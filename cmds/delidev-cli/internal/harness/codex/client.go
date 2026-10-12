@@ -24,6 +24,7 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	NativeShell           bool
 	ManagedForkHistory    bool
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
@@ -241,7 +242,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// Revert uses the closed response and cursor profile verified for this
 	// actual initialized process. General startup eligibility does not imply
 	// support for a context mutation or its replacement history shape.
-	if config.RevertHistory && config.Version != "0.162.0" {
+	if (config.RevertHistory || config.NativeShell) && config.Version != NativeShellVersion {
 		return nil, incompatible()
 	}
 	platform, family := runtime.GOOS, "unix"

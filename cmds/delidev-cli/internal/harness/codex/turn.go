@@ -72,6 +72,7 @@ type inputAttempt struct {
 
 type executionState struct {
 	windowsWarnings     uint8
+	shell               *nativeShellAttempt
 	strictReviewNotices map[strictReviewNoticeKey]bool
 
 	autoReviews         map[domain.ID]domain.AutoReviewState
@@ -143,6 +144,9 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	}
 	if !allowRecovery && c.problem != nil {
 		return c.problem
+	}
+	if !allowRecovery && c.execution.shell != nil {
+		return domain.NativeShellRecovery()
 	}
 	if !allowRecovery && c.execution.compaction != nil {
 		return compactionUncertain()

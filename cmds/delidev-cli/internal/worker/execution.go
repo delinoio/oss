@@ -121,6 +121,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
 		}
+		if c.NativeShell != nil {
+			previous = workspace.ExecutionPredecessor{JobID: c.NativeShell.JobID, ExecutionID: c.NativeShell.ActionID}
+		}
 		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, previous, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
@@ -167,6 +170,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	nativeHome := filepath.Join(home, "codex")
 	var checkpoint CodexExecutionCheckpoint
 	var compacted *codex.CompactedCheckpoint
+	var shellHistory *codex.NativeShellCheckpoint
 	if c := input.Continuation; c != nil {
 		rawDigest, err := hex.DecodeString(c.PromptDigest)
 		if err != nil || len(rawDigest) != sha256.Size {
@@ -193,18 +197,30 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if replaced != 1 {
 			return nil, executionCheckpointUncertain()
 		}
-		if c.Compaction == nil {
+		if c.Compaction == nil && c.NativeShell == nil {
 			if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, checkpoint.Native); err != nil {
 				return nil, err
 			}
+		}
+		if c.NativeShell != nil {
+			p, e := readNativeShellCheckpoint(ctx, manager.Root, config.execution.Credential, input, *c.NativeShell)
+			if e != nil {
+				return nil, e
+			}
+			if e := codex.VerifyNativeShellRollout(ctx, nativeHome, p); e != nil {
+				return nil, e
+			}
+			shellHistory = &p
 		}
 		if c.Compaction != nil {
 			retained, err := readCodexSessionCompactionCheckpoint(ctx, manager.Root, config.execution.Credential, input, *c.Compaction, checkpoint)
 			if err != nil {
 				return nil, err
 			}
-			if err := codex.VerifyCompactionRollout(ctx, nativeHome, retained); err != nil {
-				return nil, err
+			if c.NativeShell == nil {
+				if err := codex.VerifyCompactionRollout(ctx, nativeHome, retained); err != nil {
+					return nil, err
+				}
 			}
 			compacted = &retained
 		}
@@ -447,7 +463,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if c.Intent == domain.ContinueExplicitly {
 				intent = codex.ResumeAfterTerminal
 			}
-			if compacted != nil {
+			if c.NativeShell != nil {
+				p, e := readNativeShellCheckpoint(ctx, manager.Root, config.execution.Credential, input, *c.NativeShell)
+				if e != nil {
+					return nil, e
+				}
+				shellHistory = &p
+			}
+			if shellHistory != nil {
+				_, err = client.VerifyNativeShellContinuation(ctx, c.HistoryRequestID, *shellHistory)
+			} else if compacted != nil {
 				_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
 			} else {
 				_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)

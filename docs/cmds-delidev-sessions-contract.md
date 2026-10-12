@@ -1063,3 +1063,55 @@ execution, queued input or routing state. The existing structured blocked event
 records the closed cause with the code; quota blocks are not storage failures.
 No messages, prompts, account content or native output enter logs.
 This optional metadata adds no RPC, allocation, schema, migration or backfill.
+
+## Explicit native shell commands
+
+An authenticated owner or paired client can run one explicit native Codex shell
+command on a settled original session through `SessionService.RunNativeShell`.
+The CLI command is `session native-shell run --id SESSION --revision N --command
+SCRIPT --confirm-full-access`. Before acceptance, the CLI displays the exact
+script and this disclosure: “This native command runs outside the thread sandbox
+with full access on the original Agent Worker.” Connect callers must supply the
+explicit `NATIVE_SHELL_ACCESS_FULL_ACCESS` selection. Agent execution credentials,
+transcript text, native tool results and product terminal input cannot authorize
+this action. The original authenticated actor, request, command bytes, session
+revision, account, machine and predecessor remain immutable. The optional timeout
+is at most one hour; zero requests the native immediate timeout.
+
+Acceptance reserves the shared original-session action gate. FIFO input remains
+queued until the action and its independent cleanup settle. The action is a
+closed native-shell variant with its own resource, receipt and Worker claim.
+It never dispatches ordinary input, compaction or Revert. A replay reads the same
+accepted resource; a changed command or actor cannot reuse the receipt. The
+original paired client must still be authorized when the original Worker claims
+its one send. Pending, foreign, archived, recovery-required and incompatible
+Sidechat sessions fail closed.
+
+`session native-shell status --id SESSION --action ACTION` and
+`GetNativeShell` read that original action without sending native work.
+`session native-shell cancel --id SESSION --action ACTION --revision N` and
+`CancelNativeShell` request only its original owned native turn. Queued
+cancellation positively means no send. Claimed cancellation waits for native
+terminal evidence and owned-process cleanup; acknowledgment alone cannot mean
+exit. Session Stop and Archive share this cleanup boundary. Product terminals
+and unrelated native or operating-system processes keep their separate owners.
+
+The typed receipt distinguishes queued, claimed, running, exited, canceled and
+uncertain state. It retains exact original native thread/turn/item identities,
+optional native process metadata, ordered bounded output, independent aggregate
+output, exit code and duration. Native process metadata is never an operating-
+system signaling authority. Lost acceptance, send, publication, cancellation or
+cleanup evidence retains uncertainty and the original action; it never
+resubmits the command. Read retained status and reconcile the original owner.
+
+A successful action preserves ordinary execution outcome, configuration, mode,
+context revision and checkpoint. Its separate private history proof pins the
+unchanged predecessor prefix and one terminal native shell turn. Later execution
+verifies that original history and rollout before resume. It does not fabricate
+conversation input, compaction/context events, timing, usage or account activity.
+A canceled action keeps explicit Resume separate from cancellation. The
+[harness](cmds-delidev-harness-contract.md#codex-native-shell-profile),
+[process](cmds-delidev-process-contract.md#native-shell-action-ownership) and
+[storage](cmds-delidev-storage-contract.md#native-shell-action-retention) contracts
+own their independent proof boundaries. CLI and Connect expose this profile;
+this contract does not add a desktop screen.

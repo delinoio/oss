@@ -19,17 +19,18 @@ import (
 
 type continuationFixture struct {
 	*firstDispatchFixture
-	job          *pb.Resource
-	input        domain.ExecutionJobInput
-	thread, turn domain.ID
-	startupToken string
+	job           *pb.Resource
+	input         domain.ExecutionJobInput
+	thread, turn  domain.ID
+	startupToken  string
+	nativeVersion string
 }
 
 func newContinuationFixture(t *testing.T, outcome domain.ExecutionOutcome) *continuationFixture {
 	t.Helper()
 	return newContinuationFixtureProfile(t, outcome, domain.Codex)
 }
-func newContinuationFixtureProfile(t *testing.T, outcome domain.ExecutionOutcome, harness domain.Harness) *continuationFixture {
+func newContinuationFixtureProfile(t *testing.T, outcome domain.ExecutionOutcome, harness domain.Harness, nativeVersion ...string) *continuationFixture {
 	t.Helper()
 	var base *firstDispatchFixture
 	if harness == domain.OpenCode {
@@ -38,6 +39,9 @@ func newContinuationFixtureProfile(t *testing.T, outcome domain.ExecutionOutcome
 		base = newFirstDispatchFixtureForHarness(t, harness)
 	}
 	f := &continuationFixture{firstDispatchFixture: base, thread: domain.NewID()}
+	if len(nativeVersion) != 0 {
+		f.nativeVersion = nativeVersion[0]
+	}
 	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +74,9 @@ func (f *continuationFixture) claim(t *testing.T) {
 	if f.input.Version == 4 {
 		f.grant(t)
 		version := domain.CodexProtocolVersion
+		if f.nativeVersion != "" {
+			version = f.nativeVersion
+		}
 		if f.input.Configuration.Harness == domain.OpenCode {
 			version = domain.OpenCodeProtocolVersion
 		}

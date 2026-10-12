@@ -228,6 +228,22 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				v.State, v.Problem, v.FinishedAt = domain.JobCanceled, restoreQuarantined().(*domain.Error), &receipt.CreatedAt
 			}
 			value = v
+		case domain.NativeActionKind:
+			var v domain.NativeShellAction
+			if domain.Decode(raw, &v) != nil || v.Validate() != nil {
+				rows.Close()
+				return domain.NativeShellRecovery()
+			}
+			if v.State == domain.NativeShellQueued {
+				v.State = domain.NativeShellCanceled
+			} else if v.Observation != nil && !v.Observation.CleanupVerified && v.State != domain.NativeShellUncertain {
+				v.State = domain.NativeShellUncertain
+				observation := *v.Observation
+				observation.State = domain.NativeShellUncertain
+				observation.CleanupVerified = false
+				v.Observation = &observation
+			}
+			value = v
 		case domain.ScheduleKind:
 			var v domain.Schedule
 			if err := domain.Decode(raw, &v); err != nil {

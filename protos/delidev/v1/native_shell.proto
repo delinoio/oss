@@ -1,0 +1,61 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+enum NativeShellAccess {
+  NATIVE_SHELL_ACCESS_UNSPECIFIED = 0;
+  // Explicit user confirmation: outside the thread sandbox with full access.
+  NATIVE_SHELL_ACCESS_FULL_ACCESS = 1;
+}
+message RunNativeShellRequest {
+  Mutation mutation = 1;
+  string command = 2;
+  NativeShellAccess access = 3;
+  optional uint64 timeout_ms = 4;
+}
+message RunNativeShellResponse {
+  // Closed native-shell action document; never the original execution input.
+  Resource action = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetNativeShellRequest {
+  string session_id = 1;
+  string action_id = 2;
+}
+message GetNativeShellResponse {
+  Resource action = 1;
+}
+message CancelNativeShellRequest {
+  // Exact original action ID and revision, never a PID or product terminal.
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message CancelNativeShellResponse {
+  Resource action = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ClaimNativeShellRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+}
+message ClaimNativeShellResponse {
+  Resource action = 1;
+  bool replayed = 2;
+}
+message PublishNativeShellRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // Closed typed domain.NativeShellObservation; bounded and original-only.
+  bytes observation_json = 4;
+}
+message PublishNativeShellResponse {
+  Resource action = 1;
+  bool replayed = 2;
+}

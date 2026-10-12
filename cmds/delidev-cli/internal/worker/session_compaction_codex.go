@@ -61,7 +61,7 @@ func codexCheckpointForContinuation(root string, input domain.ExecutionJobInput,
 
 func executeCodexSessionCompaction(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.SessionCompactionInput) (output json.RawMessage, returned error) {
 	c := config.execution
-	if c == nil || c.Assignment == nil || config.executionContext == nil || i.Validate() != nil || (i.Version != 2 && i.Version != 4) || i.Assignment.Configuration.Harness != domain.Codex || domain.ID(c.Assignment.Id) != owner {
+	if c == nil || c.Assignment == nil || config.executionContext == nil || i.Validate() != nil || (i.Version != 2 && i.Version != 4 && i.Version != 5) || i.Assignment.Configuration.Harness != domain.Codex || domain.ID(c.Assignment.Id) != owner {
 		return nil, domain.CompactionUncertain()
 	}
 	logger := config.Logger
@@ -104,6 +104,9 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	previous := workspace.ExecutionPredecessor{JobID: i.SourceJobID, ExecutionID: i.Assignment.ExecutionID}
 	if i.Previous != nil {
 		previous = workspace.ExecutionPredecessor{JobID: i.Previous.JobID, ExecutionID: i.Previous.ActionID}
+	}
+	if ref := i.Restore.Continuation.NativeShell; ref != nil {
+		previous = workspace.ExecutionPredecessor{JobID: ref.JobID, ExecutionID: ref.ActionID}
 	}
 	lease, err := manager.ClaimContinuation(ctx, owner, i.ActionID, previous, prep, manifest)
 	if err != nil {
@@ -155,12 +158,25 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return nil, err
 		}
 		prior = &restored
-	} else if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, source.Native); err != nil {
-		return nil, err
+	} else if i.Restore.Continuation.NativeShell == nil {
+		if err := codex.VerifyContinuationContextRollout(ctx, nativeHome, source.Native); err != nil {
+			return nil, err
+		}
 	}
-	if prior != nil {
+	if prior != nil && i.Restore.Continuation.NativeShell == nil {
 		if err := codex.VerifyCompactionRollout(ctx, nativeHome, *prior); err != nil {
 			return nil, err
+		}
+	}
+	var shellHistory *codex.NativeShellCheckpoint
+	if ref := i.Restore.Continuation.NativeShell; ref != nil {
+		p, e := readNativeShellCheckpoint(ctx, config.Root, c.Credential, i.Restore, *ref)
+		if e != nil {
+			return nil, e
+		}
+		shellHistory = &p
+		if e := codex.VerifyNativeShellRollout(ctx, nativeHome, p); e != nil {
+			return nil, e
 		}
 	}
 	instructions, err := i.Assignment.Configuration.NativeInstructions(i.Assignment.Input.Mode)
@@ -249,9 +265,12 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	nativeCtx, cancel := context.WithCancel(config.executionContext)
 	defer cancel()
-	cancelAction := context.AfterFunc(ctx, cancel)
+	cancelAction := func() bool { return false }
+	if i.NativeShell == nil {
+		cancelAction = context.AfterFunc(ctx, cancel)
+	}
 	defer cancelAction()
-	nativeConfig := codex.Config{RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
+	nativeConfig := codex.Config{NativeShell: i.NativeShell != nil, RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
 	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -331,7 +350,10 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if _, err := native.ResumeThread(ctx, i.Restore.ThreadRequestID, source.Native.ThreadID, settings); err != nil {
 		return nil, err
 	}
-	if prior != nil {
+
+	if shellHistory != nil {
+		_, err = native.VerifyNativeShellContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *shellHistory)
+	} else if prior != nil {
 		_, err = native.VerifyCompactedContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *prior)
 	} else {
 		proofIntent := codex.ContinueAfterSuccess
@@ -348,6 +370,25 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		return nil, err
 	}
 	phase = compactionCommand
+	if i.NativeShell != nil {
+		observation, history, send, e := runNativeShellAction(ctx, config, owner, job, i, native, source.Native)
+		if e != nil {
+			return nil, e
+		}
+		if e := closeNative(); e != nil {
+			return nil, e
+		}
+		if proxy != nil {
+			if e := proxy.Close(); e != nil {
+				return nil, e
+			}
+			proxyClosed = true
+		}
+		if e := lease.Close(); e != nil {
+			return nil, e
+		}
+		return retainNativeShellResult(config, owner, i, observation, history, send)
+	}
 	var retained codex.CompactedCheckpoint
 	usages := []domain.NativeResponseUsage{}
 	if i.Revert != nil {

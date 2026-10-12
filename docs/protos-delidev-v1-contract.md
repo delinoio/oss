@@ -1517,3 +1517,36 @@ workspace/commits documents retain bounded source observations; avatars return
 sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
 Worker allocation, feature flag or database migration. Reconcile the capability
 and all declarations against current allocations before merge.
+
+System `TAILSCALE_CONNECTIONS_V1 = 93` negotiates `TailscaleService` in
+`v1/tailscale.proto`. The complete additive field and method ownership is recorded
+in the allocation ledger. Preserve DeviceType client/Worker meaning and all
+existing capability numbers. Generated Go, Connect Go, TypeScript and Connect
+Query bindings come from the pinned generators.
+
+Local authenticated discovery/access and original outgoing request operations
+remain separate from public bounded target request/status/key-proved cancellation
+and encrypted Worker delivery. Authenticated owner/client decisions retain the
+original actor, transcript and existing Device pairing receipt. Bounded JSON
+projections follow the closed states and private/public separation in the
+[connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
+No new SQLite entity or migration is introduced.
+
+## Original native shell actions
+
+System capability 95 and Worker capability 57 reserve `CODEX_NATIVE_SHELL_V1`.
+`EntityKind` 36 identifies the closed native-action resource returned by the
+action RPCs. It preserves the original action owner and grants no generic write
+authority or database migration.
+`SessionService.RunNativeShell`, `GetNativeShell` and `CancelNativeShell` expose
+a closed native shell action independently of product terminals and ordinary
+execution input. Run requires an exact original mutation, command, explicit
+full-access selection and optional timeout. Cancellation retains the original
+action and session identities; it accepts no operating-system process identifier.
+
+`WorkerService.ClaimNativeShell` and `PublishNativeShell` bind the original
+mutation to its Machine and Worker instance. Publication carries only the
+bounded closed native-shell observation document. The action resource preserves
+original request receipts and independent delivery, native completion and
+cleanup evidence. These declarations grant no shell dispatch, continuation,
+account or cleanup authority by themselves and add no database migration.

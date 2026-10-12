@@ -31,6 +31,9 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleNativeShell(id, method, raw, write) {
+		return true
+	}
 	if f.handleRevert(id, method, raw, write) {
 		return true
 	}

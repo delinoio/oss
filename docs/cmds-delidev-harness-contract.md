@@ -2641,3 +2641,34 @@ Complete continuation, context/compaction and permitted ordinary/managed Fork hi
 Managed Codex Thread initialization retains the private original process-bound helper proof under the [subscription cleanup contract](cmds-delidev-subscription-contract.md#original-managed-codex-execution-helpers). Pin the canonical home, retained native directory identities, canonical verified executable identity and prelaunch bounded directory inventory before launch. Capture and validate the exact original Unix `apply_patch`, `applypatch` and `codex-execve-wrapper` aliases after initialized startup and before thread input admission. This proof is private, in memory and unavailable to historical runtime recovery, other execution owners or public RPCs. Windows regular batch scripts and other aliases grant no removal authority.
 
 Closure returns original process-join and helper-retirement results independently. Only a joined original native tree permits retirement through retained no-follow parent operations. Changed/foreign entries, missing startup proof and failed removal/synchronization remain recovery-required. Native destructor absence requires its unchanged retained original parent; basename lookup at cleanup cannot adopt entries. Preserve unrelated native files, lock files and history. The Worker must still run final original authentication comparison/removal and the complete unchanged bounded raw/encoded-credential scan after process join if helper retirement fails. Helper cleanup cannot settle native execution, input, history or credential ownership alone. Accepted-input native failures remain failed with once-only reporting and no replay even when both cleanup owners succeed. No capability, public protocol, migration or automatic historical-account recovery is introduced.
+
+## Codex native shell profile
+
+The closed native shell adapter uses the independently detected Codex `0.162.0`
+profile and experimental ThreadProtocol initialization. It sends exactly one
+`thread/shellCommand` request with the original thread, exact accepted command
+and optional timeout after the durable Worker claim and private send fence.
+Native Codex trims the command and runs it outside the thread sandbox with full
+access. A native empty acknowledgment confirms submission only. A failed or
+malformed reply keeps the original attempt uncertain; connection replacement,
+replayed receipts and agent text cannot authorize another send.
+
+The original standalone native turn must produce `commandExecution` items with
+`source = userShell`. Bind exact thread, turn, item, working directory and optional
+native process metadata. Preserve native rendered shell argv independently from
+the accepted raw command. Reject agent-origin commands, foreign or duplicate
+items, changed identities, incompatible envelopes, changed rendered command and
+oversized output. Native output deltas and terminal aggregate output remain
+independent bounded observations. Item exit does not complete its turn; native
+turn completion does not prove operating-system cleanup. Interrupt targets only
+the bound original turn once and preserves uncertain acknowledgment.
+
+The separate native-shell checkpoint retains the ordinary source unchanged,
+full original history-prefix digest, one terminal shell turn, exact rollout
+digest and existing context records. Verify retained rollout bytes before a
+replacement process resumes. Verify the same original native history and
+settings after resume before accepting later work. This profile never invokes
+compaction, emits compaction/context events, rewrites the ordinary checkpoint or
+changes runtime permissions/mode. The [sessions contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands)
+owns human authorization and public typed receipts. Fixture tests and source
+inspection do not establish real native, account or platform acceptance.

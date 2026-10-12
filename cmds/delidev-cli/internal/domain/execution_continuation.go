@@ -94,6 +94,7 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 // ExecutionContinuation retains the preceding public progress before advancing
 // Session.Execution. Native paths/defaults stay in the digest-bound Worker file.
 type ExecutionContinuation struct {
+	NativeShell           *NativeShellRef       `json:"native_shell,omitempty"`
 	Compaction            *SessionCompactionRef `json:"compaction,omitempty"`
 	HistoryExecutionID    ID                    `json:"history_execution_id"`
 	HistoryRequestID      ID                    `json:"history_request_id"`
@@ -110,6 +111,9 @@ type ExecutionContinuation struct {
 }
 
 func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
+	if c.NativeShell != nil && (input.Configuration.Harness != Codex || c.NativeShell.Validate() != nil || c.NativeShell.ExecutionID != c.Previous.ExecutionID) {
+		return NativeShellRecovery()
+	}
 	if c.Compaction != nil && (input.Configuration.Harness == Codex || input.Configuration.Harness == OpenCode) && (c.Compaction.RequiresResume || len(c.Previous.Subagents) != 0 || (c.Previous.Outcome != ExecutionSucceeded && !(input.Configuration.Harness == Codex && c.Compaction.Revert))) {
 		return CompactionUncertain()
 	}

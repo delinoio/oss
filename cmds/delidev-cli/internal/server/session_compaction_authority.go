@@ -39,7 +39,10 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if i.Revert != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
 		return denied()
 	}
-	if i.Revert == nil && i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
+	if i.NativeShell != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexNativeShellV1) {
+		return denied()
+	}
+	if i.NativeShell == nil && i.Revert == nil && i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
 		return denied()
 	}
 	if i.Assignment.Configuration.Harness == domain.OpenCode && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {

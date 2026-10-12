@@ -1475,3 +1475,28 @@ Resource document_json always excludes this key. Native assignments, closed
 progress attempts, checkpoints and digests do not include display timing.
 Legacy omission receives no backfill; replacement jobs retain independent current
 identity and original deletion ownership. No schema or migration is added.
+
+## Native shell action retention
+
+Native shell actions use a closed `native_action` document in the existing
+session-scoped entity store. Acceptance, exact human actor and command, original
+Worker claim, ordered bounded observations and terminal cleanup remain durable
+under the ordinary request-receipt and revision transaction. No table migration
+or generic write authority is introduced. Managed database restore preserves
+historical content while canceling undispatched actions and quarantining
+unsettled claimed actions; restored bytes cannot authorize another native send.
+
+The Worker retains a separate private `native-shell-checkpoints` proof bound to
+its original server/device/job/instance/assignment digest, exact send fence,
+ordinary predecessor, native history and completed job journal. Later original
+continuation checks it before native resume and independently checks the native
+history afterward. It never overwrites the ordinary execution or compaction
+checkpoint. Account/connection/configuration changes cannot retarget this proof.
+
+Permanent session deletion includes each original action runtime, private send
+claim and native-shell checkpoint in the existing immutable action/job/process
+inventory. Completed deletion proof rechecks the same inventory, so restored
+private shell history cannot survive under a completed proof. Unrelated action
+checkpoints are preserved. Deletion closes action authority and joins independent
+owned processes before removing session-scoped receipts/content. Follow the
+[sessions contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands).

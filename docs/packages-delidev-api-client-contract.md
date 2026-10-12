@@ -523,3 +523,19 @@ mismatched causes are not typed causes; untyped transport messages never prove
 exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlation
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
+
+TailscaleService and TailscaleQuery export the generated connection surface under
+the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
+Closed bounded JSON projections retain public observation metadata only; private
+keys, decrypted grants and protected Worker inputs stay Go-owned.
+
+## Native shell action clients
+
+Generated SessionService Run/Get/Cancel native-shell methods and WorkerService
+Claim/Publish methods follow the [sessions](cmds-delidev-sessions-contract.md#explicit-native-shell-commands)
+and [protocol](protos-delidev-v1-contract.md#original-native-shell-actions)
+contracts. Clients retain exact original mutation/actor/session/action identities
+and explicit full-access selection. Status reads cannot resubmit an action, and
+cancellation cannot adopt a product terminal or operating-system PID. Typed
+receipt revisions and observation sequences remain decimal-safe. Generated
+bindings alone provide no native, account or cleanup acceptance evidence.

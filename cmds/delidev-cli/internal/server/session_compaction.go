@@ -25,9 +25,9 @@ func compactionActor(ctx context.Context) error {
 // Source verification shares current account/installation eligibility, but never
 // claims a queued input, changes the preceding outcome or reruns routing.
 func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID) (domain.SessionCompactionInput, error) {
-	return contextActionSource(tx, sr, session, action, false)
+	return contextActionSource(tx, sr, session, action, false, false)
 }
-func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert bool) (domain.SessionCompactionInput, error) {
+func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert bool, shell bool) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
 	p := session.Execution
 	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
@@ -62,6 +62,20 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 	if (!revert && j.State != domain.JobSucceeded) || (revert && j.State != domain.JobSucceeded && j.State != domain.JobFailed && j.State != domain.JobCanceled) || domain.Decode(j.Input, &original) != nil || original.Validate() != nil || !session.OwnsExecution(original) || domain.Decode(j.Output, &done) != nil || done.Version != 2 || (!revert && done.Outcome != domain.ExecutionSucceeded) || done.ExecutionID != p.ExecutionID || done.InputID != p.InputID || done.NativeTurnID != domain.NativeIdentity(p.NativeTurnID) || done.NativeThreadID != domain.NativeIdentity(p.NativeThreadID) || done.LastSequence != p.LastSequence {
 		return empty, domain.CompactionUncertain()
 	}
+	if shell {
+		// Only original initialized startup evidence can admit this closed native
+		// profile. Machine capability and configured version are insufficient.
+		version := original.Installation.Version
+		if original.Version == 4 {
+			if j.Startup == nil || j.Startup.JobID != r.ID || j.Startup.ExecutionID != original.ExecutionID || j.Startup.Ready == nil || j.Startup.Ready.Validate() != nil || j.Startup.Failure != nil {
+				return empty, domain.Fail(domain.Unsupported, "The original native shell profile is unavailable.", "Refresh the original Worker; no command was accepted or sent.")
+			}
+			version = j.Startup.Ready.NativeVersion
+		}
+		if version != "0.162.0" {
+			return empty, domain.Fail(domain.Unsupported, "The original Codex version has no supported native shell profile.", "Use the validated original Codex runtime before requesting a command.")
+		}
+	}
 	if !revert && original.ContextRevision != session.ContextRevision {
 		return empty, domain.CompactionUncertain()
 	}
@@ -75,7 +89,7 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 	if revert && !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
 		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support conversation revert.", "Update the original Worker.")
 	}
-	if !revert && h == domain.Codex && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
+	if !revert && !shell && h == domain.Codex && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
 		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support Codex compaction.", "Update that Worker before requesting this operation.")
 	}
 	if h == domain.OpenCode && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {
@@ -113,7 +127,7 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 			intent = domain.ContinueExplicitly
 		}
 	}
-	restored.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: p.NativePublication(), Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: domain.BindSessionInput(original.InputID, original.Input).PromptDigest, Intent: intent, Compaction: previous}
+	restored.Continuation = &domain.ExecutionContinuation{NativeShell: session.NativeShellForExecution(original.ExecutionID), HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: p.NativePublication(), Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: domain.BindSessionInput(original.InputID, original.Input).PromptDigest, Intent: intent, Compaction: previous}
 	version := uint32(1)
 	if h == domain.Codex {
 		version = 2
@@ -121,7 +135,7 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 		version = 3
 	}
 	input := domain.SessionCompactionInput{Version: version, ActionID: action, SourceJobID: r.ID, Assignment: original, Restore: restored, Completion: done, Previous: previous, Dispatch: session.Dispatch, Intent: session.NextExecutionIntent}
-	if revert {
+	if revert || shell {
 		return input, nil
 	}
 	return input, input.Validate()
@@ -204,6 +218,10 @@ const (
 )
 
 func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error) (store.Record, error) {
+	var input domain.SessionCompactionInput
+	if domain.DecodeCompactionInput(j.Input, &input) == nil && input.NativeShell != nil {
+		return finishNativeShell(tx, r, j, revision, raw, problem)
+	}
 	return finalizeSessionCompaction(tx, r, j, revision, raw, problem, ordinaryContextAction)
 }
 
@@ -313,6 +331,9 @@ func finalizeSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revis
 	return store.Record{ID: saved.ID}, err
 }
 func loseSessionCompaction(tx *store.Tx, r store.Record, j domain.Job) error {
+	if err := settleLostNativeShell(tx, r, j); err != nil {
+		return err
+	}
 	sr, session, err := sessionRecord(tx, r.SessionID)
 	if err != nil {
 		return err

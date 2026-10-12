@@ -271,6 +271,17 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 func (a *executionAuthority) inferenceScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
 	scope, err := a.scope(tx, grant)
 	if err == nil {
+		r, e := tx.Get(domain.JobKind, grant.JobID)
+		if e != nil {
+			return apiproxy.Scope{}, executionDenied()
+		}
+		j, e := store.Decode[domain.Job](r)
+		var action domain.SessionCompactionInput
+		if e != nil || j.Type == domain.CompactSessionJob && domain.DecodeCompactionInput(j.Input, &action) == nil && action.NativeShell != nil {
+			return apiproxy.Scope{}, executionDenied()
+		}
+	}
+	if err == nil {
 		err = requireExecutionStartupReady(tx, grant.JobID)
 	}
 	if err == nil && scope.SubscriptionService == domain.SubscriptionOpenCodeGo && domain.NativeIdentity(scope.OpenCodeSession).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {

@@ -56,6 +56,8 @@ edit generations independently of empty text payloads; busy and uncertain
 original intents fence fresh input. Follow the [desktop contract](apps-delidev-desktop-contract.md#conversation-revert-and-edit).
 This does not change native mutation, server admission or protocol ownership.
 
+Explicit Codex shell commands use the [sessions contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands), with separate original action receipts, once-only native send authority and independent process/history cleanup. CLI and Connect expose full-access confirmation; ordinary execution checkpoints, account routing and product terminals preserve their owners.
+
 ## Goal
 
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. The feature remains normative, with the explicit owner startup/presentation amendment in ; implementation and real-environment evidence are distinct.
