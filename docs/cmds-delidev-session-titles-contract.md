@@ -73,6 +73,8 @@ Worker revocation cancels an unassigned title and records `skipped`/`authority-l
 
 The Worker uses a private temporary native home/work directory and joined process ownership. Cleanup must be confirmed before a successful title report. Uncertain process cleanup remains explicit and cannot trigger another native request. Fixed instructions, an effective read-only sandbox, no tools and disabled retry limits are all required; sandbox mode alone is insufficient.
 
+Register one finalization owner immediately after creating the private runtime, before further setup can fail. Successful and failed inference share its cached result. Independently join the native client, proxy and original process owner before removing the runtime and synchronizing its parent. Any failed join retains the runtime. Every cleanup failure overrides an earlier inference error with `RecoveryRequired`, clears candidate output and keeps title/Archive cleanup pending. Deferred finalization must not retry a failed stage or replace cleanup uncertainty with an ordinary inference result. Diagnostics identify only the failed stage and safe code, without native errors or private paths.
+
 ## Logging
 
 Structured records may include correlation/job/session/operation IDs, stable phases, capability outcome, usage-observed boolean and stable failure codes. Never log the first message, title, provider response, credential, request body, native config document or private path.
