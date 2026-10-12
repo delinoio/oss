@@ -1190,6 +1190,7 @@ fn inline_imports_follow_escapes_and_import_maps() {
     for page in [
         r#"<script type="module">import{htmlOnly}from"./lib.js";htmlOnly();</script><script type="module" src="./index.js"></script>"#,
         r#"<script type="importmap">{"imports":{"lib":"/lib.js"}}</script><script type="module">import{htmlOnly}from"lib";htmlOnly();</script><script type="module" src="./index.js"></script>"#,
+        r#"<script type="module">const p="./lib.js";import(p).then(m=>m.htmlOnly());</script><script type="module" src="./index.js"></script>"#,
     ] {
         let temp = bundle(&[
             ("index.html", page),

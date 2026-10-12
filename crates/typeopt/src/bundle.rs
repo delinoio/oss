@@ -315,10 +315,18 @@ pub(crate) fn decode_js_string(raw: &str) -> Option<String> {
     Some(out)
 }
 
-/// Specifiers of literal dynamic `import("…")` calls in script text.
-pub(crate) fn literal_dynamic_imports(code: &str) -> Vec<String> {
+/// Dynamic `import(…)` calls in script text.
+pub(crate) struct DynamicImports {
+    /// Specifiers of `import("…")` calls with a string literal argument.
+    pub literals: Vec<String>,
+    /// Some `import(…)` call has another argument, which can name any chunk.
+    pub non_literal: bool,
+}
+
+pub(crate) fn literal_dynamic_imports(code: &str) -> DynamicImports {
     let bytes = code.as_bytes();
     let mut found = Vec::new();
+    let mut non_literal = false;
     let mut from = 0;
     while let Some(offset) = code[from..].find("import") {
         let at = from + offset;
@@ -340,13 +348,17 @@ pub(crate) fn literal_dynamic_imports(code: &str) -> Vec<String> {
             .next()
             .filter(|c| matches!(c, '"' | '\'' | '`'))
         else {
+            non_literal = true;
             continue;
         };
         if let Some(end) = rest[1..].find(quote) {
             found.push(rest[1..1 + end].to_owned());
         }
     }
-    found
+    DynamicImports {
+        literals: found,
+        non_literal,
+    }
 }
 
 /// Maps an offset of a round's input text to the round's output text.
@@ -1221,10 +1233,13 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert_eq!(
             super::literal_dynamic_imports(
                 "import/* a */(\"./a.js\");import(/* b */'./b.js');import \
-                 (\n`./c.js`);x.import('no');import(name);"
-            ),
+                 (\n`./c.js`);x.import('no');"
+            )
+            .literals,
             ["./a.js", "./b.js", "./c.js"]
         );
+        let found = super::literal_dynamic_imports("const p='./lib.js';import(p);");
+        assert!(found.literals.is_empty() && found.non_literal);
     }
 
     #[test]

@@ -1004,7 +1004,12 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                     None => {
                         // Inline code can import chunks: they become public.
                         let code = tag.text.as_deref().unwrap_or_default();
-                        let mut specifiers = crate::bundle::literal_dynamic_imports(code);
+                        let dynamic = crate::bundle::literal_dynamic_imports(code);
+                        // A computed specifier can name any chunk.
+                        if dynamic.non_literal {
+                            found.all_public = true;
+                        }
+                        let mut specifiers = dynamic.literals;
                         if module {
                             specifiers.extend(crate::pipeline::bundle_static_imports(code));
                         }
