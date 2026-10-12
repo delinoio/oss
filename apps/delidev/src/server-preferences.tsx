@@ -113,7 +113,11 @@ export function ServerPreferencesUnavailable({
 export function serverPreferenceLabel(
   section: ServerPreferenceSection,
 ): string {
-  return copy("configuration-fields.projectDefaults");
+  return copy(
+    section === ServerPreferenceSection.Harnesses
+      ? "harness-settings.harnesses"
+      : "configuration-fields.projectDefaults",
+  );
 }
 
 export function ServerPreferencesEmpty({

@@ -10,6 +10,13 @@ import { copy, useLocale, type MessageKey } from "./localization";
 import { SettingsCategory as Category } from "./settings-category";
 import "./settings-search.css";
 export enum SettingsSearchTarget {
+  Codex = "codex-harness",
+  CodexModel = "codex-model",
+  CodexEffort = "codex-effort",
+  CodexPermissions = "codex-permission",
+  CodexApproval = "codex-approval_policy",
+  CodexSubagents = "codex-subagent_model",
+  CodexTier = "codex-service_tier",
   Approvals = "notification-approvals",
   Succeeded = "notification-succeeded",
   Failed = "notification-failed",
@@ -87,6 +94,25 @@ const target = (
 export const settingsSearchTargets: Partial<
   Record<Category, readonly StaticTarget[]>
 > = {
+  [Category.CodexCli]: [
+    target(
+      SettingsSearchTarget.Codex,
+      "harness-settings.codex",
+      "harness-settings.help",
+    ),
+    target(SettingsSearchTarget.CodexModel, "harness-settings.model"),
+    target(SettingsSearchTarget.CodexEffort, "harness-settings.effort"),
+    target(
+      SettingsSearchTarget.CodexPermissions,
+      "harness-settings.permission",
+    ),
+    target(SettingsSearchTarget.CodexApproval, "harness-settings.approval"),
+    target(
+      SettingsSearchTarget.CodexSubagents,
+      "harness-settings.subagentModel",
+    ),
+    target(SettingsSearchTarget.CodexTier, "harness-settings.tier"),
+  ],
   [Category.AppInformation]: [
     target(
       SettingsSearchTarget.AppInformation,

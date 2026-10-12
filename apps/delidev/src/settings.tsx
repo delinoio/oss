@@ -1,3 +1,7 @@
+import {
+  ServerPresentationKind,
+  type ServerPresentation,
+} from "./server-presentation";
 // SPDX-License-Identifier: Apache-2.0
 import {
   useProductLabels,
@@ -1106,7 +1110,8 @@ export function ConfigurationEditor({
       kind,
       schemaVersion:
         [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) &&
-        !supportsProjectBehavior
+        !supportsProjectBehavior &&
+        !Object.hasOwn(submittedData, "harness_defaults")
           ? 1
           : configurationSchemaVersion(kind, submittedData),
       documentJson,
@@ -1147,7 +1152,15 @@ export function ConfigurationEditor({
       <form
         id={formId}
         ref={form}
-        aria-label={inline ? copy("settings.projectDefaultsForm") : undefined}
+        aria-label={
+          inline
+            ? copy(
+                serverPreferenceSection === ServerPreferenceSection.Harnesses
+                  ? "harness-settings.codex"
+                  : "settings.projectDefaultsForm",
+              )
+            : undefined
+        }
         className={
           kind === EntityKind.REPOSITORY && source
             ? "repository-editor"
@@ -1314,11 +1327,26 @@ export function ConfigurationEditor({
           <div className="actions server-preferences-actions">
             <span className="server-preferences-status" role="status">
               {mutation.busy
-                ? copy("settings.savingProjectDefaults")
+                ? copy(
+                    serverPreferenceSection ===
+                      ServerPreferenceSection.Harnesses
+                      ? "harness-settings.saving"
+                      : "settings.savingProjectDefaults",
+                  )
                 : mutation.uncertain
-                  ? copy("settings.projectDefaultsSaveOutcomeUnknown")
+                  ? copy(
+                      serverPreferenceSection ===
+                        ServerPreferenceSection.Harnesses
+                        ? "harness-settings.saveUnknown"
+                        : "settings.projectDefaultsSaveOutcomeUnknown",
+                    )
                   : dirty
-                    ? copy("settings.unsavedProjectDefaults")
+                    ? copy(
+                        serverPreferenceSection ===
+                          ServerPreferenceSection.Harnesses
+                          ? "harness-settings.unsaved"
+                          : "settings.unsavedProjectDefaults",
+                      )
                     : ""}
             </span>
             <SettingsActionButton
@@ -1579,6 +1607,7 @@ enum SettingsArea {
 }
 
 enum SettingsGroup {
+  Harnesses = "Harnesses",
   Ai = "AI",
   Coding = "Coding",
   Devices = "Device management",
@@ -1653,6 +1682,16 @@ export const settingsCategories: Record<
       return copy("settings.providerAvailabilityIsSavedOnThe_11e7c8");
     },
     kind: EntityKind.PROVIDER,
+    area: SettingsArea.Configuration,
+  },
+  [SettingsCategory.CodexCli]: {
+    get label() {
+      return copy("harness-settings.codex");
+    },
+    get description() {
+      return copy("harness-settings.help");
+    },
+    kind: EntityKind.SETTINGS,
     area: SettingsArea.Configuration,
   },
   [SettingsCategory.AgentWorkers]: {
@@ -1786,6 +1825,7 @@ export const settingsGroups: {
   label: SettingsGroup;
   categories: SettingsCategory[];
 }[] = [
+  { label: SettingsGroup.Harnesses, categories: [SettingsCategory.CodexCli] },
   {
     label: SettingsGroup.Ai,
     categories: [
@@ -1828,6 +1868,7 @@ export const settingsGroups: {
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+  [SettingsCategory.CodexCli]: "m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18",
   [SettingsCategory.AppInformation]:
     "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 5h.01M12 11v6",
   [SettingsCategory.ProjectDefaults]: "M4 6h16M4 12h16M4 18h16",
@@ -1879,6 +1920,7 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 }
 
 interface SettingsProps {
+  serverPresentation?: ServerPresentation;
   openUsage?: (entry: UsageEntry) => void;
   readLocalWorker?: ReadLocalWorkerProof;
   chooseRepositoryFolder?: ChooseRepositoryFolder;
@@ -2061,13 +2103,15 @@ function SettingsVisit({
               <section className="settings-nav-group" key={group.label}>
                 <h2>
                   {copy(
-                    group.label === SettingsGroup.Ai
-                      ? "settings.group.aiAgents"
-                      : group.label === SettingsGroup.Coding
-                        ? "settings.group.coding"
-                        : group.label === SettingsGroup.Devices
-                          ? "settings.group.devices"
-                          : "settings.group.system",
+                    group.label === SettingsGroup.Harnesses
+                      ? "harness-settings.harnesses"
+                      : group.label === SettingsGroup.Ai
+                        ? "settings.group.aiAgents"
+                        : group.label === SettingsGroup.Coding
+                          ? "settings.group.coding"
+                          : group.label === SettingsGroup.Devices
+                            ? "settings.group.devices"
+                            : "settings.group.system",
                   )}
                 </h2>
                 {group.categories.map((category) => (
@@ -2122,6 +2166,7 @@ function SettingsVisit({
 }
 
 function SettingsWorkspace({
+  serverPresentation,
   openUsage,
   connectionSettings,
   visible = true,
@@ -2299,12 +2344,15 @@ function SettingsWorkspace({
   const isGitWorkflow = selectedCategory === SettingsCategory.GitWorkflow;
   const isProjectDefaults =
     selectedCategory === SettingsCategory.ProjectDefaults;
-  const isPreferenceCategory = isProjectDefaults;
-  const preferenceSection = isProjectDefaults
-    ? ServerPreferenceSection.ProjectDefaults
-    : isGitWorkflow
-      ? ServerPreferenceSection.GitWorkflow
-      : ServerPreferenceSection.AccountRouting;
+  const isHarnesses = selectedCategory === SettingsCategory.CodexCli;
+  const isPreferenceCategory = isProjectDefaults || isHarnesses;
+  const preferenceSection = isHarnesses
+    ? ServerPreferenceSection.Harnesses
+    : isProjectDefaults
+      ? ServerPreferenceSection.ProjectDefaults
+      : isGitWorkflow
+        ? ServerPreferenceSection.GitWorkflow
+        : ServerPreferenceSection.AccountRouting;
   const preferenceLabel = serverPreferenceLabel(preferenceSection);
   const isPairedDevices = selectedCategory === SettingsCategory.PairedDevices;
   const isRunnerDevices =
@@ -2701,7 +2749,26 @@ function SettingsWorkspace({
                         )}
                       </p>
                     ) : isPreferenceCategory ? (
-                      <p>{copy("settings.projectDefaultsDescription")}</p>
+                      <div>
+                        {isHarnesses ? (
+                          <p>
+                            {copy("harness-settings.connectedServer", {
+                              name:
+                                serverPresentation?.kind ===
+                                ServerPresentationKind.Saved
+                                  ? serverPresentation.name
+                                  : copy("harness-settings.localServer"),
+                            })}
+                          </p>
+                        ) : null}
+                        <p>
+                          {copy(
+                            isHarnesses
+                              ? "harness-settings.help"
+                              : "settings.projectDefaultsDescription",
+                          )}
+                        </p>
+                      </div>
                     ) : null}
                     <p
                       className={

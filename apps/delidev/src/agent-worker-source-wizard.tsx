@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
   captureHarnessEditorChanges,
+  newTypedHarnessDocument,
   harnessEditorDocument,
 } from "./harness-settings-draft";
+import { HarnessScopeSource } from "./harness-settings-model";
 import {
   useProductLabels,
   PresentationKind,

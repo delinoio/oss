@@ -1351,3 +1351,90 @@ it.each([
     expect(value.save).not.toHaveBeenCalled();
   },
 );
+it("saves Harnesses through the original singleton owner without rewriting hidden preferences", async () => {
+  const original = resource(EntityKind.SETTINGS, {
+    ...known,
+    harness_defaults: { version: 1, entries: [] },
+  });
+  original.schemaVersion = 4;
+  const rows = [original];
+  const value = fixture(rows, undefined, [
+    SystemCapability.HARNESS_DEFAULTS_V1,
+    SystemCapability.SESSION_DEFAULTS_V1,
+  ]);
+  value.save.mockImplementation(async (request) => {
+    const saved = create(ResourceSchema, {
+      ...original,
+      schemaVersion: request.schemaVersion,
+      revision: 9n,
+      documentJson: request.documentJson,
+    });
+    rows[0] = saved;
+    return { resource: saved };
+  });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Codex CLI" }));
+  const effort = await screen.findByRole("combobox", {
+    name: "Reasoning effort: Selection",
+  });
+  await waitFor(() => expect(effort.closest("fieldset")?.disabled).toBe(false));
+  expect(value.save).not.toHaveBeenCalled();
+  fireEvent.change(effort, { target: { value: "override" } });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Reasoning effort: Override value" }),
+    { target: { value: "high" } },
+  );
+  await waitFor(() => expect(saveButton().disabled).toBe(false));
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  const request = value.save.mock.calls[0][0];
+  const saved = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(request.schemaVersion).toBe(4);
+  expect(request.mutation).toMatchObject({
+    id: original.id,
+    expectedRevision: 8n,
+  });
+  expect(saved).toMatchObject(known);
+  expect(saved.harness_defaults).toEqual({
+    version: 1,
+    entries: [
+      {
+        scope: { harness: "codex", source: "any" },
+        settings: { version: 1, effort: { mode: "override", value: "high" } },
+      },
+    ],
+  });
+});
+it("retains a stale Codex draft after the original singleton save rejects its revision", async () => {
+  const original = resource(EntityKind.SETTINGS, {
+    ...known,
+    harness_defaults: { version: 1, entries: [] },
+  });
+  original.schemaVersion = 4;
+  const rows = [original];
+  const value = fixture(rows, undefined, [
+    SystemCapability.HARNESS_DEFAULTS_V1,
+    SystemCapability.SESSION_DEFAULTS_V1,
+  ]);
+  value.save.mockImplementationOnce(async () => {
+    rows[0] = { ...original, revision: 9n };
+    throw new ConnectError("Revision conflict", Code.Aborted);
+  });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Codex CLI" }));
+  const effort = await screen.findByRole("combobox", {
+    name: "Reasoning effort: Selection",
+  });
+  await waitFor(() => expect(effort.closest("fieldset")?.disabled).toBe(false));
+  fireEvent.change(effort, { target: { value: "override" } });
+  const input = screen.getByRole("textbox", {
+    name: "Reasoning effort: Override value",
+  });
+  fireEvent.change(input, { target: { value: "high" } });
+  await waitFor(() => expect(saveButton().disabled).toBe(false));
+  fireEvent.click(saveButton());
+  await screen.findByText(/Harnesses changed elsewhere/);
+  expect((input as HTMLInputElement).value).toBe("high");
+  expect(saveButton().disabled).toBe(true);
+  expect(value.save).toHaveBeenCalledOnce();
+});

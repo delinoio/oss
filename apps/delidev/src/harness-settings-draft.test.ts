@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   captureHarnessEditorChanges,
   harnessEditorDocument,
+  newTypedHarnessDocument,
 } from "./harness-settings-draft";
 
 it("preserves inherited and explicit selectors through unrelated editor changes and JSON restart", () => {
@@ -70,4 +71,61 @@ it("normalizes a new inherited route without manufacturing omitted choices", () 
     permission: { mode: "override", value: "default" },
   });
   expect(JSON.parse(JSON.stringify(created))).toEqual(created);
+});
+it("preserves direct shared-editor override and reset choices through the route wizard", () => {
+  const saved = {
+    harness_settings: {
+      version: 1,
+      effort: { mode: "override", value: "high" },
+      permission: { mode: "inherit" },
+    },
+    options: { permission: "default" },
+  };
+  const projected = harnessEditorDocument(saved);
+  const next = captureHarnessEditorChanges(saved, {
+    ...projected,
+    harness_settings: {
+      version: 1,
+      effort: { mode: "inherit" },
+      permission: { mode: "override", value: "read-only" },
+    },
+  });
+  expect(next.harness_settings).toEqual({
+    version: 1,
+    effort: { mode: "inherit" },
+    permission: { mode: "override", value: "read-only" },
+  });
+  expect(
+    captureHarnessEditorChanges(
+      {},
+      { options: { permission: "default" }, harness_settings: { version: 1 } },
+      true,
+    ).harness_settings,
+  ).toEqual({ version: 1 });
+});
+
+it("retains legacy choices when capability discovery arrives without inventing untouched defaults", () => {
+  const normalized = newTypedHarnessDocument({
+    name: "Draft",
+    effort: "high",
+    options: {
+      permission: "read-only",
+      service_tier: "",
+      future_option: "retain",
+    },
+  });
+  expect(normalized.harness_settings).toEqual({
+    version: 1,
+    effort: { mode: "override", value: "high" },
+    permission: { mode: "override", value: "read-only" },
+    service_tier: { mode: "override", value: "" },
+  });
+  expect(captureHarnessEditorChanges({}, normalized).options).toEqual({
+    permission: "default",
+    future_option: "retain",
+  });
+  expect(
+    newTypedHarnessDocument({ options: { permission: "default" } })
+      .harness_settings,
+  ).toEqual({ version: 1 });
 });

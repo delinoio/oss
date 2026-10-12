@@ -24,5 +24,6 @@
   "ui.failure.provider_disabled": "공급자가 비활성화되었습니다. 계속하기 전에 구성을 확인하세요.",
   "ui.failure.canceled": "요청이 취소되었습니다. 이미 접수된 효과는 남아 있을 수 있습니다. 원래 작업을 확인하세요.",
   "ui.failure.internal": "요청을 완료할 수 없습니다. 다시 시도하기 전에 기술 상세와 접수된 작업을 확인하세요.",
-  "ui.retryCurrentRead": "현재 정보 다시 읽기"
+  "ui.retryCurrentRead": "현재 정보 다시 읽기",
+  "ui.failure.harness_default_unverified": "선택한 계정 소스의 네이티브 기본값이 검증되지 않았습니다. 세션을 시작하기 전에 서버 기본값, 프로젝트 또는 에이전트 워커 설정에서 모델 또는 하네스 설정을 명시적으로 지정하세요."
 }

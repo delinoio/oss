@@ -1,0 +1,55 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.harness-settings-editor {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.harness-settings-editor h3,
+.harness-settings-editor h4,
+.harness-settings-editor h5,
+.harness-settings-editor p {
+  margin: 0;
+}
+.harness-settings-editor fieldset {
+  min-width: 0;
+}
+.harness-scope,
+.harness-setting-fields {
+  display: grid;
+  gap: 16px;
+}
+.harness-setting {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.harness-setting-actions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.harness-setting-actions > label {
+  flex: 1 1 160px;
+}
+.harness-settings-editor input,
+.harness-settings-editor select,
+.harness-settings-editor button {
+  min-height: 40px;
+  border-radius: 8px;
+  max-width: 100%;
+}
+.harness-settings-editor label {
+  display: grid;
+  gap: 6px;
+}
+.harness-setting-effective {
+  font-size: 0.875rem;
+}
+
+.harness-settings-editor h5 {
+  font-size: 0.875rem;
+  font-weight: 600;
+}

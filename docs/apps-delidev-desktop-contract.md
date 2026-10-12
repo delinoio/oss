@@ -6085,3 +6085,56 @@ Show details opens the original Info target, including Budget and Recovery.
 No card grants sign-in, account switching, reset, send, Resume or new retry authority.
 Startup correction, delivery and cleanup remain independent visible facts;
 original no-send and confirmed-cleanup proof alone can permit startup retry.
+
+The `tailscale:` retained mutation namespace belongs to the connection registry,
+including submissions initiated from the disposable device list. Accepted
+operations remain recoverable through the original outgoing journal after the
+submitting Settings scope closes.
+
+## Codex CLI shared Settings editor
+
+Settings > Harnesses > Codex CLI edits the connected server's existing Settings
+singleton. The heading names the original local or saved server without exposing
+its resource identity. Project Execution and the Agent source wizard use the same
+source-aware field editor and existing revision-checked save owner. System 91
+activates these controls; reading or editing them adds no native execution
+authority and changes only future executions. No second store, protocol allocation
+or migration is introduced.
+
+Source scopes retain all-source, API/subscription, Provider/service and exact
+declared API-profile defaults. Agent previews follow the original ordered routes;
+model selectors remain in each route's Model step. An Agent's other overrides
+apply to all of its routes. Selecting a Project or API profile only previews
+inheritance and neither changes account routing nor assigns a Project. An exact
+Agent API-source preview requires an explicitly chosen declared profile. Complete
+current singleton and selected-Project reads supply ancestor revisions. Incomplete
+reads cannot manufacture an effective inherited value. Native defaults remain
+unverified unless the execution owner has accepted exact native evidence.
+
+Model and effort, native permissions and approval, subagents and service tier
+share Inherit/Override, configured value/source/revision and Reset to inherited
+rows. Codex subagent and approval-review controls retain their independent
+capabilities. Unsupported overrides remain visible and can be reset; the menu
+cannot activate an unavailable adapter. Exact custom service tiers remain
+editable values whose application the native owner must verify. Hooks have an
+unavailable reason until a separately trusted configuration owner exists.
+
+Edits patch only the selected field and exact scope. Retain other harnesses,
+source entries, unknown entry values, unsupported selectors, explicit empty
+strings and zero. The existing save bar owns unsaved, saving, conflict, failed
+and uncertain state. Refresh, same-identity reconnect and source-preview changes
+retain the original draft and expected revision. Discard adopts only a complete
+current original Settings document. Category disposal retains its existing
+Settings lifetime rules.
+
+A fresh Codex Agent normalizes to the negotiated typed document before deriving
+route selectors and schema. Every explicit route receives its exact override
+selector; inherited routes keep an empty native ID and unknown advisory metadata.
+Capability discovery after legacy field edits carries those edits into selectors
+and leaves untouched display defaults inherited. Older servers retain the
+original source-native schema and controls.
+
+English/Korean Settings search includes the Codex page and field targets. Native
+selects, labels and reset buttons retain keyboard access; locale changes preserve
+control identity and draft focus. Existing semantic themes, 1040px content/720px
+forms, 40px controls, 8px corners and narrow wrapping remain authoritative.

@@ -249,6 +249,8 @@ const failureGuidance: Record<FailureCode, MessageKey> = {
   [FailureCode.HarnessDefaultUnverified]:
     "ui.failure.harness_default_unverified",
   [FailureCode.Unsupported]: "ui.failure.unsupported",
+  [FailureCode.HarnessDefaultUnverified]:
+    "ui.failure.harness_default_unverified",
   [FailureCode.RecoveryRequired]: "ui.failure.recovery_required",
   [FailureCode.BudgetReached]: "ui.failure.budget_reached",
   [FailureCode.ResourceExhausted]: "ui.failure.resource_exhausted",

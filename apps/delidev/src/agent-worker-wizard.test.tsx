@@ -36,7 +36,7 @@ import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
 import { chooseScrollOption } from "./test-scroll-picker";
-function fixture(supported = true) {
+function fixture(supported = true, inherited = true) {
   const row = (
     kind: EntityKind,
     data: Record<string, unknown>,
@@ -131,18 +131,19 @@ function fixture(supported = true) {
       request.schemaVersion,
     ),
   }));
+  const status = vi.fn(async () => ({
+    protocolVersion: 2,
+    capabilities: supported
+      ? [
+          SystemCapability.INLINE_WORKER_MODELS_V1,
+          ...(inherited ? [SystemCapability.HARNESS_DEFAULTS_V1] : []),
+          SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
+        ]
+      : [],
+  }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
-      getStatus: () => ({
-        protocolVersion: 2,
-        capabilities: supported
-          ? [
-              SystemCapability.INLINE_WORKER_MODELS_V1,
-              SystemCapability.HARNESS_DEFAULTS_V1,
-              SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
-            ]
-          : [],
-      }),
+      getStatus: status,
     });
     router.service(ProviderService, {
       listProviderInventory: () => ({
@@ -201,6 +202,7 @@ function fixture(supported = true) {
     cancel,
     view,
     client,
+    status,
   };
 }
 async function accounts(
@@ -321,7 +323,7 @@ it("saves ordered accounts and source-native model atomically only at Configure"
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const request = f.save.mock.calls[0][0];
-  expect(request.schemaVersion).toBe(4);
+  expect(request.schemaVersion).toBe(5);
   expect(request.model).toBeUndefined();
   expect(request.routeModels).toMatchObject([
     { selection: { case: "nativeId", value: "exact-two" } },
@@ -329,6 +331,7 @@ it("saves ordered accounts and source-native model atomically only at Configure"
   const data = JSON.parse(new TextDecoder().decode(request.documentJson));
   expect(data.routes[0]).toMatchObject({
     model: { provider_id: f.provider.id, native_id: "exact-two" },
+    model_selection: { mode: "override", value: "exact-two" },
     accounts: f.accounts.map((row) => ({ id: row.id, weight: 1 })),
   });
   expect(data.model_id).toBeUndefined();
@@ -631,5 +634,74 @@ it("saves an inherited model as schema 5 without an invented native ID", async (
   expect(request.routeModels[0].selection).toEqual({
     case: "nativeId",
     value: "",
+  });
+});
+
+it.each([true, false])(
+  "normalizes a fresh explicit-model Agent only for the negotiated typed capability (%s)",
+  async (inherited) => {
+    const f = fixture(true, inherited);
+    render(f.view());
+    const input = await accounts(f);
+    await configure(input, "explicit-source-model");
+    fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+    await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+    const request = f.save.mock.calls[0][0];
+    const saved = JSON.parse(new TextDecoder().decode(request.documentJson));
+    expect(request.schemaVersion).toBe(inherited ? 5 : 4);
+    expect(saved.harness_settings).toEqual(
+      inherited ? { version: 1 } : undefined,
+    );
+    expect(saved.routes[0].model_selection).toEqual(
+      inherited
+        ? { mode: "override", value: "explicit-source-model" }
+        : undefined,
+    );
+    expect(request.routeModels[0].selection).toEqual({
+      case: "nativeId",
+      value: "explicit-source-model",
+    });
+  },
+);
+
+it("retains a legacy draft when harness capability discovery settles before final submission", async () => {
+  const f = fixture(true, false);
+  render(f.view());
+  const input = await accounts(f);
+  await configure(input, "late-model");
+  // Native options stay in the original mounted Configure disclosure.
+  const reasoning = screen.getByLabelText("Reasoning effort");
+  const reasoningDisclosure = reasoning.closest("details");
+  if (reasoningDisclosure && !reasoningDisclosure.open)
+    fireEvent.click(reasoningDisclosure.querySelector("summary")!);
+  fireEvent.change(reasoning, { target: { value: "high" } });
+  f.status.mockResolvedValue({
+    protocolVersion: 2,
+    capabilities: [
+      SystemCapability.INLINE_WORKER_MODELS_V1,
+      SystemCapability.HARNESS_DEFAULTS_V1,
+      SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
+    ],
+  });
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  const selection = await screen.findByLabelText("Reasoning effort: Selection");
+  expect(selection).toHaveProperty("value", "override");
+  expect(
+    screen.getByLabelText("Reasoning effort: Override value"),
+  ).toHaveProperty("value", "high");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const request = f.save.mock.calls[0][0];
+  const saved = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(request.schemaVersion).toBe(5);
+  expect(saved.harness_settings.effort).toEqual({
+    mode: "override",
+    value: "high",
+  });
+  expect(saved.routes[0].model_selection).toEqual({
+    mode: "override",
+    value: "late-model",
   });
 });

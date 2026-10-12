@@ -24,5 +24,6 @@
   "ui.failure.provider_disabled": "This provider is disabled. Inspect its configuration before continuing.",
   "ui.failure.canceled": "The request was canceled. Its accepted effects may remain; inspect the original operation.",
   "ui.failure.internal": "The request could not complete. Inspect the technical details and accepted work before retrying.",
-  "ui.retryCurrentRead": "Retry current read"
+  "ui.retryCurrentRead": "Retry current read",
+  "ui.failure.harness_default_unverified": "A native default is unverified for the selected account source. Set an explicit model or Harness setting in server defaults, Project or Agent Worker settings before starting the session."
 }
