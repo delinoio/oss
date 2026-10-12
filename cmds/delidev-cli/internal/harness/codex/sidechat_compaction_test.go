@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
+	"strings"
 	"testing"
 )
 
 func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
-	if f.mode != "thread-continuation-sidechat" {
+	if f.mode != "thread-continuation-sidechat" && !strings.HasPrefix(f.mode, "thread-native-review-") {
 		return false
 	}
 	if method == "fixture/sidechat-drift" {
@@ -43,6 +44,19 @@ func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method stri
 			features[key] = false
 		}
 		config := map[string]any{"features": features, "sandbox_mode": "read-only", "approval_policy": "never", "approvals_reviewer": "user", "allow_login_shell": false, "web_search": "disabled"}
+		if strings.HasPrefix(f.mode, "thread-native-review-") {
+			config["review_model"] = "fixture-model"
+			delete(config, "sandbox_mode")
+			config["default_permissions"] = nativeReviewPermissionProfile
+			config["permissions"] = map[string]any{
+				nativeReviewPermissionProfile: map[string]any{
+					"filesystem": map[string]any{
+						":root": "deny", ":minimal": "read", ":workspace_roots": map[string]any{".": "read"},
+					},
+					"network": map[string]any{"enabled": false},
+				},
+			}
+		}
 		if os.Getenv("DELIDEV_CODEX_MANAGED_SIDECHAT") == "1" {
 			config["cli_auth_credentials_store"], config["model_provider"], config["forced_login_method"] = "file", "openai", "chatgpt"
 			config["model_providers"] = map[string]any{}
@@ -102,6 +116,74 @@ func TestSidechatCompactionRechecksChangedNativeAuthorityBeforeOnceOnlySend(t *t
 				t.Fatal("changed Sidechat authority claimed or sent compaction", err)
 			}
 		})
+	}
+}
+
+func TestNativeReviewPermissionProfileRejectsBroaderOrInheritedFilesystemAccess(t *testing.T) {
+	valid := func() map[string]json.RawMessage {
+		features := map[string]bool{"skip_host_skill_discovery": true}
+		for _, key := range sidechatDisabledFeatures {
+			features[key] = false
+		}
+		var config map[string]json.RawMessage
+		raw, err := json.Marshal(map[string]any{
+			"features":        features,
+			"approval_policy": "never", "approvals_reviewer": "user", "allow_login_shell": false, "web_search": "disabled",
+			"default_permissions": nativeReviewPermissionProfile,
+			"permissions": map[string]any{nativeReviewPermissionProfile: map[string]any{
+				"filesystem": map[string]any{":root": "deny", ":minimal": "read", ":workspace_roots": map[string]any{".": "read"}},
+				"network":    map[string]any{"enabled": false},
+			}},
+		})
+		if err != nil || json.Unmarshal(raw, &config) != nil {
+			t.Fatal("could not construct permission profile fixture", err)
+		}
+		return config
+	}
+	for _, kind := range []string{"broader-root", "network", "extra-workspace", "legacy-sandbox", "wrong-default"} {
+		t.Run(kind, func(t *testing.T) {
+			config := valid()
+			var permissions map[string]json.RawMessage
+			if err := json.Unmarshal(config["permissions"], &permissions); err != nil {
+				t.Fatal(err)
+			}
+			var profile map[string]json.RawMessage
+			if err := json.Unmarshal(permissions[nativeReviewPermissionProfile], &profile); err != nil {
+				t.Fatal(err)
+			}
+			var filesystem map[string]json.RawMessage
+			if err := json.Unmarshal(profile["filesystem"], &filesystem); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "broader-root":
+				filesystem[":root"] = json.RawMessage(`"read"`)
+			case "network":
+				profile["network"] = json.RawMessage(`{"enabled":true}`)
+			case "extra-workspace":
+				filesystem[":workspace_roots"] = json.RawMessage(`{".":"read","/outside":"read"}`)
+			case "legacy-sandbox":
+				config["sandbox_mode"] = json.RawMessage(`"read-only"`)
+			case "wrong-default":
+				config["default_permissions"] = json.RawMessage(`"read-only"`)
+			}
+			profile["filesystem"], _ = json.Marshal(filesystem)
+			permissions[nativeReviewPermissionProfile], _ = json.Marshal(profile)
+			config["permissions"], _ = json.Marshal(permissions)
+			if err := validateNativeReviewPermissionProfile(config); err == nil {
+				t.Fatal("broader or inherited native read authority accepted")
+			}
+		})
+	}
+	config := valid()
+	var permissions map[string]json.RawMessage
+	if err := json.Unmarshal(config["permissions"], &permissions); err != nil {
+		t.Fatal(err)
+	}
+	permissions["unused-user-profile"] = json.RawMessage(`{"filesystem":{"/other":"read"}}`)
+	config["permissions"], _ = json.Marshal(permissions)
+	if err := validateNativeReviewPermissionProfile(config); err != nil {
+		t.Fatal("unused user profile prevented the selected restricted profile", err)
 	}
 }
 

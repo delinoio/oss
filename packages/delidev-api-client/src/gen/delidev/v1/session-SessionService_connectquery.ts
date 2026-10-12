@@ -5,6 +5,16 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.CreateNativeCodeReview
+ */
+export const createNativeCodeReview = SessionService.method.createNativeCodeReview;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetNativeCodeReview
+ */
+export const getNativeCodeReview = SessionService.method.getNativeCodeReview;
+
+/**
  * @generated from rpc delidev.v1.SessionService.ListRequestDiagnostics
  */
 export const listRequestDiagnostics = SessionService.method.listRequestDiagnostics;

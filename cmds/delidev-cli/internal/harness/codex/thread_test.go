@@ -31,6 +31,9 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleNativeCodeReview(id, method, raw, write) {
+		return true
+	}
 	if f.handleRevert(id, method, raw, write) {
 		return true
 	}
@@ -97,6 +100,9 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	if method == string(startThread) && (params["historyMode"] != "legacy" || params["ephemeral"] != false || params["allowProviderModelFallback"] != false) {
 		os.Exit(25)
 	}
+	if method == string(startThread) && strings.HasPrefix(f.mode, "thread-native-review-") && (params["permissions"] != nativeReviewPermissionProfile || params["sandbox"] != nil) {
+		os.Exit(27)
+	}
 	if method == string(resumeThread) {
 		if params["excludeTurns"] != true {
 			os.Exit(24)
@@ -124,6 +130,9 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	case "danger-full-access":
 		sandbox = "dangerFullAccess"
 	}
+	if params["permissions"] == nativeReviewPermissionProfile {
+		sandbox = "readOnly"
+	}
 	effort := any(nil)
 	if config, ok := params["config"].(map[string]any); ok {
 		effort = config["model_reasoning_effort"]
@@ -137,6 +146,15 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		}
 	}
 	result["activePermissionProfile"] = nil
+	if strings.HasPrefix(f.mode, "thread-native-review-") {
+		result["activePermissionProfile"] = map[string]any{"id": nativeReviewPermissionProfile}
+		if f.mode == "thread-native-review-inherited-profile" {
+			result["activePermissionProfile"] = map[string]any{"id": nativeReviewPermissionProfile, "extends": "default"}
+		}
+		if f.mode == "thread-native-review-wrong-profile" {
+			result["activePermissionProfile"] = map[string]any{"id": "read-only"}
+		}
+	}
 	result["multiAgentMode"] = "explicitRequestOnly"
 	if fixtureVersion() == "0.159.2" {
 		f.thread["daybreakEnabled"] = nil
@@ -215,6 +233,9 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	if strings.HasPrefix(mode, "thread-revert-") {
 		config.RevertHistory = true
 		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")
+	}
+	if strings.HasPrefix(mode, "thread-native-review-") {
+		config.CodeReviewModel = "fixture-model"
 	}
 	if mode == "thread-continuation-sidechat" {
 		config.Sidechat = ReadOnlySidechatV1

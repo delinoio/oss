@@ -678,7 +678,9 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.DiscoverRepositoryBranchesJob {
 		maxBodyBytes = domain.MaxRepositoryBranchesJobBytes
 	}
-	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
+	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.NativeCodeReviewJob {
+		maxBodyBytes = domain.MaxNativeCodeReviewJobBytes
+	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
 		maxBodyBytes = maxCompactionJobEntityBytes
 	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type != domain.DiscoverRepositoryBranchesJob {
 		maxBodyBytes = workspace.StorageJobDocumentLimit(job)
@@ -817,6 +819,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 		}
 	}
 	if kind == domain.SessionKind {
+		if err := t.DeleteNativeCodeReviewSessionUsage(id); err != nil {
+			return err
+		}
 		if err := t.requireTerminalCleanup(id); err != nil {
 			return err
 		}
@@ -1122,7 +1127,9 @@ func Decode[T any](r Record) (T, error) {
 			if envelope.Type == domain.DiscoverRepositoryBranchesJob {
 				maxBytes = domain.MaxRepositoryBranchesJobBytes
 			}
-			if envelope.Type == domain.CompactSessionJob {
+			if envelope.Type == domain.NativeCodeReviewJob {
+				maxBytes = domain.MaxNativeCodeReviewJobBytes
+			} else if envelope.Type == domain.CompactSessionJob {
 				maxBytes = maxCompactionJobEntityBytes
 			} else if envelope.Type == domain.WorkspaceStorageJob {
 				var job domain.Job

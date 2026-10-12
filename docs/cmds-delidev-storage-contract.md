@@ -1465,6 +1465,12 @@ ownership remain unchanged.
 
 `Tx.Put` checks normalized Project and Repository names before publication in the serialized mutation transaction. Admission checks and native inspection do not reserve names. Final asynchronous writes repeat the check. A rejected write leaves resource documents, revisions, references, immutable history and events unchanged; an existing coordinator may atomically settle its failed job. Receipts and original-request replay keep their existing rules. Tombstones reserve IDs but do not reserve display names. No table or SQLite migration is added. The [command contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness) owns normalization and the collision cause.
 
+## Dedicated review storage
+
+Independent `native-code-review` jobs retain the exact original settled execution, account/context, target, actor and source revision. Active or uncertain reviews fence competing continuation and workspace actions. Their progress, response receipts and lifetime estimate aggregates use closed versioned typed metadata namespaces; no legacy response purpose, protocol number or migration is repurposed. Exact Worker receipts remain immutable across reconnect, while restored jobs remain quarantined and grants are never restored. Current accounting overlays preserve original budget totals; tombstoned sessions prune their own review receipts, aggregates and orphaned progress. Coordinated session deletion inventories only the retained original review action runtime, joins its process/proxy/auth cleanup and removes its private intent, result and history with the session.
+
+The Worker retains at most 132 original review observation requests with their immutable receipt IDs, assignment digest, server/device/instance and bounded protobuf bytes beneath the original job. Exact acknowledgments bind the request digest. Reconnect publishes only these retained server receipts before the terminal report; it never restarts native review. Session deletion retires this job-owned journal with the existing original copy inventory.
+
 ## Private startup group timing retention
 
 Optional private Session.startup_timing retains at most the current original

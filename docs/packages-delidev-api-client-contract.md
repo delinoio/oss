@@ -490,6 +490,10 @@ portable exports and reviewed plans use version 7. Source-native version-4 files
 remain importable through reviewed conversion; retired versions 1–3 remain unavailable.
 Expose the named `harness_default_unverified` error without manufacturing a default.
 
+## Dedicated native code review bindings
+
+Generated SessionService create/get and WorkerService publication bindings retain the independent original review job, target, lifecycle, findings and usage. System 96 and Worker 58 negotiate the dedicated review feature. Clients never substitute ordinary feedback, automatically retry native work or infer review support from another capability. Exact receipt observation retains its original request; declarations and generated output follow the [protocol contract](protos-delidev-v1-contract.md#dedicated-codex-code-review).
+
 ## Startup group timing
 
 Generated Resource.startupTiming exposes optional SessionStartupTiming workspace
