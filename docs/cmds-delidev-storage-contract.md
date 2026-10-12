@@ -1464,3 +1464,14 @@ ownership remain unchanged.
 Independent `native-code-review` jobs retain the exact original settled execution, account/context, target, actor and source revision. Active or uncertain reviews fence competing continuation and workspace actions. Their progress, response receipts and lifetime estimate aggregates use closed versioned typed metadata namespaces; no legacy response purpose, protocol number or migration is repurposed. Exact Worker receipts remain immutable across reconnect, while restored jobs remain quarantined and grants are never restored. Current accounting overlays preserve original budget totals; tombstoned sessions prune their own review receipts, aggregates and orphaned progress. Coordinated session deletion inventories only the retained original review action runtime, joins its process/proxy/auth cleanup and removes its private intent, result and history with the session.
 
 The Worker retains at most 132 original review observation requests with their immutable receipt IDs, assignment digest, server/device/instance and bounded protobuf bytes beneath the original job. Exact acknowledgments bind the request digest. Reconnect publishes only these retained server receipts before the terminal report; it never restarts native review. Session deletion retires this job-owned journal with the existing original copy inventory.
+
+## Private startup group timing retention
+
+Optional private Session.startup_timing retains at most the current original
+workspace and initial-agent timing. Starts and ends share their owning transaction
+clock and receipt; exact replay cannot restart or finish a second interval.
+Backups retain observations under original Session ownership, while public
+Resource document_json always excludes this key. Native assignments, closed
+progress attempts, checkpoints and digests do not include display timing.
+Legacy omission receives no backfill; replacement jobs retain independent current
+identity and original deletion ownership. No schema or migration is added.

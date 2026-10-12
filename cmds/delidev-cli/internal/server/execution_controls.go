@@ -99,6 +99,7 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 	if progress != nil && (progress.JobID != r.ID || progress.ExecutionID != session.ExecutionSelection().ID || progress.InputID != session.ExecutionSelection().InputID) {
 		return executionEventConflict()
 	}
+	session.FinishStartupTiming(r.ID, session.ExecutionSelection().ID, tx.ObservationTime())
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	if err := retireSteer(tx, sr, session, false); err != nil {
 		return err
@@ -129,7 +130,7 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 		session.Outcome, session.Problem = domain.ExecutionStopped, job.Problem
 	}
 	if job.State != domain.JobClaimed {
-		return retainNativeUncertainty(tx, input, sr, session)
+		return retainNativeUncertainty(tx, r.ID, input, sr, session)
 	}
 	return nil
 }
@@ -196,6 +197,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			if err := tx.RequestJobCancellation(r.ID); err != nil {
 				return err
 			}
+			session.FinishStartupTiming(r.ID, input.ExecutionID, tx.ObservationTime())
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 			if err := retireSteer(tx, sr, &session, false); err != nil {
 				return err
@@ -214,7 +216,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 				}
 			}
 			if job.State != domain.JobClaimed {
-				if err := retainNativeUncertainty(tx, input, sr, &session); err != nil {
+				if err := retainNativeUncertainty(tx, r.ID, input, sr, &session); err != nil {
 					return err
 				}
 			}

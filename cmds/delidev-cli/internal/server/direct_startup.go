@@ -115,6 +115,7 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 					return nil, executionDenied()
 				}
 			}
+			session.FinishStartupTiming(r.ID, input.ExecutionID, tx.ObservationTime())
 			session.Startup.Failure = &o
 			session.Problem = startupFailureProblem(o)
 		}

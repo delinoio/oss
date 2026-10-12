@@ -32,7 +32,9 @@ export async function readStartupPresence(
   signal.throwIfAborted();
   return {
     resource: response.resource,
+    transport,
     observedAt: overview.observedAt,
+    clockReceivedAt: performance.now(),
     startedAt,
   };
 }

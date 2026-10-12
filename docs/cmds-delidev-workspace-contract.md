@@ -627,3 +627,12 @@ Repository saves check server-wide same-kind name uniqueness at admission and af
 Dedicated review holds one joined read-only observation of the original prepared workspace and selected repository. Its bounded admission/capture verifies manifest, continuation identity, working-tree diff revision, exact HEAD/reference commit and tracked/untracked content digest. The native operation retains its own joined lifetime; ordinary read deadlines do not detach it. Recheck the same complete selection after native completion and cleanup. Drift prevents result publication. No workspace claim, predecessor advance, file write, clone, checkout adoption or original Local deletion authority is added.
 
 Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged.
+
+## Workspace preparation group timing
+
+The server starts workspace group time only on the first accepted Running
+observation for its exact original preparation job. Its original successful
+preparation settlement freezes elapsed time; failed, canceled, uncertain and Stop
+settlements freeze unfinished time without implying preparation success. The
+Worker's operation report shape and original workspace/native cleanup authority
+remain unchanged. Missing historical timing cannot be derived from Job timestamps.

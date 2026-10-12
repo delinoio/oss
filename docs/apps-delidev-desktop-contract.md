@@ -5490,8 +5490,39 @@ retain independent files, revisions and semantics.
 `read_sidebar_preference` and `update_sidebar_preference` use the closed
 `device-sidebar` permission only for existing main/local-* and saved server-*
 product capabilities. Native admission captures/rechecks original authority,
-performs locked storage work off the UI thread, checks the expected process
-revision and atomically replaces only valid current storage. Publish ordered
+performs storage work off the UI thread and checks the expected process
+revision. Every participating native Read and Update acquires the same private,
+persistent `sidebar-preference.lock` sidecar before inspection and keeps its
+exclusive lease through publication, owned-scratch cleanup, parent durability
+and receipt verification. Never unlink or replace this sidecar. Preserve the
+presentation mutex, state mutex and sidecar acquisition order. Nonblocking lease
+contention retains the committed selection and requires explicit Reload, with
+ReadFailed for Read and WriteFailed for Update.
+
+A successful Read retains private Missing/Present evidence, exact bounded bytes,
+decoded version/enum, opened-file identity and link/reparse evidence, and the
+original parent identity. It adopts new evidence even when the enum is unchanged.
+Update compares that full observation under the lease and rechecks it after
+scratch preparation. Opened handles must prove regular, unlinked storage and
+original parent/sidecar identity; unsupported metadata or locking fails closed.
+Unix uses device/inode identity and owner/link checks. Windows uses handle-based
+volume and full 128-bit file identity, link counts and reparse checks.
+Missing publication atomically creates a new target without clobbering a target
+that appeared after the final absence check. Present publication atomically
+replaces only the unchanged observed document among participating writers.
+Remove the owned scratch link before validating the final destination link count.
+Adopt the new selection and private receipt only after cleanup, required parent
+sync and exact published bytes/new-file identity verification succeed. Any
+post-publication failure is OutcomeUnknown and requires Read recovery without
+replay. Cleanup can remove only this attempt's exclusively created scratch with
+matching file and parent identity; it cannot remove colliding or replaced evidence.
+
+This protocol coordinates processes that preserve the config/sidecar namespace
+and use the same lease. The final evidence check detects observed changes by
+nonparticipating writers, but an arbitrary writer can still replace an existing
+target after that check and before the replacing syscall. Do not promise an
+atomic comparison against writers that ignore the protocol. Process revisions
+and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,
 oversized and newer documents remain unchanged. Failure retains committed layout;
@@ -5914,6 +5945,30 @@ Hide the complete Agent requests disclosure only when a successful complete resi
 The selected ChatGPT usage popover places a compact Paid credits card above quota within its existing 320px width, 16px padding and viewport-clamped internal scroll. Reuse the subscription presentation contract’s validated saved projection, string-only two-decimal formatter, 24px tabular value, smaller unit and accessible unchanged exact decimal disclosure. Separate multiple buckets in source order with native labels and their original observation times; never sum them. Explicit zero, null/unknown, tiny positive, unlimited, loading, unsupported, stale/future and failed evidence remain distinct. System 76 controls credit display independently of capability-17 inventory admission; other services remain unchanged.
 
 Failed or incomplete saved-resource reads retain original account-bound values and timestamps as historical evidence until a complete accepted replacement. Connection identity replacement resets local disclosure state; authentication loss removes the selected details. Credits do not affect `remainingBadge`, quota windows, read pagination, the existing refresh owner or Recheck saved quota evidence and Manage subscriptions actions. Preserve semantic themes, EN/KO wrapping, narrow and effective 200% reflow, Escape/outside dismissal and opener focus. No new RPC, polling owner, native operation, purchase, consumption or migration is added. Follow [the subscription presentation contract](apps-delidev-subscription-settings-contract.md#paid-credit-observations).
+
+### Initial startup group disclosures and time
+
+The empty-transcript detailed ordinary Session and General Chat startup block
+uses two independent native Disclosure rows, initially closed. Each row places
+the left chevron, localized title, an 8px gap, muted integer elapsed seconds, an
+8px gap and a decorative 20px running spinner together beside the title. Flat
+resting headers apply only to this block. Expansion reveals existing ordered
+operations and repository ordinals. Compact Startup details retains its existing
+presentation. Narrow layouts and 200% zoom wrap safely; theme hover, visible
+focus and reduced-motion spinner behavior follow the shared disclosure family.
+
+Only exact original job/execution metadata in Resource.startup_timing supplies
+time. Missing, malformed, reversed or foreign timing is unavailable, never zero.
+Live seconds use the paired authenticated Machine/Overview observed_at and a
+monotonic presentation timer, once per second even while closed. The clock anchors
+at receipt of the server observation; network read duration remains a conservative
+presence bound, not additional group duration. Finished time stays fixed without
+a spinner. Attention, inactivity, hidden documents, stale presence or connection
+replacement stop ticks and animation. Retained unfinished values are explicitly
+unconfirmed. Timing is outside the polite status node and has aria-live off.
+Disclosure toggles do not fetch, reset clocks, dispatch or remount controllers;
+composer, drafts, first-input proof and initial Info visibility retain their
+existing ownership.
 
 ## Tailscale Connections presentation
 
