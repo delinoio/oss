@@ -30,3 +30,36 @@ it("isolates reconstructed metadata by original connection and fences late write
   expect(() => originalWrite("late-original", 1)).toThrow();
   expect(screen.getByText("No original operation")).toBeTruthy();
 });
+
+it("keeps original background intent metadata across nested pane replacement", () => {
+  let write!: () => void;
+  function Presenter() {
+    const metadata = useRetainedMutationPresentation<{ action: string }>(
+      "native-background:session",
+    );
+    const control = useRetainedMutationPresentation<{ action: string }>(
+      "native-background-control:session",
+    );
+    write = () => {
+      metadata.save({ action: "original-uncertain" }, 1024);
+      control.save({ action: "original-fence" }, 1024);
+    };
+    return (
+      <output>
+        {metadata.value?.action}:{control.value?.action}
+      </output>
+    );
+  }
+  const view = (pane: string) => (
+    <MutationIntents>
+      <MutationIntents key={pane}>
+        <Presenter />
+      </MutationIntents>
+    </MutationIntents>
+  );
+  const rendered = render(view("commands"));
+  act(() => write());
+  rendered.rerender(view("replacement-pane"));
+  expect(screen.getByText("original-uncertain:original-fence")).toBeTruthy();
+  rendered.unmount();
+});

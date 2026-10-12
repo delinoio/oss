@@ -204,7 +204,9 @@ function connectionOwned(key: string) {
     key.startsWith(sessionInboxReadPrefix) ||
     key.startsWith("native-command:") ||
     key.startsWith("native-command-run:") ||
-    key.startsWith("native-command-cancel:")
+    key.startsWith("native-command-cancel:") ||
+    key.startsWith("native-background:") ||
+    key.startsWith("native-background-control:")
   );
 }
 function useIntentRegistry(key: string) {

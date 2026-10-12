@@ -232,6 +232,29 @@ describe("original native background controls", () => {
     fireEvent.keyDown(modal, { key: "Escape" });
     expect(fixture.send).not.toHaveBeenCalled();
   });
+  it("rejects a foreign execution receipt while the original intent is uncertain", () => {
+    fixture.uncertain = true;
+    fixture.saved = {
+      pending: {
+        action: actionId,
+        execution: executionId,
+        sequence: 1n,
+        revision: 9n,
+        operation: NativeBackgroundOperation.LIST,
+      },
+    };
+    fixture.data = {
+      session: session(),
+      action: action({ execution_id: threadId }),
+    };
+    render(<NativeBackground session={session()} active supported />);
+    expect(
+      (screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(fixture.saved).toHaveProperty("pending");
+    expect(fixture.send).not.toHaveBeenCalled();
+  });
   it("retains uncertainty across remounts and status reads without replay", () => {
     fixture.uncertain = true;
     fixture.saved = {

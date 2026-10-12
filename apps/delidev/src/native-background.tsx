@@ -321,11 +321,29 @@ export function NativeBackground({
   );
   const original = read.error ? undefined : read.data?.session;
   const inventory = nativeBackgroundInventory(original, session.id);
-  const receipt = nativeBackgroundAction(
+  const readReceipt = nativeBackgroundAction(
     read.data?.action,
     session.id,
     actionId ?? "",
   );
+  const pending = presentation.value?.pending;
+  const receipt =
+    readReceipt &&
+    (!pending ||
+      (readReceipt.execution_id === pending.execution &&
+        readReceipt.inventory_sequence === String(pending.sequence) &&
+        readReceipt.operation ===
+          (
+            {
+              [NativeBackgroundOperation.LIST]: "list",
+              [NativeBackgroundOperation.TERMINATE]: "terminate",
+              [NativeBackgroundOperation.CLEAN]: "clean",
+            } as Record<number, string>
+          )[pending.operation] &&
+        (readReceipt.item_id ?? "") === (pending.item ?? "") &&
+        (readReceipt.process_id ?? "") === (pending.process ?? "")))
+      ? readReceipt
+      : undefined;
   const send = useRetainedMutation(
     `native-background-control:${session.id}`,
     SessionQuery.requestNativeBackground,
