@@ -1486,11 +1486,15 @@ with its keyed proof upgrades to version 3; a version-2 fence with no keyed proo
 fails closed because its device publication state cannot be established.
 
 When both the session fence and Worker receipt are absent, fresh admission also
-requires the identity-keyed workspace-proof path to be absent unless it imports
-an exact historical workspace proof. An orphaned keyed workspace proof cannot
-be adopted into a new report receipt. Once Worker removal has started, an
-incomplete receipt requires its matching keyed workspace proof; missing evidence
-keeps cleanup pending instead of recreating a workspace proof.
+requires the identity-keyed workspace-proof path to be absent unless it has an
+exact historical workspace proof to import. An orphaned keyed workspace proof
+cannot be adopted into a new report receipt. For an exact legacy import, persist
+an initial marker phase and the matching keyed Worker receipt before writing or
+retiring workspace evidence. That phase may recover an exact keyed copy after
+the legacy name was retired, but missing or mismatched proof remains pending.
+Once Worker removal has started, an incomplete receipt requires its matching
+keyed workspace proof; missing evidence keeps cleanup pending instead of
+recreating a workspace proof.
 
 The session fence's current metadata grants no cleanup authority.
 Import a historical progress proof only for the exact accepted work digest and

@@ -2,6 +2,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -151,6 +152,55 @@ func TestDeletionLegacyAbsentWorkspaceRejectsOrphanedKeyedProof(t *testing.T) {
 	}
 	if _, err := os.Lstat(legacyDeletionWorkspacePath(root, work)); !os.IsNotExist(err) {
 		t.Fatal("fresh admission created legacy workspace evidence", err)
+	}
+}
+
+func TestFreshDeletionWorkspaceProofValidationIsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	legacy := deletionWorkspaceProof{Version: 1, Digest: work.Digest(), Removed: true}
+	legacyPath := legacyDeletionWorkspacePath(root, work)
+	if err := writeDeletionWorkspaceProof(legacyPath, legacy); err != nil {
+		t.Fatal(err)
+	}
+	before, err := security.ReadPrivate(legacyPath, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasLegacy, err := ValidateFreshDeletionWorkspaceProof(root, work)
+	if err != nil || !hasLegacy {
+		t.Fatal("valid legacy proof was not admitted for fenced import", err)
+	}
+	after, err := security.ReadPrivate(legacyPath, 1<<20)
+	if err != nil || !bytes.Equal(after, before) {
+		t.Fatal("fresh proof validation changed legacy evidence", err)
+	}
+}
+
+func TestInitialDeletionWorkspaceRecoveryRequiresExactKeyedProof(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := SessionDeletionProofPaths(root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, deletionWorkspaceProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), Removed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverInitialDeletionWorkspaceProof(root, work); err != nil {
+		t.Fatalf("exact keyed proof did not recover an admitted import: %v", err)
+	}
+	if err := os.Remove(paths.Workspace); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverInitialDeletionWorkspaceProof(root, work); err == nil {
+		t.Fatal("initial import recovered after all original evidence disappeared")
 	}
 }
 

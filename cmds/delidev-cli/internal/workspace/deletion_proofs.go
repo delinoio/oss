@@ -33,6 +33,71 @@ func legacyDeletionWorkspacePath(root string, w domain.SessionDeletionWork) stri
 	return filepath.Join(root, "session-deletions", string(w.SessionID)+"-workspace.json")
 }
 
+// ValidateFreshDeletionWorkspaceProof checks the legacy import candidates
+// without changing them. A keyed proof with no legacy source is an orphan and
+// cannot be adopted by a fresh deletion.
+func ValidateFreshDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) (bool, error) {
+	if w.Validate() != nil {
+		return false, domain.SessionDeletionPending()
+	}
+	paths, err := SessionDeletionProofPaths(root, w)
+	if err != nil {
+		return false, domain.SessionDeletionPending()
+	}
+	legacyRaw, err := security.ReadPrivate(legacyDeletionWorkspacePath(root, w), 1<<20)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, RequireNoKeyedDeletionWorkspaceProof(root, w)
+	}
+	var legacy deletionWorkspaceProof
+	if err != nil || domain.Decode(legacyRaw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() {
+		return false, domain.SessionDeletionPending()
+	}
+	legacy.Version = 2
+	legacy.Identity = w.Identity()
+	if !validDeletionWorkspaceProof(legacy, w) {
+		return false, domain.SessionDeletionPending()
+	}
+	expected, err := json.Marshal(legacy)
+	if err != nil {
+		return false, domain.SessionDeletionPending()
+	}
+	current, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err == nil {
+		if !bytes.Equal(current, expected) {
+			return false, domain.SessionDeletionPending()
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, domain.SessionDeletionPending()
+	}
+	return true, nil
+}
+
+// RecoverInitialDeletionWorkspaceProof may be called only after the caller has
+// synchronized the exact initial marker and matching Worker receipt. That
+// durable admission pair authorizes finishing the exact legacy import if its
+// keyed copy survived retirement of the legacy name.
+func RecoverInitialDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+	if w.Validate() != nil {
+		return domain.SessionDeletionPending()
+	}
+	legacyPath := legacyDeletionWorkspacePath(root, w)
+	if _, err := os.Lstat(legacyPath); err == nil {
+		return ImportLegacyDeletionWorkspaceProof(root, w, false)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
+	paths, err := SessionDeletionProofPaths(root, w)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	var proof deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) {
+		return domain.SessionDeletionPending()
+	}
+	return nil
+}
+
 // ImportLegacyDeletionWorkspaceProof requires the caller's original deletion or
 // workspace lock. Synchronize the exact keyed copy before retiring old evidence.
 // A foreign digest cannot establish another device's workspace ownership.

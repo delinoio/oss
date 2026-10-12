@@ -654,11 +654,16 @@ commits. Both bounded proof names enter completed absence checks. Reappearance
 keeps acknowledgement pending; original Local directories, independent child
 copies and shared account/browser data retain their separate ownership.
 
-Legacy import belongs to the original Worker admission transition, before the
-current session fence is published. Workspace cleanup checks legacy proof absence
-under its original locks before cleanup and again before loading keyed progress.
-An exact legacy proof restored after admission remains unchanged and keeps
-acknowledgement pending; cleanup cannot import it or reuse its removal stages.
+Legacy import belongs to the original Worker admission transition. Fresh
+admission validates the legacy proof and requires any existing keyed copy to
+match it exactly, then synchronizes an initial marker phase and its matching
+Worker receipt before it writes or retires legacy workspace evidence. That
+phase can recover an exact keyed copy after the legacy name was retired; it
+cannot adopt a keyed proof without the original marker and Worker receipt.
+Workspace cleanup checks legacy proof absence under its original locks before
+cleanup and again before loading keyed progress. An exact legacy proof restored
+after admission remains unchanged and keeps acknowledgement pending; cleanup
+cannot import it or reuse its removal stages.
 When a historical Worker proof already records removal started or complete,
 admission also requires its matching legacy workspace receipt or a valid keyed
 copy from an interrupted import. Missing or mismatched evidence keeps deletion

@@ -232,6 +232,89 @@ func TestSessionDeletionFreshAdmissionRejectsOrphanedWorkspaceProof(t *testing.T
 	}
 }
 
+func TestSessionDeletionFreshAdmissionFencesLegacyWorkspaceImport(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(config.Root, "session-deletions", string(work.SessionID)+"-workspace.json")
+	legacy := map[string]any{"version": 1, "digest": work.Digest(), "removed": true}
+	if err := writeJSON(legacyPath, legacy); err != nil {
+		t.Fatal(err)
+	}
+	proof, path, lock, err := loadSessionDeletionProof(config.Root, work)
+	if err != nil {
+		t.Fatal("fresh admission did not complete the fenced import", err)
+	}
+	defer lock.Close()
+	if proof.ReportID.Validate() != nil {
+		t.Fatal("fresh import did not retain its original report ID")
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imported struct {
+		Version  uint32                         `json:"version"`
+		Identity domain.SessionDeletionIdentity `json:"identity"`
+		Digest   string                         `json:"digest"`
+		Removed  bool                           `json:"removed"`
+	}
+	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil || domain.Decode(raw, &imported) != nil || imported.Version != 2 || imported.Identity != work.Identity() || imported.Digest != work.Digest() || !imported.Removed {
+		t.Fatal("fenced import did not retain exact keyed workspace evidence", err)
+	}
+	if _, err := os.Lstat(legacyPath); !os.IsNotExist(err) {
+		t.Fatal("successful import did not retire the legacy proof", err)
+	}
+	if got, err := security.ReadPrivate(path, 4096); err != nil || domain.Decode(got, &proof) != nil {
+		t.Fatal("fenced Worker receipt was not published", err)
+	}
+	var marker sessionDeletionMarker
+	markerRaw, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
+	if err != nil || domain.Decode(markerRaw, &marker) != nil || len(marker.Obligations) != 1 || marker.Obligations[0].Phase != sessionDeletionMarkerPublished || marker.Obligations[0].ReportID != proof.ReportID {
+		t.Fatal("legacy import did not finish its original marker phase", err)
+	}
+}
+
+func TestSessionDeletionInitialLegacyImportRecoversAfterRetirement(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportID := domain.NewID()
+	marker := deletionMarker(work)
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerInitialWorkspaceImport}}
+	if err := writeDeletionMarker(sessionDeletionPath(config.Root, work.SessionID), marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Worker, sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": work.Identity(), "digest": work.Digest(), "removed": true}); err != nil {
+		t.Fatal(err)
+	}
+	proof, _, lock, err := loadSessionDeletionProof(config.Root, work)
+	if err != nil {
+		t.Fatal("exact interrupted legacy import did not recover", err)
+	}
+	defer lock.Close()
+	if proof.ReportID != reportID {
+		t.Fatal("interrupted import changed its original report ID")
+	}
+	var published sessionDeletionMarker
+	raw, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
+	if err != nil || domain.Decode(raw, &published) != nil || len(published.Obligations) != 1 || published.Obligations[0].Phase != sessionDeletionMarkerPublished || published.Obligations[0].ReportID != reportID {
+		t.Fatal("recovered import did not publish its original marker", err)
+	}
+}
+
 func TestSessionDeletionStartedWorkerProofRequiresKeyedWorkspaceProof(t *testing.T) {
 	config, works := failedDeletionObligations(t)
 	work := works[0]

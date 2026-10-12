@@ -13,8 +13,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
-// The session-wide marker only closes admission. Progress and report identity
-// belong to the original device obligation, never this shared fence.
+// The session-wide marker closes admission and fences the original report
+// identity. Progress remains bound to the original device obligation.
 type sessionDeletionMarker struct {
 	Version     uint32                            `json:"version"`
 	ServerID    domain.ID                         `json:"server_id"`
@@ -36,6 +36,7 @@ type sessionDeletionMarkerPhase uint8
 const (
 	sessionDeletionMarkerInitial sessionDeletionMarkerPhase = iota + 1
 	sessionDeletionMarkerPublished
+	sessionDeletionMarkerInitialWorkspaceImport
 )
 
 func deletionMarker(w domain.SessionDeletionWork) sessionDeletionMarker {
@@ -49,7 +50,7 @@ func validDeletionMarker(marker sessionDeletionMarker, w domain.SessionDeletionW
 	seen := make(map[domain.ID]bool, len(marker.Obligations))
 	for _, obligation := range marker.Obligations {
 		identity := obligation.Identity
-		if identity.Validate() != nil || identity.ServerID != marker.ServerID || identity.SessionID != marker.SessionID || identity.DeletionID != marker.DeletionID || identity.MachineID != marker.MachineID || seen[identity.DeviceID] || len(obligation.Digest) != 64 || obligation.ReportID.Validate() != nil || obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerPublished {
+		if identity.Validate() != nil || identity.ServerID != marker.ServerID || identity.SessionID != marker.SessionID || identity.DeletionID != marker.DeletionID || identity.MachineID != marker.MachineID || seen[identity.DeviceID] || len(obligation.Digest) != 64 || obligation.ReportID.Validate() != nil || obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerPublished && obligation.Phase != sessionDeletionMarkerInitialWorkspaceImport {
 			return false
 		}
 		seen[identity.DeviceID] = true
@@ -203,6 +204,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			if !exists {
 				return pending()
 			}
+			if obligation.Phase == sessionDeletionMarkerInitialWorkspaceImport && !sessionDeletionUsesWorkspace(w) {
+				return pending()
+			}
 			if keyErr == nil {
 				if keyed.ReportID != obligation.ReportID {
 					return pending()
@@ -216,12 +220,20 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 					if writeDeletionMarker(markerPath, marker) != nil {
 						return pending()
 					}
+				} else if obligation.Phase == sessionDeletionMarkerInitialWorkspaceImport {
+					if !sessionDeletionUsesWorkspace(w) || workspace.RecoverInitialDeletionWorkspaceProof(root, w) != nil {
+						return pending()
+					}
+					obligation.Phase = sessionDeletionMarkerPublished
+					if writeDeletionMarker(markerPath, marker) != nil {
+						return pending()
+					}
 				}
 			} else {
 				if obligation.Phase == sessionDeletionMarkerPublished {
 					return pending()
 				}
-				if workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
+				if obligation.Phase == sessionDeletionMarkerInitial && workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
 					return pending()
 				}
 				// A new device obligation in an existing session fence must be
@@ -232,6 +244,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 				}
 				proof.ReportID = obligation.ReportID
 				if writeJSON(paths.Worker, proof) != nil || security.SyncParent(paths.Worker) != nil {
+					return pending()
+				}
+				if obligation.Phase == sessionDeletionMarkerInitialWorkspaceImport && workspace.RecoverInitialDeletionWorkspaceProof(root, w) != nil {
 					return pending()
 				}
 				obligation.Phase = sessionDeletionMarkerPublished
@@ -250,8 +265,11 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		// new deletion. Restored/transplanted metadata must stay pending.
 		return pending()
 	} else {
+		hasLegacyWorkspaceProof := false
 		if sessionDeletionUsesWorkspace(w) {
-			if workspace.ImportLegacyDeletionWorkspaceProof(root, w, false) != nil {
+			var err error
+			hasLegacyWorkspaceProof, err = workspace.ValidateFreshDeletionWorkspaceProof(root, w)
+			if err != nil {
 				return pending()
 			}
 		} else if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil || workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
@@ -265,8 +283,14 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		if !ok {
 			return pending()
 		}
+		if hasLegacyWorkspaceProof {
+			obligation.Phase = sessionDeletionMarkerInitialWorkspaceImport
+		}
 		proof.ReportID = obligation.ReportID
 		if writeDeletionMarker(markerPath, marker) != nil || writeJSON(paths.Worker, proof) != nil || security.SyncParent(paths.Worker) != nil {
+			return pending()
+		}
+		if hasLegacyWorkspaceProof && workspace.RecoverInitialDeletionWorkspaceProof(root, w) != nil {
 			return pending()
 		}
 		obligation.Phase = sessionDeletionMarkerPublished
