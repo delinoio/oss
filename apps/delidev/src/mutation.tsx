@@ -564,6 +564,37 @@ export function useRetainedMutation<
       setLocalError({ key, error, rejected: false });
     }
   };
+  // Read-only recovery can acknowledge the original response without sending
+  // its side effect again. The original request's verifier remains authoritative.
+  const observe = (result: MessageShape<O>) => {
+    const current = registry.entries.get(key) ?? empty;
+    if (
+      !registry.alive ||
+      opening?.disposed ||
+      current.busy ||
+      !current.input ||
+      !current.acknowledge
+    )
+      return false;
+    try {
+      if (!current.acknowledge(result)) return false;
+    } catch {
+      return false;
+    }
+    const retained = current.input as MessageShape<I>;
+    registry.notifyAcceptedResult(key, retained, result);
+    registry.put(key, empty);
+    registry.notifyAccepted(key);
+    if (mounted.current) {
+      setLocalError(undefined);
+      try {
+        accepted?.(result, retained);
+      } catch (error) {
+        setLocalError({ key, error, rejected: false });
+      }
+    }
+    return true;
+  };
   const clearRejected = () => {
     // Read the current owner, rather than a render snapshot: a late send or
     // uncertain receipt must never be discarded by presentation cleanup.
@@ -587,6 +618,7 @@ export function useRetainedMutation<
   return {
     resolveJob,
     send,
+    observe,
     retry: () => send(),
     clearRejected,
     ...state,
