@@ -264,6 +264,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			if !exists {
 				return pending()
 			}
+			if keyErr == nil && validPreviousDeletionProof(keyed, w) && obligation.PreviousDigest != keyed.Digest {
+				return pending()
+			}
 			if keyErr == nil && keyed.ReportID != obligation.ReportID {
 				return pending()
 			}
