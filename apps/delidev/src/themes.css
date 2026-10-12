@@ -337,6 +337,9 @@
 :root[data-composer-layout="compact"] .session-workspace .composer {
   padding: 8px 12px;
 }
+:root[data-composer-layout="compact"] .new-session-composer {
+  min-height: 0;
+}
 :root[data-composer-layout="compact"] .new-session-composer textarea {
   padding: 12px;
   min-height: 64px;

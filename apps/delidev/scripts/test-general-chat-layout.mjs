@@ -141,6 +141,141 @@ try {
       await control.elementHandle(),
     );
   };
+  // Use the real shared creation forms; Compact must not impose a fixed height.
+  for (const language of ["en", "ko"])
+    for (const theme of ["light", "dark"])
+      for (const width of [1440, 1200, 1100, 960, 640, 480]) {
+        await page.setViewportSize({ width, height: 640 });
+        await page.goto(`${origin}/?language=${language}&theme=${theme}`);
+        for (const kind of ["General Chat", "New session"]) {
+          await page
+            .getByRole("button", { name: `Fixture ${kind}`, exact: true })
+            .click();
+          const root = page.locator(
+            kind === "General Chat"
+              ? ".new-general-chat-page"
+              : ".new-session-page:not(.new-general-chat-page)",
+          );
+          const input = root.locator("textarea");
+          await input.waitFor();
+          if (kind === "New session") await selectResource(root, 0);
+          const pickerOffset = kind === "New session" ? 1 : 0;
+          await selectResource(root, pickerOffset);
+          await selectResource(root, pickerOffset + 1);
+          await root
+            .getByRole("checkbox", {
+              name: language === "en" ? "Plan Mode" : "계획 모드",
+              exact: true,
+            })
+            .check();
+          await input.fill("Retained multiline draft\nSecond line");
+          const originalInput = await input.elementHandle();
+          const snapshot = () =>
+            originalInput.evaluate((node) => {
+              const root = node.closest(".new-session-page");
+              return {
+                connected: node.isConnected,
+                sameInput: root.querySelector("textarea") === node,
+                value: node.value,
+                rows: node.rows,
+                selection: [node.selectionStart, node.selectionEnd],
+                focused: document.activeElement === node,
+                choices: Array.from(
+                  root.querySelectorAll("[role=combobox]"),
+                  (control) => control.dataset.value ?? "",
+                ),
+                mode: root.querySelector(".plan-mode input").checked,
+              };
+            });
+          const measure = () =>
+            root.locator(".new-session-composer").evaluate((node) => {
+              const input = node.querySelector("textarea");
+              const rect = node.getBoundingClientRect();
+              return {
+                height: rect.height,
+                minimum: getComputedStyle(node).minHeight,
+                inputHeight: input.getBoundingClientRect().height,
+                inputMinimum: getComputedStyle(input).minHeight,
+                resize: getComputedStyle(input).resize,
+                controlsContained: Array.from(
+                  node.querySelectorAll("button, [role=combobox], .plan-mode"),
+                  (control) => control.getBoundingClientRect(),
+                ).every(
+                  (control) =>
+                    control.left >= rect.left - 1 &&
+                    control.right <= rect.right + 1 &&
+                    control.top >= rect.top - 1 &&
+                    control.bottom <= rect.bottom + 1,
+                ),
+              };
+            });
+          for (const textSize of ["default", "12", "14", "16", "18"]) {
+            await page.evaluate((textSize) => {
+              document.documentElement.dataset.composerSize = textSize;
+              document.documentElement.dataset.composerLayout = "regular";
+            }, textSize);
+            await input.focus();
+            await input.evaluate((node) => node.setSelectionRange(3, 14));
+            await frame();
+            const retained = await snapshot();
+            assert.equal(retained.rows, 5);
+            const regular = await measure();
+            assert.equal(regular.minimum, "210px");
+            assert(regular.height >= 210);
+            await page.evaluate(() => {
+              document.documentElement.dataset.composerLayout = "compact";
+            });
+            await frame();
+            const compact = await measure();
+            assert.equal(compact.minimum, "0px");
+            assert.equal(compact.inputMinimum, "64px");
+            assert(compact.inputHeight >= 64);
+            assert.equal(compact.resize, "vertical");
+            assert(compact.controlsContained, "Wrapping controls fit the card");
+            if (width >= 1200 && ["12", "14"].includes(textSize))
+              assert(
+                compact.height < 210,
+                `Compact uses natural height: ${JSON.stringify({ language, theme, width, kind, textSize, compact })}`,
+              );
+            assert.deepEqual(await snapshot(), retained);
+            // Inline height models a native manual resize without changing rows.
+            await input.evaluate((node, height) => {
+              node.style.height = `${height + 32}px`;
+            }, compact.inputHeight);
+            await frame();
+            assert((await measure()).inputHeight >= compact.inputHeight + 31);
+            await input.evaluate((node) => {
+              node.style.height = "";
+            });
+            await page.evaluate(() => {
+              document.documentElement.dataset.composerLayout = "regular";
+            });
+            await frame();
+            assert(
+              Math.abs((await measure()).height - regular.height) <= 1,
+              "Regular restores its original geometry",
+            );
+            assert.deepEqual(await snapshot(), retained);
+            assert.equal(
+              await page.locator("output").getAttribute("data-fixture-creates"),
+              "0",
+              "Appearance changes never submit",
+            );
+            assert(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth + 1,
+              ),
+              "Narrow and effective 200% reflow have no horizontal overflow",
+            );
+            cases++;
+          }
+          await originalInput.dispose();
+        }
+      }
+  await page.evaluate(() => {
+    delete document.documentElement.dataset.composerSize;
+    delete document.documentElement.dataset.composerLayout;
+  });
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "system"])
       for (const size of [
