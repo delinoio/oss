@@ -34,6 +34,16 @@ pub(crate) struct HtmlTag {
 /// legacy names browsers decode without `;`. Returns `None` for a named
 /// reference outside the decoded set.
 fn decode_references(value: &str) -> Option<String> {
+    decode_references_in(value, true)
+}
+
+/// Like [`decode_references`], but keeps a reference it cannot decode as
+/// literal text and decodes the rest: each reference is independent.
+fn decode_references_lossy(value: &str) -> String {
+    decode_references_in(value, false).expect("lossy decoding never fails")
+}
+
+fn decode_references_in(value: &str, strict: bool) -> Option<String> {
     const NAMED: [(&str, char); 22] = [
         ("amp", '&'),
         ("lt", '<'),
@@ -88,21 +98,32 @@ fn decode_references(value: &str) -> Option<String> {
             let len = digits
                 .find(|c: char| !c.is_digit(radix))
                 .unwrap_or(digits.len());
-            let decoded = u32::from_str_radix(&digits[..len], radix)
+            match u32::from_str_radix(&digits[..len], radix)
                 .ok()
-                .and_then(char::from_u32)?;
-            out.push(decoded);
-            let after = &digits[len..];
-            rest = after.strip_prefix(';').unwrap_or(after);
+                .and_then(char::from_u32)
+            {
+                Some(decoded) => {
+                    out.push(decoded);
+                    let after = &digits[len..];
+                    rest = after.strip_prefix(';').unwrap_or(after);
+                }
+                None if strict => return None,
+                None => out.push('&'),
+            }
             continue;
         }
         let len = rest
             .find(|c: char| !c.is_ascii_alphanumeric())
             .unwrap_or(rest.len());
         if len > 0 && rest[len..].starts_with(';') {
-            let (_, decoded) = NAMED.iter().find(|(name, _)| *name == &rest[..len])?;
-            out.push(*decoded);
-            rest = &rest[len + 1..];
+            match NAMED.iter().find(|(name, _)| *name == &rest[..len]) {
+                Some((_, decoded)) => {
+                    out.push(*decoded);
+                    rest = &rest[len + 1..];
+                }
+                None if strict => return None,
+                None => out.push('&'),
+            }
             continue;
         }
         // Without `;`, a legacy name decodes unless an alphanumeric or `=`
@@ -116,11 +137,17 @@ fn decode_references(value: &str) -> Option<String> {
                 if !rest[name.len()..]
                     .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '=') =>
             {
-                let (_, decoded) = NAMED
+                match NAMED
                     .iter()
-                    .find(|(known, _)| known.eq_ignore_ascii_case(name))?;
-                out.push(*decoded);
-                rest = &rest[name.len()..];
+                    .find(|(known, _)| known.eq_ignore_ascii_case(name))
+                {
+                    Some((_, decoded)) => {
+                        out.push(*decoded);
+                        rest = &rest[name.len()..];
+                    }
+                    None if strict => return None,
+                    None => out.push('&'),
+                }
             }
             _ => out.push('&'),
         }
@@ -938,7 +965,9 @@ fn rehash(source: &Path, root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usiz
         if !text.contains('%') && !text.contains('&') {
             continue;
         }
-        let unescaped = decode_references(text).unwrap_or_else(|| text.clone());
+        // Each reference decodes on its own: an unknown entity elsewhere in
+        // the text must not hide an encoded file name.
+        let unescaped = decode_references_lossy(text);
         let unescaped = crate::compiler::percent_decode(&unescaped);
         if unescaped == *text {
             continue;
@@ -1363,6 +1392,11 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
             Some("a&amp=b")
         );
         assert_eq!(super::decode_references("a&copy.js"), None);
+        // Lossy decoding keeps unknown references and decodes the others.
+        assert_eq!(
+            super::decode_references_lossy("&copy; index&#45;DnKDBunT.js &unknown;"),
+            "&copy; index-DnKDBunT.js &unknown;"
+        );
         // Unterminated markup at the end of a page.
         for html in ["<script src=a.js", "<p a=", "<p =", "<script>x", "<a b='c"] {
             let _ = html_tags(html);

@@ -861,7 +861,7 @@ fn retains_chunks_that_encoded_references_name() {
     let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
     chunks[0] = (
         "index.html",
-        r#"<script type="module" src="/assets/index%2DAAAAAAAA.js"></script>"#,
+        r#"<p>&copy; 2026</p><script type="module" src="/assets/index&#45;AAAAAAAA.js"></script>"#,
     );
     let temp = bundle(&chunks);
     optimize(temp.path(), &[]);
