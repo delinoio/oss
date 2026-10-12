@@ -132,6 +132,12 @@ const splitSelectorList = (selectors: string) => {
   result.push(selectors.slice(start).trim());
   return result;
 };
+const normalizeSelector = (selector: string) =>
+  selector
+    .replace(/\s+/gu, " ")
+    .replace(/\( /gu, "(")
+    .replace(/ \)/gu, ")")
+    .trim();
 
 test("ordinary controls use semantic accent and contrast tokens", async () => {
   const stylesheet = async (name: string) =>
@@ -145,7 +151,10 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
     for (const [selector, property, value] of checks) {
       const rule = rules.find(
         ([, selectors, declarations]) =>
-          splitSelectorList(selectors).includes(selector) &&
+          splitSelectorList(selectors).some(
+            (candidate) =>
+              normalizeSelector(candidate) === normalizeSelector(selector),
+          ) &&
           declarations.split(";").some((candidate) => {
             const separator = candidate.indexOf(":");
             return (
@@ -172,10 +181,20 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
     [".usage-model-bar", "fill", "selected-border"],
     [".usage-model-labels li", "border-left", "selected-border"],
   ]);
+  await declarations("shared-tabs.css", [
+    [
+      '.shared-tab-strip .shared-tab-item:is([aria-selected="true"], [data-selected="true"], .is-selected)',
+      "color",
+      "selected-text",
+    ],
+    [
+      '.shared-tab-strip .shared-tab-item:is([aria-selected="true"], [data-selected="true"], .is-selected)',
+      "border-bottom-color",
+      "selected-border",
+    ],
+    [".shared-tab-strip .shared-tab-control:focus-visible", "outline", "focus"],
+  ]);
   await declarations("session.css", [
-    [".session-tab.is-selected", "color", "link"],
-    [".session-tab.is-selected", "border-bottom-color", "selected-border"],
-    [".session-tab button:focus-visible", "outline", "focus"],
     [".queue-insertion", "border-top", "selected-border"],
     [".context-capacity > div", "background", "selected-border"],
   ]);
@@ -208,13 +227,6 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
   ]);
   await declarations("credential-access.css", [
     [".credential-access-brand", "color", "link"],
-  ]);
-  await declarations("project-edit-tabs.css", [
-    [
-      '.project-edit-tablist button[aria-selected="true"]',
-      "border-bottom-color",
-      "selected-border",
-    ],
   ]);
 });
 
