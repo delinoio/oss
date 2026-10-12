@@ -745,3 +745,17 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Quota exhaustion cause projection
+
+`QuotaExhaustedCause` has the exact string `quota_exhausted` in the existing
+Error cause field. Single-source routing attaches it only when candidates are
+nonempty and every resulting eligibility is `exhausted`. Ordered source routing
+attaches it only after complete all-source exhaustion proof. Disabled, missing,
+restricted, incompatible, unauthenticated, unavailable/unknown observations,
+rate limits and source problems cannot establish that proof. Fresh admitted
+Codex paid-credit or unlimited evidence remains eligible under its existing
+independent spend-control and freshness rules. Failures preserve routing state,
+code, message, guidance, exit code and transport semantics. Per-source metadata
+never turns a later selected outer result into an exhaustion failure.
+This cause grants no fallback, quota recovery, account or execution authority.

@@ -5990,3 +5990,31 @@ The ordinary workspace contains no CI/rules/reviewer verification grid, Overview
 problem history or separate stack-dependencies section. Pending PR actions remains
 above the workspace. Existing server/CLI inspection and recovery surfaces survive.
 Unknown counts and failed decorative images remain accessible fallbacks.
+
+### Contextual session recovery cards
+
+Session and General Chat Conversation retain one recovery region immediately
+above the composer, after the input tray and outside transcript scrolling.
+Independent notices keep their existing order and original controllers. Transcript
+read failures remain in the transcript; form validation stays with its input.
+The region scrolls internally when several cards exceed its bounded height.
+Cards use semantic warning tokens, definitive startup errors use danger tokens,
+and all retain a decorative warning icon, text, thin borders, 12px corners and
+controls of at least 40 CSS pixels. Narrow layouts wrap text and stack actions.
+The transcript, composer node/draft, attachments, queued inputs, Info targets and
+original request identities remain mounted through observations and locale changes.
+New or changed error text uses the existing alert announcement without focus
+movement or a mutation on mount. Unchanged observations add no announcement.
+
+Each card exposes its localized heading, safe cause and supported guidance.
+Only secondary codes, versions and opaque references belong in closed Technical
+details. The exact `missing_input` plus `quota_exhausted` pair shows Usage limit
+reached and localized complete-exhaustion guidance. Legacy, unknown, malformed or
+mismatched causes retain a generic heading and visible safe evidence; message
+text never establishes exhaustion. Authentication, connection, definitive startup,
+budget and uncertain recovery have distinct localized headings. Connection
+refresh retains its original failed-observation gate and only reobserves.
+Show details opens the original Info target, including Budget and Recovery.
+No card grants sign-in, account switching, reset, send, Resume or new retry authority.
+Startup correction, delivery and cleanup remain independent visible facts;
+original no-send and confirmed-cleanup proof alone can permit startup retry.
