@@ -1045,11 +1045,14 @@ fn percent_decode(path: &str) -> String {
 }
 
 /// Whether a file uses `eval` (direct or aliased) or `with`, which can look
-/// up the file's bindings by runtime strings.
+/// up the file's bindings by runtime strings, or `importScripts`, which only
+/// a classic worker has: such a file may run as a classic script whose
+/// top-level bindings are globals, even if a module also imports it.
 pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
     nodes.iter().any(|node| {
         node.kind() == SyntaxKind::WithStatement
-            || (node.kind() == SyntaxKind::Identifier && node.text() == "eval")
+            || (node.kind() == SyntaxKind::Identifier
+                && matches!(node.text(), "eval" | "importScripts"))
     })
 }
 

@@ -1151,6 +1151,19 @@ fn keeps_exports_that_inline_scripts_import() {
     assert!(out(temp.path(), "lazy.js").contains("lazyOnly"));
 }
 
+/// A file that calls `importScripts` can run as a classic worker even when a
+/// module imports it: it stays unchanged.
+#[test]
+fn keeps_dual_used_classic_workers_unchanged() {
+    let worker = r#"typeof importScripts=="function"&&importScripts("vendor.js");function workerGlobal(){return{verticalSpacing:1,horizontalSpacing:2}}export{};"#;
+    let temp = bundle(&[
+        ("index.js", r#"import"./worker.js";console.log(1);"#),
+        ("worker.js", worker),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "worker.js"), worker);
+}
+
 /// A query in an import specifier still loads the chunk, but the compiler
 /// cannot link it: that chunk's exports stay public.
 #[test]
