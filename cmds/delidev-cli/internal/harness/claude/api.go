@@ -152,7 +152,8 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 				filtered = append(filtered, entry)
 			}
 		}
-		env = append(filtered, "CLAUDE_CODE_OAUTH_TOKEN="+string(config.ManagedToken), "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home)
+		// Keep the server-owned setup token out of Claude tool subprocesses.
+		env = append(filtered, "CLAUDE_CODE_OAUTH_TOKEN="+string(config.ManagedToken), "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1", "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home)
 	} else if config.Subscription != nil {
 		if config.Subscription.ID.Validate() != nil || security.CheckPrivateDir(config.Subscription.Home) != nil {
 			return process.Config{}, apiConfigurationError()
