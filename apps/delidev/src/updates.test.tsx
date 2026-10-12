@@ -192,7 +192,8 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
     name: "Original update",
   });
   fireEvent.click(screen.getByText("Update recovery"));
-  const id = screen.getByText("Resource unavailable · 1").textContent!;
+  expect(screen.getByText("Resource unavailable · 1")).toBeTruthy();
+  const id = original.id;
   const revision = screen.getByText("9007199254740993").textContent!;
   fireEvent.click(
     within(candidate).getByRole("button", {

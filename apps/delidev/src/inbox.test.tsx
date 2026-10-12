@@ -1070,9 +1070,21 @@ describe("Inbox detail presentation", () => {
         lists = value.list.mock.calls.length;
       fireEvent.click(disclosure.querySelector("summary")!);
       expect(disclosure.open).toBe(true);
-      expect(JSON.parse(disclosure.querySelector("pre")!.textContent!)).toEqual(
-        metadata,
+      const displayed = JSON.parse(
+        disclosure.querySelector("pre")!.textContent!,
       );
+      expect(displayed).toMatchObject({
+        native_thread_id: metadata.native_thread_id,
+        native_turn_id: metadata.native_turn_id,
+        sequence: metadata.sequence,
+        outcome: metadata.outcome,
+      });
+      for (const id of [
+        metadata.job_id,
+        metadata.input_id,
+        metadata.execution_id,
+      ])
+        expect(JSON.stringify(displayed)).not.toContain(id);
       expect(value.get).toHaveBeenCalledTimes(reads);
       expect(value.list).toHaveBeenCalledTimes(lists);
       expect(value.setRead).not.toHaveBeenCalled();

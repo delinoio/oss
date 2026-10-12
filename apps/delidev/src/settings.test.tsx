@@ -637,7 +637,7 @@ it.each([
     const value = fixture([future]);
     render(value.view(<Settings />));
     fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-    const name = valid ? projected : "Unnamed";
+    const name = valid ? projected : "Agent unavailable · 1";
     const heading = await screen.findByRole("heading", { name });
     expect(heading.textContent).toBe(name);
     const row = within(heading.closest("article")!);

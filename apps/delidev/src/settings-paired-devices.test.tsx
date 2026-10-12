@@ -177,8 +177,14 @@ it("renders the approved server order and local Details without an RPC or inferr
     control.getAttribute("aria-controls")!,
   )!;
   expect(disclosure.hidden).toBe(false);
-  expect(within(disclosure).getByText(ids[1])).toBeTruthy();
-  expect(within(disclosure).getByText(ids[3])).toBeTruthy();
+  expect(
+    within(disclosure).getByText(/^Device unavailable · \d+$/),
+  ).toBeTruthy();
+  expect(
+    within(disclosure).getByText(/^Runner unavailable · \d+$/),
+  ).toBeTruthy();
+  expect(disclosure.textContent).not.toContain(ids[1]);
+  expect(disclosure.textContent).not.toContain(ids[3]);
   expect(within(disclosure).getByText("Runner Device ID")).toBeTruthy();
   expect(
     within(disclosure).getByTitle("2026-09-29T00:58:53.515872Z"),

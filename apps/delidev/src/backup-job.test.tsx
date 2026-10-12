@@ -67,21 +67,21 @@ it("distinguishes creation and deletion tracking for the same backup", async () 
     </TransportProvider>,
   );
   const createArticle = screen.getByRole("article", {
-    name: `Backup ${backupId} creation`,
+    name: /^Backup · \d+ creation$/,
   });
   const deleteArticle = screen.getByRole("article", {
-    name: `Backup ${backupId} deletion`,
+    name: /^Backup · \d+ deletion$/,
   });
   fireEvent.click(
     await within(createArticle).findByRole("button", {
-      name: `Dismiss backup ${backupId} creation tracking`,
+      name: /^Dismiss Backup · \d+ creation tracking$/,
     }),
   );
   expect(dismissCreation).toHaveBeenCalledTimes(1);
   expect(dismissDeletion).not.toHaveBeenCalled();
   fireEvent.click(
     await within(deleteArticle).findByRole("button", {
-      name: `Dismiss backup ${backupId} deletion tracking`,
+      name: /^Dismiss Backup · \d+ deletion tracking$/,
     }),
   );
   expect(dismissDeletion).toHaveBeenCalledTimes(1);

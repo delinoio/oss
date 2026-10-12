@@ -193,7 +193,7 @@ it("owns the standalone Diagnostics heading, three independent observations and 
   allClosed(view.container);
   expect(
     within(server)
-      .getByText(value.state.report.server_id as string)
+      .getByText(/^Server unavailable · \d+$/)
       .closest("details")?.open,
   ).toBe(false);
   expect(
@@ -545,7 +545,7 @@ for (const code of [Code.Unauthenticated, Code.PermissionDenied])
     expect(
       screen.getByText("Inspect the selected authorized connection."),
     ).toBeTruthy();
-    expect(screen.getByText(`Reference: ${reference}`)).toBeTruthy();
+    expect(screen.queryByText(new RegExp(reference))).toBeNull();
   });
 
 for (const encoding of ["future", "json", "utf8", "oversized"])

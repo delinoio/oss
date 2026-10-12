@@ -361,7 +361,7 @@ it.each([false, true])(
     if (mixed) {
       expect(within(responseSection).getByRole("table")).toBeTruthy();
       expect(
-        within(responseSection).getByText("Retained session"),
+        within(responseSection).getAllByText("Retained session").at(0),
       ).toBeTruthy();
       expect(
         within(responseSection).getByText(/1 responses · 1 unavailable/),
@@ -398,7 +398,9 @@ it.each([false, true])(
     const nativeSection = screen.getByRole("region", {
       name: "Verified Grok closed inputs",
     });
-    expect(within(nativeSection).getByText("Grok-only session")).toBeTruthy();
+    expect(
+      within(nativeSection).getAllByText("Grok-only session").length,
+    ).toBeGreaterThan(0);
     const nativeModelTable = within(nativeSection).getByRole("table", {
       name: "Verified Grok inputs by model",
     });
@@ -981,18 +983,18 @@ it("keeps current query results when an older scope resolves later, without show
   const b = create(GetUsageSummaryResponseSchema, f.data);
   b.groups[0].sessionName = "Latest scope";
   finishB(b);
-  await screen.findByText("Latest scope");
+  await screen.findAllByText("Latest scope");
   const a = create(GetUsageSummaryResponseSchema, f.data);
   a.groups[0].sessionName = "Earlier scope";
   finishA(a);
   await waitFor(() =>
     expect(screen.queryByText("Loading token usage…")).toBeNull(),
   );
-  expect(screen.getByText("Latest scope")).toBeTruthy();
+  expect(screen.getAllByText("Latest scope").length).toBeGreaterThan(0);
   expect(screen.queryByText("Earlier scope")).toBeNull();
   expect(
     screen.getByRole("group", { name: "Applied conditions" }).textContent,
-  ).toContain(f.ids.account);
+  ).toContain("Original account");
 });
 
 it("does not reuse old scope data when a new valid selection fails", async () => {
@@ -1145,7 +1147,7 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
     f.ids.provider,
     f.data.groups[0].projectId,
   ])
-    expect(detail.textContent).toContain(id);
+    expect(detail.textContent).not.toContain(id);
   expect(detail.textContent).toContain("USD 0.002");
   expect(detail.textContent).toContain("EUR 0");
   expect(f.read).toHaveBeenCalledTimes(1);
@@ -1337,7 +1339,8 @@ it.each(["response", "native"] as const)(
       fireEvent.click(historyTab);
       const history = screen.getByRole("tabpanel", { name: "Usage history" });
       const model = within(history).getByRole("button", {
-        name: source === "response" ? "Original model" : f.ids.model,
+        name:
+          source === "response" ? "Original model" : "Model unavailable · 1",
       });
       model.focus();
       fireEvent.click(model);
@@ -1359,7 +1362,7 @@ it.each(["response", "native"] as const)(
               : SubscriptionServiceIdentity.OPENCODE_GO,
         }),
       );
-      expect(selector.textContent).toContain(f.ids.model);
+      expect(selector.textContent).not.toContain(f.ids.model);
       expect(selector.textContent).toContain(
         source === "response" ? "Original API" : "OpenCode Go",
       );
@@ -1523,7 +1526,8 @@ it("opens exact historical pricing without changing filters and retains read-onl
     "This original identity has no editable current model. Historical price evidence is read-only.",
   );
   expect(within(panel).getByText("Original deleted price")).toBeTruthy();
-  expect(within(panel).getByText(new RegExp(version))).toBeTruthy();
+  expect(panel.textContent).toContain("Model price · 1");
+  expect(panel.textContent).not.toContain(version);
   expect(
     within(panel).getByRole("button", { name: "Edit token pricing" }),
   ).toHaveProperty("disabled", true);

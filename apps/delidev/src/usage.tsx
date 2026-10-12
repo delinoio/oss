@@ -1020,7 +1020,11 @@ export function Usage({
                                       ],
                                       [
                                         copy("usage.model_5e2c61"),
-                                        group.model?.nativeId ?? "",
+                                        productLabel(
+                                          PresentationKind.Model,
+                                          group.model?.nativeId,
+                                          group.modelName,
+                                        ),
                                       ],
                                     ].map(([label, id]) => (
                                       <div key={label}>

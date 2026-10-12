@@ -557,15 +557,24 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   fireEvent.click(
     screen.getByRole("button", { name: "Add starting override" }),
   );
-  fireEvent.change(screen.getByLabelText(`Starting ${repository} type`), {
-    target: { value: "remote-branch" },
-  });
-  fireEvent.change(screen.getByLabelText(`Starting ${repository} name`), {
-    target: { value: "feature/source" },
-  });
-  fireEvent.change(screen.getByLabelText(`Starting ${repository} remote`), {
-    target: { value: "upstream" },
-  });
+  fireEvent.change(
+    screen.getByLabelText(/^Starting Repository unavailable · \d+ type$/),
+    {
+      target: { value: "remote-branch" },
+    },
+  );
+  fireEvent.change(
+    screen.getByLabelText(/^Starting Repository unavailable · \d+ name$/),
+    {
+      target: { value: "feature/source" },
+    },
+  );
+  fireEvent.change(
+    screen.getByLabelText(/^Starting Repository unavailable · \d+ remote$/),
+    {
+      target: { value: "upstream" },
+    },
+  );
   fireEvent.change(screen.getByLabelText("First message"), {
     target: { value: "Original selected work" },
   });

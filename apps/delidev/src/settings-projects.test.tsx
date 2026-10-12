@@ -240,7 +240,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])(
     );
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).not.toContain("private fixture detail");
-    expect(alert.textContent).toContain(correlationId);
+    expect(alert.textContent).not.toContain(correlationId);
     expect(screen.queryByText("No projects yet")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "New Project" }));
     expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
@@ -286,7 +286,7 @@ it.each([false, true])(
     await screen.findByText(
       "Refresh failed. Showing the last successfully loaded results.",
     );
-    expect(screen.getByRole("alert").textContent).toContain(correlationId);
+    expect(screen.getByRole("alert").textContent).not.toContain(correlationId);
     if (empty) expect(screen.queryByText("No projects yet")).toBeNull();
     else expect(screen.getByText("Retained project")).toBeTruthy();
   },
@@ -426,7 +426,7 @@ it("retries exact edit repository IDs without replacing unreadable names with se
   });
   expect(
     within(primary).getByRole("option", {
-      name: "Repository name unavailable (entry 1)",
+      name: "Exact repository",
     }),
   ).toBeTruthy();
   const reads = value.get.mock.calls.filter(([id]) => id === first.id).length;

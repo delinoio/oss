@@ -1234,6 +1234,18 @@ export function ResourceChoice({
       (JSON.parse(allowedKey) as unknown[]).includes(value))
       ? knownHarness(selectedData.harness)
       : undefined;
+  if (selectedResource) productResourceName(productLabel, selectedResource);
+  result.rows.forEach((row) =>
+    productLabel(presentationKind(kind), row.id, row.name),
+  );
+  // Recompute after registering the complete inventory so every duplicate
+  // receives a numbered label on its first visible frame.
+  const choiceLabels = new Map(
+    result.rows.map((row) => [
+      row.id,
+      productLabel(presentationKind(kind), row.id, row.name),
+    ]),
+  );
   const options = [
     {
       id: "",
@@ -1248,7 +1260,7 @@ export function ResourceChoice({
       id: row.id,
       decoration: decorate(row.harness),
       label:
-        productLabel(presentationKind(kind), row.id, row.name) +
+        (choiceLabels.get(row.id) ?? "") +
         (kind === EntityKind.ACCOUNT
           ? copy("configuration-fields.message_2fa20b", {
               v0: statusLabel(row.health),

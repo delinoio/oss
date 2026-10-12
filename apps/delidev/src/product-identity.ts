@@ -206,6 +206,7 @@ export const generatedIdentityFields: Readonly<
   model_key: PresentationKind.Model,
   connection_id: PresentationKind.Connection,
   execution_id: PresentationKind.Execution,
+  job_id: PresentationKind.Request,
   input_id: PresentationKind.Input,
   request_id: PresentationKind.Request,
   correlation_id: PresentationKind.Request,

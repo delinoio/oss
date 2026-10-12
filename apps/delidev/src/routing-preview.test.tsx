@@ -279,7 +279,7 @@ it.each([
     };
   });
   render(<value.Fixture />);
-  await screen.findByText("Account information unavailable");
+  await screen.findByText(/^Account unavailable · \d+$/);
   expect(screen.getByText("Unauthenticated")).toBeTruthy();
   expect(screen.getByText("unknown")).toBeTruthy();
   expect(screen.queryByText("ChatGPT Personal")).toBeNull();
