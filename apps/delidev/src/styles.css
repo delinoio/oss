@@ -2798,12 +2798,21 @@ dialog nav {
   outline-offset: -3px;
 }
 .sidebar-pull-requests .pr-repository-details {
-  margin: 4px 8px 12px;
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  margin: 0;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px var(--shadow-soft);
   font-size: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
   overflow-wrap: anywhere;
 }
 .sidebar-pull-requests .pr-repository-details dl {

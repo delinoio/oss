@@ -89,7 +89,6 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", (error) => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const id = "0195c9c0-7b13-7000-8000-000000000001";
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
       for (const [width, height] of [
@@ -122,10 +121,7 @@ try {
         });
         await pane
           .getByRole("button", {
-            name:
-              language === "ko"
-                ? `oss. 저장소 ID: ${id}`
-                : `oss. Repository ID: ${id}`,
+            name: "oss",
             exact: true,
           })
           .click();
@@ -359,10 +355,7 @@ try {
         const pane = page.locator(".sidebar-pull-requests");
         await pane
           .getByRole("button", {
-            name:
-              language === "ko"
-                ? `oss. 저장소 ID: ${id}`
-                : `oss. Repository ID: ${id}`,
+            name: "oss",
             exact: true,
           })
           .click();

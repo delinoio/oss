@@ -325,7 +325,7 @@ function fixture() {
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: `Fixture repository. Repository ID: ${repositoryId}`,
+        name: "Fixture repository",
       }),
     );
     expect(

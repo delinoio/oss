@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   ConfigurationService,
   EntityKind,
@@ -25,6 +25,75 @@ import {
 import { App } from "./App";
 import { encode, resourceName } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
+
+// jsdom does not implement the native top layer. Browser fixtures cover geometry
+// separately; this seam proves original row identity and event ownership only.
+const nativeOpen = new WeakSet<HTMLElement>();
+const originalShow = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "showPopover",
+);
+const originalHide = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "hidePopover",
+);
+beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, "showPopover", {
+    configurable: true,
+    value: function (this: HTMLElement) {
+      nativeOpen.add(this);
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", {
+    configurable: true,
+    value: function (this: HTMLElement) {
+      nativeOpen.delete(this);
+    },
+  });
+  const matches = HTMLElement.prototype.matches;
+  vi.spyOn(HTMLElement.prototype, "matches").mockImplementation(function (
+    this: HTMLElement,
+    selector,
+  ) {
+    return selector === ":popover-open"
+      ? nativeOpen.has(this)
+      : matches.call(this, selector);
+  });
+  // The pinned jsdom runtime has no DOMRect constructor. Keep the synthetic
+  // bounds explicit; real browser rectangles belong to the layout fixture.
+  const rect: DOMRect = {
+    x: 0,
+    y: 0,
+    width: 1024,
+    height: 768,
+    top: 0,
+    left: 0,
+    right: 1024,
+    bottom: 768,
+    toJSON: () => ({}),
+  };
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    rect,
+  );
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue({
+    0: rect,
+    length: 1,
+    item: () => rect,
+    [Symbol.iterator]: function* () {
+      yield rect;
+    },
+  } as DOMRectList);
+});
+afterEach(() => {
+  for (const [name, descriptor] of [
+    ["showPopover", originalShow],
+    ["hidePopover", originalHide],
+  ] as const) {
+    if (descriptor)
+      Object.defineProperty(HTMLElement.prototype, name, descriptor);
+    else delete (HTMLElement.prototype as Partial<HTMLElement>)[name];
+  }
+});
 
 const repositoryId = "0195c9c0-7b13-7000-8000-000000000001";
 function repository(name = "Example repository") {
@@ -178,7 +247,7 @@ async function open() {
 async function choose(row: Resource) {
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `${resourceName(row)}. Repository ID: ${row.id}`,
+      name: resourceName(row).trim(),
     }),
   );
   await waitFor(() =>
@@ -275,7 +344,7 @@ it("shows only the selected name and loads the selected default query automatica
   expect(pane.getByRole("heading", { name: "Query options" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
   const row = pane.getByRole("button", {
-    name: `Example repository. Repository ID: ${repositoryId}`,
+    name: "Example repository",
   });
   expect(row.textContent).toBe("Example repository");
   expect(row.querySelector("button")).toBeNull();
@@ -308,10 +377,10 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   render(<App transport={value.transport} />);
   const pane = await open();
   const firstButton = await pane.findByRole("button", {
-    name: `Details for Example repository. Repository ID: ${first.id}`,
+    name: "Details for Example repository · 1",
   });
   const secondButton = pane.getByRole("button", {
-    name: `Details for Example repository. Repository ID: ${second.id}`,
+    name: "Details for Example repository · 2",
   });
   const catalogReads = value.list.mock.calls.filter(
     ([request]) => request.filter?.kind === EntityKind.REPOSITORY,
@@ -319,18 +388,21 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(firstButton);
   let details = pane.getByRole("region", {
-    name: `Details for Example repository. Repository ID: ${first.id}`,
+    name: "Details for Example repository · 1",
   });
   expect(details.id).toBe(firstButton.getAttribute("aria-controls"));
-  expect(within(details).getByText(first.id).textContent).toBe(first.id);
+  expect(details.textContent).not.toContain(first.id);
+  expect(details.getAttribute("popover")).toBe("manual");
+  expect(nativeOpen.has(details)).toBe(true);
   expect(within(details).getByText("owner/repo")).toBeTruthy();
   fireEvent.click(secondButton);
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   expect(secondButton.getAttribute("aria-expanded")).toBe("true");
   details = pane.getByRole("region", {
-    name: `Details for Example repository. Repository ID: ${second.id}`,
+    name: "Details for Example repository · 2",
   });
-  expect(within(details).getByText(second.id)).toBeTruthy();
+  expect(details.textContent).not.toContain(second.id);
+  expect(nativeOpen.has(details)).toBe(true);
   expect(pane.queryAllByRole("region", { name: /Details for/ })).toHaveLength(
     1,
   );
@@ -338,7 +410,7 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(
     pane
       .getByRole("button", {
-        name: `Example repository. Repository ID: ${first.id}`,
+        name: "Example repository · 1",
       })
       .getAttribute("aria-pressed"),
   ).toBe("false");
@@ -359,7 +431,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   const view = render(<App transport={value.transport} />);
   let pane = await open();
   await choose(row);
-  const detailsName = `Details for ${resourceName(row)}. Repository ID: ${row.id}`;
+  const detailsName = `Details for ${resourceName(row).trim()}`;
   fireEvent.click(pane.getByRole("button", { name: detailsName }));
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
   fireEvent.change(pane.getByLabelText("Search title and body"), {
@@ -373,6 +445,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
       ),
     ).toBe(true),
   );
+  fireEvent.click(pane.getByRole("button", { name: detailsName }));
   expect(pane.getByRole("region", { name: detailsName })).toBeTruthy();
   expect(
     (await pane.findByRole("button", { name: detailsName })).getAttribute(
@@ -382,7 +455,9 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   pane = await open();
   view.rerender(<App transport={value.transport} connectionEpoch={1} />);
-  expect(pane.getByRole("region", { name: detailsName })).toBeTruthy();
+  await waitFor(() =>
+    expect(pane.getByRole("region", { name: detailsName })).toBeTruthy(),
+  );
   await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
   pane = within(
     screen.getByRole("region", { name: "풀 리퀘스트 탐색 및 필터" }),
@@ -390,7 +465,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   expect(
     pane
       .getByRole("button", {
-        name: `${resourceName(row).trim()} 상세. 저장소 ID: ${row.id}`,
+        name: `${resourceName(row).trim()} 상세`,
       })
       .getAttribute("aria-expanded"),
   ).toBe("true");
@@ -415,11 +490,11 @@ it("keeps missing repository mapping and original content inert in Details", asy
   const pane = await open();
   fireEvent.click(
     await pane.findByRole("button", {
-      name: `Details for <b>Original name</b>. Repository ID: ${row.id}`,
+      name: "Details for <b>Original name</b>",
     }),
   );
   const details = pane.getByRole("region", {
-    name: `Details for <b>Original name</b>. Repository ID: ${row.id}`,
+    name: "Details for <b>Original name</b>",
   });
   expect(within(details).getByText("Not configured")).toBeTruthy();
   expect(details.textContent).not.toContain("https://private.example/repo");
@@ -427,7 +502,7 @@ it("keeps missing repository mapping and original content inert in Details", asy
   expect(
     pane
       .getByRole("button", {
-        name: `<b>Original name</b>. Repository ID: ${row.id}`,
+        name: "<b>Original name</b>",
       })
       .querySelector("b"),
   ).toBeNull();
@@ -469,7 +544,7 @@ it("preserves selected identity and filter drafts through empty appended pages a
   ).toBe("fix");
   fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
   await pane.findByRole("button", {
-    name: `Example repository. Repository ID: ${repositoryId}`,
+    name: "Example repository",
   });
   expect((pane.getByLabelText("PR page size") as HTMLSelectElement).value).toBe(
     "5",
@@ -590,7 +665,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])(
     );
     expect(
       pane.getByRole("button", {
-        name: `Example repository. Repository ID: ${repositoryId}`,
+        name: "Example repository",
       }),
     ).toBeTruthy();
     expect(pane.queryByText("No repositories on this page.")).toBeNull();
@@ -651,7 +726,7 @@ it("hides the profile shortcut before selection and for an unavailable selected 
   expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Example repository. Repository ID: ${repositoryId}`,
+      name: "Example repository",
     }),
   );
   await screen.findByText(
@@ -1026,7 +1101,7 @@ it("waits for validated selected metadata before automatic GitHub reads", async 
   await open();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Example repository. Repository ID: ${repositoryId}`,
+      name: "Example repository",
     }),
   );
   await screen.findByText("Loading repository settings…");
@@ -1332,4 +1407,155 @@ it("keeps an admitted save unresolved when succeeded job output identifies anoth
   expect(button.disabled).toBe(true);
   fireEvent.click(button);
   expect(save).toHaveBeenCalledTimes(1);
+});
+
+it("dismisses details on outside activation without moving focus and gives Escape only to its opener", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const opener = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
+  opener.focus();
+  fireEvent.click(opener);
+  const popup = pane.getByRole("region", {
+    name: "Details for Example repository",
+  });
+  expect(nativeOpen.has(popup)).toBe(true);
+  const key = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
+  opener.dispatchEvent(key);
+  await waitFor(() =>
+    expect(opener.getAttribute("aria-expanded")).toBe("false"),
+  );
+  expect(key.defaultPrevented).toBe(true);
+  expect(document.activeElement).toBe(opener);
+  fireEvent.click(opener);
+  const outside = pane.getByRole("button", { name: "Repository settings" });
+  outside.focus();
+  fireEvent.pointerDown(outside);
+  expect(nativeOpen.has(popup)).toBe(false);
+  expect(document.activeElement).toBe(outside);
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.query).not.toHaveBeenCalled();
+});
+
+it("does not consume Escape from a different control while details is visible", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const opener = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
+  fireEvent.click(opener);
+  const outside = pane.getByRole("button", { name: "Repository settings" });
+  outside.focus();
+  const key = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
+  outside.dispatchEvent(key);
+  expect(key.defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(outside);
+});
+
+it("classifies absent, throwing and canceled native popup APIs without exposing an in-flow panel", async () => {
+  for (const behavior of ["absent", "throw", "cancel"] as const) {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    Object.defineProperty(HTMLElement.prototype, "showPopover", {
+      configurable: true,
+      value:
+        behavior === "absent"
+          ? undefined
+          : function () {
+              if (behavior === "throw")
+                throw new DOMException("Synthetic failure");
+            },
+    });
+    const value = fixture();
+    const view = render(<App transport={value.transport} />);
+    const pane = await open();
+    const opener = await pane.findByRole("button", {
+      name: "Details for Example repository",
+    });
+    fireEvent.click(opener);
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    const popup = document.getElementById(
+      opener.getAttribute("aria-controls")!,
+    )!;
+    expect(popup.hidden).toBe(true);
+    expect(
+      pane
+        .getByText(
+          "Repository details could not open. Try again in a supported app version.",
+        )
+        .getAttribute("role"),
+    ).toBe("status");
+    expect(warning).toHaveBeenCalledWith({
+      event: "repository_details_popup",
+      outcome: behavior === "absent" ? "unavailable" : "failed",
+    });
+    expect(value.get).not.toHaveBeenCalled();
+    expect(value.query).not.toHaveBeenCalled();
+    view.unmount();
+    warning.mockRestore();
+  }
+});
+
+it("keeps duplicate-name numbers after reorder and preserves user UUID-like names verbatim", async () => {
+  const first = repository("Same name"),
+    second = repository("Same name");
+  second.id = newRequestId();
+  const userName = `User name ${newRequestId()}`;
+  const third = repository(userName);
+  third.id = newRequestId();
+  const value = fixture([first, second, third]);
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  await pane.findByRole("button", { name: "Same name · 1" });
+  value.rows.reverse();
+  fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+  const firstSelection = await pane.findByRole("button", {
+    name: "Same name · 1",
+  });
+  expect(pane.getByRole("button", { name: "Same name · 2" })).toBeTruthy();
+  expect(pane.getByRole("button", { name: userName }).textContent).toBe(
+    userName,
+  );
+  fireEvent.click(firstSelection);
+  await waitFor(() => expect(value.get).toHaveBeenCalled());
+  expect(value.get.mock.calls.at(-1)?.[0].id).toBe(first.id);
+  expect(
+    pane
+      .getByRole("button", { name: "Same name · 1" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+});
+
+it("retires a hidden original opener and cleans up its native layer without reading another row", async () => {
+  const value = fixture();
+  const view = render(<App transport={value.transport} />);
+  const pane = await open();
+  const opener = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
+  fireEvent.click(opener);
+  const popup = pane.getByRole("region", {
+    name: "Details for Example repository",
+  });
+  opener.hidden = true;
+  await waitFor(() => expect(nativeOpen.has(popup)).toBe(false));
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  opener.hidden = false;
+  expect(nativeOpen.has(popup)).toBe(false);
+  fireEvent.click(opener);
+  expect(nativeOpen.has(popup)).toBe(true);
+  view.unmount();
+  expect(nativeOpen.has(popup)).toBe(false);
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.query).not.toHaveBeenCalled();
 });
