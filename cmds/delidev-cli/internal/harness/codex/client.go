@@ -46,38 +46,40 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
-	codeReviewModel    string
-	codeReviewRoot     string
-	codeReview         *codeReviewAttempt
-	reviewProtected    security.ProtectedJSON
-	managedForkHistory bool
-	quotaUsed          atomic.Bool
-	skillsRoot         string
-	imageRoot          string
-	imageMachine       domain.ID
-	sidechat           SidechatProfile
-	quotaObserver      func(context.Context, domain.SubscriptionQuotaObservation)
-	subagents          map[string]domain.SubagentObservation
-	subagentTurn       domain.ID
-	modelObservation   string
-	home               string
-	wire               *nativewire.Connection
-	version            string
-	ownerID            domain.ID
-	logger             *slog.Logger
-	control            chan struct{}
-	thread             domain.ID
-	problem            *domain.Error
-	mode               ProtocolMode
-	execution          *executionState
-	eventGate          chan struct{}
-	pendingEvent       *nativewire.Event
-	api                *apiBinding
-	managedHome        string
-	executionHelpers   *executionHelpers
-	revertHistory      bool
-	imageGeneration    bool
-	imageObservations  bool
+	codeReviewModel      string
+	codeReviewRoot       string
+	codeReview           *codeReviewAttempt
+	reviewProtected      security.ProtectedJSON
+	safety               modelSafetyLedger
+	managedForkHistory   bool
+	quotaUsed            atomic.Bool
+	skillsRoot           string
+	imageRoot            string
+	imageMachine         domain.ID
+	sidechat             SidechatProfile
+	quotaObserver        func(context.Context, domain.SubscriptionQuotaObservation)
+	subagents            map[string]domain.SubagentObservation
+	subagentTurn         domain.ID
+	modelObservation     string
+	home                 string
+	wire                 *nativewire.Connection
+	version              string
+	ownerID              domain.ID
+	logger               *slog.Logger
+	control              chan struct{}
+	thread               domain.ID
+	problem              *domain.Error
+	remoteControlRefusal *remoteControlPolicyViolation
+	mode                 ProtocolMode
+	execution            *executionState
+	eventGate            chan struct{}
+	pendingEvent         *nativewire.Event
+	api                  *apiBinding
+	managedHome          string
+	executionHelpers     *executionHelpers
+	revertHistory        bool
+	imageGeneration      bool
+	imageObservations    bool
 }
 
 type ProtocolMode string

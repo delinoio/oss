@@ -39,13 +39,27 @@ type steerAttempt struct {
 	delivery  SteerDelivery
 	evidence  SteerEvidence
 	// Only this exact uncertainty may be cleared after native inspection. A
-	// subsequent event failure replaces Client.problem and must survive proof
-	// of this input's acceptance. Explicit pause/interrupt is never cleared.
-	problem *domain.Error
+	// later event failure can retain the first Client.problem while adding an
+	// independent pause, so that recovery must survive proof of acceptance.
+	problem         *domain.Error
+	preserveProblem bool
 }
 
 func (a *steerAttempt) observation(thread domain.ID) SteerObservation {
 	return SteerObservation{RequestID: a.operation.RequestID, InputID: a.operation.InputID, ThreadID: thread, TurnID: a.operation.TurnID, Delivery: a.delivery, Evidence: a.evidence}
+}
+
+// preserveSteerRecoveryAfterEventFailure prevents accepted-input proof from
+// clearing the first recovery cause after another native event has failed.
+func (c *Client) preserveSteerRecoveryAfterEventFailure() {
+	if c.execution == nil || c.problem == nil {
+		return
+	}
+	for _, attempt := range c.execution.steers {
+		if attempt.delivery == SteerUncertain && attempt.problem == c.problem {
+			attempt.preserveProblem = true
+		}
+	}
 }
 
 // InspectSteerAcceptance reads native state after a possibly accepted attempt;
@@ -83,7 +97,7 @@ func (c *Client) InspectSteerAcceptance(ctx context.Context, requestID domain.ID
 		}
 	}()
 	clearOwnUncertainty := func() {
-		if attempt.problem != nil && c.problem == attempt.problem {
+		if !attempt.preserveProblem && attempt.problem != nil && c.problem == attempt.problem {
 			c.problem = nil
 		}
 	}

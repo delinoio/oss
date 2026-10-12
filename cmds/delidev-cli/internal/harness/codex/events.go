@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ type EventKind string
 type eventValidationStage string
 
 const (
+	validationRemoteControl  eventValidationStage = "remote-control-policy"
 	validationWindowsSandbox eventValidationStage = "windows-sandbox"
 	validationOther          eventValidationStage = "other"
 	validationNativeError    eventValidationStage = "native-error"
@@ -26,6 +28,7 @@ const (
 	validationVerification   eventValidationStage = "model-verification"
 	validationAuthRecovery   eventValidationStage = "provider-auth-recovery"
 	validationModeration     eventValidationStage = "turn-moderation"
+	validationReroute        eventValidationStage = "model-reroute"
 	validationBuffering      eventValidationStage = "model-safety-buffering"
 	validationDeprecation    eventValidationStage = "deprecation"
 	validationThreadIdentity eventValidationStage = "thread-identity"
@@ -46,6 +49,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "remoteControl/status/changed":
+		return validationRemoteControl
 	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
 		return validationWindowsSandbox
 	case "error":
@@ -58,6 +63,8 @@ func validationStage(method string) eventValidationStage {
 		return validationUsage
 	case "account/rateLimits/updated":
 		return validationQuota
+	case "model/rerouted":
+		return validationReroute
 	case "model/verification":
 		return validationVerification
 	case "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
@@ -113,6 +120,7 @@ const (
 	LateTurnResponseEvent         EventKind = "late-turn-response"
 	NativeExtensionEvent          EventKind = "native-extension"
 	MetadataEvent                 EventKind = "metadata"
+	ModelSafetyEvent              EventKind = "model-safety"
 	UsageEvent                    EventKind = "usage"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
@@ -161,6 +169,7 @@ type Message struct {
 type Event struct {
 	NativeError      *NativeErrorObservation `json:"-"`
 	CodeReview       *CodeReviewObservation
+	Safety           *ModelSafetyObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -198,10 +207,11 @@ type Event struct {
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
-	Native         *nativewire.Event    `json:"-"`
-	ExtensionStage eventValidationStage `json:"-"`
-	gatewayStatus  gatewayOAuthStatus
-	windowsWarning *windowsWarningObservation
+	Native              *nativewire.Event    `json:"-"`
+	ExtensionStage      eventValidationStage `json:"-"`
+	remoteControlStatus remoteControlStatus
+	gatewayStatus       gatewayOAuthStatus
+	windowsWarning      *windowsWarningObservation
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -263,14 +273,25 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	c.pendingEvent = nil
 	event, err := c.observeEventLocked(native)
 	if err != nil {
-		c.problem = turnUncertain()
+		if c.problem == nil {
+			c.problem = turnUncertain()
+		}
+		c.preserveSteerRecoveryAfterEventFailure()
 		if c.execution != nil {
 			c.execution.paused = true
 		}
 		if c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
+			var refusal *remoteControlPolicyViolation
+			if errors.As(err, &refusal) {
+				c.logger.WarnContext(ctx, "Codex native remote control refused", "owner_id", c.ownerID, "status", refusal.status, "policy", refusal.classification, "stage", validationRemoteControl, "code", c.problem.Code)
+			} else {
+				c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
+			}
 		}
 		return Event{}, c.problem
+	}
+	if c.logger != nil && event.Safety != nil {
+		c.logger.InfoContext(ctx, "Codex native safety observed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "late", event.Late)
 	}
 	if event.Kind == QuestionAcceptedEvent && c.logger != nil {
 		c.logger.InfoContext(ctx, "Codex native question acceptance observed", "owner_id", c.ownerID, "interaction_id", event.InteractionState.ID, "response_id", event.InteractionState.ResponseID, "turn_id", event.TurnID)
@@ -295,6 +316,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && event.Metadata == WindowsSandboxSetupDiscarded {
 		c.logger.InfoContext(ctx, "Codex unsolicited Windows sandbox setup discarded", "owner_id", c.ownerID, "policy", WindowsSandboxSetupDiscarded)
+	}
+	if c.logger != nil && event.Metadata == RemoteControlDisabled {
+		c.logger.InfoContext(ctx, "Codex passive remote control status observed", "owner_id", c.ownerID, "status", event.remoteControlStatus, "policy", RemoteControlDisabled)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
@@ -385,6 +409,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			if turn.Status.terminal() && turn.Status != prior.Turn.Status {
 				return Event{}, incompatible()
 			}
+			if err := c.safetyCompletionProblem(turn.ID, turn.Status); err != nil {
+				return Event{}, err
+			}
 			return event, nil
 		}
 		if turn.ID != c.execution.active {
@@ -431,6 +458,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			}
 			// Neither a terminal notification nor a late response clears an
 			// uncertain send or a previous Stop/failed execution pause.
+		}
+		if err := c.safetyCompletionProblem(turn.ID, turn.Status); err != nil {
+			return Event{}, err
 		}
 		return event, nil
 	case "serverRequest/resolved":
