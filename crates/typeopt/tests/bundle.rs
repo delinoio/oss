@@ -1151,6 +1151,24 @@ fn keeps_exports_that_inline_scripts_import() {
     assert!(out(temp.path(), "lazy.js").contains("lazyOnly"));
 }
 
+/// A query in an import specifier still loads the chunk, but the compiler
+/// cannot link it: that chunk's exports stay public.
+#[test]
+fn keeps_exports_imported_through_query_specifiers() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{used as u}from"./lib.js";import{viaQuery as q}from"./lib.js?v=1";console.log(u(),q());"#,
+        ),
+        (
+            "lib.js",
+            r#"function used(){return 1}function viaQuery(){return 2}export{used,viaQuery};"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert!(out(temp.path(), "lib.js").contains("viaQuery"));
+}
+
 /// A chunk that imports a module outside the bundle cannot be published.
 #[test]
 fn rejects_imports_outside_the_bundle() {

@@ -277,7 +277,7 @@ impl Project {
                  published: {outside}"
             );
         }
-        let imported = project.bundle_imported();
+        let (imported, unlinked) = project.bundle_imported();
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
@@ -288,7 +288,9 @@ impl Project {
         } = html_scripts(dir)?;
         // Chunks that inline HTML scripts import are entries: their exports
         // are observed outside the program.
-        let loaded_by_html = |chunk: &String| scripts.contains(chunk) || from_html.contains(chunk);
+        let loaded_by_html = |chunk: &String| {
+            scripts.contains(chunk) || from_html.contains(chunk) || unlinked.contains(chunk)
+        };
         let mut modules = imported.clone();
         modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
         // A chunk that no chunk imports (an HTML entry, a worker or a file
@@ -320,10 +322,13 @@ impl Project {
     }
 
     /// Bundle chunks that another chunk imports with an import or export
-    /// declaration or a literal dynamic `import()`.
-    fn bundle_imported(&self) -> std::collections::BTreeSet<String> {
+    /// declaration or a literal dynamic `import()`, and the subset that is
+    /// imported through a specifier with a query, fragment or `%` escape.
+    /// The compiler cannot link such a specifier to the chunk, so those
+    /// chunks are public: what the importer reads stays unseen.
+    fn bundle_imported(&self) -> (Paths, Paths) {
         let _scope = enter_program(Some(self.version));
-        let mut imported = std::collections::BTreeSet::new();
+        let (mut imported, mut public) = (Paths::new(), Paths::new());
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -356,14 +361,21 @@ impl Project {
                     continue;
                 }
                 let text = specifier.text();
-                if (text.starts_with("./") || text.starts_with("../"))
-                    && let Ok(path) = base.join(text).canonicalize()
-                {
-                    imported.insert(path.to_string_lossy().into_owned());
+                if !(text.starts_with("./") || text.starts_with("../")) {
+                    continue;
+                }
+                // URL semantics: queries and fragments do not name files.
+                let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
+                if let Ok(resolved) = base.join(&path).canonicalize() {
+                    let resolved = resolved.to_string_lossy().into_owned();
+                    if path != text {
+                        public.insert(resolved.clone());
+                    }
+                    imported.insert(resolved);
                 }
             }
         }
-        imported
+        (imported, public)
     }
 
     /// Checks the original program and records the analysis snapshot.
@@ -904,25 +916,6 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
             .find(|c| c.starts_with(root) && c.is_file())
             .map(|c| c.to_string_lossy().into_owned())
     }
-    fn percent_decode(path: &str) -> String {
-        let bytes = path.as_bytes();
-        let mut out = Vec::with_capacity(bytes.len());
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'%'
-                && let Some(byte) = path
-                    .get(i + 1..i + 3)
-                    .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-            {
-                out.push(byte);
-                i += 3;
-                continue;
-            }
-            out.push(bytes[i]);
-            i += 1;
-        }
-        String::from_utf8_lossy(&out).into_owned()
-    }
     fn walk(root: &std::path::Path, dir: &std::path::Path, found: &mut HtmlScripts) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
             let entry = entry?;
@@ -1028,6 +1021,27 @@ fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
             }
             None => true,
         })
+}
+
+/// Decodes `%XX` escapes of a URL path.
+fn percent_decode(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let Some(byte) = path
+                .get(i + 1..i + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        {
+            out.push(byte);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Whether a file uses `eval` (direct or aliased) or `with`, which can look
