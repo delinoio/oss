@@ -5,6 +5,14 @@ mod optimizer;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod output;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod passes;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod pipeline;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod plan;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod report;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn main() {
     app::main();
 }
@@ -16,7 +24,6 @@ fn main() {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod app {
     use std::{
-        collections::BTreeMap,
         path::PathBuf,
         sync::atomic::{AtomicBool, Ordering},
         time::Instant,
@@ -24,9 +31,12 @@ mod app {
 
     use anyhow::{Context, Result, ensure};
     use clap::Parser;
-    use serde::Serialize;
 
-    use super::{compiler, optimizer, output};
+    use super::{
+        compiler, output,
+        passes::{PassId, PassSet},
+        pipeline, report,
+    };
 
     /// Upstream compiler revision recorded in reports. It must match the
     /// `ts_goport` pin in Cargo.toml; a unit test enforces this.
@@ -42,7 +52,7 @@ mod app {
     #[derive(Parser)]
     #[command(
         version,
-        about = "Conservative TypeScript property optimization (experimental v0)"
+        about = "Conservative type-aware TypeScript size optimization (experimental)"
     )]
     struct Args {
         #[arg(long)]
@@ -55,36 +65,9 @@ mod app {
         check: bool,
         #[arg(long)]
         verbose: bool,
-    }
-
-    #[derive(Serialize)]
-    pub(crate) struct Report {
-        schema_version: u8,
-        tool_version: &'static str,
-        compiler_revision: &'static str,
-        files: usize,
-        object_regions: usize,
-        analysis_scope: &'static str,
-        no_change_reason: Option<&'static str>,
-        properties: usize,
-        renamed_properties: usize,
-        changed_occurrences: usize,
-        preservation_reasons: BTreeMap<String, usize>,
-        measurements: Measurements,
-    }
-    impl Report {
-        pub(crate) fn measure(&mut self, started: Instant) {
-            self.measurements = Measurements {
-                elapsed_ms: started.elapsed().as_millis(),
-                peak_rss_bytes: output::peak_rss(),
-            };
-        }
-    }
-
-    #[derive(Serialize)]
-    struct Measurements {
-        elapsed_ms: u128,
-        peak_rss_bytes: u64,
+        /// Exclude one optimization pass; repeat to exclude several.
+        #[arg(long = "disable-pass", value_enum, value_name = "ID", action = clap::ArgAction::Append)]
+        disable_pass: Vec<PassId>,
     }
 
     pub(crate) fn main() {
@@ -151,63 +134,53 @@ mod app {
                 Ok(path.to_string_lossy().into_owned())
             })
             .collect::<Result<_>>()?;
-        tracing::info!(entries = entries.len(), "loading TypeScript program");
-        let compiler = compiler::Project::load(&project.to_string_lossy(), entries)?;
-        let (mut objects, sources) = compiler.analyze()?;
-        check_cancelled()?;
-        let (mappings, edits) = optimizer::allocate(&mut objects);
-        let renamed = mappings.iter().filter(|m| m.original != m.renamed).count();
+        let passes = PassSet::without(&args.disable_pass);
         tracing::info!(
-            files = sources.len(),
-            objects = objects.len(),
-            renamed,
+            entries = entries.len(),
+            disabled = ?passes.disabled().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+            "loading TypeScript program"
+        );
+        let compiler = compiler::Project::load(&project.to_string_lossy(), entries)?;
+        let snapshot = compiler.snapshot()?;
+        check_cancelled()?;
+        // Check and output modes share every analysis, transformation and
+        // size decision; only publication differs.
+        let outcome = {
+            let mut backend = compiler::Backend::new(&compiler, &snapshot);
+            pipeline::Pipeline {
+                backend: &mut backend,
+                enabled: &passes,
+            }
+            .run(&snapshot.sources)?
+        };
+        let mut report = report::build(&snapshot, &outcome, &passes);
+        tracing::info!(
+            files = snapshot.sources.len(),
+            bundles = outcome.bundles.len(),
+            rounds = outcome.rounds,
+            bytes_before = outcome.size_before,
+            bytes_after = outcome.size_after,
+            renamed = report.renamed_properties,
             "analysis complete"
         );
-        let mut reasons = BTreeMap::new();
-        for m in &mappings {
-            if let Some(reason) = &m.preservation {
-                *reasons
-                    .entry(serde_json::to_value(reason)?.as_str().unwrap().to_owned())
-                    .or_default() += 1;
-            }
-        }
-        let mut report = Report {
-            schema_version: 0,
-            tool_version: env!("CARGO_PKG_VERSION"),
-            compiler_revision: COMPILER_REVISION,
-            files: sources.len(),
-            object_regions: objects.len(),
-            analysis_scope: "module_local_interprocedural",
-            no_change_reason: (renamed == 0).then_some(
-                "No profitable property rename was proven safe; unsupported or observable shapes \
-                 are preserved.",
-            ),
-            properties: mappings.len(),
-            renamed_properties: renamed,
-            changed_occurrences: edits.values().map(Vec::len).sum(),
-            preservation_reasons: reasons,
-            measurements: Measurements {
-                elapsed_ms: 0,
-                peak_rss_bytes: 0,
-            },
-        };
         if let Some(destination) = args.out_dir {
-            let mut changed = sources.clone();
-            for (name, file_edits) in &edits {
-                changed.insert(name.clone(), output::apply(&sources[name], file_edits)?);
-            }
-            let emitted = compiler.emit(changed)?;
+            let changed = outcome
+                .texts
+                .iter()
+                .filter(|(name, text)| snapshot.sources.get(*name) != Some(*text))
+                .map(|(name, text)| (name.clone(), text.clone()))
+                .collect();
+            let emitted = compiler.emit(&changed)?;
             check_cancelled()?;
             output::publish(
                 &destination,
                 emitted,
-                &sources,
-                &edits,
-                &mappings,
+                &snapshot,
+                &outcome,
                 &mut report,
                 started,
             )?;
-            tracing::info!(renamed, "output published");
+            tracing::info!(bundles = outcome.bundles.len(), "output published");
         } else {
             report.measure(started);
             println!("{}", serde_json::to_string_pretty(&report)?);

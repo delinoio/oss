@@ -3,23 +3,13 @@ use std::{collections::BTreeMap, path::Path};
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
-use crate::optimizer::{Edit, Mapping};
-
-pub fn apply(source: &str, edits: &[Edit]) -> Result<String> {
-    let mut text = String::new();
-    let mut previous = 0;
-    for edit in edits {
-        ensure!(
-            edit.start >= previous && edit.end >= edit.start && edit.end <= source.len(),
-            "invalid or overlapping property edits"
-        );
-        text.push_str(&source[previous..edit.start]);
-        text.push_str(&edit.replacement);
-        previous = edit.end;
-    }
-    text.push_str(&source[previous..]);
-    Ok(text)
-}
+use crate::{
+    compiler::Snapshot,
+    optimizer::Mapping,
+    pipeline::{Outcome, source_offset},
+    plan::Edit,
+    report::Report,
+};
 
 fn line_starts(text: &str) -> Vec<usize> {
     let mut starts = vec![0];
@@ -47,20 +37,6 @@ fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize 
     }
     text.len()
 }
-fn original_offset(offset: usize, edits: &[Edit]) -> usize {
-    let mut delta: isize = 0;
-    for edit in edits {
-        let start = (edit.start as isize + delta) as usize;
-        if offset < start {
-            break;
-        }
-        if offset < start + edit.replacement.len() {
-            return edit.start;
-        }
-        delta += edit.replacement.len() as isize - (edit.end - edit.start) as isize;
-    }
-    (offset as isize - delta) as usize
-}
 fn coordinate(text: &str, starts: &[usize], offset: usize) -> (u32, u32) {
     let line = starts.partition_point(|&start| start <= offset) - 1;
     (
@@ -68,17 +44,20 @@ fn coordinate(text: &str, starts: &[usize], offset: usize) -> (u32, u32) {
         text[starts[line]..offset].encode_utf16().count() as u32,
     )
 }
+/// Rebuilds the compiler's map of the transformed text so every token points
+/// at the original source. Inserted, inlined or moved code maps to the start
+/// of the original range it replaced.
 fn compose(
     raw: &str,
     original: &str,
+    changed: &str,
     name: &str,
     output_name: &str,
-    edits: &[Edit],
+    chain: &[Vec<Edit>],
 ) -> Result<Vec<u8>> {
     let source_map =
         sourcemap::SourceMap::from_slice(raw.as_bytes()).context("invalid compiler source map")?;
-    let changed = apply(original, edits)?;
-    let changed_starts = line_starts(&changed);
+    let changed_starts = line_starts(changed);
     let original_starts = line_starts(original);
     ensure!(
         source_map.get_source_count() <= 1,
@@ -90,12 +69,12 @@ fn compose(
     for token in source_map.tokens() {
         if token.has_source() {
             let byte = byte_at_utf16(
-                &changed,
+                changed,
                 &changed_starts,
                 token.get_src_line(),
                 token.get_src_col(),
             );
-            let (line, col) = coordinate(original, &original_starts, original_offset(byte, edits));
+            let (line, col) = coordinate(original, &original_starts, source_offset(byte, chain));
             builder.add(
                 token.get_dst_line(),
                 token.get_dst_col(),
@@ -146,15 +125,43 @@ struct Versioned<T> {
     data: T,
 }
 
+/// Property mappings in a deterministic order: source, object start, then
+/// frequency and name within the object (the allocation priority).
+pub fn sorted_mappings(mappings: &[Mapping]) -> Vec<&Mapping> {
+    let start = |m: &Mapping| -> usize {
+        m.group
+            .rsplit(':')
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
+    };
+    let mut sorted: Vec<&Mapping> = mappings.iter().collect();
+    sorted.sort_by(|a, b| {
+        (
+            &a.source,
+            start(a),
+            std::cmp::Reverse(a.occurrences),
+            &a.original,
+        )
+            .cmp(&(
+                &b.source,
+                start(b),
+                std::cmp::Reverse(b.occurrences),
+                &b.original,
+            ))
+    });
+    sorted
+}
+
 pub fn publish(
     destination: &Path,
     emitted: BTreeMap<String, (String, String)>,
-    sources: &BTreeMap<String, String>,
-    edits: &BTreeMap<String, Vec<Edit>>,
-    mappings: &[Mapping],
-    report: &mut crate::app::Report,
+    snapshot: &Snapshot,
+    outcome: &Outcome,
+    report: &mut Report,
     started: std::time::Instant,
 ) -> Result<()> {
+    let sources = &snapshot.sources;
     let absolute = std::path::absolute(destination)?;
     let parent = absolute
         .parent()
@@ -188,7 +195,7 @@ pub fn publish(
                 );
                 modules.push(Module {
                     source: name.clone(),
-                    source_sha256: sha256_hex(original),
+                    source_sha256: crate::compiler::sha256_hex(original.as_bytes()),
                     output: name.clone(),
                     source_map: None,
                     kind: ModuleKind::Passthrough,
@@ -207,20 +214,23 @@ pub fn publish(
             staging.path().join(&output),
             format!("{code}\n//# sourceMappingURL={map_name}\n"),
         )?;
+        let changed = &outcome.texts[name];
         let map = compose(
             raw_map,
             original,
+            changed,
             name,
             &output,
-            edits.get(name).map_or(&[], Vec::as_slice),
+            outcome.chains.get(name).map_or(&[], Vec::as_slice),
         )?;
         std::fs::write(staging.path().join(&map_name), map)?;
         modules.push(Module {
             source: name.clone(),
-            source_sha256: sha256_hex(original),
+            source_sha256: crate::compiler::sha256_hex(original.as_bytes()),
             output,
             source_map: Some(map_name),
-            kind: if edits.get(name).is_some_and(|edits| !edits.is_empty()) {
+            // Any accepted runtime transformation, renamed or not.
+            kind: if changed != original {
                 ModuleKind::Optimized
             } else {
                 ModuleKind::Preserved
@@ -231,14 +241,14 @@ pub fn publish(
         &staging.path().join("modules.json"),
         &Versioned {
             schema_version: 0,
-            data: serde_json::json!({"modules": modules}),
+            data: serde_json::json!({"modules": modules, "inputs": snapshot.inputs}),
         },
     )?;
     write_json(
         &staging.path().join("properties.json"),
         &Versioned {
             schema_version: 0,
-            data: serde_json::json!({"properties": mappings}),
+            data: serde_json::json!({"properties": sorted_mappings(&outcome.mappings)}),
         },
     )?;
     report.measure(started);
@@ -246,13 +256,6 @@ pub fn publish(
     crate::app::check_cancelled()?;
     rename_exclusive(staging.path(), &destination)?;
     Ok(())
-}
-fn sha256_hex(text: &str) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     std::fs::write(path, serde_json::to_vec_pretty(value)?)?;
@@ -313,14 +316,14 @@ mod tests {
             end: 12,
             replacement: "a".into(),
         }];
-        let transformed = apply(s, &edits).unwrap();
+        let transformed = crate::pipeline::apply(s, &edits).unwrap();
         assert_eq!(transformed, "😀a + z\nlongName");
         assert_eq!(
             byte_at_utf16(&transformed, &line_starts(&transformed), 0, 2),
             4
         );
         assert_eq!(
-            coordinate(s, &line_starts(s), original_offset(8, &edits)),
+            coordinate(s, &line_starts(s), source_offset(8, &[edits])),
             (0, 13)
         );
     }

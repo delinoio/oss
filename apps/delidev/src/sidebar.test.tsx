@@ -17,7 +17,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi, type Mock } from "vitest";
 import {
   EntityKind,
   ErrorDetailSchema,
@@ -33,8 +33,14 @@ import { encode } from "./documents";
 import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
 import type { ComponentProps } from "react";
-import { ServerPresentationKind } from "./server-presentation";
 import { i18n, SupportedLanguage } from "./localization";
+
+type StatusResponse = {
+  version: string;
+  protocolVersion: number;
+  stopping?: boolean;
+};
+type StatusReader = () => StatusResponse | Promise<StatusResponse>;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -66,6 +72,10 @@ function mountSidebar({
   props = {},
   stateful = false,
   withApp = false,
+  status = vi.fn<StatusReader>(() => ({
+    version: "0.1.0",
+    protocolVersion: 1,
+  })),
 }: {
   projects: (
     pageToken: string,
@@ -79,6 +89,7 @@ function mountSidebar({
   }) =>
     | { sessions: Resource[]; nextPageToken?: string }
     | Promise<{ sessions: Resource[]; nextPageToken?: string }>;
+  status?: Mock<StatusReader>;
   stateful?: boolean;
   withApp?: boolean;
   props?: Partial<ComponentProps<typeof Sidebar>>;
@@ -91,7 +102,7 @@ function mountSidebar({
   }[] = [];
   const transport: Transport = createRouterTransport((router) => {
     router.service(SystemService, {
-      getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }),
+      getStatus: status,
     });
     router.service(ResourceService, {
       listResources: (request) => {
@@ -1424,37 +1435,67 @@ it("keeps the archive popup open for changes and restores its opener on Escape",
   expect(window.document.activeElement).toBe(opener);
 });
 
-it("shows generic connection status with the saved name and no lifecycle disclosure", async () => {
-  const value = mountSidebar({
-    projects: () => ({ resources: [] }),
-    sessions: () => ({ sessions: [] }),
-    props: {
-      serverPresentation: {
-        kind: ServerPresentationKind.Saved,
-        name: "Original saved name",
-      },
-    },
-  });
-  const summary = await screen.findByText("Original saved name · Connected");
-  expect(summary.getAttribute("role")).toBe("status");
-  expect(
-    window.document.querySelector("#sidebar-server-management"),
-  ).toBeNull();
-  expect(screen.queryByText("Server 0.1.0")).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: /Original saved name/ }),
-  ).toBeNull();
-  value.setProps({
-    serverPresentation: { kind: ServerPresentationKind.Local },
-  });
-  expect(screen.getByText("This computer · Connected")).toBe(summary);
-  value.setProps({ connectionReady: false });
-  expect(
-    screen.getByText(
-      "This computer · Disconnected · previous data may be stale",
-    ),
-  ).toBe(summary);
-});
+for (const language of [SupportedLanguage.English, SupportedLanguage.Korean]) {
+  for (const compact of [false, true]) {
+    it(`omits the connection footer on every surface (${language}, compact=${compact})`, async () => {
+      await act(() => i18n.changeLanguage(language));
+      vi.stubGlobal("matchMedia", () => ({
+        matches: compact,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+      const status = vi.fn<StatusReader>();
+      const value = mountSidebar({
+        projects: () => ({ resources: [] }),
+        sessions: () => ({ sessions: [] }),
+        status,
+        props: { drawerOpen: compact },
+      });
+      const pane = value.container.querySelector(".sidebar-pane")!;
+      const list = pane.querySelector(".sidebar-list");
+      for (const theme of ["light", "dark"]) {
+        value.container.setAttribute("data-theme", theme);
+        // The shared sidebar has no status observer in any connection state.
+        for (const state of [
+          "pending",
+          "connected",
+          "failed",
+          "disconnected",
+          "stale",
+          "stopping",
+        ]) {
+          status.mockImplementation(() => {
+            if (state === "pending") return new Promise(() => {});
+            if (state === "failed" || state === "disconnected")
+              throw new ConnectError("Fixture disconnected", Code.Unavailable);
+            return {
+              version: "0.1.0",
+              protocolVersion: 1,
+              stopping: state === "stopping",
+            };
+          });
+          value.setProps({ connectionReady: state === "connected" });
+          for (const surface of Object.values(Surface)) {
+            value.setSurface(surface);
+            expect(pane.querySelector(".sidebar-list")).toBe(list);
+            expect(
+              pane.querySelector(".sidebar-footer, .sidebar-server-summary"),
+            ).toBeNull();
+            expect(
+              pane.querySelector(
+                ":scope > [role='status'], :scope > footer [role='status']",
+              ),
+            ).toBeNull();
+            expect(pane.lastElementChild).toBe(list);
+          }
+        }
+      }
+      expect(status).not.toHaveBeenCalled();
+      value.unmount();
+      await act(() => i18n.changeLanguage(SupportedLanguage.English));
+    });
+  }
+}
 
 function expectHeaderActions(home: boolean) {
   const header = window.document.querySelector<HTMLElement>(".sidebar-header")!;

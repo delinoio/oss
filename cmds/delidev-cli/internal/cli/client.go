@@ -19,6 +19,7 @@ import (
 )
 
 type client struct {
+	tailscale     delidevv1connect.TailscaleServiceClient
 	installation  delidevv1connect.InstallationServiceClient
 	storage       delidevv1connect.WorkspaceStorageServiceClient
 	nativeModels  delidevv1connect.NativeModelServiceClient
@@ -152,6 +153,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		subscriptions: delidevv1connect.NewSubscriptionServiceClient(httpClient, endpoint, opts...),
 		prFixes:       delidevv1connect.NewPullRequestFixServiceClient(httpClient, endpoint, opts...),
 		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
+		tailscale:     delidevv1connect.NewTailscaleServiceClient(httpClient, endpoint, opts...),
 		network:       delidevv1connect.NewNetworkServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),

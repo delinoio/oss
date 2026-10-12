@@ -9,7 +9,6 @@ import { QuitConnectionProvider, useQuitConnection } from "./quit-confirmation";
 import { createDesktopFetch } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
 import { OAuthNativeProvider, type OAuthNativeControl } from "./account-oauth";
-import { ServerPresentationKind } from "./server-presentation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -17,6 +16,7 @@ import { type Transport } from "@connectrpc/connect";
 import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { Updates, type DesktopUpdateControls } from "./updates";
 import { App } from "./App";
+import { TailscaleConnections } from "./tailscale-connections";
 import {
   PersistentConnectionView,
   ConnectionsPage,
@@ -102,6 +102,7 @@ function LocalDesktop() {
     useState<HTMLElement>();
   const [showConnection, setShowConnection] = useState(false);
   const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
+  const [savedRefresh, setSavedRefresh] = useState(0);
   const [appInformationTarget, setAppInformationTarget] =
     useState<HTMLElement>();
   const [connectionTarget, setConnectionTarget] =
@@ -382,6 +383,11 @@ function LocalDesktop() {
   );
   const controls = (
     <>
+      <TailscaleConnections
+        current={pageSlots?.current}
+        target={pageSlots?.tailscale}
+        onPaired={() => setSavedRefresh((value) => value + 1)}
+      />
       <LocalServerControls
         endpoint={previous.current?.endpoint}
         connected={connectionVerified}
@@ -432,7 +438,6 @@ function LocalDesktop() {
                   setInlineRecoveryTarget(target);
                   setInlineRecovery(Boolean(target));
                 }}
-                serverPresentation={{ kind: ServerPresentationKind.Local }}
                 pairingAuthority={
                   previous.current
                     ? {
@@ -563,6 +568,7 @@ function LocalDesktop() {
         visible={showSaved || Boolean(pageSlots)}
         close={() => setShowSaved(false)}
         actions={savedActions}
+        refreshKey={savedRefresh}
       />
     </>
   );
@@ -772,10 +778,6 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
                     ? (connectionTarget ?? undefined)
                     : pageSlots?.current
                 }
-                serverPresentation={{
-                  kind: ServerPresentationKind.Saved,
-                  name: profile.name,
-                }}
                 pairingAuthority={{
                   endpoint: profile.endpoint,
                   serverId: profile.server_id,

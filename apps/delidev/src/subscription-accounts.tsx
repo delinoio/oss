@@ -160,6 +160,9 @@ function NativeManagedSubscriptionAccount({
       ),
   );
   const blocked = quotaBusy || operation.busy || operation.uncertain;
+  // Explicit refresh owns lifecycle admission until quota and status settle.
+  // Ordinary background polling keeps its existing admission semantics.
+  const lifecycleBlocked = blocked || refreshing;
   const connected = Boolean(text(object(data.connection).id)),
     pendingID = text(pending.id);
   const capable =
@@ -192,7 +195,7 @@ function NativeManagedSubscriptionAccount({
     supported &&
     !status.error &&
     validRead &&
-    !blocked &&
+    !lifecycleBlocked &&
     !pendingID &&
     state.recovery_required !== true &&
     !data.removal;
@@ -203,6 +206,7 @@ function NativeManagedSubscriptionAccount({
     );
   const request = (action: SubscriptionAction) => {
     if (
+      refreshLock.current ||
       !current ||
       !(action === SubscriptionAction.LOGOUT ? logoutReady : ready)
     )
@@ -359,7 +363,10 @@ function NativeManagedSubscriptionAccount({
             icon={SettingsActionIcon.Connect}
             type="button"
             disabled={!ready || !flow.available}
-            onClick={() => flow.begin(service, current)}
+            onClick={() => {
+              if (!ready || !flow.available || refreshLock.current) return;
+              flow.begin(service, current);
+            }}
           >
             <LocalizedText
               id="subscription-accounts.signInTo_fa4edf"
@@ -372,11 +379,12 @@ function NativeManagedSubscriptionAccount({
               icon={SettingsActionIcon.Inspect}
               type="button"
               disabled={!ready}
-              onClick={() =>
-                service === SubscriptionServiceId.Claude
-                  ? flow.begin(service, current, true)
-                  : request(SubscriptionAction.REFRESH)
-              }
+              onClick={() => {
+                if (!ready || refreshLock.current) return;
+                if (service === SubscriptionServiceId.Claude)
+                  flow.begin(service, current, true);
+                else request(SubscriptionAction.REFRESH);
+              }}
             >
               {copy(
                 service === SubscriptionServiceId.Claude
@@ -388,7 +396,10 @@ function NativeManagedSubscriptionAccount({
               icon={SettingsActionIcon.Delete}
               type="button"
               disabled={!logoutReady}
-              onClick={() => setLogoutConfirmation(current)}
+              onClick={() => {
+                if (!logoutReady || refreshLock.current) return;
+                setLogoutConfirmation(current);
+              }}
             >
               {copy("subscription-accounts.logOut_496161")}
             </SettingsActionButton>
@@ -438,6 +449,12 @@ function NativeManagedSubscriptionAccount({
                   current.revision !== logoutConfirmation.revision
                 }
                 onClick={() => {
+                  if (
+                    !logoutReady ||
+                    refreshLock.current ||
+                    current.revision !== logoutConfirmation.revision
+                  )
+                    return;
                   request(SubscriptionAction.LOGOUT);
                   setLogoutConfirmation(undefined);
                 }}

@@ -198,6 +198,7 @@ function existingRepositoryConfiguration(key: string) {
 }
 export const sessionInboxReadPrefix = "inbox-session-read:";
 function connectionOwned(key: string) {
+  if (key.startsWith("tailscale:")) return true;
   return (
     existingRepositoryConfiguration(key) ||
     key.startsWith(sessionInboxReadPrefix)
