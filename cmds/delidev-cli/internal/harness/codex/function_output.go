@@ -3,12 +3,97 @@ package codex
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"reflect"
 	"strconv"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
+
+// Function output notifications intentionally omit media. Use only the exact
+// item from the owning thread's full current-turn history as publication
+// evidence; notification bytes still have to match the native media-free
+// projection before that history item is accepted.
+func (c *Client) functionOutputHistoryItemLocked(ctx context.Context, turn domain.ID, itemID string, notification json.RawMessage) (json.RawMessage, error) {
+	reply, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
+		Thread    domain.ID `json:"threadId"`
+		Limit     int       `json:"limit"`
+		Direction string    `json:"sortDirection"`
+		View      string    `json:"itemsView"`
+	}{c.thread, 1, "desc", "full"})
+	if err != nil || reply.ErrorCode != nil {
+		return nil, incompatible()
+	}
+	var page struct {
+		Data            []json.RawMessage `json:"data"`
+		NextCursor      *string           `json:"nextCursor"`
+		BackwardsCursor *string           `json:"backwardsCursor"`
+	}
+	if domain.DecodeBounded(reply.Result, &page, c.nativeFrameLimit()) != nil || len(page.Data) != 1 {
+		return nil, incompatible()
+	}
+	for _, cursor := range []*string{page.NextCursor, page.BackwardsCursor} {
+		if cursor != nil && domain.Text(*cursor, "native turn cursor", 4096, true) != nil {
+			return nil, incompatible()
+		}
+	}
+	var wire turnWire
+	if domain.DecodeBounded(page.Data[0], &wire, c.nativeFrameLimit()) != nil || wire.ID != turn || wire.ItemsView != "full" || wire.Items == nil {
+		return nil, incompatible()
+	}
+	var authoritative json.RawMessage
+	seen := make(map[string]bool, len(wire.Items))
+	for _, raw := range wire.Items {
+		var identity map[string]json.RawMessage
+		var id, kind string
+		if domain.DecodeBounded(raw, &identity, c.nativeFrameLimit()) != nil || json.Unmarshal(identity["id"], &id) != nil || json.Unmarshal(identity["type"], &kind) != nil || domain.Text(id, "native history item identity", 1024, true) != nil || seen[id] {
+			return nil, incompatible()
+		}
+		seen[id] = true
+		if id == itemID {
+			if kind != "functionCallOutput" || authoritative != nil {
+				return nil, incompatible()
+			}
+			authoritative = raw
+		}
+	}
+	if authoritative == nil || !functionOutputNotificationMatches(notification, authoritative) {
+		return nil, incompatible()
+	}
+	return authoritative, nil
+}
+
+func functionOutputNotificationMatches(notification, authoritative json.RawMessage) bool {
+	notificationID, observed, err := decodeFunctionOutput(notification)
+	if err != nil {
+		return false
+	}
+	historyID, complete, err := decodeFunctionOutput(authoritative)
+	if err != nil || notificationID != historyID || observed.Name != complete.Name || observed.NamespacePresent != complete.NamespacePresent || !sameFunctionNamespace(observed.Namespace, complete.Namespace) || observed.Structured != complete.Structured {
+		return false
+	}
+	if !complete.Structured {
+		return observed.Text != nil && complete.Text != nil && *observed.Text == *complete.Text
+	}
+	// The app-server filters image and audio entries from notifications. Every
+	// remaining entry must still match the authoritative history in order.
+	filtered := make([]domain.FunctionOutputContent, 0, len(complete.Content))
+	for _, content := range complete.Content {
+		if content.Kind != domain.FunctionImage && content.Kind != domain.FunctionAudio {
+			filtered = append(filtered, content)
+		}
+	}
+	return reflect.DeepEqual(observed.Content, filtered)
+}
+
+func sameFunctionNamespace(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
 
 type functionOutputItem struct {
 	Type      string          `json:"type"`

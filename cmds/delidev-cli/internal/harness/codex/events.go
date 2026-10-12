@@ -273,7 +273,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	native := *c.pendingEvent
 	c.pendingEvent = nil
-	event, err := c.observeEventLocked(native)
+	event, err := c.observeEventContextLocked(ctx, native)
 	if err != nil {
 		if c.problem == nil {
 			c.problem = turnUncertain()
@@ -329,6 +329,10 @@ func privateNative(event nativewire.Event) Event {
 	return Event{Kind: NativeExtensionEvent, Native: &event, ExtensionStage: validationStage(event.Method)}
 }
 func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
+	return c.observeEventContextLocked(context.Background(), native)
+}
+
+func (c *Client) observeEventContextLocked(ctx context.Context, native nativewire.Event) (Event, error) {
 	if native.Kind == nativewire.LateResponse {
 		return c.observeLateTurnLocked(native)
 	}
@@ -480,7 +484,7 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	case "turn/plan/updated", "turn/diff/updated", "item/plan/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta":
 		return c.observeArtifactUpdateLocked(native)
 	case "item/started", "item/completed":
-		return c.observeMessageLocked(native)
+		return c.observeMessageLocked(ctx, native)
 	case "thread/tokenUsage/updated":
 		return c.observeUsageLocked(native)
 	case "item/commandExecution/outputDelta", "item/fileChange/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
@@ -566,7 +570,7 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 	delete(c.execution.pending, id)
 	return event, nil
 }
-func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
+func (c *Client) observeMessageLocked(ctx context.Context, native nativewire.Event) (Event, error) {
 	var params struct {
 		ThreadID      domain.ID       `json:"threadId"`
 		TurnID        domain.ID       `json:"turnId"`
@@ -602,7 +606,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		if c.sidechat != "" {
 			return privateNative(native), nil
 		}
-		id, output, err := decodeFunctionOutput(params.Item)
+		id, _, err := decodeFunctionOutput(params.Item)
 		if err != nil {
 			return Event{}, err
 		}
@@ -612,6 +616,17 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		turn, known := c.execution.turns[params.TurnID]
 		if !known {
 			return Event{}, incompatible()
+		}
+		item := params.Item
+		if c.wire != nil {
+			item, err = c.functionOutputHistoryItemLocked(ctx, params.TurnID, id, params.Item)
+			if err != nil {
+				return Event{}, err
+			}
+		}
+		id, output, err := decodeFunctionOutput(item)
+		if err != nil {
+			return Event{}, err
 		}
 		stage := domain.FunctionOutputStarted
 		if native.Method == "item/completed" {

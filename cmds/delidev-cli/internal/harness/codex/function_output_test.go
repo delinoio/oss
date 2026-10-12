@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -104,6 +105,54 @@ func TestFunctionOutputKeepsOriginalLifecycleWithoutTurnAuthority(t *testing.T) 
 		}
 	}
 }
+
+func TestFunctionOutputUsesCorrelatedFullHistoryForMediaProjection(t *testing.T) {
+	c, capture, _, _ := boundTurnFixture(t, "ready")
+	result, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.PlanMode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextKind(t, c, TurnStartedEvent)
+	nextKind(t, c, MessageCompletedEvent)
+	turn := map[string]any{
+		"id": result.TurnID, "items": []json.RawMessage{json.RawMessage(richFunctionOutput)}, "itemsView": "full",
+		"status": TurnRunning, "startedAt": int64(1), "completedAt": nil, "durationMs": nil, "error": nil,
+	}
+	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": []any{turn}, "nextCursor": nil, "backwardsCursor": nil}})
+	filtered := `{"type":"functionCallOutput","id":"original-output","name":"fixture_tool","namespace":"original_namespace","output":[{"type":"input_text","text":"<script>inert()</script>"},{"type":"encrypted_content","encrypted_content":"private-encrypted-sentinel"},{"type":"input_text","text":"last"}]}`
+	fixtureSignal(t, c, "notify", map[string]any{
+		"method": "item/completed",
+		"params": functionOutputFixture(c, result.TurnID, true, filtered),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	event, err := c.NextEvent(ctx)
+	if err != nil {
+		t.Fatalf("function output observation failed: %v; requests: %#v", err, capturedThreads(t, capture))
+	}
+	if event.Kind != FunctionOutputEvent {
+		t.Fatalf("unexpected event kind: %s", event.Kind)
+	}
+	if event.FunctionOutput == nil || len(event.FunctionOutput.Content) != 6 || event.FunctionOutput.Content[1].ReferenceKind != domain.FunctionImageURL || event.FunctionOutput.Content[2].ReferenceKind != domain.FunctionFileID || event.FunctionOutput.Content[3].ReferenceKind != domain.FunctionAudioURL {
+		t.Fatal("authoritative media metadata was not recovered", event.FunctionOutput)
+	}
+	reads := requestsOf(t, capture, "thread/turns/list")
+	if len(reads) != 1 || reads[0]["limit"] != float64(1) || reads[0]["sortDirection"] != "desc" || reads[0]["itemsView"] != "full" || reads[0]["threadId"] != string(c.thread) {
+		t.Fatal("full history was not read for the owning turn", reads)
+	}
+}
+
+func TestFunctionOutputRejectsUncorrelatedHistoryProjection(t *testing.T) {
+	notification := json.RawMessage(`{"type":"functionCallOutput","id":"original-output","name":"fixture_tool","output":[{"type":"input_text","text":"changed"}]}`)
+	if functionOutputNotificationMatches(notification, json.RawMessage(richFunctionOutput)) {
+		t.Fatal("notification mismatch was accepted as authoritative history")
+	}
+	wrongIdentity := strings.Replace(richFunctionOutput, `"id":"original-output"`, `"id":"other-output"`, 1)
+	if functionOutputNotificationMatches(notification, json.RawMessage(wrongIdentity)) {
+		t.Fatal("foreign lifecycle identity was accepted")
+	}
+}
+
 func TestFunctionOutputPreservesProtectedHistoryAndDigests(t *testing.T) {
 	for _, namespace := range []string{"named", "null", "omitted"} {
 		t.Run(namespace, func(t *testing.T) {
