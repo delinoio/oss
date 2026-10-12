@@ -1341,6 +1341,26 @@ fn keeps_exports_of_root_import_cycles() {
     assert!(out(temp.path(), "lib.js").contains("externalOnly"));
 }
 
+/// A chunk that a classic worker loads with `importScripts` stays a classic
+/// boundary even when a module also imports it.
+#[test]
+fn keeps_chunks_that_workers_import_scripts_from() {
+    let vendor = r#"function vendorHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var vendorState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import"./vendor.js";const w=new URL("./sw.js",import.meta.url);console.log(w.pathname.length>0);"#,
+        ),
+        ("vendor.js", vendor),
+        (
+            "sw.js",
+            r#"typeof importScripts=="function"&&importScripts("./vendor.js");console.log(typeof vendorHelper);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "vendor.js"), vendor);
+}
+
 /// A query in an import specifier still loads the chunk, but the compiler
 /// cannot link it: that chunk's exports stay public.
 #[test]

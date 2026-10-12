@@ -284,6 +284,7 @@ impl Project {
             edges,
             computed: computed_import,
             bare,
+            worker_scripts,
         } = project.bundle_imported();
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
@@ -344,6 +345,8 @@ impl Project {
         entries.sort();
         entries.dedup();
         project.entries = entries;
+        let mut classic = classic;
+        classic.extend(worker_scripts);
         crate::app::set_bundle_modules(modules, classic);
         tracing::info!(
             chunks = chunks.len(),
@@ -396,6 +399,8 @@ impl Project {
         let mut edges = BTreeMap::<String, Paths>::new();
         let mut computed = false;
         let mut bare = None;
+        let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
+        let mut non_esm = Paths::new();
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -407,7 +412,39 @@ impl Project {
                 .unwrap_or_default();
             let mut nodes = Vec::new();
             collect(file, &mut nodes);
+            if !has_esm_statements(file) && !uses_import_meta(&nodes) {
+                non_esm.insert(name.clone());
+            }
             for node in nodes {
+                // `importScripts(…)` loads its targets as classic scripts.
+                if node.kind() == SyntaxKind::CallExpression {
+                    let callee = node.expression();
+                    let callee_name = match callee.kind() {
+                        SyntaxKind::Identifier => callee.text(),
+                        SyntaxKind::PropertyAccessExpression => callee.name().text(),
+                        _ => "",
+                    };
+                    if callee_name == "importScripts" {
+                        for argument in node.arguments().iter() {
+                            let literal = matches!(
+                                argument.kind(),
+                                SyntaxKind::StringLiteral
+                                    | SyntaxKind::NoSubstitutionTemplateLiteral
+                            );
+                            if !literal {
+                                worker_computed = true;
+                                continue;
+                            }
+                            let path = percent_decode(
+                                argument.text().split(['?', '#']).next().unwrap_or_default(),
+                            );
+                            if let Ok(resolved) = base.join(&path).canonicalize() {
+                                worker_scripts.insert(resolved.to_string_lossy().into_owned());
+                            }
+                        }
+                        continue;
+                    }
+                }
                 let specifier = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
                         node.module_specifier()
@@ -454,12 +491,18 @@ impl Project {
                 }
             }
         }
+        // A computed `importScripts` target can be any chunk that a classic
+        // script can parse: every chunk without ESM syntax.
+        if worker_computed {
+            worker_scripts.extend(non_esm);
+        }
         BundleImports {
             imported,
             unlinked: public,
             edges,
             computed,
             bare,
+            worker_scripts,
         }
     }
 
@@ -977,6 +1020,8 @@ struct BundleImports {
     computed: bool,
     /// A package specifier some chunk imports.
     bare: Option<String>,
+    /// Chunks that `importScripts` can load as classic scripts.
+    worker_scripts: Paths,
 }
 
 /// JavaScript MIME type essences, which make a `<script>` a classic script
