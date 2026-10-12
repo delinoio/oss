@@ -103,6 +103,7 @@ impl<'c> Ctx<'c> {
                     // unchecked boundary exactly like JavaScript.
                     js: if crate::app::bundle_mode() {
                         crate::app::bundle_boundary(&name, super::has_esm_statements(node))
+                            || super::uses_eval_or_with(&nodes)
                     } else {
                         is_js(node) || is_unchecked(node)
                     },

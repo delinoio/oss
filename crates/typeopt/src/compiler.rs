@@ -93,6 +93,11 @@ fn deny_write() -> ts_goport::frontend::vfs::FsError {
 
 impl Project {
     pub fn load(path: &str, entries: Vec<String>) -> Result<Self> {
+        Self::load_rooted(path, entries, Vec::new())
+    }
+
+    /// Loads the program rooted at `entries`, `roots` and declaration files.
+    fn load_rooted(path: &str, entries: Vec<String>, extra_roots: Vec<String>) -> Result<Self> {
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
         // Every file the compiler reads, including module-resolution
         // metadata such as package manifests, is part of the analysis
@@ -196,6 +201,7 @@ impl Project {
         // Include ambient declarations discovered by tsconfig, but root runtime
         // traversal at the explicit entries rather than every include match.
         let mut roots = entries.clone();
+        roots.extend(extra_roots);
         roots.extend(
             config
                 .file_names()
@@ -231,42 +237,6 @@ impl Project {
             !chunks.is_empty(),
             "bundle directory contains no JavaScript chunk"
         );
-        let mut imported = std::collections::BTreeSet::new();
-        for chunk in &chunks {
-            let text = std::fs::read_to_string(chunk).context("cannot read a bundle chunk")?;
-            let base = std::path::Path::new(chunk).parent().unwrap_or(dir);
-            for specifier in chunk_specifiers(&text) {
-                if (specifier.starts_with("./") || specifier.starts_with("../"))
-                    && let Ok(path) = base.join(&specifier).canonicalize()
-                {
-                    imported.insert(path.to_string_lossy().into_owned());
-                }
-            }
-        }
-        let entries: Vec<String> = chunks
-            .iter()
-            .filter(|c| !imported.contains(*c))
-            .cloned()
-            .collect();
-        // Chunks known to run as ES modules: imported by another chunk or
-        // loaded by an HTML module script. Others count as modules only with
-        // ESM statements; classic scripts stay unchanged boundaries.
-        let mut modules = imported.clone();
-        let scripts = html_module_scripts(dir)?;
-        for chunk in &chunks {
-            let name = std::path::Path::new(chunk)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned());
-            if name.is_some_and(|n| scripts.contains(&n)) {
-                modules.insert(chunk.clone());
-            }
-        }
-        crate::app::set_bundle_modules(modules);
-        tracing::info!(
-            chunks = chunks.len(),
-            entries = entries.len(),
-            "loading bundle program"
-        );
         let config_dir = tempfile::Builder::new()
             .prefix("typeopt-bundle-")
             .tempdir()
@@ -289,9 +259,88 @@ impl Project {
         let path = config_dir.path().join("tsconfig.json");
         std::fs::write(&path, serde_json::to_vec_pretty(&config)?)
             .context("cannot write bundle configuration")?;
-        let mut project = Self::load(&path.canonicalize()?.to_string_lossy(), entries)?;
+        // Every chunk is a root: chunks that only HTML, workers, classic
+        // scripts or non-literal loaders reach still belong to the program.
+        let mut project = Self::load_rooted(
+            &path.canonicalize()?.to_string_lossy(),
+            Vec::new(),
+            chunks.clone(),
+        )?;
+        let imported = project.bundle_imported();
+        // Chunks known to run as ES modules: imported by another chunk or
+        // loaded by an HTML module script. Others count as modules only with
+        // ESM statements; classic scripts stay unchanged boundaries.
+        let scripts = html_module_scripts(dir)?;
+        let loaded_by_html = |chunk: &String| {
+            std::path::Path::new(chunk)
+                .file_name()
+                .is_some_and(|n| scripts.contains(n.to_string_lossy().as_ref()))
+        };
+        let mut modules = imported.clone();
+        modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
+        // A chunk that no chunk imports (an HTML entry, a worker or a file
+        // referenced by URL) is an entry; HTML entries stay entries even when
+        // lazy chunks import shared code back from them.
+        project.entries = chunks
+            .iter()
+            .filter(|c| !imported.contains(*c) || loaded_by_html(c))
+            .cloned()
+            .collect();
+        crate::app::set_bundle_modules(modules);
+        tracing::info!(
+            chunks = chunks.len(),
+            entries = project.entries.len(),
+            "bundle program loaded"
+        );
         project._bundle_config = Some(config_dir);
         Ok(project)
+    }
+
+    /// Bundle chunks that another chunk imports with an import or export
+    /// declaration or a literal dynamic `import()`.
+    fn bundle_imported(&self) -> std::collections::BTreeSet<String> {
+        let _scope = enter_program(Some(self.version));
+        let mut imported = std::collections::BTreeSet::new();
+        for file in source_files() {
+            if !is_application(file) {
+                continue;
+            }
+            let name = source_file_info(file).file_name.clone();
+            let base = std::path::Path::new(&name)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            let mut nodes = Vec::new();
+            collect(file, &mut nodes);
+            for node in nodes {
+                let specifier = match node.kind() {
+                    SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
+                        node.module_specifier()
+                    }
+                    SyntaxKind::CallExpression
+                        if node.expression().kind() == SyntaxKind::ImportKeyword =>
+                    {
+                        node.arguments().iter().next().unwrap_or(Node::NIL)
+                    }
+                    _ => continue,
+                };
+                if specifier.is_nil()
+                    || !matches!(
+                        specifier.kind(),
+                        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+                    )
+                {
+                    continue;
+                }
+                let text = specifier.text();
+                if (text.starts_with("./") || text.starts_with("../"))
+                    && let Ok(path) = base.join(text).canonicalize()
+                {
+                    imported.insert(path.to_string_lossy().into_owned());
+                }
+            }
+        }
+        imported
     }
 
     /// Checks the original program and records the analysis snapshot.
@@ -347,12 +396,15 @@ impl Project {
             let mut nodes = Vec::new();
             collect(file, &mut nodes);
             for node in &nodes {
+                // A bundle chunk with eval or with stays an unchecked
+                // boundary instead (see `uses_eval_or_with`).
                 ensure!(
-                    node.kind() != SyntaxKind::WithStatement,
+                    crate::app::bundle_mode() || node.kind() != SyntaxKind::WithStatement,
                     "with is unsupported"
                 );
                 ensure!(
-                    !(node.kind() == SyntaxKind::Identifier && node.text() == "eval"),
+                    crate::app::bundle_mode()
+                        || !(node.kind() == SyntaxKind::Identifier && node.text() == "eval"),
                     "eval is unsupported (including aliases); remove it before optimizing"
                 );
                 // module: Preserve emits these forms as require/module.exports,
@@ -812,6 +864,15 @@ fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeS
     Ok(out)
 }
 
+/// Whether a file uses `eval` (direct or aliased) or `with`, which can look
+/// up the file's bindings by runtime strings.
+pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
+    nodes.iter().any(|node| {
+        node.kind() == SyntaxKind::WithStatement
+            || (node.kind() == SyntaxKind::Identifier && node.text() == "eval")
+    })
+}
+
 /// Whether the file has ES module statements (imports or exports).
 pub(crate) fn has_esm_statements(file: Node) -> bool {
     file.statements().iter().any(|statement| {
@@ -822,38 +883,6 @@ pub(crate) fn has_esm_statements(file: Node) -> bool {
                 | SyntaxKind::ExportAssignment
         ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT)
     })
-}
-
-/// Static and literal dynamic import specifiers of a chunk.
-fn chunk_specifiers(text: &str) -> Vec<String> {
-    let mut specifiers = crate::pipeline::static_imports(text);
-    for quote in ['"', '\'', '`'] {
-        let pattern = format!("import({quote}");
-        let mut rest = text;
-        while let Some(at) = rest.find(&pattern) {
-            rest = &rest[at + pattern.len()..];
-            if let Some(end) = rest.find(quote) {
-                specifiers.push(rest[..end].to_owned());
-            }
-        }
-    }
-    // Vite preload helpers list dependency chunks as string literals.
-    let mut rest = text;
-    while let Some(at) = rest.find(".js\"") {
-        let head = &rest[..at + 3];
-        if let Some(start) = head.rfind('"') {
-            let name = &head[start + 1..];
-            if !name.contains(['"', ' ', '(', ')']) {
-                specifiers.push(if name.starts_with('.') {
-                    name.to_owned()
-                } else {
-                    format!("./{}", name.rsplit('/').next().unwrap_or(name))
-                });
-            }
-        }
-        rest = &rest[at + 4..];
-    }
-    specifiers
 }
 
 fn is_js_name(n: &str) -> bool {

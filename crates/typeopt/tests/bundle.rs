@@ -260,6 +260,48 @@ fn keeps_classic_scripts_unchanged() {
     );
 }
 
+/// Lazy chunks import shared code back from the HTML entry chunk; the entry
+/// stays an entry and every chunk belongs to the program.
+#[test]
+fn keeps_html_entries_that_lazy_chunks_import() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/index.js"></script>"#,
+        ),
+        (
+            "index.js",
+            r#"function shared(n){return{verticalSpacing:n,horizontalSpacing:n}}function unusedSharedHelper(){return 7}const s=shared(1);console.log(s.verticalSpacing);import("./lazy.js").then(l=>console.log(l.page()));export{shared as s};"#,
+        ),
+        (
+            "lazy.js",
+            r#"import{s as e}from"./index.js";function page(){const o=e(4);return o.verticalSpacing+o.horizontalSpacing}export{page};"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(report["files"].as_u64(), Some(2), "{report:#}");
+    assert!(!out(temp.path(), "index.js").contains("unusedSharedHelper"));
+}
+
+/// Direct eval can read the bindings of its chunk; that chunk stays
+/// unchanged while the rest of the bundle is optimized.
+#[test]
+fn keeps_chunks_with_eval_unchanged() {
+    let evaluating = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}function unusedButEvaluated(){return"via eval"}export function run(code){return eval(code)}export{make};"#;
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{run as r,make as m}from"./evaluating.js";console.log(r("unusedButEvaluated()"),m(2).verticalSpacing);function own(n){return{firstOwnValue:n,secondOwnValue:n}}const s=own(1);console.log(s.firstOwnValue+s.secondOwnValue);"#,
+        ),
+        ("evaluating.js", evaluating),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "evaluating.js"), evaluating);
+    assert!(saved(&report) > 0, "{report:#}");
+}
+
 #[test]
 fn never_publishes_typescript_only_syntax() {
     let (temp, _) = run(&[(
