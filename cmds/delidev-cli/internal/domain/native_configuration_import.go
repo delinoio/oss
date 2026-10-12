@@ -382,11 +382,29 @@ func (t *Template) UnmarshalJSON(raw []byte) error {
 	return t.Validate()
 }
 
+type NativeImportedCategory string
+
+const (
+	NativeImportedInstructions NativeImportedCategory = "instructions"
+	NativeImportedHooks        NativeImportedCategory = "hooks"
+	NativeImportedPlugins      NativeImportedCategory = "plugins"
+	NativeImportedMCPServers   NativeImportedCategory = "mcp_servers"
+	NativeImportedSkill        NativeImportedCategory = "skill"
+	NativeImportedHook         NativeImportedCategory = "hook"
+	NativeImportedPlugin       NativeImportedCategory = "plugin"
+	NativeImportedMCP          NativeImportedCategory = "mcp"
+)
+
 type NativeImportedPackage struct {
 	Version      uint32                       `json:"version"`
 	Harness      Harness                      `json:"harness"`
 	Kind         NativeConfigurationEntryKind `json:"kind"`
 	SourceDigest string                       `json:"source_digest"`
+	Category     NativeImportedCategory       `json:"category"`
+	SourceScope  NativeConfigurationScopeKind `json:"source_scope"`
+	SourceRoot   string                       `json:"source_root"`
+	SourceFile   string                       `json:"source_file"`
+	Profile      string                       `json:"profile,omitempty"`
 	// Selected packages retain native order independently of display names.
 	Order   uint32                           `json:"order"`
 	Enabled bool                             `json:"enabled"`
@@ -396,6 +414,9 @@ type NativeImportedPackage struct {
 func (p *NativeImportedPackage) Validate(contents string) error {
 	if p == nil {
 		return nil
+	}
+	if !slices.Contains([]NativeConfigurationScopeKind{NativeConfigurationHome, NativeConfigurationProject}, p.SourceScope) || !nativeExecutableDigest.MatchString(p.SourceRoot) || !NativeConfigurationSafePath(p.SourceFile) || p.Profile != "" && !nativeConfigurationSelector.MatchString(p.Profile) || p.Kind == NativeConfigurationInstruction && (p.Category != NativeImportedInstructions || p.Profile != "") || p.Kind == NativeConfigurationInertExtension && !slices.Contains([]NativeImportedCategory{NativeImportedHooks, NativeImportedPlugins, NativeImportedMCPServers, NativeImportedSkill, NativeImportedHook, NativeImportedPlugin, NativeImportedMCP}, p.Category) {
+		return NativeConfigurationInvalid()
 	}
 	if p.Kind == NativeConfigurationInstruction && HarnessEvidenceDigest([]byte(contents)) != p.SourceDigest {
 		return NativeConfigurationInvalid()

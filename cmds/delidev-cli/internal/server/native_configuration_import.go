@@ -296,7 +296,7 @@ func stageNativeConfiguration(tx *store.Tx, input domain.NativeConfigurationJobI
 			}
 			domain.MergeNativeConfigurationSettings(&settings, selected)
 		} else {
-			packageValue := domain.Template{Name: fmt.Sprintf("Imported %s %s %d", input.Preview.Harness, entry.Kind, order+1), Contents: entry.Contents, NativeImport: &domain.NativeImportedPackage{Version: 1, Harness: input.Preview.Harness, Kind: entry.Kind, SourceDigest: entry.SourceDigest, Order: uint32(order), Files: entry.Files}}
+			packageValue := domain.Template{Name: fmt.Sprintf("Imported %s %s %d", input.Preview.Harness, entry.Name, order+1), Contents: entry.Contents, NativeImport: &domain.NativeImportedPackage{Version: 1, Harness: input.Preview.Harness, Kind: entry.Kind, SourceDigest: entry.SourceDigest, Category: domain.NativeImportedCategory(entry.Name), SourceScope: input.Preview.Scopes[entry.ScopeIndex].Kind, SourceRoot: observation.Roots[entry.ScopeIndex], SourceFile: entry.File, Profile: entry.Profile, Order: uint32(order), Files: entry.Files}}
 			if err := packageValue.Validate(); err != nil {
 				return nil, nil, err
 			}

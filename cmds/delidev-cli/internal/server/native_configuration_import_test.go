@@ -308,6 +308,9 @@ func TestNativeImportPackagesRemainImmutableAndInertThroughPortableTransfer(t *t
 			t.Fatal(err)
 		}
 		pkg, _ := store.Decode[domain.Template](record)
+		if pkg.NativeImport == nil || pkg.NativeImport.SourceScope != f.selection.Scopes[0].Kind || pkg.NativeImport.SourceRoot != f.observation.Roots[0] || pkg.NativeImport.Category == "" || pkg.NativeImport.SourceFile == "" {
+			t.Fatal("package lost bounded source provenance")
+		}
 		portable, err := portableDocument(domain.TemplateKind, record.Data)
 		if err != nil {
 			t.Fatal(err)

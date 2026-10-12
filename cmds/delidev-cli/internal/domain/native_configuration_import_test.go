@@ -23,7 +23,7 @@ func TestNativeImportSelectorsRemainClosedAndDoNotGrantNativeAuthority(t *testin
 		}
 	}
 	text := "Original instructions.\n"
-	template := Template{Name: "Original", Contents: text, NativeImport: &NativeImportedPackage{Version: 1, Harness: Codex, Kind: NativeConfigurationInstruction, SourceDigest: HarnessEvidenceDigest([]byte(text)), Order: 0, Files: []NativeConfigurationPackageFile{{ManagedSkillResource: ManagedSkillResource{Path: "AGENTS.md", Bytes: len(text), Digest: HarnessEvidenceDigest([]byte(text))}, Contents: text}}}}
+	template := Template{Name: "Original", Contents: text, NativeImport: &NativeImportedPackage{Version: 1, Harness: Codex, Kind: NativeConfigurationInstruction, Category: NativeImportedInstructions, SourceScope: NativeConfigurationHome, SourceRoot: HarnessEvidenceDigest([]byte("root")), SourceFile: "AGENTS.md", SourceDigest: HarnessEvidenceDigest([]byte(text)), Order: 0, Files: []NativeConfigurationPackageFile{{ManagedSkillResource: ManagedSkillResource{Path: "AGENTS.md", Bytes: len(text), Digest: HarnessEvidenceDigest([]byte(text))}, Contents: text}}}}
 	raw, _ := json.Marshal(template)
 	var retained Template
 	if Decode(raw, &retained) != nil || retained.NativeImport == nil || retained.Contents != text {

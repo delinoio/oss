@@ -470,6 +470,29 @@ function nativeImportPackage(value: ResourceDocument): boolean {
     meta.enabled !== false ||
     !["codex", "claude-code"].includes(meta.harness as string) ||
     !["instruction", "inert-extension"].includes(meta.kind as string) ||
+    !["home", "project"].includes(meta.source_scope as string) ||
+    typeof meta.source_root !== "string" ||
+    !/^[a-f0-9]{64}$/.test(meta.source_root) ||
+    typeof meta.source_file !== "string" ||
+    !meta.source_file ||
+    meta.source_file.startsWith("/") ||
+    meta.source_file.split("/").some((v) => !v || v === "." || v === "..") ||
+    /[\\\r\n\x00]/.test(meta.source_file) ||
+    (meta.profile !== undefined &&
+      (typeof meta.profile !== "string" ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/.test(meta.profile))) ||
+    (meta.kind === "instruction" &&
+      (meta.category !== "instructions" || meta.profile !== undefined)) ||
+    (meta.kind === "inert-extension" &&
+      ![
+        "hooks",
+        "plugins",
+        "mcp_servers",
+        "skill",
+        "hook",
+        "plugin",
+        "mcp",
+      ].includes(meta.category as string)) ||
     typeof meta.source_digest !== "string" ||
     !/^[a-f0-9]{64}$/.test(meta.source_digest) ||
     !Number.isInteger(meta.order) ||

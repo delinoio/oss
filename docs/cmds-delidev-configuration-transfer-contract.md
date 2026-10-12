@@ -248,7 +248,7 @@ headers, together with nonsecret source provenance. Unrelated unsupported values
 from the source file cannot become package preview contents. A secret in any
 selected resource excludes that whole package.
 
-Imported resources are immutable schema-2 instruction templates with version-1
+Imported resources retain the closed original category, selected home/project scope, root fingerprint, relative source file, explicitly selected profile, source digest, native order and exact resource manifest after preview disposal. Imported resources are immutable schema-2 instruction templates with version-1
 `native_import` metadata, harness/kind, original source digest, selected order,
 `enabled:false` and complete resource bytes/manifests. They are stored disabled
 and unattached. Import has no activation control, trust state, credentials or
