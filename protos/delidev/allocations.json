@@ -13449,7 +13449,9 @@
       "kind": "enum",
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
-      "number": 54,
+      "number": 54
+    },
+    {
       "issue": 2678,
       "kind": "enum",
       "declaration": "SystemCapability",
