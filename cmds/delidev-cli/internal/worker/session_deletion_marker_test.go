@@ -69,3 +69,40 @@ func TestSessionDeletionInitialFenceRecoversExactReportID(t *testing.T) {
 		t.Fatal("recovered publication did not close its fence", err)
 	}
 }
+
+func TestSessionDeletionFreshAdmissionRejectsOrphanedWorkspaceProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Workspace, map[string]any{
+		"version":  2,
+		"identity": work.Identity(),
+		"digest":   work.Digest(),
+		"removed":  false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	orphanBefore, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("fresh admission adopted orphaned workspace proof", err)
+	}
+	if _, err := os.Lstat(paths.Worker); !os.IsNotExist(err) {
+		t.Fatal("fresh admission created Worker progress", err)
+	}
+	if _, err := os.Lstat(sessionDeletionPath(config.Root, work.SessionID)); !os.IsNotExist(err) {
+		t.Fatal("fresh admission created the session fence", err)
+	}
+	orphanAfter, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil || string(orphanAfter) != string(orphanBefore) {
+		t.Fatal("fresh admission changed orphaned workspace proof", err)
+	}
+}

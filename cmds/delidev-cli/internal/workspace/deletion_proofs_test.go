@@ -100,6 +100,36 @@ func TestDeletionLegacyAbsentWorkspaceCannotAdoptRestoredContent(t *testing.T) {
 	}
 }
 
+func TestDeletionLegacyAbsentWorkspaceRejectsOrphanedKeyedProof(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := SessionDeletionProofPaths(root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphan := deletionWorkspaceProof{Version: 2, Identity: work.Identity(), Digest: work.Digest()}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, orphan); err != nil {
+		t.Fatal(err)
+	}
+	before, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportLegacyDeletionWorkspaceProof(root, work, false); err == nil {
+		t.Fatal("fresh admission adopted an orphaned keyed workspace proof")
+	}
+	after, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("orphaned keyed workspace proof changed", err)
+	}
+	if _, err := os.Lstat(legacyDeletionWorkspacePath(root, work)); !os.IsNotExist(err) {
+		t.Fatal("fresh admission created legacy workspace evidence", err)
+	}
+}
+
 func TestDeletionLegacyWorkspaceProofCannotImportForeignManifestScope(t *testing.T) {
 	root := t.TempDir()
 	work := deletionProofWork()

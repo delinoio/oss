@@ -48,7 +48,7 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 	raw, err := security.ReadPrivate(legacyPath, 1<<20)
 	if errors.Is(err, os.ErrNotExist) {
 		if !requireExisting {
-			return nil
+			return RequireNoKeyedDeletionWorkspaceProof(root, w)
 		}
 		// Once Worker removal has started, a missing historical receipt is lost
 		// evidence. An exact keyed copy can finish an interrupted import; absence
@@ -91,6 +91,21 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 		return domain.SessionDeletionPending()
 	}
 	if security.SyncParent(legacyPath) != nil {
+		return domain.SessionDeletionPending()
+	}
+	return nil
+}
+
+// RequireNoKeyedDeletionWorkspaceProof prevents fresh admission from
+// reconstructing progress when only an identity-keyed workspace receipt
+// survived. With no original fence or Worker receipt, that orphan is not
+// authority to remove workspace data.
+func RequireNoKeyedDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+	paths, err := SessionDeletionProofPaths(root, w)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	if _, err := os.Lstat(paths.Workspace); !errors.Is(err, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
 	}
 	return nil
