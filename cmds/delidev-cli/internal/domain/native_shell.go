@@ -200,6 +200,12 @@ func CheckNativeShellTransition(previous, next NativeShellObservation) error {
 }
 
 func (s Session) NativeShellForExecution(execution ID) *NativeShellRef {
+	// A later compact/revert checkpoint is the current history boundary. The
+	// native-shell checkpoint predates that rewrite and must not be used to
+	// authorize continuation from the updated rollout.
+	if s.Compaction != nil && s.Compaction.ExecutionID == execution {
+		return nil
+	}
 	if s.NativeShell != nil && s.NativeShell.ExecutionID == execution {
 		return s.NativeShell
 	}

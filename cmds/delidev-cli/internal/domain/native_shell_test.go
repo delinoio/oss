@@ -81,3 +81,17 @@ func TestNativeShellReceiptCannotInventClaimOrCleanup(t *testing.T) {
 		t.Fatal("native acknowledgment proved cleanup")
 	}
 }
+
+func TestNativeShellForExecutionPrefersLaterCompactionCheckpoint(t *testing.T) {
+	execution := NewID()
+	shell := &NativeShellRef{JobID: NewID(), ActionID: NewID(), ExecutionID: execution}
+	compaction := &SessionCompactionRef{JobID: NewID(), ActionID: NewID(), ExecutionID: execution}
+	session := Session{NativeShell: shell, Compaction: compaction}
+	if got := session.NativeShellForExecution(execution); got != nil {
+		t.Fatal("superseded native-shell checkpoint remained eligible after compaction")
+	}
+	compaction.ExecutionID = NewID()
+	if got := (Session{NativeShell: shell, Compaction: compaction}).NativeShellForExecution(execution); got != shell {
+		t.Fatal("compaction from another execution suppressed the native-shell checkpoint")
+	}
+}
