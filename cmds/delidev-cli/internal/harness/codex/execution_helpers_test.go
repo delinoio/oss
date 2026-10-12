@@ -33,6 +33,12 @@ func helperFixture(t *testing.T) (*executionHelpers, string, string, *bytes.Buff
 	if err := os.WriteFile(executable, []byte("synthetic executable identity"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	// macOS temporary paths can use /var for /private/var. Native aliases
+	// target the canonical executable retained by the startup proof.
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var logs bytes.Buffer
 	h, err := prepareExecutionHelpers(home, process.Config{OwnerID: domain.NewID(), Executable: executable, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
 	if err != nil {
