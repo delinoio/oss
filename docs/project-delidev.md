@@ -458,3 +458,12 @@ client contracts jointly own server-observed group timing and independent closed
 detailed disclosures. Private Session records project through additive typed
 Resource metadata while legacy document JSON and native ownership stay intact.
 No migration, Worker report or execution authority is added.
+
+### Shared Codex Harness settings
+
+The desktop's Harnesses > Codex CLI page, Project Execution tab and Agent source
+wizard share the existing typed defaults owner. The desktop and catalog contracts
+own exact source previews, per-field inheritance/reset, revision-conflict drafts,
+unsupported-value preservation and EN/KO search. System 91/Worker 55 retain the
+foundation's independent dispatch and immutable-history boundaries; the menu
+adds no native capability, configuration store or migration.

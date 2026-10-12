@@ -1,3 +1,10 @@
+import { newTypedHarnessDocument } from "./harness-settings-draft";
+import { HarnessSettingsEditor } from "./harness-settings-editor";
+import {
+  harnessRoutePreviews,
+  HarnessSettingsOwner,
+  type HarnessRoutePreview,
+} from "./harness-settings-model";
 import { configurationNameConflictCopy } from "./configuration-name-conflict";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
@@ -1603,6 +1610,7 @@ function ProviderFields({
 }
 export enum ServerPreferenceSection {
   All = "all",
+  Harnesses = "harnesses",
   AccountRouting = "account-routing",
   GitWorkflow = "git-workflow",
   ProjectDefaults = "project-defaults",
@@ -1624,6 +1632,7 @@ interface FieldsProps {
   subscriptionOnly?: boolean;
   serverPreferenceSection?: ServerPreferenceSection;
   workerWizard?: boolean;
+  harnessRoutes?: HarnessRoutePreview[];
 }
 export function ConfigurationFields({
   kind,
@@ -1646,6 +1655,19 @@ export function ConfigurationFields({
   );
   const field = (key: string) => (value: unknown) =>
     change({ ...data, [key]: value });
+  if (
+    kind === EntityKind.SETTINGS &&
+    serverPreferenceSection === ServerPreferenceSection.Harnesses
+  )
+    return (
+      <HarnessSettingsEditor
+        data={data}
+        change={change}
+        active={active}
+        owner={HarnessSettingsOwner.Server}
+        revision={props.initial ? String(props.initial.revision) : undefined}
+      />
+    );
   if (kind === EntityKind.SETTINGS)
     return (
       <>
@@ -1862,6 +1884,13 @@ export function ConfigurationFields({
   }
   if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
   if (kind === EntityKind.AGENT) {
+    const typedCodex =
+      data.harness === Harness.Codex &&
+      (data.harness_settings !== undefined ||
+        (!reviewerStatus.error &&
+          reviewerStatus.data?.capabilities.includes(
+            SystemCapability.HARNESS_DEFAULTS_V1,
+          ) === true));
     const options = object(data.options);
     const option = (name: string) => (value: unknown) =>
       change({ ...data, options: { ...options, [name]: value } });
@@ -1896,42 +1925,46 @@ export function ConfigurationFields({
           </>
         }
         permissions={
-          <AgentPermissions
-            reviewSupported={
-              reviewerStatus.data?.capabilities.includes(
-                SystemCapability.CODEX_APPROVAL_REVIEW_V1,
-              ) === true
-            }
-            active={props.movementActive ?? active}
-            disabled={props.disabled ?? false}
-            harness={data.harness}
-            options={options}
-            change={field("options")}
-          />
+          typedCodex ? undefined : (
+            <AgentPermissions
+              reviewSupported={
+                reviewerStatus.data?.capabilities.includes(
+                  SystemCapability.CODEX_APPROVAL_REVIEW_V1,
+                ) === true
+              }
+              active={props.movementActive ?? active}
+              disabled={props.disabled ?? false}
+              harness={data.harness}
+              options={options}
+              change={field("options")}
+            />
+          )
         }
         reasoning={
-          <>
-            <ReasoningEffortField
-              label={copy("configuration-fields.reasoningEffort_3236ae")}
-              value={data.effort}
-              change={field("effort")}
-              disabled={data.harness === Harness.Grok}
-              suggestions={
-                data.harness === Harness.Codex
-                  ? codexEffortSuggestions
-                  : data.harness === Harness.Claude
-                    ? claudeEffortSuggestions
-                    : undefined
-              }
-            />
-            {data.harness === Harness.Grok ? (
-              <NativeOptionExplanation
+          typedCodex ? undefined : (
+            <>
+              <ReasoningEffortField
                 label={copy("configuration-fields.reasoningEffort_3236ae")}
                 value={data.effort}
-                clear={() => field("effort")("")}
+                change={field("effort")}
+                disabled={data.harness === Harness.Grok}
+                suggestions={
+                  data.harness === Harness.Codex
+                    ? codexEffortSuggestions
+                    : data.harness === Harness.Claude
+                      ? claudeEffortSuggestions
+                      : undefined
+                }
               />
-            ) : null}
-          </>
+              {data.harness === Harness.Grok ? (
+                <NativeOptionExplanation
+                  label={copy("configuration-fields.reasoningEffort_3236ae")}
+                  value={data.effort}
+                  clear={() => field("effort")("")}
+                />
+              ) : null}
+            </>
+          )
         }
         accounts={
           props.workerWizard ? undefined : (
@@ -1969,82 +2002,95 @@ export function ConfigurationFields({
           />
         }
         native={
-          <>
-            {data.harness === Harness.Codex ? (
-              <CodexSubagentConfiguration
-                options={options}
-                active={active}
-                change={(key, value) => option(key)(value)}
-              />
-            ) : (
-              <>
-                <TextField
-                  label={copy("configuration-fields.subagentModel_28463c")}
-                  value={options.subagent_model}
-                  change={option("subagent_model")}
-                  unavailable
+          typedCodex ? (
+            <HarnessSettingsEditor
+              data={newTypedHarnessDocument(data)}
+              change={change}
+              active={active}
+              owner={HarnessSettingsOwner.Agent}
+              routes={props.harnessRoutes ?? harnessRoutePreviews(data.routes)}
+              revision={
+                props.initial ? String(props.initial.revision) : undefined
+              }
+            />
+          ) : (
+            <>
+              {data.harness === Harness.Codex ? (
+                <CodexSubagentConfiguration
+                  options={options}
+                  active={active}
+                  change={(key, value) => option(key)(value)}
                 />
-                <ReasoningEffortField
-                  label={copy("configuration-fields.subagentEffort_eea2b1")}
-                  value={options.subagent_effort}
-                  change={option("subagent_effort")}
-                  disabled
-                />
-                <NativeOptionExplanation
-                  label={copy("configuration-fields.subagentEffort_eea2b1")}
-                  value={options.subagent_effort}
-                  clear={() => option("subagent_effort")("")}
-                />
-                <label>
-                  {copy(
-                    "configuration-fields.maximumConcurrency0UsesNativeDefault_451d39",
-                  )}
-                  <input
-                    type="number"
-                    min={0}
-                    max={4294967295}
-                    step={1}
-                    value={Number(options.max_concurrency ?? 0)}
+              ) : (
+                <>
+                  <TextField
+                    label={copy("configuration-fields.subagentModel_28463c")}
+                    value={options.subagent_model}
+                    change={option("subagent_model")}
+                    unavailable
+                  />
+                  <ReasoningEffortField
+                    label={copy("configuration-fields.subagentEffort_eea2b1")}
+                    value={options.subagent_effort}
+                    change={option("subagent_effort")}
                     disabled
                   />
-                </label>
-                <NativeOptionExplanation
-                  label={copy(
-                    "configuration-fields.maximumConcurrency0UsesNativeDefault_451d39",
-                  )}
-                  value={options.max_concurrency}
-                  clear={() => option("max_concurrency")(0)}
-                />
-              </>
-            )}
-            <TextField
-              label={copy("configuration-fields.approvalPolicy_89d24f")}
-              value={options.approval_policy}
-              change={option("approval_policy")}
-              unavailable={data.harness !== Harness.Codex}
-            />
-            <TextField
-              label={copy("configuration-fields.approvalReviewModel_ef091f")}
-              value={options.approval_review_model}
-              change={option("approval_review_model")}
-              unavailable
-            />
-            <ServiceTierField
-              value={options.service_tier}
-              change={option("service_tier")}
-              unavailable={data.harness !== Harness.Codex}
-              clear={() => {
-                const next = { ...options };
-                delete next.service_tier;
-                field("options")(next);
-              }}
-            />
-            <p>
-              {copy(
-                "configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d",
+                  <NativeOptionExplanation
+                    label={copy("configuration-fields.subagentEffort_eea2b1")}
+                    value={options.subagent_effort}
+                    clear={() => option("subagent_effort")("")}
+                  />
+                  <label>
+                    {copy(
+                      "configuration-fields.maximumConcurrency0UsesNativeDefault_451d39",
+                    )}
+                    <input
+                      type="number"
+                      min={0}
+                      max={4294967295}
+                      step={1}
+                      value={Number(options.max_concurrency ?? 0)}
+                      disabled
+                    />
+                  </label>
+                  <NativeOptionExplanation
+                    label={copy(
+                      "configuration-fields.maximumConcurrency0UsesNativeDefault_451d39",
+                    )}
+                    value={options.max_concurrency}
+                    clear={() => option("max_concurrency")(0)}
+                  />
+                </>
               )}
-            </p>
-          </>
+              <TextField
+                label={copy("configuration-fields.approvalPolicy_89d24f")}
+                value={options.approval_policy}
+                change={option("approval_policy")}
+                unavailable={data.harness !== Harness.Codex}
+              />
+              <TextField
+                label={copy("configuration-fields.approvalReviewModel_ef091f")}
+                value={options.approval_review_model}
+                change={option("approval_review_model")}
+                unavailable
+              />
+              <ServiceTierField
+                value={options.service_tier}
+                change={option("service_tier")}
+                unavailable={data.harness !== Harness.Codex}
+                clear={() => {
+                  const next = { ...options };
+                  delete next.service_tier;
+                  field("options")(next);
+                }}
+              />
+              <p>
+                {copy(
+                  "configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d",
+                )}
+              </p>
+            </>
+          )
         }
       />
     );
@@ -2145,6 +2191,7 @@ export function projectRepositoryOption(
     : name;
 }
 function ProjectFields({
+  initial,
   nameConflict = false,
   data,
   change,
@@ -2289,15 +2336,26 @@ function ProjectFields({
             </fieldset>
           </>
         ),
-        [ProjectEditTab.Execution]: supportsProjectBehavior ? (
-          <ProjectBehaviorFields
-            data={data}
-            change={change}
-            active={active}
-            supportsSessionDefaults={supportsSessionDefaults}
-          />
-        ) : (
-          <p>{copy("configuration-fields.behaviorUnsupported")}</p>
+        [ProjectEditTab.Execution]: (
+          <>
+            <HarnessSettingsEditor
+              data={data}
+              change={change}
+              active={active}
+              owner={HarnessSettingsOwner.Project}
+              revision={initial ? String(initial.revision) : undefined}
+            />
+            {supportsProjectBehavior ? (
+              <ProjectBehaviorFields
+                data={data}
+                change={change}
+                active={active}
+                supportsSessionDefaults={supportsSessionDefaults}
+              />
+            ) : (
+              <p>{copy("configuration-fields.behaviorUnsupported")}</p>
+            )}
+          </>
         ),
         [ProjectEditTab.Access]: (
           <>

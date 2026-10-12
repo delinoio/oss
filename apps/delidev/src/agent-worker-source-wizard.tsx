@@ -1,6 +1,8 @@
+import { HarnessScopeSource } from "./harness-settings-model";
 import "./wizard-presentation.css";
 import {
   captureHarnessEditorChanges,
+  newTypedHarnessDocument,
   harnessEditorDocument,
 } from "./harness-settings-draft";
 // SPDX-License-Identifier: Apache-2.0
@@ -1190,6 +1192,11 @@ export function AgentWorkerSourceWizard({
   cancel: () => void;
   openAccounts?: (source: Source) => void;
 }) {
+  const harnessStatus = useQuery(
+    SystemQuery.getStatus,
+    {},
+    { enabled: active },
+  );
   const [data, setData] = useState<Document>(() =>
     initial
       ? harnessEditorDocument(document(initial))
@@ -1438,15 +1445,24 @@ export function AgentWorkerSourceWizard({
             ?.focus();
           return;
         }
-        const typed =
+        const requiresTyped =
           Boolean(data.harness_settings) ||
           Boolean(initial && document(initial).harness_settings) ||
           routes.some((route) => route.inheritModel);
         const next: Document = captureHarnessEditorChanges(
           initial ? document(initial) : {},
-          data,
-          typed,
+          !initial &&
+            data.harness === Harness.Codex &&
+            harnessStatus.data?.capabilities.includes(
+              SystemCapability.HARNESS_DEFAULTS_V1,
+            )
+            ? newTypedHarnessDocument(data)
+            : data,
+          requiresTyped,
         );
+        // Normalization may introduce the typed marker after capability discovery.
+        // Every final route must use the same schema as the submitted document.
+        const typed = Boolean(next.harness_settings);
         delete next.reconfiguration_required;
         delete next.accounts;
         delete next.model_id;
@@ -1671,6 +1687,31 @@ export function AgentWorkerSourceWizard({
             change={setData}
             existing={Boolean(initial)}
             active={active && step === Step.Configure}
+            initial={initial}
+            harnessRoutes={routes.flatMap((route) =>
+              route.source
+                ? [
+                    {
+                      label: evidence[route.key]?.label,
+                      scope:
+                        route.source.kind === SourceKind.Api
+                          ? {
+                              harness: "codex" as const,
+                              source: HarnessScopeSource.Api,
+                              provider_id: route.source.id,
+                            }
+                          : {
+                              harness: "codex" as const,
+                              source: HarnessScopeSource.Subscription,
+                              subscription_service: route.source.id,
+                            },
+                      modelSelection: route.inheritModel
+                        ? { mode: "inherit" }
+                        : { mode: "override", value: route.input.trim() },
+                    },
+                  ]
+                : [],
+            )}
             workerWizard
           />
           <section
