@@ -88,9 +88,24 @@ it("retains historical relocation kinds, files and full map order", () => {
   // Pin the complete map as well as per-kind aggregate positions. Moving an
   // entry across another kind can leave reflection order unchanged.
   const entries = Object.entries(layout.declarations).map(
-    ([name, { kind, file }]) => [name, kind, file],
+    ([name, { kind, file }]) => [name, kind, file] as const,
   );
+  const historicalNames = new Set([
+    ...historicalOrder.message,
+    ...historicalOrder.enum,
+    ...historicalOrder.service,
+  ]);
+  const historicalEntries = entries.filter(([name]) =>
+    historicalNames.has(name),
+  );
+  expect(historicalEntries).toHaveLength(historicalNames.size);
   expect(
-    createHash("sha256").update(JSON.stringify(entries)).digest("hex"),
+    createHash("sha256")
+      .update(JSON.stringify(historicalEntries))
+      .digest("hex"),
   ).toBe(historicalOrder.relocationSha256);
+  const firstAdded = entries.findIndex(([name]) => !historicalNames.has(name));
+  expect(firstAdded === -1 ? entries.length : firstAdded).toBe(
+    historicalNames.size,
+  );
 });
