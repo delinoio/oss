@@ -688,9 +688,11 @@ pub struct Staged {
 }
 
 impl Staged {
-    /// Moves the staged output to its destination.
+    /// Moves the staged output to its destination. The rename fails instead
+    /// of replacing a destination that appeared after the initial check.
     pub fn commit(self) -> Result<()> {
-        std::fs::rename(&self.root, &self.destination).context("cannot publish bundle output")
+        crate::output::rename_exclusive(&self.root, &self.destination)
+            .context("cannot publish bundle output")
     }
 }
 

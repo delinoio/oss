@@ -262,7 +262,7 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
-fn rename_exclusive(from: &Path, to: &Path) -> Result<()> {
+pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Result<()> {
     use std::os::unix::ffi::OsStrExt;
     let from = std::ffi::CString::new(from.as_os_str().as_bytes())?;
     let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;
