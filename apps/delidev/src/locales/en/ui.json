@@ -15,7 +15,6 @@
   "ui.failure.server_unavailable": "Check the selected connection and inspect accepted work before retrying the same request.",
   "ui.failure.confirmation_required": "Inspect the current item and provide the required confirmation.",
   "ui.failure.missing_input": "Provide the required input before submitting.",
-  "ui.failure.harness_default_unverified": "The selected harness default could not be verified. Choose an explicit value or inspect the selected source before continuing.",
   "ui.failure.unsupported": "This action is unsupported by the selected server or native adapter.",
   "ui.failure.recovery_required": "Inspect the original operation and its recovery controls before acting again.",
   "ui.failure.budget_reached": "The budget limit was reached. Inspect the session's budget and original operation.",
