@@ -415,22 +415,46 @@ func exchangeMCPOAuth(ctx context.Context, config domain.MCPOAuthConfiguration, 
 	if err != nil || len(raw) > 64<<10 || response.StatusCode != http.StatusOK {
 		return secret, ResultUncertain()
 	}
+	defer clear(raw)
+	secret, ok := decodeMCPOAuthToken(raw)
+	if !ok {
+		return domain.MCPSecrets{}, ResultUncertain()
+	}
+	return secret, nil
+}
+
+func decodeMCPOAuthToken(raw []byte) (domain.MCPSecrets, bool) {
+	var secret domain.MCPSecrets
+	fields := map[string]json.RawMessage{}
+	if domain.DecodeBounded(raw, &fields, 64<<10) != nil || fields == nil {
+		return secret, false
+	}
 	var token struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		TokenType    string `json:"token_type"`
 		ExpiresIn    int64  `json:"expires_in"`
-		Scope        string `json:"scope"`
 	}
-	if domain.Decode(raw, &token) != nil || token.AccessToken == "" || !strings.EqualFold(token.TokenType, "Bearer") || token.ExpiresIn < 0 || token.ExpiresIn > 365*24*3600 {
-		return secret, ResultUncertain()
+	for name, target := range map[string]any{
+		"access_token":  &token.AccessToken,
+		"refresh_token": &token.RefreshToken,
+		"token_type":    &token.TokenType,
+		"expires_in":    &token.ExpiresIn,
+	} {
+		value, present := fields[name]
+		if present && domain.Decode(value, target) != nil {
+			return secret, false
+		}
+	}
+	if token.AccessToken == "" || !strings.EqualFold(token.TokenType, "Bearer") || token.ExpiresIn < 0 || token.ExpiresIn > 365*24*3600 {
+		return secret, false
 	}
 	secret.AccessToken, secret.RefreshToken = token.AccessToken, token.RefreshToken
 	if token.ExpiresIn > 0 {
 		expires := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
 		secret.ExpiresAt = &expires
 	}
-	return secret, nil
+	return secret, true
 }
 
 // MCPGenerationSecrets is private Worker adapter authority. It resolves only an

@@ -322,7 +322,9 @@ explicitly. A synchronized consumed claim precedes the one token exchange.
 Wrong ownership, callback path/state/query, expiry, cancellation and response loss
 cannot authorize another exchange. Tokens and private PKCE evidence remain sealed
 on the Worker; callback codes are absent from receipts. Redirects and ambient HTTP
-proxies are excluded from the token request. Uncertainty retains original receipts
+proxies are excluded from the token request. Bounded token responses may include
+provider extension members; validate consumed fields and reject duplicate JSON
+members without requiring a closed response schema. Uncertainty retains original receipts
 and references without automatic replay or speculative deletion. Safe expiry metadata
 prevents a fresh generation from treating an expired token as authenticated.
 Private native adapters resolve secrets only for an exact retained definition copy

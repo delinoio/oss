@@ -193,6 +193,24 @@ func TestMCPOAuthOwnershipOnceOnlyExchangeAndSecretProjection(t *testing.T) {
 	}
 }
 
+func TestMCPOAuthTokenResponseAcceptsExtensionsAndValidatesConsumedFields(t *testing.T) {
+	valid := []byte(`{"access_token":"access","refresh_token":"refresh","token_type":"Bearer","expires_in":3600,"id_token":"openid-extension","provider_extension":{"version":1}}`)
+	secret, ok := decodeMCPOAuthToken(valid)
+	if !ok || secret.AccessToken != "access" || secret.RefreshToken != "refresh" || secret.ExpiresAt == nil {
+		t.Fatal("valid OAuth token response with extensions was rejected", secret, ok)
+	}
+	for _, raw := range [][]byte{
+		[]byte(`{"access_token":"access","token_type":"Basic"}`),
+		[]byte(`{"access_token":"access","token_type":"Bearer","expires_in":"3600"}`),
+		[]byte(`{"access_token":"first","access_token":"second","token_type":"Bearer"}`),
+		[]byte(`{"refresh_token":"refresh","token_type":"Bearer"}`),
+	} {
+		if _, ok := decodeMCPOAuthToken(raw); ok {
+			t.Fatalf("invalid consumed OAuth token fields were accepted: %s", raw)
+		}
+	}
+}
+
 func TestMCPManualSecretsKeepOriginalGenerationAfterDeletion(t *testing.T) {
 	m, q := mcpFixture(t)
 	vault := &fixtureMCPVault{}
