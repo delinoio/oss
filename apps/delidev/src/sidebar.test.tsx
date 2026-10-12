@@ -17,7 +17,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi, type Mock } from "vitest";
 import {
   EntityKind,
   ErrorDetailSchema,
@@ -34,6 +34,13 @@ import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
 import type { ComponentProps } from "react";
 import { i18n, SupportedLanguage } from "./localization";
+
+type StatusResponse = {
+  version: string;
+  protocolVersion: number;
+  stopping?: boolean;
+};
+type StatusReader = () => StatusResponse | Promise<StatusResponse>;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -65,7 +72,10 @@ function mountSidebar({
   props = {},
   stateful = false,
   withApp = false,
-  status = vi.fn(() => ({ version: "0.1.0", protocolVersion: 1 })),
+  status = vi.fn<StatusReader>(() => ({
+    version: "0.1.0",
+    protocolVersion: 1,
+  })),
 }: {
   projects: (
     pageToken: string,
@@ -79,7 +89,7 @@ function mountSidebar({
   }) =>
     | { sessions: Resource[]; nextPageToken?: string }
     | Promise<{ sessions: Resource[]; nextPageToken?: string }>;
-  status?: ReturnType<typeof vi.fn>;
+  status?: Mock<StatusReader>;
   stateful?: boolean;
   withApp?: boolean;
   props?: Partial<ComponentProps<typeof Sidebar>>;
@@ -1434,7 +1444,7 @@ for (const language of [SupportedLanguage.English, SupportedLanguage.Korean]) {
         addEventListener: () => {},
         removeEventListener: () => {},
       }));
-      const status = vi.fn();
+      const status = vi.fn<StatusReader>();
       const value = mountSidebar({
         projects: () => ({ resources: [] }),
         sessions: () => ({ sessions: [] }),
