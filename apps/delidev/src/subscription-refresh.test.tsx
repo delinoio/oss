@@ -283,8 +283,10 @@ it.each([Code.Aborted, Code.PermissionDenied])(
       directLogout();
     });
     await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
+    const quotaResult = f.quota.mock.results[0];
+    if (quotaResult.type !== "return") throw new Error("Missing quota promise");
     await act(async () => {
-      await f.quota.mock.results[0].value.catch(() => undefined);
+      await quotaResult.value.catch(() => undefined);
     });
     await waitFor(() =>
       expect(actionDisabled("Back to subscriptions")).toBe(false),
