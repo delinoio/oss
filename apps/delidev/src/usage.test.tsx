@@ -846,7 +846,8 @@ it("keeps historical currency subtotals, partial coverage and source basis separ
     }),
   ];
   render(f.view());
-  await screen.findByText("USD 9,223.372036854775807");
+  const overview = screen.getByRole("tabpanel", { name: "Overview" });
+  await within(overview).findByText("USD 9,223.372036854775807");
   fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
   expect(screen.getByText("EUR 0")).toBeTruthy();
   expect(
@@ -1279,8 +1280,11 @@ it("retains legacy Codex Overview values and coverage after a failed refresh", a
     ],
   });
   render(f.view());
-  await screen.findByText("USD 2.50");
-  const row = screen.getByRole("rowheader", { name: "Codex" }).closest("tr")!;
+  const overview = screen.getByRole("tabpanel", { name: "Overview" });
+  await within(overview).findByText("USD 2.50");
+  const row = within(overview)
+    .getByRole("rowheader", { name: "Codex" })
+    .closest("tr")!;
   const retained = row.textContent;
   f.read.mockRejectedValueOnce(
     new ConnectError("Fixture unavailable", Code.Unavailable),
