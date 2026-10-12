@@ -1771,13 +1771,16 @@ it.each(["failed", "foreign", "older", "malformed"])(
     const { repository, saved, value, completion } = repositorySaveFixture();
     const accepted = completion({ id: repository.id, revision: 2 });
     let trustworthy = false;
+    let submitted = false;
     let reads = 0;
     const transportValue = fixture([repository, accepted], {
       readResource: (id) => {
-        if (id !== accepted.id)
+        if (id !== accepted.id) {
+          if (!submitted) return { resource: repository };
           return {
             resource: create(ResourceSchema, { ...repository, revision: 2n }),
           };
+        }
         reads += 1;
         if (trustworthy) return { resource: accepted };
         if (failure === "failed")
@@ -1795,10 +1798,13 @@ it.each(["failed", "foreign", "older", "malformed"])(
         };
       },
     });
-    transportValue.save.mockImplementation(async (request) => ({
-      job: accepted,
-      requestId: input(request).mutation.requestId,
-    }));
+    transportValue.save.mockImplementation(async (request) => {
+      submitted = true;
+      return {
+        job: accepted,
+        requestId: input(request).mutation.requestId,
+      };
+    });
     render(
       <NotificationProvider>
         {transportValue.view(
@@ -1859,8 +1865,13 @@ it.each(["failed", "missing", "foreign", "kind", "schema", "zero", "older"])(
     const { repository, job, saved, completion } = repositorySaveFixture();
     const fresh = create(ResourceSchema, { ...repository, revision: 3n });
     let trustworthy = false;
+    let submitted = false;
+    const completionRead = vi.fn();
     const read = vi.fn((id: string) => {
       if (id === job.id) return { resource: value.resources[1] };
+      // The editor checks its submitted revision before completion starts.
+      if (!submitted) return { resource: repository };
+      completionRead();
       if (trustworthy) return { resource: fresh };
       if (failure === "failed")
         throw new ConnectError("Private read diagnostic", Code.Unavailable);
@@ -1876,10 +1887,10 @@ it.each(["failed", "missing", "foreign", "kind", "schema", "zero", "older"])(
       };
     });
     const value = fixture([repository, job], { readResource: read });
-    value.save.mockImplementation(async (request) => ({
-      job,
-      requestId: input(request).mutation.requestId,
-    }));
+    value.save.mockImplementation(async (request) => {
+      submitted = true;
+      return { job, requestId: input(request).mutation.requestId };
+    });
     render(
       <StrictMode>
         <NotificationProvider>
@@ -1900,9 +1911,7 @@ it.each(["failed", "missing", "foreign", "kind", "schema", "zero", "older"])(
       </StrictMode>,
     );
     await submitRepositorySave();
-    expect(read.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(
-      0,
-    );
+    expect(completionRead).not.toHaveBeenCalled();
     value.resources[1] = completion({ id: repository.id, revision: "3" });
     await act(async () => {
       await value.client.invalidateQueries();
@@ -1961,19 +1970,21 @@ it.each(["complete", "inactive", "disposed", "unmounted", "output-replaced"])(
       resolveReplacement = done;
     });
     let reads = 0;
+    let submitted = false;
     const value = fixture([repository, job], {
       readResource: (id) => {
         if (id === job.id) return { resource: value.resources[1] };
+        if (!submitted) return { resource: repository };
         reads += 1;
         return transition === "output-replaced" && reads > 1
           ? replacement
           : pending;
       },
     });
-    value.save.mockImplementation(async (request) => ({
-      job,
-      requestId: input(request).mutation.requestId,
-    }));
+    value.save.mockImplementation(async (request) => {
+      submitted = true;
+      return { job, requestId: input(request).mutation.requestId };
+    });
     let opening!: SettingsOpening;
     const view = (active: boolean) => (
       <NotificationProvider>
@@ -1999,7 +2010,14 @@ it.each(["complete", "inactive", "disposed", "unmounted", "output-replaced"])(
     await submitRepositorySave();
     value.resources[1] = completion({ id: repository.id, revision: 2 });
     await act(async () => {
-      await value.client.invalidateQueries();
+      // Refresh only the job; the baseline editor query has its own reader.
+      await value.client.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[1] as
+            { input?: { id?: string } } | undefined;
+          return key?.input?.id === job.id;
+        },
+      });
     });
     await waitFor(() => expect(reads).toBeGreaterThan(0));
     expect(saved).not.toHaveBeenCalled();
@@ -2013,7 +2031,14 @@ it.each(["complete", "inactive", "disposed", "unmounted", "output-replaced"])(
         revision: 3n,
       });
       await act(async () => {
-        await value.client.invalidateQueries();
+        // Refresh only the job; the baseline editor query has its own reader.
+        await value.client.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey[1] as
+              { input?: { id?: string } } | undefined;
+            return key?.input?.id === job.id;
+          },
+        });
       });
     }
     if (transition === "output-replaced")
