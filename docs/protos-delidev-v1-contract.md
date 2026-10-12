@@ -1511,3 +1511,20 @@ and all declarations against current allocations before merge.
 ## Original Codex assistant metadata negotiation
 
 System `CODEX_ASYNC_MESSAGES_V1 = 98` and Worker `CODEX_ASYNC_MESSAGES_V1 = 60` independently negotiate bounded root assistant delivery and embedded questions. The original immutable Codex assignment carries optional `native_async_messages`; only a supporting original Worker may publish optional typed `codex_assistant` in the existing message lifecycle. Message resources retain separate immutable started/completed metadata. Preserve absent, null and empty fields and exact question/option order. Reuse the current publication envelopes and identical durable receipts without a new RPC, event version, entity kind or database migration. Embedded questions grant no native response, Interaction or input authority. See [the harness contract](cmds-delidev-harness-contract.md#codex-assistant-delivery-and-embedded-questions).
+
+## Original Codex dynamic tool publication
+
+System capability `CODEX_DYNAMIC_TOOLS_V1 = 102` and Worker capability
+`CODEX_DYNAMIC_TOOLS_V1 = 63` negotiate typed original dynamic lifecycle,
+unavailable reply delivery and request resolution in the existing event JSON.
+Original numeric request identities use canonical decimal strings for browser
+precision; text request identities retain their separate kind. Private journals
+preserve original ownership and wire spelling. Older peers grant no publication
+authority. Capability changes rotate the original attach receipt identity.
+No RPC, entity kind, global event version or database migration is added.
+
+The immutable original assignment records optional `native_dynamic_tools` only
+for a negotiated root Codex Worker. Legacy and restricted assignments grant no
+live dynamic responder. A failed/interrupted root with unresolved tool evidence
+can retain its terminal and verified cleanup in a version-1 completion; it cannot
+produce a continuation checkpoint or later input authority.

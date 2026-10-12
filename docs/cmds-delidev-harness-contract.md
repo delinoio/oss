@@ -2689,3 +2689,51 @@ The pinned [original ThreadItem schema](https://github.com/openai/codex/blob/ff6
 System `CODEX_ASYNC_MESSAGES_V1` and Worker `CODEX_ASYNC_MESSAGES_V1` independently negotiate publication. The original immutable assignment enables the native observer only for a supporting Codex Worker. A legacy assignment keeps prior plain-message behavior and does not publish unsupported populated metadata. Only original root thread/turn messages may publish this metadata. Child auxiliary events cannot gain root-message ownership. Completion may add native evidence, but cannot replace observed non-null delivery or remove, reorder or rewrite an observed question. Started and completed facts remain separate. Original message identity, text, phase, lifecycle, FIFO receipts and cleanup obligations remain authoritative.
 
 Embedded questions have no native synchronous request identity. They cannot create an Interaction, reply/answer receipt, automatic input or native acceptance. Message completion does not settle the turn. Original bounded history, continuation input digests and Fork lineage preserve the native bytes; inspecting this metadata grants no replay or control authority. Synthetic fixtures do not establish installed-client, account or platform acceptance.
+
+## Original Codex dynamic tools
+
+The original root Codex execution admits the closed `dynamicToolCall` lifecycle
+and `item/tool/call` request union. Preserve the original item/call, thread,
+turn, tool, nullable namespace, argument commitment, native status, ordered
+content, nullable success and exact duration. Native content uses the separate
+camelCase `inputText`, `inputImage` and `inputAudio` union. Arguments and media
+locators stay in protected original history. Public text is inert; media retain
+only their kind and commitment, with no retrieval, adoption or dispatch.
+
+A request binds its original root turn and call identity. If a lifecycle item is
+already observed, the identity must match before it gains reply authority. An
+original request may precede its lifecycle; later observations must match the
+retained request identity.
+Retain the original numeric-versus-text wire identity without browser precision
+loss, arrival token and immutable Worker assignment. Persist original ownership
+before claiming the reply; persist send intent after the native connection's
+atomic arrival claim and before its pipe write. With no selected backend, the
+only response is `success: false` and one `inputText` item containing
+`This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
+tool backend, automatic input replay or automatic resend is introduced.
+
+The first wire-request uniqueness claim atomically publishes a complete private
+original owner document. A missing or partial later call journal preserves that
+inspectable owner and never permits another send.
+
+Exclusive original-call and wire-request journals survive cancellation,
+publication loss and restart. Existing or uncertain attempts permit inspection
+of the original journal and native reply state only. Receipt replay republishes
+the exact pending fact and cannot respond again. Reply delivery, native request
+resolution, native item completion/success, root outcome and cleanup remain
+independent. Unresolved or uncertain original requests block successful
+completion and operations that need settled continuation proof. Failed and
+interrupted roots retain their original unsettled evidence; late completion or
+resolution can refine only that original item before independent cleanup.
+
+System capability 102 and Worker capability 63 negotiate this additive JSON
+publication. The Worker advertises it only after explicit server support.
+Read-only Sidechat, title and model-observation profiles gain no responder.
+Existing human question and approval controllers retain their separate types
+and ownership. No storage migration or selected backend is added.
+
+The immutable original assignment records optional `native_dynamic_tools` only
+for a negotiated root Codex Worker. Legacy and restricted assignments grant no
+live dynamic responder. A failed/interrupted root with unresolved tool evidence
+can retain its terminal and verified cleanup in a version-1 completion; it cannot
+produce a continuation checkpoint or later input authority.

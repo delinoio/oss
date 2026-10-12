@@ -51,6 +51,9 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 		return nil, err
 	}
 	defer func() { <-c.control }()
+	if c.dynamicRequestsBlockInput() {
+		return nil, continuationUncertain()
+	}
 	if c.problem != nil {
 		return nil, c.problem
 	}
@@ -182,6 +185,14 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					}
 					seen["item:"+identity.ID] = true
 				}
+				if identity.Type == "dynamicToolCall" {
+					if c.sidechat != "" {
+						return nil, unsupportedFork()
+					}
+					if _, _, err := decodeDynamicTool(item, true); err != nil {
+						return nil, unsupportedFork()
+					}
+				}
 				if identity.Type == "sleep" {
 					if seen["sleep:"+identity.ID] {
 						return nil, unsupportedFork()
@@ -194,7 +205,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					if _, citation, err := decodeAssistantMessage(item); err != nil || citation {
 						return nil, unsupportedFork()
 					}
-				} else if !slices.Contains([]string{"userMessage", "reasoning"}, identity.Type) {
+				} else if !slices.Contains([]string{"userMessage", "reasoning", "dynamicToolCall"}, identity.Type) {
 					if !c.managedForkHistory || !settledForkTool(item, identity.Type) {
 						return nil, unsupportedFork()
 					}
@@ -462,6 +473,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "dynamicToolCall" {
+		_, _, err := decodeDynamicTool(raw, true)
+		return err == nil
+	}
 	if kind == "sleep" {
 		_, err := decodeSleep(raw)
 		return err == nil

@@ -171,6 +171,7 @@ type Message struct {
 }
 
 type Event struct {
+	DynamicTool      *domain.DynamicToolUpdate
 	NativeError      *NativeErrorObservation `json:"-"`
 	CodeReview       *CodeReviewObservation
 	Safety           *ModelSafetyObservation `json:"-"`
@@ -631,6 +632,11 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	switch kind {
 	case "enteredReviewMode", "exitedReviewMode":
 		return c.observeCodeReviewLocked(native, params.ThreadID, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
+	case "dynamicToolCall":
+		if !c.dynamicToolsEnabled || c.sidechat != "" {
+			return privateNative(native), nil
+		}
+		return c.observeDynamicItemLocked(native, params.TurnID, params.Item)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

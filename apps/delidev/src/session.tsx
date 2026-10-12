@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom";
 import { useSessionInboxRead } from "./session-inbox-read";
+import { NativeDynamicTool } from "./native-dynamic-tool";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -466,6 +467,22 @@ export const TranscriptItem = memo(function TranscriptItem({
 }) {
   useLocale();
   const data = readDocument(resource);
+  if (Object.hasOwn(data, "dynamic_tool"))
+    return (
+      <NativeDynamicTool
+        content={
+          data.role === "tool" &&
+          data.text === "" &&
+          ![
+            "tool", "function_output", "claude_tool", "grok_tool",
+            "artifact", "progress", "input_id", "phase", "claude", "claude_progress",
+            "claude_interruption", "grok_text", "grok_user",
+          ].some((key) => Object.hasOwn(data, key))
+            ? data.dynamic_tool
+            : undefined
+        }
+      />
+    );
   if (Object.hasOwn(data, "grok_tool")) return <NativeGrokTool data={data} />;
   if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
   if (data.grok_text != null) return <NativeGrokText data={data} />;

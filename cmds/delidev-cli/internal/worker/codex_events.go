@@ -13,6 +13,7 @@ import (
 // must route them to another typed adapter or stop with an unsupported result.
 // This component never sends prompts, answers interactions or owns cleanup.
 type CodexEventPublisher struct {
+	dynamicTools      map[string]dynamicToolPublication
 	children          domain.SubagentState
 	mu                sync.Mutex
 	publisher         *ExecutionPublisher
@@ -31,7 +32,7 @@ type CodexEventPublisher struct {
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, dynamicTools: map[string]dynamicToolPublication{}, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 // The accepted authentication profile fixes native provider authority. Neither
@@ -44,7 +45,7 @@ func codexExecutionProvider(subscription bool) string {
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
-	if c.publisher == nil || c.blocked || c.finished && event.Kind != domain.ExecutionSubagentObserved {
+	if c.publisher == nil || c.blocked || c.finished && event.Kind != domain.ExecutionSubagentObserved && event.Kind != domain.ExecutionDynamicToolObserved {
 		return publicationUncertain()
 	}
 	event.NativeThreadID = string(c.thread)
@@ -133,7 +134,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent && event.Kind != codex.ModelSafetyEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
+	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent && event.Kind != codex.ModelSafetyEvent && event.Kind != codex.DynamicToolEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
@@ -163,11 +164,13 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		// Private safety evidence is never a prompt, response, tool or public event.
 		return true, nil
 	}
-	if !event.Correlated || event.Late || event.ThreadID != c.thread || (event.TurnID != "" && event.TurnID != c.turn) {
+	if !event.Correlated || (event.Late && event.Kind != codex.DynamicToolEvent) || event.ThreadID != c.thread || (event.TurnID != "" && event.TurnID != c.turn) {
 		c.blocked = true
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.DynamicToolEvent:
+		return true, c.publishDynamicTool(ctx, event)
 	case codex.AutoReviewEvent:
 		if event.AutoReview == nil || c.publisher.input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || event.ThreadID != c.thread || event.TurnID != c.turn || !event.Correlated {
 			return false, publicationUncertain()
@@ -310,6 +313,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		outcome := domain.ExecutionSucceeded
 		switch event.Turn.Status {
 		case codex.TurnCompleted:
+			if !c.dynamicToolsSettled() {
+				return true, publicationUncertain()
+			}
 		case codex.TurnFailed:
 			outcome = domain.ExecutionFailed
 		case codex.TurnInterrupted:

@@ -212,7 +212,7 @@ func (c *Client) RetainCompactedCheckpoint(ctx context.Context) (diagnosticResul
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	a := c.execution.compaction
-	if c.problem != nil || a == nil || !a.acknowledged || !a.terminal || a.turnID == "" || a.itemID == "" || c.execution.active != "" || c.execution.paused || c.execution.interactions.blocksInput() || len(c.execution.pending) != 0 || len(c.subagents) != 0 {
+	if c.problem != nil || a == nil || !a.acknowledged || !a.terminal || a.turnID == "" || a.itemID == "" || c.execution.active != "" || c.execution.paused || (c.execution.interactions.blocksInput() || c.dynamicRequestsBlockInput()) || len(c.execution.pending) != 0 || len(c.subagents) != 0 {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	item, ok := c.execution.compactionItems[string(a.turnID)+"/"+a.itemID]
@@ -295,7 +295,7 @@ func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain
 	}
 	defer func() { <-c.control }()
 	s := c.execution
-	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || s.interactions.blocksInput() || c.problem != nil {
+	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || (s.interactions.blocksInput() || c.dynamicRequestsBlockInput()) || c.problem != nil {
 		return Turn{}, compactionUncertain()
 	}
 	if !c.matchesCheckpointHistoryMode(p.Source.PaginatedHistory) {
@@ -443,6 +443,10 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 						return nil, compactionUncertain()
 					}
 				case "userMessage", "reasoning", "plan", "contextCompaction":
+				case "dynamicToolCall":
+					if _, _, err := decodeDynamicTool(rawItem, true); err != nil {
+						return nil, compactionUncertain()
+					}
 				case "commandExecution", "fileChange", "imageView", "sleep":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()

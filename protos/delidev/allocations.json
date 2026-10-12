@@ -14724,6 +14724,20 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1",
       "number": 60
+    },
+    {
+      "issue": 2397,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
+      "number": 102
+    },
+    {
+      "issue": 2397,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
+      "number": 63
     }
   ],
   "rpcReservations": [

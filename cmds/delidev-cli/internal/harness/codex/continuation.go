@@ -114,7 +114,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 		return result, c.problem
 	}
 	state := c.execution
-	if !state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || len(state.turns) != 0 || len(state.inputs) != 0 || len(state.pending) != 0 || state.interactions.blocksInput() {
+	if !state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || len(state.turns) != 0 || len(state.inputs) != 0 || len(state.pending) != 0 || (state.interactions.blocksInput() || c.dynamicRequestsBlockInput()) {
 		return result, turnConflict()
 	}
 	defer func() {
@@ -261,6 +261,16 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "dynamicToolCall" {
+			if _, _, err := decodeDynamicTool(rawItem, true); err != nil {
+				return Turn{}, nil, err
+			}
+		}
+		if identity.Type == "dynamicToolCall" {
+			if _, _, err := decodeDynamicTool(rawItem, true); err != nil {
+				return Turn{}, nil, err
+			}
+		}
 		if identity.Type == "agentMessage" {
 			if _, citation, err := decodeAssistantMessage(rawItem); err != nil || citation {
 				return Turn{}, nil, incompatible()

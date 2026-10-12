@@ -519,3 +519,11 @@ allocation is added; older documents and clients keep their generic fallback.
 ## Original Codex assistant metadata
 
 Generated System and Worker `CODEX_ASYNC_MESSAGES_V1` capabilities negotiate the optional typed message metadata under the protocol and harness contracts. Renderer projections preserve separate original started/completed delivery and ordered nullable questions, fail closed on malformed metadata and display escaped text. Explicit option selection can only fill a guarded empty unsent draft through the existing composer owner; it grants no enqueue, control or native response authority. Keep current authenticated transport, session revision, connection and draft generations, attachments, skills and composition guards. No new RPC or persistent client state is introduced.
+
+## Original Codex dynamic tools
+
+Generated System 102 and Worker 63 declarations retain existing service paths.
+Typed event JSON keeps original item status, nullable success/duration, inert
+text/media commitments and independent reply/resolution metadata. Native wire
+request numbers remain decimal strings across JavaScript readers. These facts
+grant no dispatch, media retrieval, reply retry or continuation authority.

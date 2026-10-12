@@ -175,5 +175,17 @@
   "session.asyncMessage": "Asynchronous message",
   "session.embeddedUnavailable": "The original assistant metadata is unavailable.",
   "session.embeddedDraftHelp": "Selecting an option adds it to your draft.",
-  "session.embeddedDraftOccupied": "Clear your draft to use a suggestion."
+  "session.embeddedDraftOccupied": "Clear your draft to use a suggestion.",
+  "session.dynamicTool": "Dynamic tool",
+  "session.dynamicUnavailable": "Dynamic tool observation is unavailable.",
+  "session.dynamicReplyDelivery": "Reply delivery",
+  "session.dynamicNativeRequest": "Native request",
+  "session.dynamicNativeSuccess": "Native success",
+  "session.dynamicTransmitted": "Transmitted",
+  "session.dynamicUncertain": "Uncertain",
+  "session.dynamicNotSent": "Not sent",
+  "session.dynamicOpen": "Open",
+  "session.dynamicResolved": "Resolved",
+  "session.dynamicImageReference": "Image reference",
+  "session.dynamicAudioReference": "Audio reference"
 }

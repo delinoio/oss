@@ -24,7 +24,9 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED WorkerCapability = 0
+	// Original Codex dynamic lifecycle and unavailable replies.
+	WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1         WorkerCapability = 63
 	WorkerCapability_WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1        WorkerCapability = 60
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1         WorkerCapability = 58
 	WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1 WorkerCapability = 53
@@ -71,6 +73,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		63: "WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
 		60: "WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1",
 		58: "WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
 		53: "WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1",
@@ -113,6 +116,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":            63,
 		"WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1":           60,
 		"WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1":            58,
 		"WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1":    53,
@@ -4694,9 +4698,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xb7\x0f\n" +
+	"\x06_total*\xe5\x0f\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12-\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
+	"(WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1\x10?\x12-\n" +
 	")WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1\x10<\x12,\n" +
 	"(WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1\x10:\x124\n" +
 	"0WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1\x105\x12*\n" +

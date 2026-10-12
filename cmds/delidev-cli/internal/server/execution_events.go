@@ -123,7 +123,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(result.Data, &receipt); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionApprovalDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted || event.Kind == domain.ExecutionApprovalAccepted || event.Kind == domain.ExecutionSteerObserved || event.Kind == domain.ExecutionSubagentObserved || event.Kind == domain.ExecutionResponseUsageObserved || event.Kind == domain.ExecutionOpenCodeUsageObserved || event.Kind == domain.ExecutionGrokUsageObserved {
+	if event.Kind == domain.ExecutionDynamicToolObserved || event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionApprovalDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted || event.Kind == domain.ExecutionApprovalAccepted || event.Kind == domain.ExecutionSteerObserved || event.Kind == domain.ExecutionSubagentObserved || event.Kind == domain.ExecutionResponseUsageObserved || event.Kind == domain.ExecutionOpenCodeUsageObserved || event.Kind == domain.ExecutionGrokUsageObserved {
 		s.logger.InfoContext(ctx, "execution_event_committed", "job_id", identity.Job, "execution_id", event.ExecutionID, "kind", event.Kind, "sequence", event.Sequence, "replayed", result.Replayed)
 	}
 	response := connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: receipt.Sequence, Replayed: result.Replayed})
@@ -278,6 +278,18 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 			if err := publishSubagents(tx, input, sr, progress, event); err != nil {
 				return err
 			}
+		} else if event.Kind == domain.ExecutionDynamicToolObserved {
+			if progress.NativeTurnID != event.NativeTurnID || progress.CleanupVerified || queued.Delivery != domain.InputAccepted || progress.Outcome != domain.ExecutionRunning && (event.DynamicTool.Stage != domain.DynamicCompleted && event.DynamicTool.Stage != domain.DynamicResolved) {
+				return executionEventConflict()
+			}
+			if progress.Outcome != domain.ExecutionRunning {
+				if _, err := tx.Get(domain.MessageKind, event.DynamicTool.ID); err != nil {
+					return executionEventConflict()
+				}
+			}
+			if err := publishDynamicTool(tx, input, sr, event); err != nil {
+				return err
+			}
 		} else if event.Kind == domain.ExecutionClaudeProgressObserved {
 			if err := publishClaudeProgress(tx, input, sr, progress, event); err != nil {
 				return err
@@ -408,6 +420,13 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 				responseUncertain = responseUncertain || progress.UnconfirmedResponses != 0
 				progress.Waiting = domain.NativeWaiting{}
 				if event.Outcome == domain.ExecutionSucceeded {
+					dynamicSettled, dynamicErr := tx.DynamicToolsSettled(input.ExecutionID)
+					if dynamicErr != nil {
+						return dynamicErr
+					}
+					if !dynamicSettled {
+						return executionEventConflict()
+					}
 					complete, err := tx.ExecutionMessagesComplete(input.ExecutionID)
 					if err != nil {
 						return err

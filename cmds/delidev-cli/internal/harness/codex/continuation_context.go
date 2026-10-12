@@ -137,11 +137,16 @@ func (c *Client) RetainContinuationContext(ctx context.Context, source Continuat
 	}
 	defer func() { <-c.control }()
 	s := c.execution
-	if s == nil || c.problem != nil || source.Status == TurnCompleted && s.paused || s.active != "" || s.compaction != nil || len(s.pending) != 0 || s.interactions.blocksInput() || len(c.subagents) != 0 || source.ThreadID != c.thread || source.SessionID != s.thread.SessionID || !sameEffectiveSettings(source.Effective, s.settings) {
+	if s == nil || c.problem != nil || source.Status == TurnCompleted && s.paused || s.active != "" || s.compaction != nil || len(s.pending) != 0 || (s.interactions.blocksInput() || source.Status == TurnCompleted && c.dynamicRequestsBlockInput()) || len(c.subagents) != 0 || source.ThreadID != c.thread || source.SessionID != s.thread.SessionID || !sameEffectiveSettings(source.Effective, s.settings) {
 		return nil, compactionUncertain()
 	}
+	// Failed/interrupted cleanup needs no successful continuation proof.
+	// Unsettled dynamic evidence remains retained and grants no later input.
 	if len(s.contextOrder) == 0 && s.contextBase == nil {
 		return nil, nil
+	}
+	if c.dynamicRequestsBlockInput() {
+		return nil, compactionUncertain()
 	}
 	tracked, known := s.turns[source.TurnID]
 	if !known || tracked.Turn.Status != source.Status || tracked.Mode != source.Mode {

@@ -592,3 +592,13 @@ Compact settled removal proof to one original inventory path per entry, without 
 ## Codex assistant metadata in retained history
 
 The shared strict assistant decoder validates delivery and embedded questions in live and retained original items. Preserve native omission, null, empty arrays and ordered values without rebuilding the raw history. These fields do not change original compaction/continuation checkpoints, user-input digests, terminal status or original account/process/workspace ownership. Malformed metadata remains a history failure; populated memory citations keep their separate adapter boundary. No embedded question resolves a synchronous interaction or authorizes input.
+
+## Original Codex dynamic-tool history
+
+Complete continuation and context history validate dynamic items through the
+same closed lifecycle decoder as live observation. Preserve original arguments,
+ordered camelCase output variants, nullable success/duration and media locators
+inside protected native history and its digest. Public commitments and inert
+text cannot reconstruct or rewrite that history. Pending original request
+resolution or uncertain reply delivery blocks operations that require settled
+native proof; history reads never create another reply or dispatch.

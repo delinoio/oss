@@ -7,6 +7,7 @@ import {
 import { responseEvidence, type ResponseEvidence } from "./session-progress";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
+import { dynamicTool } from "./native-dynamic-tool";
 import { claudeToolReference } from "./native-claude-tool";
 import { validGrokTool } from "./native-grok-interactions";
 
@@ -84,7 +85,7 @@ export function conversationProjection(
     d.role !== "tool"
   )
     return projection;
-  const families = ["tool", "claude_tool", "grok_tool"].filter((key) =>
+  const families = ["tool", "claude_tool", "grok_tool", "dynamic_tool", "function_output"].filter((key) =>
     Object.hasOwn(d, key),
   );
   if (
@@ -102,7 +103,15 @@ export function conversationProjection(
     return projection;
   let name = "",
     state = label(d.state);
-  if (families[0] === "claude_tool") {
+  if (families[0] === "dynamic_tool") {
+    const dynamic = dynamicTool(d.dynamic_tool);
+    const original = dynamic?.snapshot?.identity ?? dynamic?.request?.identity;
+    if (!dynamic || !original || d.text !== "" || !identity(d.native_id) || !["streaming", "complete"].includes(state) || ["input_id", "phase"].some((key) => Object.hasOwn(d, key))) return projection;
+    name = original.namespace === null ? original.tool : `${original.namespace}.${original.tool}`;
+    state = dynamic.snapshot?.status === "inProgress" ? "running" : (dynamic.snapshot?.status ?? "running");
+  } else if (families[0] === "function_output") {
+    return projection;
+  } else if (families[0] === "claude_tool") {
     const c = object(d.claude_tool),
       ref = claudeToolReference(c.reference);
     if (

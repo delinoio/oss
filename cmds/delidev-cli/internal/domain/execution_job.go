@@ -34,6 +34,7 @@ type ExecutionJobInput struct {
 	Remediation         *PRFixExecution            `json:"remediation,omitempty"`
 	Continuation        *ExecutionContinuation     `json:"continuation,omitempty"`
 	// Frozen admission owns all output intents, including unpublished native calls.
+	NativeDynamicTools    bool `json:"native_dynamic_tools,omitempty"`
 	NativeAsyncMessages   bool `json:"native_async_messages,omitempty"`
 	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
 }
@@ -94,6 +95,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 func (i ExecutionJobInput) Validate() error {
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
+	}
+	if i.NativeDynamicTools && (i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "") {
+		return Fail(Unsupported, "This assignment cannot observe original Codex dynamic tools.", "Preserve the negotiated original root execution owner.")
 	}
 	if i.NativeAsyncMessages && i.Configuration.Harness != Codex {
 		return Fail(Unsupported, "This assignment cannot observe Codex assistant metadata.", "Keep original native message ownership.")

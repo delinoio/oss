@@ -531,3 +531,13 @@ unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-cont
 ## Original Codex assistant metadata at Fork
 
 The existing bounded retained-history profiles admit strictly validated assistant delivery and embedded questions through the shared native decoder. Keep original raw item bytes and original ordered nullable metadata throughout source comparison and independent Fork verification. This addition changes neither inherited user-input digests nor source/child identity, effective settings, checkpoint, account, cleanup and workspace requirements. Populated memory citations and other unsupported auxiliary families keep their separate boundaries. Embedded questions never become native response owners or inherited control authority.
+
+## Original Codex dynamic-tool history
+
+Ordinary and managed root Fork history retain complete, validated original
+dynamic items without changing their private bytes or digest. Native false
+success remains an item outcome; it does not fabricate a root result. Historical
+items grant no reply, dispatch, adoption or media retrieval. The restricted
+read-only Sidechat history profile rejects dynamic items and never obtains an
+original request responder. Existing immutable account, checkpoint, workspace,
+accepted-input and independent cleanup boundaries apply unchanged.
