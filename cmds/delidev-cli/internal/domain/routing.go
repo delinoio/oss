@@ -103,7 +103,7 @@ func routeAccount(agentID ID, agent Agent, model Model, project *Project, accoun
 			c.Eligibility = UnauthenticatedAccount
 		case blocked[link.ID] != "":
 			c.Eligibility = blocked[link.ID]
-		case account.ConfirmedExhausted:
+		case ClassifyExecutionQuotaAdmission(account, agent.Harness, now) == QuotaAdmissionBlocked:
 			c.Eligibility = ExhaustedAccount
 		case account.ExcludeAutomatic && policy != Fixed:
 			c.Eligibility = AutomaticExcluded

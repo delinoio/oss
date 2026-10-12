@@ -256,7 +256,7 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		}
 	}
 	apiReady := account.Type == domain.APIAccount && account.Validation != nil && account.Validation.ConnectionID == input.ConnectionID && account.Validation.State == domain.Observed && account.Validation.Problem == nil && !account.Validation.ObservedAt.IsZero() && account.Connection != nil && !account.Validation.ObservedAt.Before(account.Connection.ConnectedAt) && !account.Validation.ObservedAt.After(time.Now().UTC().Add(time.Second)) && (account.Validation.Authentication == domain.CredentialAccepted || account.Validation.Authentication == domain.KeylessEndpoint)
-	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady && !keySubscription) {
+	if !account.Enabled || account.Removal != nil || domain.ClassifyExecutionQuotaAdmission(account, c.Harness, tx.ObservationTime()) == domain.QuotaAdmissionBlocked || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady && !keySubscription) {
 		return empty, domain.Fail(domain.Unsupported, "The selected account lacks verified API execution authority.", "Connect and validate the selected API account; stored credentials or a model catalog alone do not authorize inference.")
 	}
 	if !managed && !keySubscription {

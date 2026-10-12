@@ -644,6 +644,32 @@ The approved Settings confirmation uses the existing task lifetime, retained
 mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
 accepted server processing. No consumption resumes a failed session automatically.
 
+## Paid-credit execution admission
+
+Included-quota exhaustion remains recorded independently from new managed
+ChatGPT/Codex execution admission. One shared Go predicate permits that admission
+only for the exact `codex` paid bucket with native `hasCredits=true` or
+`unlimited=true`, plus independently observed explicit `spend_control_reached=false`.
+Each observation must be nonfuture and no older than five minutes at the original
+routing or transaction observation time. Missing, stale, future, unavailable or
+reached evidence blocks the exception. Exact balance is display-only; never
+calculate availability from it or combine buckets.
+
+Routing, fresh dispatch/continuation and new execution-authority registration
+apply the same predicate. Keep health, authentication, removal, model/project
+compatibility, connection/credential generation, Worker capability and lease
+restrictions. Registered original grant/receipt ownership remains authoritative
+after credit evidence expires for completion, cleanup and exact registration
+replay. Other live ownership fences still apply. API, Claude and OpenCode retain
+their existing exhaustion rules.
+
+Paid admission never clears included exhaustion, changes quota scores, creates
+recovery notifications or rearms automatic reset-credit episodes. Native Codex
+remains the final input authority; native rejection retains the existing failure
+path without replay, account substitution or automatic Resume. Structured logs
+use closed admission classifications and opaque original IDs without balances,
+credentials or raw native content. No RPC, allocation or migration is added.
+
 ## Paid-credit observations
 
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.

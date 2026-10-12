@@ -213,7 +213,12 @@ or roll back together. Replayed original requests retain their exact identities.
 
 The first execution claim of a new session evaluates sources in configured order.
 A source advances only when every configured candidate is classified as confirmed
-quota exhaustion. Missing accounts, project restrictions, disabled accounts,
+quota exhaustion that blocks new admission. Fresh exact Codex paid availability
+and independently fresh explicit spend-control clearance can keep an exhausted
+managed ChatGPT/Codex candidate eligible under the [subscription admission
+contract](cmds-delidev-subscription-contract.md#paid-credit-execution-admission).
+That exception preserves included exhaustion and quota scores; it does not apply
+to API, Claude or OpenCode. Missing accounts, project restrictions, disabled accounts,
 invalid authentication/generation/validation, unsupported model/harness/provider
 protocol, and unavailable quota that cannot establish exhaustion are blockers.
 A failed query or elapsed reset time never clears exhaustion. Only observed
