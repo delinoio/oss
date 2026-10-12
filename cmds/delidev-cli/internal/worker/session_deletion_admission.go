@@ -44,7 +44,7 @@ func loadSessionRemovalAdmission(root, path string, w domain.SessionDeletionWork
 	}
 	return record.Native, digest, nil
 }
-func persistSessionRemovalAdmission(ctx context.Context, root, path string, w domain.SessionDeletionWork, proof *sessionDeletionProof, a *security.RemovalAdmission) error {
+func persistSessionRemovalAdmission(ctx context.Context, root, path string, w domain.SessionDeletionWork, proof *sessionDeletionProof, a *security.RemovalAdmission, markRemovalStarted bool) error {
 	if a.CheckTrees(ctx, root) != nil {
 		return domain.SessionDeletionPending()
 	}
@@ -59,11 +59,11 @@ func persistSessionRemovalAdmission(ctx context.Context, root, path string, w do
 		}
 		proof.AdmissionDigest = executionInputDigest(raw)
 	}
-	if !proof.RemovalStarted {
+	if markRemovalStarted && !proof.RemovalStarted {
 		proof.RemovalStarted = true
 		return writeJSON(path, *proof)
 	}
-	return nil
+	return writeJSON(path, *proof)
 }
 
 // These independently removed namespaces are absence-only at generic cleanup.

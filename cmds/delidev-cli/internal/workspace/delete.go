@@ -28,12 +28,12 @@ type deletionWorkspaceProof struct {
 // Its external proof retains the original manifest across a crash during Git
 // worktree removal. Local paths are never traversed or deleted.
 func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) error {
-	return m.DeleteOwnedWorkspaceAdmitted(ctx, w, allowAbsent, nil, nil, removeCopies)
+	return m.DeleteOwnedWorkspaceAdmitted(ctx, w, allowAbsent, nil, nil, nil, removeCopies)
 }
 
 // DeleteOwnedWorkspaceAdmitted binds generic cleanup to the Worker's captured
 // originals. The callback durably admits all original copies before Git unlink.
-func (m *Manager) DeleteOwnedWorkspaceAdmitted(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, admission *security.RemovalAdmission, admit func() error, removeCopies func() error) (returned error) {
+func (m *Manager) DeleteOwnedWorkspaceAdmitted(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, admission *security.RemovalAdmission, admit func() error, markRemovalStarted func() error, removeCopies func() error) (returned error) {
 	stage := "validate"
 	defer func() {
 		if m.Logger != nil {
@@ -393,8 +393,8 @@ func (m *Manager) DeleteOwnedWorkspaceAdmitted(ctx context.Context, w domain.Ses
 	if err := reconcileDeletionGit(ctx, m.Root, w); err != nil {
 		return err
 	}
-	if admit != nil {
-		if err := admit(); err != nil {
+	if markRemovalStarted != nil {
+		if err := markRemovalStarted(); err != nil {
 			return err
 		}
 	}

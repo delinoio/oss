@@ -362,7 +362,7 @@ func deleteSessionCopiesWithAdmissionHooks(ctx context.Context, config Config, w
 				hook()
 				hook = nil
 			}
-			if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission); err != nil {
+			if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission, false); err != nil {
 				return err
 			}
 			if afterAdmission != nil {
@@ -370,6 +370,8 @@ func deleteSessionCopiesWithAdmissionHooks(ctx context.Context, config Config, w
 				afterAdmission = nil
 			}
 			return nil
+		}, func() error {
+			return persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission, true)
 		}, func() error {
 			phase = deletionCopyRemoval
 
@@ -422,7 +424,7 @@ func deleteSessionCopiesWithAdmissionHooks(ctx context.Context, config Config, w
 			hook()
 			hook = nil
 		}
-		if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission); err != nil {
+		if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission, true); err != nil {
 			return proof, err
 		}
 		if afterAdmission != nil {

@@ -157,7 +157,7 @@ func TestSessionDeletionAdmissionReusesDurableNativeRecordAfterInterruption(t *t
 				}
 			}
 			proof, err := deleteSessionCopiesWithAdmissionHooks(ctx, config, work, nil, hook)
-			if err == nil || !proof.RemovalStarted || proof.AdmissionDigest == "" || proof.Complete {
+			if err == nil || proof.RemovalStarted || proof.AdmissionDigest == "" || proof.Complete {
 				t.Fatal("interruption lost original admission", err)
 			}
 			paths, _ := workspace.SessionDeletionProofPaths(config.Root, work)
@@ -236,7 +236,7 @@ func TestSessionDeletionAdmissionBindsOriginalDeviceWorkAndReceipt(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	proof, err := deleteSessionCopiesWithAdmissionHooks(ctx, config, first, nil, cancel)
-	if err == nil || !proof.RemovalStarted {
+	if err == nil || proof.RemovalStarted || proof.AdmissionDigest == "" {
 		t.Fatal("fixture did not retain admission", err)
 	}
 	firstPaths, _ := workspace.SessionDeletionProofPaths(config.Root, first)
