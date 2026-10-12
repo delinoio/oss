@@ -24,6 +24,9 @@ pub(crate) struct HtmlTag {
     /// Attributes whose value has a character reference this parser cannot
     /// decode; their value is kept raw.
     pub undecodable: Vec<String>,
+    /// Text content of a raw-text element (`script`, `style`, `textarea`,
+    /// `title`).
+    pub text: Option<String>,
 }
 
 /// Decodes the character references of an attribute value: numeric
@@ -181,6 +184,7 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
         }
         // Raw-text elements contain no markup: skip to their end tag so
         // script or style text that looks like a tag is not reported.
+        let mut text = None;
         if matches!(name.as_str(), "script" | "style" | "textarea" | "title") {
             // The end tag name must match exactly: `</scripture>` does not
             // end a script.
@@ -203,15 +207,51 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
                 }
                 from = after;
             }
+            let content_start = i.min(html.len());
             i = end.map_or(html.len(), |end| i + end);
+            text = Some(html[content_start..i].to_owned());
         }
         tags.push(HtmlTag {
             name,
             attributes,
             undecodable,
+            text,
         });
     }
     tags
+}
+
+/// Specifiers of literal dynamic `import("…")` calls in script text.
+pub(crate) fn literal_dynamic_imports(code: &str) -> Vec<String> {
+    let bytes = code.as_bytes();
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = code[from..].find("import") {
+        let at = from + offset;
+        from = at + "import".len();
+        if at > 0
+            && (bytes[at - 1].is_ascii_alphanumeric()
+                || matches!(bytes[at - 1], b'_' | b'$' | b'.'))
+        {
+            continue;
+        }
+        let rest = code[from..].trim_start();
+        let Some(rest) = rest.strip_prefix('(') else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(quote) = rest
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '"' | '\'' | '`'))
+        else {
+            continue;
+        };
+        if let Some(end) = rest[1..].find(quote) {
+            found.push(rest[1..1 + end].to_owned());
+        }
+    }
+    found
 }
 
 /// Maps an offset of a round's input text to the round's output text.
@@ -529,13 +569,20 @@ fn hashed_name(file: &str) -> Option<(&str, &str, char)> {
     (!name.is_empty() && hash.len() == 8 && alphabet && random).then_some((name, ext, separator))
 }
 
+/// Whether a file is an HTML page (`.html` or `.htm`).
+pub(crate) fn is_html(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"))
+}
+
 fn is_text_asset(path: &Path) -> bool {
-    path.extension().is_some_and(|e| {
-        matches!(
-            e.to_str(),
-            Some("js" | "mjs" | "cjs" | "html" | "css" | "json" | "map" | "webmanifest")
-        )
-    })
+    is_html(path)
+        || path.extension().is_some_and(|e| {
+            matches!(
+                e.to_str(),
+                Some("js" | "mjs" | "cjs" | "css" | "json" | "map" | "webmanifest")
+            )
+        })
 }
 
 fn files_under(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -772,7 +819,7 @@ pub fn preflight(dir: &Path) -> Result<()> {
     let mut files = Vec::new();
     files_under(dir, &mut files)?;
     for file in &files {
-        if file.extension().is_some_and(|e| e == "html")
+        if is_html(file)
             && std::fs::read_to_string(file).is_ok_and(|html| {
                 html_tags(&html)
                     .iter()

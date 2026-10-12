@@ -271,12 +271,24 @@ impl Project {
             Vec::new(),
             chunks.clone(),
         )?;
+        if let Some(outside) = project.application_file_outside(dir) {
+            bail!(
+                "a bundle chunk imports a module outside the bundle directory, which cannot be \
+                 published: {outside}"
+            );
+        }
         let imported = project.bundle_imported();
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
-        let (scripts, classic) = html_scripts(dir)?;
-        let loaded_by_html = |chunk: &String| scripts.contains(chunk);
+        let HtmlScripts {
+            modules: scripts,
+            classic,
+            imported: from_html,
+        } = html_scripts(dir)?;
+        // Chunks that inline HTML scripts import are entries: their exports
+        // are observed outside the program.
+        let loaded_by_html = |chunk: &String| scripts.contains(chunk) || from_html.contains(chunk);
         let mut modules = imported.clone();
         modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
         // A chunk that no chunk imports (an HTML entry, a worker or a file
@@ -295,6 +307,16 @@ impl Project {
         );
         project._bundle_config = Some(config_dir);
         Ok(project)
+    }
+
+    /// An application module of the program that lies outside `dir`.
+    fn application_file_outside(&self, dir: &std::path::Path) -> Option<String> {
+        let _scope = enter_program(Some(self.version));
+        source_files()
+            .into_iter()
+            .filter(|&file| is_application(file))
+            .map(|file| source_file_info(file).file_name.clone())
+            .find(|name| !std::path::Path::new(name).starts_with(dir))
     }
 
     /// Bundle chunks that another chunk imports with an import or export
@@ -827,104 +849,154 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
     Ok(out)
 }
 
-/// Canonical paths of bundle files that HTML pages load with
-/// `<script type="module">`, and of those they load as classic scripts. A
-/// relative `src` resolves against the page's `<base href>` or the page itself;
-/// a root-relative `src` resolves against the bundle directory, dropping
-/// leading segments of a deployment base path when needed. External URLs
-/// are ignored.
 type Paths = std::collections::BTreeSet<String>;
 
-fn html_scripts(dir: &std::path::Path) -> Result<(Paths, Paths)> {
-    fn resolve(dir: &std::path::Path, page: &std::path::Path, src: &str) -> Option<String> {
-        let src = src.split(['?', '#']).next()?;
-        if src.is_empty()
-            || src.contains("://")
-            || src.starts_with("//")
-            || src.starts_with("data:")
-        {
+/// Bundle files that HTML pages reach, as canonical paths.
+#[derive(Default)]
+struct HtmlScripts {
+    /// Loaded with `<script type="module" src>`.
+    modules: Paths,
+    /// Loaded as classic scripts.
+    classic: Paths,
+    /// Imported by inline scripts (static imports of inline modules and
+    /// literal dynamic imports): public entries of the bundle.
+    imported: Paths,
+}
+
+/// JavaScript MIME type essences, which make a `<script>` a classic script
+/// (https://mimesniff.spec.whatwg.org/#javascript-mime-type).
+const JAVASCRIPT_MIME_TYPES: [&str; 16] = [
+    "application/ecmascript",
+    "application/javascript",
+    "application/x-ecmascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript",
+];
+
+/// What HTML pages in the bundle load. Script URLs resolve with URL
+/// semantics against the page's first `<base href>` (or the page) within a
+/// virtual origin rooted at the bundle directory; a path that does not exist
+/// there is retried without leading segments (a deployment base path).
+/// External URLs are ignored.
+fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
+    const ORIGIN: &str = "http://bundle.invalid/";
+    fn resolve(root: &std::path::Path, base: &url::Url, reference: &str) -> Option<String> {
+        let url = base.join(reference.trim()).ok()?;
+        if url.scheme() != "http" || url.host_str() != Some("bundle.invalid") {
             return None;
         }
-        let candidates: Vec<std::path::PathBuf> = match src.strip_prefix('/') {
-            Some(rooted) => {
-                let segments: Vec<&str> = rooted.split('/').collect();
-                (0..segments.len())
-                    .map(|skip| dir.join(segments[skip..].join("/")))
-                    .collect()
-            }
-            None => vec![page.parent()?.join(src)],
-        };
-        candidates
-            .into_iter()
+        let path = percent_decode(url.path().trim_start_matches('/'));
+        let segments: Vec<&str> = path.split('/').collect();
+        (0..segments.len())
+            .map(|skip| root.join(segments[skip..].join("/")))
             .filter_map(|c| c.canonicalize().ok())
-            .find(|c| c.starts_with(dir) && c.is_file())
+            .find(|c| c.starts_with(root) && c.is_file())
             .map(|c| c.to_string_lossy().into_owned())
     }
-    fn walk(
-        root: &std::path::Path,
-        dir: &std::path::Path,
-        modules: &mut Paths,
-        classic: &mut Paths,
-    ) -> Result<()> {
+    fn percent_decode(path: &str) -> String {
+        let bytes = path.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%'
+                && let Some(byte) = path
+                    .get(i + 1..i + 3)
+                    .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+            out.push(bytes[i]);
+            i += 1;
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+    fn walk(root: &std::path::Path, dir: &std::path::Path, found: &mut HtmlScripts) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
             let entry = entry?;
             let path = entry.path();
             if entry.file_type()?.is_dir() {
-                walk(root, &path, modules, classic)?;
-            } else if path.extension().is_some_and(|e| e == "html") {
-                let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
-                let tags = crate::bundle::html_tags(&html);
-                // A reference this parser cannot decode could name any file.
-                ensure!(
-                    !tags.iter().any(|t| {
-                        (t.name == "script"
-                            && t.undecodable.iter().any(|a| a == "src" || a == "type"))
-                            || (t.name == "base" && t.undecodable.iter().any(|a| a == "href"))
-                    }),
-                    "an HTML script or base URL uses an unsupported character reference"
-                );
-                // Relative URLs resolve against the first `<base href>`.
-                let base = tags
-                    .iter()
-                    .find(|t| t.name == "base" && t.attribute("href").is_some())
-                    .and_then(|t| t.attribute("href"))
-                    .map(|href| {
-                        let href = href.trim().split(['?', '#']).next().unwrap_or_default();
-                        href[..href.rfind('/').map_or(0, |at| at + 1)].to_owned()
-                    });
-                for tag in &tags {
-                    if tag.name != "script" {
-                        continue;
-                    }
-                    let kind = tag.attribute("type").map(|t| t.trim().to_ascii_lowercase());
-                    let module = kind.as_deref() == Some("module");
-                    // Classic scripts: no type or a JavaScript MIME type.
-                    let script = module
-                        || kind.as_deref().is_none_or(|t| {
-                            t.is_empty() || t.contains("javascript") || t.contains("ecmascript")
-                        });
-                    if !script {
-                        continue;
-                    }
-                    let Some(src) = tag.attribute("src").map(str::trim) else {
-                        continue;
-                    };
-                    let relative = !(src.starts_with('/') || src.contains(':'));
-                    let src = match &base {
-                        // An external base makes relative scripts external.
-                        Some(base)
-                            if relative && (base.contains("://") || base.starts_with("//")) =>
-                        {
-                            continue;
+                walk(root, &path, found)?;
+                continue;
+            }
+            if !crate::bundle::is_html(&path) {
+                continue;
+            }
+            let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
+            let tags = crate::bundle::html_tags(&html);
+            // A reference this parser cannot decode could name any file.
+            ensure!(
+                !tags.iter().any(|t| {
+                    (t.name == "script" && t.undecodable.iter().any(|a| a == "src" || a == "type"))
+                        || (t.name == "base" && t.undecodable.iter().any(|a| a == "href"))
+                }),
+                "an HTML script or base URL uses an unsupported character reference"
+            );
+            let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
+            let origin = url::Url::parse(ORIGIN).expect("valid origin");
+            let page = origin
+                .join(&relative)
+                .context("cannot form a URL for an HTML page")?;
+            // Relative URLs resolve against the first `<base href>`.
+            let base = match tags
+                .iter()
+                .find(|t| t.name == "base" && t.attribute("href").is_some())
+                .and_then(|t| t.attribute("href"))
+            {
+                Some(href) => page
+                    .join(href.trim())
+                    .context("an HTML page has an invalid base URL")?,
+                None => page,
+            };
+            for tag in tags.iter().filter(|t| t.name == "script") {
+                // The MIME type essence: parameters and case do not matter.
+                let kind = tag.attribute("type").map(|t| {
+                    t.split(';')
+                        .next()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_ascii_lowercase()
+                });
+                let module = kind.as_deref() == Some("module");
+                let classic = kind
+                    .as_deref()
+                    .is_none_or(|t| t.is_empty() || JAVASCRIPT_MIME_TYPES.contains(&t));
+                if !module && !classic {
+                    continue;
+                }
+                match tag.attribute("src") {
+                    Some(src) => {
+                        if let Some(file) = resolve(root, &base, src) {
+                            if module {
+                                found.modules.insert(file);
+                            } else {
+                                found.classic.insert(file);
+                            }
                         }
-                        Some(base) if relative => format!("{base}{src}"),
-                        _ => src.to_owned(),
-                    };
-                    if let Some(path) = resolve(root, &path, &src) {
+                    }
+                    None => {
+                        // Inline code can import chunks: they become public.
+                        let code = tag.text.as_deref().unwrap_or_default();
+                        let mut specifiers = crate::bundle::literal_dynamic_imports(code);
                         if module {
-                            modules.insert(path);
-                        } else {
-                            classic.insert(path);
+                            specifiers.extend(crate::pipeline::bundle_static_imports(code));
+                        }
+                        for specifier in specifiers {
+                            if let Some(file) = resolve(root, &base, &specifier) {
+                                found.imported.insert(file);
+                            }
                         }
                     }
                 }
@@ -932,9 +1004,9 @@ fn html_scripts(dir: &std::path::Path) -> Result<(Paths, Paths)> {
         }
         Ok(())
     }
-    let (mut modules, mut classic) = (Paths::new(), Paths::new());
-    walk(dir, dir, &mut modules, &mut classic)?;
-    Ok((modules, classic))
+    let mut found = HtmlScripts::default();
+    walk(dir, dir, &mut found)?;
+    Ok(found)
 }
 
 /// Sorted diagnostic codes with their message templates' arguments omitted.

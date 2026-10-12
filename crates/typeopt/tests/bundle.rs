@@ -1062,6 +1062,87 @@ fn decodes_character_references_in_script_urls() {
     assert!(!run_typeopt(unknown.path(), &[]).status.success());
 }
 
+/// Script URLs resolve with URL semantics: a base without a trailing slash
+/// drops its last segment.
+#[test]
+fn resolves_script_urls_with_url_semantics() {
+    let shared = r#"function sharedGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var sharedState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "nested/page.html",
+            r#"<base href="/modern"><script src="shared.js"></script>"#,
+        ),
+        ("shared.js", shared),
+        ("nested/shared.js", "console.log(0);"),
+        (
+            "index.js",
+            r#"import"./shared.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "shared.js"), shared);
+}
+
+/// Every JavaScript MIME type essence loads a classic script, and `.htm`
+/// pages count as HTML.
+#[test]
+fn recognizes_legacy_script_types_and_htm_pages() {
+    let shared = r#"function sharedGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var sharedState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.htm",
+            r#"<script type="text/jscript; charset=utf-8" src="./shared.js"></script><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        ("shared.js", shared),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import"../shared.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "shared.js"), shared);
+    let assets = listing(&temp.path().join("out/assets"));
+    let page = fs::read_to_string(temp.path().join("out/index.htm")).unwrap();
+    assert!(page.contains(&format!("/assets/{}", assets[0])), "{page}");
+    assert!(!assets[0].contains("AAAAAAAA"), "{assets:?}");
+}
+
+/// Inline HTML scripts can import chunk exports, which stay public.
+#[test]
+fn keeps_exports_that_inline_scripts_import() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module">import{htmlOnly}from"./lib.js";console.log(htmlOnly());</script><script>import("./lazy.js").then(m=>m.lazyOnly())</script><script type="module" src="./index.js"></script>"#,
+        ),
+        (
+            "lib.js",
+            r#"function used(){return 1}function htmlOnly(){return 2}export{used,htmlOnly};"#,
+        ),
+        (
+            "lazy.js",
+            r#"function lazyOnly(){return 3}function unusedLazy(){return 4}export{lazyOnly,unusedLazy};"#,
+        ),
+        (
+            "index.js",
+            r#"import{used as u}from"./lib.js";console.log(u());"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert!(out(temp.path(), "lib.js").contains("htmlOnly"));
+    assert!(out(temp.path(), "lazy.js").contains("lazyOnly"));
+}
+
+/// A chunk that imports a module outside the bundle cannot be published.
+#[test]
+fn rejects_imports_outside_the_bundle() {
+    let temp = bundle(&[("index.js", r#"import"../outside.js";console.log(1);"#)]);
+    fs::write(temp.path().join("outside.js"), "console.log(0);export{};").unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [
