@@ -2079,15 +2079,27 @@ cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppH
  fn do_close(&self,browser:Option<&mut Browser>)->i32{
    #[cfg(any(target_os="macos",windows))]
    {
-     // CEF's default sends a product-parent close on these platforms. Always
-     // intercept it, even when evidence or dispatch fails; only the original
-     // child's before-close callback may release shutdown accounting.
+     // Prefer exact child teardown. Retry transient native failures with the
+     // retained browser, then allow CEF's default close path if it cannot finish.
+     // Only the original child's before-close callback releases shutdown accounting.
      if let Some(browser)=browser{
-       schedule_child_destroy(browser,&self.request,&self.lifetime);
+       if self.lifetime.lock().is_ok_and(|receipt|receipt.default_close_allowed(browser.identifier(),self.request.generation)){
+         tracing::warn!(operation="browser_child_close",stage="fallback",classification="allow_default_close",generation=self.request.generation);
+         0
+       }else{
+         match schedule_child_destroy(browser,&self.request,&self.lifetime){
+           ChildCloseDecision::Intercept=>1,
+           ChildCloseDecision::AllowDefault=>{
+             // The exact child could not be safely detached or dispatched. Let CEF
+             // complete its documented parent-close path instead of trapping it.
+             0
+           }
+         }
+       }
      }else{
        tracing::warn!(operation="browser_child_close",stage="intercept",classification="missing_browser",generation=self.request.generation);
+       1
      }
-     1
    }
    #[cfg(not(any(target_os="macos",windows)))]
    {let _=browser;0}
@@ -2110,11 +2122,17 @@ fn native_handle(handle: cef::sys::cef_window_handle_t) -> usize {
 }
 
 #[cfg(any(target_os = "macos", windows))]
+enum ChildCloseDecision {
+    Intercept,
+    AllowDefault,
+}
+
+#[cfg(any(target_os = "macos", windows))]
 fn schedule_child_destroy(
     browser: &Browser,
     request: &ViewRequest,
     lifetime: &Arc<Mutex<ChildLifetime>>,
-) {
+) -> ChildCloseDecision {
     let Some(identity) = lifetime
         .lock()
         .ok()
@@ -2126,42 +2144,63 @@ fn schedule_child_destroy(
             classification = "duplicate_or_foreign",
             generation = request.generation
         );
-        return;
+        return ChildCloseDecision::Intercept;
     };
     // Retain this browser, not the currently selected view. The client shares
     // the receipt across every LifeSpanHandler interface CEF requests.
-    let mut task = DestroyExternalChild::new(browser.clone(), identity, Arc::clone(lifetime));
-    if cef::post_task(ThreadId::UI, Some(&mut task)) != 1 {
-        if let Ok(mut receipt) = lifetime.lock() {
-            receipt.dispatch_failed(identity);
-        }
-        tracing::warn!(
-            operation = "browser_child_close",
-            stage = "dispatch",
-            classification = "unavailable",
-            generation = identity.generation
-        );
-    } else {
+    let mut task = DestroyExternalChild::new(browser.clone(), identity, Arc::clone(lifetime), 0);
+    if cef::post_task(ThreadId::UI, Some(&mut task)) == 1 {
         tracing::info!(
             operation = "browser_child_close",
             stage = "dispatch",
             state = "queued",
             generation = identity.generation
         );
+        return ChildCloseDecision::Intercept;
     }
+
+    if let Ok(mut receipt) = lifetime.lock() {
+        receipt.use_default_close(identity);
+    }
+    tracing::warn!(
+        operation = "browser_child_close",
+        stage = "dispatch",
+        classification = "unavailable_allow_default",
+        generation = identity.generation
+    );
+    ChildCloseDecision::AllowDefault
 }
 
 #[cfg(any(target_os = "macos", windows))]
-cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdentity,lifetime:Arc<Mutex<ChildLifetime>>,}impl Task{
+const MAX_CHILD_DESTROY_RETRIES: u8 = 3;
+
+#[cfg(any(target_os = "macos", windows))]
+cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdentity,lifetime:Arc<Mutex<ChildLifetime>>,attempt:u8,}impl Task{
  fn execute(&self){
    if !self.lifetime.lock().is_ok_and(|mut receipt|receipt.begin_destroy(self.identity)){return;}
    // Release the receipt lock before native calls: destruction can reenter
    // on_before_close, which is the sole accounting acknowledgment.
    let result=destroy_native_child(&self.browser,self.identity);
-   if let Ok(mut receipt)=self.lifetime.lock(){receipt.finish_destroy(self.identity,result.is_ok());}
    match result{
-     Ok(())=>tracing::info!(operation="browser_child_close",stage="destruction",state="awaiting_acknowledgment",generation=self.identity.generation),
-     Err(code)=>tracing::warn!(operation="browser_child_close",stage="destruction",?code,generation=self.identity.generation),
+     Ok(())=>{
+       if let Ok(mut receipt)=self.lifetime.lock(){receipt.finish_destroy(self.identity,true);}
+       tracing::info!(operation="browser_child_close",stage="destruction",state="awaiting_acknowledgment",generation=self.identity.generation);
+     }
+     Err(code)=>{
+       if self.attempt<MAX_CHILD_DESTROY_RETRIES && self.lifetime.lock().is_ok_and(|mut receipt|receipt.retry_destroy(self.identity)){
+         let mut retry=DestroyExternalChild::new(self.browser.clone(),self.identity,Arc::clone(&self.lifetime),self.attempt+1);
+         let delay_ms=50_i64 * i64::from(self.attempt+1);
+         if cef::post_delayed_task(ThreadId::UI,Some(&mut retry),delay_ms)==1{
+           tracing::warn!(operation="browser_child_close",stage="destruction",state="retry_queued",?code,attempt=self.attempt+1,generation=self.identity.generation);
+           return;
+         }
+       }
+       if let Ok(mut receipt)=self.lifetime.lock(){receipt.use_default_close(self.identity);}
+       tracing::warn!(operation="browser_child_close",stage="destruction",state="allow_default_close",?code,attempt=self.attempt,generation=self.identity.generation);
+       // This runs on CEF's UI thread. The next DoClose observes the exact
+       // receipt's fallback state and allows CEF to finish the close.
+       if let Some(host)=self.browser.host(){host.close_browser(1);}
+     }
    }
  }
 }}

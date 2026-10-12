@@ -17,6 +17,7 @@ enum Phase {
     Queued,
     Destroying,
     Destroyed,
+    DefaultClose,
     Closed,
 }
 
@@ -60,6 +61,31 @@ impl ChildLifetime {
         }
         self.phase = Phase::Destroying;
         true
+    }
+
+    pub fn retry_destroy(&mut self, identity: ChildIdentity) -> bool {
+        if self.identity != Some(identity) || self.phase != Phase::Destroying {
+            return false;
+        }
+        self.phase = Phase::Queued;
+        true
+    }
+
+    pub fn use_default_close(&mut self, identity: ChildIdentity) -> bool {
+        if self.identity != Some(identity)
+            || !matches!(self.phase, Phase::Queued | Phase::Destroying | Phase::Live)
+        {
+            return false;
+        }
+        self.phase = Phase::DefaultClose;
+        true
+    }
+
+    pub fn default_close_allowed(&self, browser_id: i32, generation: u64) -> bool {
+        self.phase == Phase::DefaultClose
+            && self.identity.is_some_and(|identity| {
+                identity.browser_id == browser_id && identity.generation == generation
+            })
     }
 
     pub fn finish_destroy(&mut self, identity: ChildIdentity, success: bool) {
@@ -184,6 +210,50 @@ mod tests {
             assert_eq!(receipt.queue(41, 7), None);
             assert!(!receipt.closed(41, 7));
         }
+    }
+
+    #[test]
+    fn failed_destroy_keeps_the_original_receipt_queued_for_retry() {
+        let mut receipt = ChildLifetime::default();
+        let original = child();
+        receipt.created(original);
+        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.begin_destroy(original));
+        assert!(receipt.retry_destroy(original));
+        assert!(!receipt.begin_destroy(ChildIdentity {
+            browser_id: 42,
+            ..original
+        }));
+        assert!(receipt.begin_destroy(original));
+        receipt.finish_destroy(original, true);
+        assert!(receipt.closed(41, 7));
+    }
+
+    #[test]
+    fn failed_dispatch_can_allow_default_close_from_the_queued_phase() {
+        let mut receipt = ChildLifetime::default();
+        let original = child();
+        receipt.created(original);
+        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.use_default_close(original));
+        assert!(receipt.default_close_allowed(41, 7));
+        assert!(receipt.closed(41, 7));
+    }
+
+    #[test]
+    fn default_close_fallback_is_limited_to_the_original_child() {
+        let mut receipt = ChildLifetime::default();
+        let original = child();
+        receipt.created(original);
+        receipt.queue(41, 7);
+        assert!(!receipt.default_close_allowed(41, 7));
+        assert!(receipt.begin_destroy(original));
+        assert!(receipt.use_default_close(original));
+        assert!(receipt.default_close_allowed(41, 7));
+        assert!(!receipt.default_close_allowed(42, 7));
+        assert!(!receipt.default_close_allowed(41, 8));
+        assert!(receipt.closed(41, 7));
+        assert!(!receipt.default_close_allowed(41, 7));
     }
 
     #[test]
