@@ -20,5 +20,6 @@
   "pr-workspace.retryTab": "Retry this tab",
   "pr-workspace.unsupportedCommits": "This server does not support commit reads.",
   "pr-workspace.select": "Select a pull request to inspect its details.",
-  "pr-workspace.matches": "GitHub reports {{count}} matching pull requests."
+  "pr-workspace.matches": "GitHub reports {{count}} matching pull requests.",
+  "pr-workspace.patchDigest": "Patch SHA-256"
 }

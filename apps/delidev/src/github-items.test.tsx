@@ -257,15 +257,21 @@ function fixture(
   return { repository, query, inspect, client, view };
 }
 it("loads standalone pull request results and reads detail without inventing mergeability", async () => {
-  const f = fixture(); const view = render(f.view());
-  expect(f.query).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  const f = fixture();
+  const view = render(f.view());
+  expect(f.query).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await screen.findByRole("button", { name: /#17 Original fixture title/ });
   expect(f.inspect).not.toHaveBeenCalled();
   expect(f.query.mock.calls[0][0].repositoryId).toBe(f.repository.id);
-  fireEvent.click(screen.getByRole("button", { name: /#17 Original fixture title/ }));
+  fireEvent.click(
+    screen.getByRole("button", { name: /#17 Original fixture title/ }),
+  );
   await screen.findByRole("tab", { name: "Description" });
   expect(screen.queryByRole("button", { name: "Read PR checks" })).toBeNull();
-  expect(screen.getAllByText(/<script>never executed/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/<script>never executed/).length).toBeGreaterThan(
+    0,
+  );
   expect(view.container.querySelector("script")).toBeNull();
   expect(screen.queryAllByRole("link")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
@@ -323,30 +329,85 @@ it("discloses incomplete standalone PR search and preserves its exact terms and 
   );
 });
 it("rejects a foreign revision without rendering partial items", async () => {
-  const f = fixture(); const valid = await f.query({ repositoryId: f.repository.id, queryJson: encode({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 }) });
-  const result = JSON.parse(new TextDecoder().decode(valid.documentJson)); result.repository_revision = "2";
-  f.query.mockResolvedValueOnce({ schemaVersion: 1, documentJson: encode(result) });render(f.view());fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
-  await screen.findByRole("alert"); expect(screen.queryByRole("button", { name: /#17 Original fixture title/ })).toBeNull();
+  const f = fixture();
+  const valid = await f.query({
+    repositoryId: f.repository.id,
+    queryJson: encode({
+      kind: "pull-request",
+      operation: "list",
+      state: "open",
+      page: 1,
+      page_size: 20,
+    }),
+  });
+  const result = JSON.parse(new TextDecoder().decode(valid.documentJson));
+  result.repository_revision = "2";
+  f.query.mockResolvedValueOnce({
+    schemaVersion: 1,
+    documentJson: encode(result),
+  });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("alert");
+  expect(
+    screen.queryByRole("button", { name: /#17 Original fixture title/ }),
+  ).toBeNull();
 });
 it("discards repository content on inactivation", async () => {
-  const f = fixture();const view = render(f.view());fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));await screen.findByRole("button", { name: /#17 Original fixture title/ });
-  view.rerender(f.view(false));expect(screen.queryByText("Original fixture title")).toBeNull();
-  await waitFor(() => expect(f.client.getQueryCache().getAll()).toHaveLength(0));expect(f.query).toHaveBeenCalledTimes(1);
+  const f = fixture();
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("button", { name: /#17 Original fixture title/ });
+  view.rerender(f.view(false));
+  expect(screen.queryByText("Original fixture title")).toBeNull();
+  await waitFor(() =>
+    expect(f.client.getQueryCache().getAll()).toHaveLength(0),
+  );
+  expect(f.query).toHaveBeenCalledTimes(1);
 });
 
 it("retains the shared checks read without exposing it in the ordinary workspace", async () => {
-  const f = fixture(); const query = { kind: ItemKind.PullRequest, operation: QueryOperation.Checks, number: "17", page: 1, page_size: 20 };
-  const reply = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
+  const f = fixture();
+  const query = {
+    kind: ItemKind.PullRequest,
+    operation: QueryOperation.Checks,
+    number: "17",
+    page: 1,
+    page_size: 20,
+  };
+  const reply = await f.query({
+    repositoryId: f.repository.id,
+    queryJson: encode(query),
+  });
   expect(githubResult(reply.documentJson, f.repository, query)).toBeDefined();
 });
 it("shows the original immutable diff text without rendering active content", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); fireEvent.click(await screen.findByRole("button", { name: /#17 Original fixture title/ }));fireEvent.click(await screen.findByRole("tab", { name: "Diff" }));
-  await waitFor(() => expect(screen.getAllByText(/Original patch/).length).toBeGreaterThan(0)); expect(screen.queryByRole("navigation", { name: "GitHub result pages" })).toBeNull();
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /#17 Original fixture title/ }),
+  );
+  fireEvent.click(await screen.findByRole("tab", { name: "Diff" }));
+  await waitFor(() =>
+    expect(screen.getAllByText(/Original patch/).length).toBeGreaterThan(0),
+  );
+  expect(
+    screen.queryByRole("navigation", { name: "GitHub result pages" }),
+  ).toBeNull();
   expect(screen.getByText("Snapshot details")).toBeTruthy();
 });
 it("retains the shared rules read without exposing it in the ordinary workspace", async () => {
-  const f = fixture(); const query = { kind: ItemKind.PullRequest, operation: QueryOperation.Rules, number: "17" };
-  const reply = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
+  const f = fixture();
+  const query = {
+    kind: ItemKind.PullRequest,
+    operation: QueryOperation.Rules,
+    number: "17",
+  };
+  const reply = await f.query({
+    repositoryId: f.repository.id,
+    queryJson: encode(query),
+  });
   expect(githubResult(reply.documentJson, f.repository, query)).toBeDefined();
 });
 it("rejects foreign heads, mixed observation families and an empty successful status aggregate", async () => {
@@ -425,33 +486,85 @@ it("preserves unknown check source values without accepting a known passing clas
 });
 
 it("retains the shared ci read without exposing it in the ordinary workspace", async () => {
-  const f = fixture(); const query = { kind: ItemKind.PullRequest, operation: QueryOperation.CI, number: "17" };
-  const reply = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
+  const f = fixture();
+  const query = {
+    kind: ItemKind.PullRequest,
+    operation: QueryOperation.CI,
+    number: "17",
+  };
+  const reply = await f.query({
+    repositoryId: f.repository.id,
+    queryJson: encode(query),
+  });
   expect(githubResult(reply.documentJson, f.repository, query)).toBeDefined();
 });
 
 it("reads published PR feedback explicitly without a partial page control", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
-  fireEvent.click(await screen.findByRole("button", { name: /#17 Original fixture title/ }));
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /#17 Original fixture title/ }),
+  );
   fireEvent.click(await screen.findByRole("tab", { name: "Reviews" }));
   await screen.findByRole("region", { name: "Published PR feedback" });
-  expect(screen.getByText("<script>Approved review feedback</script>")).toBeTruthy();
-  expect(screen.queryByRole("navigation", { name: "GitHub result pages" })).toBeNull();
-  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson))).toEqual({ kind: "pull-request", operation: "feedback", number: "17" });
+  expect(
+    screen.getByText("<script>Approved review feedback</script>"),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("navigation", { name: "GitHub result pages" }),
+  ).toBeNull();
+  expect(
+    JSON.parse(
+      new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson),
+    ),
+  ).toEqual({ kind: "pull-request", operation: "feedback", number: "17" });
 });
 
 it("retains the shared reviewers read without exposing it in the ordinary workspace", async () => {
-  const f = fixture(); const query = { kind: ItemKind.PullRequest, operation: QueryOperation.Reviewers, number: "17" };
-  const reply = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
+  const f = fixture();
+  const query = {
+    kind: ItemKind.PullRequest,
+    operation: QueryOperation.Reviewers,
+    number: "17",
+  };
+  const reply = await f.query({
+    repositoryId: f.repository.id,
+    queryJson: encode(query),
+  });
   expect(githubResult(reply.documentJson, f.repository, query)).toBeDefined();
 });
 
-const forkSource = () => ({ state: "available", repository: { provider: "github.com", id: "9007199254740993", node_id: "FORK_1", owner: "fixture-author", name: "fork-repo", private: true, default_branch: "main" } });
-it.each([undefined, { state: "unavailable" }, forkSource()])("preserves original source identity in shared detail observations (%j)", async source => {
- const f = fixture(source), query = { kind: ItemKind.PullRequest, operation: QueryOperation.Detail, number: "17" };
- const reply = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
- expect(githubResult(reply.documentJson, f.repository, query)?.items).toBeDefined();
+const forkSource = () => ({
+  state: "available",
+  repository: {
+    provider: "github.com",
+    id: "9007199254740993",
+    node_id: "FORK_1",
+    owner: "fixture-author",
+    name: "fork-repo",
+    private: true,
+    default_branch: "main",
+  },
 });
+it.each([undefined, { state: "unavailable" }, forkSource()])(
+  "preserves original source identity in shared detail observations (%j)",
+  async (source) => {
+    const f = fixture(source),
+      query = {
+        kind: ItemKind.PullRequest,
+        operation: QueryOperation.Detail,
+        number: "17",
+      };
+    const reply = await f.query({
+      repositoryId: f.repository.id,
+      queryJson: encode(query),
+    });
+    expect(
+      githubResult(reply.documentJson, f.repository, query)?.items,
+    ).toBeDefined();
+  },
+);
 
 it("rejects inconsistent source identities and source data outside PR detail", async () => {
   const f = fixture(forkSource()),
@@ -512,43 +625,125 @@ it("rejects inconsistent source identities and source data outside PR detail", a
 });
 
 it("retains accepted rows after a failed append and explicitly retries the same numeric page", async () => {
-  const f = fixture(), original = f.query.getMockImplementation()!;
+  const f = fixture(),
+    original = f.query.getMockImplementation()!;
   let failed = false;
-  f.query.mockImplementation(async request => {
+  f.query.mockImplementation(async (request) => {
     const query = JSON.parse(new TextDecoder().decode(request.queryJson));
-    if (query.page === 2 && !failed) { failed = true; throw new ConnectError("Read unavailable", Code.Unavailable); }
-    const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson));
-    if (query.page === 2) data.items = [{ ...data.items[0], id: "9007199254740994", node_id: "ITEM_18", number: "18", title: "Later fixture title", url: "https://github.com/fixture-owner/repo/pull/18" }];
+    if (query.page === 2 && !failed) {
+      failed = true;
+      throw new ConnectError("Read unavailable", Code.Unavailable);
+    }
+    const reply = await original(request),
+      data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    if (query.page === 2)
+      data.items = [
+        {
+          ...data.items[0],
+          id: "9007199254740994",
+          node_id: "ITEM_18",
+          number: "18",
+          title: "Later fixture title",
+          url: "https://github.com/fixture-owner/repo/pull/18",
+        },
+      ];
     return { ...reply, documentJson: encode(data) };
   });
-  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); await screen.findByRole("button", { name: /#17 Original fixture title/ });
-  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" })); await screen.findByRole("button", { name: "Retry" });
-  expect(screen.getByRole("button", { name: /#17 Original fixture title/ })).toBeTruthy(); expect(f.query).toHaveBeenCalledTimes(2);
-  fireEvent.click(screen.getByRole("button", { name: "Retry" })); await screen.findByRole("button", { name: /#18 / });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("button", { name: /#17 Original fixture title/ });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load more GitHub query results" }),
+  );
+  await screen.findByRole("button", { name: "Retry" });
+  expect(
+    screen.getByRole("button", { name: /#17 Original fixture title/ }),
+  ).toBeTruthy();
+  expect(f.query).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("button", { name: /#18 / });
   expect(f.query.mock.calls[2][0]).toEqual(f.query.mock.calls[1][0]);
-  expect(screen.getByRole("button", { name: /#17 Original fixture title/ })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: /#17 Original fixture title/ }),
+  ).toBeTruthy();
 });
 
-it.each(["checks", "statuses"])("appends %s observations and deduplicates their IDs instead of the repeated PR envelope", async operation => {
-  const f = fixture(), original = f.query.getMockImplementation()!;
-  f.query.mockImplementation(async request => {
-    const query = JSON.parse(new TextDecoder().decode(request.queryJson)), reply = await original(request);
-    if (query.operation !== operation) return reply;
-    const data = JSON.parse(new TextDecoder().decode(reply.documentJson));
-    if (operation === "checks") {
-      const first = data.checks.runs[0]; data.checks.total_count = "2";
-      data.checks.runs = query.page === 1 ? [first] : [first, { ...first, id: "54", node_id: "CHECK_54", name: "Later observed check" }];
-    } else {
-      const first = { id: "61", node_id: "STATUS_61", context: "First observed status", native_state: "pending", state: "pending", created_at: "2026-09-27T00:00:00Z", updated_at: "2026-09-28T00:00:00Z" };
-      data.statuses.total_count = "2";
-      data.statuses.contexts = query.page === 1 ? [first] : [first, { ...first, id: "62", node_id: "STATUS_62", context: "Later observed status" }];
-    }
-    if (query.page === 1) data.next_page = 2;
-    return { ...reply, documentJson: encode(data) };
-  });
-  const firstQuery = { kind: ItemKind.PullRequest, operation: operation === "checks" ? QueryOperation.Checks : QueryOperation.Statuses, number: "17", page: 1, page_size: 20 };
-  const first = await f.query({ repositoryId: f.repository.id, queryJson: encode(firstQuery) });
-  expect(githubResult(first.documentJson, f.repository, firstQuery)).toBeDefined();
-  const nextQuery = { ...firstQuery, page: 2 }, next = await f.query({ repositoryId: f.repository.id, queryJson: encode(nextQuery) });
-  expect(githubResult(next.documentJson, f.repository, nextQuery)).toBeDefined();
-});
+it.each(["checks", "statuses"])(
+  "appends %s observations and deduplicates their IDs instead of the repeated PR envelope",
+  async (operation) => {
+    const f = fixture(),
+      original = f.query.getMockImplementation()!;
+    f.query.mockImplementation(async (request) => {
+      const query = JSON.parse(new TextDecoder().decode(request.queryJson)),
+        reply = await original(request);
+      if (query.operation !== operation) return reply;
+      const data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+      if (operation === "checks") {
+        const first = data.checks.runs[0];
+        data.checks.total_count = "2";
+        data.checks.runs =
+          query.page === 1
+            ? [first]
+            : [
+                first,
+                {
+                  ...first,
+                  id: "54",
+                  node_id: "CHECK_54",
+                  name: "Later observed check",
+                },
+              ];
+      } else {
+        const first = {
+          id: "61",
+          node_id: "STATUS_61",
+          context: "First observed status",
+          native_state: "pending",
+          state: "pending",
+          created_at: "2026-09-27T00:00:00Z",
+          updated_at: "2026-09-28T00:00:00Z",
+        };
+        data.statuses.total_count = "2";
+        data.statuses.contexts =
+          query.page === 1
+            ? [first]
+            : [
+                first,
+                {
+                  ...first,
+                  id: "62",
+                  node_id: "STATUS_62",
+                  context: "Later observed status",
+                },
+              ];
+      }
+      if (query.page === 1) data.next_page = 2;
+      return { ...reply, documentJson: encode(data) };
+    });
+    const firstQuery = {
+      kind: ItemKind.PullRequest,
+      operation:
+        operation === "checks"
+          ? QueryOperation.Checks
+          : QueryOperation.Statuses,
+      number: "17",
+      page: 1,
+      page_size: 20,
+    };
+    const first = await f.query({
+      repositoryId: f.repository.id,
+      queryJson: encode(firstQuery),
+    });
+    expect(
+      githubResult(first.documentJson, f.repository, firstQuery),
+    ).toBeDefined();
+    const nextQuery = { ...firstQuery, page: 2 },
+      next = await f.query({
+        repositoryId: f.repository.id,
+        queryJson: encode(nextQuery),
+      });
+    expect(
+      githubResult(next.documentJson, f.repository, nextQuery),
+    ).toBeDefined();
+  },
+);

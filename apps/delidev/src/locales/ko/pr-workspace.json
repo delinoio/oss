@@ -14,11 +14,12 @@
   "pr-workspace.details": "세부 정보",
   "pr-workspace.tabs": "PR 세부 정보",
   "pr-workspace.description": "설명",
-  "pr-workspace.diff": "Diff",
+  "pr-workspace.diff": "변경 사항",
   "pr-workspace.reviews": "리뷰",
   "pr-workspace.originalBody": "전체 원본 본문",
   "pr-workspace.retryTab": "이 탭 다시 읽기",
   "pr-workspace.unsupportedCommits": "이 서버는 커밋 읽기를 지원하지 않습니다.",
   "pr-workspace.select": "PR을 선택해 세부 정보를 확인하세요.",
-  "pr-workspace.matches": "GitHub의 일치하는 PR 수: {{count}}개."
+  "pr-workspace.matches": "GitHub의 일치하는 PR 수: {{count}}개.",
+  "pr-workspace.patchDigest": "패치 SHA-256"
 }

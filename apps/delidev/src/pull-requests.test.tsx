@@ -552,48 +552,96 @@ it("applies filters and reloads page one on return with retained controls", asyn
 });
 
 it("distinguishes initial loading from a successful empty page", async () => {
-  const value = fixture([]); let release!: () => void;
-  value.defer(new Promise<void>((resolve) => { release = resolve; }));
-  render(<App transport={value.transport} />); const pane = await open();
-  expect(await pane.findByRole("status")).toHaveProperty("textContent", "Loading repositories…");
+  const value = fixture([]);
+  let release!: () => void;
+  value.defer(
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  expect(await pane.findByRole("status")).toHaveProperty(
+    "textContent",
+    "Loading repositories…",
+  );
   expect(pane.queryByText("No repositories on this page.")).toBeNull();
-  release(); await pane.findByText("No repositories on this page.");
+  release();
+  await pane.findByText("No repositories on this page.");
   expect(pane.queryByText("Loading repositories…")).toBeNull();
 });
 
-it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failure %s from an empty page and preserves cached rows on failed Refresh", async (code) => {
-  const value = fixture(); value.fail(code);
-  render(<App transport={value.transport} />); const pane = await open();
-  await pane.findByRole("alert");
-  expect(pane.queryByText("No repositories on this page.")).toBeNull();
-  value.fail(); fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
-  await choose(value.rows[0]);
-  value.fail(code); fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
-  await pane.findByText("Refresh failed. Showing the previous repository page.");
-  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
-  expect(pane.queryByText("No repositories on this page.")).toBeNull();
-  expect(value.query).toHaveBeenCalledTimes(1);
-});
+it.each([Code.PermissionDenied, Code.Unavailable])(
+  "distinguishes catalog failure %s from an empty page and preserves cached rows on failed Refresh",
+  async (code) => {
+    const value = fixture();
+    value.fail(code);
+    render(<App transport={value.transport} />);
+    const pane = await open();
+    await pane.findByRole("alert");
+    expect(pane.queryByText("No repositories on this page.")).toBeNull();
+    value.fail();
+    fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+    await choose(value.rows[0]);
+    value.fail(code);
+    fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+    await pane.findByText(
+      "Refresh failed. Showing the previous repository page.",
+    );
+    expect(
+      pane.getByRole("button", {
+        name: `Example repository. Repository ID: ${repositoryId}`,
+      }),
+    ).toBeTruthy();
+    expect(pane.queryByText("No repositories on this page.")).toBeNull();
+    expect(value.query).toHaveBeenCalledTimes(1);
+  },
+);
 
-it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unconfigured %s guidance and existing plain-search validation", async (missing) => {
-  const row = repository();
-  if (missing === "schema") row.schemaVersion = 2;
-  else { const config = JSON.parse(new TextDecoder().decode(row.documentJson)); delete config[missing]; row.documentJson = encode(config); }
-  const value = fixture([row]); render(<App transport={value.transport} />);
-  const pane = await open(); await choose(row);
-  expect(pane.getByText(/Set a supported GitHub profile/)).toBeTruthy();
-  expect(pane.queryByRole("button", { name: "Load pull requests" })).toBeNull();
-  const search = pane.getByLabelText("Search title and body") as HTMLInputElement;
-  expect(search.maxLength).toBe(120);
-  fireEvent.change(search, { target: { value: "is:pr" } });
-  expect(pane.getByRole("alert").textContent).toMatch(/Use plain words/);
-  expect(value.query).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "GitHub profiles" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Git Profiles" }).getAttribute("aria-pressed")).toBe("true"));
-  expect(document.activeElement).toBe(screen.getByRole("main"));
-  expect(screen.queryByRole("dialog")).toBeNull(); expect(value.mutation).not.toHaveBeenCalled(); expect(value.query).not.toHaveBeenCalled();
-  await open(); expect((screen.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("is:pr");
-});
+it.each(["schema", "integration_id", "github_owner", "github_name"])(
+  "keeps unconfigured %s guidance and existing plain-search validation",
+  async (missing) => {
+    const row = repository();
+    if (missing === "schema") row.schemaVersion = 2;
+    else {
+      const config = JSON.parse(new TextDecoder().decode(row.documentJson));
+      delete config[missing];
+      row.documentJson = encode(config);
+    }
+    const value = fixture([row]);
+    render(<App transport={value.transport} />);
+    const pane = await open();
+    await choose(row);
+    expect(pane.getByText(/Set a supported GitHub profile/)).toBeTruthy();
+    expect(
+      pane.queryByRole("button", { name: "Load pull requests" }),
+    ).toBeNull();
+    const search = pane.getByLabelText(
+      "Search title and body",
+    ) as HTMLInputElement;
+    expect(search.maxLength).toBe(120);
+    fireEvent.change(search, { target: { value: "is:pr" } });
+    expect(pane.getByRole("alert").textContent).toMatch(/Use plain words/);
+    expect(value.query).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "GitHub profiles" }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Git Profiles" })
+          .getAttribute("aria-pressed"),
+      ).toBe("true"),
+    );
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(value.mutation).not.toHaveBeenCalled();
+    expect(value.query).not.toHaveBeenCalled();
+    await open();
+    expect(
+      (screen.getByLabelText("Search title and body") as HTMLInputElement)
+        .value,
+    ).toBe("is:pr");
+  },
+);
 
 it("hides the profile shortcut before selection and for an unavailable selected repository", async () => {
   const value = fixture();
@@ -615,50 +663,111 @@ it("hides the profile shortcut before selection and for an unavailable selected 
 });
 
 it("uses standalone cards with exact UTC precision, Draft and unknown author evidence across language changes", async () => {
-  const value = fixture(), original = value.query.getMockImplementation()!;
-  const updated = "2026-10-07T08:07:22.123456789Z", observed = "2026-10-07T08:11:52.759123456Z", title = "Long title ".repeat(80);
-  value.query.mockImplementation(async request => {
-    const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson));
-    data.observed_at = observed; data.items[0] = { ...data.items[0], title, draft: true, updated_at: updated, author: { id: "19", node_id: "U_19", login: "long-author-name-".repeat(5), kind: "unknown", provider_type: "FutureActor" } };
+  const value = fixture(),
+    original = value.query.getMockImplementation()!;
+  const updated = "2026-10-07T08:07:22.123456789Z",
+    observed = "2026-10-07T08:11:52.759123456Z",
+    title = "Long title ".repeat(80);
+  value.query.mockImplementation(async (request) => {
+    const reply = await original(request),
+      data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    data.observed_at = observed;
+    data.items[0] = {
+      ...data.items[0],
+      title,
+      draft: true,
+      updated_at: updated,
+      author: {
+        id: "19",
+        node_id: "U_19",
+        login: "long-author-name-".repeat(5),
+        kind: "unknown",
+        provider_type: "FutureActor",
+      },
+    };
     return { ...reply, documentJson: encode(data) };
   });
-  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
-  const heading = await screen.findByRole("heading", { name: `#17 ${title.trim()}` });
-  const card = heading.closest("article")!; expect(card.className).toBe("pr-workspace-row");
-  expect(within(card).getByText("Open")).toBeTruthy(); expect(within(card).getByText("Draft")).toBeTruthy(); expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
-  expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
+  const view = render(<App transport={value.transport} />);
+  const pane = await open();
+  await choose(value.rows[0]);
+  const heading = await screen.findByRole("heading", {
+    name: `#17 ${title.trim()}`,
+  });
+  const card = heading.closest("article")!;
+  expect(card.className).toBe("pr-workspace-row");
+  expect(within(card).getByText("Open")).toBeTruthy();
+  expect(within(card).getByText("Draft")).toBeTruthy();
+  expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
+  expect(card.querySelector("time")?.textContent).toBe(updated);
+  expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
   expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();
-  expect(view.container.querySelector(".pending-pr-actions")?.getAttribute("data-empty")).toBe("true");
-  const refresh = screen.getByRole("button", { name: "Refresh GitHub results" });
+  expect(
+    view.container
+      .querySelector(".pending-pr-actions")
+      ?.getAttribute("data-empty"),
+  ).toBe("true");
+  const refresh = screen.getByRole("button", {
+    name: "Refresh GitHub results",
+  });
   expect(refresh.textContent).toBe("");
-  expect(refresh.querySelector('svg[aria-hidden="true"][focusable="false"]')).toBeTruthy();
+  expect(
+    refresh.querySelector('svg[aria-hidden="true"][focusable="false"]'),
+  ).toBeTruthy();
   fireEvent.pointerEnter(refresh);
-  expect(screen.getByRole("tooltip").textContent).toBe("Refresh GitHub results");
+  expect(screen.getByRole("tooltip").textContent).toBe(
+    "Refresh GitHub results",
+  );
   expect(screen.getByRole("tooltip").getAttribute("tabindex")).toBeNull();
   expect(value.query).toHaveBeenCalledTimes(1);
   fireEvent.keyDown(refresh, { key: "Escape" });
   expect(screen.queryByRole("tooltip")).toBeNull();
-  fireEvent.focus(refresh); fireEvent.blur(refresh);
+  fireEvent.focus(refresh);
+  fireEvent.blur(refresh);
   expect(screen.queryByRole("tooltip")).toBeNull();
-  fireEvent.pointerEnter(refresh); fireEvent.scroll(window);
+  fireEvent.pointerEnter(refresh);
+  fireEvent.scroll(window);
   expect(screen.queryByRole("tooltip")).toBeNull();
-  fireEvent.focus(refresh); fireEvent.resize(window);
+  fireEvent.focus(refresh);
+  fireEvent.resize(window);
   expect(screen.queryByRole("tooltip")).toBeNull();
   fireEvent.focus(refresh);
   await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
-  expect(screen.getByRole("tooltip").textContent).toBe(refresh.getAttribute("aria-label"));
-  expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).textContent).toBe(observed); expect(value.query).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("tooltip").textContent).toBe(
+    refresh.getAttribute("aria-label"),
+  );
+  expect(card.querySelector("time")?.textContent).toBe(updated);
+  expect(screen.getByText(observed).textContent).toBe(observed);
+  expect(value.query).toHaveBeenCalledTimes(1);
 });
 
-it.each([Code.PermissionDenied, Code.Unavailable])("keeps the card observation after failed explicit refresh %s and explicitly retries it", async code => {
-  const value = fixture(); render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
-  await screen.findByRole("heading", { name: "#17 Original fixture title" }); value.query.mockRejectedValueOnce(new ConnectError("Synthetic read failed", code));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" })); await screen.findByRole("alert");
-  expect(screen.getByRole("heading", { name: "#17 Original fixture title" })).toBeTruthy(); expect(screen.getByText(/Previous observation/)).toBeTruthy();
-  expect(value.query).toHaveBeenCalledTimes(2); fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" }));
-  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3)); await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-  expect(value.query.mock.calls[2][0]).toEqual(value.query.mock.calls[1][0]);
-});
+it.each([Code.PermissionDenied, Code.Unavailable])(
+  "keeps the card observation after failed explicit refresh %s and explicitly retries it",
+  async (code) => {
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    const pane = await open();
+    await choose(value.rows[0]);
+    await screen.findByRole("heading", { name: "#17 Original fixture title" });
+    value.query.mockRejectedValueOnce(
+      new ConnectError("Synthetic read failed", code),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh GitHub results" }),
+    );
+    await screen.findByRole("alert");
+    expect(
+      screen.getByRole("heading", { name: "#17 Original fixture title" }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Previous observation/)).toBeTruthy();
+    expect(value.query).toHaveBeenCalledTimes(2);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh GitHub results" }),
+    );
+    await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(value.query.mock.calls[2][0]).toEqual(value.query.mock.calls[1][0]);
+  },
+);
 
 it("keeps successful empty query pages distinct from initial errors", async () => {
   const value = fixture(),
@@ -677,12 +786,23 @@ it("keeps successful empty query pages distinct from initial errors", async () =
 });
 
 it("does not label an unverified non-UTC timestamp as a UTC card observation", async () => {
-  const value = fixture(), original = value.query.getMockImplementation()!;
-  value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.observed_at = "2026-10-07T17:11:52+09:00"; return { ...reply, documentJson: encode(data) }; });
-  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
-  await screen.findByRole("alert"); expect(view.container.querySelector(".pr-workspace-row")).toBeNull(); expect(screen.queryByText("No pull requests were returned on page 1.")).toBeNull();
+  const value = fixture(),
+    original = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async (request) => {
+    const reply = await original(request),
+      data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    data.observed_at = "2026-10-07T17:11:52+09:00";
+    return { ...reply, documentJson: encode(data) };
+  });
+  const view = render(<App transport={value.transport} />);
+  const pane = await open();
+  await choose(value.rows[0]);
+  await screen.findByRole("alert");
+  expect(view.container.querySelector(".pr-workspace-row")).toBeNull();
+  expect(
+    screen.queryByText("No pull requests were returned on page 1."),
+  ).toBeNull();
 });
-
 
 it("announces standalone automatic loading and refresh while preserving returned cards", async () => {
   const value = fixture(),
@@ -710,7 +830,7 @@ it("announces standalone automatic loading and refresh while preserving returned
     finish();
     await pending;
   });
-  await results.findByText("Original fixture title");
+  await results.findByRole("heading", { name: "#17 Original fixture title" });
   expect(results.queryByText("Reading GitHub…")).toBeNull();
   let refreshed!: () => void;
   const refreshing = new Promise<void>((resolve) => {
@@ -726,7 +846,9 @@ it("announces standalone automatic loading and refresh while preserving returned
   expect(
     (await results.findByText("Reading GitHub…")).getAttribute("role"),
   ).toBe("status");
-  expect(results.getByText("Original fixture title")).toBeTruthy();
+  expect(
+    results.getByRole("heading", { name: "#17 Original fixture title" }),
+  ).toBeTruthy();
   await act(async () => {
     refreshed();
     await refreshing;
@@ -750,7 +872,7 @@ it("explains a continuation page containing only unchanged duplicate pull reques
   const pane = await open();
   await choose(value.rows[0]);
 
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   fireEvent.click(
     screen.getByRole("button", { name: "Load more GitHub query results" }),
   );
@@ -762,7 +884,9 @@ it("explains a continuation page containing only unchanged duplicate pull reques
   expect(
     second.getByText("No pull requests were returned on page 2."),
   ).toBeTruthy();
-  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  expect(
+    screen.getAllByRole("heading", { name: "#17 Original fixture title" }),
+  ).toHaveLength(1);
   expect(value.query).toHaveBeenCalledTimes(2);
 });
 
@@ -781,7 +905,7 @@ it("reserves boundary-expiry recovery for explicit Reload list instead of header
   const pane = await open();
   await choose(value.rows[0]);
 
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   fireEvent.click(
     screen.getByRole("button", { name: "Load more GitHub query results" }),
   );
@@ -792,7 +916,9 @@ it("reserves boundary-expiry recovery for explicit Reload list instead of header
   expect(refresh).toHaveProperty("disabled", true);
   fireEvent.click(refresh);
   expect(value.query).toHaveBeenCalledTimes(2);
-  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  expect(
+    screen.getAllByRole("heading", { name: "#17 Original fixture title" }),
+  ).toHaveLength(1);
   fireEvent.click(reload);
   await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
   await waitFor(() => expect(refresh).toHaveProperty("disabled", false));
@@ -840,7 +966,7 @@ it("debounces trimmed search, waits for IME and cancels invalid pending terms", 
   const view = render(<App transport={value.transport} />);
   const pane = await open();
   await choose(value.rows[0]);
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   const search = pane.getByLabelText("Search title and body");
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const tick = async (milliseconds: number) => {
@@ -909,7 +1035,7 @@ it("waits for validated selected metadata before automatic GitHub reads", async 
     release();
     await pending;
   });
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   expect(value.query).toHaveBeenCalledTimes(1);
 });
 
@@ -951,7 +1077,7 @@ it("disposes pending search timers while inactive and resumes retained filters",
   render(<App transport={value.transport} />);
   const pane = await open();
   await choose(value.rows[0]);
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   fireEvent.change(pane.getByLabelText("Search title and body"), {
     target: { value: "retained" },
   });
@@ -976,7 +1102,7 @@ it.each([false, true])(
     render(<App transport={value.transport} />);
     await open();
     await choose(value.rows[0]);
-    await screen.findByText("Original fixture title");
+    await screen.findByRole("heading", { name: "#17 Original fixture title" });
     expect(value.get).toHaveBeenCalledTimes(1);
     expect(value.query).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
@@ -999,7 +1125,9 @@ it.each([false, true])(
       await screen.findByText(/^This repository is no longer available\./);
       expect(value.query).toHaveBeenCalledTimes(1);
     } else {
-      await screen.findByText("Original fixture title");
+      await screen.findByRole("heading", {
+        name: "#17 Original fixture title",
+      });
       expect(value.query).toHaveBeenCalledTimes(2);
       expect(submitted(value, 1)).toMatchObject({
         operation: "list",
@@ -1018,7 +1146,7 @@ it.each(["invalid", "composing"])(
     render(<App transport={value.transport} />);
     const pane = await open();
     await choose(value.rows[0]);
-    await screen.findByText("Original fixture title");
+    await screen.findByRole("heading", { name: "#17 Original fixture title" });
     const search = pane.getByLabelText("Search title and body");
     fireEvent.change(search, { target: { value: "accepted" } });
     await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2));
