@@ -481,6 +481,14 @@ fn rejects_an_existing_destination_and_bundles_without_chunks() {
     let temp = bundle(&[("index.js", "console.log(1);")]);
     fs::create_dir(temp.path().join("out")).unwrap();
     assert!(!run_typeopt(temp.path(), &[]).status.success());
+    let inside = bundle(&[("index.js", "console.log(1);")]);
+    let output = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(inside.path())
+        .args(["--bundle", "dist", "--out-dir", "dist/optimized"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!inside.path().join("dist/optimized").exists());
     let empty = bundle(&[("index.html", "<p>")]);
     assert!(!run_typeopt(empty.path(), &[]).status.success());
 }

@@ -81,7 +81,7 @@ mod app {
     #[derive(Parser)]
     #[command(
         version,
-        about = "Conservative type-aware TypeScript size optimization (experimental)"
+        about = "Conservative two-stage type-aware size optimization (experimental)"
     )]
     struct Args {
         #[arg(long, required_unless_present = "bundle", conflicts_with = "bundle")]
@@ -239,6 +239,18 @@ mod app {
         let _ = BUNDLE_EXCLUDE.set(args.bundle_exclude.clone());
         let dir = dir.canonicalize().context("cannot find bundle directory")?;
         ensure!(dir.is_dir(), "--bundle must be a directory");
+        if let Some(destination) = &args.out_dir {
+            let parent = destination
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(std::path::Path::new("."))
+                .canonicalize()
+                .context("cannot find the output parent directory")?;
+            ensure!(
+                !parent.starts_with(&dir),
+                "the output directory must be outside the bundle directory"
+            );
+        }
         let passes = PassSet::bundle_without(&args.disable_pass);
         tracing::info!(
             enabled = ?passes.enabled().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
