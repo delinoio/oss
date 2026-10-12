@@ -178,7 +178,12 @@ export class SessionTabsStore {
   closePage(id: string, profile: string, pageId: string) {
     this.close(
       id,
-      sessionTabKey({ kind: SessionTabKind.Page, profile, id: pageId, title: "" }),
+      sessionTabKey({
+        kind: SessionTabKind.Page,
+        profile,
+        id: pageId,
+        title: "",
+      }),
     );
   }
   position(id: string, number: number) {
