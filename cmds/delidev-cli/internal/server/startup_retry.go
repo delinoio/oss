@@ -21,6 +21,7 @@ func settleExecutionStartupFailure(tx *store.Tx, record store.Record, job domain
 	if err != nil || queued.Delivery != domain.InputClaimed || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, domain.StartupRejectionUncertain()
 	}
+	session.FinishStartupTiming(record.ID, input.ExecutionID, tx.ObservationTime())
 	queued.Delivery = domain.InputRejected
 	session.PendingInputs--
 	session.PendingInputBytes -= uint64(len(queued.Prompt))

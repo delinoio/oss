@@ -2,9 +2,15 @@
 package worker
 
 import (
+	"bytes"
 	"encoding/base64"
+	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -44,6 +50,73 @@ func TestManagedExecutionCleanupRejectsEncodedAuthentication(t *testing.T) {
 			}
 			if _, err := os.Stat(history); err != nil {
 				t.Fatal("cleanup erased retained native evidence", err)
+			}
+		})
+	}
+}
+
+func TestManagedExecutionCleanupRetainsInventoryFencesAndSafeLogs(t *testing.T) {
+	for _, mode := range []string{"pending", "file-limit", "byte-limit", "file-size-limit"} {
+		t.Run(mode, func(t *testing.T) {
+			home := filepath.Join(t.TempDir(), "codex")
+			if err := security.PrivateDir(home); err != nil {
+				t.Fatal(err)
+			}
+			bundle := workerSubscriptionBundle("first")
+			defer clear(bundle)
+			if err := security.WriteAtomic(filepath.Join(home, "auth.json"), bundle); err != nil {
+				t.Fatal(err)
+			}
+			writeSparse := func(name string, size int64) {
+				t.Helper()
+				file, err := os.Create(filepath.Join(home, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := file.Truncate(size); err != nil {
+					file.Close()
+					t.Fatal(err)
+				}
+				if err := file.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch mode {
+			case "pending":
+				writeSparse(".pending-native-auth", 0)
+			case "file-limit":
+				for i := 0; i < 2049; i++ {
+					writeSparse("history-"+strconv.Itoa(i), 0)
+				}
+			case "byte-limit":
+				for i := 0; i < 4; i++ {
+					writeSparse("history-"+strconv.Itoa(i), 16<<20)
+				}
+				writeSparse("history-4", 1)
+			case "file-size-limit":
+				writeSparse("history", (16<<20)+1)
+			}
+			err := cleanupExecutionAuthentication(home, bundle, bundle)
+			var failure *executionAuthenticationFailure
+			if !errors.As(err, &failure) || failure.stage != executionAuthScan {
+				t.Fatal("inventory failure lost independent scan fence", err)
+			}
+			expected := executionAuthLimit
+			if mode == "pending" {
+				expected = executionAuthPending
+			}
+			if failure.reason != expected {
+				t.Fatal("scan reason changed", failure.reason)
+			}
+			var logs bytes.Buffer
+			logExecutionAuthenticationCleanup(slog.New(slog.NewJSONHandler(&logs, nil)), domain.NewID(), err)
+			for _, private := range []string{home, string(bundle), "synthetic-worker-access-first", "synthetic-worker-refresh-first"} {
+				if strings.Contains(logs.String(), private) {
+					t.Fatal("cleanup log contains private data")
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(home, "auth.json")); !os.IsNotExist(err) {
+				t.Fatal("scan failure skipped original auth removal", err)
 			}
 		})
 	}

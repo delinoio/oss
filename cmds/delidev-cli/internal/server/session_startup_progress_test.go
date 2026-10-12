@@ -39,6 +39,11 @@ func TestSessionStartupProgressExactReceiptsPreserveAuthority(t *testing.T) {
 	if err != nil || first.Msg.Replayed {
 		t.Fatal("first report", err)
 	}
+	before, _ := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	original, err := store.Decode[domain.Session](before)
+	if err != nil || original.StartupTiming == nil || original.StartupTiming.Agent == nil || original.StartupTiming.Agent.JobID != f.job || original.StartupTiming.Agent.ExecutionID != f.input.ExecutionID || original.StartupTiming.Agent.FinishedAt != nil {
+		t.Fatal("original start missing", err)
+	}
 	again, err := f.client.ReportSessionStartupProgress(context.Background(), r)
 	if err != nil || !again.Msg.Replayed {
 		t.Fatal("lost acknowledgment replay", err)
@@ -56,6 +61,9 @@ func TestSessionStartupProgressExactReceiptsPreserveAuthority(t *testing.T) {
 	if err != nil || s.Startup != nil || s.Execution != nil || s.StartupProgress.Native.LastSequence != 1 || len(s.StartupProgress.Native.Steps) != 6 {
 		t.Fatal("authoritative state changed", err)
 	}
+	if !s.StartupTiming.Agent.StartedAt.Equal(original.StartupTiming.Agent.StartedAt) {
+		t.Fatal("replay restarted timing")
+	}
 	changed := connect.NewRequest(proto.Clone(r.Msg).(*pb.ReportSessionStartupProgressRequest))
 	changed.Header().Set("Authorization", "Bearer "+f.workerToken)
 	changed.Msg.State = pb.SessionStartupProgressState_SESSION_STARTUP_PROGRESS_STATE_COMPLETED
@@ -69,6 +77,11 @@ func TestSessionStartupProgressExactReceiptsPreserveAuthority(t *testing.T) {
 	changed.Msg.Sequence = 2
 	if _, err := f.client.ReportSessionStartupProgress(context.Background(), changed); err != nil {
 		t.Fatal("confirmed completion", err)
+	}
+	after, _ := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	completed, err := store.Decode[domain.Session](after)
+	if err != nil || completed.StartupTiming.Agent.FinishedAt != nil {
+		t.Fatal("descriptive completion accepted initial input", err)
 	}
 	r.Msg.Mutation.RequestId = string(domain.NewID())
 	r.Msg.Sequence = 3

@@ -1,5 +1,9 @@
 # DeliDev source ownership and compatibility
 
+## Named checkout allocation closure
+
+The complete named managed checkout feature owns Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` under the shared allocation workflow. The numeric ledger records its original feature owner. Preserve Worker 19 and all prior allocations. Optional private version-1 `directory_name` retains legacy omission; no System capability, public RPC or SQLite migration is allocated. The [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names) and [storage contract](cmds-delidev-storage-contract.md#frozen-live-checkout-layout) own acceptance, immutable live path derivation, original Worker negotiation and independent storage/Fork lifetime.
+
 ## Allocation workflow
 
 A complete DeliDev feature PR may update protocol-number and database-version

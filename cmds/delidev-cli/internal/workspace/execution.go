@@ -137,6 +137,9 @@ func (m *Manager) ClaimUnsentRetry(ctx context.Context, jobID, executionID domai
 }
 
 func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.ID, previous *ExecutionPredecessor, unsentRetry bool, fallback *ExecutionPredecessor, input PrepareRequest, expected Manifest) (lease *ExecutionLease, returned error) {
+	if err := m.requireNamedDirectories(input); err != nil {
+		return nil, err
+	}
 	for _, id := range []domain.ID{jobID, executionID} {
 		if err := id.Validate(); err != nil {
 			return nil, err

@@ -119,3 +119,49 @@
   margin-block-start: 16px;
   width: min(100%, 380px);
 }
+
+/* Only the empty-transcript startup groups have flat resting native headers. */
+.session-startup-groups.is-detailed {
+  gap: 8px;
+}
+.session-startup-group.disclosure > .disclosure-header {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0;
+  font-size: 14px;
+}
+.session-startup-group.disclosure > .disclosure-header:hover {
+  background: var(--surface-hover);
+}
+.session-startup-group .disclosure-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.session-startup-group-title {
+  font-weight: 600;
+}
+.session-startup-timing {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.session-startup-seconds {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.session-startup-group[open] ol {
+  margin-block-start: 12px;
+  padding-inline-start: 22px;
+}
+.session-startup-unconfirmed {
+  font-size: 12px;
+}
+.session-startup-retained-time {
+  color: var(--text-secondary);
+  font-size: 14px;
+}

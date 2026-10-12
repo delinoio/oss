@@ -316,6 +316,7 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 				progress.GrokUserMessageID = event.GrokUserMessageID
 			}
 			progress.NativeTurnID = event.NativeTurnID
+			session.FinishStartupTiming(job.ID, input.ExecutionID, observedAt)
 			progress.TurnTiming = &domain.TurnTiming{AcceptedAt: observedAt}
 			progress.Outcome = domain.ExecutionRunning
 			progress.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindSessionInput(input.InputID, input.Input)}

@@ -460,26 +460,79 @@ func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
 	return nil
 }
 
+type executionAuthenticationStage string
+type executionAuthenticationReason string
+
+const (
+	executionAuthFile       executionAuthenticationStage  = "auth-file"
+	executionAuthScan       executionAuthenticationStage  = "retained-credential-scan"
+	executionAuthVerified   executionAuthenticationReason = "verified"
+	executionAuthFilesystem executionAuthenticationReason = "filesystem-failure"
+	executionAuthBundle     executionAuthenticationReason = "bundle-mismatch"
+	executionAuthIdentity   executionAuthenticationReason = "identity-changed"
+	executionAuthLink       executionAuthenticationReason = "symlink"
+	executionAuthPending    executionAuthenticationReason = "pending-file"
+	executionAuthSpecial    executionAuthenticationReason = "non-regular-file"
+	executionAuthLimit      executionAuthenticationReason = "inventory-limit"
+	executionAuthRemnant    executionAuthenticationReason = "credential-remnant"
+)
+
+type executionAuthenticationFailure struct {
+	stage  executionAuthenticationStage
+	reason executionAuthenticationReason
+	count  int
+	bytes  int64
+}
+
+func (e *executionAuthenticationFailure) Error() string {
+	return "Native authentication cleanup could not be confirmed."
+}
+func (e *executionAuthenticationFailure) Unwrap() error { return subscription.Invalid() }
+
+func logExecutionAuthenticationCleanup(logger *slog.Logger, owner domain.ID, err error) {
+	if logger == nil {
+		return
+	}
+	if err == nil {
+		logger.Info("execution_authentication_cleanup", "owner_id", owner, "stage", executionAuthScan, "reason", executionAuthVerified)
+		return
+	}
+	failure := &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+	var observed *executionAuthenticationFailure
+	if errors.As(err, &observed) {
+		failure = observed
+	}
+	logger.Warn("execution_authentication_cleanup", "owner_id", owner, "stage", failure.stage, "reason", failure.reason, "file_count", failure.count, "observed_bytes", failure.bytes, "file_limit", 2048, "byte_limit", 64<<20)
+}
+
 func cleanupExecutionAuthentication(home string, latest, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
-		return subscription.Invalid()
+		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
 	closed, err := security.ReadPrivate(filepath.Join(home, "auth.json"), subscription.MaxBundle)
-	if err != nil || len(latest) == 0 || !bytes.Equal(closed, latest) {
+	if err != nil {
 		clear(closed)
-		return subscription.Invalid()
+		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
+	}
+	if len(latest) == 0 || !bytes.Equal(closed, latest) {
+		clear(closed)
+		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthBundle}
 	}
 	clear(closed)
 	if err := os.Remove(filepath.Join(home, "auth.json")); err != nil {
-		return subscription.Invalid()
+		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
 	if err := security.SyncParent(filepath.Join(home, "auth.json")); err != nil {
-		return subscription.Invalid()
+		return &executionAuthenticationFailure{stage: executionAuthFile, reason: executionAuthFilesystem}
 	}
 	return scanExecutionAuthentication(home, latest, original)
 }
 
 func scanExecutionAuthentication(home string, latest, original []byte) error {
+	count, total := 0, int64(0)
+	fail := func(reason executionAuthenticationReason) error {
+		return &executionAuthenticationFailure{stage: executionAuthScan, reason: reason, count: count, bytes: total}
+	}
 	// Native history is retained for resume. Check the bounded original tree
 	// rather than claiming credential cleanup merely from auth.json absence.
 	var needles [][]byte
@@ -491,7 +544,7 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 	for _, raw := range [][]byte{original, latest} {
 		b, _, err := subscription.Parse(raw)
 		if err != nil {
-			return err
+			return fail(executionAuthBundle)
 		}
 		for _, v := range []string{b.Tokens.ID, b.Tokens.Access, b.Tokens.Refresh} {
 			plain := []byte(v)
@@ -507,50 +560,58 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 	}
 	root, err := os.OpenRoot(home)
 	if err != nil {
-		return subscription.Invalid()
+		return fail(executionAuthFilesystem)
 	}
 	defer root.Close()
 	originalInfo, err := root.Stat(".")
 	if err != nil {
-		return subscription.Invalid()
+		return fail(executionAuthFilesystem)
 	}
-	count, total := 0, int64(0)
 	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.Type()&os.ModeSymlink != 0 {
-			return subscription.Invalid()
+		if err != nil {
+			return fail(executionAuthFilesystem)
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fail(executionAuthLink)
 		}
 		// WriteAtomic owns this temporary namespace. A failed write/removal can
 		// retain only a token prefix or no bytes, so token matching cannot prove
 		// cleanup while any such entry remains in the owned runtime.
 		if strings.HasPrefix(entry.Name(), ".pending-") {
-			return subscription.Invalid()
+			return fail(executionAuthPending)
 		}
 		if entry.IsDir() {
 			return nil
 		}
 		count++
 		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() || count > 2048 || info.Size() > 16<<20 {
-			return subscription.Invalid()
+		if err != nil {
+			return fail(executionAuthFilesystem)
+		}
+		if !info.Mode().IsRegular() {
+			return fail(executionAuthSpecial)
+		}
+		if count > 2048 || info.Size() > 16<<20 {
+			return fail(executionAuthLimit)
 		}
 		total += info.Size()
 		if total > 64<<20 {
-			return subscription.Invalid()
+			return fail(executionAuthLimit)
 		}
 		file, err := root.Open(path)
 		if err != nil {
-			return subscription.Invalid()
+			return fail(executionAuthFilesystem)
 		}
 		raw, err := io.ReadAll(io.LimitReader(file, (16<<20)+1))
 		closeErr := file.Close()
 		if err != nil || closeErr != nil || len(raw) > 16<<20 {
 			clear(raw)
-			return subscription.Invalid()
+			return fail(executionAuthFilesystem)
 		}
 		defer clear(raw)
 		for _, needle := range needles {
 			if bytes.Contains(raw, needle) {
-				return subscription.Invalid()
+				return fail(executionAuthRemnant)
 			}
 		}
 		return nil
@@ -560,7 +621,7 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 	}
 	current, err := os.Stat(home)
 	if err != nil || !os.SameFile(originalInfo, current) {
-		return subscription.Invalid()
+		return fail(executionAuthIdentity)
 	}
 	return nil
 }

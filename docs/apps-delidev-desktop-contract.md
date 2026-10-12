@@ -5946,6 +5946,30 @@ The selected ChatGPT usage popover places a compact Paid credits card above quot
 
 Failed or incomplete saved-resource reads retain original account-bound values and timestamps as historical evidence until a complete accepted replacement. Connection identity replacement resets local disclosure state; authentication loss removes the selected details. Credits do not affect `remainingBadge`, quota windows, read pagination, the existing refresh owner or Recheck saved quota evidence and Manage subscriptions actions. Preserve semantic themes, EN/KO wrapping, narrow and effective 200% reflow, Escape/outside dismissal and opener focus. No new RPC, polling owner, native operation, purchase, consumption or migration is added. Follow [the subscription presentation contract](apps-delidev-subscription-settings-contract.md#paid-credit-observations).
 
+### Initial startup group disclosures and time
+
+The empty-transcript detailed ordinary Session and General Chat startup block
+uses two independent native Disclosure rows, initially closed. Each row places
+the left chevron, localized title, an 8px gap, muted integer elapsed seconds, an
+8px gap and a decorative 20px running spinner together beside the title. Flat
+resting headers apply only to this block. Expansion reveals existing ordered
+operations and repository ordinals. Compact Startup details retains its existing
+presentation. Narrow layouts and 200% zoom wrap safely; theme hover, visible
+focus and reduced-motion spinner behavior follow the shared disclosure family.
+
+Only exact original job/execution metadata in Resource.startup_timing supplies
+time. Missing, malformed, reversed or foreign timing is unavailable, never zero.
+Live seconds use the paired authenticated Machine/Overview observed_at and a
+monotonic presentation timer, once per second even while closed. The clock anchors
+at receipt of the server observation; network read duration remains a conservative
+presence bound, not additional group duration. Finished time stays fixed without
+a spinner. Attention, inactivity, hidden documents, stale presence or connection
+replacement stop ticks and animation. Retained unfinished values are explicitly
+unconfirmed. Timing is outside the polite status node and has aria-live off.
+Disclosure toggles do not fetch, reset clocks, dispatch or remount controllers;
+composer, drafts, first-input proof and initial Info visibility retain their
+existing ownership.
+
 ### Pull request workspace presentation
 
 The read-only PR workspace follows the integration contract's separately retained
@@ -5966,38 +5990,3 @@ The ordinary workspace contains no CI/rules/reviewer verification grid, Overview
 problem history or separate stack-dependencies section. Pending PR actions remains
 above the workspace. Existing server/CLI inspection and recovery surfaces survive.
 Unknown counts and failed decorative images remain accessible fallbacks.
-
-## Tailscale Connections presentation
-
-The main Local Connections screen orders Current connection, Tailscale devices,
-Saved servers and Advanced. Current connection presents explicit access state and
-Enable/Disable. Enable uses the existing focused, Escape-dismissable modal to
-explain tailnet visibility, HTTPS prerequisites and server lifetime. The
-[connections contract](cmds-delidev-connections-contract.md#tailscale-connections)
-owns original ingress, approval, cryptography and recovery authority.
-
-Device rows separate ownership, Tailscale online status and explicit checked
-DeliDev availability. Only an explicit Check probes a peer. Successful normal-TLS
-negotiation admits Connect; Register Worker also requires the selected server's
-reachable access origin and explicit displayed server identity. An online peer
-can prefill its canonical hostname into the existing SSH setup. This preserves
-exact fingerprint consent, write-only credentials and signed Worker-only
-installation. Manual Add server and Runner Device setup stay available.
-
-The connection-owned controller retains approvals and exact accepted mutations
-across Settings departure. Device inventory reads are disposed with their
-presentation; late results cannot change another opening. Target approval modals
-show requester, exact client/Worker intent, original origin and matching code;
-Worker approval also identifies the selected server. Denied, expired, pending,
-completed and uncertain requests remain distinct. Inspect uses the original
-request; uncertainty grants no replacement operation.
-
-English/Korean copy, semantic lists/status announcements, 40px controls, 18px
-headings, wrapping identities/actions and existing light/dark tokens retain the
-1040px Settings cap and narrow reflow. Native two-device/TLS/SSH and packaged
-platform acceptance require separate evidence.
-
-The `tailscale:` retained mutation namespace belongs to the connection registry,
-including submissions initiated from the disposable device list. Accepted
-operations remain recoverable through the original outgoing journal after the
-submitting Settings scope closes.

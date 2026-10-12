@@ -100,7 +100,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if domain.Decode(i.Assignment.Preparation, &prep) != nil || domain.Decode(i.Assignment.Manifest, &manifest) != nil || workspace.ValidateResult(prep, manifest, runtime.GOOS) != nil {
 		return nil, domain.CompactionUncertain()
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: logger}
 	previous := workspace.ExecutionPredecessor{JobID: i.SourceJobID, ExecutionID: i.Assignment.ExecutionID}
 	if i.Previous != nil {
 		previous = workspace.ExecutionPredecessor{JobID: i.Previous.JobID, ExecutionID: i.Previous.ActionID}
@@ -300,18 +300,24 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			stop()
 			managedSuccess = err == nil
 		}
-		if err := native.Close(); err != nil {
-			return err
+		nativeErr, helperErr := native.CloseWithExecutionHelpers()
+		if nativeErr != nil {
+			return errors.Join(nativeErr, helperErr)
 		}
 		closed = true
 		nativeClosed = true
 		if managed != nil {
-			managedCleanup = cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle) == nil
+			authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+			managedCleanup = helperErr == nil && authErr == nil
+			logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
+			if helperErr != nil {
+				return helperErr
+			}
 			if !managedCleanup || !managedSuccess {
 				return subscription.Invalid()
 			}
 		}
-		return nil
+		return helperErr
 	}
 	defer func() {
 		if err := closeNative(); err != nil {
