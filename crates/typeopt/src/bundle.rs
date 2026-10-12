@@ -462,17 +462,25 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
     }
     let base = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
     // Every hashed text file and the hashed files it references.
-    let hashed: BTreeMap<String, PathBuf> = texts
-        .keys()
-        .filter(|p| hashed_name(&base(p)).is_some())
-        .map(|p| (base(p), p.clone()))
-        .collect();
+    // Hashed text files grouped by file name. A reference names only the
+    // file name, so files that share one (in different directories) are
+    // renamed together, from the content of all of them.
+    let mut hashed = BTreeMap::<String, Vec<PathBuf>>::new();
+    for path in texts.keys() {
+        if hashed_name(&base(path)).is_some() {
+            hashed.entry(base(path)).or_default().push(path.clone());
+        }
+    }
     let mut referenced = BTreeMap::<String, BTreeSet<String>>::new();
-    for (name, path) in &hashed {
-        let text = &texts[path];
+    for (name, paths) in &hashed {
         let targets = hashed
             .keys()
-            .filter(|other| *other != name && !references(text, other).is_empty())
+            .filter(|other| {
+                *other != name
+                    && paths
+                        .iter()
+                        .any(|path| !references(&texts[path], other).is_empty())
+            })
             .cloned()
             .collect();
         referenced.insert(name.clone(), targets);
@@ -512,8 +520,15 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
     let digests: BTreeMap<String, [u8; 32]> = renaming
         .iter()
         .map(|n| {
-            let normalized = rewrite(&texts[&hashed[n]], &logical);
-            (n.clone(), Sha256::digest(normalized.as_bytes()).into())
+            let mut hasher = Sha256::new();
+            for path in &hashed[n] {
+                let relative = path.strip_prefix(root).unwrap_or(path);
+                hasher.update(relative.to_string_lossy().as_bytes());
+                hasher.update([0]);
+                hasher.update(rewrite(&texts[path], &logical).as_bytes());
+                hasher.update([0]);
+            }
+            (n.clone(), hasher.finalize().into())
         })
         .collect();
     let mut renamed = BTreeMap::<String, String>::new();

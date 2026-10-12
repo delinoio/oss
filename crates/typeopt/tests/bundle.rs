@@ -700,6 +700,40 @@ fn importer_names_follow_dependency_content() {
     );
 }
 
+/// Hashed files that share a name in different directories are renamed
+/// together from the content of all of them, so an edit to either one
+/// changes the shared name.
+#[test]
+fn same_named_hashed_files_follow_every_content() {
+    let chunks = [
+        (
+            "index.js",
+            r#"import{m as e}from"./a/x-AAAAAAAA.js";import{p as t}from"./b/x-AAAAAAAA.js";console.log(e(2),t());"#,
+        ),
+        (
+            "a/x-AAAAAAAA.js",
+            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function m(n){const o=make(n);return o.verticalSpacing+o.horizontalSpacing}function unusedHelperThatIsNeverCalled(n){return n.toString(36).repeat(3)}export{m,unusedHelperThatIsNeverCalled as u};"#,
+        ),
+        (
+            "b/x-AAAAAAAA.js",
+            r#"function p(){return"plain"}export{p};"#,
+        ),
+    ];
+    let names = |extra: &[&str]| {
+        let temp = bundle(&chunks);
+        optimize(temp.path(), extra);
+        same_behavior(temp.path());
+        let a = listing(&temp.path().join("out/a"));
+        let b = listing(&temp.path().join("out/b"));
+        assert_eq!(a, b, "references cannot tell the two files apart");
+        a
+    };
+    let all = names(&[]);
+    let without_removal = names(&["--disable-pass", "residual-dependency-removal"]);
+    assert!(!all[0].contains("AAAAAAAA"));
+    assert_ne!(all, without_removal);
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);
