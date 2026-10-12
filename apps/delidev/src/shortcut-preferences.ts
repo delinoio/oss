@@ -2,6 +2,7 @@
 import {
   primaryShortcutKey,
   globalShortcutBindings,
+  sessionShortcutBindings,
   ShortcutId,
   ShortcutInput,
   ShortcutPlatform,
@@ -144,6 +145,15 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
     priority: 0,
     input: ShortcutInput.Allow,
     defaults: globalShortcutBindings[ShortcutId.CommandMenu],
+  },
+  {
+    id: ShortcutId.OpenTerminals,
+    label: "shortcuts.openTerminals",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: sessionShortcutBindings[ShortcutId.OpenTerminals],
   },
   {
     target: ShortcutTargetContext.SessionMessage,

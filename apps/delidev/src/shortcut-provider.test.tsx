@@ -12,6 +12,7 @@ import {
 } from "./shortcut-provider";
 import {
   globalShortcutBindings,
+  sessionShortcutBindings,
   ShortcutId,
   ShortcutInput,
   ShortcutScope,
@@ -286,6 +287,17 @@ function HelpActions({
       label: "shortcuts.help",
       bindings: [{ key: "?" }],
       helpKeydown: holdHelp,
+    },
+    {
+      id: ShortcutId.OpenTerminals,
+      scope: Surface.Sessions,
+      label: "shortcuts.openTerminals",
+      bindings: sessionShortcutBindings[ShortcutId.OpenTerminals],
+      input: ShortcutInput.Allow,
+      run: () => {
+        run();
+        input.current?.focus();
+      },
     },
     {
       id: ShortcutId.OpenSettings,
@@ -742,5 +754,41 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Destination" }),
     );
+  },
+);
+
+it.each([
+  ["en", "MacIntel", "Open terminals"],
+  ["en", "Win32", "Open terminals"],
+  ["ko", "MacIntel", "터미널 열기"],
+  ["ko", "Linux x86_64", "터미널 열기"],
+])(
+  "closes %s Help before opening terminals on %s and keeps destination focus",
+  async (language, platform, label) => {
+    await act(() => i18n.changeLanguage(language));
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const run = vi.fn(() =>
+      expect(document.querySelector(".shortcut-help")).toBeNull(),
+    );
+    render(
+      <ShortcutProvider>
+        <HelpActions run={run} />
+      </ShortcutProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(label)).toBeTruthy();
+    fireEvent.keyDown(within(dialog).getByRole("button"), {
+      key: "`",
+      metaKey: platform === "MacIntel",
+      ctrlKey: platform !== "MacIntel",
+    });
+    expect(run).toHaveBeenCalledOnce();
+    await act(async () => {});
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Destination" }),
+    );
+    await act(() => i18n.changeLanguage("en"));
   },
 );
