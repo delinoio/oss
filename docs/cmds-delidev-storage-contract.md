@@ -1485,3 +1485,7 @@ identity and original deletion ownership. No schema or migration is added.
 ## Managed MCP generations
 
 [Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) uses existing server resources plus private, locked Worker JSON journals; no SQLite migration is needed. Accepted catalog revisions and execution copies retain original native credential references. Tombstoning a current definition does not delete immutable generations or historical attribution. Pending metadata never grants execution authority.
+
+## Managed skill catalog and receipts
+
+[Worker-owned managed skills](cmds-delidev-managed-skills-contract.md) uses the existing typed metadata table plus private locked Worker journals. No SQLite migration is added, and accepted snapshots keep independent cleanup.

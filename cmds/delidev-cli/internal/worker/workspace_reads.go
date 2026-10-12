@@ -11,6 +11,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -76,7 +77,7 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 			}
 			operationCtx, cancel := context.WithDeadline(ctx, request.Deadline)
 			defer cancel()
-			if q.ServerID != credential.ServerID || q.MachineID != credential.MachineID || q.WorkerDeviceID != credential.DeviceID || q.WorkerInstanceID != instance || request.Skills != nil || request.PRCandidate != nil {
+			if q.ServerID != credential.ServerID || q.MachineID != credential.MachineID || q.WorkerDeviceID != credential.DeviceID || q.WorkerInstanceID != instance || request.Skills != nil || request.ManagedSkills != nil || request.PRCandidate != nil {
 				return workspace.ResultUncertain()
 			}
 			catalog := managedmcp.Manager{Root: config.Root, ServerID: credential.ServerID, MachineID: credential.MachineID, WorkerDeviceID: credential.DeviceID, Logger: config.Logger}
@@ -115,6 +116,24 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 				clear(q.Secrets.Headers)
 			}
 			q.CallbackURL = ""
+		} else if request.ManagedSkills != nil {
+			scope := request.ManagedSkills
+			if scope.MachineID != credential.MachineID || scope.WorkerDeviceID != credential.DeviceID || scope.WorkerInstanceID != instance || scope.ServerID != credential.ServerID || request.PRCandidate != nil {
+				return workspace.ResultUncertain()
+			}
+			if request.Deadline.Before(time.Now()) || request.Deadline.After(time.Now().Add(31*time.Second)) {
+				return workspace.ResultUncertain()
+			}
+			operationCtx, operationCancel := context.WithDeadline(ctx, request.Deadline)
+			result, e := (skills.Manager{Root: config.Root}).Managed(operationCtx, *scope)
+			operationCancel()
+			if config.Logger != nil {
+				config.Logger.InfoContext(ctx, "managed_skill_request_finished", "request_id", scope.RequestID, "package_id", scope.PackageID, "machine_id", scope.MachineID, "action", scope.Action, "success", e == nil)
+			}
+			problem = e
+			if e == nil {
+				report.DocumentJson, _ = json.Marshal(result)
+			}
 		} else if request.Skills != nil {
 			if request.Skills.WorkerDeviceID != credential.DeviceID || request.Skills.WorkerInstanceID != instance {
 				return workspace.ResultUncertain()

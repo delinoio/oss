@@ -1063,3 +1063,7 @@ execution, queued input or routing state. The existing structured blocked event
 records the closed cause with the code; quota blocks are not storage failures.
 No messages, prompts, account content or native output enter logs.
 This optional metadata adds no RPC, allocation, schema, migration or backfill.
+
+## Managed skill execution generations
+
+At session creation the server captures enabled managed Agent selections and prepares complete independent package snapshots through the original preparation lane. The accepted queue keeps `managed_skills` separate from explicit input `skills`; first dispatch freezes the automatic bindings in `ExecutionConfiguration`. See [Worker-owned managed skills](cmds-delidev-managed-skills-contract.md). Automatic bindings never synthesize explicit input parts or change `$` input and history digests.

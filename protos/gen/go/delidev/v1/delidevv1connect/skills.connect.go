@@ -37,11 +37,35 @@ const (
 const (
 	// SkillServiceListSkillsProcedure is the fully-qualified name of the SkillService's ListSkills RPC.
 	SkillServiceListSkillsProcedure = "/delidev.v1.SkillService/ListSkills"
+	// SkillServiceListManagedSkillsProcedure is the fully-qualified name of the SkillService's
+	// ListManagedSkills RPC.
+	SkillServiceListManagedSkillsProcedure = "/delidev.v1.SkillService/ListManagedSkills"
+	// SkillServiceGetManagedSkillProcedure is the fully-qualified name of the SkillService's
+	// GetManagedSkill RPC.
+	SkillServiceGetManagedSkillProcedure = "/delidev.v1.SkillService/GetManagedSkill"
+	// SkillServiceImportManagedSkillProcedure is the fully-qualified name of the SkillService's
+	// ImportManagedSkill RPC.
+	SkillServiceImportManagedSkillProcedure = "/delidev.v1.SkillService/ImportManagedSkill"
+	// SkillServiceSetManagedSkillEnabledProcedure is the fully-qualified name of the SkillService's
+	// SetManagedSkillEnabled RPC.
+	SkillServiceSetManagedSkillEnabledProcedure = "/delidev.v1.SkillService/SetManagedSkillEnabled"
+	// SkillServiceCancelManagedSkillImportProcedure is the fully-qualified name of the SkillService's
+	// CancelManagedSkillImport RPC.
+	SkillServiceCancelManagedSkillImportProcedure = "/delidev.v1.SkillService/CancelManagedSkillImport"
+	// SkillServiceDeleteManagedSkillProcedure is the fully-qualified name of the SkillService's
+	// DeleteManagedSkill RPC.
+	SkillServiceDeleteManagedSkillProcedure = "/delidev.v1.SkillService/DeleteManagedSkill"
 )
 
 // SkillServiceClient is a client for the delidev.v1.SkillService service.
 type SkillServiceClient interface {
 	ListSkills(context.Context, *connect.Request[v1.ListSkillsRequest]) (*connect.Response[v1.ListSkillsResponse], error)
+	ListManagedSkills(context.Context, *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error)
+	GetManagedSkill(context.Context, *connect.Request[v1.GetManagedSkillRequest]) (*connect.Response[v1.GetManagedSkillResponse], error)
+	ImportManagedSkill(context.Context, *connect.Request[v1.ImportManagedSkillRequest]) (*connect.Response[v1.ImportManagedSkillResponse], error)
+	SetManagedSkillEnabled(context.Context, *connect.Request[v1.SetManagedSkillEnabledRequest]) (*connect.Response[v1.SetManagedSkillEnabledResponse], error)
+	CancelManagedSkillImport(context.Context, *connect.Request[v1.CancelManagedSkillImportRequest]) (*connect.Response[v1.CancelManagedSkillImportResponse], error)
+	DeleteManagedSkill(context.Context, *connect.Request[v1.DeleteManagedSkillRequest]) (*connect.Response[v1.DeleteManagedSkillResponse], error)
 }
 
 // NewSkillServiceClient constructs a client for the delidev.v1.SkillService service. By default, it
@@ -61,12 +85,54 @@ func NewSkillServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(skillServiceMethods.ByName("ListSkills")),
 			connect.WithClientOptions(opts...),
 		),
+		listManagedSkills: connect.NewClient[v1.ListManagedSkillsRequest, v1.ListManagedSkillsResponse](
+			httpClient,
+			baseURL+SkillServiceListManagedSkillsProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("ListManagedSkills")),
+			connect.WithClientOptions(opts...),
+		),
+		getManagedSkill: connect.NewClient[v1.GetManagedSkillRequest, v1.GetManagedSkillResponse](
+			httpClient,
+			baseURL+SkillServiceGetManagedSkillProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("GetManagedSkill")),
+			connect.WithClientOptions(opts...),
+		),
+		importManagedSkill: connect.NewClient[v1.ImportManagedSkillRequest, v1.ImportManagedSkillResponse](
+			httpClient,
+			baseURL+SkillServiceImportManagedSkillProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("ImportManagedSkill")),
+			connect.WithClientOptions(opts...),
+		),
+		setManagedSkillEnabled: connect.NewClient[v1.SetManagedSkillEnabledRequest, v1.SetManagedSkillEnabledResponse](
+			httpClient,
+			baseURL+SkillServiceSetManagedSkillEnabledProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("SetManagedSkillEnabled")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelManagedSkillImport: connect.NewClient[v1.CancelManagedSkillImportRequest, v1.CancelManagedSkillImportResponse](
+			httpClient,
+			baseURL+SkillServiceCancelManagedSkillImportProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("CancelManagedSkillImport")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteManagedSkill: connect.NewClient[v1.DeleteManagedSkillRequest, v1.DeleteManagedSkillResponse](
+			httpClient,
+			baseURL+SkillServiceDeleteManagedSkillProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("DeleteManagedSkill")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // skillServiceClient implements SkillServiceClient.
 type skillServiceClient struct {
-	listSkills *connect.Client[v1.ListSkillsRequest, v1.ListSkillsResponse]
+	listSkills               *connect.Client[v1.ListSkillsRequest, v1.ListSkillsResponse]
+	listManagedSkills        *connect.Client[v1.ListManagedSkillsRequest, v1.ListManagedSkillsResponse]
+	getManagedSkill          *connect.Client[v1.GetManagedSkillRequest, v1.GetManagedSkillResponse]
+	importManagedSkill       *connect.Client[v1.ImportManagedSkillRequest, v1.ImportManagedSkillResponse]
+	setManagedSkillEnabled   *connect.Client[v1.SetManagedSkillEnabledRequest, v1.SetManagedSkillEnabledResponse]
+	cancelManagedSkillImport *connect.Client[v1.CancelManagedSkillImportRequest, v1.CancelManagedSkillImportResponse]
+	deleteManagedSkill       *connect.Client[v1.DeleteManagedSkillRequest, v1.DeleteManagedSkillResponse]
 }
 
 // ListSkills calls delidev.v1.SkillService.ListSkills.
@@ -74,9 +140,45 @@ func (c *skillServiceClient) ListSkills(ctx context.Context, req *connect.Reques
 	return c.listSkills.CallUnary(ctx, req)
 }
 
+// ListManagedSkills calls delidev.v1.SkillService.ListManagedSkills.
+func (c *skillServiceClient) ListManagedSkills(ctx context.Context, req *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error) {
+	return c.listManagedSkills.CallUnary(ctx, req)
+}
+
+// GetManagedSkill calls delidev.v1.SkillService.GetManagedSkill.
+func (c *skillServiceClient) GetManagedSkill(ctx context.Context, req *connect.Request[v1.GetManagedSkillRequest]) (*connect.Response[v1.GetManagedSkillResponse], error) {
+	return c.getManagedSkill.CallUnary(ctx, req)
+}
+
+// ImportManagedSkill calls delidev.v1.SkillService.ImportManagedSkill.
+func (c *skillServiceClient) ImportManagedSkill(ctx context.Context, req *connect.Request[v1.ImportManagedSkillRequest]) (*connect.Response[v1.ImportManagedSkillResponse], error) {
+	return c.importManagedSkill.CallUnary(ctx, req)
+}
+
+// SetManagedSkillEnabled calls delidev.v1.SkillService.SetManagedSkillEnabled.
+func (c *skillServiceClient) SetManagedSkillEnabled(ctx context.Context, req *connect.Request[v1.SetManagedSkillEnabledRequest]) (*connect.Response[v1.SetManagedSkillEnabledResponse], error) {
+	return c.setManagedSkillEnabled.CallUnary(ctx, req)
+}
+
+// CancelManagedSkillImport calls delidev.v1.SkillService.CancelManagedSkillImport.
+func (c *skillServiceClient) CancelManagedSkillImport(ctx context.Context, req *connect.Request[v1.CancelManagedSkillImportRequest]) (*connect.Response[v1.CancelManagedSkillImportResponse], error) {
+	return c.cancelManagedSkillImport.CallUnary(ctx, req)
+}
+
+// DeleteManagedSkill calls delidev.v1.SkillService.DeleteManagedSkill.
+func (c *skillServiceClient) DeleteManagedSkill(ctx context.Context, req *connect.Request[v1.DeleteManagedSkillRequest]) (*connect.Response[v1.DeleteManagedSkillResponse], error) {
+	return c.deleteManagedSkill.CallUnary(ctx, req)
+}
+
 // SkillServiceHandler is an implementation of the delidev.v1.SkillService service.
 type SkillServiceHandler interface {
 	ListSkills(context.Context, *connect.Request[v1.ListSkillsRequest]) (*connect.Response[v1.ListSkillsResponse], error)
+	ListManagedSkills(context.Context, *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error)
+	GetManagedSkill(context.Context, *connect.Request[v1.GetManagedSkillRequest]) (*connect.Response[v1.GetManagedSkillResponse], error)
+	ImportManagedSkill(context.Context, *connect.Request[v1.ImportManagedSkillRequest]) (*connect.Response[v1.ImportManagedSkillResponse], error)
+	SetManagedSkillEnabled(context.Context, *connect.Request[v1.SetManagedSkillEnabledRequest]) (*connect.Response[v1.SetManagedSkillEnabledResponse], error)
+	CancelManagedSkillImport(context.Context, *connect.Request[v1.CancelManagedSkillImportRequest]) (*connect.Response[v1.CancelManagedSkillImportResponse], error)
+	DeleteManagedSkill(context.Context, *connect.Request[v1.DeleteManagedSkillRequest]) (*connect.Response[v1.DeleteManagedSkillResponse], error)
 }
 
 // NewSkillServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -92,10 +194,58 @@ func NewSkillServiceHandler(svc SkillServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(skillServiceMethods.ByName("ListSkills")),
 		connect.WithHandlerOptions(opts...),
 	)
+	skillServiceListManagedSkillsHandler := connect.NewUnaryHandler(
+		SkillServiceListManagedSkillsProcedure,
+		svc.ListManagedSkills,
+		connect.WithSchema(skillServiceMethods.ByName("ListManagedSkills")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceGetManagedSkillHandler := connect.NewUnaryHandler(
+		SkillServiceGetManagedSkillProcedure,
+		svc.GetManagedSkill,
+		connect.WithSchema(skillServiceMethods.ByName("GetManagedSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceImportManagedSkillHandler := connect.NewUnaryHandler(
+		SkillServiceImportManagedSkillProcedure,
+		svc.ImportManagedSkill,
+		connect.WithSchema(skillServiceMethods.ByName("ImportManagedSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceSetManagedSkillEnabledHandler := connect.NewUnaryHandler(
+		SkillServiceSetManagedSkillEnabledProcedure,
+		svc.SetManagedSkillEnabled,
+		connect.WithSchema(skillServiceMethods.ByName("SetManagedSkillEnabled")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceCancelManagedSkillImportHandler := connect.NewUnaryHandler(
+		SkillServiceCancelManagedSkillImportProcedure,
+		svc.CancelManagedSkillImport,
+		connect.WithSchema(skillServiceMethods.ByName("CancelManagedSkillImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceDeleteManagedSkillHandler := connect.NewUnaryHandler(
+		SkillServiceDeleteManagedSkillProcedure,
+		svc.DeleteManagedSkill,
+		connect.WithSchema(skillServiceMethods.ByName("DeleteManagedSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SkillService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SkillServiceListSkillsProcedure:
 			skillServiceListSkillsHandler.ServeHTTP(w, r)
+		case SkillServiceListManagedSkillsProcedure:
+			skillServiceListManagedSkillsHandler.ServeHTTP(w, r)
+		case SkillServiceGetManagedSkillProcedure:
+			skillServiceGetManagedSkillHandler.ServeHTTP(w, r)
+		case SkillServiceImportManagedSkillProcedure:
+			skillServiceImportManagedSkillHandler.ServeHTTP(w, r)
+		case SkillServiceSetManagedSkillEnabledProcedure:
+			skillServiceSetManagedSkillEnabledHandler.ServeHTTP(w, r)
+		case SkillServiceCancelManagedSkillImportProcedure:
+			skillServiceCancelManagedSkillImportHandler.ServeHTTP(w, r)
+		case SkillServiceDeleteManagedSkillProcedure:
+			skillServiceDeleteManagedSkillHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -107,4 +257,28 @@ type UnimplementedSkillServiceHandler struct{}
 
 func (UnimplementedSkillServiceHandler) ListSkills(context.Context, *connect.Request[v1.ListSkillsRequest]) (*connect.Response[v1.ListSkillsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.ListSkills is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) ListManagedSkills(context.Context, *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.ListManagedSkills is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) GetManagedSkill(context.Context, *connect.Request[v1.GetManagedSkillRequest]) (*connect.Response[v1.GetManagedSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.GetManagedSkill is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) ImportManagedSkill(context.Context, *connect.Request[v1.ImportManagedSkillRequest]) (*connect.Response[v1.ImportManagedSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.ImportManagedSkill is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) SetManagedSkillEnabled(context.Context, *connect.Request[v1.SetManagedSkillEnabledRequest]) (*connect.Response[v1.SetManagedSkillEnabledResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.SetManagedSkillEnabled is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) CancelManagedSkillImport(context.Context, *connect.Request[v1.CancelManagedSkillImportRequest]) (*connect.Response[v1.CancelManagedSkillImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.CancelManagedSkillImport is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) DeleteManagedSkill(context.Context, *connect.Request[v1.DeleteManagedSkillRequest]) (*connect.Response[v1.DeleteManagedSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.DeleteManagedSkill is not implemented"))
 }

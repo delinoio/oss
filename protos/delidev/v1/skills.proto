@@ -2,21 +2,31 @@
 syntax = "proto3";
 package delidev.v1;
 
+import "delidev/v1/common.proto";
+
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 // Inventory is keyless and belongs to the selected authenticated Runner.
 service SkillService {
   rpc ListSkills(ListSkillsRequest) returns (ListSkillsResponse);
+  rpc ListManagedSkills(ListManagedSkillsRequest) returns (ListManagedSkillsResponse);
+  rpc GetManagedSkill(GetManagedSkillRequest) returns (GetManagedSkillResponse);
+  rpc ImportManagedSkill(ImportManagedSkillRequest) returns (ImportManagedSkillResponse);
+  rpc SetManagedSkillEnabled(SetManagedSkillEnabledRequest) returns (SetManagedSkillEnabledResponse);
+  rpc CancelManagedSkillImport(CancelManagedSkillImportRequest) returns (CancelManagedSkillImportResponse);
+  rpc DeleteManagedSkill(DeleteManagedSkillRequest) returns (DeleteManagedSkillResponse);
 }
 enum SkillProvenance {
   SKILL_PROVENANCE_UNSPECIFIED = 0;
   SKILL_PROVENANCE_USER = 1;
   SKILL_PROVENANCE_PROJECT = 2;
+  SKILL_PROVENANCE_MANAGED = 3;
 }
 message SkillSelection {
   string inventory_id = 1;
   string skill_id = 2;
   string content_revision = 3;
   string worker_device_id = 4;
+  optional string managed_revision = 5;
 }
 // Presence distinguishes an old client omission from an explicit clear.
 message SkillSelectionList {
@@ -36,4 +46,85 @@ message ListSkillsRequest {
 }
 message ListSkillsResponse {
   repeated SkillEntry skills = 1;
+}
+
+message ManagedSkillSelection {
+  string worker_device_id = 1;
+  string package_id = 2;
+  string content_revision = 3;
+}
+message ManagedSkillSelectionList {
+  repeated ManagedSkillSelection selections = 1;
+}
+message ManagedSkillResource {
+  string path = 1;
+  uint64 size = 2;
+  uint32 mode = 3;
+  string digest = 4;
+}
+message ManagedSkillPackage {
+  ManagedSkillSelection selection = 1;
+  uint64 revision = 2;
+  string name = 3;
+  string description = 4;
+  bool enabled = 5;
+  repeated string referencing_agent_ids = 6;
+  repeated ManagedSkillResource resources = 7;
+  // Native eligibility is checked on the actual original process before use.
+  repeated string supported_harness_profiles = 8;
+}
+message ListManagedSkillsRequest {
+  string machine_id = 1;
+}
+message ListManagedSkillsResponse {
+  repeated ManagedSkillPackage packages = 1;
+}
+message GetManagedSkillRequest {
+  string machine_id = 1;
+  string package_id = 2;
+}
+message GetManagedSkillResponse {
+  ManagedSkillPackage package = 1;
+  string skill_markdown = 2;
+}
+message ImportManagedSkillRequest {
+  string machine_id = 1;
+  string request_id = 2;
+  string source_directory = 3;
+}
+message ImportManagedSkillResponse {
+  ManagedSkillPackage package = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool canceled = 4;
+}
+message SetManagedSkillEnabledRequest {
+  string machine_id = 1;
+  Mutation mutation = 2;
+  bool enabled = 3;
+}
+message SetManagedSkillEnabledResponse {
+  ManagedSkillPackage package = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DeleteManagedSkillRequest {
+  string machine_id = 1;
+  Mutation mutation = 2;
+}
+message DeleteManagedSkillResponse {
+  string request_id = 1;
+  bool replayed = 2;
+}
+
+message CancelManagedSkillImportRequest {
+  string machine_id = 1;
+  string request_id = 2;
+  string original_request_id = 3;
+}
+message CancelManagedSkillImportResponse {
+  string request_id = 1;
+  string original_request_id = 2;
+  bool replayed = 3;
+  bool import_complete = 4;
 }

@@ -262,7 +262,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 	}{input, actor, origin}
 	var preparedSkillScope *domain.SkillReadRequest
 	var preparedSkillNames map[domain.ID]string
-	if len(input.Skills) > 0 {
+	{
 		previous, found, e := s.Store.Replay(ctx, domain.ID(req.Msg.RequestId), "session.create", identity)
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
@@ -274,7 +274,29 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 			}
 			return connect.NewResponse(&pb.CreateSessionResponse{Change: change}), nil
 		}
-		prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: input.Skills}, domain.ID(req.Msg.RequestId), "session.create", identity)
+	}
+	automatic, automaticRevision, e := s.managedGenerationSelections(ctx, input.AgentID, input.MachineID, domain.ID(req.Msg.RequestId))
+	if e != nil {
+		return nil, rpc.Error(e, correlation)
+	}
+	selections := append([]domain.SkillBinding{}, input.Skills...)
+	for i, binding := range automatic {
+		matched := false
+		for _, explicit := range input.Skills {
+			if binding.SkillID == explicit.SkillID {
+				if binding.ManagedRevision != explicit.ManagedRevision || binding.ContentRevision != explicit.ContentRevision {
+					return nil, rpc.Error(skillUnavailable(), correlation)
+				}
+				automatic[i] = explicit
+				matched = true
+			}
+		}
+		if !matched {
+			selections = append(selections, binding)
+		}
+	}
+	if len(selections) > 0 {
+		prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: selections}, domain.ID(req.Msg.RequestId), "session.create", identity)
 		defer finish()
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
@@ -314,6 +336,37 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, Attachments: input.Attachments}, preparedSkillNames)
 		if err != nil {
 			return nil, err
+		}
+		if len(automatic) > 0 {
+			ar, err := tx.Get(domain.AgentKind, input.AgentID)
+			if err != nil || ar.Revision != automaticRevision {
+				return nil, domain.Fail(domain.Conflict, "The Agent Worker changed during skill copying.", "Retry a new execution with its current selections.")
+			}
+			qr, err := tx.Get(domain.QueueKind, itemID)
+			if err != nil {
+				return nil, err
+			}
+			var queued domain.QueuedInput
+			if domain.Decode(qr.Data, &queued) != nil {
+				return nil, managedSkillFailure()
+			}
+			if err = tx.CheckSkillSnapshotCapacity(id, itemID, len(queued.Skills)+len(automatic)); err != nil {
+				return nil, err
+			}
+			for _, binding := range automatic {
+				pkg, found, e := tx.ManagedSkill(binding.SkillID)
+				if e != nil {
+					return nil, e
+				}
+				if !found || !pkg.Enabled || pkg.Deleted || pkg.Deleting || pkg.ContentRevision != binding.ManagedRevision || pkg.LegacyRevision != binding.ContentRevision {
+					return nil, domain.Fail(domain.Conflict, "The managed package changed during preparation.", "Start a new generation with its current enabled selection.")
+				}
+			}
+			queued.ManagedSkills = automatic
+			queued.ManagedSkillsAgentRevision = automaticRevision
+			if _, err = tx.Put(domain.QueueKind, itemID, qr.Revision, id, input.ProjectID, queued); err != nil {
+				return nil, err
+			}
 		}
 		if err := claimInputImages(tx, actor, domain.ID(req.Msg.RequestId), id, itemID, input.MachineID, input.Attachments, true); err != nil {
 			return nil, err
@@ -561,7 +614,7 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 				}
 			}
 			if err := s.Store.Read(ctx, func(tx *store.Tx) error {
-				return tx.CheckSkillSnapshotCapacity(sessionID, domain.ID(meta.Id), len(nextBindings)+len(retired))
+				return tx.CheckSkillSnapshotCapacity(sessionID, domain.ID(meta.Id), len(nextBindings)+len(retired)+len(old.ManagedSkills))
 			}); err != nil {
 				return nil, err
 			}
@@ -627,7 +680,7 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 					value.RetiredSkills = append(value.RetiredSkills, binding)
 				}
 			}
-			if err := tx.CheckSkillSnapshotCapacity(sessionID, r.ID, len(value.RetiredSkills)+len(nextBindings)); err != nil {
+			if err := tx.CheckSkillSnapshotCapacity(sessionID, r.ID, len(value.RetiredSkills)+len(nextBindings)+len(value.ManagedSkills)); err != nil {
 				return nil, err
 			}
 			value.Skills = nextBindings
@@ -988,7 +1041,7 @@ func (s *Service) ListQueue(ctx context.Context, req *connect.Request[pb.ListQue
 }
 
 func sameSelectedSkill(a, b domain.SkillBinding) bool {
-	return a.WorkerDeviceID == b.WorkerDeviceID && a.InventoryID == b.InventoryID && a.SkillID == b.SkillID && a.ContentRevision == b.ContentRevision
+	return a.WorkerDeviceID == b.WorkerDeviceID && a.InventoryID == b.InventoryID && a.SkillID == b.SkillID && a.ContentRevision == b.ContentRevision && a.ManagedRevision == b.ManagedRevision
 }
 func skillEntryNames(entries []domain.SkillEntry) map[domain.ID]string {
 	if len(entries) == 0 {

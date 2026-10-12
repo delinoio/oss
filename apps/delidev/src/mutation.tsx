@@ -362,7 +362,7 @@ export function useRetainedMutation<
   method: DescMethodUnary<I, O>,
   accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void,
   acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
-  retainOnError = false,
+  retainOnError: boolean | ((failure: FailureCode) => boolean) = false,
   rejected?: (request: MessageInitShape<I>) => void,
 ) {
   const registry = useIntentRegistry(key);
@@ -492,7 +492,9 @@ export function useRetainedMutation<
       // A rejected replay cannot establish whether an earlier uncertain request
       // was admitted. Keep opt-in original verification until a matching receipt.
       const uncertain =
-        retainOnError ||
+        (typeof retainOnError === "function"
+          ? retainOnError(failure.code)
+          : retainOnError) ||
         Boolean(current.uncertain && current.acknowledge) ||
         [
           FailureCode.Unavailable,

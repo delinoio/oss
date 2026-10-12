@@ -11,16 +11,66 @@ import (
 )
 
 func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionInput) ([]nativeTextInput, error) {
-	if len(input.Skills) == 0 {
+	if len(input.Skills) == 0 && len(c.managedSkills) == 0 {
 		return nil, nil
 	}
 	if c.skillsRoot == "" || c.home == "" {
 		return nil, incompatible()
 	}
-	selected, e := (skills.Manager{Root: c.skillsRoot}).CopyToRuntime(ctx, input.Skills, c.home)
+	automatic, e := (skills.Manager{Root: c.skillsRoot}).ManagedRuntime(ctx, c.managedSkills, c.home)
 	if e != nil {
 		return nil, e
 	}
+	manager := skills.Manager{Root: c.skillsRoot}
+	// Later explicit selections have independent snapshot identities. Verify them,
+	// but preserve the execution's original automatic runtime proof and bytes.
+	if _, e = manager.Resolve(ctx, input.Skills); e != nil {
+		return nil, e
+	}
+	explicit := []skills.NativeSelection{}
+	for _, binding := range input.Skills {
+		shared := -1
+		for i, original := range c.managedSkills {
+			if original.SkillID == binding.SkillID {
+				if original.WorkerDeviceID != binding.WorkerDeviceID || original.ContentRevision != binding.ContentRevision || original.ManagedRevision != binding.ManagedRevision {
+					return nil, incompatible()
+				}
+				shared = i
+			}
+		}
+		if shared >= 0 {
+			explicit = append(explicit, automatic[shared])
+			continue
+		}
+		copied, err := manager.CopyToRuntime(ctx, []domain.SkillBinding{binding}, c.home)
+		if err != nil {
+			return nil, err
+		}
+		explicit = append(explicit, copied...)
+	}
+	selected := append([]skills.NativeSelection{}, automatic...)
+	for _, entry := range explicit {
+		found := false
+		for _, existing := range selected {
+			if nativePathEqual(existing.Path, entry.Path) {
+				if existing.Name != entry.Name {
+					return nil, incompatible()
+				}
+				found = true
+			}
+		}
+		if !found {
+			selected = append(selected, entry)
+		}
+	}
+	names := map[string]bool{}
+	for _, v := range selected {
+		if names[v.Name] {
+			return nil, incompatible()
+		}
+		names[v.Name] = true
+	}
+
 	roots := []string{}
 	for _, s := range selected {
 		roots = append(roots, filepath.Dir(s.Path))
@@ -73,11 +123,20 @@ func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionIn
 		if matches != 1 {
 			return nil, incompatible()
 		}
-		out = append(out, nativeTextInput{Type: "skill", Name: selection.Name, Path: selection.Path})
+
+	}
+	// Only explicit selections create original ordered native input parts.
+	for _, entry := range explicit {
+		out = append(out, nativeTextInput{Type: "skill", Name: entry.Name, Path: entry.Path})
 	}
 	// Recheck immutable snapshots after native discovery, before turn/start.
 	if _, e = (skills.Manager{Root: c.skillsRoot}).Resolve(ctx, input.Skills); e != nil {
 		return nil, e
+	}
+	for _, v := range automatic {
+		if e = skills.VerifyRuntimePackage(ctx, c.home, v.Path); e != nil {
+			return nil, e
+		}
 	}
 	return out, nil
 }

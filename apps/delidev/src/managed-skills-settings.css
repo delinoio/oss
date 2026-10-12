@@ -1,0 +1,25 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.managed-skills-settings .result p,
+.managed-skill-resources li,
+.managed-skill-markdown {
+  overflow-wrap: anywhere;
+}
+.managed-skills-settings .result[data-enabled="false"] h3 {
+  color: var(--muted);
+}
+.managed-skill-markdown {
+  max-width: 100%;
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.managed-skill-resources {
+  padding-inline-start: 1.25em;
+}
+@media (max-width: 700px) {
+  .managed-skills-settings .settings-toolbar,
+  .managed-skills-settings .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

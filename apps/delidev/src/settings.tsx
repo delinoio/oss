@@ -123,6 +123,7 @@ import {
 import { SSHSetup } from "./ssh-setup";
 import { MachineSettings } from "./machine-settings";
 import { ManagedMcpSettings } from "./managed-mcp-settings";
+import { ManagedSkillsSettings } from "./managed-skills-settings";
 import { NetworkSettings } from "./network-settings";
 import {
   DeviceAction,
@@ -1675,6 +1676,15 @@ export const settingsCategories: Record<
     },
     area: SettingsArea.Configuration,
   },
+  [SettingsCategory.Skills]: {
+    get label() {
+      return copy("managed-skills-settings.title");
+    },
+    get description() {
+      return copy("managed-skills-settings.description");
+    },
+    area: SettingsArea.Configuration,
+  },
   [SettingsCategory.Instructions]: {
     get label() {
       return copy("settings.instructions_934652");
@@ -1805,6 +1815,7 @@ export const settingsGroups: {
       SettingsCategory.AgentWorkers,
       SettingsCategory.Instructions,
       SettingsCategory.Mcp,
+      SettingsCategory.Skills,
     ],
   },
   {
@@ -1856,6 +1867,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.AgentWorkers]:
     "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
   [SettingsCategory.Mcp]: "M8 3v5m8-5v5M5 8h14v5a7 7 0 0 1-14 0zM12 20v2",
+  [SettingsCategory.Skills]: "M6 3h8l4 4v14H6zM9 12h6M9 16h4",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
   [SettingsCategory.Repositories]:
@@ -2322,7 +2334,9 @@ function SettingsWorkspace({
   const isRunnerDevices =
     selectedCategory === SettingsCategory.ExecutionWorkers;
   const isMcp = selectedCategory === SettingsCategory.Mcp;
-  const hasSpecializedPanel = isAccountCategory || isApiProviders || isMcp;
+  const isSkills = selectedCategory === SettingsCategory.Skills;
+  const hasSpecializedPanel =
+    isAccountCategory || isApiProviders || isMcp || isSkills;
   const hasOverlay = Boolean(
     editing || account || deleting || routing || machine || device,
   );
@@ -2860,6 +2874,9 @@ function SettingsWorkspace({
                   <div>
                     {isMcp ? (
                       <ManagedMcpSettings active={visible && !hasOverlay} />
+                    ) : null}
+                    {isSkills ? (
+                      <ManagedSkillsSettings active={visible && !hasOverlay} />
                     ) : null}
                     {controlLocalWorker && isRunnerDevices ? (
                       <div data-settings-search-target="local-worker">

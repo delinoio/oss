@@ -87,6 +87,16 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if err != nil {
 		return empty, err
 	}
+	if len(input.ManagedSkills) > 0 {
+		if input.ManagedSkillsAgentRevision != preview.Configuration.AgentRevision {
+			return empty, domain.Fail(domain.Conflict, "The captured skill generation uses an earlier Agent Worker revision.", "Preserve its immutable copied input and explicitly reconfigure the session.")
+		}
+		preview.Configuration.ManagedSkills = input.ManagedSkills
+		preview.ConfigurationDigest, err = preview.Configuration.Digest()
+		if err != nil {
+			return empty, err
+		}
+	}
 	accepted := domain.InitialExecution{ID: domain.NewID(), InputID: inputID, Configuration: preview.Configuration, ConfigurationDigest: preview.ConfigurationDigest, InitialAccountID: preview.AccountID, ConnectionID: preview.ConnectionID, Route: preview.Route, AcceptedAt: t.now}
 	input.Delivery = domain.InputClaimed
 	input.ExecutionID = accepted.ID

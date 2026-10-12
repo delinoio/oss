@@ -2945,7 +2945,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "EntityKind",
       "member": "ENTITY_KIND_COMPACTION",
@@ -2953,7 +2956,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -2961,7 +2967,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -2969,7 +2978,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "SessionChange",
       "member": "compaction_job",
@@ -4802,7 +4814,9 @@
     },
     {
       "issue": 1202,
-      "sharedIssues": [1203],
+      "sharedIssues": [
+        1203
+      ],
       "kind": "message",
       "declaration": "GetUsageSummaryResponse",
       "member": "accepted_compactions_without_response",
@@ -6845,7 +6859,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "CompactSessionRequest",
       "member": "expected_execution_id",
@@ -6853,7 +6870,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "CompactSessionResponse",
       "member": "session",
@@ -12061,7 +12081,9 @@
       "number": 2,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12070,7 +12092,9 @@
       "number": 3,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12079,7 +12103,9 @@
       "number": 4,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12088,7 +12114,9 @@
       "number": 6,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12097,7 +12125,9 @@
       "number": 4,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "issue": 2138,
@@ -13185,7 +13215,9 @@
     },
     {
       "issue": 964,
-      "sharedIssues": [2138],
+      "sharedIssues": [
+        2138
+      ],
       "kind": "message",
       "declaration": "ListTokenPricingResponse",
       "member": "models",
@@ -15355,6 +15387,402 @@
       "member": "definition_id",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_SKILLS_V1",
+      "number": 98
+    },
+    {
+      "issue": 2130,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_SKILLS_V1",
+      "number": 60
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillSelection",
+      "member": "worker_device_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillSelection",
+      "member": "package_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillSelection",
+      "member": "content_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillSelectionList",
+      "member": "selections",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillResource",
+      "member": "path",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillResource",
+      "member": "size",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillResource",
+      "member": "mode",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillResource",
+      "member": "digest",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "selection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "name",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "description",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "enabled",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "referencing_agent_ids",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "resources",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ManagedSkillPackage",
+      "member": "supported_harness_profiles",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ListManagedSkillsRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ListManagedSkillsResponse",
+      "member": "packages",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "GetManagedSkillRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "GetManagedSkillRequest",
+      "member": "package_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "GetManagedSkillResponse",
+      "member": "package",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "GetManagedSkillResponse",
+      "member": "skill_markdown",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillRequest",
+      "member": "source_directory",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillResponse",
+      "member": "package",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "ImportManagedSkillResponse",
+      "member": "canceled",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SetManagedSkillEnabledRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SetManagedSkillEnabledRequest",
+      "member": "mutation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SetManagedSkillEnabledRequest",
+      "member": "enabled",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SetManagedSkillEnabledResponse",
+      "member": "package",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SetManagedSkillEnabledResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SetManagedSkillEnabledResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "DeleteManagedSkillRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "DeleteManagedSkillRequest",
+      "member": "mutation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "DeleteManagedSkillResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "DeleteManagedSkillResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportRequest",
+      "member": "original_request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportResponse",
+      "member": "original_request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "CancelManagedSkillImportResponse",
+      "member": "import_complete",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2130,
+      "kind": "message",
+      "declaration": "SkillSelection",
+      "member": "managed_revision",
+      "number": 5
+    },
+    {
+      "issue": 2130,
+      "kind": "enum",
+      "declaration": "SkillProvenance",
+      "member": "SKILL_PROVENANCE_MANAGED",
+      "number": 3
     }
   ],
   "rpcReservations": [
@@ -15832,6 +16260,60 @@
       "method": "GetManagedMcpOperation",
       "input": "GetManagedMcpOperationRequest",
       "output": "GetManagedMcpOperationResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2130,
+      "service": "SkillService",
+      "method": "ListManagedSkills",
+      "input": "ListManagedSkillsRequest",
+      "output": "ListManagedSkillsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2130,
+      "service": "SkillService",
+      "method": "GetManagedSkill",
+      "input": "GetManagedSkillRequest",
+      "output": "GetManagedSkillResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2130,
+      "service": "SkillService",
+      "method": "ImportManagedSkill",
+      "input": "ImportManagedSkillRequest",
+      "output": "ImportManagedSkillResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2130,
+      "service": "SkillService",
+      "method": "SetManagedSkillEnabled",
+      "input": "SetManagedSkillEnabledRequest",
+      "output": "SetManagedSkillEnabledResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2130,
+      "service": "SkillService",
+      "method": "CancelManagedSkillImport",
+      "input": "CancelManagedSkillImportRequest",
+      "output": "CancelManagedSkillImportResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2130,
+      "service": "SkillService",
+      "method": "DeleteManagedSkill",
+      "input": "DeleteManagedSkillRequest",
+      "output": "DeleteManagedSkillResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

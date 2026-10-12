@@ -10,3 +10,33 @@ import { SkillService } from "./skills_pb.js";
  * @generated from rpc delidev.v1.SkillService.ListSkills
  */
 export const listSkills = SkillService.method.listSkills;
+
+/**
+ * @generated from rpc delidev.v1.SkillService.ListManagedSkills
+ */
+export const listManagedSkills = SkillService.method.listManagedSkills;
+
+/**
+ * @generated from rpc delidev.v1.SkillService.GetManagedSkill
+ */
+export const getManagedSkill = SkillService.method.getManagedSkill;
+
+/**
+ * @generated from rpc delidev.v1.SkillService.ImportManagedSkill
+ */
+export const importManagedSkill = SkillService.method.importManagedSkill;
+
+/**
+ * @generated from rpc delidev.v1.SkillService.SetManagedSkillEnabled
+ */
+export const setManagedSkillEnabled = SkillService.method.setManagedSkillEnabled;
+
+/**
+ * @generated from rpc delidev.v1.SkillService.CancelManagedSkillImport
+ */
+export const cancelManagedSkillImport = SkillService.method.cancelManagedSkillImport;
+
+/**
+ * @generated from rpc delidev.v1.SkillService.DeleteManagedSkill
+ */
+export const deleteManagedSkill = SkillService.method.deleteManagedSkill;

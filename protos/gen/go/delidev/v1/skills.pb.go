@@ -29,6 +29,7 @@ const (
 	SkillProvenance_SKILL_PROVENANCE_UNSPECIFIED SkillProvenance = 0
 	SkillProvenance_SKILL_PROVENANCE_USER        SkillProvenance = 1
 	SkillProvenance_SKILL_PROVENANCE_PROJECT     SkillProvenance = 2
+	SkillProvenance_SKILL_PROVENANCE_MANAGED     SkillProvenance = 3
 )
 
 // Enum value maps for SkillProvenance.
@@ -37,11 +38,13 @@ var (
 		0: "SKILL_PROVENANCE_UNSPECIFIED",
 		1: "SKILL_PROVENANCE_USER",
 		2: "SKILL_PROVENANCE_PROJECT",
+		3: "SKILL_PROVENANCE_MANAGED",
 	}
 	SkillProvenance_value = map[string]int32{
 		"SKILL_PROVENANCE_UNSPECIFIED": 0,
 		"SKILL_PROVENANCE_USER":        1,
 		"SKILL_PROVENANCE_PROJECT":     2,
+		"SKILL_PROVENANCE_MANAGED":     3,
 	}
 )
 
@@ -78,6 +81,7 @@ type SkillSelection struct {
 	SkillId         string                 `protobuf:"bytes,2,opt,name=skill_id,json=skillId,proto3" json:"skill_id,omitempty"`
 	ContentRevision string                 `protobuf:"bytes,3,opt,name=content_revision,json=contentRevision,proto3" json:"content_revision,omitempty"`
 	WorkerDeviceId  string                 `protobuf:"bytes,4,opt,name=worker_device_id,json=workerDeviceId,proto3" json:"worker_device_id,omitempty"`
+	ManagedRevision *string                `protobuf:"bytes,5,opt,name=managed_revision,json=managedRevision,proto3,oneof" json:"managed_revision,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -136,6 +140,13 @@ func (x *SkillSelection) GetContentRevision() string {
 func (x *SkillSelection) GetWorkerDeviceId() string {
 	if x != nil {
 		return x.WorkerDeviceId
+	}
+	return ""
+}
+
+func (x *SkillSelection) GetManagedRevision() string {
+	if x != nil && x.ManagedRevision != nil {
+		return *x.ManagedRevision
 	}
 	return ""
 }
@@ -365,17 +376,964 @@ func (x *ListSkillsResponse) GetSkills() []*SkillEntry {
 	return nil
 }
 
+type ManagedSkillSelection struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	WorkerDeviceId  string                 `protobuf:"bytes,1,opt,name=worker_device_id,json=workerDeviceId,proto3" json:"worker_device_id,omitempty"`
+	PackageId       string                 `protobuf:"bytes,2,opt,name=package_id,json=packageId,proto3" json:"package_id,omitempty"`
+	ContentRevision string                 `protobuf:"bytes,3,opt,name=content_revision,json=contentRevision,proto3" json:"content_revision,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ManagedSkillSelection) Reset() {
+	*x = ManagedSkillSelection{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedSkillSelection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedSkillSelection) ProtoMessage() {}
+
+func (x *ManagedSkillSelection) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedSkillSelection.ProtoReflect.Descriptor instead.
+func (*ManagedSkillSelection) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ManagedSkillSelection) GetWorkerDeviceId() string {
+	if x != nil {
+		return x.WorkerDeviceId
+	}
+	return ""
+}
+
+func (x *ManagedSkillSelection) GetPackageId() string {
+	if x != nil {
+		return x.PackageId
+	}
+	return ""
+}
+
+func (x *ManagedSkillSelection) GetContentRevision() string {
+	if x != nil {
+		return x.ContentRevision
+	}
+	return ""
+}
+
+type ManagedSkillSelectionList struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Selections    []*ManagedSkillSelection `protobuf:"bytes,1,rep,name=selections,proto3" json:"selections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManagedSkillSelectionList) Reset() {
+	*x = ManagedSkillSelectionList{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedSkillSelectionList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedSkillSelectionList) ProtoMessage() {}
+
+func (x *ManagedSkillSelectionList) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedSkillSelectionList.ProtoReflect.Descriptor instead.
+func (*ManagedSkillSelectionList) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ManagedSkillSelectionList) GetSelections() []*ManagedSkillSelection {
+	if x != nil {
+		return x.Selections
+	}
+	return nil
+}
+
+type ManagedSkillResource struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Size          uint64                 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	Mode          uint32                 `protobuf:"varint,3,opt,name=mode,proto3" json:"mode,omitempty"`
+	Digest        string                 `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManagedSkillResource) Reset() {
+	*x = ManagedSkillResource{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedSkillResource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedSkillResource) ProtoMessage() {}
+
+func (x *ManagedSkillResource) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedSkillResource.ProtoReflect.Descriptor instead.
+func (*ManagedSkillResource) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ManagedSkillResource) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ManagedSkillResource) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ManagedSkillResource) GetMode() uint32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+func (x *ManagedSkillResource) GetDigest() string {
+	if x != nil {
+		return x.Digest
+	}
+	return ""
+}
+
+type ManagedSkillPackage struct {
+	state               protoimpl.MessageState  `protogen:"open.v1"`
+	Selection           *ManagedSkillSelection  `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
+	Revision            uint64                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	Name                string                  `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description         string                  `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Enabled             bool                    `protobuf:"varint,5,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ReferencingAgentIds []string                `protobuf:"bytes,6,rep,name=referencing_agent_ids,json=referencingAgentIds,proto3" json:"referencing_agent_ids,omitempty"`
+	Resources           []*ManagedSkillResource `protobuf:"bytes,7,rep,name=resources,proto3" json:"resources,omitempty"`
+	// Native eligibility is checked on the actual original process before use.
+	SupportedHarnessProfiles []string `protobuf:"bytes,8,rep,name=supported_harness_profiles,json=supportedHarnessProfiles,proto3" json:"supported_harness_profiles,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *ManagedSkillPackage) Reset() {
+	*x = ManagedSkillPackage{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedSkillPackage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedSkillPackage) ProtoMessage() {}
+
+func (x *ManagedSkillPackage) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedSkillPackage.ProtoReflect.Descriptor instead.
+func (*ManagedSkillPackage) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ManagedSkillPackage) GetSelection() *ManagedSkillSelection {
+	if x != nil {
+		return x.Selection
+	}
+	return nil
+}
+
+func (x *ManagedSkillPackage) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *ManagedSkillPackage) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ManagedSkillPackage) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ManagedSkillPackage) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ManagedSkillPackage) GetReferencingAgentIds() []string {
+	if x != nil {
+		return x.ReferencingAgentIds
+	}
+	return nil
+}
+
+func (x *ManagedSkillPackage) GetResources() []*ManagedSkillResource {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *ManagedSkillPackage) GetSupportedHarnessProfiles() []string {
+	if x != nil {
+		return x.SupportedHarnessProfiles
+	}
+	return nil
+}
+
+type ListManagedSkillsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListManagedSkillsRequest) Reset() {
+	*x = ListManagedSkillsRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListManagedSkillsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListManagedSkillsRequest) ProtoMessage() {}
+
+func (x *ListManagedSkillsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListManagedSkillsRequest.ProtoReflect.Descriptor instead.
+func (*ListManagedSkillsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListManagedSkillsRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+type ListManagedSkillsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Packages      []*ManagedSkillPackage `protobuf:"bytes,1,rep,name=packages,proto3" json:"packages,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListManagedSkillsResponse) Reset() {
+	*x = ListManagedSkillsResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListManagedSkillsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListManagedSkillsResponse) ProtoMessage() {}
+
+func (x *ListManagedSkillsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListManagedSkillsResponse.ProtoReflect.Descriptor instead.
+func (*ListManagedSkillsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListManagedSkillsResponse) GetPackages() []*ManagedSkillPackage {
+	if x != nil {
+		return x.Packages
+	}
+	return nil
+}
+
+type GetManagedSkillRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	PackageId     string                 `protobuf:"bytes,2,opt,name=package_id,json=packageId,proto3" json:"package_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetManagedSkillRequest) Reset() {
+	*x = GetManagedSkillRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetManagedSkillRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManagedSkillRequest) ProtoMessage() {}
+
+func (x *GetManagedSkillRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManagedSkillRequest.ProtoReflect.Descriptor instead.
+func (*GetManagedSkillRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetManagedSkillRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *GetManagedSkillRequest) GetPackageId() string {
+	if x != nil {
+		return x.PackageId
+	}
+	return ""
+}
+
+type GetManagedSkillResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Package       *ManagedSkillPackage   `protobuf:"bytes,1,opt,name=package,proto3" json:"package,omitempty"`
+	SkillMarkdown string                 `protobuf:"bytes,2,opt,name=skill_markdown,json=skillMarkdown,proto3" json:"skill_markdown,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetManagedSkillResponse) Reset() {
+	*x = GetManagedSkillResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetManagedSkillResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManagedSkillResponse) ProtoMessage() {}
+
+func (x *GetManagedSkillResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManagedSkillResponse.ProtoReflect.Descriptor instead.
+func (*GetManagedSkillResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetManagedSkillResponse) GetPackage() *ManagedSkillPackage {
+	if x != nil {
+		return x.Package
+	}
+	return nil
+}
+
+func (x *GetManagedSkillResponse) GetSkillMarkdown() string {
+	if x != nil {
+		return x.SkillMarkdown
+	}
+	return ""
+}
+
+type ImportManagedSkillRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	MachineId       string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	RequestId       string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SourceDirectory string                 `protobuf:"bytes,3,opt,name=source_directory,json=sourceDirectory,proto3" json:"source_directory,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ImportManagedSkillRequest) Reset() {
+	*x = ImportManagedSkillRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportManagedSkillRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportManagedSkillRequest) ProtoMessage() {}
+
+func (x *ImportManagedSkillRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportManagedSkillRequest.ProtoReflect.Descriptor instead.
+func (*ImportManagedSkillRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ImportManagedSkillRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *ImportManagedSkillRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ImportManagedSkillRequest) GetSourceDirectory() string {
+	if x != nil {
+		return x.SourceDirectory
+	}
+	return ""
+}
+
+type ImportManagedSkillResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Package       *ManagedSkillPackage   `protobuf:"bytes,1,opt,name=package,proto3" json:"package,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Canceled      bool                   `protobuf:"varint,4,opt,name=canceled,proto3" json:"canceled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportManagedSkillResponse) Reset() {
+	*x = ImportManagedSkillResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportManagedSkillResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportManagedSkillResponse) ProtoMessage() {}
+
+func (x *ImportManagedSkillResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportManagedSkillResponse.ProtoReflect.Descriptor instead.
+func (*ImportManagedSkillResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ImportManagedSkillResponse) GetPackage() *ManagedSkillPackage {
+	if x != nil {
+		return x.Package
+	}
+	return nil
+}
+
+func (x *ImportManagedSkillResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ImportManagedSkillResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *ImportManagedSkillResponse) GetCanceled() bool {
+	if x != nil {
+		return x.Canceled
+	}
+	return false
+}
+
+type SetManagedSkillEnabledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	Mutation      *Mutation              `protobuf:"bytes,2,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetManagedSkillEnabledRequest) Reset() {
+	*x = SetManagedSkillEnabledRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetManagedSkillEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetManagedSkillEnabledRequest) ProtoMessage() {}
+
+func (x *SetManagedSkillEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetManagedSkillEnabledRequest.ProtoReflect.Descriptor instead.
+func (*SetManagedSkillEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SetManagedSkillEnabledRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *SetManagedSkillEnabledRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *SetManagedSkillEnabledRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type SetManagedSkillEnabledResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Package       *ManagedSkillPackage   `protobuf:"bytes,1,opt,name=package,proto3" json:"package,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetManagedSkillEnabledResponse) Reset() {
+	*x = SetManagedSkillEnabledResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetManagedSkillEnabledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetManagedSkillEnabledResponse) ProtoMessage() {}
+
+func (x *SetManagedSkillEnabledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetManagedSkillEnabledResponse.ProtoReflect.Descriptor instead.
+func (*SetManagedSkillEnabledResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SetManagedSkillEnabledResponse) GetPackage() *ManagedSkillPackage {
+	if x != nil {
+		return x.Package
+	}
+	return nil
+}
+
+func (x *SetManagedSkillEnabledResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SetManagedSkillEnabledResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type DeleteManagedSkillRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	Mutation      *Mutation              `protobuf:"bytes,2,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteManagedSkillRequest) Reset() {
+	*x = DeleteManagedSkillRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteManagedSkillRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteManagedSkillRequest) ProtoMessage() {}
+
+func (x *DeleteManagedSkillRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteManagedSkillRequest.ProtoReflect.Descriptor instead.
+func (*DeleteManagedSkillRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *DeleteManagedSkillRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *DeleteManagedSkillRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+type DeleteManagedSkillResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteManagedSkillResponse) Reset() {
+	*x = DeleteManagedSkillResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteManagedSkillResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteManagedSkillResponse) ProtoMessage() {}
+
+func (x *DeleteManagedSkillResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteManagedSkillResponse.ProtoReflect.Descriptor instead.
+func (*DeleteManagedSkillResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DeleteManagedSkillResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DeleteManagedSkillResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type CancelManagedSkillImportRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	MachineId         string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	RequestId         string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OriginalRequestId string                 `protobuf:"bytes,3,opt,name=original_request_id,json=originalRequestId,proto3" json:"original_request_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CancelManagedSkillImportRequest) Reset() {
+	*x = CancelManagedSkillImportRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelManagedSkillImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelManagedSkillImportRequest) ProtoMessage() {}
+
+func (x *CancelManagedSkillImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelManagedSkillImportRequest.ProtoReflect.Descriptor instead.
+func (*CancelManagedSkillImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CancelManagedSkillImportRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *CancelManagedSkillImportRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *CancelManagedSkillImportRequest) GetOriginalRequestId() string {
+	if x != nil {
+		return x.OriginalRequestId
+	}
+	return ""
+}
+
+type CancelManagedSkillImportResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RequestId         string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	OriginalRequestId string                 `protobuf:"bytes,2,opt,name=original_request_id,json=originalRequestId,proto3" json:"original_request_id,omitempty"`
+	Replayed          bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	ImportComplete    bool                   `protobuf:"varint,4,opt,name=import_complete,json=importComplete,proto3" json:"import_complete,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CancelManagedSkillImportResponse) Reset() {
+	*x = CancelManagedSkillImportResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelManagedSkillImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelManagedSkillImportResponse) ProtoMessage() {}
+
+func (x *CancelManagedSkillImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelManagedSkillImportResponse.ProtoReflect.Descriptor instead.
+func (*CancelManagedSkillImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CancelManagedSkillImportResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *CancelManagedSkillImportResponse) GetOriginalRequestId() string {
+	if x != nil {
+		return x.OriginalRequestId
+	}
+	return ""
+}
+
+func (x *CancelManagedSkillImportResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *CancelManagedSkillImportResponse) GetImportComplete() bool {
+	if x != nil {
+		return x.ImportComplete
+	}
+	return false
+}
+
 var File_delidev_v1_skills_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_skills_proto_rawDesc = "" +
 	"\n" +
 	"\x17delidev/v1/skills.proto\x12\n" +
-	"delidev.v1\"\xa3\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xe8\x01\n" +
 	"\x0eSkillSelection\x12!\n" +
 	"\finventory_id\x18\x01 \x01(\tR\vinventoryId\x12\x19\n" +
 	"\bskill_id\x18\x02 \x01(\tR\askillId\x12)\n" +
 	"\x10content_revision\x18\x03 \x01(\tR\x0fcontentRevision\x12(\n" +
-	"\x10worker_device_id\x18\x04 \x01(\tR\x0eworkerDeviceId\"P\n" +
+	"\x10worker_device_id\x18\x04 \x01(\tR\x0eworkerDeviceId\x12.\n" +
+	"\x10managed_revision\x18\x05 \x01(\tH\x00R\x0fmanagedRevision\x88\x01\x01B\x13\n" +
+	"\x11_managed_revision\"P\n" +
 	"\x12SkillSelectionList\x12:\n" +
 	"\n" +
 	"selections\x18\x01 \x03(\v2\x1a.delidev.v1.SkillSelectionR\n" +
@@ -397,14 +1355,99 @@ const file_delidev_v1_skills_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x04 \x01(\tR\tprojectId\"D\n" +
 	"\x12ListSkillsResponse\x12.\n" +
-	"\x06skills\x18\x01 \x03(\v2\x16.delidev.v1.SkillEntryR\x06skills*l\n" +
+	"\x06skills\x18\x01 \x03(\v2\x16.delidev.v1.SkillEntryR\x06skills\"\x8b\x01\n" +
+	"\x15ManagedSkillSelection\x12(\n" +
+	"\x10worker_device_id\x18\x01 \x01(\tR\x0eworkerDeviceId\x12\x1d\n" +
+	"\n" +
+	"package_id\x18\x02 \x01(\tR\tpackageId\x12)\n" +
+	"\x10content_revision\x18\x03 \x01(\tR\x0fcontentRevision\"^\n" +
+	"\x19ManagedSkillSelectionList\x12A\n" +
+	"\n" +
+	"selections\x18\x01 \x03(\v2!.delidev.v1.ManagedSkillSelectionR\n" +
+	"selections\"j\n" +
+	"\x14ManagedSkillResource\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\x12\x12\n" +
+	"\x04mode\x18\x03 \x01(\rR\x04mode\x12\x16\n" +
+	"\x06digest\x18\x04 \x01(\tR\x06digest\"\xf4\x02\n" +
+	"\x13ManagedSkillPackage\x12?\n" +
+	"\tselection\x18\x01 \x01(\v2!.delidev.v1.ManagedSkillSelectionR\tselection\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x18\n" +
+	"\aenabled\x18\x05 \x01(\bR\aenabled\x122\n" +
+	"\x15referencing_agent_ids\x18\x06 \x03(\tR\x13referencingAgentIds\x12>\n" +
+	"\tresources\x18\a \x03(\v2 .delidev.v1.ManagedSkillResourceR\tresources\x12<\n" +
+	"\x1asupported_harness_profiles\x18\b \x03(\tR\x18supportedHarnessProfiles\"9\n" +
+	"\x18ListManagedSkillsRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\"X\n" +
+	"\x19ListManagedSkillsResponse\x12;\n" +
+	"\bpackages\x18\x01 \x03(\v2\x1f.delidev.v1.ManagedSkillPackageR\bpackages\"V\n" +
+	"\x16GetManagedSkillRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
+	"\n" +
+	"package_id\x18\x02 \x01(\tR\tpackageId\"{\n" +
+	"\x17GetManagedSkillResponse\x129\n" +
+	"\apackage\x18\x01 \x01(\v2\x1f.delidev.v1.ManagedSkillPackageR\apackage\x12%\n" +
+	"\x0eskill_markdown\x18\x02 \x01(\tR\rskillMarkdown\"\x84\x01\n" +
+	"\x19ImportManagedSkillRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12)\n" +
+	"\x10source_directory\x18\x03 \x01(\tR\x0fsourceDirectory\"\xae\x01\n" +
+	"\x1aImportManagedSkillResponse\x129\n" +
+	"\apackage\x18\x01 \x01(\v2\x1f.delidev.v1.ManagedSkillPackageR\apackage\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12\x1a\n" +
+	"\bcanceled\x18\x04 \x01(\bR\bcanceled\"\x8a\x01\n" +
+	"\x1dSetManagedSkillEnabledRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x120\n" +
+	"\bmutation\x18\x02 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\"\x96\x01\n" +
+	"\x1eSetManagedSkillEnabledResponse\x129\n" +
+	"\apackage\x18\x01 \x01(\v2\x1f.delidev.v1.ManagedSkillPackageR\apackage\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"l\n" +
+	"\x19DeleteManagedSkillRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x120\n" +
+	"\bmutation\x18\x02 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"W\n" +
+	"\x1aDeleteManagedSkillResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\x8f\x01\n" +
+	"\x1fCancelManagedSkillImportRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12.\n" +
+	"\x13original_request_id\x18\x03 \x01(\tR\x11originalRequestId\"\xb6\x01\n" +
+	" CancelManagedSkillImportResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12.\n" +
+	"\x13original_request_id\x18\x02 \x01(\tR\x11originalRequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12'\n" +
+	"\x0fimport_complete\x18\x04 \x01(\bR\x0eimportComplete*\x8a\x01\n" +
 	"\x0fSkillProvenance\x12 \n" +
 	"\x1cSKILL_PROVENANCE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SKILL_PROVENANCE_USER\x10\x01\x12\x1c\n" +
-	"\x18SKILL_PROVENANCE_PROJECT\x10\x022[\n" +
+	"\x18SKILL_PROVENANCE_PROJECT\x10\x02\x12\x1c\n" +
+	"\x18SKILL_PROVENANCE_MANAGED\x10\x032\xcb\x05\n" +
 	"\fSkillService\x12K\n" +
 	"\n" +
-	"ListSkills\x12\x1d.delidev.v1.ListSkillsRequest\x1a\x1e.delidev.v1.ListSkillsResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"ListSkills\x12\x1d.delidev.v1.ListSkillsRequest\x1a\x1e.delidev.v1.ListSkillsResponse\x12`\n" +
+	"\x11ListManagedSkills\x12$.delidev.v1.ListManagedSkillsRequest\x1a%.delidev.v1.ListManagedSkillsResponse\x12Z\n" +
+	"\x0fGetManagedSkill\x12\".delidev.v1.GetManagedSkillRequest\x1a#.delidev.v1.GetManagedSkillResponse\x12c\n" +
+	"\x12ImportManagedSkill\x12%.delidev.v1.ImportManagedSkillRequest\x1a&.delidev.v1.ImportManagedSkillResponse\x12o\n" +
+	"\x16SetManagedSkillEnabled\x12).delidev.v1.SetManagedSkillEnabledRequest\x1a*.delidev.v1.SetManagedSkillEnabledResponse\x12u\n" +
+	"\x18CancelManagedSkillImport\x12+.delidev.v1.CancelManagedSkillImportRequest\x1a,.delidev.v1.CancelManagedSkillImportResponse\x12c\n" +
+	"\x12DeleteManagedSkill\x12%.delidev.v1.DeleteManagedSkillRequest\x1a&.delidev.v1.DeleteManagedSkillResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_skills_proto_rawDescOnce sync.Once
@@ -419,27 +1462,65 @@ func file_delidev_v1_skills_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_skills_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_delidev_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_delidev_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_delidev_v1_skills_proto_goTypes = []any{
-	(SkillProvenance)(0),       // 0: delidev.v1.SkillProvenance
-	(*SkillSelection)(nil),     // 1: delidev.v1.SkillSelection
-	(*SkillSelectionList)(nil), // 2: delidev.v1.SkillSelectionList
-	(*SkillEntry)(nil),         // 3: delidev.v1.SkillEntry
-	(*ListSkillsRequest)(nil),  // 4: delidev.v1.ListSkillsRequest
-	(*ListSkillsResponse)(nil), // 5: delidev.v1.ListSkillsResponse
+	(SkillProvenance)(0),                     // 0: delidev.v1.SkillProvenance
+	(*SkillSelection)(nil),                   // 1: delidev.v1.SkillSelection
+	(*SkillSelectionList)(nil),               // 2: delidev.v1.SkillSelectionList
+	(*SkillEntry)(nil),                       // 3: delidev.v1.SkillEntry
+	(*ListSkillsRequest)(nil),                // 4: delidev.v1.ListSkillsRequest
+	(*ListSkillsResponse)(nil),               // 5: delidev.v1.ListSkillsResponse
+	(*ManagedSkillSelection)(nil),            // 6: delidev.v1.ManagedSkillSelection
+	(*ManagedSkillSelectionList)(nil),        // 7: delidev.v1.ManagedSkillSelectionList
+	(*ManagedSkillResource)(nil),             // 8: delidev.v1.ManagedSkillResource
+	(*ManagedSkillPackage)(nil),              // 9: delidev.v1.ManagedSkillPackage
+	(*ListManagedSkillsRequest)(nil),         // 10: delidev.v1.ListManagedSkillsRequest
+	(*ListManagedSkillsResponse)(nil),        // 11: delidev.v1.ListManagedSkillsResponse
+	(*GetManagedSkillRequest)(nil),           // 12: delidev.v1.GetManagedSkillRequest
+	(*GetManagedSkillResponse)(nil),          // 13: delidev.v1.GetManagedSkillResponse
+	(*ImportManagedSkillRequest)(nil),        // 14: delidev.v1.ImportManagedSkillRequest
+	(*ImportManagedSkillResponse)(nil),       // 15: delidev.v1.ImportManagedSkillResponse
+	(*SetManagedSkillEnabledRequest)(nil),    // 16: delidev.v1.SetManagedSkillEnabledRequest
+	(*SetManagedSkillEnabledResponse)(nil),   // 17: delidev.v1.SetManagedSkillEnabledResponse
+	(*DeleteManagedSkillRequest)(nil),        // 18: delidev.v1.DeleteManagedSkillRequest
+	(*DeleteManagedSkillResponse)(nil),       // 19: delidev.v1.DeleteManagedSkillResponse
+	(*CancelManagedSkillImportRequest)(nil),  // 20: delidev.v1.CancelManagedSkillImportRequest
+	(*CancelManagedSkillImportResponse)(nil), // 21: delidev.v1.CancelManagedSkillImportResponse
+	(*Mutation)(nil),                         // 22: delidev.v1.Mutation
 }
 var file_delidev_v1_skills_proto_depIdxs = []int32{
-	1, // 0: delidev.v1.SkillSelectionList.selections:type_name -> delidev.v1.SkillSelection
-	1, // 1: delidev.v1.SkillEntry.selection:type_name -> delidev.v1.SkillSelection
-	0, // 2: delidev.v1.SkillEntry.provenance:type_name -> delidev.v1.SkillProvenance
-	3, // 3: delidev.v1.ListSkillsResponse.skills:type_name -> delidev.v1.SkillEntry
-	4, // 4: delidev.v1.SkillService.ListSkills:input_type -> delidev.v1.ListSkillsRequest
-	5, // 5: delidev.v1.SkillService.ListSkills:output_type -> delidev.v1.ListSkillsResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	1,  // 0: delidev.v1.SkillSelectionList.selections:type_name -> delidev.v1.SkillSelection
+	1,  // 1: delidev.v1.SkillEntry.selection:type_name -> delidev.v1.SkillSelection
+	0,  // 2: delidev.v1.SkillEntry.provenance:type_name -> delidev.v1.SkillProvenance
+	3,  // 3: delidev.v1.ListSkillsResponse.skills:type_name -> delidev.v1.SkillEntry
+	6,  // 4: delidev.v1.ManagedSkillSelectionList.selections:type_name -> delidev.v1.ManagedSkillSelection
+	6,  // 5: delidev.v1.ManagedSkillPackage.selection:type_name -> delidev.v1.ManagedSkillSelection
+	8,  // 6: delidev.v1.ManagedSkillPackage.resources:type_name -> delidev.v1.ManagedSkillResource
+	9,  // 7: delidev.v1.ListManagedSkillsResponse.packages:type_name -> delidev.v1.ManagedSkillPackage
+	9,  // 8: delidev.v1.GetManagedSkillResponse.package:type_name -> delidev.v1.ManagedSkillPackage
+	9,  // 9: delidev.v1.ImportManagedSkillResponse.package:type_name -> delidev.v1.ManagedSkillPackage
+	22, // 10: delidev.v1.SetManagedSkillEnabledRequest.mutation:type_name -> delidev.v1.Mutation
+	9,  // 11: delidev.v1.SetManagedSkillEnabledResponse.package:type_name -> delidev.v1.ManagedSkillPackage
+	22, // 12: delidev.v1.DeleteManagedSkillRequest.mutation:type_name -> delidev.v1.Mutation
+	4,  // 13: delidev.v1.SkillService.ListSkills:input_type -> delidev.v1.ListSkillsRequest
+	10, // 14: delidev.v1.SkillService.ListManagedSkills:input_type -> delidev.v1.ListManagedSkillsRequest
+	12, // 15: delidev.v1.SkillService.GetManagedSkill:input_type -> delidev.v1.GetManagedSkillRequest
+	14, // 16: delidev.v1.SkillService.ImportManagedSkill:input_type -> delidev.v1.ImportManagedSkillRequest
+	16, // 17: delidev.v1.SkillService.SetManagedSkillEnabled:input_type -> delidev.v1.SetManagedSkillEnabledRequest
+	20, // 18: delidev.v1.SkillService.CancelManagedSkillImport:input_type -> delidev.v1.CancelManagedSkillImportRequest
+	18, // 19: delidev.v1.SkillService.DeleteManagedSkill:input_type -> delidev.v1.DeleteManagedSkillRequest
+	5,  // 20: delidev.v1.SkillService.ListSkills:output_type -> delidev.v1.ListSkillsResponse
+	11, // 21: delidev.v1.SkillService.ListManagedSkills:output_type -> delidev.v1.ListManagedSkillsResponse
+	13, // 22: delidev.v1.SkillService.GetManagedSkill:output_type -> delidev.v1.GetManagedSkillResponse
+	15, // 23: delidev.v1.SkillService.ImportManagedSkill:output_type -> delidev.v1.ImportManagedSkillResponse
+	17, // 24: delidev.v1.SkillService.SetManagedSkillEnabled:output_type -> delidev.v1.SetManagedSkillEnabledResponse
+	21, // 25: delidev.v1.SkillService.CancelManagedSkillImport:output_type -> delidev.v1.CancelManagedSkillImportResponse
+	19, // 26: delidev.v1.SkillService.DeleteManagedSkill:output_type -> delidev.v1.DeleteManagedSkillResponse
+	20, // [20:27] is the sub-list for method output_type
+	13, // [13:20] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_skills_proto_init() }
@@ -447,13 +1528,15 @@ func file_delidev_v1_skills_proto_init() {
 	if File_delidev_v1_skills_proto != nil {
 		return
 	}
+	file_delidev_v1_common_proto_init()
+	file_delidev_v1_skills_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_skills_proto_rawDesc), len(file_delidev_v1_skills_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -82,6 +82,9 @@ type packageFile struct {
 }
 
 func packageFiles(ctx context.Context, path string) (map[string]packageFile, string, error) {
+	return packageResources(ctx, path, true)
+}
+func packageResources(ctx context.Context, path string, requireSkill bool) (map[string]packageFile, string, error) {
 	r, e := os.OpenRoot(path)
 	if e != nil {
 		return nil, "", unavailable()
@@ -145,7 +148,7 @@ func packageFiles(ctx context.Context, path string) (map[string]packageFile, str
 		return nil, "", e
 	}
 
-	if len(files["SKILL.md"].Bytes) == 0 || len(files["SKILL.md"].Bytes) > 1<<20 {
+	if requireSkill && (len(files["SKILL.md"].Bytes) == 0 || len(files["SKILL.md"].Bytes) > 1<<20) {
 		return nil, "", unavailable()
 	}
 	keys := make([]string, 0, len(files))
@@ -283,6 +286,29 @@ func (m Manager) List(ctx context.Context, scope domain.SkillReadRequest, projec
 			result.Entries = append(result.Entries, item)
 		}
 	}
+	if len(scope.ManagedPackages) > 0 {
+		if scope.ManagedServerID.Validate() != nil || (domain.ManagedSkillSelectionList{Selections: scope.ManagedPackages}).Validate() != nil {
+			return result, unavailable()
+		}
+		for _, selection := range scope.ManagedPackages {
+			record, e := m.managedRecord(selection.PackageID)
+			if e != nil || record.ServerID != scope.ManagedServerID || record.Package.WorkerDeviceID != scope.WorkerDeviceID || record.Package.MachineID != scope.MachineID || record.Package.ContentRevision != selection.ContentRevision {
+				return result, unavailable()
+			}
+			if record.Package.Deleted || !record.Package.Enabled {
+				continue
+			}
+			if e = m.verifyManaged(ctx, record); e != nil {
+				return result, e
+			}
+			if len(inv.Packages) >= MaxInventory {
+				return result, bound()
+			}
+			item := domain.SkillEntry{ManagedRevision: record.Package.ContentRevision, WorkerDeviceID: scope.WorkerDeviceID, InventoryID: id, SkillID: record.Package.PackageID, ContentRevision: record.Package.LegacyRevision, Name: record.Package.Name, Description: record.Package.Description, Provenance: "managed"}
+			inv.Packages = append(inv.Packages, packageRecord{Entry: item, Path: m.managedPath(selection.PackageID)})
+			result.Entries = append(result.Entries, item)
+		}
+	}
 	raw, _ := json.Marshal(result)
 	if len(raw) > 256<<10 {
 		return result, bound()
@@ -337,6 +363,12 @@ func (m Manager) Resolve(ctx context.Context, bindings []domain.SkillBinding) ([
 		if e != nil || digest != s.ContentRevision {
 			return nil, unavailable()
 		}
+		if s.ManagedRevision != "" {
+			_, _, full, _, err := managedFiles(ctx, path)
+			if err != nil || full != s.ManagedRevision {
+				return nil, unavailable()
+			}
+		}
 		out = append(out, NativeSelection{Name: entry.Name, Path: filepath.Join(path, "SKILL.md")})
 	}
 	return out, nil
@@ -370,6 +402,12 @@ func (m Manager) CopyToRuntime(ctx context.Context, bindings []domain.SkillBindi
 		_, after, e := packageFiles(ctx, target)
 		if e != nil || after != digest {
 			return nil, unavailable()
+		}
+		if s.ManagedRevision != "" {
+			_, _, full, _, err := managedFiles(ctx, target)
+			if err != nil || full != s.ManagedRevision {
+				return nil, unavailable()
+			}
 		}
 		if e = writeJSON(filepath.Join(runtime, "selected-skill-proofs", string(s.SkillID)+".json"), s); e != nil {
 			return nil, unavailable()
@@ -444,6 +482,12 @@ func CloneRuntimePackage(ctx context.Context, sourceHome, sourcePath, childHome 
 	if err != nil || digest != binding.ContentRevision {
 		return "", 0, unavailable()
 	}
+	if binding.ManagedRevision != "" {
+		_, _, full, _, err := managedFiles(ctx, filepath.Dir(sourcePath))
+		if err != nil || full != binding.ManagedRevision {
+			return "", 0, unavailable()
+		}
+	}
 	target := filepath.Join(childHome, "selected-skills", parts[0])
 	total := 0
 	for name, contents := range files {
@@ -480,6 +524,12 @@ func VerifyRuntimePackage(ctx context.Context, home, path string) error {
 	_, digest, err := packageFiles(ctx, filepath.Dir(path))
 	if err != nil || digest != binding.ContentRevision {
 		return unavailable()
+	}
+	if binding.ManagedRevision != "" {
+		_, _, full, _, err := managedFiles(ctx, filepath.Dir(path))
+		if err != nil || full != binding.ManagedRevision {
+			return unavailable()
+		}
 	}
 	return nil
 }

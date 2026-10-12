@@ -6100,3 +6100,7 @@ Deletion requires confirmation, is disabled for current Agent references and
 explains that historical generations and protected credential cleanup remain
 independently owned. These UI fixtures do not establish native, account or
 packaged platform acceptance.
+
+## Worker-owned Skills Settings
+
+[Worker-owned managed skills](cmds-delidev-managed-skills-contract.md) owns the typed catalog. Skills appears after MCP in AI Settings with Runner selection, search, Import skill, read-only View, enablement and confirmed deletion, and Agent Workers expose explicit selections. Import sends an absolute directory that the selected Worker resolves; the renderer never substitutes its own filesystem.

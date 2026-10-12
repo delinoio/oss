@@ -8,6 +8,7 @@ import {
 import type { IdentityLabel } from "./product-identity";
 import { configurationNameConflictCopy } from "./configuration-name-conflict";
 import { AgentManagedMCP } from "./agent-managed-mcp";
+import { AgentManagedSkills } from "./agent-managed-skills";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
@@ -1987,6 +1988,9 @@ export function ConfigurationFields({
         }
         managedMCP={
           <AgentManagedMCP data={data} change={change} active={active} />
+        }
+        managedSkills={
+          <AgentManagedSkills data={data} change={change} active={active} />
         }
         instructions={
           <OrderedLinks

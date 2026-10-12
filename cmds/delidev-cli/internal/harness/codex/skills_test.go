@@ -195,3 +195,95 @@ func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 		t.Fatal("child history proof changed", err)
 	}
 }
+
+func TestManagedSkillAutomaticDiscoveryPreservesLiteralInputProof(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	source := t.TempDir()
+	os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: add-issue\ndescription: fixture\n---\nAutomatic instructions\n"), 0600)
+	manager := skills.Manager{Root: home}
+	request := domain.ManagedSkillRequest{Action: domain.ManagedSkillImport, ServerID: domain.NewID(), ActorID: domain.NewID(), MachineID: domain.NewID(), WorkerDeviceID: domain.NewID(), WorkerInstanceID: domain.NewID(), RequestID: domain.NewID(), SourceDirectory: source}
+	request.PackageID = request.RequestID
+	imported, e := manager.Managed(ctx, request)
+	if e != nil {
+		t.Fatal(e)
+	}
+	pkg := imported.Packages[0]
+	binding := domain.SkillBinding{WorkerDeviceID: request.WorkerDeviceID, InventoryID: pkg.PackageID, SkillID: pkg.PackageID, SnapshotID: domain.NewID(), ContentRevision: pkg.LegacyRevision, ManagedRevision: pkg.ContentRevision}
+	scope := domain.SkillReadRequest{MachineID: request.MachineID, AgentID: domain.NewID(), ActorID: request.ServerID, AgentRevision: 1, WorkerDeviceID: request.WorkerDeviceID, WorkerInstanceID: request.WorkerInstanceID, Selections: []domain.SkillBinding{binding}}
+	if e = manager.Prepare(ctx, scope); e != nil {
+		t.Fatal(e)
+	}
+	client, _, _, _ := boundTurnFixture(t, "normal")
+	client.skillsRoot = home
+	client.managedSkills = scope.Selections
+	in := input(domain.ExecuteMode)
+	in.Prompt = "A literal $add-issue token"
+	started, e := client.StartTurn(ctx, domain.NewID(), domain.NewID(), in)
+	if e != nil {
+		t.Fatal(e)
+	}
+	nextKind(t, client, MessageCompletedEvent)
+	proof, e := client.SkillInputProofs(ctx)
+	if e != nil || len(proof) != 1 || proof[0].ID != started.InputID || proof[0].SkillDigest != ([32]byte{}) {
+		t.Fatal("automatic discovery invented explicit input authority", proof, e)
+	}
+	runtime, e := skills.ManagedRuntimeBindings(client.home)
+	if e != nil || len(runtime) != 1 || runtime[0] != binding {
+		t.Fatal("native discovery missing original copy", runtime, e)
+	}
+}
+
+func TestManagedSkillExplicitSelectionSharesAutomaticInventory(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	source := t.TempDir()
+	os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: add-issue\ndescription: fixture\n---\nAutomatic instructions\n"), 0600)
+	manager := skills.Manager{Root: home}
+	request := domain.ManagedSkillRequest{Action: domain.ManagedSkillImport, ServerID: domain.NewID(), ActorID: domain.NewID(), MachineID: domain.NewID(), WorkerDeviceID: domain.NewID(), WorkerInstanceID: domain.NewID(), RequestID: domain.NewID(), SourceDirectory: source}
+	request.PackageID = request.RequestID
+	imported, e := manager.Managed(ctx, request)
+	if e != nil {
+		t.Fatal(e)
+	}
+	pkg := imported.Packages[0]
+	binding := domain.SkillBinding{WorkerDeviceID: request.WorkerDeviceID, InventoryID: pkg.PackageID, SkillID: pkg.PackageID, SnapshotID: domain.NewID(), ContentRevision: pkg.LegacyRevision, ManagedRevision: pkg.ContentRevision}
+	scope := domain.SkillReadRequest{MachineID: request.MachineID, AgentID: domain.NewID(), ActorID: request.ServerID, AgentRevision: 1, WorkerDeviceID: request.WorkerDeviceID, WorkerInstanceID: request.WorkerInstanceID, Selections: []domain.SkillBinding{binding}}
+	if e = manager.Prepare(ctx, scope); e != nil {
+		t.Fatal(e)
+	}
+	client, _, _, _ := boundTurnFixture(t, "normal")
+	client.skillsRoot = home
+	client.managedSkills = scope.Selections
+	in := input(domain.ExecuteMode)
+	in.Prompt = "Explicit $add-issue"
+	in.Skills = scope.Selections
+	started, e := client.StartTurn(ctx, domain.NewID(), domain.NewID(), in)
+	if e != nil {
+		t.Fatal(e)
+	}
+	nextKind(t, client, MessageCompletedEvent)
+	proof, e := client.SkillInputProofs(ctx)
+	if e != nil || len(proof) != 1 || proof[0].ID != started.InputID || proof[0].SkillDigest == ([32]byte{}) {
+		t.Fatal("explicit selection lost original input authority", proof, e)
+	}
+	// A subsequent explicit snapshot must not replace the automatic proof.
+	later := binding
+	later.SnapshotID = domain.NewID()
+	scope.Selections = []domain.SkillBinding{later}
+	if e = manager.Prepare(ctx, scope); e != nil {
+		t.Fatal(e)
+	}
+	in.Skills = scope.Selections
+	parts, e := client.selectedSkillInputs(ctx, in)
+	if e != nil || len(parts) != 1 {
+		t.Fatal("later explicit selection lost independent snapshot", parts, e)
+	}
+	if _, e = manager.ManagedRuntime(ctx, client.managedSkills, client.home); e != nil {
+		t.Fatal("later explicit selection replaced automatic runtime proof", e)
+	}
+	runtime, e := skills.ManagedRuntimeBindings(client.home)
+	if e != nil || len(runtime) != 1 || runtime[0] != binding {
+		t.Fatal("native discovery missing original copy", runtime, e)
+	}
+}

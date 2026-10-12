@@ -1515,3 +1515,7 @@ The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns `ManagedMC
 `ListManagedMcpResponse.operations` field 2 owns bounded original-client pending/awaiting recovery metadata. Category disposal cannot authorize replay; list discovery and original-operation reads disclose no credentials and grant no runtime support.
 
 `GetManagedMcpOperationRequest.definition_id` field 3 binds original absence proofs to their exact definition and authenticated original Worker. A read cannot replace that identity or create generic no-receipt authority.
+
+## Managed skills management
+
+The [managed skills contract](cmds-delidev-managed-skills-contract.md) owns the `SkillService` management methods, System capability 98 and Worker capability 60, `SkillSelection.managed_revision = 5` and `SKILL_PROVENANCE_MANAGED = 3`. Agent selections travel in the Agent document, not in a separate request field. Generated Go/Connect and TypeScript/Connect Query bindings change together with the allocation catalog. Management negotiation grants no path, account or execution authority and adds no database migration.

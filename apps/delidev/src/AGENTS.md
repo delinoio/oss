@@ -15,6 +15,7 @@ The shared pure `product-identity.ts` module is owned here and consumed by the m
 ## Owning contracts
 
 - [DeliDev Worker-owned managed MCP](../../../docs/cmds-delidev-managed-mcp-contract.md)
+- [DeliDev Worker-owned managed skills](../../../docs/cmds-delidev-managed-skills-contract.md)
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
 - [Explicit skill completion presentation and input ownership](../../../docs/apps-delidev-desktop-contract.md#explicit-skill-completion)

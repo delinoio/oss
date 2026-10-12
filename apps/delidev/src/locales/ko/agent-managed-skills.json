@@ -1,0 +1,14 @@
+{
+  "agent-managed-skills.title": "스킬",
+  "agent-managed-skills.help": "한 실행 장치에서 사용 중인 패키지를 선택하세요. 선택되고 사용 중이며 네이티브에서 지원되는 패키지만 이후 실행에서 검색됩니다.",
+  "agent-managed-skills.retained": "유지된 스킬 패키지",
+  "agent-managed-skills.remove": "선택 해제",
+  "agent-managed-skills.unsupported": "이 서버에서는 스킬 관리를 사용할 수 없습니다. 기존 선택은 유지됩니다.",
+  "agent-managed-skills.runner": "실행 장치",
+  "agent-managed-skills.loading": "선택한 실행 장치를 읽는 중…",
+  "agent-managed-skills.add": "스킬 선택 추가",
+  "agent-managed-skills.choose": "사용 중인 스킬 선택",
+  "agent-managed-skills.eligible": "사용 가능",
+  "agent-managed-skills.noNative": "네이티브 지원 없음",
+  "agent-managed-skills.codexOnly": "관리형 스킬 패키지는 검증된 Codex 실행에서만 사용할 수 있습니다."
+}

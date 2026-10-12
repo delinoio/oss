@@ -9,3 +9,4 @@
 - [DeliDev same-account native session forks](../../../../docs/cmds-delidev-forks-contract.md)
 - [DeliDev session acceptance and input queue contract](../../../../docs/cmds-delidev-sessions-contract.md)
 - [DeliDev Session Terminals Contract](../../../../docs/cmds-delidev-terminals-contract.md)
+- [DeliDev Worker-owned managed skills](../../../../docs/cmds-delidev-managed-skills-contract.md)

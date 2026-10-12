@@ -21,8 +21,9 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
-	ManagedMCP   []ManagedMCPDefinition `json:"managed_mcp,omitempty"`
-	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
+	ManagedMCP    []ManagedMCPDefinition `json:"managed_mcp,omitempty"`
+	ManagedSkills []SkillBinding         `json:"managed_skills,omitempty"`
+	BranchPrefix  *BranchPrefixSelection `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
@@ -134,6 +135,12 @@ func (c ExecutionConfiguration) Validate() error {
 		if !d.Eligible(c.Harness) {
 			return Fail(Unsupported, "The original MCP generation is unavailable.", "Use independently verified native support.")
 		}
+	}
+	if err := ValidateSkills(c.ManagedSkills); err != nil {
+		return err
+	}
+	if len(c.ManagedSkills) > 0 && c.Harness != Codex {
+		return Fail(Unsupported, "Managed skills are unavailable for this native adapter.", "Select a verified Codex adapter.")
 	}
 	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
 		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")

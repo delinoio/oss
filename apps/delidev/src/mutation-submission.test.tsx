@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
+  FailureCode,
   SessionQuery,
   SessionService,
   newRequestId,
@@ -381,4 +382,53 @@ it("settles an uncertain original request from a matching read without replay", 
   fireEvent.click(screen.getByText("Original read"));
   await screen.findByText("Original settled");
   expect(sends).toBe(1);
+});
+
+it("retains only selected definite failure classes for original recovery", async () => {
+  const id = newRequestId(),
+    requestId = newRequestId(),
+    requests: unknown[] = [];
+  const transport = createRouterTransport((router) =>
+    router.service(SessionService, {
+      enqueueInput: (request) => {
+        requests.push(request);
+        if (requests.length === 1)
+          throw new ConnectError("Recovery needed", Code.FailedPrecondition);
+        return { change: { requestId: request.requestId } };
+      },
+    }),
+  );
+  function Sender() {
+    const mutation = useRetainedMutation(
+      "predicate-fixture",
+      SessionQuery.enqueueInput,
+      undefined,
+      (result, request) => result.change?.requestId === request.requestId,
+      (failure) => failure === FailureCode.RecoveryRequired,
+    );
+    return (
+      <>
+        <button onClick={() => void mutation.send({ sessionId: id, requestId })}>
+          Submit predicate
+        </button>
+        <button onClick={mutation.retry}>Retry predicate</button>
+        <p>{mutation.uncertain ? "Retained predicate" : "Settled predicate"}</p>
+      </>
+    );
+  }
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <MutationIntents>
+          <Sender />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  fireEvent.click(screen.getByText("Submit predicate"));
+  await screen.findByText("Retained predicate");
+  fireEvent.click(screen.getByText("Retry predicate"));
+  await screen.findByText("Settled predicate");
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
 });

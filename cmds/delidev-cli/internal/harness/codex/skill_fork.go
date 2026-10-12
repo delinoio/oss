@@ -32,6 +32,13 @@ func (s *ForkSource) RehomeSkills(ctx context.Context, childHome string) (*ForkS
 		return nil, err
 	}
 	paths := map[string]string{}
+	automatic, err := skills.CloneManagedRuntime(ctx, s.home, childHome)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range automatic {
+		paths[filepath.Join(s.home, "selected-skills", filepath.Base(filepath.Dir(entry.Path)), "SKILL.md")] = entry.Path
+	}
 	var collect func(any) error
 	total := 0
 	collect = func(value any) error {

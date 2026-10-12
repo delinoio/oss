@@ -763,3 +763,7 @@ This cause grants no fallback, quota recovery, account or execution authority.
 ## Managed MCP selection metadata
 
 [Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns Worker metadata and Agent bindings. Agent managed selections are optional and additive: omitted legacy updates preserve current bindings, while explicit empty selections clear them. Pending, deleted, foreign and disabled references fail admission. Management capability is separate from per-harness native eligibility.
+
+## Managed skill selection metadata
+
+[Worker-owned managed skills](cmds-delidev-managed-skills-contract.md) owns Agent `managed_skills`. Selections are optional and additive: omission preserves saved bindings, an explicit empty list clears them, and every reference is validated in the saving transaction. Deletion reservations and current references block deletion. Portable import marks selections as requiring reconfiguration.

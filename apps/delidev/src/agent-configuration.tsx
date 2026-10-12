@@ -164,6 +164,7 @@ export function AgentConfiguration({
   accounts,
   instructions,
   managedMCP,
+  managedSkills,
   native,
   routingProblem,
 }: {
@@ -174,6 +175,7 @@ export function AgentConfiguration({
   accounts?: ReactNode;
   instructions: ReactNode;
   managedMCP?: ReactNode;
+  managedSkills?: ReactNode;
   native: ReactNode;
   routingProblem: boolean;
 }) {
@@ -258,6 +260,7 @@ export function AgentConfiguration({
           {instructions}
         </AgentDisclosure>
         {managedMCP}
+        {managedSkills}
         <AgentDisclosure
           section={AgentSection.Native}
           summary={nativeSummary(data)}

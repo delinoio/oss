@@ -6,13 +6,15 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Mutation } from "./common_pb.js";
+import { file_delidev_v1_common } from "./common_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file delidev/v1/skills.proto.
  */
 export const file_delidev_v1_skills: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpZGV2L3YxL3NraWxscy5wcm90bxIKZGVsaWRldi52MSJsCg5Ta2lsbFNlbGVjdGlvbhIUCgxpbnZlbnRvcnlfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgDIAEoCRIYChB3b3JrZXJfZGV2aWNlX2lkGAQgASgJIkQKElNraWxsU2VsZWN0aW9uTGlzdBIuCgpzZWxlY3Rpb25zGAEgAygLMhouZGVsaWRldi52MS5Ta2lsbFNlbGVjdGlvbiKPAQoKU2tpbGxFbnRyeRItCglzZWxlY3Rpb24YASABKAsyGi5kZWxpZGV2LnYxLlNraWxsU2VsZWN0aW9uEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSLwoKcHJvdmVuYW5jZRgEIAEoDjIbLmRlbGlkZXYudjEuU2tpbGxQcm92ZW5hbmNlImEKEUxpc3RTa2lsbHNSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRISCgpwcm9qZWN0X2lkGAQgASgJIjwKEkxpc3RTa2lsbHNSZXNwb25zZRImCgZza2lsbHMYASADKAsyFi5kZWxpZGV2LnYxLlNraWxsRW50cnkqbAoPU2tpbGxQcm92ZW5hbmNlEiAKHFNLSUxMX1BST1ZFTkFOQ0VfVU5TUEVDSUZJRUQQABIZChVTS0lMTF9QUk9WRU5BTkNFX1VTRVIQARIcChhTS0lMTF9QUk9WRU5BTkNFX1BST0pFQ1QQAjJbCgxTa2lsbFNlcnZpY2USSwoKTGlzdFNraWxscxIdLmRlbGlkZXYudjEuTGlzdFNraWxsc1JlcXVlc3QaHi5kZWxpZGV2LnYxLkxpc3RTa2lsbHNSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM");
+  fileDesc("ChdkZWxpZGV2L3YxL3NraWxscy5wcm90bxIKZGVsaWRldi52MSKgAQoOU2tpbGxTZWxlY3Rpb24SFAoMaW52ZW50b3J5X2lkGAEgASgJEhAKCHNraWxsX2lkGAIgASgJEhgKEGNvbnRlbnRfcmV2aXNpb24YAyABKAkSGAoQd29ya2VyX2RldmljZV9pZBgEIAEoCRIdChBtYW5hZ2VkX3JldmlzaW9uGAUgASgJSACIAQFCEwoRX21hbmFnZWRfcmV2aXNpb24iRAoSU2tpbGxTZWxlY3Rpb25MaXN0Ei4KCnNlbGVjdGlvbnMYASADKAsyGi5kZWxpZGV2LnYxLlNraWxsU2VsZWN0aW9uIo8BCgpTa2lsbEVudHJ5Ei0KCXNlbGVjdGlvbhgBIAEoCzIaLmRlbGlkZXYudjEuU2tpbGxTZWxlY3Rpb24SDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIvCgpwcm92ZW5hbmNlGAQgASgOMhsuZGVsaWRldi52MS5Ta2lsbFByb3ZlbmFuY2UiYQoRTGlzdFNraWxsc1JlcXVlc3QSEgoKbWFjaGluZV9pZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhIKCnByb2plY3RfaWQYBCABKAkiPAoSTGlzdFNraWxsc1Jlc3BvbnNlEiYKBnNraWxscxgBIAMoCzIWLmRlbGlkZXYudjEuU2tpbGxFbnRyeSJfChVNYW5hZ2VkU2tpbGxTZWxlY3Rpb24SGAoQd29ya2VyX2RldmljZV9pZBgBIAEoCRISCgpwYWNrYWdlX2lkGAIgASgJEhgKEGNvbnRlbnRfcmV2aXNpb24YAyABKAkiUgoZTWFuYWdlZFNraWxsU2VsZWN0aW9uTGlzdBI1CgpzZWxlY3Rpb25zGAEgAygLMiEuZGVsaWRldi52MS5NYW5hZ2VkU2tpbGxTZWxlY3Rpb24iUAoUTWFuYWdlZFNraWxsUmVzb3VyY2USDAoEcGF0aBgBIAEoCRIMCgRzaXplGAIgASgEEgwKBG1vZGUYAyABKA0SDgoGZGlnZXN0GAQgASgJIokCChNNYW5hZ2VkU2tpbGxQYWNrYWdlEjQKCXNlbGVjdGlvbhgBIAEoCzIhLmRlbGlkZXYudjEuTWFuYWdlZFNraWxsU2VsZWN0aW9uEhAKCHJldmlzaW9uGAIgASgEEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSDwoHZW5hYmxlZBgFIAEoCBIdChVyZWZlcmVuY2luZ19hZ2VudF9pZHMYBiADKAkSMwoJcmVzb3VyY2VzGAcgAygLMiAuZGVsaWRldi52MS5NYW5hZ2VkU2tpbGxSZXNvdXJjZRIiChpzdXBwb3J0ZWRfaGFybmVzc19wcm9maWxlcxgIIAMoCSIuChhMaXN0TWFuYWdlZFNraWxsc1JlcXVlc3QSEgoKbWFjaGluZV9pZBgBIAEoCSJOChlMaXN0TWFuYWdlZFNraWxsc1Jlc3BvbnNlEjEKCHBhY2thZ2VzGAEgAygLMh8uZGVsaWRldi52MS5NYW5hZ2VkU2tpbGxQYWNrYWdlIkAKFkdldE1hbmFnZWRTa2lsbFJlcXVlc3QSEgoKbWFjaGluZV9pZBgBIAEoCRISCgpwYWNrYWdlX2lkGAIgASgJImMKF0dldE1hbmFnZWRTa2lsbFJlc3BvbnNlEjAKB3BhY2thZ2UYASABKAsyHy5kZWxpZGV2LnYxLk1hbmFnZWRTa2lsbFBhY2thZ2USFgoOc2tpbGxfbWFya2Rvd24YAiABKAkiXQoZSW1wb3J0TWFuYWdlZFNraWxsUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSGAoQc291cmNlX2RpcmVjdG9yeRgDIAEoCSKGAQoaSW1wb3J0TWFuYWdlZFNraWxsUmVzcG9uc2USMAoHcGFja2FnZRgBIAEoCzIfLmRlbGlkZXYudjEuTWFuYWdlZFNraWxsUGFja2FnZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEhAKCGNhbmNlbGVkGAQgASgIImwKHVNldE1hbmFnZWRTa2lsbEVuYWJsZWRSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSJgoIbXV0YXRpb24YAiABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEg8KB2VuYWJsZWQYAyABKAgieAoeU2V0TWFuYWdlZFNraWxsRW5hYmxlZFJlc3BvbnNlEjAKB3BhY2thZ2UYASABKAsyHy5kZWxpZGV2LnYxLk1hbmFnZWRTa2lsbFBhY2thZ2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCJXChlEZWxldGVNYW5hZ2VkU2tpbGxSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSJgoIbXV0YXRpb24YAiABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIkIKGkRlbGV0ZU1hbmFnZWRTa2lsbFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgiZgofQ2FuY2VsTWFuYWdlZFNraWxsSW1wb3J0UmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSGwoTb3JpZ2luYWxfcmVxdWVzdF9pZBgDIAEoCSJ+CiBDYW5jZWxNYW5hZ2VkU2tpbGxJbXBvcnRSZXNwb25zZRISCgpyZXF1ZXN0X2lkGAEgASgJEhsKE29yaWdpbmFsX3JlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSFwoPaW1wb3J0X2NvbXBsZXRlGAQgASgIKooBCg9Ta2lsbFByb3ZlbmFuY2USIAocU0tJTExfUFJPVkVOQU5DRV9VTlNQRUNJRklFRBAAEhkKFVNLSUxMX1BST1ZFTkFOQ0VfVVNFUhABEhwKGFNLSUxMX1BST1ZFTkFOQ0VfUFJPSkVDVBACEhwKGFNLSUxMX1BST1ZFTkFOQ0VfTUFOQUdFRBADMssFCgxTa2lsbFNlcnZpY2USSwoKTGlzdFNraWxscxIdLmRlbGlkZXYudjEuTGlzdFNraWxsc1JlcXVlc3QaHi5kZWxpZGV2LnYxLkxpc3RTa2lsbHNSZXNwb25zZRJgChFMaXN0TWFuYWdlZFNraWxscxIkLmRlbGlkZXYudjEuTGlzdE1hbmFnZWRTa2lsbHNSZXF1ZXN0GiUuZGVsaWRldi52MS5MaXN0TWFuYWdlZFNraWxsc1Jlc3BvbnNlEloKD0dldE1hbmFnZWRTa2lsbBIiLmRlbGlkZXYudjEuR2V0TWFuYWdlZFNraWxsUmVxdWVzdBojLmRlbGlkZXYudjEuR2V0TWFuYWdlZFNraWxsUmVzcG9uc2USYwoSSW1wb3J0TWFuYWdlZFNraWxsEiUuZGVsaWRldi52MS5JbXBvcnRNYW5hZ2VkU2tpbGxSZXF1ZXN0GiYuZGVsaWRldi52MS5JbXBvcnRNYW5hZ2VkU2tpbGxSZXNwb25zZRJvChZTZXRNYW5hZ2VkU2tpbGxFbmFibGVkEikuZGVsaWRldi52MS5TZXRNYW5hZ2VkU2tpbGxFbmFibGVkUmVxdWVzdBoqLmRlbGlkZXYudjEuU2V0TWFuYWdlZFNraWxsRW5hYmxlZFJlc3BvbnNlEnUKGENhbmNlbE1hbmFnZWRTa2lsbEltcG9ydBIrLmRlbGlkZXYudjEuQ2FuY2VsTWFuYWdlZFNraWxsSW1wb3J0UmVxdWVzdBosLmRlbGlkZXYudjEuQ2FuY2VsTWFuYWdlZFNraWxsSW1wb3J0UmVzcG9uc2USYwoSRGVsZXRlTWFuYWdlZFNraWxsEiUuZGVsaWRldi52MS5EZWxldGVNYW5hZ2VkU2tpbGxSZXF1ZXN0GiYuZGVsaWRldi52MS5EZWxldGVNYW5hZ2VkU2tpbGxSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.SkillSelection
@@ -37,6 +39,11 @@ export type SkillSelection = Message<"delidev.v1.SkillSelection"> & {
    * @generated from field: string worker_device_id = 4;
    */
   workerDeviceId: string;
+
+  /**
+   * @generated from field: optional string managed_revision = 5;
+   */
+  managedRevision?: string | undefined;
 };
 
 /**
@@ -147,6 +154,430 @@ export const ListSkillsResponseSchema: GenMessage<ListSkillsResponse> = /*@__PUR
   messageDesc(file_delidev_v1_skills, 4);
 
 /**
+ * @generated from message delidev.v1.ManagedSkillSelection
+ */
+export type ManagedSkillSelection = Message<"delidev.v1.ManagedSkillSelection"> & {
+  /**
+   * @generated from field: string worker_device_id = 1;
+   */
+  workerDeviceId: string;
+
+  /**
+   * @generated from field: string package_id = 2;
+   */
+  packageId: string;
+
+  /**
+   * @generated from field: string content_revision = 3;
+   */
+  contentRevision: string;
+};
+
+/**
+ * Describes the message delidev.v1.ManagedSkillSelection.
+ * Use `create(ManagedSkillSelectionSchema)` to create a new message.
+ */
+export const ManagedSkillSelectionSchema: GenMessage<ManagedSkillSelection> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 5);
+
+/**
+ * @generated from message delidev.v1.ManagedSkillSelectionList
+ */
+export type ManagedSkillSelectionList = Message<"delidev.v1.ManagedSkillSelectionList"> & {
+  /**
+   * @generated from field: repeated delidev.v1.ManagedSkillSelection selections = 1;
+   */
+  selections: ManagedSkillSelection[];
+};
+
+/**
+ * Describes the message delidev.v1.ManagedSkillSelectionList.
+ * Use `create(ManagedSkillSelectionListSchema)` to create a new message.
+ */
+export const ManagedSkillSelectionListSchema: GenMessage<ManagedSkillSelectionList> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 6);
+
+/**
+ * @generated from message delidev.v1.ManagedSkillResource
+ */
+export type ManagedSkillResource = Message<"delidev.v1.ManagedSkillResource"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: uint64 size = 2;
+   */
+  size: bigint;
+
+  /**
+   * @generated from field: uint32 mode = 3;
+   */
+  mode: number;
+
+  /**
+   * @generated from field: string digest = 4;
+   */
+  digest: string;
+};
+
+/**
+ * Describes the message delidev.v1.ManagedSkillResource.
+ * Use `create(ManagedSkillResourceSchema)` to create a new message.
+ */
+export const ManagedSkillResourceSchema: GenMessage<ManagedSkillResource> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 7);
+
+/**
+ * @generated from message delidev.v1.ManagedSkillPackage
+ */
+export type ManagedSkillPackage = Message<"delidev.v1.ManagedSkillPackage"> & {
+  /**
+   * @generated from field: delidev.v1.ManagedSkillSelection selection = 1;
+   */
+  selection?: ManagedSkillSelection | undefined;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 4;
+   */
+  description: string;
+
+  /**
+   * @generated from field: bool enabled = 5;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: repeated string referencing_agent_ids = 6;
+   */
+  referencingAgentIds: string[];
+
+  /**
+   * @generated from field: repeated delidev.v1.ManagedSkillResource resources = 7;
+   */
+  resources: ManagedSkillResource[];
+
+  /**
+   * Native eligibility is checked on the actual original process before use.
+   *
+   * @generated from field: repeated string supported_harness_profiles = 8;
+   */
+  supportedHarnessProfiles: string[];
+};
+
+/**
+ * Describes the message delidev.v1.ManagedSkillPackage.
+ * Use `create(ManagedSkillPackageSchema)` to create a new message.
+ */
+export const ManagedSkillPackageSchema: GenMessage<ManagedSkillPackage> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 8);
+
+/**
+ * @generated from message delidev.v1.ListManagedSkillsRequest
+ */
+export type ListManagedSkillsRequest = Message<"delidev.v1.ListManagedSkillsRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+};
+
+/**
+ * Describes the message delidev.v1.ListManagedSkillsRequest.
+ * Use `create(ListManagedSkillsRequestSchema)` to create a new message.
+ */
+export const ListManagedSkillsRequestSchema: GenMessage<ListManagedSkillsRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 9);
+
+/**
+ * @generated from message delidev.v1.ListManagedSkillsResponse
+ */
+export type ListManagedSkillsResponse = Message<"delidev.v1.ListManagedSkillsResponse"> & {
+  /**
+   * @generated from field: repeated delidev.v1.ManagedSkillPackage packages = 1;
+   */
+  packages: ManagedSkillPackage[];
+};
+
+/**
+ * Describes the message delidev.v1.ListManagedSkillsResponse.
+ * Use `create(ListManagedSkillsResponseSchema)` to create a new message.
+ */
+export const ListManagedSkillsResponseSchema: GenMessage<ListManagedSkillsResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 10);
+
+/**
+ * @generated from message delidev.v1.GetManagedSkillRequest
+ */
+export type GetManagedSkillRequest = Message<"delidev.v1.GetManagedSkillRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string package_id = 2;
+   */
+  packageId: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetManagedSkillRequest.
+ * Use `create(GetManagedSkillRequestSchema)` to create a new message.
+ */
+export const GetManagedSkillRequestSchema: GenMessage<GetManagedSkillRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 11);
+
+/**
+ * @generated from message delidev.v1.GetManagedSkillResponse
+ */
+export type GetManagedSkillResponse = Message<"delidev.v1.GetManagedSkillResponse"> & {
+  /**
+   * @generated from field: delidev.v1.ManagedSkillPackage package = 1;
+   */
+  package?: ManagedSkillPackage | undefined;
+
+  /**
+   * @generated from field: string skill_markdown = 2;
+   */
+  skillMarkdown: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetManagedSkillResponse.
+ * Use `create(GetManagedSkillResponseSchema)` to create a new message.
+ */
+export const GetManagedSkillResponseSchema: GenMessage<GetManagedSkillResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 12);
+
+/**
+ * @generated from message delidev.v1.ImportManagedSkillRequest
+ */
+export type ImportManagedSkillRequest = Message<"delidev.v1.ImportManagedSkillRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string source_directory = 3;
+   */
+  sourceDirectory: string;
+};
+
+/**
+ * Describes the message delidev.v1.ImportManagedSkillRequest.
+ * Use `create(ImportManagedSkillRequestSchema)` to create a new message.
+ */
+export const ImportManagedSkillRequestSchema: GenMessage<ImportManagedSkillRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 13);
+
+/**
+ * @generated from message delidev.v1.ImportManagedSkillResponse
+ */
+export type ImportManagedSkillResponse = Message<"delidev.v1.ImportManagedSkillResponse"> & {
+  /**
+   * @generated from field: delidev.v1.ManagedSkillPackage package = 1;
+   */
+  package?: ManagedSkillPackage | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+
+  /**
+   * @generated from field: bool canceled = 4;
+   */
+  canceled: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.ImportManagedSkillResponse.
+ * Use `create(ImportManagedSkillResponseSchema)` to create a new message.
+ */
+export const ImportManagedSkillResponseSchema: GenMessage<ImportManagedSkillResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 14);
+
+/**
+ * @generated from message delidev.v1.SetManagedSkillEnabledRequest
+ */
+export type SetManagedSkillEnabledRequest = Message<"delidev.v1.SetManagedSkillEnabledRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 2;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: bool enabled = 3;
+   */
+  enabled: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.SetManagedSkillEnabledRequest.
+ * Use `create(SetManagedSkillEnabledRequestSchema)` to create a new message.
+ */
+export const SetManagedSkillEnabledRequestSchema: GenMessage<SetManagedSkillEnabledRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 15);
+
+/**
+ * @generated from message delidev.v1.SetManagedSkillEnabledResponse
+ */
+export type SetManagedSkillEnabledResponse = Message<"delidev.v1.SetManagedSkillEnabledResponse"> & {
+  /**
+   * @generated from field: delidev.v1.ManagedSkillPackage package = 1;
+   */
+  package?: ManagedSkillPackage | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.SetManagedSkillEnabledResponse.
+ * Use `create(SetManagedSkillEnabledResponseSchema)` to create a new message.
+ */
+export const SetManagedSkillEnabledResponseSchema: GenMessage<SetManagedSkillEnabledResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 16);
+
+/**
+ * @generated from message delidev.v1.DeleteManagedSkillRequest
+ */
+export type DeleteManagedSkillRequest = Message<"delidev.v1.DeleteManagedSkillRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 2;
+   */
+  mutation?: Mutation | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.DeleteManagedSkillRequest.
+ * Use `create(DeleteManagedSkillRequestSchema)` to create a new message.
+ */
+export const DeleteManagedSkillRequestSchema: GenMessage<DeleteManagedSkillRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 17);
+
+/**
+ * @generated from message delidev.v1.DeleteManagedSkillResponse
+ */
+export type DeleteManagedSkillResponse = Message<"delidev.v1.DeleteManagedSkillResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 2;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.DeleteManagedSkillResponse.
+ * Use `create(DeleteManagedSkillResponseSchema)` to create a new message.
+ */
+export const DeleteManagedSkillResponseSchema: GenMessage<DeleteManagedSkillResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 18);
+
+/**
+ * @generated from message delidev.v1.CancelManagedSkillImportRequest
+ */
+export type CancelManagedSkillImportRequest = Message<"delidev.v1.CancelManagedSkillImportRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string original_request_id = 3;
+   */
+  originalRequestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.CancelManagedSkillImportRequest.
+ * Use `create(CancelManagedSkillImportRequestSchema)` to create a new message.
+ */
+export const CancelManagedSkillImportRequestSchema: GenMessage<CancelManagedSkillImportRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 19);
+
+/**
+ * @generated from message delidev.v1.CancelManagedSkillImportResponse
+ */
+export type CancelManagedSkillImportResponse = Message<"delidev.v1.CancelManagedSkillImportResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string original_request_id = 2;
+   */
+  originalRequestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+
+  /**
+   * @generated from field: bool import_complete = 4;
+   */
+  importComplete: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.CancelManagedSkillImportResponse.
+ * Use `create(CancelManagedSkillImportResponseSchema)` to create a new message.
+ */
+export const CancelManagedSkillImportResponseSchema: GenMessage<CancelManagedSkillImportResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 20);
+
+/**
  * @generated from enum delidev.v1.SkillProvenance
  */
 export enum SkillProvenance {
@@ -164,6 +595,11 @@ export enum SkillProvenance {
    * @generated from enum value: SKILL_PROVENANCE_PROJECT = 2;
    */
   PROJECT = 2,
+
+  /**
+   * @generated from enum value: SKILL_PROVENANCE_MANAGED = 3;
+   */
+  MANAGED = 3,
 }
 
 /**
@@ -185,6 +621,54 @@ export const SkillService: GenService<{
     methodKind: "unary";
     input: typeof ListSkillsRequestSchema;
     output: typeof ListSkillsResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.ListManagedSkills
+   */
+  listManagedSkills: {
+    methodKind: "unary";
+    input: typeof ListManagedSkillsRequestSchema;
+    output: typeof ListManagedSkillsResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.GetManagedSkill
+   */
+  getManagedSkill: {
+    methodKind: "unary";
+    input: typeof GetManagedSkillRequestSchema;
+    output: typeof GetManagedSkillResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.ImportManagedSkill
+   */
+  importManagedSkill: {
+    methodKind: "unary";
+    input: typeof ImportManagedSkillRequestSchema;
+    output: typeof ImportManagedSkillResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.SetManagedSkillEnabled
+   */
+  setManagedSkillEnabled: {
+    methodKind: "unary";
+    input: typeof SetManagedSkillEnabledRequestSchema;
+    output: typeof SetManagedSkillEnabledResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.CancelManagedSkillImport
+   */
+  cancelManagedSkillImport: {
+    methodKind: "unary";
+    input: typeof CancelManagedSkillImportRequestSchema;
+    output: typeof CancelManagedSkillImportResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.DeleteManagedSkill
+   */
+  deleteManagedSkill: {
+    methodKind: "unary";
+    input: typeof DeleteManagedSkillRequestSchema;
+    output: typeof DeleteManagedSkillResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delidev_v1_skills, 0);

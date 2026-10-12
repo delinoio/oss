@@ -452,6 +452,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				err = rewrite(&v.ProviderID, domain.ProviderKind)
 			}
 		case *domain.Agent:
+			if v.ManagedSkills != nil && len(v.ManagedSkills.Selections) > 0 {
+				v.ReconfigurationRequired = true
+			}
 			if len(v.Routes) == 0 {
 				return plan, transferInvalid()
 			}

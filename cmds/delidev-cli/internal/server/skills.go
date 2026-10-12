@@ -24,7 +24,7 @@ func validateSkillResult(result domain.SkillReadResult) error {
 	}
 	seen := map[domain.ID]bool{}
 	for _, v := range result.Entries {
-		if domain.ValidateSkills([]domain.SkillBinding{{WorkerDeviceID: v.WorkerDeviceID, InventoryID: v.InventoryID, SkillID: v.SkillID, ContentRevision: v.ContentRevision, SnapshotID: v.InventoryID}}) != nil || seen[v.SkillID] || domain.Text(v.Name, "skill name", 128, true) != nil || domain.Text(v.Description, "skill description", 4096, true) != nil || (v.Provenance != "user" && v.Provenance != "project") {
+		if domain.ValidateSkills([]domain.SkillBinding{{WorkerDeviceID: v.WorkerDeviceID, InventoryID: v.InventoryID, SkillID: v.SkillID, ManagedRevision: v.ManagedRevision, ContentRevision: v.ContentRevision, SnapshotID: v.InventoryID}}) != nil || seen[v.SkillID] || domain.Text(v.Name, "skill name", 128, true) != nil || domain.Text(v.Description, "skill description", 4096, true) != nil || (v.Provenance != "user" && v.Provenance != "project" && v.Provenance != "managed") {
 			return skillUnavailable()
 		}
 		seen[v.SkillID] = true
@@ -50,6 +50,29 @@ func skillScope(tx *store.Tx, request domain.SkillReadRequest) (workspace.Prepar
 	agent, err := store.Decode[domain.Agent](row)
 	if err != nil {
 		return input, manifest, err
+	}
+	for _, binding := range request.Selections {
+		if binding.ManagedRevision == "" {
+			continue
+		}
+		selected := false
+		if agent.ManagedSkills != nil {
+			for _, pkg := range agent.ManagedSkills.Selections {
+				if pkg.PackageID == binding.SkillID && pkg.WorkerDeviceID == binding.WorkerDeviceID && pkg.ContentRevision == binding.ManagedRevision {
+					selected = true
+				}
+			}
+		}
+		if !selected {
+			return input, manifest, skillUnavailable()
+		}
+		pkg, found, e := tx.ManagedSkill(binding.SkillID)
+		if e != nil {
+			return input, manifest, e
+		}
+		if !found || !pkg.Enabled || pkg.Deleting || pkg.Deleted || pkg.MachineID != request.MachineID || pkg.ContentRevision != binding.ManagedRevision || pkg.LegacyRevision != binding.ContentRevision {
+			return input, manifest, skillUnavailable()
+		}
 	}
 	_, machine, err := activeMachine(tx, request.MachineID)
 	if err != nil {
@@ -119,6 +142,17 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 		row, readErr := tx.Get(domain.AgentKind, scope.AgentID)
 		if readErr != nil {
 			return readErr
+		}
+		agent, e := store.Decode[domain.Agent](row)
+		if e != nil {
+			return e
+		}
+		if agent.ManagedSkills != nil && len(agent.ManagedSkills.Selections) > 0 {
+			if e = tx.ValidateManagedSkillSelections(agent.ManagedSkills); e != nil {
+				return e
+			}
+			scope.ManagedPackages = agent.ManagedSkills.Selections
+			scope.ManagedServerID = s.Identity.ServerID
 		}
 		scope.AgentRevision = row.Revision
 		if scope.SessionID != "" {
@@ -294,7 +328,13 @@ func (s *Service) ListSkills(ctx context.Context, req *connect.Request[pb.ListSk
 		if entry.Provenance == "project" {
 			p = pb.SkillProvenance_SKILL_PROVENANCE_PROJECT
 		}
-		response.Skills = append(response.Skills, &pb.SkillEntry{Selection: &pb.SkillSelection{WorkerDeviceId: string(entry.WorkerDeviceID), InventoryId: string(entry.InventoryID), SkillId: string(entry.SkillID), ContentRevision: entry.ContentRevision}, Name: entry.Name, Description: entry.Description, Provenance: p})
+		var managedRevision *string
+		if entry.ManagedRevision != "" {
+			value := entry.ManagedRevision
+			managedRevision = &value
+			p = pb.SkillProvenance_SKILL_PROVENANCE_MANAGED
+		}
+		response.Skills = append(response.Skills, &pb.SkillEntry{Selection: &pb.SkillSelection{ManagedRevision: managedRevision, WorkerDeviceId: string(entry.WorkerDeviceID), InventoryId: string(entry.InventoryID), SkillId: string(entry.SkillID), ContentRevision: entry.ContentRevision}, Name: entry.Name, Description: entry.Description, Provenance: p})
 	}
 	return connect.NewResponse(response), nil
 }
@@ -307,7 +347,7 @@ func skillBindings(selection *pb.SkillSelectionList, request string) ([]domain.S
 		if v == nil {
 			return nil, skillUnavailable()
 		}
-		result = append(result, domain.SkillBinding{WorkerDeviceID: domain.ID(v.WorkerDeviceId), InventoryID: domain.ID(v.InventoryId), SkillID: domain.ID(v.SkillId), ContentRevision: v.ContentRevision, SnapshotID: domain.ID(request)})
+		result = append(result, domain.SkillBinding{WorkerDeviceID: domain.ID(v.WorkerDeviceId), InventoryID: domain.ID(v.InventoryId), SkillID: domain.ID(v.SkillId), ManagedRevision: v.GetManagedRevision(), ContentRevision: v.ContentRevision, SnapshotID: domain.ID(request)})
 	}
 	return result, domain.ValidateSkills(result)
 }

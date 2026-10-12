@@ -343,18 +343,20 @@ type SessionStartPreparation struct {
 }
 
 type QueuedInput struct {
-	SidechatRetryGeneration ID                `json:"sidechat_retry_generation,omitempty"`
-	RetiredSkills           []SkillBinding    `json:"retired_skills,omitempty"`
-	SkillNames              map[ID]string     `json:"skill_names,omitempty"`
-	Skills                  []SkillBinding    `json:"skills,omitempty"`
-	Sequence                uint64            `json:"sequence"`
-	ContentRevision         uint64            `json:"content_revision"`
-	Prompt                  string            `json:"prompt"`
-	Mode                    SessionMode       `json:"mode"`
-	Delivery                InputDelivery     `json:"delivery"`
-	ExecutionID             ID                `json:"execution_id,omitempty"`
-	NativeRequestID         ID                `json:"native_request_id,omitempty"`
-	Attachments             []ImageAttachment `json:"attachments,omitempty"`
+	ManagedSkills              []SkillBinding    `json:"managed_skills,omitempty"`
+	ManagedSkillsAgentRevision uint64            `json:"managed_skills_agent_revision,omitempty"`
+	SidechatRetryGeneration    ID                `json:"sidechat_retry_generation,omitempty"`
+	RetiredSkills              []SkillBinding    `json:"retired_skills,omitempty"`
+	SkillNames                 map[ID]string     `json:"skill_names,omitempty"`
+	Skills                     []SkillBinding    `json:"skills,omitempty"`
+	Sequence                   uint64            `json:"sequence"`
+	ContentRevision            uint64            `json:"content_revision"`
+	Prompt                     string            `json:"prompt"`
+	Mode                       SessionMode       `json:"mode"`
+	Delivery                   InputDelivery     `json:"delivery"`
+	ExecutionID                ID                `json:"execution_id,omitempty"`
+	NativeRequestID            ID                `json:"native_request_id,omitempty"`
+	Attachments                []ImageAttachment `json:"attachments,omitempty"`
 }
 
 func SessionExecutionUnavailable() *Error {

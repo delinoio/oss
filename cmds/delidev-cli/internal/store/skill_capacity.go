@@ -87,7 +87,7 @@ func (t *Tx) checkSkillFamilyCapacity(session, replaced domain.ID, references in
 			return domain.SessionDeletionPending()
 		}
 		var count int64
-		err = t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(SUM(COALESCE(json_array_length(body,'$.skills'),0)+COALESCE(json_array_length(body,'$.retired_skills'),0)),0) FROM entities WHERE kind='queue' AND session_id=? AND id<>?`, id, replaced).Scan(&count)
+		err = t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(SUM(COALESCE(json_array_length(body,'$.skills'),0)+COALESCE(json_array_length(body,'$.retired_skills'),0)+COALESCE(json_array_length(body,'$.managed_skills'),0)),0) FROM entities WHERE kind='queue' AND session_id=? AND id<>?`, id, replaced).Scan(&count)
 		if err != nil {
 			return storageError(err)
 		}

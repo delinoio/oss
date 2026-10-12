@@ -236,3 +236,5 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
 - [DeliDev Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md)
+
+- [DeliDev Worker-owned managed skills](cmds-delidev-managed-skills-contract.md)

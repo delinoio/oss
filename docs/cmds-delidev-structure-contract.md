@@ -586,3 +586,7 @@ private approval/outgoing journals and existing pairing integration.
 Follow the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 The existing SSH installer and detached outbound Worker controller retain their
 independent ownership. No empty migration or new native binding is required.
+
+## Worker-owned managed skills
+
+`internal/skills` owns immutable private package copying and original request journals, and `internal/server` owns authenticated selected-Worker dispatch and catalog metadata. See [Worker-owned managed skills](cmds-delidev-managed-skills-contract.md). Management shares the joined workspace reader and cannot claim an execution job.

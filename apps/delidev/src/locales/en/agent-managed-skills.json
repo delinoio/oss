@@ -1,0 +1,14 @@
+{
+  "agent-managed-skills.title": "Skills",
+  "agent-managed-skills.help": "Select enabled packages from one Runner. Only selected, enabled and natively eligible packages become discoverable in new executions.",
+  "agent-managed-skills.retained": "Retained skill package",
+  "agent-managed-skills.remove": "Remove selection",
+  "agent-managed-skills.unsupported": "Skill management is unavailable on this server. Existing selections are preserved.",
+  "agent-managed-skills.runner": "Runner",
+  "agent-managed-skills.loading": "Reading the selected Runner…",
+  "agent-managed-skills.add": "Add skill selection",
+  "agent-managed-skills.choose": "Choose an enabled skill",
+  "agent-managed-skills.eligible": "Eligible",
+  "agent-managed-skills.noNative": "Native support unavailable",
+  "agent-managed-skills.codexOnly": "Managed skill packages are available only to verified Codex executions."
+}

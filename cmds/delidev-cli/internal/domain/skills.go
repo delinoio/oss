@@ -13,6 +13,7 @@ const MaxRetainedSkillSnapshots = 4096
 
 // Skill bindings contain opaque ownership and digest evidence, never paths.
 type SkillBinding struct {
+	ManagedRevision string `json:"managed_revision,omitempty"`
 	WorkerDeviceID  ID     `json:"worker_device_id"`
 	InventoryID     ID     `json:"inventory_id"`
 	SkillID         ID     `json:"skill_id"`
@@ -30,12 +31,19 @@ func ValidateSkills(values []SkillBinding) error {
 		if v.WorkerDeviceID.Validate() != nil || v.InventoryID.Validate() != nil || v.SkillID.Validate() != nil || v.SnapshotID.Validate() != nil || e != nil || len(h) != 32 || hex.EncodeToString(h) != v.ContentRevision || seen[v.SkillID] {
 			return Fail(InvalidArgument, "Invalid skill selection.", "Refresh the skill inventory and select the exact package.")
 		}
+		if v.ManagedRevision != "" {
+			h, e := hex.DecodeString(v.ManagedRevision)
+			if e != nil || len(h) != 32 || hex.EncodeToString(h) != v.ManagedRevision {
+				return Fail(InvalidArgument, "Invalid managed package digest.", "Select its original complete package.")
+			}
+		}
 		seen[v.SkillID] = true
 	}
 	return nil
 }
 
 type SkillEntry struct {
+	ManagedRevision string `json:"managed_revision,omitempty"`
 	WorkerDeviceID  ID     `json:"worker_device_id"`
 	InventoryID     ID     `json:"inventory_id"`
 	SkillID         ID     `json:"skill_id"`
@@ -56,17 +64,19 @@ type SkillPreparationProof struct {
 }
 
 type SkillReadRequest struct {
-	Action           SkillReadAction        `json:"action,omitempty"`
-	Preparation      *SkillPreparationProof `json:"preparation,omitempty"`
-	ProjectID        ID                     `json:"project_id,omitempty"`
-	WorkerInstanceID ID                     `json:"worker_instance_id"`
-	WorkerDeviceID   ID                     `json:"worker_device_id"`
-	AgentRevision    uint64                 `json:"agent_revision,string"`
-	MachineID        ID                     `json:"machine_id"`
-	AgentID          ID                     `json:"agent_id"`
-	ActorID          ID                     `json:"actor_id"`
-	SessionID        ID                     `json:"session_id,omitempty"`
-	Selections       []SkillBinding         `json:"selections,omitempty"`
+	ManagedPackages  []ManagedSkillSelection `json:"managed_packages,omitempty"`
+	ManagedServerID  ID                      `json:"managed_server_id,omitempty"`
+	Action           SkillReadAction         `json:"action,omitempty"`
+	Preparation      *SkillPreparationProof  `json:"preparation,omitempty"`
+	ProjectID        ID                      `json:"project_id,omitempty"`
+	WorkerInstanceID ID                      `json:"worker_instance_id"`
+	WorkerDeviceID   ID                      `json:"worker_device_id"`
+	AgentRevision    uint64                  `json:"agent_revision,string"`
+	MachineID        ID                      `json:"machine_id"`
+	AgentID          ID                      `json:"agent_id"`
+	ActorID          ID                      `json:"actor_id"`
+	SessionID        ID                      `json:"session_id,omitempty"`
+	Selections       []SkillBinding          `json:"selections,omitempty"`
 }
 type SkillReadResult struct {
 	Scope   *SkillReadRequest `json:"scope,omitempty"`

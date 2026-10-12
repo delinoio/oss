@@ -406,6 +406,12 @@ func (s *Service) ReportWorkspaceRead(ctx context.Context, req *connect.Request[
 			return fail(workspaceReadUnavailable())
 		}
 		reply.document, _ = json.Marshal(value)
+	} else if pending.request.ManagedSkills != nil {
+		var result domain.ManagedSkillResult
+		if len(req.Msg.DocumentJson) > 2<<20 || domain.Decode(req.Msg.DocumentJson, &result) != nil || len(result.Packages) > 256 || len(result.SkillMarkdown) > 1<<20 {
+			return fail(workspaceReadUnavailable())
+		}
+		reply.document, _ = json.Marshal(result)
 	} else if pending.request.Skills != nil {
 		var result domain.SkillReadResult
 		if len(req.Msg.DocumentJson) > 256<<10 || domain.Decode(req.Msg.DocumentJson, &result) != nil || validateSkillResult(result) != nil {

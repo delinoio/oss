@@ -27,6 +27,7 @@ type preparationFile struct {
 	SHA256     string `json:"sha256"`
 	Size       int64  `json:"size"`
 	Executable bool   `json:"executable,omitempty"`
+	Mode       uint32 `json:"mode,omitempty"`
 }
 type preparationIntent struct {
 	Version      uint32                  `json:"version"`
@@ -110,7 +111,7 @@ func readPreparation(path string) (preparationIntent, error) {
 	var total int64
 	for _, file := range v.Files {
 		digest, err := hex.DecodeString(file.SHA256)
-		if !fs.ValidPath(file.Name) || file.Name == "." || seen[file.Name] || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != file.SHA256 || file.Size < 0 || file.Size > MaxPackageBytes {
+		if !fs.ValidPath(file.Name) || file.Name == "." || seen[file.Name] || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != file.SHA256 || file.Size < 0 || file.Size > MaxPackageBytes || file.Mode != 0 && file.Mode != 0600 && file.Mode != 0700 {
 			return v, unavailable()
 		}
 		seen[file.Name] = true
@@ -213,7 +214,17 @@ func (m Manager) Prepare(ctx context.Context, scope domain.SkillReadRequest) err
 	for _, name := range names {
 		file := files[name]
 		digest := sha256.Sum256(file.Bytes)
-		plan = append(plan, preparationFile{Name: name, SHA256: hex.EncodeToString(digest[:]), Size: int64(len(file.Bytes)), Executable: file.Executable})
+		claim := preparationFile{Name: name, SHA256: hex.EncodeToString(digest[:]), Size: int64(len(file.Bytes)), Executable: file.Executable}
+		for _, binding := range scope.Selections {
+			if binding.ManagedRevision != "" {
+				claim.Mode = 0600
+				if file.Executable {
+					claim.Mode = 0700
+				}
+				break
+			}
+		}
+		plan = append(plan, claim)
 	}
 	if len(intent.Files) > 0 {
 		a, _ := json.Marshal(intent.Files)
@@ -332,13 +343,37 @@ func (m Manager) plannedPreparation(ctx context.Context, scope domain.SkillReadR
 	saved := snapshot{Scope: scope}
 	total := 0
 	for _, selection := range scope.Selections {
-		raw, err := readBounded(filepath.Join(m.Root, "skill-inventories", string(selection.InventoryID)+".json"), 256<<10)
-		if err != nil {
-			return nil, saved, unavailable()
-		}
 		var inv inventory
-		if domain.Decode(raw, &inv) != nil || !sameScope(inv.Scope, scope) {
-			return nil, saved, unavailable()
+		if selection.ManagedRevision != "" {
+			record, err := m.managedRecord(selection.SkillID)
+			if err != nil || record.ServerID != scope.Preparation.ServerID || record.Package.WorkerDeviceID != scope.WorkerDeviceID || record.Package.MachineID != scope.MachineID || !record.Package.Enabled || record.Package.Deleted || record.Package.ContentRevision != selection.ManagedRevision || record.Package.LegacyRevision != selection.ContentRevision {
+				return nil, saved, unavailable()
+			}
+			if selection.InventoryID != selection.SkillID {
+				raw, e := readBounded(filepath.Join(m.Root, "skill-inventories", string(selection.InventoryID)+".json"), 256<<10)
+				var original inventory
+				if e != nil || domain.Decode(raw, &original) != nil || !sameScope(original.Scope, scope) {
+					return nil, saved, unavailable()
+				}
+				found := false
+				for _, entry := range original.Packages {
+					if entry.Entry.SkillID == selection.SkillID && entry.Entry.ManagedRevision == selection.ManagedRevision && entry.Entry.ContentRevision == selection.ContentRevision {
+						found = true
+					}
+				}
+				if !found {
+					return nil, saved, unavailable()
+				}
+			}
+			if err = m.verifyManaged(ctx, record); err != nil {
+				return nil, saved, err
+			}
+			inv = inventory{Scope: scope, Packages: []packageRecord{{Path: m.managedPath(selection.SkillID), Entry: domain.SkillEntry{ManagedRevision: selection.ManagedRevision, WorkerDeviceID: scope.WorkerDeviceID, InventoryID: selection.InventoryID, SkillID: selection.SkillID, ContentRevision: selection.ContentRevision, Name: record.Package.Name, Description: record.Package.Description, Provenance: "managed"}}}}
+		} else {
+			raw, err := readBounded(filepath.Join(m.Root, "skill-inventories", string(selection.InventoryID)+".json"), 256<<10)
+			if err != nil || domain.Decode(raw, &inv) != nil || !sameScope(inv.Scope, scope) {
+				return nil, saved, unavailable()
+			}
 		}
 		var selected *packageRecord
 		for i := range inv.Packages {
@@ -478,7 +513,7 @@ func (m Manager) CleanupPreparation(ctx context.Context, scope domain.SkillReadR
 				return unavailable()
 			}
 			metadata, e := f.Stat()
-			if e != nil || !metadata.Mode().IsRegular() || metadata.Size() != claim.Size || (metadata.Mode().Perm()&0111 != 0) != claim.Executable {
+			if e != nil || !metadata.Mode().IsRegular() || metadata.Size() != claim.Size || (metadata.Mode().Perm()&0111 != 0) != claim.Executable || claim.Mode != 0 && uint32(metadata.Mode().Perm()) != claim.Mode {
 				f.Close()
 				return unavailable()
 			}

@@ -131,6 +131,11 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 				return nil, err
 			}
 		}
+		if agent, ok := value.(*domain.Agent); ok {
+			if e := preserveManagedAgent(tx, input, id, agent); e != nil {
+				return nil, e
+			}
+		}
 		if err := validateNewProviderSelections(tx, input, id, value); err != nil {
 			return nil, err
 		}

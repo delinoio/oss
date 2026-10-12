@@ -2655,3 +2655,7 @@ Closure returns original process-join and helper-retirement results independentl
 ## Managed MCP management boundary
 
 [Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) adds configuration and explicit authentication only. Management does not weaken the existing empty native MCP inventory checks. Supported-harness observations remain empty until the owning adapter independently validates managed MCP. Execution selection requires enabled, authenticated and verified original Worker definitions; existing adapters fail closed before launching a managed inventory. Future adapters consume immutable execution copies and must retain original generation/cleanup ownership.
+
+## Managed skill automatic discovery
+
+[Worker-owned managed skills](cmds-delidev-managed-skills-contract.md) supports the Codex native discovery channel only: exact extra roots and a verified native inventory before send. Claude Code, OpenCode and Grok automatic discovery remain unsupported until their accepted adapters exist.

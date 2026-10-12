@@ -462,3 +462,7 @@ No migration, Worker report or execution authority is added.
 ## Worker-owned managed MCP
 
 [Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns `cmds/delidev-cli/internal/managedmcp`, the typed management service and desktop MCP Settings. Worker definitions/secrets, bounded server metadata, additive Agent selections and immutable execution generations remain distinct authorities. Management and explicit OAuth never advertise native runtime acceptance.
+
+## Worker-owned managed skills
+
+[Worker-owned managed skills](cmds-delidev-managed-skills-contract.md) owns the independent Worker package store, the typed `SkillService` management operations, optional Agent selections and desktop Skills Settings. Catalog metadata, accepted immutable snapshots and runtime copies keep separate ownership. Management never claims native acceptance for harnesses other than the verified Codex channel.
