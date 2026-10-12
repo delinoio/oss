@@ -11,24 +11,55 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+// failedSubscriptionDeleteOutcome reports how one deleteFailedSubscription
+// invocation relates to the failed-subscription deletion it handled.
+type failedSubscriptionDeleteOutcome int
+
+const (
+	// The account is not a failed-subscription cleanup candidate; ordinary
+	// deletion owns it.
+	failedSubscriptionDeleteNotHandled failedSubscriptionDeleteOutcome = iota
+	// This invocation admitted the deletion request or resumed its pending
+	// cleanup, so it reports the original completion.
+	failedSubscriptionDeleteNewlyCompleted
+	// The deletion request was admitted by an earlier invocation, and its
+	// cleanup had already recorded the DELETED outcome (committing the original
+	// receipt) before this invocation read it.
+	failedSubscriptionDeleteObservedExisting
+)
+
+func (o failedSubscriptionDeleteOutcome) String() string {
+	switch o {
+	case failedSubscriptionDeleteNewlyCompleted:
+		return "newly_completed"
+	case failedSubscriptionDeleteObservedExisting:
+		return "observed_existing"
+	default:
+		return "not_handled"
+	}
+}
+
 // An explicit configuration deletion can own one initial failed LOGIN cleanup.
 // Its job ID is the public deletion request ID; only the final deletion writes
 // that request's receipt. The child retains both confirmed and checkpoint
 // revisions, so cleanup cannot change the public command's immutable identity.
-func (s *Service) deleteFailedSubscription(ctx context.Context, request, id domain.ID, revision uint64) (bool, error) {
+func (s *Service) deleteFailedSubscription(ctx context.Context, request, id domain.ID, revision uint64) (failedSubscriptionDeleteOutcome, error) {
 	if err := request.Validate(); err != nil {
-		return false, err
+		return failedSubscriptionDeleteNotHandled, err
 	}
 	actor, err := cleanupActor(ctx)
 	if err != nil {
-		return false, err
+		return failedSubscriptionDeleteNotHandled, err
 	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
-		return false, err
+		return failedSubscriptionDeleteNotHandled, err
 	}
 	var parent store.Record
 	var handled bool
+	// Set when the retained child already recorded DELETED at the first read,
+	// so the original receipt was committed before this invocation ran.
+	var alreadyDeleted bool
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -46,10 +77,11 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 			if len(children) != 1 {
 				return failedCleanupUnavailable()
 			}
-			_, child, _, err := decodeFailedCleanupAccount(children[0], request)
+			_, child, existing, err := decodeFailedCleanupAccount(children[0], request)
 			if err != nil || child.AccountID != id || child.DeleteRequestID != request || child.DeleteRevision != revision {
 				return failedCleanupUnavailable()
 			}
+			alreadyDeleted = existing.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_DELETED
 			parent, handled = row, true
 			return nil
 		}
@@ -108,15 +140,22 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 	if err == nil && handled {
 		s.logger.InfoContext(ctx, "subscription_account_delete_cleanup", "job_id", parent.ID)
 	}
-	if err != nil || !handled {
-		return handled, err
+	if err != nil {
+		return failedSubscriptionDeleteNotHandled, err
+	}
+	if !handled {
+		return failedSubscriptionDeleteNotHandled, nil
+	}
+	outcome := failedSubscriptionDeleteNewlyCompleted
+	if alreadyDeleted {
+		outcome = failedSubscriptionDeleteObservedExisting
 	}
 	if err := s.runFailedSubscriptionCleanup(ctx, parent); err != nil {
-		return true, err
+		return outcome, err
 	}
 	// A terminal retained attempt never replays native or vault effects. A new
 	// deliberate confirmation must use a fresh request and account observation.
-	return true, s.Store.Read(ctx, func(tx *store.Tx) error {
+	return outcome, s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
 		}

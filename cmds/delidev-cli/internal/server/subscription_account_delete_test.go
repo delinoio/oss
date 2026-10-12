@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func TestDeleteFailedSubscriptionCleansOriginalLogin(t *testing.T) {
@@ -134,5 +136,95 @@ func TestDeleteFailedSubscriptionBindsOriginalActorAndConfirmation(t *testing.T)
 	}
 	if err := f.deleteFailedLogin(f.failedLoginDeletion()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func (f *subscriptionFixture) deleteFailedLoginResponse(request *pb.DeleteConfigurationRequest) (*pb.DeleteConfigurationResponse, error) {
+	f.t.Helper()
+	client := delidevv1connect.NewConfigurationServiceClient(http.DefaultClient, f.http.URL)
+	response, err := client.DeleteConfiguration(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
+	if err != nil {
+		return nil, err
+	}
+	return response.Msg, nil
+}
+
+func TestSubscriptionAccountDeleteReportsNewCompletionThenReplay(t *testing.T) {
+	f, _ := legacyFailedServerLogin(t, false)
+	request := f.failedLoginDeletion()
+	first, err := f.deleteFailedLoginResponse(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Replayed || first.Id != request.Mutation.Id || first.RequestId != request.Mutation.RequestId {
+		t.Fatal("invocation that completed deletion reported a replay", first)
+	}
+	again, err := f.deleteFailedLoginResponse(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Replayed || again.Id != request.Mutation.Id || again.RequestId != request.Mutation.RequestId {
+		t.Fatal("committed receipt was not reported as replayed", again)
+	}
+}
+
+func TestSubscriptionAccountDeleteReportsRacedReceiptAsReplayed(t *testing.T) {
+	f, _ := legacyFailedServerLogin(t, false)
+	request := f.failedLoginDeletion()
+	var racedErr error
+	var hookRuns int
+	var raceRef credentials.Ref
+	// The original cleanup completes after the retry's initial replay check
+	// misses and before the retry reaches the failed-subscription helper.
+	f.service.afterAccountDeleteReplay = func(context.Context) {
+		hookRuns++
+		f.service.afterAccountDeleteReplay = nil
+		racedErr = f.deleteFailedLogin(request)
+		// Recreate protected state for the account. A second native or vault
+		// cleanup by the retry would remove it.
+		ref := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+		if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-post-cleanup-token")); err != nil {
+			racedErr = err
+		}
+		raceRef = ref
+	}
+	retry, err := f.deleteFailedLoginResponse(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hookRuns != 1 || racedErr != nil {
+		t.Fatal("original cleanup did not complete inside the race window", hookRuns, racedErr)
+	}
+	if !retry.Replayed || retry.Id != request.Mutation.Id || retry.RequestId != request.Mutation.RequestId {
+		t.Fatal("raced retry did not report the original receipt as replayed", retry)
+	}
+	if _, err := f.secrets.Get(context.Background(), raceRef); err != nil {
+		t.Fatal("raced retry repeated cleanup", err)
+	}
+}
+
+func TestSubscriptionAccountDeleteKeepsFailedCleanupFences(t *testing.T) {
+	f, _ := legacyFailedServerLogin(t, false)
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-staged-token")); err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.deleteError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "Retry explicit cleanup.")
+	request := f.failedLoginDeletion()
+	if response, err := f.deleteFailedLoginResponse(request); err == nil {
+		t.Fatal("failed cleanup reported success", response)
+	}
+	f.secrets.deleteError = nil
+	// A retained failed attempt stays an error for its own request, never a replay.
+	if response, err := f.deleteFailedLoginResponse(request); err == nil {
+		t.Fatal("terminal failed cleanup reported success on retry", response)
+	}
+	stale := &pb.DeleteConfigurationRequest{Kind: request.Kind, Mutation: &pb.Mutation{Id: request.Mutation.Id, ExpectedRevision: request.Mutation.ExpectedRevision, RequestId: string(domain.NewID())}}
+	if response, err := f.deleteFailedLoginResponse(stale); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("stale confirmation admitted", response, err)
+	}
+	fresh, err := f.deleteFailedLoginResponse(f.failedLoginDeletion())
+	if err != nil || fresh.Replayed {
+		t.Fatal("fresh confirmation did not newly complete deletion", fresh, err)
 	}
 }

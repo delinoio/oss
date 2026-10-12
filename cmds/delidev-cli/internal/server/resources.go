@@ -512,12 +512,20 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 			rpc.CopyCorrelation(response, req.Header())
 			return response, nil
 		}
-		handled, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), meta.ExpectedRevision)
+		if s.afterAccountDeleteReplay != nil {
+			s.afterAccountDeleteReplay(ctx)
+		}
+		outcome, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), meta.ExpectedRevision)
 		if err != nil {
 			return reject(err)
 		}
-		if handled {
-			response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId})
+		if outcome != failedSubscriptionDeleteNotHandled {
+			// A receipt committed by the original cleanup after the replay check
+			// above is still a replay; only the invocation that completes the
+			// deletion reports Replayed=false.
+			replayed := outcome == failedSubscriptionDeleteObservedExisting
+			s.logger.InfoContext(ctx, "configuration_deleted", "kind", kind, "entity_id", meta.Id, "request_id", meta.RequestId, "replayed", replayed, "cleanup_outcome", outcome.String())
+			response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId, Replayed: replayed})
 			rpc.CopyCorrelation(response, req.Header())
 			return response, nil
 		}
