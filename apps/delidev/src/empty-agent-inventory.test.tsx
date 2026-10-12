@@ -229,6 +229,80 @@ it("keeps empty continuation and later final pages as ordinary pagination", asyn
   ).toBeNull();
 });
 
+async function loadTerminalPage(f: ReturnType<typeof fixture>) {
+  await screen.findByText(/More Agent Worker choices are available/);
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Load more/ }));
+  await waitFor(() => expect(f.reads).toHaveBeenCalledWith("next"));
+  await waitFor(() =>
+    expect(
+      screen.queryByText(/More Agent Worker choices are available/),
+    ).toBeNull(),
+  );
+}
+
+it("shows project restriction guidance when a terminal page is fully excluded after an empty first page", async () => {
+  const later = worker(),
+    f = fixture((token) =>
+      token ? { resources: [later] } : { resources: [], nextPageToken: "next" },
+    );
+  render(<f.View allowed={[]} />);
+  await loadTerminalPage(f);
+  expect(
+    await screen.findByText(/match the selected project's restrictions/),
+  ).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Agent Worker" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+  expect(f.change).not.toHaveBeenCalled();
+});
+
+it("keeps the continuation state ahead of restriction guidance until the terminal page loads", async () => {
+  const f = fixture((token) =>
+    token
+      ? { resources: [worker()] }
+      : { resources: [], nextPageToken: "next" },
+  );
+  render(<f.View allowed={[]} />);
+  expect(
+    await screen.findByText(/More Agent Worker choices are available/),
+  ).toBeTruthy();
+  expect(screen.queryByText(/match the selected project/)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+});
+
+it("does not report restriction when every reached page is raw-empty", async () => {
+  const f = fixture((token) => ({
+    resources: [],
+    nextPageToken: token ? "" : "next",
+  }));
+  render(<f.View allowed={[]} />);
+  await loadTerminalPage(f);
+  expect(screen.queryByText(/match the selected project/)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+});
+
+it("lists an allowed worker from a later page without restriction guidance", async () => {
+  const later = worker(),
+    f = fixture((token) =>
+      token ? { resources: [later] } : { resources: [], nextPageToken: "next" },
+    );
+  render(<f.View allowed={[later.id]} />);
+  await loadTerminalPage(f);
+  fireEvent.click(await screen.findByRole("option", { name: "Worker" }));
+  await waitFor(() => expect(f.change).toHaveBeenCalled());
+  expect(f.change.mock.calls[0][0]).toBe(later.id);
+  expect(screen.queryByText(/match the selected project/)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+});
+
 it("retains an off-page selected identity when the raw inventory is empty", async () => {
   const f = fixture(() => ({ resources: [] }));
   render(<f.View value={f.selected.id} />);

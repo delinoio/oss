@@ -521,7 +521,10 @@ unavailable, malformed, stale, restricted and continuing-page observations
 retain their separate selector states. A later empty page never proves absence.
 Suppress the generic empty-page sentence on these two controls; restricted
 results retain explicit project restriction guidance and continuation remains
-available.
+available. Project restriction guidance uses raw counts from every page reached
+in the current validated chain, so an empty first page that continues to a
+terminal page whose workers are all excluded by the project shows the guidance;
+only the first page can enable the creation entry.
 
 Keep the Agent Worker label above an outlined 40px native non-submit button with
 an inert plus icon, 8px corners, existing selector width, semantic theme colors,
