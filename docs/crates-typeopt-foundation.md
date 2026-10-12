@@ -2,7 +2,7 @@
 
 ## Scope
 
-`crates/typeopt` owns the CLI, private compiler integration, shared whole-program analysis, the eighteen optimization passes, the transformation pipeline, fixtures, Vite example adapter and Excalidraw benchmark harness. The CLI and output interfaces are experimental; `report.json` is schema v1 and `modules.json`/`properties.json` are schema v0. Incompatible changes require explicit documentation.
+`crates/typeopt` owns the CLI, private compiler integration, shared whole-program analysis, the eighteen optimization passes, the transformation pipeline, the stage-2 bundle mode, fixtures, Vite example adapter and Excalidraw benchmark harness. The CLI and output interfaces are experimental; `report.json` is schema v1 and `modules.json`/`properties.json` are schema v0. Incompatible changes require explicit documentation.
 
 ## Runtime and Language
 
@@ -14,7 +14,7 @@ Application maintainers invoke the optimizer, then separately run their bundler 
 
 ## Interfaces and Contracts
 
-`typeopt --project <tsconfig> --entry <file>... --out-dir <new-dir>` analyzes and emits ESM. `--check` performs the same analysis, in-memory transformation and size decisions without publishing output and does not require an output directory. Repeatable `--disable-pass <id>` excludes passes; unknown IDs are invalid CLI arguments. Support `--help`, `--version` and `--verbose`.
+Optimization has two stages with one pass inventory. Stage 1, `typeopt --project <tsconfig> --entry <file>... --out-dir <new-dir>`, analyzes application TypeScript before bundling and emits ESM. Stage 2, `typeopt --bundle <bundler-output-dir> --out-dir <new-dir>`, analyzes bundler output chunks after bundling (see Bundle Mode). `--check` performs the same analysis, in-memory transformation and size decisions without publishing output and does not require an output directory. Repeatable `--disable-pass <id>` excludes passes; unknown IDs are invalid CLI arguments. Support `--help`, `--version` and `--verbose`.
 
 The fixed pass inventory and its stable IDs are: `property-shortening`, `property-disambiguation`, `property-ambiguation`, `finite-key-rewriting`, `unused-method-removal`, `unused-field-removal`, `constant-property-inlining`, `method-devirtualization`, `call-inlining`, `function-specialization`, `signature-reduction`, `type-directed-control-flow`, `primitive-operation-simplification`, `enum-runtime-reduction`, `discriminant-compaction`, `aggregate-elimination`, `intrinsic-specialization` and `residual-dependency-removal`. All are enabled by default. Skip reasons use stable snake_case codes.
 
@@ -32,6 +32,14 @@ Emit JS and source maps plus versioned `modules.json`, `properties.json` and `re
 
 The Vite example validates the whole analysis snapshot at build start and substitutes mapped JS for `optimized` modules under original module identities; preserved TS modules retain the original Vite transpilation. Compose source maps through the original module identities. Keep assets in the original project and preserve resolution context. It is not a separately published plugin. Roll back one optimization by excluding its pass and rebuilding into a new directory; roll back adoption by restoring original build inputs/configuration.
 
+## Bundle Mode
+
+Stage 2 loads every `.js`/`.mjs` file of a bundler output directory as one closed ES module program with the standard DOM libraries and no `@types` packages; `--project` and `--entry` are not used. Static imports, literal dynamic imports and Vite preload dependency lists link chunks. A chunk that no other chunk imports is an entry whose exports are public. A chunk is transformed only when it is known to be an ES module (ESM statements, imported by a chunk or loaded by an HTML module script); classic scripts, `importScripts` workers and chunks matched by repeatable `--bundle-exclude <text>` stay unchanged unchecked boundaries.
+
+Bundled JavaScript is not type-checked, so inferred and JSDoc types can be wrong. The bundle pass set is fixed to the passes whose proofs do not depend on static types: `property-shortening`, `property-disambiguation`, `property-ambiguation`, `call-inlining`, `signature-reduction`, `type-directed-control-flow`, `primitive-operation-simplification` and `residual-dependency-removal`. The other ten passes are reported as disabled and cannot be enabled in bundle mode; `--disable-pass` narrows the set. Identifier-like tokens of string and template literals count as mentioned names. Candidates that need TypeScript-only syntax are rejected with `unsupported_syntax`; other syntax errors fail the operation.
+
+Edits apply to the chunk text, and the size gate compares the edited chunk text bytes. Output is a staged copy of the input directory with edited chunks replaced, source maps composed with the edits, and edited content-hashed chunks (`<name>-<8 base64url characters>.js`) plus every hashed chunk that references a renamed chunk renamed deterministically with all references in text assets rewritten; `--keep-chunk-names` disables renaming. Pages with Subresource Integrity attributes are rejected. The report v1 is printed to standard output. Behavior tests against the optimized directory remain the operator's responsibility.
+
 ## Storage
 
 One-shot, in-memory analysis; no daemon, watch mode or persistent cache. Never modify input files or an existing output destination. Stage output in an operation-owned temporary directory and publish without replacing an existing destination. Error and cancellation paths return failure, remove owned temporary artifacts and never publish a complete result.
@@ -48,13 +56,15 @@ Use structured Rust tracing and English stderr diagnostics. Verbose mode adds di
 
 Run root `cargo test` after Rust changes and applicable frontend `pnpm test` after frontend changes. Compare original and optimized fixtures in Node, including side effects. Cover each optimization, combinations, structural types, unions, aliases, computed keys, accessors, inheritance, reflection, serialization, external escape, collisions, determinism, maps, malformed input, filesystem failures and Ctrl+C. Verify no input execution or network access in a restricted environment.
 
+Bundle mode needs Node fixtures that compare original and optimized entry chunks, including chunks whose unchecked types lie, runtime-parsed member paths, generated functions, dynamic namespace access, observable arity, unimported entry chunks, classic scripts, exclusion, map composition, rehashing and determinism.
+
 Every pass needs positive fixtures that demonstrate its transformation and size benefit and negative fixtures for its safety boundaries, run with the pass alone, in combinations and with every pass enabled and disabled; every fixture compares original and optimized Node behavior. Validate Vite with workspace aliases, TSX, unchanged JS, original assets, non-property transformations and stale transitive inputs. Pin the Excalidraw commit, lockfile, runtime, browser, production settings and compression tools before benchmarking; apply documented compatibility adjustments equally to all builds. Compare three builds: original inputs, existing typeopt at the pinned `existing_typeopt_revision` and the extended optimizer; each optimized build records the clean source revision its optimizer binary was built from. Asset sets may differ; record added and removed assets, verify that no entry or chunk references a missing chunk and sum every production JS asset excluding source maps. The extended build's raw, gzip and Brotli totals must each be strictly smaller than both other builds; no minimum percentage applies.
 
 Chromium acceptance compares drawing shapes/freehand, text/move/resize edits, undo/redo, save/reload/file import and PNG/SVG export across the three builds. Actual application acceptance cannot be replaced by fixtures. Require native build/execution on macOS arm64 and Linux x64. Retain source revision, commands, results and unperformed checks in CI artifacts or PR/issue records. Preserve existing affected CI and macOS runner restrictions.
 
 ## Dependencies and Integrations
 
-Use immutable ts-rust input and preserve all upstream licenses/notices. Repository-owned code is Apache-2.0. Vite and Excalidraw are validation integrations; the CLI never launches them. Public Rust/Node APIs, library declaration transformation, CommonJS output, JavaScript optimization, prebuilt distributions and other platforms are out of scope.
+Use immutable ts-rust input and preserve all upstream licenses/notices. Repository-owned code is Apache-2.0. Vite and Excalidraw are validation integrations; the CLI never launches them. Public Rust/Node APIs, library declaration transformation, CommonJS output, JavaScript optimization outside bundle mode, prebuilt distributions and other platforms are out of scope.
 
 ## Change Triggers
 

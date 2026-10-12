@@ -444,6 +444,24 @@ fn rejects_an_existing_destination_and_bundles_without_chunks() {
 }
 
 #[test]
+fn rejects_pages_with_subresource_integrity() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="./index.js" integrity="sha384-x"></script>"#,
+        ),
+        (
+            "index.js",
+            r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Subresource Integrity"));
+    assert!(!temp.path().join("out").exists());
+}
+
+#[test]
 fn bundle_output_is_deterministic() {
     let chunks = [
         (

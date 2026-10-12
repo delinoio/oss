@@ -59,8 +59,8 @@
 
 ## Canonical Directory Map
 
-- `docs/project-typeopt.md`: typeopt Rust property optimizer project index.
-- `docs/crates-typeopt-foundation.md`: typeopt CLI, safety, Vite integration and benchmark contract.
+- `docs/project-typeopt.md`: typeopt two-stage size optimizer project index.
+- `docs/crates-typeopt-foundation.md`: typeopt CLI, safety, bundle mode, Vite integration and benchmark contract.
 
 - `docs/README.md`: Canonical docs catalog and naming rules.
 - `docs/repository-defaults.md`: Repository-wide default technology choices.

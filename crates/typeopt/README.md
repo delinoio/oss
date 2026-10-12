@@ -1,6 +1,6 @@
 # typeopt
 
-Experimental type-aware TypeScript size optimization before bundling. The CLI analyzes a single application project with TypeScript type and symbol information plus runtime evidence from source, control flow and uses. It applies eighteen conservative optimization passes, accepts a transformation only when it makes the emitted ESM strictly smaller, and emits ESM for an existing bundler. It never runs your application or bundler.
+Experimental type-aware size optimization in two stages. Stage 1 runs before bundling: the CLI analyzes a single application project with TypeScript type and symbol information plus runtime evidence from source, control flow and uses. It applies eighteen conservative optimization passes, accepts a transformation only when it makes the emitted ESM strictly smaller, and emits ESM for an existing bundler. Stage 2 runs after bundling: it analyzes every JavaScript chunk of the bundler output, including library code, as one closed program and applies the passes whose proofs do not depend on static types (see [Stage 2: bundle mode](#stage-2-bundle-mode)). typeopt never runs your application or bundler.
 
 ## Install
 
@@ -57,6 +57,23 @@ Each round rebuilds the program from the current in-memory text, recomputes ever
 
 When a transformation removes the last runtime use of an import, TypeScript would elide the import and skip or reorder that module's initialization. The pipeline keeps the dependency with a bare `import "specifier";`, unless `residual-dependency-removal` is enabled and the module and its imports are proven to initialize without effects.
 
+## Stage 2: bundle mode
+
+```sh
+vite build --outDir ./dist
+typeopt --bundle ./dist --out-dir ./dist-optimized
+typeopt --bundle ./dist --check --bundle-exclude monaco
+```
+
+Stage 2 optimizes the output of a bundler rather than the application sources. Stage 1 cannot see dependencies: `node_modules` is external, so every value that reaches a library (for example component props that reach React) is a boundary, and the bundler's own tree shaking and minification already remove most of what stage 1 removes. In the bundle, library code is part of the program, and the size gate measures the shipped chunk text itself. Run stage 2 on any Vite or Rollup ESM output directory, with or without stage 1.
+
+- **Program.** Every `.js` and `.mjs` file under the directory is a module of one program with the standard DOM libraries and no `@types` packages. Static imports, literal dynamic imports and Vite preload dependency lists link the chunks. A chunk that no other chunk imports (HTML entries, workers) is an entry, and its exports are public. A chunk is optimized only when it is known to run as an ES module: it has ESM statements, another chunk imports it or an HTML page loads it with `<script type="module">`. Classic scripts (for example AMD loaders and `importScripts` workers) stay unchanged, because they share top-level bindings through the global scope. `--bundle-exclude <text>` keeps every chunk whose path contains the text unchanged as an unchecked boundary; use it for very large vendor chunks to bound time and memory.
+- **Passes.** Bundled JavaScript is not type-checked, so an inferred or JSDoc type can be wrong, not only imprecise. Bundle mode therefore offers only the passes whose proofs rest on syntax, references, points-to flows and runtime facts: `property-shortening`, `property-disambiguation`, `property-ambiguation`, `call-inlining`, `signature-reduction`, `type-directed-control-flow`, `primitive-operation-simplification` and `residual-dependency-removal`. The other passes use static types to bound where class instances and values flow; a library that reads modules off a container with runtime-parsed keys (for example template strings such as `"{{company.name}}"`) defeats that bound. `--disable-pass` removes passes from this set. Every identifier-like token in a string or template literal counts as a mentioned name, because bundled code can parse strings into member lookups. The recheck has nothing to check in JavaScript, so every transformation rests on its own proof; candidates that would need TypeScript-only syntax are skipped (`unsupported_syntax`).
+- **Output.** The output directory is a copy of the input with edited chunks replaced. Source maps of edited chunks are composed with the edits; inserted code maps to the original range it replaced. An edited chunk named with the default Vite or Rollup content hash (`<name>-<8 characters>.js`), and every hashed chunk that references a renamed chunk, gets a new hash, and every reference in HTML, JavaScript, CSS, JSON, source maps and web manifests follows. Otherwise a browser could combine an edited chunk with a stale cached copy of a chunk it depends on. `--keep-chunk-names` disables renaming. HTML pages with Subresource Integrity attributes are rejected; compute integrity after typeopt. The report (schema v1) goes to standard output; `passes.disabled` lists the passes bundle mode does not offer.
+- **Cost.** Analysis of minified chunks needs much more memory than the bundle size suggests (about 18 GB peak RSS and 75 s for a 2 MB bundle on macOS arm64). Exclude large vendor chunks when memory is limited.
+
+Bundle mode is as conservative as stage 1, but bundled libraries use more dynamic patterns than application TypeScript. Always run your application behavior tests against the optimized directory.
+
 ## Output and compatibility
 
 - Numbered `.js` files and adjacent `.js.map` files contain ESM and maps back to original source text. Code that is inserted, deleted, inlined or moved maps to the original range it replaced, across every round.
@@ -74,7 +91,7 @@ Supply explicit application entries and one tsconfig. Workspace imports and decl
 
 TypeScript modules with a leading `// @ts-nocheck` comment disable the semantic recheck that backs every transformation, so they are treated like JavaScript: they are not transformed and their references are boundaries. `@ts-ignore` and `@ts-expect-error` suppress recheck errors on single lines; every transformation still requires its own proof, but the recheck cannot serve as a second check on those lines.
 
-The CLI owns emission controls: it overrides `noEmit`, declaration/incremental/composite output, output locations and source-map output settings. It does not change the input tsconfig. JavaScript and node_modules are not transformed; imported JSON and other assets stay in the original project.
+Bundle mode has its own input rules; see [Stage 2: bundle mode](#stage-2-bundle-mode). The CLI owns emission controls: it overrides `noEmit`, declaration/incremental/composite output, output locations and source-map output settings. It does not change the input tsconfig. JavaScript and node_modules are not transformed; imported JSON and other assets stay in the original project.
 
 This conservative boundary is intentional: types alone do not prove transformation safety. There is no aggressive mode or trusted-declaration opt-out. Always run application behavior tests after bundling. This is an application optimizer, not a library/declaration compatibility tool. To roll back one optimization, rerun into a new directory with `--disable-pass <id>`; to roll back adoption, restore the original build inputs and configuration.
 

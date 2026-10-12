@@ -239,6 +239,19 @@ pub fn publish(
     }
     let root = staging.path().join("out");
     copy(source, &root).context("cannot copy bundle directory")?;
+    // Subresource Integrity digests would no longer match edited chunks.
+    let mut files = Vec::new();
+    files_under(&root, &mut files)?;
+    for file in &files {
+        if file.extension().is_some_and(|e| e == "html")
+            && std::fs::read_to_string(file).is_ok_and(|html| html.contains("integrity="))
+        {
+            anyhow::bail!(
+                "HTML pages use Subresource Integrity, which bundle mode cannot update; compute \
+                 integrity attributes after typeopt"
+            );
+        }
+    }
     let mut edited = BTreeSet::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
     for (name, text) in &outcome.texts {
