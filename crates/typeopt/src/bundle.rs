@@ -407,12 +407,14 @@ fn update_chunk_map(
 }
 
 /// `<name>-<hash>.<ext>` or `<name>.<hash>.<ext>` with an 8-character
-/// base64url content hash, as Vite and Rollup name chunks. A hash must
+/// base64url content hash, as Vite and Rollup name chunks and assets, for
+/// the text assets whose references bundle mode rewrites. A hash must
 /// contain a digit, an uppercase letter, `-` or `_`, so ordinary words such
 /// as `polyfill` are not mistaken for one.
 fn hashed_name(file: &str) -> Option<(&str, &str, char)> {
     let (stem, ext) = file.rsplit_once('.')?;
-    if !matches!(ext, "js" | "mjs") {
+    // Every text asset that reference rewriting can change.
+    if !matches!(ext, "js" | "mjs" | "cjs" | "css" | "json" | "webmanifest") {
         return None;
     }
     // The hash alphabet includes `-`, so split at a fixed width.
@@ -878,7 +880,15 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         );
         assert_eq!(hashed_name("worker.polyfill.js"), None);
         assert_eq!(hashed_name("react-dom-client.js"), None);
-        assert_eq!(hashed_name("style-DnKDBunT.css"), None);
+        assert_eq!(
+            hashed_name("style-DnKDBunT.css"),
+            Some(("style", "css", '-'))
+        );
+        assert_eq!(
+            hashed_name("site-AB12cd34.webmanifest"),
+            Some(("site", "webmanifest", '-'))
+        );
+        assert_eq!(hashed_name("logo-DnKDBunT.png"), None);
         assert_eq!(hashed_name("-DnKDBunT.js"), None);
     }
 }

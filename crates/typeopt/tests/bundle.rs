@@ -782,6 +782,35 @@ fn same_named_hashed_files_follow_every_content() {
     assert_ne!(all, without_removal);
 }
 
+/// A content-hashed JSON asset that references a renamed chunk is rewritten,
+/// so it gets a new hash too, and its own referrers follow.
+#[test]
+fn rehashes_rewritten_hashed_text_assets() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<link rel="manifest" href="/assets/manifest-DDDD1111.json"><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    );
+    chunks.push((
+        "assets/manifest-DDDD1111.json",
+        r#"{"entry":"/assets/index-AAAAAAAA.js","settings":"/assets/settings-BBBBBBBB.js"}"#,
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    let manifest = assets.iter().find(|a| a.starts_with("manifest-")).unwrap();
+    assert_ne!(manifest, "manifest-DDDD1111.json", "{assets:?}");
+    let html = fs::read_to_string(temp.path().join("out/index.html")).unwrap();
+    assert!(html.contains(&format!("/assets/{manifest}")), "{html}");
+    let json = fs::read_to_string(temp.path().join("out/assets").join(manifest)).unwrap();
+    for name in json.split('"').filter(|p| p.starts_with("/assets/")) {
+        assert!(
+            assets.contains(&name["/assets/".len()..].to_owned()),
+            "{json}"
+        );
+    }
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);
