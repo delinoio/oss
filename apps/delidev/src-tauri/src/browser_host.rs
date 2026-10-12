@@ -2079,23 +2079,12 @@ cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppH
  fn do_close(&self,browser:Option<&mut Browser>)->i32{
    #[cfg(any(target_os="macos",windows))]
    {
-     // Prefer exact child teardown. Retry transient native failures with the
-     // retained browser, then allow CEF's default close path if it cannot finish.
-     // Only the original child's before-close callback releases shutdown accounting.
      if let Some(browser)=browser{
-       if self.lifetime.lock().is_ok_and(|receipt|receipt.default_close_allowed(browser.identifier(),self.request.generation)){
-         tracing::warn!(operation="browser_child_close",stage="fallback",classification="allow_default_close",generation=self.request.generation);
-         0
-       }else{
-         match schedule_child_destroy(browser,&self.request,&self.lifetime){
-           ChildCloseDecision::Intercept=>1,
-           ChildCloseDecision::AllowDefault=>{
-             // The exact child could not be safely detached or dispatched. Let CEF
-             // complete its documented parent-close path instead of trapping it.
-             0
-           }
-         }
-       }
+       // Keep CEF's default windowed close path intercepted even when child
+       // teardown cannot be dispatched or completed. That path may close the
+       // product window and sibling presentations along with this child.
+       schedule_child_destroy(browser,&self.request,&self.lifetime);
+       1
      }else{
        tracing::warn!(operation="browser_child_close",stage="intercept",classification="missing_browser",generation=self.request.generation);
        1
@@ -2122,17 +2111,11 @@ fn native_handle(handle: cef::sys::cef_window_handle_t) -> usize {
 }
 
 #[cfg(any(target_os = "macos", windows))]
-enum ChildCloseDecision {
-    Intercept,
-    AllowDefault,
-}
-
-#[cfg(any(target_os = "macos", windows))]
 fn schedule_child_destroy(
     browser: &Browser,
     request: &ViewRequest,
     lifetime: &Arc<Mutex<ChildLifetime>>,
-) -> ChildCloseDecision {
+) {
     let Some(identity) = lifetime
         .lock()
         .ok()
@@ -2144,7 +2127,7 @@ fn schedule_child_destroy(
             classification = "duplicate_or_foreign",
             generation = request.generation
         );
-        return ChildCloseDecision::Intercept;
+        return;
     };
     // Retain this browser, not the currently selected view. The client shares
     // the receipt across every LifeSpanHandler interface CEF requests.
@@ -2156,19 +2139,18 @@ fn schedule_child_destroy(
             state = "queued",
             generation = identity.generation
         );
-        return ChildCloseDecision::Intercept;
+        return;
     }
 
     if let Ok(mut receipt) = lifetime.lock() {
-        receipt.use_default_close(identity);
+        receipt.dispatch_failed(identity);
     }
     tracing::warn!(
         operation = "browser_child_close",
         stage = "dispatch",
-        classification = "unavailable_allow_default",
+        classification = "unavailable_close_rejected",
         generation = identity.generation
     );
-    ChildCloseDecision::AllowDefault
 }
 
 #[cfg(any(target_os = "macos", windows))]
@@ -2194,12 +2176,12 @@ cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdent
            tracing::warn!(operation="browser_child_close",stage="destruction",state="retry_queued",?code,attempt=self.attempt+1,generation=self.identity.generation);
            return;
          }
+         if let Ok(mut receipt)=self.lifetime.lock(){receipt.dispatch_failed(self.identity);}
+         tracing::warn!(operation="browser_child_close",stage="retry_dispatch",state="close_rejected",?code,attempt=self.attempt+1,generation=self.identity.generation);
+         return;
        }
-       if let Ok(mut receipt)=self.lifetime.lock(){receipt.use_default_close(self.identity);}
-       tracing::warn!(operation="browser_child_close",stage="destruction",state="allow_default_close",?code,attempt=self.attempt,generation=self.identity.generation);
-       // This runs on CEF's UI thread. The next DoClose observes the exact
-       // receipt's fallback state and allows CEF to finish the close.
-       if let Some(host)=self.browser.host(){host.close_browser(1);}
+       if let Ok(mut receipt)=self.lifetime.lock(){receipt.finish_destroy(self.identity,false);}
+       tracing::warn!(operation="browser_child_close",stage="destruction",state="close_rejected",?code,attempt=self.attempt,generation=self.identity.generation);
      }
    }
  }

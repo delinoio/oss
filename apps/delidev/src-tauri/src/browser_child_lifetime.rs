@@ -17,7 +17,6 @@ enum Phase {
     Queued,
     Destroying,
     Destroyed,
-    DefaultClose,
     Closed,
 }
 
@@ -69,23 +68,6 @@ impl ChildLifetime {
         }
         self.phase = Phase::Queued;
         true
-    }
-
-    pub fn use_default_close(&mut self, identity: ChildIdentity) -> bool {
-        if self.identity != Some(identity)
-            || !matches!(self.phase, Phase::Queued | Phase::Destroying | Phase::Live)
-        {
-            return false;
-        }
-        self.phase = Phase::DefaultClose;
-        true
-    }
-
-    pub fn default_close_allowed(&self, browser_id: i32, generation: u64) -> bool {
-        self.phase == Phase::DefaultClose
-            && self.identity.is_some_and(|identity| {
-                identity.browser_id == browser_id && identity.generation == generation
-            })
     }
 
     pub fn finish_destroy(&mut self, identity: ChildIdentity, success: bool) {
@@ -230,30 +212,26 @@ mod tests {
     }
 
     #[test]
-    fn failed_dispatch_can_allow_default_close_from_the_queued_phase() {
+    fn failed_dispatch_restores_the_original_child_for_a_later_close_attempt() {
         let mut receipt = ChildLifetime::default();
         let original = child();
         receipt.created(original);
         assert_eq!(receipt.queue(41, 7), Some(original));
-        assert!(receipt.use_default_close(original));
-        assert!(receipt.default_close_allowed(41, 7));
-        assert!(receipt.closed(41, 7));
+        receipt.dispatch_failed(original);
+        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.begin_destroy(original));
     }
 
     #[test]
-    fn default_close_fallback_is_limited_to_the_original_child() {
+    fn exhausted_destruction_retries_restore_live_child_without_acknowledging_close() {
         let mut receipt = ChildLifetime::default();
         let original = child();
         receipt.created(original);
-        receipt.queue(41, 7);
-        assert!(!receipt.default_close_allowed(41, 7));
+        assert_eq!(receipt.queue(41, 7), Some(original));
         assert!(receipt.begin_destroy(original));
-        assert!(receipt.use_default_close(original));
-        assert!(receipt.default_close_allowed(41, 7));
-        assert!(!receipt.default_close_allowed(42, 7));
-        assert!(!receipt.default_close_allowed(41, 8));
-        assert!(receipt.closed(41, 7));
-        assert!(!receipt.default_close_allowed(41, 7));
+        receipt.finish_destroy(original, false);
+        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.begin_destroy(original));
     }
 
     #[test]
