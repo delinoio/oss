@@ -49,6 +49,18 @@ func TestNativeWebSearchActionsKeepOriginalModeAndContent(t *testing.T) {
 		t.Fatal("disabled search gained authority")
 	}
 }
+
+func TestNativeWebSearchAcceptsOmittedResults(t *testing.T) {
+	c, turn := observationClient()
+	c.execution.settings.WebSearch = domain.WebSearchLive
+	c.execution.settings.Provider = "openai"
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 0, "item": map[string]any{"type": "webSearch", "id": "original-search", "query": "Original", "action": nil}}
+	event, err := observeFixture(c, "item/started", params)
+	if err != nil || event.Tool == nil || event.Tool.WebSearch == nil || event.Tool.WebSearch.Results != nil {
+		t.Fatal("omitted native results were not retained as unavailable", event, err)
+	}
+}
+
 func TestWebSearchRejectsUnprovedProviderBeforeLaunch(t *testing.T) {
 	for _, mode := range []domain.WebSearchMode{domain.WebSearchCached, domain.WebSearchLive} {
 		config := Config{Mode: ThreadProtocol, WebSearch: mode, API: &APIConfig{}}

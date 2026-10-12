@@ -25,7 +25,7 @@ func decodeWebSearch(raw json.RawMessage) (webSearchItem, error) {
 		Action  json.RawMessage `json:"action"`
 		Results json.RawMessage `json:"results"`
 	}
-	if domain.Decode(raw, &item) != nil || item.Type != "webSearch" || domain.Text(item.ID, "native search identity", 1024, true) != nil || item.Query == nil || domain.Text(*item.Query, "native search query", 16<<10, false) != nil || len(item.Action) == 0 || len(item.Results) == 0 {
+	if domain.Decode(raw, &item) != nil || item.Type != "webSearch" || domain.Text(item.ID, "native search identity", 1024, true) != nil || item.Query == nil || domain.Text(*item.Query, "native search query", 16<<10, false) != nil || len(item.Action) == 0 {
 		return webSearchItem{}, incompatible()
 	}
 	observed := domain.CodexWebSearchObservation{Query: *item.Query}
@@ -46,7 +46,7 @@ func decodeWebSearch(raw json.RawMessage) (webSearchItem, error) {
 		}
 		observed.Action = &action
 	}
-	if !bytes.Equal(bytes.TrimSpace(item.Results), []byte("null")) {
+	if len(item.Results) > 0 && !bytes.Equal(bytes.TrimSpace(item.Results), []byte("null")) {
 		var results []json.RawMessage
 		if len(item.Results) > 384<<10 || domain.DecodeBounded(item.Results, &results, 384<<10) != nil || results == nil || len(results) > 1024 {
 			return webSearchItem{}, incompatible()
