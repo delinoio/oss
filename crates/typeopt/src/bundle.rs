@@ -21,6 +21,77 @@ use crate::{
 pub(crate) struct HtmlTag {
     pub name: String,
     pub attributes: Vec<(String, String)>,
+    /// Attributes whose value has a character reference this parser cannot
+    /// decode; their value is kept raw.
+    pub undecodable: Vec<String>,
+}
+
+/// Decodes the character references of an attribute value: numeric
+/// (`&#46;`, `&#x2e;`, with or without `;`) and common named ones. Returns
+/// `None` for a named reference outside that set.
+fn decode_references(value: &str) -> Option<String> {
+    const NAMED: [(&str, char); 22] = [
+        ("amp", '&'),
+        ("lt", '<'),
+        ("gt", '>'),
+        ("quot", '"'),
+        ("apos", '\''),
+        ("sol", '/'),
+        ("period", '.'),
+        ("colon", ':'),
+        ("num", '#'),
+        ("quest", '?'),
+        ("equals", '='),
+        ("lowbar", '_'),
+        ("comma", ','),
+        ("semi", ';'),
+        ("excl", '!'),
+        ("percnt", '%'),
+        ("plus", '+'),
+        ("lpar", '('),
+        ("rpar", ')'),
+        ("dollar", '$'),
+        ("ast", '*'),
+        ("nbsp", '\u{a0}'),
+    ];
+    if !value.contains('&') {
+        return Some(value.to_owned());
+    }
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at + 1..];
+        if let Some(numeric) = rest.strip_prefix('#') {
+            let (radix, digits) = match numeric.strip_prefix(['x', 'X']) {
+                Some(hex) => (16, hex),
+                None => (10, numeric),
+            };
+            let len = digits
+                .find(|c: char| !c.is_digit(radix))
+                .unwrap_or(digits.len());
+            let decoded = u32::from_str_radix(&digits[..len], radix)
+                .ok()
+                .and_then(char::from_u32)?;
+            out.push(decoded);
+            let after = &digits[len..];
+            rest = after.strip_prefix(';').unwrap_or(after);
+            continue;
+        }
+        let len = rest
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(rest.len());
+        if len == 0 || !rest[len..].starts_with(';') {
+            // Not a reference (or a legacy form without `;`): literal `&`.
+            out.push('&');
+            continue;
+        }
+        let (_, decoded) = NAMED.iter().find(|(name, _)| *name == &rest[..len])?;
+        out.push(*decoded);
+        rest = &rest[len + 1..];
+    }
+    out.push_str(rest);
+    Some(out)
 }
 
 impl HtmlTag {
@@ -55,6 +126,7 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
         }
         let name = html[start..i].to_ascii_lowercase();
         let mut attributes = Vec::new();
+        let mut undecodable = Vec::new();
         loop {
             while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
                 i += 1;
@@ -99,7 +171,13 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
                 i = (i + 1).min(bytes.len());
                 continue;
             }
-            attributes.push((attribute, value));
+            match decode_references(&value) {
+                Some(decoded) => attributes.push((attribute, decoded)),
+                None => {
+                    undecodable.push(attribute.clone());
+                    attributes.push((attribute, value));
+                }
+            }
         }
         // Raw-text elements contain no markup: skip to their end tag so
         // script or style text that looks like a tag is not reported.
@@ -127,7 +205,11 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
             }
             i = end.map_or(html.len(), |end| i + end);
         }
-        tags.push(HtmlTag { name, attributes });
+        tags.push(HtmlTag {
+            name,
+            attributes,
+            undecodable,
+        });
     }
     tags
 }
@@ -915,6 +997,15 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         );
         let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["script", "p"]);
+        // Character references in attribute values are decoded.
+        let tags = html_tags(
+            "<script src=\"shared&#46;js\" type=\"&#x6d;odule\" data-x=\"a&amp;b&c\"></script><a \
+             href=\"&unknownref;\">",
+        );
+        assert_eq!(tags[0].attribute("src"), Some("shared.js"));
+        assert_eq!(tags[0].attribute("type"), Some("module"));
+        assert_eq!(tags[0].attribute("data-x"), Some("a&b&c"));
+        assert_eq!(tags[1].undecodable, ["href"]);
         // Unterminated markup at the end of a page.
         for html in ["<script src=a.js", "<p a=", "<p =", "<script>x", "<a b='c"] {
             let _ = html_tags(html);

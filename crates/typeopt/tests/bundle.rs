@@ -1034,6 +1034,34 @@ fn keeps_chunks_that_pages_load_as_classic_scripts() {
     assert_eq!(out(temp.path(), "shared.js"), shared);
 }
 
+/// Character references in HTML attributes are decoded before scripts are
+/// classified.
+#[test]
+fn decodes_character_references_in_script_urls() {
+    let shared = r#"function sharedGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var sharedState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="shared&#46;js"></script><script type="module" src="./index.js"></script>"#,
+        ),
+        ("shared.js", shared),
+        (
+            "index.js",
+            r#"import"./shared.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "shared.js"), shared);
+    let unknown = bundle(&[
+        (
+            "index.html",
+            r#"<script src="shared&unknownref;js"></script>"#,
+        ),
+        ("shared.js", shared),
+    ]);
+    assert!(!run_typeopt(unknown.path(), &[]).status.success());
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [

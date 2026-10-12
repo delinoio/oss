@@ -874,6 +874,15 @@ fn html_scripts(dir: &std::path::Path) -> Result<(Paths, Paths)> {
             } else if path.extension().is_some_and(|e| e == "html") {
                 let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
                 let tags = crate::bundle::html_tags(&html);
+                // A reference this parser cannot decode could name any file.
+                ensure!(
+                    !tags.iter().any(|t| {
+                        (t.name == "script"
+                            && t.undecodable.iter().any(|a| a == "src" || a == "type"))
+                            || (t.name == "base" && t.undecodable.iter().any(|a| a == "href"))
+                    }),
+                    "an HTML script or base URL uses an unsupported character reference"
+                );
                 // Relative URLs resolve against the first `<base href>`.
                 let base = tags
                     .iter()
