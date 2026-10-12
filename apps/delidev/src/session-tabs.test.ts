@@ -226,7 +226,7 @@ it("dismisses an acknowledged page to its existing left neighbor without removin
   const foreign = { ...page, profile: "foreign" };
   store.open("s", foreign);
   store.select("s", sessionTabKey(page));
-  store.dismissPage("s", "original", "a", "b");
+  store.dismissPage("s", "original", "a");
   expect(store.snapshot("s").selected).toBe(SessionTabKind.Conversation);
   expect(store.snapshot("s").tabs).toContainEqual(foreign);
   store.dismissPage("s", "original", "b", "");
@@ -263,7 +263,7 @@ describe("acknowledged page dismissal", () => {
         sessionTabKey(foreign),
       ]);
       expect(store.snapshot("s").selected).toBe(
-        selected ? SessionTabKind.Conversation : sessionTabKey(foreign),
+        sessionTabKey(selected ? survivor : foreign),
       );
       expect(store.snapshot("other")).toBe(other);
     },
@@ -278,7 +278,7 @@ describe("acknowledged page dismissal", () => {
     };
     store.open("s", { ...page, profile: "other", id: "b" });
     store.open("s", page);
-    store.dismissPage("s", "p", "a", "b");
+    store.dismissPage("s", "p", "a");
     expect(store.snapshot("s").selected).toBe(
       sessionTabKey({ ...page, profile: "other", id: "b" }),
     );
