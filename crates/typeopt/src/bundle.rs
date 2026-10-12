@@ -1016,10 +1016,12 @@ fn rehash(
     let frozen_names: BTreeSet<String> = frozen.iter().map(|p| base(p)).collect();
     // The rename set: edited hashed chunks and, transitively, hashed files
     // that reference a renamed file.
+    // References name only the file name, so a name that a frozen chunk
+    // carries anywhere keeps it everywhere.
     let mut renaming: BTreeSet<String> = edited
         .iter()
         .map(|p| base(p))
-        .filter(|n| hashed.contains_key(n))
+        .filter(|n| hashed.contains_key(n) && !frozen_names.contains(n))
         .collect();
     loop {
         let more: Vec<String> = referenced

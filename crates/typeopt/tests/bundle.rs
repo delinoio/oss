@@ -911,6 +911,32 @@ fn keeps_boundary_chunks_and_their_original_dependencies() {
     );
 }
 
+/// A name that a frozen boundary chunk carries is never renamed, even for an
+/// edited chunk elsewhere that shares it.
+#[test]
+fn keeps_names_shared_with_boundary_chunks() {
+    let legacy = r#"var legacyState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/legacy/x-AAAAAAAA.js"></script><script type="module" src="/index.js"></script>"#,
+        ),
+        ("legacy/x-AAAAAAAA.js", legacy),
+        (
+            "modern/x-AAAAAAAA.js",
+            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function m(n){const o=make(n);return o.verticalSpacing+o.horizontalSpacing}export{m};"#,
+        ),
+        (
+            "index.js",
+            r#"import{m}from"./modern/x-AAAAAAAA.js";console.log(m(2));"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "legacy/x-AAAAAAAA.js"), legacy);
+    assert_eq!(listing(&temp.path().join("out/modern")), ["x-AAAAAAAA.js"]);
+}
+
 /// JavaScript escapes in a reference also keep the original, with its map.
 #[test]
 fn retains_escaped_references_with_their_maps() {
