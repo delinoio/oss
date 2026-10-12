@@ -479,6 +479,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		}
 		return event, nil
 	case "serverRequest/resolved":
+		if event, handled, err := c.observeDynamicResolvedLocked(native); handled || err != nil {
+			return event, err
+		}
 		return c.observeInteractionClosedLocked(native)
 	case "thread/status/changed":
 		var params struct {
