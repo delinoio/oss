@@ -497,7 +497,9 @@ it.each([false, true])(
     const f = fixture(() => ({ resources: [] }));
     f.reads.mockImplementationOnce(() => first.pending);
     render(<Composer f={f} strict={strict} />);
-    const picker = await screen.findByRole("combobox", { name: "Agent Worker" });
+    const picker = await screen.findByRole("combobox", {
+      name: "Agent Worker",
+    });
     picker.focus();
     expect(document.activeElement).toBe(picker);
     await act(async () => first.release({ resources: [] }));
