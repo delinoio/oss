@@ -98,6 +98,7 @@ fn renames_properties_across_chunks_and_shrinks_the_bundle() {
         ),
     ]);
     assert!(saved(&report) > 0, "{report:#}");
+    assert_eq!(report["size"]["metric"], "chunk_text_bytes");
     assert!(report["renamed_properties"].as_u64().unwrap() >= 3);
     assert!(!out(temp.path(), "settings.js").contains("verticalSpacing"));
     // Bundle mode never offers passes whose proofs depend on static types.
