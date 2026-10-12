@@ -3,8 +3,10 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -223,5 +225,52 @@ func TestSessionDeletionStartedWorkerProofRequiresKeyedWorkspaceProof(t *testing
 	markerAfter, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
 	if err != nil || string(markerAfter) != string(markerBefore) {
 		t.Fatal("published admission fence changed", err)
+	}
+}
+
+func TestWorkspaceFreeStartedDeletionDoesNotRequireWorkspaceProof(t *testing.T) {
+	for _, version := range []uint32{1, 3} {
+		t.Run(fmt.Sprintf("version-%d", version), func(t *testing.T) {
+			config, works := failedDeletionObligations(t)
+			work := works[0]
+			work.Copies = nil
+			work.Images = []domain.ImageAttachment{{ID: domain.NewID(), MachineID: work.MachineID, MediaType: domain.ImagePNG, ByteLength: 1, SHA256: strings.Repeat("a", 64)}}
+			if work.Validate() != nil {
+				t.Fatal("workspace-free deletion fixture is invalid")
+			}
+			if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+				t.Fatal(err)
+			}
+			reportID := domain.NewID()
+			started := sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}
+			if version == 1 {
+				started.Version = 1
+				started.Identity = domain.SessionDeletionIdentity{}
+				if err := writeJSON(sessionDeletionPath(config.Root, work.SessionID), started); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				marker := deletionMarker(work)
+				marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerPublished}}
+				if err := writeDeletionMarker(sessionDeletionPath(config.Root, work.SessionID), marker); err != nil {
+					t.Fatal(err)
+				}
+				paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := writeJSON(paths.Worker, started); err != nil {
+					t.Fatal(err)
+				}
+			}
+			proof, _, lock, err := loadSessionDeletionProof(config.Root, work)
+			if err != nil {
+				t.Fatal("workspace-free started deletion required workspace proof", err)
+			}
+			defer lock.Close()
+			if proof.ReportID != reportID || !proof.RemovalStarted {
+				t.Fatal("workspace-free started deletion changed its original receipt")
+			}
+		})
 	}
 }

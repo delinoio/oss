@@ -87,6 +87,10 @@ func validDeletionProof(proof sessionDeletionProof, w domain.SessionDeletionWork
 	return proof.Version == 2 && proof.Identity == w.Identity() && proof.Digest == w.Digest() && proof.ReportID.Validate() == nil && (!proof.Complete || proof.RemovalStarted) && (!proof.WorkspaceRetired || proof.Complete)
 }
 
+func sessionDeletionUsesWorkspace(w domain.SessionDeletionWork) bool {
+	return len(w.Copies) != 0 || w.Fork != nil
+}
+
 // Acquire the original session fence lock before the obligation lock, then
 // synchronize/import metadata. Native cleanup retains only the obligation lock.
 func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessionDeletionProof, string, *security.Lock, error) {
@@ -153,7 +157,11 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 				return pending()
 			}
 			proof = legacy
-			if workspace.ImportLegacyDeletionWorkspaceProof(root, w, legacy.RemovalStarted || legacy.Complete) != nil {
+			if sessionDeletionUsesWorkspace(w) {
+				if workspace.ImportLegacyDeletionWorkspaceProof(root, w, legacy.RemovalStarted || legacy.Complete) != nil {
+					return pending()
+				}
+			} else if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil || workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
 				return pending()
 			}
 			again, err := security.ReadPrivate(markerPath, 4096)
@@ -239,7 +247,11 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		// new deletion. Restored/transplanted metadata must stay pending.
 		return pending()
 	} else {
-		if workspace.ImportLegacyDeletionWorkspaceProof(root, w, false) != nil {
+		if sessionDeletionUsesWorkspace(w) {
+			if workspace.ImportLegacyDeletionWorkspaceProof(root, w, false) != nil {
+				return pending()
+			}
+		} else if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil || workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
 			return pending()
 		}
 		// Publish the exact initial receipt in the shared fence before keyed
@@ -259,7 +271,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			return pending()
 		}
 	}
-	if proof.RemovalStarted && !proof.Complete && workspace.RequireKeyedDeletionWorkspaceProof(root, w) != nil {
+	if sessionDeletionUsesWorkspace(w) && proof.RemovalStarted && !proof.Complete && workspace.RequireKeyedDeletionWorkspaceProof(root, w) != nil {
 		return pending()
 	}
 	if security.SyncParent(paths.Worker) != nil {
