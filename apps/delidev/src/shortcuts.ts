@@ -19,6 +19,7 @@ export enum ShortcutId {
   SessionTab7 = "session-tab-7",
   SessionTab8 = "session-tab-8",
   SessionTab9 = "session-tab-9",
+  TerminalCreate = "terminal-create",
   SessionCloseTab = "session-close-tab",
   OpenTool = "open-tool",
   OpenFiles = "open-files",
@@ -50,6 +51,9 @@ export enum ShortcutPlatform {
   Mac = "mac",
   Other = "other",
 }
+export const terminalShortcutBindings = {
+  [ShortcutId.TerminalCreate]: [{ key: "t", primary: true }],
+} as const;
 export const globalShortcutBindings = {
   [ShortcutId.ToggleSidebar]: [{ key: "b", primary: true }],
   [ShortcutId.CommandMenu]: [{ key: "k", primary: true }],

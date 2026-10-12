@@ -82,3 +82,24 @@ it("selects the nearest left neighbor, then the first remaining terminal", () =>
   expect(terminalFallback(["one", "two", "three"], "one")).toBe("two");
   expect(terminalFallback(["one"], "one")).toBe("");
 });
+
+
+it("retains numbers across reorder, stale observations, payload loss and verified dismissal", () => {
+  const view = new TerminalPresentation();
+  const one = resource(2n, { state: "running" });
+  const two = create(ResourceSchema, { ...one, id: "second" });
+  view.observe("parent", one);
+  view.observe("parent", two);
+  view.observe("parent", two);
+  view.observe("parent", resource(1n, { state: "running" }));
+  expect(view.number(one.id)).toBe(1);
+  expect(view.number(two.id)).toBe(2);
+  view.observe("parent", resource(3n, { state: "exited", cleanup_verified: true }));
+  view.observe("parent", one);
+  expect(view.number(one.id)).toBe(1);
+  expect(view.number("third")).toBe(3);
+  const separate = new TerminalPresentation();
+  separate.observe("parent", create(ResourceSchema, { ...one, id: "foreign", sessionId: "other" }));
+  expect(separate.known("foreign")).toBe(false);
+  expect(separate.number(two.id)).toBe(1);
+});

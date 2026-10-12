@@ -4,6 +4,17 @@ import { document, object } from "./documents";
 
 /** Connection-memory presentation tombstones never change server history. */
 export class TerminalPresentation {
+  private numbers = new Map<string, number>();
+  /** Numbers belong only to this session's connection-memory presentation. */
+  number(id: string): number {
+    let value = this.numbers.get(id);
+    if (value === undefined) {
+      value = this.numbers.size + 1;
+      this.numbers.set(id, value);
+    }
+    return value;
+  }
+  known(id: string): boolean { return this.numbers.has(id); }
   private revisions = new Map<string, bigint>();
   private dismissed = new Set<string>();
   hidden(id: string) {
@@ -18,6 +29,7 @@ export class TerminalPresentation {
       resource.revision <= 0n
     )
       return false;
+    this.number(resource.id);
     const previous = this.revisions.get(resource.id) ?? 0n;
     if (resource.revision < previous || this.hidden(resource.id)) return false;
     this.revisions.set(resource.id, resource.revision);

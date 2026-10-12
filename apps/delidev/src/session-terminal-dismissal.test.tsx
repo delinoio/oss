@@ -148,10 +148,7 @@ function fixture(count = 1, initialExited = false, offPage = false) {
             })
           : row,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Details" }));
-      fireEvent.click(
-        screen.getByRole("button", { name: "Refresh terminals" }),
-      );
+      await client.invalidateQueries();
     },
     cleanup() {
       view.unmount();

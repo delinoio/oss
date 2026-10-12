@@ -959,11 +959,21 @@ export function SessionView({
   const upperContent = useRef<HTMLDivElement>(null);
   const [filesOpened, setFilesOpened] = useState(false);
   const [terminalOpened, setTerminalOpened] = useState(false);
+  const terminalIntentPane = useRef<string | undefined>(undefined);
+  const [terminalRecoveryTarget, setTerminalRecoveryTarget] = useState<HTMLDivElement | null>(null);
   const [pendingTerminalOpen, setPendingTerminalOpen] = useState<string>();
   const [terminalOpenIntent, setTerminalOpenIntent] = useState<{
     requestId: string;
     revision: bigint;
   }>();
+  const cancelTerminalOpening = () => {
+    terminalIntentPane.current = undefined;
+    setPendingTerminalOpen(undefined);
+    setTerminalOpenIntent(undefined);
+  };
+  useLayoutEffect(() => {
+    if (tabs.tab.kind === SessionTabKind.Terminal) setTerminalOpened(true);
+  }, [tabs.tab.kind]);
   const [browserOpened, setBrowserOpened] = useState(false);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] =
     useState<HTMLDivElement | null>(null);
@@ -1164,16 +1174,22 @@ export function SessionView({
       messages.payloadPages.some((page) => page.token === ""),
     ),
   );
-  // A toolbar gesture can precede the initial session snapshot. Capture its
-  // revision only after authenticated metadata arrives, while the same tool
-  // remains selected; navigation cancels this unsent intent.
+  // Explicit opening resolves alongside the current pane. Departure or a later
+  // selection cancels unsent work; retained sent requests keep their own authority.
+  useLayoutEffect(() => {
+    if (!active || (terminalIntentPane.current !== undefined &&
+      terminalIntentPane.current !== tabs.selected)) {
+      terminalIntentPane.current = undefined;
+      setPendingTerminalOpen(undefined);
+      setTerminalOpenIntent(undefined);
+    }
+  }, [active, tabs.selected]);
+  // A gesture before authenticated session metadata captures its revision only
+  // on arrival, without changing the selected pane.
   useEffect(() => {
     if (!pendingTerminalOpen) return;
     if (
-      !active ||
-      ![SessionTabKind.Terminal, SessionTabKind.Terminals].includes(
-        tabs.tab.kind,
-      )
+      !active || terminalIntentPane.current !== tabs.selected
     ) {
       setPendingTerminalOpen(undefined);
       return;
@@ -1188,7 +1204,7 @@ export function SessionView({
       );
       setPendingTerminalOpen(undefined);
     }
-  }, [pendingTerminalOpen, active, tabs.tab.kind, session]);
+  }, [pendingTerminalOpen, active, tabs.selected, session]);
   const waitingRevision = `${session?.revision ?? 0n}:${live.generation}:${[
     ...live.resources.values(),
   ]
@@ -1447,6 +1463,7 @@ export function SessionView({
             document
               .getElementById(`session-tab-${id}-${index}`)
               ?.focus({ preventScroll: true });
+            cancelTerminalOpening();
             tabs.store.position(id, index + 1);
           },
         }))
@@ -1720,8 +1737,7 @@ export function SessionView({
   const hideEmptyTerminals = () => {
     for (const tab of tabs.store.snapshot(id).tabs) {
       if (
-        tab.kind === SessionTabKind.Terminal ||
-        tab.kind === SessionTabKind.Terminals
+        tab.kind === SessionTabKind.Terminal
       )
         tabs.store.close(id, sessionTabKey(tab));
     }
@@ -1738,6 +1754,7 @@ export function SessionView({
     if (next === SessionPanel.Terminals) {
       if (terminalsDisabled) return;
       setTerminalOpened(true);
+      terminalIntentPane.current = tabs.selected;
       if (session)
         setTerminalOpenIntent(
           (current) =>
@@ -1747,12 +1764,13 @@ export function SessionView({
             },
         );
       else setPendingTerminalOpen((current) => current ?? newRequestId());
+      return;
     }
+    cancelTerminalOpening();
     if (next === SessionPanel.Browser) setBrowserOpened(true);
     const kinds = {
       [SessionPanel.Files]: SessionTabKind.Files,
       [SessionPanel.Diff]: SessionTabKind.Diff,
-      [SessionPanel.Terminals]: SessionTabKind.Terminals,
       [SessionPanel.Browser]: SessionTabKind.Browser,
       [SessionPanel.Diagnostics]: SessionTabKind.Diagnostics,
     } as const;
@@ -2127,9 +2145,10 @@ export function SessionView({
               id={id}
               tabs={tabs.tabs}
               selected={tabs.selected}
-              select={(key) => tabs.store.select(id, key)}
+              select={(key) => { cancelTerminalOpening(); tabs.store.select(id, key); }}
               close={closeTab}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
+              terminalNumber={(terminalId) => tabs.store.terminalPresentation(id).number(terminalId)}
             />
             <SessionToolMenu key={id} active={active}>
               {tools.map((tool) => (
@@ -2177,6 +2196,10 @@ export function SessionView({
             </SessionToolMenu>
           </div>
         ) : null}
+        {!embedded ? <div ref={setTerminalRecoveryTarget} className="session-terminal-status"
+          hidden={!active} inert={!active}>
+          {pendingTerminalOpen ? <p role="status">{copy("session-terminals.openingTerminal")}</p> : null}
+        </div> : null}
         <div className="session-content">
           <div
             id={`session-pane-${id}`}
@@ -3037,22 +3060,29 @@ export function SessionView({
                   />
                 </div>
               ) : null}
-              {session && terminalOpened ? (
+              {session && (terminalOpened || tabs.tab.kind === SessionTabKind.Terminal) ? (
                 <div
                   hidden={
                     !active ||
-                    ![
-                      SessionTabKind.Terminal,
-                      SessionTabKind.Terminals,
-                    ].includes(tabs.tab.kind)
+                    tabs.tab.kind !== SessionTabKind.Terminal
                   }
+                  inert={!active || tabs.tab.kind !== SessionTabKind.Terminal}
                   className="session-app-panel session-terminal-pane"
                 >
                   <SessionTerminals
                     session={session}
                     close={closeTerminal}
                     openIntent={terminalOpenIntent}
-                    finishOpenIntent={() => setTerminalOpenIntent(undefined)}
+                    finishOpenIntent={() => {
+                      terminalIntentPane.current = undefined;
+                      setTerminalOpenIntent(undefined);
+                    }}
+                    resumeOpenIntent={(value) => {
+                      terminalIntentPane.current = tabs.selected;
+                      setTerminalOpenIntent(value);
+                    }}
+                    resolveActive={active}
+                    recoveryTarget={terminalRecoveryTarget}
                     tabbed
                     selectedId={
                       tabs.tab.kind === SessionTabKind.Terminal
@@ -3092,10 +3122,7 @@ export function SessionView({
                     }}
                     active={
                       active &&
-                      [
-                        SessionTabKind.Terminal,
-                        SessionTabKind.Terminals,
-                      ].includes(tabs.tab.kind)
+                      tabs.tab.kind === SessionTabKind.Terminal
                     }
                   />
                 </div>

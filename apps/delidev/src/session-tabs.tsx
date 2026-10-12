@@ -18,7 +18,6 @@ export enum SessionTabKind {
   File = "file",
   Diff = "diff",
   Comparison = "comparison",
-  Terminals = "terminals",
   Terminal = "terminal",
   Browser = "browser",
   Page = "page",
@@ -32,7 +31,6 @@ export type SessionTab =
         | SessionTabKind.Conversation
         | SessionTabKind.Files
         | SessionTabKind.Diff
-        | SessionTabKind.Terminals
         | SessionTabKind.Browser
         | SessionTabKind.Diagnostics;
     }
@@ -124,6 +122,8 @@ export class SessionTabsStore {
       this.terminalPresentation(id).hidden(tab.id)
     )
       return;
+    if (tab.kind === SessionTabKind.Terminal)
+      this.terminalPresentation(id).number(tab.id);
     if (tab.kind === SessionTabKind.Sidechat) {
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();

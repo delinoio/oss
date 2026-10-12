@@ -932,7 +932,7 @@
 
 /* Session tabs supersede temporary panel, browser split and terminal dock geometry. */
 .session-tabbed {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 .session-navigation {
   grid-area: 2 / 1;
@@ -1141,7 +1141,7 @@
 }
 
 .session-tabbed > .session-content {
-  grid-area: 3 / 1;
+  grid-area: 4 / 1;
 }
 .session-tabbed .session-upper-content {
   grid-area: 2 / 1;
@@ -1708,3 +1708,15 @@
     width: 100%;
   }
 }
+
+/* Opening/recovery is visible alongside the original selected pane. */
+.session-terminal-status {
+  grid-area: 3 / 1;
+  min-width: 0;
+  max-height: min(160px, 25cqh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.session-terminal-status:not(:empty) { padding: 8px 12px; }
+.session-terminal-status[hidden] { display: none; }
+.session-terminal-status > p { margin: 0; }

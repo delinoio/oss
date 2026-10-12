@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
   primaryShortcutKey,
+  terminalShortcutBindings,
   globalShortcutBindings,
   sessionShortcutBindings,
   ShortcutId,
@@ -32,6 +33,7 @@ export enum ShortcutGroup {
   Search = "search",
 }
 export enum ShortcutTargetContext {
+  Terminal = "terminal",
   SessionMessage = "session-message",
   CreationMessage = "creation-message",
   Search = "search",
@@ -119,6 +121,16 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
   },
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
+  {
+    target: ShortcutTargetContext.Terminal,
+    id: ShortcutId.TerminalCreate,
+    label: "shortcuts.createTerminal",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 2,
+    input: ShortcutInput.Target,
+    defaults: terminalShortcutBindings[ShortcutId.TerminalCreate],
+  },
   {
     id: ShortcutId.OpenSettings,
     label: "shortcuts.openSettings",

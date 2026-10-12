@@ -33,7 +33,7 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
-The explicit Terminals toolbar/menu gesture resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
+The explicit Terminals toolbar/menu gesture resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, empty default-shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
 creation/selection opens a full-pane tab by original terminal ID while retaining
 conversation authoring and original mutation controllers. Presentation Close or
 inactive selection releases only the client attachment; it never closes the shell
@@ -488,3 +488,15 @@ or closed with independent cleanup verified and no pending operation before
 creation. Concurrent clients receive the same newly accepted terminal. Exact
 request replay retains actor-bound receipts without dispatching another shell.
 No capability, migration or native protocol change is added.
+
+Desktop direct tabs use session-scoped monotonic presentation numbers in
+connection memory. These numbers never replace original terminal IDs in
+requests, receipts, selection or cleanup proofs. Explicit tool admission retains
+the current pane until its verified result and exposes read-only failures and
+original uncertain-request recovery outside hidden attachments. The simplified
+Terminals/+ toolbar and terminal-input primary+T use default-shell additional
+creation through one callback. Removing shell override, details and process Close
+UI grants no new termination authority. Tab ×, departure and reopening remain
+presentation-only; native exit and Archive/storage cleanup keep their original
+independent process ownership. Follow the desktop contract for numbering,
+focus, shortcut admission and retained presentation lifetime.

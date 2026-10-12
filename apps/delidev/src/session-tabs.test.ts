@@ -179,3 +179,29 @@ it("refreshes only existing exact session/profile/page metadata without selectio
   expect(store.snapshot("session")).toBe(closed);
   expect(publish).not.toHaveBeenCalled();
 });
+
+
+it("allocates shared session numbers on original-ID opens and authenticated encounters", () => {
+  const store = new SessionTabsStore();
+  const one = { kind: SessionTabKind.Terminal as const, id: "one" };
+  store.open("session", { kind: SessionTabKind.Files });
+  store.open("session", one);
+  const presentation = store.terminalPresentation("session");
+  expect(presentation.number("one")).toBe(1);
+  presentation.observe("session", create(ResourceSchema, {
+    id: "inventory", sessionId: "session", kind: EntityKind.TERMINAL,
+    schemaVersion: 1, revision: 2n, documentJson: encode({ state: "running" }),
+  }));
+  store.close("session", sessionTabKey(one));
+  store.open("session", { kind: SessionTabKind.Terminal, id: "inventory" });
+  store.open("session", one);
+  expect(presentation.number("one")).toBe(1);
+  expect(presentation.number("inventory")).toBe(2);
+  store.open("session", { kind: SessionTabKind.Terminal, id: "third" });
+  expect(presentation.number("third")).toBe(3);
+  expect(store.snapshot("session").selected).toBe(JSON.stringify(["terminal", "third"]));
+  store.open("other", one);
+  expect(store.terminalPresentation("other").number("one")).toBe(1);
+  expect(new SessionTabsStore().terminalPresentation("session").number("third")).toBe(1);
+  expect(Object.values(SessionTabKind)).not.toContain("terminals");
+});

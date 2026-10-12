@@ -719,7 +719,7 @@ it("keeps Info independent of all tabs with one active content region and retain
   const info = screen.getByRole("complementary", {
     name: "Session information",
   });
-  for (const name of ["Files", "Diff", "Terminals", "Browser", "Diagnostics"]) {
+  for (const name of ["Files", "Diff", "Browser", "Diagnostics"]) {
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name }));
     expect(
@@ -742,26 +742,27 @@ it("keeps Info independent of all tabs with one active content region and retain
   expect(f.rename).not.toHaveBeenCalled();
 });
 it("replaces dock/split coexistence with exact selection and presentation-only close", async () => {
-  const f = fixture();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
   render(f.view());
   await screen.findByRole("heading", { name: "Original session" });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  await screen.findByRole("tab", { name: "Terminal 1" });
   expect(
     screen
-      .getByRole("tab", { name: "Terminals" })
+      .getByRole("tab", { name: "Terminal 1" })
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.queryByRole("region", { name: "Session browser" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
   expect(
     screen
-      .getByRole("tab", { name: "Terminals" })
+      .getByRole("tab", { name: "Terminal 1" })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Close Terminals tab" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Terminal 1 tab" }));
   expect(
     screen
       .getByRole("tab", { name: "Conversation" })
@@ -775,11 +776,12 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
 it.each([580, 120])(
   "keeps retained composer isolated from terminal pane at body height %s",
   async (height) => {
-    const f = fixture();
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
     render(f.view());
     const composer = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    await screen.findByRole("tab", { name: "Terminal 1" });
     expect(composer.isConnected).toBe(true);
     expect(composer.closest("[inert]")).not.toBeNull();
     expect(
@@ -1522,9 +1524,7 @@ it("last verified terminal exit restores the actual Session conversation, focus 
     });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 1/ }),
-    );
+    await screen.findByRole("tab", { name: "Terminal 1" });
     await waitFor(() =>
       expect(document.querySelector(".terminal-view")).not.toBeNull(),
     );
@@ -1537,7 +1537,7 @@ it("last verified terminal exit restores the actual Session conversation, focus 
           .getAttribute("aria-selected"),
       ).toBe("true"),
     );
-    expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /^Terminal \d+$/ })).toBeNull();
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
     expect(composer).toHaveProperty("value", "Original draft");
     expect(composer.closest("[inert]")).toBeNull();
@@ -1581,9 +1581,7 @@ it("verified terminal removal skips intervening Files and selects the original l
     await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 1/ }),
-    );
+    await screen.findByRole("tab", { name: "Terminal 1" });
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id),
     );
@@ -1591,19 +1589,18 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 2/ }),
-    );
+    await screen.findByRole("tab", { name: "Terminal 1" });
+    f.terminalCreate.mockReturnValueOnce({ terminal: f.terminals[1]! });
+    fireEvent.click(await screen.findByRole("button", { name: "Create terminal" }));
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 3/ }),
-    );
+    f.terminalCreate.mockReturnValueOnce({ terminal: f.terminals[2]! });
+    fireEvent.click(await screen.findByRole("button", { name: "Create terminal" }));
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
     );
-    const terminalTabs = screen.getAllByRole("tab", { name: /^Terminal ·/ });
+    const terminalTabs = screen.getAllByRole("tab", { name: /^Terminal \d+$/ });
     expect(terminalTabs).toHaveLength(3);
     const beforeSelection = f.terminalWatches.mock.calls.length;
     fireEvent.click(terminalTabs[1]!);
@@ -1617,11 +1614,11 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(1));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminal ·/ })).toHaveLength(
+      expect(screen.getAllByRole("tab", { name: /^Terminal \d+$/ })).toHaveLength(
         2,
       ),
     );
-    const remaining = screen.getAllByRole("tab", { name: /^Terminal ·/ });
+    const remaining = screen.getAllByRole("tab", { name: /^Terminal \d+$/ });
     expect(remaining[0]).toBe(terminalTabs[0]);
     expect(remaining[0]!.getAttribute("aria-selected")).toBe("true");
     await waitFor(() =>
@@ -1637,17 +1634,17 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(0));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminal ·/ })).toHaveLength(
+      expect(screen.getAllByRole("tab", { name: /^Terminal \d+$/ })).toHaveLength(
         1,
       ),
     );
     expect(
       screen
-        .getByRole("tab", { name: /^Terminal ·/ })
+        .getByRole("tab", { name: /^Terminal \d+$/ })
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(f.terminalControl).not.toHaveBeenCalled();
-    expect(f.terminalCreate).toHaveBeenCalledTimes(2);
+    expect(f.terminalCreate).toHaveBeenCalledTimes(4);
   } finally {
     view.unmount();
     for (let index = 0; index < 3; index++) f.releaseTerminal(index);

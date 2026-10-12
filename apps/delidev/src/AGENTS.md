@@ -49,6 +49,7 @@ The shared pure `product-identity.ts` module is owned here and consumed by the m
 - [DeliDev native subagent observations](../../../docs/cmds-delidev-subagents-contract.md)
 - [DeliDev native subscriptions](../../../docs/cmds-delidev-subscription-contract.md)
 - [DeliDev native usage ledger](../../../docs/cmds-delidev-usage-contract.md)
+- [DeliDev Worker-owned session terminals](../../../docs/cmds-delidev-terminals-contract.md)
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
