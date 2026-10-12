@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useCallback } from "react";
 import {
   UsageQuery,
@@ -114,12 +115,13 @@ export function UsageModelPrices({
   active: boolean;
   data?: GetUsageSummaryResponse;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const models = usePriceModels(active);
   const providers = useProviderPages("", active, false);
   const identity = selection ? selectionModel(selection) : undefined;
   const label = (model: SourceModel) =>
-    `${model.providerId ? providers.rows.find((row) => row.providerId === model.providerId)?.displayName || data?.groups.find((row) => row.model?.providerId === model.providerId)?.providerName || model.providerId : subscriptionServiceLabel(model.subscriptionService)} · ${model.nativeId}`;
+    `${model.providerId ? productLabel(PresentationKind.Provider, model.providerId, providers.rows.find((row) => row.providerId === model.providerId)?.displayName || data?.groups.find((row) => row.model?.providerId === model.providerId)?.providerName) : subscriptionServiceLabel(model.subscriptionService)} · ${model.nativeId}`;
   const history = selection
     ? (selection.history ?? retainedPrices(data, selection))
     : [];

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { Timestamp, TimestampText, TimestampMode } from "./timestamp-display";
 import {
   useCallback,
@@ -50,6 +51,7 @@ export function SubscriptionRail({
   manage: () => void;
   focusFallback?: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [visible, setVisible] = useState(
     () => document.visibilityState !== "hidden",
@@ -258,6 +260,8 @@ export function SubscriptionRail({
     );
   if (query.loaded && !accounts.length && !query.nextPageToken && !query.error)
     return null;
+  for (const row of accounts)
+    productLabel(PresentationKind.Account, row.id, row.alias);
   return (
     <div
       className="subscription-rail-group"
@@ -271,13 +275,13 @@ export function SubscriptionRail({
           const percent = unavailable
             ? undefined
             : remainingBadge(row.windows, now);
-          const label = `${brand(row).name} · ${row.alias} · ${percent === undefined ? copy("subscription-rail.unavailable") : copy("subscription-rail.remaining", { percent })}`;
+          const label = `${brand(row).name} · ${productLabel(PresentationKind.Account, row.id, row.alias)} · ${percent === undefined ? copy("subscription-rail.unavailable") : copy("subscription-rail.remaining", { percent })}`;
           return (
             <button
               type="button"
               key={row.id}
               className="sidebar-rail-button subscription-rail-account"
-              aria-label={`${label} · ${row.id}`}
+              aria-label={label}
               title={label}
               aria-haspopup="dialog"
               aria-expanded={selection?.id === row.id}

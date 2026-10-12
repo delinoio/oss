@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useSidebarPaneVisible } from "./sidebar-context";
-// SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { useRunnerRemediation } from "./runner-remediation";
@@ -139,6 +140,7 @@ export function StartingReferences({
   active: boolean;
   showRepositoryNames?: boolean;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [selected, setSelected] = useState("");
   const result = useQuery(
@@ -162,7 +164,9 @@ export function StartingReferences({
     active && showRepositoryNames,
   );
   const label = (id: string, position = nameIds.indexOf(id)) =>
-    showRepositoryNames ? projectRepositoryOption(id, position, names) : id;
+    showRepositoryNames
+      ? projectRepositoryOption(id, position, names, productLabel)
+      : productLabel(PresentationKind.Repository, id);
   return (
     <fieldset>
       <legend>{copy("schedules.startingReferenceOverrides_58881e")}</legend>
@@ -754,6 +758,7 @@ function Occurrence({
   resource: Resource;
   open: (id: string) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const data = document(resource),
     selection = object(data.selection),
@@ -814,8 +819,22 @@ function Occurrence({
           <LocalizedText
             id="schedules.agentWorker_16fb23"
             components={{
-              s0: <>{text(selection.agent_id)}</>,
-              s1: <>{text(selection.machine_id)}</>,
+              s0: (
+                <>
+                  {productLabel(
+                    PresentationKind.Agent,
+                    text(selection.agent_id),
+                  )}
+                </>
+              ),
+              s1: (
+                <>
+                  {productLabel(
+                    PresentationKind.Runner,
+                    text(selection.machine_id),
+                  )}
+                </>
+              ),
             }}
           />
         </p>
@@ -826,7 +845,7 @@ function Occurrence({
           />
         </p>
         <pre>{text(selection.prompt)}</pre>
-        <small>{resource.id}</small>
+        <small>{productLabel(PresentationKind.Schedule, resource.id)}</small>
       </Disclosure>
     </article>
   );
@@ -918,6 +937,7 @@ export function ScheduleDetails({
   edit: (row: Resource) => void;
   protectedChange?: (protectedState: boolean) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [deleted, setDeleted] = useState(false),
     [confirm, setConfirm] = useState<"delete" | "run">();
@@ -990,7 +1010,7 @@ export function ScheduleDetails({
           {copy("schedules.backToSchedules_975251")}
         </button>
       </header>
-      <small>{initial.id}</small>
+      <small>{productLabel(PresentationKind.Schedule, initial.id)}</small>
       {deleted ? (
         <p>
           {copy(

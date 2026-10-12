@@ -1,3 +1,11 @@
+import {
+  useProductLabels,
+  presentationKind,
+  productDiagnostic,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
+import type { IdentityLabel } from "./product-identity";
 import { configurationNameConflictCopy } from "./configuration-name-conflict";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
@@ -63,14 +71,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import {
-  document,
-  items,
-  object,
-  resourceName,
-  text,
-  type Document,
-} from "./documents";
+import { document, items, object, text, type Document } from "./documents";
 import { Problem, ServiceProblem } from "./ui";
 import { useRetainedMutation } from "./mutation";
 import { JobState, TrackedJob } from "./jobs";
@@ -836,6 +837,7 @@ export function ResourceChoice({
   emptyLabel?: string;
   resolvedChoice?: Resource;
 }) {
+  const productLabel = useProductLabels();
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
   useLocale();
@@ -1246,7 +1248,7 @@ export function ResourceChoice({
       id: row.id,
       decoration: decorate(row.harness),
       label:
-        (row.name || copy("documents.extra.e504e6152194")) +
+        productLabel(presentationKind(kind), row.id, row.name) +
         (kind === EntityKind.ACCOUNT
           ? copy("configuration-fields.message_2fa20b", {
               v0: statusLabel(row.health),
@@ -1294,7 +1296,7 @@ export function ResourceChoice({
           selectedLabel={
             value
               ? selectedResource
-                ? resourceName(selectedResource)
+                ? productResourceName(productLabel, selectedResource)
                 : copy("configuration-fields.sentence.38798a0275ce", {
                     v0: resourceLabel,
                   })
@@ -1377,8 +1379,18 @@ export function ResourceChoice({
             </SettingsActionButton>
           }
         >
-          <p>{result.error.failure.message}</p>
-          <p>{result.error.failure.guidance}</p>
+          <p>
+            {productDiagnostic(
+              result.error.failure.message,
+              copy("product-identity.hidden"),
+            )}
+          </p>
+          <p>
+            {productDiagnostic(
+              result.error.failure.guidance,
+              copy("product-identity.hidden"),
+            )}
+          </p>
         </ServiceProblem>
       ) : null}
       <Problem error={failure} />
@@ -1441,6 +1453,7 @@ function OrderedLinks({
   explanation?: string;
   names?: ReadonlyMap<string, string>;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [selected, setSelected] = useState("");
   const id = (value: unknown) =>
@@ -1501,7 +1514,7 @@ function OrderedLinks({
                 <RepositoryIdentity id={id(link)} />
               </>
             ) : (
-              <code>{id(link)}</code>
+              <code>{productLabel(PresentationKind.Repository, id(link))}</code>
             )}
             {weighted ? (
               <label>
@@ -2114,6 +2127,7 @@ export function RepositoryIdentity({
   id: string;
   descriptionId?: string;
 }) {
+  const productLabel = useProductLabels();
   return (
     <>
       <Disclosure
@@ -2123,11 +2137,11 @@ export function RepositoryIdentity({
         <DisclosureSummary>
           {copy("project-creation.repositoryDetails")}
         </DisclosureSummary>
-        <code>{id}</code>
+        <code>{productLabel(PresentationKind.Repository, id)}</code>
       </Disclosure>
       {descriptionId ? (
         <span id={descriptionId} className="project-repository-id">
-          <code>{id}</code>
+          <code>{productLabel(PresentationKind.Repository, id)}</code>
         </span>
       ) : null}
     </>
@@ -2137,12 +2151,13 @@ export function projectRepositoryOption(
   id: string,
   index: number,
   names: ReadonlyMap<string, string>,
+  productLabel: IdentityLabel,
 ) {
-  const name = names.get(id) ?? copy("project-creation.nameUnavailable");
-  return [...names.values()].filter((value) => value === name).length > 1 ||
-    !names.has(id)
-    ? copy("project-creation.distinctRepository", { name, position: index + 1 })
-    : name;
+  // Position is ordering context only; identity owns lifetime-stable numbering.
+  void index;
+  for (const [target, name] of names)
+    productLabel(PresentationKind.Repository, target, name);
+  return productLabel(PresentationKind.Repository, id, names.get(id));
 }
 function ProjectFields({
   nameConflict = false,
@@ -2276,7 +2291,7 @@ function ProjectFields({
                   </option>
                   {repositories.map((id, index) => (
                     <option key={id} value={id}>
-                      {projectRepositoryOption(id, index, names)}
+                      {projectRepositoryOption(id, index, names, productLabel)}
                     </option>
                   ))}
                 </select>
@@ -2460,7 +2475,7 @@ function RemediationFields({
           }}
         />
       </div>
-      {runner.guidance}
+      {productDiagnostic(runner.guidance, copy("product-identity.hidden"))}
     </RemediationPolicyFields>
   );
 }
@@ -2478,6 +2493,7 @@ export function RepositoryFields({
   registration?: boolean;
   requiredCheckout?: { machine_id: string; path: string };
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [machine, setMachine] = useState(""),
     [path, setPath] = useState("");
@@ -2594,7 +2610,7 @@ export function RepositoryFields({
   );
   const checkoutAddition = (
     <>
-      {runner.guidance}
+      {productDiagnostic(runner.guidance, copy("product-identity.hidden"))}
       <fieldset disabled={blocked}>
         <legend>{copy("configuration-fields.addACheckout_0ee4d5")}</legend>
         <ResourceChoice
@@ -2763,7 +2779,11 @@ export function RepositoryFields({
                 />
               ) : (
                 <p>
-                  {text(checkout.machine_id)} · {text(checkout.path)}
+                  {productLabel(
+                    PresentationKind.Runner,
+                    text(checkout.machine_id),
+                  )}{" "}
+                  · {text(checkout.path)}
                 </p>
               )}
               {required ? (

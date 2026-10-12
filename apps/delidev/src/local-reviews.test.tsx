@@ -626,11 +626,9 @@ it("isolates retained deletion by Session and preserves historical submissions",
   expect(
     screen.queryByRole("button", { name: "Retry original comment deletion" }),
   ).toBeNull();
-  expect(
-    screen.queryByText(`Submitted review · plan · ${historical.id}`),
-  ).toBeNull();
+  expect(screen.queryByText(`Submitted review · plan · Review · 1`)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
-  await screen.findByText(`Submitted review · plan · ${historical.id}`);
+  await screen.findByText(`Submitted review · plan · Review · 1`);
   expect(screen.queryByRole("button", { name: "Delete comment" })).toBeNull();
   expect(f.remove).toHaveBeenCalledTimes(1);
   fireEvent.click(

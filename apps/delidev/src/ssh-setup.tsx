@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
   SettingsTaskDialog,
@@ -68,6 +69,7 @@ function SSHSetupTask({
   initialHost: string;
   close: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const formId = useId();
   const [host, setHost] = useState(initialHost),
@@ -458,7 +460,14 @@ function SSHSetupTask({
                     id="ssh-setup.workerReadinessConfirmedMachine_699397"
                     components={{
                       s0: <>{text(result.worker_version)}</>,
-                      s1: <>{text(result.machine_id)}</>,
+                      s1: (
+                        <>
+                          {productLabel(
+                            PresentationKind.Runner,
+                            text(result.machine_id),
+                          )}
+                        </>
+                      ),
                     }}
                   />
                 </p>

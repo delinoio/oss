@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import type { PriceSelection } from "./usage-prices";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -93,6 +94,7 @@ function NativeSummary({
   disclosures?: AccountingDisclosures;
   selectPrice?: (identity: PriceSelection) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const claude =
     data.totals?.kind === AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT;
@@ -196,14 +198,23 @@ function NativeSummary({
                         type="button"
                         onClick={() => open(group.sessionId)}
                       >
-                        {group.sessionId}
+                        {productLabel(
+                          PresentationKind.Session,
+                          group.sessionId,
+                        )}
                       </button>
                       <p>
-                        {group.projectId ||
-                          copy("native-accounting.extra.f634bca1f142")}
+                        {group.projectId
+                          ? productLabel(
+                              PresentationKind.Project,
+                              group.projectId,
+                            )
+                          : copy("native-accounting.extra.f634bca1f142")}
                       </p>
                     </td>
-                    <td>{group.accountId}</td>
+                    <td>
+                      {productLabel(PresentationKind.Account, group.accountId)}
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -217,7 +228,12 @@ function NativeSummary({
                       >
                         {group.model?.nativeId ?? ""}
                       </button>
-                      <p>{group.providerId}</p>
+                      <p>
+                        {productLabel(
+                          PresentationKind.Provider,
+                          group.providerId,
+                        )}
+                      </p>
                     </td>
                     <td>
                       {group.totals?.units.toLocaleString(displayLocale())}
@@ -329,7 +345,12 @@ function NativeSummary({
                         >
                           {model.model?.nativeId ?? ""}
                         </button>
-                        <p>{model.providerId}</p>
+                        <p>
+                          {productLabel(
+                            PresentationKind.Provider,
+                            model.providerId,
+                          )}
+                        </p>
                       </td>
                       <td>
                         {model.totals?.units.toLocaleString(displayLocale())}
@@ -371,7 +392,10 @@ function NativeSummary({
                     {data.pricing.map((price) => (
                       <tr key={price.pricing?.id}>
                         <td>
-                          {price.pricing?.id}
+                          {productLabel(
+                            PresentationKind.Pricing,
+                            price.pricing?.id,
+                          )}
                           <p>
                             <LocalizedText
                               id="native-accounting.revision_058534"

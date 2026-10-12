@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import {
   ConfigurationNameJobFailure,
   isConfigurationNameConflict,
   configurationNameConflictCopy,
 } from "./configuration-name-conflict";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
   DisclosureButton,
@@ -52,7 +56,6 @@ import {
   encode,
   items,
   object,
-  resourceName,
   text,
   type Document,
 } from "./documents";
@@ -338,6 +341,7 @@ export function RepositoryRegistration({
   saved: (repository: RegisteredRepository) => void;
   cancel: () => void;
 }) {
+  const productLabel = useProductLabels();
   const disclosureContentId1 = useId();
   const disclosureContentId2 = useId();
   const manualContentId = useId();
@@ -545,7 +549,7 @@ export function RepositoryRegistration({
       runner.suggestion
     ) {
       setMachine(runner.suggestion.id);
-      setMachineName(resourceName(runner.suggestion));
+      setMachineName(productResourceName(productLabel, runner.suggestion));
     }
   }, [active, runner.suggestion, blocked, computer, machine]);
   const taskVisible = useSettingsTaskVisible(),
@@ -1353,7 +1357,7 @@ export function RepositoryRegistration({
                             setMachine(id);
                             setMachineName(
                               resource
-                                ? resourceName(resource)
+                                ? productResourceName(productLabel, resource)
                                 : text(value?.name),
                             );
                           }}

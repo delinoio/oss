@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
+import {
   createContext,
   useContext,
   useEffect,
@@ -18,7 +22,7 @@ import {
   SessionQuery,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { resourceName } from "./documents";
+
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { copy, useLocale } from "./localization";
 import { DialogSurface, InlineRemediation, Problem } from "./ui";
@@ -88,6 +92,7 @@ function SessionNameController({
   alive: { current: boolean };
   close: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const client = useQueryClient(),
     dialog = useRef<HTMLDialogElement>(null),
@@ -123,7 +128,10 @@ function SessionNameController({
   );
   useEffect(() => {
     if (visible && readable && !draft && !rename.busy && !rename.uncertain)
-      setDraft({ value: resourceName(current), revision: current.revision });
+      setDraft({
+        value: productResourceName(productLabel, current),
+        revision: current.revision,
+      });
   }, [visible, readable, current, draft, rename.busy, rename.uncertain]);
   useLayoutEffect(() => {
     if (!visible) return;

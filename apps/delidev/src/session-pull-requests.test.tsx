@@ -362,7 +362,7 @@ it("keeps a committed unlink recoverable after refresh, reopen and session navig
     screen.getByRole("button", { name: "Retry original PR unlink" }),
   ).toBeTruthy();
   expect(
-    screen.getByText(`Original association: ${original.mutation!.id}`),
+    screen.getByText("Original association: Resource unavailable · 1"),
   ).toBeTruthy();
 
   closeAssociations();

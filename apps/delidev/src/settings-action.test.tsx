@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ProductIdentityProvider } from "./product-identity-labels";
 import { useRef } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
@@ -15,7 +17,7 @@ import { RepositoryRow } from "./repository-list";
 import { AgentWorkerRow } from "./agent-worker-row";
 import { SettingsTaskActions } from "./settings-task";
 import { copy, i18n, useLocale } from "./localization";
-import { encode, resourceName } from "./documents";
+import { encode } from "./documents";
 
 it("keeps native form association, ref, disabled guard and one original callback", () => {
   const save = vi.fn(),
@@ -117,7 +119,7 @@ it("does not alter shared workflows outside Settings", () => {
   fireEvent.focus(button);
   expect(screen.queryByRole("tooltip")).toBeNull();
 });
-it("disambiguates same-name Projects with original IDs and retains exact supported-row callbacks", () => {
+it("disambiguates same-name Projects with safe stable numbers and retains exact supported-row callbacks", () => {
   const row = (id: string, schemaVersion = 1) =>
     create(ResourceSchema, {
       id,
@@ -131,33 +133,37 @@ it("disambiguates same-name Projects with original IDs and retains exact support
     unsupported = row("unsupported", 99),
     edit = vi.fn(),
     remove = vi.fn();
+  const client = new QueryClient();
+  client.setQueryData(["fixture"], [a, b, unsupported]);
   render(
-    <SettingsActionScope>
-      <ProjectList
-        resources={[a]}
-        metadata={new Map()}
-        edit={edit}
-        remove={remove}
-      />
-      <ProjectList
-        resources={[b, unsupported]}
-        metadata={new Map()}
-        edit={edit}
-        remove={remove}
-      />
-    </SettingsActionScope>,
+    <QueryClientProvider client={client}>
+      <ProductIdentityProvider>
+        <SettingsActionScope>
+          <ProjectList
+            resources={[a]}
+            metadata={new Map()}
+            edit={edit}
+            remove={remove}
+          />
+          <ProjectList
+            resources={[b, unsupported]}
+            metadata={new Map()}
+            edit={edit}
+            remove={remove}
+          />
+        </SettingsActionScope>
+      </ProductIdentityProvider>
+    </QueryClientProvider>,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Edit Shared name · original-b" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Edit Shared name · 2" }));
   expect(edit).toHaveBeenCalledExactlyOnceWith(b);
   fireEvent.click(
-    screen.getByRole("button", { name: "Delete Shared name · original-a" }),
+    screen.getByRole("button", { name: "Delete Shared name · 1" }),
   );
   expect(remove).toHaveBeenCalledExactlyOnceWith(a);
   fireEvent.click(
     screen.getByRole("button", {
-      name: `Delete ${resourceName(unsupported)} · ${unsupported.id}`,
+      name: "Delete Project unavailable · 3",
     }),
   );
   expect(remove).toHaveBeenCalledTimes(1);

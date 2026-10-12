@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useId } from "react";
 import {
   DisclosureButton,
@@ -106,6 +107,7 @@ export function PRFixAction({
   disabled: boolean;
   refreshed: () => void;
 }) {
+  const productLabel = useProductLabels();
   const disclosureContentId1 = useId();
   useLocale();
   const [open, setOpen] = useState(false),
@@ -117,7 +119,7 @@ export function PRFixAction({
     (response) => {
       setNotice(
         ownedMessage("pr-fix.sentence.613a13e6da0e", {
-          v0: response.session!.id,
+          v0: productLabel(PresentationKind.Session, response.session!.id),
         }),
       );
       setOpen(false);

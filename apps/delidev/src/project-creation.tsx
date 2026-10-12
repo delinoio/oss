@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { configurationNameConflictCopy } from "./configuration-name-conflict";
 import "./wizard-presentation.css";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
   ProjectRepositoryOrder,
@@ -151,6 +152,7 @@ export function ProjectCreationWizard({
   children?: ReactNode;
   registrationAdapters?: ProjectRegistrationAdapters;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [step, setStep] = useState(Step.Repositories);
   const [nameEdited, setNameEdited] = useState(Boolean(text(data.name)));
@@ -179,6 +181,8 @@ export function ProjectCreationWizard({
     setFocusAttempt((value) => value + 1);
   }, [nameConflict, active, visible, uncertain]);
   const catalog = useProjectRepositoryCatalog(active && visible);
+  for (const row of catalog.rows)
+    productLabel(PresentationKind.Repository, row.id, row.name);
   const query = useDeferredValue(search.trim().toLowerCase());
   const names = useMemo(
     () =>
@@ -448,7 +452,11 @@ export function ProjectCreationWizard({
                           )
                         }
                       />
-                      {row.name || copy("project-creation.nameUnavailable")}
+                      {productLabel(
+                        PresentationKind.Repository,
+                        row.id,
+                        row.name,
+                      )}
                     </label>
                     {duplicateName || !row.supported ? (
                       <RepositoryIdentity
@@ -596,7 +604,7 @@ export function ProjectCreationWizard({
                 </option>
                 {ids.map((id, index) => (
                   <option key={id} value={id}>
-                    {projectRepositoryOption(id, index, names)}
+                    {projectRepositoryOption(id, index, names, productLabel)}
                   </option>
                 ))}
               </select>
@@ -637,6 +645,7 @@ export function ProjectCreationWizard({
                   text(data.primary_repository),
                   ids.indexOf(text(data.primary_repository)),
                   names,
+                  productLabel,
                 )}
               </dd>
               <dt>{copy("configuration-fields.repositories_1e32af")}</dt>

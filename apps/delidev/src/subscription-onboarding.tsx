@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
 import "./wizard-presentation.css";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { LocalizedText, copy, useLocale } from "./localization";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
   useSettingsTaskVisible,
@@ -254,12 +254,6 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
                     copy("subscription-onboarding.notReported_adadfa")}
                 </dd>
               </div>
-              {diagnostic?.correlation ? (
-                <div>
-                  <dt>{copy("subscription-onboarding.reference_44dc4a")}</dt>
-                  <dd>{diagnostic.correlation}</dd>
-                </div>
-              ) : null}
             </dl>
           }
           actions={

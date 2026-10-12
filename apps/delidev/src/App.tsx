@@ -1,3 +1,4 @@
+import { ProductIdentityProvider } from "./product-identity-labels";
 import { DraftEditGenerations } from "./draft-edit-generations";
 import { SessionInboxReadBoundary } from "./session-inbox-read";
 import { InboxBadgePresentation } from "./inbox-badge";
@@ -10,7 +11,7 @@ import {
   useWideSidebar,
 } from "./sidebar-preference";
 import { CommandMenu, applicationCommands } from "./command-menu";
-import { resourceName } from "./documents";
+
 import {
   SessionTabsProvider,
   useSessionTabsStore,
@@ -24,6 +25,7 @@ import { RunnerPreferenceProvider } from "./runner-device-preferences";
 import { SessionControlProvider } from "./session-control";
 import { LocalizedText, copy, useLocale } from "./localization";
 import type { UsageEntry } from "./usage-entry";
+import type { ServerPresentation } from "./server-presentation";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
 import {
   useCallback,
@@ -98,6 +100,7 @@ import {
 
 function Shell({
   localServer,
+  serverPresentation,
   connectionReady,
   connectionSettings,
   appInformationSettings,
@@ -114,6 +117,7 @@ function Shell({
   controlLocalWorker?: ControlLocalWorker;
   chooseRepositoryFolder?: ChooseRepositoryFolder;
   localServer?: ReactNode;
+  serverPresentation?: ServerPresentation;
   connectionReady: boolean;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
@@ -567,6 +571,7 @@ function Shell({
                       }
                       openCommandMenu={toggleCommandMenu}
                       connectionReady={connectionReady}
+                      serverPresentation={serverPresentation}
                       surface={surface}
                       selectedSessionId={sidebarSession}
                       selectedSessionActivation={sessionNavigationActivation}
@@ -824,6 +829,7 @@ function Shell({
 export function App({
   transport,
   localServer,
+  serverPresentation,
   connectionSettings,
   appInformationSettings,
   connectionTarget,
@@ -843,6 +849,7 @@ export function App({
   readLocalWorker?: ReadLocalWorkerProof;
   transport: Transport;
   localServer?: ReactNode;
+  serverPresentation?: ServerPresentation;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
   connectionTarget?: HTMLElement;
@@ -873,37 +880,40 @@ export function App({
     <SidebarPreferenceBoundary>
       <TransportProvider transport={transport}>
         <QueryClientProvider key={connection.id} client={client}>
-          <NotificationProvider>
-            <MutationIntents>
-              <SessionTabsProvider>
-                <SessionSubmissionsProvider>
-                  <ImageDraftProvider>
-                    <PRWorkflowProvider>
-                      <ShortcutProvider>
-                        <SessionNameEditorProvider>
-                          <SessionInboxReadBoundary ready={connectionReady}>
-                            <Shell
-                              connectionReady={connectionReady}
-                              pairingAuthority={pairingAuthority}
-                              currentDeviceId={currentDeviceId}
-                              controlLocalWorker={controlLocalWorker}
-                              chooseRepositoryFolder={chooseRepositoryFolder}
-                              connectionSettings={connectionSettings}
-                              appInformationSettings={appInformationSettings}
-                              connectionTarget={connectionTarget}
-                              onConnectionHelp={onConnectionHelp}
-                              localServer={localServer}
-                              readLocalWorker={readLocalWorker}
-                            />
-                          </SessionInboxReadBoundary>
-                        </SessionNameEditorProvider>
-                      </ShortcutProvider>
-                    </PRWorkflowProvider>
-                  </ImageDraftProvider>
-                </SessionSubmissionsProvider>
-              </SessionTabsProvider>
-            </MutationIntents>
-          </NotificationProvider>
+          <ProductIdentityProvider>
+            <NotificationProvider>
+              <MutationIntents>
+                <SessionTabsProvider>
+                  <SessionSubmissionsProvider>
+                    <ImageDraftProvider>
+                      <PRWorkflowProvider>
+                        <ShortcutProvider>
+                          <SessionNameEditorProvider>
+                            <SessionInboxReadBoundary ready={connectionReady}>
+                              <Shell
+                                connectionReady={connectionReady}
+                                pairingAuthority={pairingAuthority}
+                                currentDeviceId={currentDeviceId}
+                                controlLocalWorker={controlLocalWorker}
+                                chooseRepositoryFolder={chooseRepositoryFolder}
+                                connectionSettings={connectionSettings}
+                                appInformationSettings={appInformationSettings}
+                                connectionTarget={connectionTarget}
+                                onConnectionHelp={onConnectionHelp}
+                                localServer={localServer}
+                                serverPresentation={serverPresentation}
+                                readLocalWorker={readLocalWorker}
+                              />
+                            </SessionInboxReadBoundary>
+                          </SessionNameEditorProvider>
+                        </ShortcutProvider>
+                      </PRWorkflowProvider>
+                    </ImageDraftProvider>
+                  </SessionSubmissionsProvider>
+                </SessionTabsProvider>
+              </MutationIntents>
+            </NotificationProvider>
+          </ProductIdentityProvider>
         </QueryClientProvider>
       </TransportProvider>
     </SidebarPreferenceBoundary>

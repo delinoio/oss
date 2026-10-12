@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -612,6 +613,7 @@ function PendingQueueInput({
   sessionId: string;
   refresh: () => void;
 }) {
+  const productLabel = useProductLabels();
   const edit = useRetainedMutation(
     `${QueueMutationKind.Edit}:${inputId}`,
     SessionQuery.editQueuedInput,
@@ -653,7 +655,8 @@ function PendingQueueInput({
   return (
     <article className="queue-item">
       <p>
-        <strong>{label}</strong> · {inputId}
+        <strong>{label}</strong> ·{" "}
+        {productLabel(PresentationKind.Input, inputId)}
       </p>
       <p role="status">
         {operation.busy

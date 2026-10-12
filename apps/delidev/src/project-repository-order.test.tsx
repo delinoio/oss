@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { expect, it, vi } from "vitest";
 import { ProjectRepositoryOrder } from "./project-repository-order";
@@ -33,9 +33,10 @@ function mount() {
   return { ...rendered, change, view };
 }
 const grip = (id: string) =>
-  screen.getByRole("button", {
-    name: new RegExp(`Move repository .*: ${id}$`),
-  });
+  within(document.querySelector(`li[data-repository-id="${id}"]`)!).getByRole(
+    "button",
+    { name: /Move repository/ },
+  );
 const order = () =>
   Array.from(document.querySelectorAll("li[data-repository-id]"), (node) =>
     node.getAttribute("data-repository-id"),

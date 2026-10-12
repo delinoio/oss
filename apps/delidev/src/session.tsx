@@ -1,3 +1,7 @@
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import { createPortal } from "react-dom";
 import { useSessionInboxRead } from "./session-inbox-read";
 import { WaitingQueue } from "./waiting-queue";
@@ -128,7 +132,6 @@ import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
   ConnectionState,
   EntityKind,
-  ResourceQuery,
   ResourceService,
   SessionAction,
   SessionQuery,
@@ -148,7 +151,6 @@ import {
   items,
   Mode,
   object,
-  resourceName,
   text,
   Workspace,
 } from "./documents";
@@ -872,6 +874,7 @@ export function SessionView({
   embedded?: boolean;
   openRunnerSettings?: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const tabs = useSessionTabs(id);
   const conversationActive =
@@ -2015,7 +2018,7 @@ export function SessionView({
                     if (session) editName?.(session.id, event.currentTarget);
                   }}
                 >
-                  {resourceName(session)}
+                  {productResourceName(productLabel, session)}
                 </h2>
                 <p
                   className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useId } from "react";
 import {
   DisclosureButton,
@@ -37,7 +38,7 @@ import {
   readRemediationChain,
 } from "./pr-remediation-model";
 import { Problem } from "./ui";
-import { prAllowanceKey, prSelectionKey, usePRWorkflow } from "./pr-workflow";
+import { prAllowanceKey, usePRWorkflow } from "./pr-workflow";
 
 type Props = {
   selection: PRProblemSelection;
@@ -50,6 +51,7 @@ export function PRRemediationHistory({
   validateSet,
   routineRefresh = true,
 }: Props) {
+  const productLabel = useProductLabels();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const binding = useRef<string | undefined>(undefined);
@@ -412,7 +414,14 @@ export function PRRemediationHistory({
                               <LocalizedText
                                 id="pr-remediation-history.originalSession_ffde31"
                                 components={{
-                                  s0: <code>{text(value.session_id)}</code>,
+                                  s0: (
+                                    <code>
+                                      {productLabel(
+                                        PresentationKind.Session,
+                                        text(value.session_id),
+                                      )}
+                                    </code>
+                                  ),
                                 }}
                               />
                             </p>

@@ -1,5 +1,6 @@
-import { useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
+import { useTerminalTabShortcuts } from "./shortcut-provider";
 import "./terminal-dock.css";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -70,6 +71,7 @@ export function SessionTerminals({
   openIntent?: { requestId: string; revision: bigint };
   finishOpenIntent?: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
@@ -693,25 +695,15 @@ export function SessionTerminals({
               }
             }}
           >
-            <LocalizedText
-              id="session-terminals.terminal_8058ce"
-              components={{
-                s0: <>{index + 1}</>,
-                s1: (
-                  <>
-                    {statusLabel(
-                      text(
-                        document(
-                          list.data?.resources.find(
-                            (value) => value.id === row.id,
-                          ) ?? (resource?.id === row.id ? resource : undefined),
-                        ).state,
-                      ),
-                    )}
-                  </>
-                ),
-              }}
-            />
+            {productLabel(PresentationKind.Terminal, row.id)} ·{" "}
+            {statusLabel(
+              text(
+                document(
+                  list.data?.resources.find((value) => value.id === row.id) ??
+                    (resource?.id === row.id ? resource : undefined),
+                ).state,
+              ),
+            )}
           </button>
         ))}
       </div>
@@ -778,6 +770,7 @@ function TerminalView({
   refresh: () => void;
   observe: (value: Resource) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const tabShortcut = useTerminalTabShortcuts();
   const transport = useTransport(),
@@ -1061,7 +1054,11 @@ function TerminalView({
           <LocalizedText
             id="session-terminals.worker_5a5ff9"
             components={{
-              s0: <>{text(data.machine_id)}</>,
+              s0: (
+                <>
+                  {productLabel(PresentationKind.Runner, text(data.machine_id))}
+                </>
+              ),
               s1: <br />,
               s2: <>{text(data.shell)}</>,
               s3: <br />,

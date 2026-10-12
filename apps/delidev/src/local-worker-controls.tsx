@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -123,6 +124,7 @@ export function LocalWorkerControls({
   pendingChanged?: (pending: boolean) => void;
   presentation?: LocalWorkerPresentation;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const explanation = useRef<HTMLDetailsElement>(null);
@@ -283,7 +285,9 @@ export function LocalWorkerControls({
     <small>
       <LocalizedText
         id="local-worker-controls.executionMachine_37d7c0"
-        components={{ s0: <>{status.machine_id}</> }}
+        components={{
+          s0: <>{productLabel(PresentationKind.Runner, status.machine_id)}</>,
+        }}
       />
     </small>
   ) : null;
@@ -469,7 +473,13 @@ export function LocalWorkerControls({
             <p>
               <LocalizedText
                 id="local-worker-controls.executionMachine_37d7c0"
-                components={{ s0: <>{status.machine_id}</> }}
+                components={{
+                  s0: (
+                    <>
+                      {productLabel(PresentationKind.Runner, status.machine_id)}
+                    </>
+                  ),
+                }}
               />
             </p>
           ) : null}

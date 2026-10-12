@@ -121,7 +121,7 @@ function setup(rows: Resource[], route: Document) {
   return { Fixture, preview, get, save, client, logs };
 }
 
-it("uses a saved alias and service, keeping the full identity in a closed disclosure", async () => {
+it("uses a saved alias and service, keeping original authority outside product text", async () => {
   const row = account(),
     value = setup([row], { policy: "priority", candidates: [candidate(row)] });
   render(<value.Fixture />);
@@ -131,9 +131,9 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(within(dialog).getByText("Unauthenticated")).toBeTruthy();
   expect(within(dialog).getByText("No eligible account")).toBeTruthy();
   expect(
-    dialog.querySelector(".routing-account-id")?.hasAttribute("open"),
-  ).toBe(false);
-  expect(within(dialog).getByText(row.id)).toBeTruthy();
+    dialog.querySelector(".routing-result .routing-account-id"),
+  ).toBeNull();
+  expect(within(dialog).queryByText(row.id)).toBeNull();
   expect(within(dialog).getByText("Weight")).toBeTruthy();
   expect(within(dialog).getByText("unknown")).toBeTruthy();
   expect(value.get).toHaveBeenCalledTimes(1);
@@ -458,7 +458,7 @@ it("localizes names and evidence labels without another read on language change"
   });
   expect(screen.getByText("후보 계정")).toBeTruthy();
   expect(screen.getByText("인증되지 않음")).toBeTruthy();
-  expect(screen.getByText("계정 ID")).toBeTruthy();
+  expect(screen.queryByText(row.id)).toBeNull();
   expect(value.get).toHaveBeenCalledTimes(1);
   expect(value.preview).toHaveBeenCalledTimes(1);
 });

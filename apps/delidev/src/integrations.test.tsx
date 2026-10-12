@@ -716,7 +716,7 @@ it("pins a paged profile Rename action to its original identity without observin
   const f = fixture();
   render(<SettingsActionScope>{f.view()}</SettingsActionScope>);
   const rename = await screen.findByRole("button", {
-    name: `Rename Work · ${f.profile.id}`,
+    name: `Rename Work`,
   });
   expect(rename.getAttribute("data-settings-action-presentation")).toBe("icon");
   const reads = f.list.mock.calls.length;

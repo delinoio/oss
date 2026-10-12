@@ -126,21 +126,6 @@
 .settings-content.settings-repositories .repository-github-name {
   font-weight: 500;
 }
-.settings-content.settings-repositories .repository-resource-id {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin: 16px 0 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 18px;
-}
-.settings-content.settings-repositories .repository-resource-id code {
-  font-size: 12px;
-  line-height: 18px;
-}
 .settings-content.settings-repositories .settings-pages {
   display: flex;
   flex-wrap: wrap;

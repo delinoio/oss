@@ -1,3 +1,5 @@
+import { PresentationKind, useProductLabels } from "./product-identity-labels";
+import type { IdentityLabel } from "./product-identity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import type { ReactNode } from "react";
@@ -213,24 +215,35 @@ function pendingRange(selection: UsageSelection): ReactNode {
   );
 }
 
-function appliedFilters(selection: UsageSelection): string[] {
+function appliedFilters(
+  selection: UsageSelection,
+  productLabel: IdentityLabel,
+): string[] {
   const values: string[] = [];
   if (selection.sessionId)
     values.push(
-      copy("usage.sentence.15934289ffb2", { v0: selection.sessionId }),
+      copy("usage.sentence.15934289ffb2", {
+        v0: productLabel(PresentationKind.Session, selection.sessionId),
+      }),
     );
   if (selection.projectId)
     values.push(
-      copy("usage.sentence.874241e2ef76", { v0: selection.projectId }),
+      copy("usage.sentence.874241e2ef76", {
+        v0: productLabel(PresentationKind.Project, selection.projectId),
+      }),
     );
   if (selection.generalChat) values.push(copy("usage.extra.f634bca1f142"));
   if (selection.accountId)
     values.push(
-      copy("usage.sentence.a422d5ea430e", { v0: selection.accountId }),
+      copy("usage.sentence.a422d5ea430e", {
+        v0: productLabel(PresentationKind.Account, selection.accountId),
+      }),
     );
   if (selection.providerId)
     values.push(
-      copy("usage.sentence.886fdf04e3f3", { v0: selection.providerId }),
+      copy("usage.sentence.886fdf04e3f3", {
+        v0: productLabel(PresentationKind.Provider, selection.providerId),
+      }),
     );
   if (selection.subscriptionService)
     values.push(
@@ -256,6 +269,7 @@ export function Usage({
   open: (id: string) => void;
   entry?: UsageEntry;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [detail, setDetail] = useState<PriceSelection>();
 
@@ -343,7 +357,7 @@ export function Usage({
       }
     : undefined;
   const appliedZone = data?.analytics?.timeZone || selection.timeZone;
-  const conditions = appliedFilters(selection);
+  const conditions = appliedFilters(selection, productLabel);
   const draftChanged = pending || invalid;
 
   return (
@@ -974,19 +988,35 @@ export function Usage({
                                     {[
                                       [
                                         copy("usage.session_6959b4"),
-                                        group.sessionId,
+                                        productLabel(
+                                          PresentationKind.Session,
+                                          group.sessionId,
+                                          group.sessionName,
+                                        ),
                                       ],
                                       [
                                         copy("usage.project_985959"),
-                                        group.projectId,
+                                        productLabel(
+                                          PresentationKind.Project,
+                                          group.projectId,
+                                          group.projectName,
+                                        ),
                                       ],
                                       [
                                         copy("usage.account_7e1b0d"),
-                                        group.accountId,
+                                        productLabel(
+                                          PresentationKind.Account,
+                                          group.accountId,
+                                          group.accountName,
+                                        ),
                                       ],
                                       [
                                         copy("usage.provider_472590"),
-                                        group.providerId,
+                                        productLabel(
+                                          PresentationKind.Provider,
+                                          group.providerId,
+                                          group.providerName,
+                                        ),
                                       ],
                                       [
                                         copy("usage.model_5e2c61"),

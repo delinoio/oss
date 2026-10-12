@@ -1,3 +1,4 @@
+import { ProductIdentityProvider } from "./product-identity-labels";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
@@ -95,7 +96,9 @@ function fixture(rows: Resource[] = []) {
   const view = (children: React.ReactNode, currentTransport = transport) => (
     <StrictMode>
       <TransportProvider transport={currentTransport}>
-        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        <QueryClientProvider client={client}>
+          <ProductIdentityProvider>{children}</ProductIdentityProvider>
+        </QueryClientProvider>
       </TransportProvider>
     </StrictMode>
   );
@@ -272,9 +275,9 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
       inventory.querySelectorAll("article h3"),
       (node) => node.textContent,
     ),
-  ).toEqual(["Zulu", "Alpha", "Unnamed"]);
+  ).toEqual(["Zulu", "Alpha", "Runner unavailable · 3"]);
   for (const row of rows)
-    expect(within(inventory).getByText(row.id)).toBeTruthy();
+    expect(within(inventory).queryByText(row.id)).toBeNull();
   expect(
     (
       within(inventory).getAllByRole("button", {

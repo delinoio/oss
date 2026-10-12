@@ -567,7 +567,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   const panel = heading.closest(".settings-agent-list")!;
   expect(panel.querySelectorAll(".settings-agent-row")).toHaveLength(2);
   const row = within(heading.closest("article")!);
-  expect(row.getByText(agent.id)).toBeTruthy();
+  expect(row.queryByText(agent.id)).toBeNull();
   expect(row.getByText("Codex")).toBeTruthy();
   expect(row.getByText("Status: saved")).toBeTruthy();
   expect(heading.querySelector("b")).toBeNull();
@@ -577,7 +577,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   const futureRow = within(
     screen.getByRole("heading", { name: "Future Agent" }).closest("article")!,
   );
-  expect(futureRow.getByText(future.id)).toBeTruthy();
+  expect(futureRow.queryByText(future.id)).toBeNull();
   expect(futureRow.queryByText(/Harness:|Status:/)).toBeNull();
   for (const button of futureRow.getAllByRole("button")) {
     expect((button as HTMLButtonElement).disabled).toBe(true);
@@ -599,9 +599,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   fireEvent.click(
     within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: `Edit ${name} · ${agent.id}` }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
   expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
@@ -613,9 +611,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   fireEvent.click(
     screen.getByRole("button", { name: "Close Edit Agent Worker" }),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: `Delete ${name} · ${agent.id}` }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: `Delete ${name}` }));
   expect(
     screen.getByText(
       "Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.",
@@ -645,11 +641,11 @@ it.each([
     const heading = await screen.findByRole("heading", { name });
     expect(heading.textContent).toBe(name);
     const row = within(heading.closest("article")!);
-    expect(row.getByText(future.id)).toBeTruthy();
+    expect(row.queryByText(future.id)).toBeNull();
     for (const label of [
-      `Edit ${name} · ${future.id}`,
+      `Edit ${name}`,
       `Preview routing for ${name}`,
-      `Delete ${name} · ${future.id}`,
+      `Delete ${name}`,
     ]) {
       expect(
         (row.getByRole("button", { name: label }) as HTMLButtonElement)
@@ -672,7 +668,7 @@ it("keeps the original Agent deletion revision and retry request within its open
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Delete Retained Agent · ${agent.id}`,
+      name: `Delete Retained Agent`,
     }),
   );
   expect(value.remove).not.toHaveBeenCalled();
@@ -1181,7 +1177,7 @@ it.each(["close", "category change"])(
     fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: `Delete Saved instructions · ${instructions.id}`,
+        name: `Delete Saved instructions`,
       }),
     );
     expect(
@@ -1191,7 +1187,7 @@ it.each(["close", "category change"])(
     fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
     expect(
       await screen.findByRole("button", {
-        name: `Delete Saved instructions · ${instructions.id}`,
+        name: `Delete Saved instructions`,
       }),
     ).toBeTruthy();
     expect(
@@ -2117,7 +2113,7 @@ it("closes a verified repository edit, refreshes its inventory, and restores the
   );
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   const opener = await screen.findByRole("button", {
-    name: `Edit Repository · ${repository.id}`,
+    name: `Edit Repository`,
   });
   opener.focus();
   fireEvent.click(opener);
@@ -2162,7 +2158,7 @@ it("keeps a successor repository edit open when a dismissed pending status read 
   );
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   const opener = await screen.findByRole("button", {
-    name: `Edit Repository · ${repository.id}`,
+    name: `Edit Repository`,
   });
   fireEvent.click(opener);
   await submitRepositorySave();
@@ -3586,7 +3582,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
     ),
   ).toBeNull();
   expect(screen.getByText("/saved/checkout")).toBeTruthy();
-  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(screen.queryByText(row.id)).toBeNull();
   expect(view.container.textContent).not.toContain("private-value");
   expect(view.container.textContent).not.toContain("example.invalid");
   expect(
@@ -3635,7 +3631,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
       .every((button) => (button as HTMLButtonElement).disabled),
   ).toBe(true);
   expect(screen.queryByText("/saved/checkout")).toBeNull();
-  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(screen.queryByText(row.id)).toBeNull();
   view.rerender(
     value.view(
       <RepositoryRow
@@ -3984,7 +3980,7 @@ it.each(["cancel", "close", "done"])(
     expect(modelReads).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByRole("button", {
-        name: `Delete First retained Worker · ${first.id}`,
+        name: `Delete First retained Worker`,
       }),
     );
     if (exit === "done")

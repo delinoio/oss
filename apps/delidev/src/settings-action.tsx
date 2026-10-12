@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import {
   createContext,
   useContext,
@@ -109,6 +110,7 @@ export function SettingsActionButton({
   targetId,
   ...props
 }: Props) {
+  const productLabel = useProductLabels();
   const scoped = useContext(ActionScope),
     tooltipId = useId();
   const [tooltip, setTooltip] = useState<{
@@ -132,7 +134,9 @@ export function SettingsActionButton({
       ? [
           originalName ?? (typeof children === "string" ? children : undefined),
           targetName,
-          targetId,
+          targetName || originalName
+            ? undefined
+            : productLabel(PresentationKind.Resource, targetId),
         ]
           .filter(Boolean)
           .join(" · ")

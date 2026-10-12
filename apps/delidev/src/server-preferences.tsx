@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { validBranchPrefix } from "./session-defaults";
 import { copy, useLocale } from "./localization";
 import { type SyntheticEvent } from "react";
@@ -80,6 +81,7 @@ export function ServerPreferencesUnavailable({
   rows: Resource[];
   section?: ServerPreferenceSection;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const label = serverPreferenceLabel(section);
   return (
@@ -96,7 +98,7 @@ export function ServerPreferencesUnavailable({
       </p>
       {rows.map((row) => (
         <small className="server-preferences-id" key={row.id}>
-          {row.id}
+          {productLabel(PresentationKind.Settings, row.id)}
         </small>
       ))}
     </section>
@@ -170,6 +172,7 @@ export function ServerPreferencesSummary({
   row: Resource;
   section?: ServerPreferenceSection;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const data = document(row),
     policy = object(data.remediation);
@@ -182,7 +185,9 @@ export function ServerPreferencesSummary({
       })}
     >
       <h2>{copy("server-preferences.savedPreferences", { v0: shortLabel })}</h2>
-      <small className="server-preferences-id">{row.id}</small>
+      <small className="server-preferences-id">
+        {productLabel(PresentationKind.Settings, row.id)}
+      </small>
       {readableServerPreferences(row) ? (
         <>
           {section === ServerPreferenceSection.ProjectDefaults &&

@@ -1,3 +1,9 @@
+import {
+  useProductLabels,
+  PresentationKind,
+  productMetadataJSON,
+  generatedIdentityFields,
+} from "./product-identity-labels";
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
@@ -247,6 +253,7 @@ export function ConfigurationTransfer({
   showCategoryIntro?: boolean;
   onWorkflowReadyChange?: (active: boolean) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [exported, setExported] = useState("");
   const [draft, setDraft] = useState("");
@@ -263,8 +270,16 @@ export function ConfigurationTransfer({
   const [report, setReport] = useState<Document>();
   const formattedPreview = useMemo(
     () =>
-      preview ? formatConfigurationReview(decoder.decode(preview.bytes)) : "",
-    [preview],
+      preview
+        ? formatConfigurationReview(
+            productMetadataJSON(
+              decoder.decode(preview.bytes),
+              generatedIdentityFields,
+              productLabel,
+            ),
+          )
+        : "",
+    [preview, productLabel],
   );
   const [problem, setProblem] = useProductMessage("");
   const [exportFailure, setExportFailure] = useState<ClientFailure>();
@@ -991,7 +1006,11 @@ export function ConfigurationTransfer({
                   s0: <>{text(machine.name)}</>,
                   s1: <>{text(machine.os)}</>,
                   s2: <>{text(machine.architecture)}</>,
-                  s3: <>{text(machine.id)}</>,
+                  s3: (
+                    <>
+                      {productLabel(PresentationKind.Runner, text(machine.id))}
+                    </>
+                  ),
                 }}
               />
             </p>
@@ -1008,7 +1027,16 @@ export function ConfigurationTransfer({
               <p>
                 <LocalizedText
                   id="configuration-transfer.target_8daa2b"
-                  components={{ s0: <>{text(change.id)}</> }}
+                  components={{
+                    s0: (
+                      <>
+                        {productLabel(
+                          PresentationKind.Resource,
+                          text(change.id),
+                        )}
+                      </>
+                    ),
+                  }}
                 />
               </p>
               <p>

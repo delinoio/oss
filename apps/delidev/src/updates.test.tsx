@@ -192,7 +192,7 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
     name: "Original update",
   });
   fireEvent.click(screen.getByText("Update recovery"));
-  const id = screen.getByText(original.id).textContent!;
+  const id = screen.getByText("Resource unavailable · 1").textContent!;
   const revision = screen.getByText("9007199254740993").textContent!;
   fireEvent.click(
     within(candidate).getByRole("button", {
@@ -367,7 +367,7 @@ it("keeps a prepared or uncertain candidate mounted until inspection resolves it
     name: "Review and install desktop update",
   });
   await vi.waitFor(() => expect(check.disabled).toBe(true));
-  expect(screen.getByText(f.id)).toBeTruthy();
+  expect(screen.queryByText(f.id)).toBeNull();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
 
   fireEvent.click(
@@ -378,7 +378,7 @@ it("keeps a prepared or uncertain candidate mounted until inspection resolves it
   await screen.findByText(/original installation response is unconfirmed/);
   expect(check.disabled).toBe(true);
   expect(f.check).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(f.id)).toBeTruthy();
+  expect(screen.queryByText(f.id)).toBeNull();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
 
   f.control.mockResolvedValueOnce({

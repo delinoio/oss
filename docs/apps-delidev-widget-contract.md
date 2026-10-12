@@ -1,5 +1,7 @@
 # DeliDev macOS status widget
 
+Widget, tray and OS notification product text follows the desktop [product identity contract](apps-delidev-desktop-contract.md#product-identity-presentation). Existing categorical notification copy and observed server names/account aliases remain the visible labels. Internal activation, claim, receipt, account/profile/server IDs remain authority payloads and cannot become visible text. Exact user/native quota identifiers and names remain source content.
+
 ## Scope
 
 The feature adds the initial read-only macOS WidgetKit extension under

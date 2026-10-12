@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -25,7 +30,7 @@ import {
   type GetUsageSummaryResponse,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { EstimateAmounts } from "./estimate-costs";
 import {
   QuotaObservationState,
@@ -315,9 +320,10 @@ export function ApiEntryRow({
   remove: () => void;
   openUsage?: (entry: UsageEntry) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const value = document(row),
-    name = resourceName(row),
+    name = productResourceName(productLabel, row),
     supported = supportsResourceSchema(row);
   const result = useQuery(
     UsageQuery.getUsageSummary,
@@ -404,8 +410,10 @@ export function ApiEntryRow({
             <h2 id={nameId}>{name}</h2>
             <p className="api-entry-provider-name">
               {provider?.displayName ??
-                copy("api-entry-row.extra.37709967fc3f") +
-                  text(value.provider_id)}
+                productLabel(
+                  PresentationKind.Provider,
+                  text(value.provider_id),
+                )}
             </p>
             <p className="api-entry-format">
               {apiFormatLabels[
@@ -439,7 +447,9 @@ export function ApiEntryRow({
                     copy("api-entry-row.extra.b764cdc0eab7")}
               </span>
             </div>
-            {!supported ? <small>{row.id}</small> : null}
+            {!supported ? (
+              <small>{productLabel(PresentationKind.Account, row.id)}</small>
+            ) : null}
           </div>
         </div>
         <dl className="api-usage-metrics">
@@ -660,6 +670,7 @@ export function ApiEntryDetailsBody({
   children?: ReactNode;
   active?: boolean;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const value = document(row);
   return (
@@ -694,7 +705,7 @@ export function ApiEntryDetailsBody({
         </div>
         <div>
           <dt>{copy("api-entry-row.accountId_4489c4")}</dt>
-          <dd>{row.id}</dd>
+          <dd>{productLabel(PresentationKind.Account, row.id)}</dd>
         </div>
       </dl>
       <p>

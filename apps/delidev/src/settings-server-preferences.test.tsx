@@ -1,3 +1,4 @@
+import { ProductIdentityProvider } from "./product-identity-labels";
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, type ReactNode } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -134,7 +135,9 @@ function fixture(
     <StrictMode>
       <TransportProvider transport={current}>
         <QueryClientProvider client={client}>
-          <MutationIntents>{children}</MutationIntents>
+          <ProductIdentityProvider>
+            <MutationIntents>{children}</MutationIntents>
+          </ProductIdentityProvider>
         </QueryClientProvider>
       </TransportProvider>
     </StrictMode>
@@ -257,7 +260,7 @@ it.each([
     render(value.view(<Settings />));
     chooseGit();
     await screen.findByRole("region", { name: "Project defaults unavailable" });
-    for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
+    for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
     expect(screen.queryByRole("form")).toBeNull();
     expect(value.save).not.toHaveBeenCalled();
     if (variant.endsWith("continuation")) {
@@ -548,7 +551,7 @@ it.each(["empty-continuation", "singleton-continuation", "multiple"])(
     render(value.view(<Settings />));
     choosePreferences();
     await screen.findByRole("region", { name: "Project defaults unavailable" });
-    for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
+    for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
     expect(screen.queryByRole("form")).toBeNull();
     expect(
       screen.queryByRole("navigation", { name: "Settings pages" }),
@@ -601,7 +604,7 @@ it.each([
   const unavailable = within(
     await screen.findByRole("region", { name: "Project defaults unavailable" }),
   );
-  expect(unavailable.getByText(row.id)).toBeTruthy();
+  expect(unavailable.queryByText(row.id)).toBeNull();
   expect(unavailable.getByRole("status").textContent).toContain(
     "Policy values are unavailable.",
   );
@@ -918,7 +921,7 @@ it("keeps a retained draft read-only when refresh finds unsupported settings", a
   rows[0] = { ...original, schemaVersion: 2, revision: 9n };
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByRole("region", { name: "Project defaults unavailable" });
-  expect(screen.getByText(original.id)).toBeTruthy();
+  expect(screen.queryByText(original.id)).toBeNull();
   expect(screen.getByRole("form")).toBe(form);
   expect(routing().value).toBe("fixed");
   expect(routing().matches(":disabled")).toBe(true);

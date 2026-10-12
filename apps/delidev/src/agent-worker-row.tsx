@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
+import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
@@ -15,7 +20,7 @@ import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { items, object, resourceName, text } from "./documents";
+import { items, object, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
 import { Harness } from "./configuration-fields";
 import { workerHarnessNames } from "./worker-harness-picker";
@@ -35,6 +40,7 @@ export function AgentWorkerRow({
   preview: () => void;
   remove: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const decoded = decodeResourceDocument(row),
     data = decoded ?? {},
@@ -68,7 +74,7 @@ export function AgentWorkerRow({
       </>
     );
   };
-  let name = resourceName(row);
+  let name = productResourceName(productLabel, row);
   // Unsupported schemas stay non-actionable. Only bounded inert name text is
   // projected within the Agent name's 256-byte UTF-8 limit for identifying the
   // row; it never enters an editor or request.
@@ -87,7 +93,9 @@ export function AgentWorkerRow({
         projectedName.length <= 256 &&
         new TextEncoder().encode(projectedName).byteLength <= 256
       )
-        name = projectedName || name;
+        name = projectedName
+          ? productLabel(PresentationKind.Agent, row.id, projectedName)
+          : name;
     } catch {
       /* Malformed display text keeps the existing unnamed fallback. */
     }
@@ -179,7 +187,7 @@ export function AgentWorkerRow({
               {copy("settings.reconfigurationRequired_a84a37")}
             </p>
           ) : null}
-          <small>{row.id}</small>
+          <small>{productLabel(PresentationKind.Agent, row.id)}</small>
         </div>
       </div>
       <div className="actions settings-agent-actions">

@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { AppInformation } from "./app-information";
 import {
   ConfigurationNameJobFailure,
@@ -94,7 +99,6 @@ import {
   encode,
   items,
   object,
-  resourceName,
   text,
   type Document,
 } from "./documents";
@@ -158,7 +162,7 @@ import { ShortcutSettings } from "./shortcut-settings";
 import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
 import { LanguageSettings } from "./language";
-import { statusLabel } from "./product-status";
+
 import {
   latestServerPreferences,
   readableServerPreferences,
@@ -396,6 +400,7 @@ function RepositorySaveReview({
   active: boolean;
   review: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const repository = useQuery(
     ResourceQuery.getResource,
@@ -438,7 +443,8 @@ function RepositorySaveReview({
       ) : null}
       {fresh ? (
         <p>
-          {resourceName(fresh)} · revision {fresh.revision.toString()}
+          {productResourceName(productLabel, fresh)} · revision{" "}
+          {fresh.revision.toString()}
         </p>
       ) : null}
       {fresh ? (
@@ -488,6 +494,7 @@ export function ConfigurationEditor({
   preferencesObservation?: ServerPreferencesObservation;
   registrationAdapters?: ProjectRegistrationAdapters;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const checkoutPreference = useRunnerPreference(
     RunnerWorkflow.Checkout,
@@ -842,7 +849,7 @@ export function ConfigurationEditor({
           ? copy("settings.editPreferences_00b4cc")
           : copy("settings.newAiApiKeyEntry_5f978c")}
       </h1>
-      <p>{resourceName(initial)}</p>
+      <p>{productResourceName(productLabel, initial)}</p>
       <p className="api-entry-scope">
         {copy("settings.savedOnTheSelectedServer_93dbee")}
       </p>
@@ -2134,6 +2141,7 @@ function SettingsWorkspace({
   entry?: SettingsCategoryEntry;
   navigate: NavigateSettings;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
 
   const [device, setDevice] = useState<Resource>();
@@ -3170,7 +3178,10 @@ function SettingsWorkspace({
                                       <h3>
                                         {kind === EntityKind.SETTINGS
                                           ? preferenceLabel
-                                          : resourceName(row)}
+                                          : productResourceName(
+                                              productLabel,
+                                              row,
+                                            )}
                                       </h3>
                                       {text(data.health) ? (
                                         <p>
@@ -3195,7 +3206,12 @@ function SettingsWorkspace({
                                       {kind === EntityKind.TEMPLATE ? (
                                         <pre>{text(data.contents)}</pre>
                                       ) : null}
-                                      <small>{row.id}</small>
+                                      <small>
+                                        {productLabel(
+                                          PresentationKind.Resource,
+                                          row.id,
+                                        )}
+                                      </small>
                                       <div className="actions">
                                         {editableKinds.includes(kind) ? (
                                           <SettingsActionButton
@@ -3210,7 +3226,10 @@ function SettingsWorkspace({
                                                 v0:
                                                   kind === EntityKind.SETTINGS
                                                     ? preferenceLabel
-                                                    : resourceName(row),
+                                                    : productResourceName(
+                                                        productLabel,
+                                                        row,
+                                                      ),
                                               },
                                             )}
                                             disabled={row.schemaVersion !== 1}
@@ -3229,7 +3248,10 @@ function SettingsWorkspace({
                                                     {kind ===
                                                     EntityKind.SETTINGS
                                                       ? preferenceLabel
-                                                      : resourceName(row)}
+                                                      : productResourceName(
+                                                          productLabel,
+                                                          row,
+                                                        )}
                                                   </>
                                                 ),
                                               }}
@@ -3246,7 +3268,12 @@ function SettingsWorkspace({
                                             targetId={row.id}
                                             aria-label={copy(
                                               "settings.delete_cd822e",
-                                              { v0: resourceName(row) },
+                                              {
+                                                v0: productResourceName(
+                                                  productLabel,
+                                                  row,
+                                                ),
+                                              },
                                             )}
                                             disabled={row.schemaVersion !== 1}
                                             onClick={() => setDeleting(row)}
@@ -3254,7 +3281,14 @@ function SettingsWorkspace({
                                             <LocalizedText
                                               id="settings.delete_a1b98e"
                                               components={{
-                                                s0: <>{resourceName(row)}</>,
+                                                s0: (
+                                                  <>
+                                                    {productResourceName(
+                                                      productLabel,
+                                                      row,
+                                                    )}
+                                                  </>
+                                                ),
                                               }}
                                             />
                                           </SettingsActionButton>
@@ -3477,7 +3511,9 @@ function SettingsWorkspace({
             !editing.initial
               ? copy("settings.savedOnTheSelectedServer_93dbee")
               : routing
-                ? copy("routing-preview.scope", { v0: resourceName(routing) })
+                ? copy("routing-preview.scope", {
+                    v0: productResourceName(productLabel, routing),
+                  })
                 : undefined
           }
           size={taskSize}
@@ -3615,6 +3651,7 @@ function RunnerDeviceInventory({
   nextPage: string;
   inspect: (row: Resource) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   return (
     <section
@@ -3664,7 +3701,7 @@ function RunnerDeviceInventory({
             return (
               <article className="settings-runner-row" key={row.id}>
                 <div className="settings-runner-identity">
-                  <h3>{resourceName(row)}</h3>
+                  <h3>{productResourceName(productLabel, row)}</h3>
                   {text(data.health) ? (
                     <p>
                       <LocalizedText
@@ -3681,7 +3718,9 @@ function RunnerDeviceInventory({
                       />
                     </p>
                   ) : null}
-                  <small>{row.id}</small>
+                  <small>
+                    {productLabel(PresentationKind.Resource, row.id)}
+                  </small>
                 </div>
                 <div className="actions">
                   <SettingsActionButton
