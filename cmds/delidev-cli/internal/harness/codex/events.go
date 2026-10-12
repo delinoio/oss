@@ -116,6 +116,7 @@ const (
 	UsageEvent                    EventKind = "usage"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
+	FunctionOutputEvent           EventKind = "function-output"
 	ToolStartedEvent              EventKind = "tool-started"
 	ToolCompletedEvent            EventKind = "tool-completed"
 	ToolOutputEvent               EventKind = "tool-output"
@@ -159,41 +160,43 @@ type Message struct {
 }
 
 type Event struct {
-	NativeError      *NativeErrorObservation `json:"-"`
-	AutoReview       *domain.AutoReviewObservation
-	ImageGeneration  *ImageGeneration `json:"-"`
-	Compaction       *CompactionObservation
-	AgentThreadID    domain.ID
-	Subagents        []domain.SubagentObservation
-	Kind             EventKind
-	ThreadID         domain.ID
-	TurnID           domain.ID
-	Turn             *Turn
-	Status           *ThreadStatus
-	Message          *Message
-	TextDelta        string
-	ItemID           string
-	RequestID        domain.ID
-	InputID          domain.ID
-	Action           TurnAction
-	Problem          *domain.Error
-	Late             bool
-	Correlated       bool
-	EmittedAtMS      *int64
-	Metadata         MetadataKind
-	Usage            *domain.NativeTokenUsage
-	ResponseUsage    *domain.NativeResponseUsage
-	Notice           domain.NativeNotice
-	ToolOutputKind   ToolKind
-	Tool             *Tool
-	ToolInput        *ToolInput
-	Artifact         *Artifact
-	ArtifactDelta    *ArtifactDelta
-	Plan             *PlanUpdate
-	Diff             *string
-	Interaction      *Interaction
-	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	FunctionOutput      *domain.FunctionOutput
+	FunctionOutputStage domain.FunctionOutputStage
+	NativeError         *NativeErrorObservation `json:"-"`
+	AutoReview          *domain.AutoReviewObservation
+	ImageGeneration     *ImageGeneration `json:"-"`
+	Compaction          *CompactionObservation
+	AgentThreadID       domain.ID
+	Subagents           []domain.SubagentObservation
+	Kind                EventKind
+	ThreadID            domain.ID
+	TurnID              domain.ID
+	Turn                *Turn
+	Status              *ThreadStatus
+	Message             *Message
+	TextDelta           string
+	ItemID              string
+	RequestID           domain.ID
+	InputID             domain.ID
+	Action              TurnAction
+	Problem             *domain.Error
+	Late                bool
+	Correlated          bool
+	EmittedAtMS         *int64
+	Metadata            MetadataKind
+	Usage               *domain.NativeTokenUsage
+	ResponseUsage       *domain.NativeResponseUsage
+	Notice              domain.NativeNotice
+	ToolOutputKind      ToolKind
+	Tool                *Tool
+	ToolInput           *ToolInput
+	Artifact            *Artifact
+	ArtifactDelta       *ArtifactDelta
+	Plan                *PlanUpdate
+	Diff                *string
+	Interaction         *Interaction
+	InteractionState    *InteractionStatus
+	Steer               *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -565,6 +568,29 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "functionCallOutput":
+		if c.sidechat != "" {
+			return privateNative(native), nil
+		}
+		id, output, err := decodeFunctionOutput(params.Item)
+		if err != nil {
+			return Event{}, err
+		}
+		if c.execution == nil {
+			return Event{}, incompatible()
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known {
+			return Event{}, incompatible()
+		}
+		stage := domain.FunctionOutputStarted
+		if native.Method == "item/completed" {
+			stage = domain.FunctionOutputCompleted
+		}
+		if err := c.retainFunctionOutput(params.Item, id, params.TurnID, stage); err != nil {
+			return Event{}, err
+		}
+		return Event{Kind: FunctionOutputEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: id, Correlated: true, Late: turn.Turn.Status.terminal(), FunctionOutput: output, FunctionOutputStage: stage}, nil
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

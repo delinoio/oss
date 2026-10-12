@@ -477,3 +477,13 @@ connection ownership. They localize normalized values without parsing cron or
 computing calendar instants. Unimplemented supports older servers without a new
 capability gate. Preview failure cannot authorize execution or modify retained
 save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
+
+## Inert Codex function outputs
+
+Generated System capability 92 and Worker capability 54 independently negotiate
+`CODEX_FUNCTION_OUTPUTS_V1`. The safe ToolMessage projection preserves the
+original name, namespace presence, string-or-array variant and ordered text or
+reference-kind/detail/presence metadata. It contains no media locators or
+encrypted bytes. Shared clients retain these values through resource reads and
+search without authorizing media retrieval, execution or native input replay.
+Follow [the harness contract](cmds-delidev-harness-contract.md#codex-native-function-outputs).

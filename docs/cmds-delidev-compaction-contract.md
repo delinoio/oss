@@ -588,3 +588,11 @@ Native session compaction for the feature follows the planned shared boundary in
 Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
+
+## Passive Codex function-output history
+
+Continuation, complete context inspection and paginated Revert admit strictly
+validated native function-output items through the shared harness decoder. Preserve each original
+ordered output and all protected reference/encrypted bytes in the original
+private history and digest. Public inert projections never reconstruct history,
+change checkpoint authority, resend input or authorize media retrieval.

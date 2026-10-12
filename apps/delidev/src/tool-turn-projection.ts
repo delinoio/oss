@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { functionOutput } from "./native-function-output";
 import {
   messageTurn,
   messageTurnOwner,
@@ -10,6 +11,10 @@ import { document as readDocument, object } from "./documents";
 import { claudeToolReference } from "./native-claude-tool";
 import { validGrokTool } from "./native-grok-interactions";
 
+export enum ToolClassification {
+  FunctionResult = "function-result",
+}
+
 export interface ConversationProjection {
   id: string;
   revision: bigint;
@@ -20,7 +25,12 @@ export interface ConversationProjection {
   role?: string;
   inherited?: boolean;
   response?: ResponseEvidence;
-  tool?: { owner: string; name: string; state: string };
+  tool?: {
+    owner: string;
+    name: string;
+    state: string;
+    classification?: ToolClassification;
+  };
 }
 enum NativeToolName {
   Read = "read",
@@ -84,9 +94,12 @@ export function conversationProjection(
     d.role !== "tool"
   )
     return projection;
-  const families = ["tool", "claude_tool", "grok_tool"].filter((key) =>
-    Object.hasOwn(d, key),
-  );
+  const families = [
+    "tool",
+    "claude_tool",
+    "grok_tool",
+    "function_output",
+  ].filter((key) => Object.hasOwn(d, key));
   if (
     families.length !== 1 ||
     [
@@ -102,7 +115,21 @@ export function conversationProjection(
     return projection;
   let name = "",
     state = label(d.state);
-  if (families[0] === "claude_tool") {
+  if (families[0] === "function_output") {
+    const output = functionOutput(d.function_output);
+    if (
+      !output ||
+      d.text !== "" ||
+      !identity(d.native_id) ||
+      !["streaming", "complete"].includes(state) ||
+      ["input_id", "phase"].some((key) => Object.hasOwn(d, key))
+    )
+      return projection;
+    name =
+      output.namespace === null
+        ? output.name
+        : `${output.namespace}.${output.name}`;
+  } else if (families[0] === "claude_tool") {
     const c = object(d.claude_tool),
       ref = claudeToolReference(c.reference);
     if (
@@ -151,6 +178,10 @@ export function conversationProjection(
     ]),
     name,
     state,
+    classification:
+      families[0] === "function_output"
+        ? ToolClassification.FunctionResult
+        : undefined,
   };
   return projection;
 }

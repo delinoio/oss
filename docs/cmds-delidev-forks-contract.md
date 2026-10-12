@@ -527,3 +527,13 @@ account/native assignment retain their existing invariants. Copied history
 remains inspectable when the original common/admin directories are unavailable.
 Sidechat remains metadata-only, and original Local folder lifetimes remain
 unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-contract.md#complete-independent-fork-inventory).
+
+## Passive Codex function-output history
+
+Ordinary and managed Codex Fork history admit strictly validated native function
+outputs through the same bounded decoder as live/context inspection. Retain
+original item/name and omitted/null/string namespace, string-or-array shape,
+content order, reference alternatives/detail and private encrypted bytes without rewriting
+native history or its digest. Result evidence never grants dispatch, media I/O,
+account authority, Fork mutation or cleanup proof. Restricted auxiliary profiles
+retain their separate closed history rules.

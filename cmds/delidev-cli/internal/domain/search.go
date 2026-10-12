@@ -56,6 +56,12 @@ func (m ExecutionMessage) SearchText() string {
 		}
 		changes(value.Changes)
 	}
+	if m.FunctionOutput != nil {
+		add(m.FunctionOutput.Text)
+		for _, part := range m.FunctionOutput.Content {
+			add(part.Text)
+		}
+	}
 	if m.Tool != nil {
 		tool(m.Tool.Started)
 		if m.Tool.Completed != nil {

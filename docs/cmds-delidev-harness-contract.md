@@ -2571,3 +2571,32 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Codex native function outputs
+
+The original root execution accepts the closed `functionCallOutput` item with
+original item/name, omitted or nullable namespace, and either string output or an ordered
+array of `input_text`, `input_image`, `input_audio` and `encrypted_content`.
+One bounded strict decoder validates live observations and complete retained
+history, including latest-turn reconciliation and paginated Revert. Native
+namespace omission remains omitted in protected history and its digest; the
+public `namespace_present` bit distinguishes omission from an explicit null.
+Image references preserve the `image_url` or `file_id` alternative and
+optional closed detail; conflicting alternatives, null detail, unknown fields,
+duplicate keys and oversized documents require recovery.
+
+Public `function-output-observed` events require separately negotiated
+`CODEX_FUNCTION_OUTPUTS_V1`. They carry inert text, reference kind/detail and
+encrypted-content presence only. Locator values and opaque encrypted bytes
+remain in the original protected native history and its digest. Never fetch,
+open, decrypt, replay or reconstruct content from a result observation.
+
+An original item start/completion retains one ToolMessage and immutable
+thread/turn/item identity. A completed-only item creates one completed result
+observation without an invented start. Changed original content, duplicate
+completion, foreign ownership and uncertain receipts preserve recovery. Exact
+durable receipt replay retains the same message and sequence. Result completion
+grants no dispatch, approval, tool success, input acceptance, turn result or
+cleanup authority. Title, Sidechat and other restricted profiles retain their
+separate closed admission rules. Fixture coverage does not prove real native,
+account or platform acceptance.

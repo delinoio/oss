@@ -13436,6 +13436,20 @@
       "member": "constraints",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 2396,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
+      "number": 92
+    },
+    {
+      "issue": 2396,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
+      "number": 54
     }
   ],
   "rpcReservations": [

@@ -161,5 +161,10 @@
   "session.prStateUnavailable": "풀 리퀘스트 상태 확인 불가 또는 오래된 정보",
   "session.prStateEvidence": "현재 풀 리퀘스트 #{{number}} 관측 정보",
   "session.prStateReadFailed": "현재 PR 관측 정보가 없거나 오래되었습니다. 원래 저장소와 PR 조회를 다시 시도하세요.",
-  "session.prRetryRead": "PR #{{number}} 조회 다시 시도"
+  "session.prRetryRead": "PR #{{number}} 조회 다시 시도",
+  "session.functionOutput": "함수 결과",
+  "session.functionOutputUnavailable": "함수 결과를 사용할 수 없습니다.",
+  "session.functionImageReference": "이미지 참조",
+  "session.functionAudioReference": "오디오 참조",
+  "session.functionEncryptedContent": "암호화된 콘텐츠"
 }
