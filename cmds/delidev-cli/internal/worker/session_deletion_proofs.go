@@ -209,6 +209,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 				}
 				proof = keyed
 				if obligation.Phase == sessionDeletionMarkerInitial {
+					if workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
+						return pending()
+					}
 					obligation.Phase = sessionDeletionMarkerPublished
 					if writeDeletionMarker(markerPath, marker) != nil {
 						return pending()

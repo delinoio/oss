@@ -72,6 +72,54 @@ func TestSessionDeletionInitialFenceRecoversExactReportID(t *testing.T) {
 	}
 }
 
+func TestSessionDeletionInitialFenceRejectsOrphanedWorkspaceProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := deletionMarker(work)
+	reportID := domain.NewID()
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerInitial}}
+	markerPath := sessionDeletionPath(config.Root, work.SessionID)
+	if err := writeDeletionMarker(markerPath, marker); err != nil {
+		t.Fatal(err)
+	}
+	workerProof := sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID}
+	if err := writeJSON(paths.Worker, workerProof); err != nil {
+		t.Fatal(err)
+	}
+	orphan := map[string]any{"version": 2, "identity": work.Identity(), "digest": work.Digest(), "removed": false}
+	if err := writeJSON(paths.Workspace, orphan); err != nil {
+		t.Fatal(err)
+	}
+	markerBefore, err := security.ReadPrivate(markerPath, domain.MaxSessionDeletionBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerBefore, err := security.ReadPrivate(paths.Worker, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceBefore, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("initial-fence recovery adopted an orphaned workspace proof", err)
+	}
+	for path, before := range map[string][]byte{markerPath: markerBefore, paths.Worker: workerBefore, paths.Workspace: workspaceBefore} {
+		after, err := security.ReadPrivate(path, 1<<20)
+		if err != nil || string(after) != string(before) {
+			t.Fatal("initial-fence recovery changed orphan evidence", path, err)
+		}
+	}
+}
+
 func TestSessionDeletionSharedFencePersistsNewObligationBeforeWorkerProof(t *testing.T) {
 	config, works := failedDeletionObligations(t)
 	first, second := works[0], works[1]
