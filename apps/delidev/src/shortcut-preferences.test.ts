@@ -446,7 +446,9 @@ const filesDefinition = {
 it("keeps OpenFiles read-only and outside the seven editable action IDs", () => {
   expect(editableShortcutCatalog).toHaveLength(7);
   expect(
-    editableShortcutCatalog.some((action) => action.id === ShortcutId.OpenFiles),
+    editableShortcutCatalog.some(
+      (action) => action.id === ShortcutId.OpenFiles,
+    ),
   ).toBe(false);
   expect(
     readOnlyShortcutCatalog.find((action) => action.id === ShortcutId.OpenFiles)

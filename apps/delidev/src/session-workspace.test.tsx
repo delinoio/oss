@@ -2624,7 +2624,9 @@ it("opens Files from primary+E once, keeps one tab on repeat, preserves the draf
   const view = render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
   try {
     const composer = await screen.findByRole("textbox", { name: "Message" });
-    await waitFor(() => expect(composer).toHaveProperty("value", "Original draft"));
+    await waitFor(() =>
+      expect(composer).toHaveProperty("value", "Original draft"),
+    );
     const mode = screen.getByRole("checkbox", { name: "Plan Mode" });
     const planMode = (mode as HTMLInputElement).checked;
     composer.focus();
@@ -2673,7 +2675,9 @@ it("opens Files from primary+E once, keeps one tab on repeat, preserves the draf
       shiftKey: true,
     });
     expect(
-      screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected"),
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
     ).toBe("true");
     // The Files entry shows platform guidance and the matching ARIA binding.
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
@@ -2693,7 +2697,10 @@ it("omits Files guidance and keeps the custom primary+E binding authoritative wh
       revision: 1,
       problem: null,
       overrides: {
-        "session-focus": { state: "binding", chord: { key: "e", shift: false } },
+        "session-focus": {
+          state: "binding",
+          chord: { key: "e", shift: false },
+        },
       },
     }),
     update: vi.fn(),
