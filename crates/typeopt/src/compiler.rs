@@ -248,6 +248,20 @@ impl Project {
             .filter(|c| !imported.contains(*c))
             .cloned()
             .collect();
+        // Chunks known to run as ES modules: imported by another chunk or
+        // loaded by an HTML module script. Others count as modules only with
+        // ESM statements; classic scripts stay unchanged boundaries.
+        let mut modules = imported.clone();
+        let scripts = html_module_scripts(dir)?;
+        for chunk in &chunks {
+            let name = std::path::Path::new(chunk)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned());
+            if name.is_some_and(|n| scripts.contains(&n)) {
+                modules.insert(chunk.clone());
+            }
+        }
+        crate::app::set_bundle_modules(modules);
         tracing::info!(
             chunks = chunks.len(),
             entries = entries.len(),
@@ -760,6 +774,54 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
     walk(dir, &mut out)?;
     out.sort();
     Ok(out)
+}
+
+/// File names that HTML pages in the bundle load with `<script type="module">`.
+fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeSet<String>> {
+    fn walk(dir: &std::path::Path, out: &mut std::collections::BTreeSet<String>) -> Result<()> {
+        for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                walk(&path, out)?;
+            } else if path.extension().is_some_and(|e| e == "html") {
+                let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
+                let mut rest = html.as_str();
+                while let Some(at) = rest.find("<script") {
+                    rest = &rest[at..];
+                    let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
+                    rest = &rest[tag.len()..];
+                    let module = tag.contains("type=module")
+                        || tag.contains("type=\"module\"")
+                        || tag.contains("type='module'");
+                    let Some(src) = tag.find("src=") else {
+                        continue;
+                    };
+                    let value = tag[src + 4..].trim_start_matches(['"', '\'']);
+                    let value = &value[..value.find(['"', '\'', ' ', '>']).unwrap_or(value.len())];
+                    if module && let Some(name) = value.rsplit('/').next() {
+                        out.insert(name.to_owned());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    let mut out = std::collections::BTreeSet::new();
+    walk(dir, &mut out)?;
+    Ok(out)
+}
+
+/// Whether the file has ES module statements (imports or exports).
+pub(crate) fn has_esm_statements(file: Node) -> bool {
+    file.statements().iter().any(|statement| {
+        matches!(
+            statement.kind(),
+            SyntaxKind::ImportDeclaration
+                | SyntaxKind::ExportDeclaration
+                | SyntaxKind::ExportAssignment
+        ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT)
+    })
 }
 
 /// Static and literal dynamic import specifiers of a chunk.

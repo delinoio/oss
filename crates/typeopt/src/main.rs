@@ -57,10 +57,21 @@ mod app {
     }
     /// Bundle chunks (path substrings) kept as unchecked boundaries.
     static BUNDLE_EXCLUDE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    pub(crate) fn bundle_boundary(path: &str) -> bool {
+    /// Bundle chunks known to run as ES modules (imported by a chunk or
+    /// loaded by an HTML module script).
+    static BUNDLE_MODULES: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_modules(modules: std::collections::BTreeSet<String>) {
+        let _ = BUNDLE_MODULES.set(modules);
+    }
+    /// Whether a bundle chunk is an unchecked boundary: excluded by the
+    /// operator, or not known to be an ES module (a classic script shares
+    /// its top-level bindings with other scripts).
+    pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
         BUNDLE_EXCLUDE
             .get()
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
+            || !(esm_statements || BUNDLE_MODULES.get().is_some_and(|m| m.contains(path)))
     }
     pub(crate) fn check_cancelled() -> Result<()> {
         ensure!(!CANCELLED.load(Ordering::Relaxed), "operation cancelled");

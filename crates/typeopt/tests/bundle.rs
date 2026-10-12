@@ -235,6 +235,31 @@ fn treats_unimported_chunks_as_entries() {
     );
 }
 
+/// Classic scripts share top-level bindings through the global scope, so
+/// a chunk that is not known to be an ES module stays unchanged.
+#[test]
+fn keeps_classic_scripts_unchanged() {
+    let legacy = r#"function legacyGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}function unusedLookingHelper(n){return n*2}var legacyState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="./legacy.js"></script><script type="module" src="./index.js"></script>"#,
+        ),
+        ("legacy.js", legacy),
+        (
+            "index.js",
+            r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "legacy.js"), legacy);
+    assert!(
+        saved(&report) > 0,
+        "the module entry is still optimized: {report:#}"
+    );
+}
+
 #[test]
 fn never_publishes_typescript_only_syntax() {
     let (temp, _) = run(&[(
