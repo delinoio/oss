@@ -13,6 +13,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   EntityKind,
   ResourceSchema,
+  SessionStartupTimingSchema,
+  StartupGroupTimingSchema,
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { startupTimingGroups, useStartupTimes } from "./session-startup-timing";
@@ -112,10 +114,13 @@ it("validates exact jobs/executions and UTC intervals without historical backfil
   ]) {
     const changed = create(ResourceSchema, {
       ...f.session,
-      startupTiming: {
-        ...f.session.startupTiming,
-        agent: { ...f.session.startupTiming!.agent!, ...change },
-      },
+      startupTiming: create(SessionStartupTimingSchema, {
+        ...f.session.startupTiming!,
+        agent: create(StartupGroupTimingSchema, {
+          ...f.session.startupTiming!.agent!,
+          ...change,
+        }),
+      }),
     });
     expect(startupTimingGroups(changed).agent).toBeUndefined();
   }
@@ -162,13 +167,13 @@ it("ticks closed groups from server time, freezes at acceptance, and stops on st
   });
   const finished = create(ResourceSchema, {
     ...f.session,
-    startupTiming: {
-      ...f.session.startupTiming,
-      agent: {
+    startupTiming: create(SessionStartupTimingSchema, {
+      ...f.session.startupTiming!,
+      agent: create(StartupGroupTimingSchema, {
         ...f.session.startupTiming!.agent!,
         finishedAt: "2026-10-12T00:00:20Z",
-      },
-    },
+      }),
+    }),
   });
   act(() => hook.rerender({ ...props, session: finished }));
   expect(hook.result.current.agent).toMatchObject({
