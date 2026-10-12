@@ -245,7 +245,17 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 			return nil, domain.Fail(domain.RecoveryRequired, "The native title response escaped its isolated thread and turn.", "Keep the placeholder and reconcile the private Worker runtime.")
 		}
 		switch event.Kind {
+		case codex.ModelSafetyEvent:
+			if !event.Safety.MatchesPassiveEvent(event, thread.Thread.ID, turn.TurnID) {
+				return nil, publicationUncertain()
+			}
 		case codex.MetadataEvent:
+			if event.Safety != nil {
+				if !event.Safety.MatchesPassiveEvent(event, thread.Thread.ID, turn.TurnID) {
+					return nil, publicationUncertain()
+				}
+				continue
+			}
 			if err := validateTitleMetadata(event.Metadata); err != nil {
 				return nil, err
 			}
