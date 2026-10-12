@@ -4779,7 +4779,7 @@ Always show connected checkouts, resolving Runner Device display names while ret
 
 Use existing semantic theme tokens, system fonts, 16px shell corners, 20px title, 16px section headings, 14px body, 12px hints, 40px controls and 8px control corners. Preserve narrow/200% reflow, fixed actions, modal focus containment, X/Escape dismissal and opener restoration. The top-level editor footer has Save Repository and any original exact retry controls; header dismissal owns closing. Page editors retain their ordinary cancellation. Preserve current schema/capability/revision gates, original request bytes, accepted server/native work, required checkout removal protection and protected credentials. This presentation adds no protocol, migration or native behavior.
 
-Existing repository saves retain their form, pending/error/cancel behavior, exact request recovery and retained drafts. A job acknowledgment alone never completes the edit. Completion requires the verified original succeeded job, no pending or failed status read, and output containing the original repository ID plus a canonical revision greater than the submitted expected revision. Unreadable, foreign or older job observations and succeeded output with missing, foreign or nonadvanced repository identity remain open with localized guidance and the original status-read retry; retry never resubmits Save. The completion effect is once per original job and Settings opening, requires its active visible undisposed task, and records its guard before publishing the localized success toast and invoking the existing saved callback. Remove the success paragraph and Done step only from this existing-repository path. Dismissal or Settings departure rejects late toast, completion, focus and navigation effects; a successor task retains its own authority. Immediate-resource saves, registration and generic configuration job completion retain their existing behavior.
+Existing repository saves retain their form, pending/error/cancel behavior, exact request recovery and retained drafts. A job acknowledgment alone never completes the edit. Completion requires the verified original succeeded job, no pending or failed status read, and output containing the original repository ID plus a canonical revision greater than the submitted expected revision. After this proof, explicitly read the original repository. Require the returned read result to have no error, the supported REPOSITORY schema, the original ID and a positive revision at or beyond the successful output revision. Cached query data and background invalidation cannot supply this proof. Failed, foreign, unsupported or older reads retain the exact job and expose sanitized read guidance plus a read-only retry; retry never resubmits Save. Fence each read to its original job, output and active visible undisposed opening, and reject earlier evidence after replacement. Only then release the exact original job before the saved callback. Unreadable, foreign or older job observations and succeeded output with missing, foreign or nonadvanced repository identity remain open with localized guidance and the original status-read retry; retry never resubmits Save. The completion effect is once per original job and Settings opening, requires its active visible undisposed task, and records its guard before publishing the localized success toast and invoking the existing saved callback. Remove the success paragraph and Done step only from this existing-repository path. Dismissal or Settings departure rejects late toast, completion, focus and navigation effects; a successor task retains its own authority. Immediate-resource saves, registration and generic configuration job completion retain their existing behavior.
 
 An inert Settings Resource, API account, subscription or API provider inventory beneath its original edit/delete task suspends pagination readers and continuation while retaining at most its three resident payload pages and mounted row/disclosure owners. Dismissal restores the same opener and controllers. Settings visit or category departure disposes that owner; this retention grants no refresh, mutation or recovery replay.
 
@@ -5490,8 +5490,39 @@ retain independent files, revisions and semantics.
 `read_sidebar_preference` and `update_sidebar_preference` use the closed
 `device-sidebar` permission only for existing main/local-* and saved server-*
 product capabilities. Native admission captures/rechecks original authority,
-performs locked storage work off the UI thread, checks the expected process
-revision and atomically replaces only valid current storage. Publish ordered
+performs storage work off the UI thread and checks the expected process
+revision. Every participating native Read and Update acquires the same private,
+persistent `sidebar-preference.lock` sidecar before inspection and keeps its
+exclusive lease through publication, owned-scratch cleanup, parent durability
+and receipt verification. Never unlink or replace this sidecar. Preserve the
+presentation mutex, state mutex and sidecar acquisition order. Nonblocking lease
+contention retains the committed selection and requires explicit Reload, with
+ReadFailed for Read and WriteFailed for Update.
+
+A successful Read retains private Missing/Present evidence, exact bounded bytes,
+decoded version/enum, opened-file identity and link/reparse evidence, and the
+original parent identity. It adopts new evidence even when the enum is unchanged.
+Update compares that full observation under the lease and rechecks it after
+scratch preparation. Opened handles must prove regular, unlinked storage and
+original parent/sidecar identity; unsupported metadata or locking fails closed.
+Unix uses device/inode identity and owner/link checks. Windows uses handle-based
+volume and full 128-bit file identity, link counts and reparse checks.
+Missing publication atomically creates a new target without clobbering a target
+that appeared after the final absence check. Present publication atomically
+replaces only the unchanged observed document among participating writers.
+Remove the owned scratch link before validating the final destination link count.
+Adopt the new selection and private receipt only after cleanup, required parent
+sync and exact published bytes/new-file identity verification succeed. Any
+post-publication failure is OutcomeUnknown and requires Read recovery without
+replay. Cleanup can remove only this attempt's exclusively created scratch with
+matching file and parent identity; it cannot remove colliding or replaced evidence.
+
+This protocol coordinates processes that preserve the config/sidecar namespace
+and use the same lease. The final evidence check detects observed changes by
+nonparticipating writers, but an arbitrary writer can still replace an existing
+target after that check and before the replacing syscall. Do not promise an
+atomic comparison against writers that ignore the protocol. Process revisions
+and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,
 oversized and newer documents remain unchanged. Failure retains committed layout;
