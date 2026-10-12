@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ type EventKind string
 type eventValidationStage string
 
 const (
+	validationRemoteControl  eventValidationStage = "remote-control-policy"
 	validationWindowsSandbox eventValidationStage = "windows-sandbox"
 	validationOther          eventValidationStage = "other"
 	validationNativeError    eventValidationStage = "native-error"
@@ -46,6 +48,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "remoteControl/status/changed":
+		return validationRemoteControl
 	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
 		return validationWindowsSandbox
 	case "error":
@@ -197,10 +201,11 @@ type Event struct {
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
-	Native         *nativewire.Event    `json:"-"`
-	ExtensionStage eventValidationStage `json:"-"`
-	gatewayStatus  gatewayOAuthStatus
-	windowsWarning *windowsWarningObservation
+	Native              *nativewire.Event    `json:"-"`
+	ExtensionStage      eventValidationStage `json:"-"`
+	remoteControlStatus remoteControlStatus
+	gatewayStatus       gatewayOAuthStatus
+	windowsWarning      *windowsWarningObservation
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -262,12 +267,20 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	c.pendingEvent = nil
 	event, err := c.observeEventLocked(native)
 	if err != nil {
-		c.problem = turnUncertain()
+		if c.problem == nil {
+			c.problem = turnUncertain()
+		}
+		c.preserveSteerRecoveryAfterEventFailure()
 		if c.execution != nil {
 			c.execution.paused = true
 		}
 		if c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
+			var refusal *remoteControlPolicyViolation
+			if errors.As(err, &refusal) {
+				c.logger.WarnContext(ctx, "Codex native remote control refused", "owner_id", c.ownerID, "status", refusal.status, "policy", refusal.classification, "stage", validationRemoteControl, "code", c.problem.Code)
+			} else {
+				c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
+			}
 		}
 		return Event{}, c.problem
 	}
@@ -294,6 +307,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && event.Metadata == WindowsSandboxSetupDiscarded {
 		c.logger.InfoContext(ctx, "Codex unsolicited Windows sandbox setup discarded", "owner_id", c.ownerID, "policy", WindowsSandboxSetupDiscarded)
+	}
+	if c.logger != nil && event.Metadata == RemoteControlDisabled {
+		c.logger.InfoContext(ctx, "Codex passive remote control status observed", "owner_id", c.ownerID, "status", event.remoteControlStatus, "policy", RemoteControlDisabled)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil

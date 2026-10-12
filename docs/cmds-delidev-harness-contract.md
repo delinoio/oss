@@ -37,6 +37,39 @@ Unexpected original-root archived, deleted or closed notifications retain the or
 
 Deprecated thread-compacted requires the exact original turn's manual compaction owner or canonical ContextCompaction/history record. Thread-reverted requires the existing durable Revert send claim or independently verified Revert continuation while no input/compaction is active or pending. A subsequent original input or compaction ends that supplement scope without changing the durable history proof. Discard these content-free supplements without adding transcript entries, acknowledging a mutation, completing an item/turn, changing history, creating a successor checkpoint or proving cleanup. Unowned supplements retain recovery. Original compaction and Revert responses, canonical items, complete history and private rollout verification remain authoritative under the [compaction contract](cmds-delidev-compaction-contract.md). No goal or Revert mutation authority is added.
 
+### Codex remote-control policy observations
+
+The original execution process recognizes `remoteControl/status/changed` only
+as a notification. Decode the closed `disabled`, `connecting`, `connected` and
+`errored` status enum, required string `serverName` and `installationId`, and
+nullable string `environmentId` under the
+[pinned native schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/RemoteControlStatusChangedNotification.json).
+Accept omitted `environmentId` for the legacy notification shape.
+Bound the envelope to 32 KiB and each identity string to 1024 UTF-8 bytes.
+Empty strings retain their schema meaning. Reject missing/null required fields,
+unknown/duplicate keys, case aliases, invalid states, collections, malformed
+UTF-8 and NUL text.
+Malformed observations use the closed `remote-control-policy` diagnostic stage;
+raw payloads and native identities never enter logs or product events.
+
+Disabled with absent/null environment remains passive private metadata. Every
+other valid status, or disabled with any non-null environment, retains a typed
+redacted refusal on the original Client and pauses further input. Closed
+`remote-state-refused` and `remote-environment-refused` classifications preserve
+the first refusal independently of the first existing recovery cause. Exact
+replays, later disabled status, malformed observations and original terminal
+notifications cannot clear that cause or pause. An acknowledged input remains
+recovery-required. The Worker exits through its existing failure path and joins
+original process/control/workspace cleanup independently; observed original turn
+outcomes cannot supply cleanup or successful execution authority.
+
+Do not pair, enable, disable, reconnect, adopt remote ownership, select another
+model or send replacement input. Original account, settings, input, receipts and
+turn evidence retain their ownership. Server requests with this method retain
+the unsupported request boundary and cannot acquire notification/reply handling.
+The external-token quota profile keeps its independent disabled-only policy.
+This private refusal adds no public schema allocation or database migration.
+
 ### Passive Codex fuzzy-search notifications
 
 The original execution process accepts `fuzzyFileSearch/sessionUpdated` and
