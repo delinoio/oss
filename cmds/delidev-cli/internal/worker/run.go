@@ -1147,7 +1147,21 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if err := ctx.Err(); err != nil {
-			result.Problem = domain.SafeError(err)
+			if job.Type == domain.NativeCodeReviewJob {
+				var input domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil {
+					return journal{}, publicationUncertain()
+				}
+				proof, proofErr := nativeReviewNoSendProof(input.ActionID)
+				if proofErr != nil {
+					return journal{}, proofErr
+				}
+				result.Output = proof
+				// The journal was created, but no native, workspace or authentication
+				// owner was entered, so the typed proof settles this cancellation.
+			} else {
+				result.Problem = domain.SafeError(err)
+			}
 		} else {
 			output, err := execute(ctx, config, domain.ID(resource.Id), job)
 			if err != nil {
@@ -1167,6 +1181,19 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	}
 	return result, nil
 }
+
+func nativeReviewNoSendProof(action domain.ID) (json.RawMessage, error) {
+	proof := domain.NativeCodeReviewRejectedProof{Version: 1, ActionID: action, NoSend: true, CleanupVerified: true}
+	if proof.Validate() != nil {
+		return nil, domain.NativeCodeReviewUnavailable()
+	}
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		return nil, domain.NativeCodeReviewUnavailable()
+	}
+	return raw, nil
+}
+
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	if job.Type == domain.ExecuteSessionJob {

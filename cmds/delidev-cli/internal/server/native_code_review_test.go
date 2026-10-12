@@ -193,3 +193,69 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 		})
 	}
 }
+
+func TestNativeReviewTypedNoSendProofSettlesBeforeNativeAdmission(t *testing.T) {
+	ctx := context.Background()
+	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.Codex, domain.PlanMode, "/fixture/codex", "", "fixture-model", domain.Local, openCodeMultipleProject)
+	if err := f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
+		t.Fatal(err)
+	}
+	c := &continuationFixture{firstDispatchFixture: f, thread: domain.NewID()}
+	c.claim(t)
+	c.complete(t, domain.ExecutionSucceeded)
+	f.workerStream.Close()
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.review-capability", nil, func(tx *store.Tx) (any, error) {
+		row, machine, err := activeMachine(tx, f.selection.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.NativeCodexReviewV1)
+		return tx.Put(domain.MachineKind, row.ID, row.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest workspace.Manifest
+	if domain.Decode(c.input.Manifest, &manifest) != nil || len(manifest.Repositories) == 0 {
+		t.Fatal("fixture lost original workspace ownership")
+	}
+	target := domain.NativeCodeReviewTarget{Kind: domain.ReviewUncommitted, RepositoryID: manifest.Repositories[0].ID, DiffRevision: strings.Repeat("a", 64)}
+	client := sessionClient(f.accountFixture)
+	accepted, err := client.CreateNativeCodeReview(ctx, ownerRequest(f.identity, &pb.CreateNativeCodeReviewRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Target: rpc.NativeReviewTargetWire(target)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobRecord, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(accepted.Msg.Review.Job.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](jobRecord)
+	var input domain.NativeCodeReviewInput
+	if err != nil || job.Type != domain.NativeCodeReviewJob || domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil {
+		t.Fatal("stored native review assignment is invalid", err)
+	}
+	claimed, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.claim-review", nil, func(tx *store.Tx) (any, error) {
+		row, err := tx.Get(domain.JobKind, jobRecord.ID)
+		if err != nil {
+			return nil, err
+		}
+		job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, domain.ID(f.workerInstance), f.workerDevice
+		return tx.PutJob(row.ID, row.Revision, row.SessionID, row.ProjectID, job)
+	})
+	var claim store.Record
+	if err != nil || json.Unmarshal(claimed.Data, &claim) != nil {
+		t.Fatal("could not claim review", err)
+	}
+	proof := domain.NativeCodeReviewRejectedProof{Version: 1, ActionID: input.ActionID, NoSend: true, CleanupVerified: true}
+	output, err := json.Marshal(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(resourceForTest(claim), domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: output})); err != nil {
+		t.Fatal("typed no-send proof did not settle the review", err)
+	}
+	view, err := client.GetNativeCodeReview(ctx, ownerRequest(f.identity, &pb.GetNativeCodeReviewRequest{SessionId: f.change.Session.Id, JobId: accepted.Msg.Review.Job.Id}))
+	if err != nil || view.Msg.Review.State != rpc.NativeReviewStateWire(domain.NativeReviewRejected) {
+		t.Fatal("verified no-send review did not reach rejected state", err)
+	}
+}
