@@ -1547,9 +1547,11 @@ After full immutable work and workspace validation, synchronize a private native
 removal admission before committing `RemovalStarted` or invoking workspace Git
 removal. The record binds the original server/session/deletion/machine/device,
 complete work digest and report receipt. It contains only relative names and
-stable native identities, bounded to 100,000 entries and 32 MiB. Unix uses eager
-native device/inode values; Windows captures volume/file-index values from an
-open no-follow handle. Path-based lazy file identity cannot grant removal.
+stable native identities, bounded to 100,000 entries and 32 MiB. Unix captures
+no-follow metadata without opening or reading managed content, so unreadable
+files and socket nodes remain eligible for cleanup. Windows captures
+volume/file-index values from an open no-follow handle. Path-based lazy file
+identity cannot grant removal.
 
 Traversal admission rejects changed identities, unknown names, ancestor changes
 and creations at originally absent operands. Every generic unlink rechecks its
