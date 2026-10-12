@@ -84,25 +84,36 @@ pub fn static_imports(code: &str) -> Vec<String> {
 /// Offset of the first byte at or after `at` that is not whitespace or part
 /// of a `/* */` or `//` comment.
 pub fn skip_js_trivia(code: &str, mut at: usize) -> usize {
-    let bytes = code.as_bytes();
+    let len = code.len();
     loop {
-        while at < bytes.len() && bytes[at].is_ascii_whitespace() {
-            at += 1;
+        at = at.min(len);
+        // ECMAScript whitespace and line terminators.
+        while let Some(c) = code[at..].chars().next()
+            && is_js_space(c)
+        {
+            at += c.len_utf8();
         }
-        if bytes[at.min(bytes.len())..].starts_with(b"/*") {
-            match code[at + 2..].find("*/") {
+        let rest = &code[at..];
+        if let Some(block) = rest.strip_prefix("/*") {
+            match block.find("*/") {
                 Some(end) => at += 2 + end + 2,
-                None => return bytes.len(),
+                None => return len,
             }
-        } else if bytes[at.min(bytes.len())..].starts_with(b"//") {
-            match code[at..].find('\n') {
-                Some(end) => at += end + 1,
-                None => return bytes.len(),
+        } else if rest.starts_with("//") {
+            match rest.find(['\n', '\r', '\u{2028}', '\u{2029}']) {
+                Some(end) => at += end,
+                None => return len,
             }
         } else {
-            return at.min(bytes.len());
+            return at;
         }
     }
+}
+
+/// ECMAScript whitespace (including NBSP, ZWNBSP and every space
+/// separator) or line terminator.
+pub fn is_js_space(c: char) -> bool {
+    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
 /// Static module specifiers of bundler output in source order, independent
@@ -115,7 +126,14 @@ pub fn skip_js_trivia(code: &str, mut at: usize) -> usize {
 /// not a subsequence of the previous ones.
 pub fn bundle_static_imports(code: &str) -> Vec<String> {
     let bytes = code.as_bytes();
-    let identifier = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b >= 0x80;
+    // Whether the character before `at` continues an identifier or a member
+    // access, so `from`/`import` there is not a keyword.
+    let joined = |at: usize| {
+        code[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '$' | '.'))
+    };
     let mut imports = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
@@ -130,7 +148,7 @@ pub fn bundle_static_imports(code: &str) -> Vec<String> {
         };
         let start = at;
         at += keyword;
-        if start > 0 && (identifier(bytes[start - 1]) || bytes[start - 1] == b'.') {
+        if joined(start) {
             continue;
         }
         // Whitespace and comments may separate the keyword from the quote.
@@ -1095,6 +1113,14 @@ mod tests {
         assert_eq!(
             bundle_static_imports(code),
             ["./a.js", "./side.js", "./c.js", "./d.js", "./e.js"]
+        );
+        // ECMAScript whitespace beyond ASCII and line terminators.
+        assert_eq!(
+            bundle_static_imports(
+                "f();\u{a0}import{u}from\u{a0}\"./a.js\";import\u{feff}'./b.js';import// \
+                 c\u{2028}\"./c.js\""
+            ),
+            ["./a.js", "./b.js", "./c.js"]
         );
         // Comments between the keyword and the specifier.
         assert_eq!(
