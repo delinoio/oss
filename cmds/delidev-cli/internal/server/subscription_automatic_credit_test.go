@@ -530,6 +530,48 @@ func TestAutomaticCreditConsentReplacementAndRestartCannotSend(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomaticCreditConsentRevocationCannotBeReauthorizedByExecuteFinish(t *testing.T) {
+	f, block := automaticCreditFixture(t, true, false)
+	admitFixture(t, f, &block, "")
+	record, account := f.record()
+	oldGeneration := account.Subscription.Generation
+	lease := account.Subscription.Lease
+	oldBundle, err := f.secrets.Get(creditContext(), credentials.Ref{Owner: record.ID, ID: oldGeneration, Purpose: credentials.AccountLogin})
+	if err != nil {
+		t.Fatal("read original Execute credential", err)
+	}
+	defer clear(oldBundle)
+	setConsent := func(enabled bool) {
+		t.Helper()
+		record, account = f.record()
+		req := &pb.SetAutomaticResetCreditConsentRequest{
+			Mutation:     &pb.Mutation{RequestId: string(domain.NewID()), Id: string(record.ID), ExpectedRevision: record.Revision},
+			ConnectionId: string(account.Connection.ID),
+			GenerationId: string(account.Subscription.Generation),
+			Enabled:      enabled,
+			Confirmed:    enabled,
+		}
+		if _, err := f.client.SetAutomaticResetCreditConsent(context.Background(), subscriptionRequest(f.service.Identity.Token, req)); err != nil {
+			t.Fatalf("change automatic-credit consent enabled=%t: %v", enabled, err)
+		}
+	}
+	setConsent(false)
+	setConsent(true)
+	if _, err := f.finish(&pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)}, oldBundle, true, false, true); err != nil {
+		t.Fatal("finish original Execute after consent revocation", err)
+	}
+	native := &serverCreditFixture{serverQuotaFixture: &serverQuotaFixture{}, outcome: domain.SubscriptionReset}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{native}, nil
+	}
+	f.service.runServerCredit(creditContext(), record.ID)
+	_, after := f.record()
+	if native.count() != 0 || after.Subscription.ServerCredit.EverSent || after.Subscription.ServerCredit.Phase != domain.SubscriptionObservationFailed || after.Subscription.AutomaticCreditEpisode.ServerProof != nil {
+		t.Fatal("Execute Finish reauthorized an explicitly revoked automatic-credit proof", after.Subscription.ServerCredit)
+	}
+}
+
 func TestAutomaticCreditStaleRefreshRunsOnlyOnServer(t *testing.T) {
 	f, b := automaticCreditFixture(t, true, true)
 	admitFixture(t, f, &b, "")
