@@ -300,18 +300,24 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			stop()
 			managedSuccess = err == nil
 		}
-		if err := native.Close(); err != nil {
-			return err
+		nativeErr, helperErr := native.CloseWithExecutionHelpers()
+		if nativeErr != nil {
+			return errors.Join(nativeErr, helperErr)
 		}
 		closed = true
 		nativeClosed = true
 		if managed != nil {
-			managedCleanup = cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle) == nil
+			authErr := cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle)
+			managedCleanup = helperErr == nil && authErr == nil
+			logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
+			if helperErr != nil {
+				return helperErr
+			}
 			if !managedCleanup || !managedSuccess {
 				return subscription.Invalid()
 			}
 		}
-		return nil
+		return helperErr
 	}
 	defer func() {
 		if err := closeNative(); err != nil {

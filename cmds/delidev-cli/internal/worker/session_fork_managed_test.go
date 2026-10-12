@@ -72,6 +72,21 @@ func runManagedSidechatProcess(home string) bool {
 			write(req.ID, map[string]any{"codexHome": home, "platformFamily": family, "platformOs": platform, "userAgent": "delidev/" + codex.SupportedVersion + " (fixture)"})
 		case "initialized":
 		case "thread/loaded/list":
+			if f.Fault == "helper-retirement" {
+				executable, err := os.Executable()
+				if err == nil {
+					executable, err = filepath.EvalSymlinks(executable)
+				}
+				helperDirectory := filepath.Join(home, "tmp", "arg0", "fixture-original-helper")
+				if err != nil || os.MkdirAll(helperDirectory, 0700) != nil {
+					os.Exit(97)
+				}
+				for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+					if os.Symlink(executable, filepath.Join(helperDirectory, name)) != nil {
+						os.Exit(97)
+					}
+				}
+			}
 			write(req.ID, map[string]any{"data": []string{}, "nextCursor": nil})
 		case "config/read":
 			features := map[string]any{}
@@ -134,6 +149,16 @@ func runManagedSidechatProcess(home string) bool {
 			if security.WriteAtomic(filepath.Join(home, "auth.json"), workerSubscriptionBundle("rotated")) != nil {
 				os.Exit(94)
 			}
+			if f.Fault == "helper-retirement" {
+				alias := filepath.Join(home, "tmp", "arg0", "fixture-original-helper", "apply_patch")
+				executable, err := os.Executable()
+				if err == nil {
+					executable, err = filepath.EvalSymlinks(executable)
+				}
+				if err != nil || os.Remove(alias) != nil || os.Symlink(executable, alias) != nil {
+					os.Exit(97)
+				}
+			}
 			if f.Fault == "cleanup" {
 				_ = os.WriteFile(filepath.Join(home, "history.jsonl"), []byte("synthetic-worker-refresh-rotated"), 0600)
 			}
@@ -182,7 +207,7 @@ func (f *managedSidechatRPC) FinishSubscription(_ context.Context, r *connect.Re
 }
 
 func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
-	for _, fault := range []string{"success", "success-execute-prefix", "finish-response-loss", "native-response-loss", "cleanup", "retry-success", "retry-native-response-loss", "retry-finish-response-loss"} {
+	for _, fault := range []string{"success", "success-execute-prefix", "finish-response-loss", "native-response-loss", "cleanup", "helper-retirement", "retry-success", "retry-native-response-loss", "retry-finish-response-loss"} {
 		t.Run(fault, func(t *testing.T) {
 			retry := strings.HasPrefix(fault, "retry-")
 			fault = strings.TrimPrefix(fault, "retry-")
@@ -297,6 +322,17 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 					t.Fatal("uncertain child published", err)
 				}
 			}
+			if fault == "helper-retirement" {
+				if auth.finish.CleanupConfirmed {
+					t.Fatal("helper retirement failure released the original subscription lease")
+				}
+				if _, e := os.Stat(filepath.Join(auth.home, "original-process-exited")); e != nil {
+					t.Fatal("authentication cleanup ran before the original process joined", e)
+				}
+				if _, e := os.Stat(filepath.Join(auth.home, "auth.json")); !os.IsNotExist(e) {
+					t.Fatal("joined helper retirement failure skipped independent authentication removal", e)
+				}
+			}
 			takes, finishes := auth.takes, auth.finishes
 			again, retryErr := forkSession(ctx, config, owner, job)
 			if retryErr == nil || len(again) != 0 || auth.takes != takes || auth.finishes != finishes {
@@ -316,7 +352,7 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 }
 
 func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T) {
-	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup", "changed-tool-prefix"} {
+	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup", "helper-retirement", "changed-tool-prefix"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newCheckpointFixture(t)
 			ctx := context.Background()
@@ -403,6 +439,17 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			if fault == "changed-tool-prefix" {
 				if err == nil || len(output) != 0 || !auth.finish.CleanupConfirmed {
 					t.Fatal("changed settled native tool prefix published or released without original cleanup", err)
+				}
+			}
+			if fault == "helper-retirement" {
+				if auth.finish.CleanupConfirmed {
+					t.Fatal("helper retirement failure released the original subscription lease")
+				}
+				if _, e := os.Stat(filepath.Join(auth.home, "original-process-exited")); e != nil {
+					t.Fatal("authentication cleanup ran before the original process joined", e)
+				}
+				if _, e := os.Stat(filepath.Join(auth.home, "auth.json")); !os.IsNotExist(e) {
+					t.Fatal("joined helper retirement failure skipped independent authentication removal", e)
 				}
 			}
 			if fault != "success" && fault != "changed-tool-prefix" {
