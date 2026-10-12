@@ -268,7 +268,8 @@ it("keeps the compact question state and count after a successful answer when th
       getResource: () => ({ resource: original }),
       // The authoritative list no longer includes the request after the answer.
       listResources: (request) => ({
-        resources: request.filter?.kind === EntityKind.INTERACTION ? listed : [],
+        resources:
+          request.filter?.kind === EntityKind.INTERACTION ? listed : [],
       }),
       async *watchEvents(_request, context) {
         await new Promise<void>((done) =>

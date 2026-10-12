@@ -235,7 +235,9 @@ it("keeps non-retired evicted questions as compact receipts without a retained m
 it("keeps contradictory revisions compact and drops authoritative removals", () => {
   const store = new InteractionPresentationStore();
   store.observe(row(original));
-  store.observe(row({ type: "native-approval", closure: "native-closed" }, 10n));
+  store.observe(
+    row({ type: "native-approval", closure: "native-closed" }, 10n),
+  );
   expect(receiptIds(store)).toEqual([id]);
   expect(receiptIds(store, [], [id])).toEqual([]);
 });

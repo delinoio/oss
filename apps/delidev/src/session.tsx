@@ -1592,7 +1592,9 @@ export function SessionView({
     displayed: displayedRequests.length,
     pending: new Set([
       ...pendingQuestionKeys,
-      ...missingQuestionReceipts.map(([, projection]) => projection.mutationKey),
+      ...missingQuestionReceipts.map(
+        ([, projection]) => projection.mutationKey,
+      ),
     ]).size,
   });
   // Drop RPC payloads after their resident page expires or a list/live revision
