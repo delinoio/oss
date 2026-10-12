@@ -209,11 +209,18 @@ func Run(ctx context.Context, args []string, streams IO) int {
 				c.transport.ResponseHeaderTimeout = limit
 			}
 		}
+		if command == "tailscale" {
+			limit = 40 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		bounded, cancel := context.WithTimeout(ctx, limit)
 		defer cancel()
 		ctx = bounded
 	}
 	switch command {
+	case "tailscale":
+		value, err := tailscaleCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "project":
 		if len(rest) > 0 && rest[0] == "prompt-history" {
 			value, err := projectPromptHistoryCommand(ctx, c, o, rest[1:])

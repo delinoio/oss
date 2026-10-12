@@ -127,7 +127,7 @@ func runService(ctx context.Context, o options, args []string, streams IO) (any,
 			if opts.Listen == "" {
 				opts.Listen = server.DefaultListen
 			}
-			config := server.Config{DataDir: root, Listen: opts.Listen, TLSCertificate: opts.TLSCertificate, TLSKey: opts.TLSKey, AllowedOrigins: opts.AllowedOrigins, Logger: logger}
+			config := server.Config{TailnetStartWorker: tailnetWorkerStarter(o), DataDir: root, Listen: opts.Listen, TLSCertificate: opts.TLSCertificate, TLSKey: opts.TLSKey, AllowedOrigins: opts.AllowedOrigins, Logger: logger}
 			if !explicit {
 				intent, err := server.ReadLifecycle(root)
 				if err != nil {

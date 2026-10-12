@@ -481,3 +481,8 @@ save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract
 ## Dedicated native code review bindings
 
 Generated SessionService create/get and WorkerService publication bindings retain the independent original review job, target, lifecycle, findings and usage. System 96 and Worker 58 negotiate the dedicated review feature. Clients never substitute ordinary feedback, automatically retry native work or infer review support from another capability. Exact receipt observation retains its original request; declarations and generated output follow the [protocol contract](protos-delidev-v1-contract.md#dedicated-codex-code-review).
+
+TailscaleService and TailscaleQuery export the generated connection surface under
+the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
+Closed bounded JSON projections retain public observation metadata only; private
+keys, decrypted grants and protected Worker inputs stay Go-owned.

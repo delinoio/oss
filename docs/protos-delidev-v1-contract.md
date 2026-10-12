@@ -1477,3 +1477,19 @@ transport outcomes, and a replay cannot acknowledge later arrivals.
 The complete feature owns System 96 and Worker 58, both `NATIVE_CODEX_REVIEW_V1`. `SessionService.CreateNativeCodeReview` admits one original owner/client target at the expected session revision; `GetNativeCodeReview` projects that exact job. `WorkerService.PublishNativeCodeReview` accepts only the assigned original Worker, job revision, instance and execution grant. Closed new target/state enums and `NativeCodeReview*` messages preserve original selection, typed lifecycle/findings and independent usage projections. Optional field 14 of the new `PublishNativeCodeReviewRequest` owns `NativeCodeReviewResponseUsage`; it publishes an immutable response receipt without advancing native lifecycle state. Account/model/context/price authority is server-derived from the frozen original assignment. These declarations add no field to an existing main message and no database migration.
 
 Keep all four targets separate from ordinary feedback and approval review. A public target or finding cannot authorize file writes, GitHub publication, merge, a replacement native operation or credential access. Omitted capabilities grant no support. Tool-owned Go/TypeScript bindings are generated from these reconciled declarations. Follow the [harness](cmds-delidev-harness-contract.md#dedicated-codex-code-review), [usage](cmds-delidev-usage-contract.md#dedicated-review-usage) and storage contracts for independent runtime and accounting ownership.
+
+## Tailscale connection protocol
+
+System `TAILSCALE_CONNECTIONS_V1 = 93` negotiates `TailscaleService` in
+`v1/tailscale.proto`. The complete additive field and method ownership is recorded
+in the allocation ledger. Preserve DeviceType client/Worker meaning and all
+existing capability numbers. Generated Go, Connect Go, TypeScript and Connect
+Query bindings come from the pinned generators.
+
+Local authenticated discovery/access and original outgoing request operations
+remain separate from public bounded target request/status/key-proved cancellation
+and encrypted Worker delivery. Authenticated owner/client decisions retain the
+original actor, transcript and existing Device pairing receipt. Bounded JSON
+projections follow the closed states and private/public separation in the
+[connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
+No new SQLite entity or migration is introduced.

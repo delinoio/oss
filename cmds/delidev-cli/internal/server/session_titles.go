@@ -74,11 +74,30 @@ func hasTitleCapability(values []domain.WorkerCapability) bool {
 	return false
 }
 
+// Only the immutable first native execution can consume automatic naming.
+// Proven no-send startup retries keep that execution's original title authority.
+func pendingInitialSessionTitle(session domain.Session, input domain.ExecutionJobInput) bool {
+	return session.NameOwner == domain.AutomaticNameOwner && session.NameMode == domain.AutomaticSessionName && session.TitleState == domain.TitleWaiting && session.TitleOperationID == "" && matchesInitialTitleExecution(session, input)
+}
+
+// settleUnsuccessfulInitialTitle is called only after verified owned cleanup.
+// A continuation must not revive naming after the first native turn failed.
+func settleUnsuccessfulInitialTitle(session *domain.Session, input domain.ExecutionJobInput, outcome domain.ExecutionOutcome) {
+	if !pendingInitialSessionTitle(*session, input) || (outcome != domain.ExecutionFailed && outcome != domain.ExecutionStopped) {
+		return
+	}
+	session.TitleOperationID = domain.NewID()
+	session.TitleState, session.TitleReason = titleFailureOutcome(session.Problem)
+	if outcome == domain.ExecutionStopped {
+		session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonCanceled
+	}
+}
+
 // queueAutomaticSessionTitle runs inside the verified terminal transaction.
 // The durable operation identity is retained even when the frozen profile is
 // unsupported, so reconnects and later configuration changes cannot reroute it.
 func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.Session, sourceRecord store.Record, input domain.ExecutionJobInput, recovered bool) error {
-	if session.NameOwner != domain.AutomaticNameOwner || session.NameMode != domain.AutomaticSessionName || session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || session.InitialExecution == nil {
+	if !pendingInitialSessionTitle(*session, input) {
 		return nil
 	}
 	session.TitleOperationID = domain.NewID()
