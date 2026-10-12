@@ -106,3 +106,47 @@ func TestSessionDeletionFreshAdmissionRejectsOrphanedWorkspaceProof(t *testing.T
 		t.Fatal("fresh admission changed orphaned workspace proof", err)
 	}
 }
+
+func TestSessionDeletionStartedWorkerProofRequiresKeyedWorkspaceProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := deletionMarker(work)
+	reportID := domain.NewID()
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerPublished}}
+	if err := writeDeletionMarker(sessionDeletionPath(config.Root, work.SessionID), marker); err != nil {
+		t.Fatal(err)
+	}
+	started := sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}
+	if err := writeJSON(paths.Worker, started); err != nil {
+		t.Fatal(err)
+	}
+	workerBefore, err := security.ReadPrivate(paths.Worker, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markerBefore, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("started Worker removal recreated missing workspace proof", err)
+	}
+	if _, err := os.Lstat(paths.Workspace); !os.IsNotExist(err) {
+		t.Fatal("missing keyed workspace proof was recreated", err)
+	}
+	workerAfter, err := security.ReadPrivate(paths.Worker, 4096)
+	if err != nil || string(workerAfter) != string(workerBefore) {
+		t.Fatal("started Worker progress changed", err)
+	}
+	markerAfter, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
+	if err != nil || string(markerAfter) != string(markerBefore) {
+		t.Fatal("published admission fence changed", err)
+	}
+}

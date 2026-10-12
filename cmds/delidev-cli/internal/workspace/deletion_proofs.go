@@ -111,6 +111,21 @@ func RequireNoKeyedDeletionWorkspaceProof(root string, w domain.SessionDeletionW
 	return nil
 }
 
+// RequireKeyedDeletionWorkspaceProof requires the exact original workspace
+// receipt before retrying an incomplete Worker removal.
+func RequireKeyedDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+	paths, err := SessionDeletionProofPaths(root, w)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	var proof deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) {
+		return domain.SessionDeletionPending()
+	}
+	return nil
+}
+
 // RetireDeletionWorkspaceProof runs only after the original complete Worker
 // progress was synchronized. It removes no workspace or native copy. Once its
 // retirement commits, any restored proof is absence-only on completed replay.
