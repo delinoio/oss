@@ -249,12 +249,13 @@ function NativeSessionBrowser({
   const [retry, setRetry] = useState(0);
   const [presenting, setPresenting] = useState(false);
   const pendingAction = useRef<
-    {
-      action: BrowserAction;
-      tabId?: string;
-      version: number;
-      owner: BrowserOwner;
-    } | undefined
+    | {
+        action: BrowserAction;
+        tabId?: string;
+        version: number;
+        owner: BrowserOwner;
+      }
+    | undefined
   >(undefined);
   const needsPresentation = useRef(true);
   needsPresentation.current =

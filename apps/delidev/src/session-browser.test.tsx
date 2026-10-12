@@ -765,7 +765,6 @@ it("fences a retained Browser under the maximized upper inert region through exa
   }
 });
 
-
 function pageDescriptor(f: ReturnType<typeof fixture>) {
   return {
     kind: SessionTabKind.Page as const,
@@ -841,37 +840,40 @@ it("refreshes shared labels after owned links and redirects without selection, f
   ).toBe(true);
   view.unmount();
 });
-it.each(["Back", "Forward"])("refreshes shared labels from the original %s result", async (action) => {
-  const f = fixture();
-  const view = render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  const page = pageDescriptor(f);
-  f.store.open(f.session.id, page);
-  const previous = f.store.snapshot(f.session.id);
-  native.mockResolvedValue({
-    ...f.local,
-    tabs: {
-      tabs: [{ id: f.tabId, url: "https://fixture.test/history" }],
-      selected: f.tabId,
-    },
-  });
-  const button = screen.getByRole("button", { name: action });
-  button.focus();
-  await act(async () => fireEvent.click(button));
-  const changed = f.store.snapshot(f.session.id);
-  expect(changed.tabs[1]).toEqual({
-    ...page,
-    title: "fixture.test/history",
-    label: "https://fixture.test/history",
-  });
-  expect(changed.selected).toBe(previous.selected);
-  expect(changed.tabs.map(sessionTabKey)).toEqual(
-    previous.tabs.map(sessionTabKey),
-  );
-  expect(document.activeElement).toBe(button);
-  view.unmount();
-});
+it.each(["Back", "Forward"])(
+  "refreshes shared labels from the original %s result",
+  async (action) => {
+    const f = fixture();
+    const view = render(<f.View />);
+    await open();
+    await screen.findByRole("button", { name: /Tab 1/ });
+    const page = pageDescriptor(f);
+    f.store.open(f.session.id, page);
+    const previous = f.store.snapshot(f.session.id);
+    native.mockResolvedValue({
+      ...f.local,
+      tabs: {
+        tabs: [{ id: f.tabId, url: "https://fixture.test/history" }],
+        selected: f.tabId,
+      },
+    });
+    const button = screen.getByRole("button", { name: action });
+    button.focus();
+    await act(async () => fireEvent.click(button));
+    const changed = f.store.snapshot(f.session.id);
+    expect(changed.tabs[1]).toEqual({
+      ...page,
+      title: "fixture.test/history",
+      label: "https://fixture.test/history",
+    });
+    expect(changed.selected).toBe(previous.selected);
+    expect(changed.tabs.map(sessionTabKey)).toEqual(
+      previous.tabs.map(sessionTabKey),
+    );
+    expect(document.activeElement).toBe(button);
+    view.unmount();
+  },
+);
 it("rejects a pre-action poll after Back has published a newer URL", async () => {
   const poll = pollCallback();
   const f = fixture();
@@ -913,54 +915,59 @@ it("rejects a pre-action poll after Back has published a newer URL", async () =>
   expect(f.store.snapshot(f.session.id)).toBe(current);
   view.unmount();
 });
-it.each(["inactive", "retry", "modal", "disposed"])("rejects a late poll from an %s presentation", async (replacement) => {
-  const poll = pollCallback();
-  const f = fixture();
-  let finish!: (value: typeof f.local) => void;
-  native.mockImplementation(async (operation) => {
-    if (operation === "browser_state")
-      return new Promise((resolve) => {
-        finish = resolve;
-      });
-    return f.local;
-  });
-  const view = render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  f.store.open(f.session.id, pageDescriptor(f));
-  await act(async () => poll());
-  const previous = f.store.snapshot(f.session.id);
-  const modal = document.createElement("dialog");
-  if (replacement === "inactive") view.rerender(<f.View active={false} />);
-  if (replacement === "retry") {
-    retryView();
-    await waitFor(() =>
-      expect(
-        native.mock.calls.filter(([operation]) => operation === "open_browser"),
-      ).toHaveLength(2),
-    );
-  }
-  if (replacement === "modal") {
-    modal.setAttribute("open", "");
-    await act(async () => document.body.append(modal));
-  }
-  if (replacement === "disposed") view.unmount();
-  try {
-    await act(async () =>
-      finish({
-        ...f.local,
-        tabs: {
-          tabs: [{ id: f.tabId, url: "https://fixture.test/stale" }],
-          selected: f.tabId,
-        },
-      }),
-    );
-    expect(f.store.snapshot(f.session.id)).toBe(previous);
-  } finally {
-    modal.remove();
-    view.unmount();
-  }
-});
+it.each(["inactive", "retry", "modal", "disposed"])(
+  "rejects a late poll from an %s presentation",
+  async (replacement) => {
+    const poll = pollCallback();
+    const f = fixture();
+    let finish!: (value: typeof f.local) => void;
+    native.mockImplementation(async (operation) => {
+      if (operation === "browser_state")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return f.local;
+    });
+    const view = render(<f.View />);
+    await open();
+    await screen.findByRole("button", { name: /Tab 1/ });
+    f.store.open(f.session.id, pageDescriptor(f));
+    await act(async () => poll());
+    const previous = f.store.snapshot(f.session.id);
+    const modal = document.createElement("dialog");
+    if (replacement === "inactive") view.rerender(<f.View active={false} />);
+    if (replacement === "retry") {
+      retryView();
+      await waitFor(() =>
+        expect(
+          native.mock.calls.filter(
+            ([operation]) => operation === "open_browser",
+          ),
+        ).toHaveLength(2),
+      );
+    }
+    if (replacement === "modal") {
+      modal.setAttribute("open", "");
+      await act(async () => document.body.append(modal));
+    }
+    if (replacement === "disposed") view.unmount();
+    try {
+      await act(async () =>
+        finish({
+          ...f.local,
+          tabs: {
+            tabs: [{ id: f.tabId, url: "https://fixture.test/stale" }],
+            selected: f.tabId,
+          },
+        }),
+      );
+      expect(f.store.snapshot(f.session.id)).toBe(previous);
+    } finally {
+      modal.remove();
+      view.unmount();
+    }
+  },
+);
 
 it("refreshes existing page metadata from a pending picker action after original Hide settles", async () => {
   const f = fixture({ tabbed: true });
@@ -983,9 +990,9 @@ it("refreshes existing page metadata from a pending picker action after original
   await open();
   await screen.findByRole("button", { name: "https://fixture.test/page" });
   await waitFor(() =>
-    expect(
-      native.mock.calls.some(([, args]) => args.action === "hide"),
-    ).toBe(true),
+    expect(native.mock.calls.some(([, args]) => args.action === "hide")).toBe(
+      true,
+    ),
   );
   f.store.open(f.session.id, pageDescriptor(f));
   f.store.open(f.session.id, { kind: SessionTabKind.Files });
