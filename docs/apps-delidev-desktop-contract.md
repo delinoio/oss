@@ -457,7 +457,7 @@ This naming boundary preserves Agent Worker, generic technical Worker references
 
 The the feature flow is the mounted `Surface.NewSession` page, not a dialog. It retains the selected session and connection-memory creation draft while navigating to sessions, Settings and other surfaces. Back returns to the existing selected conversation or welcome view. Entry focuses First message; changing surfaces during an accepted create cannot steal navigation or focus when the response arrives.
 
-The page centers an 820px maximum content column around **What would you like to work on?** Project selection precedes the composer. An empty project means **General Chat**, an isolated projectless directory on the explicit Worker. The composer has a 210px base height, 18px radius, accessible First message textarea, the specified task placeholder, Agent Worker and Runs on selectors, Execute/Plan control, inline Options, and a 40px Create session button. Keep 24px minimum side padding and ensure 960×640 remains scrollable without horizontal clipping. The sidebar retains its rail/pane geometry and the shared Home accumulation/scroll scope described below; loaded global and expanded project ranges refresh every 15 seconds while active and visible.
+The page centers an 820px maximum content column around **What would you like to work on?** Project selection precedes the composer. An empty project means **General Chat**, an isolated projectless directory on the explicit Worker. The composer has a 210px minimum height in Regular layout, natural content height in Compact layout, 18px radius, accessible First message textarea, the specified task placeholder, Agent Worker and Runs on selectors, Execute/Plan control, inline Options, and a 40px Create session button. Keep 24px minimum side padding and ensure 960×640 remains scrollable without horizontal clipping. The sidebar retains its rail/pane geometry and the shared Home accumulation/scroll scope described below; loaded global and expanded project ranges refresh every 15 seconds while active and visible.
 
 Initial workspace/mode is General Chat/Execute. Restore the last accepted Agent Worker/Runner Device pair under the session creation preferences contract below; without eligible device history, select the authenticated permitted local device while leaving the Agent Worker unselected. The page reuses paginated selectors, project restrictions, optional budget validation/disclaimer, Worktree/Local selection, repository starting references, and fresh same-computer Local proof. Selectors distinguish loading, an empty current page, permission denial, connection failure, and stale cached choices; an off-page selection keeps its exact identity without silently choosing a replacement. General Chat removes Git options. Enter submits except during IME composition; Shift+Enter inserts a newline. UTF-8 input is capped at 256 KiB while retaining the previous valid draft on overflow. Drafts and Options survive same-identity navigation, Settings and reconnect in memory only; identity changes clear them.
 
@@ -503,7 +503,7 @@ and submission gates remain required.
 
 Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow.
 
-`NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, 210px composer, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Restore the independent last accepted General Chat Agent Worker/Runs on choices when permitted; without history, keep both unselected. Preserve Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
+`NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, the same Regular/Compact composer height rules, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Restore the independent last accepted General Chat Agent Worker/Runs on choices when permitted; without history, keep both unselected. Preserve Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
 
 General Chat keeps one Options action. Opening it exposes the static localized
 optional estimated-cost budget heading, BudgetFields and complete explanations;
@@ -3221,7 +3221,15 @@ opaque black or white value and expose it through the render-only
 or reject an existing custom theme.
 
 Composer and Display retain Regular/Compact layouts and explicit 12/14/16/18px
-text choices. Default text size preserves the original per-component size;
+text choices. Project and General Chat creation retain the 210px Regular minimum.
+Compact removes only that container floor; its five-row textarea, 12px padding,
+64px textarea minimum and wrapping toolbar determine natural height. Supported
+12px/14px content may fit below 210px, while larger text or wrapped controls can
+grow beyond it. Preserve manual vertical resizing, creation placement, scrolling
+and reachable controls at narrow widths and effective 200% zoom. Switching layout
+retains the same mounted input, draft, selection, focus, attachments, skill bindings,
+resource/mode choices and original pending/uncertain request; it never submits.
+Default text size preserves the original per-component size;
 Original disclosure defaults preserve each component’s original expansion. Explicit
 Expanded/Collapsed overrides apply only to newly mounted supported content. Changes preserve mounted drafts, focus, attachments and business
 request identities. Session Default/Minimal presentation and accent controls
