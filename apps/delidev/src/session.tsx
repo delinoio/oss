@@ -2812,7 +2812,9 @@ export function SessionView({
                     <RunnerTaskRemediation
                       active={conversationActive}
                       machineId={text(data.machine_id)}
-                      disabled={directoryPending || control.busy || control.uncertain}
+                      disabled={
+                        directoryPending || control.busy || control.uncertain
+                      }
                       visible={Boolean(startupFailure)}
                       onPending={setRunnerRemediationPending}
                     />

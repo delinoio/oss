@@ -1163,6 +1163,7 @@ acceptance transaction repeat the complete managed generation comparison. A cach
 entry from a disabled or unselected package cannot enter a new generation. Already
 accepted session configurations and prepared snapshots retain their original
 package content and policy.
+
 ## Settled session directory generations
 
 A directory transition is an explicit metadata action on the original settled

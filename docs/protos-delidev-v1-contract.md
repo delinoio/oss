@@ -1597,6 +1597,7 @@ Mutation receipts distinguish pending, succeeded, recovery required and failed
 outcomes without granting authority to retry a new request or change an accepted
 session's configuration. Existing explicit skill selection keeps its wire
 identities and omission semantics.
+
 ## Session directory namespace
 
 `SessionDirectoryService` reserves `ChangeSessionDirectory` and read-only

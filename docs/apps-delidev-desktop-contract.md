@@ -6225,6 +6225,7 @@ Dialogs support Esc and focus return, and the single import input receives focus
 Rows/actions reflow on narrow layouts using existing theme tokens. All new copy has
 English/Korean entries. Synthetic fixtures and parser checks do not establish
 installed desktop, screen-reader, native-runtime or effective-200% acceptance.
+
 ## Settled session directory control
 
 The directory action requires both the server session-directory capability and

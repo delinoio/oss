@@ -640,6 +640,7 @@ preparation settlement freezes elapsed time; failed, canceled, uncertain and Sto
 settlements freeze unfinished time without implying preparation success. The
 Worker's operation report shape and original workspace/native cleanup authority
 remain unchanged. Missing historical timing cannot be derived from Job timestamps.
+
 ### Closed-owner working-directory selection
 
 A closed-execution inspection can select an existing directory relative to an
