@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func protocolOutput() (HarnessDiscoveryInput, HarnessDiscoveryOutput) {
 	input := HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: ExecutableSelections{Executables: []ExecutableSelection{}}}
@@ -77,5 +80,13 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 				t.Fatal("invalid observation accepted")
 			}
 		})
+	}
+}
+
+func TestDiscoveryAcceptsVerifiedClaudeExecutableDigest(t *testing.T) {
+	input, output := protocolOutput()
+	output.Installations[1].ExecutableSHA256 = strings.Repeat("a", 64)
+	if err := output.ValidateDiscovery(input); err != nil {
+		t.Fatalf("verified Claude executable identity was rejected: %v", err)
 	}
 }

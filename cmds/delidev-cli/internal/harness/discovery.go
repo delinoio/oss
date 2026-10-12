@@ -152,10 +152,10 @@ func discoverSelected(ctx context.Context, config DiscoveryConfig, input domain.
 		logger.InfoContext(ctx, "harness discovery started", "harness", i.Harness, "explicit_path", i.ExplicitPath != "")
 		resolved, state := resolve(i.Harness, i.ExplicitPath)
 		i.ResolvedPath, i.State = resolved, state
-		var codexDigest string
-		if i.Harness == domain.Codex && state == domain.InstallationUnchecked {
+		var executableDigest string
+		if (i.Harness == domain.Codex || i.Harness == domain.ClaudeCode) && state == domain.InstallationUnchecked {
 			var err error
-			codexDigest, err = InspectExecutable(ctx, resolved)
+			executableDigest, err = InspectExecutable(ctx, resolved)
 			if err != nil {
 				return domain.HarnessDiscoveryOutput{}, err
 			}
@@ -258,9 +258,9 @@ func discoverSelected(ctx context.Context, config DiscoveryConfig, input domain.
 			logger.InfoContext(ctx, "harness protocol validation completed", "harness", i.Harness, "state", i.Protocol.State, "version", i.Version)
 		}
 		logger.InfoContext(ctx, "harness discovery completed", "harness", i.Harness, "state", i.State)
-		if i.Harness == domain.Codex && i.State == domain.InstallationDetected {
+		if (i.Harness == domain.Codex || i.Harness == domain.ClaudeCode) && i.State == domain.InstallationDetected {
 			digest, err := InspectExecutable(ctx, i.ResolvedPath)
-			if err != nil || digest != codexDigest {
+			if err != nil || digest != executableDigest {
 				return domain.HarnessDiscoveryOutput{}, domain.NativeModelFailure()
 			}
 			i.ExecutableSHA256 = digest

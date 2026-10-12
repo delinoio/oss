@@ -75,6 +75,10 @@ func discoverClaude(t *testing.T, binary string) {
 	if i.Harness != domain.ClaudeCode || i.Version != domain.ClaudeProtocolVersion || !i.ProtocolVerified || i.Protocol == nil || i.Protocol.State != domain.ProtocolVerified || i.Protocol.Problem != nil || len(i.Capabilities) != 0 {
 		t.Fatalf("Claude discovery did not verify the isolated profile: state=%s version=%s protocol=%+v", i.State, i.Version, i.Protocol)
 	}
+	digest, err := InspectExecutable(context.Background(), binary)
+	if err != nil || i.ExecutableSHA256 == "" || i.ExecutableSHA256 != digest {
+		t.Fatalf("Claude discovery did not retain the verified executable digest: got %q, want %q (err %v)", i.ExecutableSHA256, digest, err)
+	}
 	if err := process.ReconcileOwner(filepath.Join(root, "processes"), owner); err != nil {
 		t.Fatal(err)
 	}
