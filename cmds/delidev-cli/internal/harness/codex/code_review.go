@@ -27,6 +27,7 @@ type codeReviewAttempt struct {
 	action    domain.ID
 	selection domain.NativeCodeReviewSelection
 	turn      domain.ID
+	childTurn domain.ID
 	items     map[string]codeReviewItem
 	entered   string
 	exited    string
