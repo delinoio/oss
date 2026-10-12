@@ -24,6 +24,9 @@ func TestRemoteControlAllStatesPreserveOriginalAuthority(t *testing.T) {
 		for _, environment := range []string{"omitted", "null", "empty", "present"} {
 			t.Run(string(status)+"/"+environment, func(t *testing.T) {
 				c, turn := observationClient()
+				// Start without the generic fixture's pause so a refusal must add
+				// its own fence and passive metadata must preserve input authority.
+				c.execution.paused = false
 				settings := c.execution.settings
 				params := remoteControlFixture(status)
 				switch environment {
@@ -111,6 +114,7 @@ func TestRemoteControlMalformedShapesAndRequestStaySeparate(t *testing.T) {
 	for _, change := range []string{"status-missing", "status-null", "status-unknown", "serverName-missing", "serverName-null", "installationId-missing", "installationId-null", "unknown", "alias", "oversized-server", "oversized-installation", "oversized-environment", "collection", "status-collection", "server-collection", "installation-collection", "status-number", "server-number", "environment-number", "nul", "envelope"} {
 		t.Run(change, func(t *testing.T) {
 			c, _ := observationClient()
+			c.execution.paused = false
 			params := remoteControlFixture(remoteControlDisabled)
 			switch change {
 			case "status-missing", "serverName-missing", "installationId-missing":
@@ -201,6 +205,9 @@ func TestRemoteControlReaderFencesAcceptedInputAndJoinsOriginalClose(t *testing.
 	nextKind(t, c, MetadataEvent)
 	fixtureSignal(t, c, "finish", map[string]any{"status": TurnCompleted})
 	completed := nextKind(t, c, TurnCompletedEvent)
+	// The finish fixture also emits thread status after the terminal event.
+	// Consume that observation before checking the malformed remote replay.
+	nextKind(t, c, ThreadStatusEvent)
 	if completed.Turn.Status != TurnCompleted || c.problem != problem || !c.execution.paused {
 		t.Fatal("terminal replaced original recovery")
 	}
