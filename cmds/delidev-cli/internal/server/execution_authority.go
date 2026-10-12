@@ -193,7 +193,7 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
 			return empty, executionDenied()
 		}
-		if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
+		if input.Configuration.Harness == domain.ClaudeCode && ((!state.ManagedClaudeToken && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1))) || state.ManagedClaudeToken && !slices.Contains(machine.WorkerCapabilities, domain.ManagedClaudeTokensV1)) {
 			return empty, executionDenied()
 		}
 		lease := state.Lease

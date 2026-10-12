@@ -525,3 +525,7 @@ through retained retry. An Execute lease or absent Runner does not select a Work
 fallback. Historical explicit-machine and reconciliation records retain their
 original server ownership. Follow the
 [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).
+
+## Managed Claude token negotiation
+
+Generated System 109 and Worker 70 identify the independent server-managed Claude lane under [the protocol contract](protos-delidev-v1-contract.md#managed-claude-token-allocations). New Add account gates on System 109 and sends an omitted-machine request. Existing device-owned Claude continues under System 38. Progress URLs and write-only code bytes remain transient outside shared query/mutation caches. Account resources expose original server operation and generation metadata only. Protected Worker Take/Finish envelopes never enter ordinary frontend state.

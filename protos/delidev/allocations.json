@@ -14466,6 +14466,20 @@
       "number": 53
     },
     {
+      "issue": 2893,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1",
+      "number": 109
+    },
+    {
+      "issue": 2893,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1",
+      "number": 70
+    },
+    {
       "issue": 2970,
       "kind": "enum",
       "declaration": "SystemCapability",

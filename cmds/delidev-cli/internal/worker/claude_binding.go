@@ -32,6 +32,7 @@ const (
 // The journal holds only immutable identities/digests and one input intent.
 // Neither reading it nor reopening the outbox authorizes another native send.
 type claudeBindingJournal struct {
+	ManagedClaudeToken  bool                   `json:"managed_claude_token,omitempty"`
 	StopClaim           *claude.InterruptClaim `json:"stop_claim,omitempty"`
 	Version             uint32                 `json:"version"`
 	JobID               domain.ID              `json:"job_id"`
@@ -315,4 +316,21 @@ func (c *ClaudeBindingPublisher) Close() error {
 		c.closeErr = c.release()
 	}
 	return c.closeErr
+}
+
+// The original protected Take proof selects this checkpoint comparison mode.
+// It is metadata only and cannot launch authentication or authorize input.
+func (c *ClaudeBindingPublisher) bindManagedClaudeToken() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.verify() != nil || c.journal.InputClaimed || c.sequence != 0 || c.journal.ManagedClaudeToken {
+		return publicationUncertain()
+	}
+	c.journal.ManagedClaudeToken = true
+	raw, e := json.Marshal(c.journal)
+	if e != nil || security.WriteAtomic(c.path, raw) != nil {
+		return c.block()
+	}
+	c.saved = raw
+	return nil
 }

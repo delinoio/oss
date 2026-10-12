@@ -67,7 +67,7 @@ func TestClosedContinuationKeepsOriginalHistoryAndConsumesOneNativeLaunch(t *tes
 		t.Fatal("fixture native replacement failed", err)
 	}
 	defer next.Close()
-	if next.config.Process.OwnerID != owner || next.config.SessionID != s.config.SessionID || next.config.API != (APIConfig{}) || next.current.input != s.current.input || next.history != s.history || !next.inputs[s.current.input] || !next.current.terminal.Successful() {
+	if next.config.Process.OwnerID != owner || next.config.SessionID != s.config.SessionID || (next.config.API.ServerOrigin != "" || next.config.API.Token != "" || len(next.config.API.ManagedToken) != 0 || len(next.config.ManagedToken) != 0) || next.current.input != s.current.input || next.history != s.history || !next.inputs[s.current.input] || !next.current.terminal.Successful() {
 		t.Fatal("replacement erased original identity/configuration")
 	}
 	if _, err := ContinueAPISession(context.Background(), closed, domain.NewID(), APIConfig{ServerOrigin: s.serverOrigin, Token: nativeContinuationToken(81)}, ContinueSuccessfulRun); err == nil {

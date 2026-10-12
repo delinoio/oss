@@ -367,7 +367,7 @@ function NativeManagedSubscriptionAccount({
           <SettingsActionButton
             icon={SettingsActionIcon.Connect}
             type="button"
-            disabled={!ready || !flow.available}
+            disabled={!ready || !flow.available || state.managed_claude_token === true}
             onClick={() => {
               if (!ready || !flow.available || refreshLock.current) return;
               flow.begin(service, current);
@@ -383,7 +383,7 @@ function NativeManagedSubscriptionAccount({
             <SettingsActionButton
               icon={SettingsActionIcon.Inspect}
               type="button"
-              disabled={!ready}
+              disabled={!ready || state.managed_claude_token === true}
               onClick={() => {
                 if (!ready || refreshLock.current) return;
                 if (service === SubscriptionServiceId.Claude)

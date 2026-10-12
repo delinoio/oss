@@ -183,6 +183,7 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 	}
 	config := previous.config
 	config.Process.OwnerID, config.API = owner, api
+	config.ManagedToken = api.ManagedToken
 	phase = continuationNativeInitialize
 	stream, err := openAPIStreamMode(ctx, config, true)
 	if err != nil {
@@ -225,6 +226,7 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 	}
 	config.Process.ProtectedValues = config.ProtectedValues()
 	config.API = APIConfig{}
+	config.ManagedToken = nil
 	next := &APISession{stream: stream, config: config, initial: initial, current: previous.current, compaction: previous.compaction, inputs: previous.inputs, history: previous.history, authorities: previous.authorities, owners: previous.owners, serverOrigin: previous.serverOrigin}
 	next.owners[owner], next.authorities[authority] = true, true
 	if config.Process.Logger != nil {

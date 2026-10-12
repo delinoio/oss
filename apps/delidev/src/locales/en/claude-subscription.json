@@ -77,5 +77,7 @@
   "claude-subscription.excluded.version": "This Claude Code version is unsupported. Install Claude Code 2.1.236 on the Runner, select its executable if needed, then inspect it again.",
   "claude-subscription.excluded.protocol": "The native Claude protocol is not verified. Open Runner Devices and inspect the installation with native protocol verification enabled; version detection alone does not establish readiness.",
   "claude-subscription.excluded.protocolFailed": "Native protocol verification failed. Review the installation on this Runner, then explicitly verify its native protocol again.",
-  "claude-subscription.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol."
+  "claude-subscription.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol.",
+  "claude-subscription.serverSummary": "Sign in through this server. Supported Runner Devices can use this account one at a time.",
+  "claude-subscription.newAccountRequired": "If this token is rejected or expires, add a new Claude account and sign in again. This account cannot renew its token."
 }

@@ -58,7 +58,11 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 		FastMode       string            `json:"fast_mode_state"`
 		FastModeReason string            `json:"fast_mode_disabled_reason"`
 	}
-	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != "ANTHROPIC_API_KEY" || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
+	source := "ANTHROPIC_API_KEY"
+	if b.tokenAuthentication {
+		source = "none"
+	}
+	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != source || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
 		init.MCPServers == nil || len(init.MCPServers) != 0 || init.Plugins == nil || len(init.Plugins) != 0 || init.AnalyticsOff == nil || !*init.AnalyticsOff || init.FeedbackOff == nil || !*init.FeedbackOff || init.FastMode != "off" || init.FastModeReason != "sdk_opt_in_required" ||
 		!uniqueText(init.Tools, 256, 256) || !uniqueText(init.Commands, 256, 256) || !uniqueText(init.Terminal, 256, 256) || !uniqueText(init.Agents, 256, 256) || !uniqueText(init.Skills, 256, 256) || !uniqueText(init.Capabilities, 256, 256) {
 		return lifecycleUncertain()

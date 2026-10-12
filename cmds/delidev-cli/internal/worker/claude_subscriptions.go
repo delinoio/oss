@@ -29,6 +29,9 @@ type claudeProfileOwner struct {
 	IdentityCommitment                string `json:"identity_commitment,omitempty"`
 }
 type nativeClaudeProfile struct {
+	token        []byte
+	tokenBundle  []byte
+	tokenFailed  bool
 	root, home   string
 	original     os.FileInfo
 	lock         *security.Lock
@@ -456,6 +459,9 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 		closeHTTP()
 		return nil, nil, err
 	}
+	if len(lease.response.Bundle) > 0 && lease.response.NativeProfileId == "" {
+		return beginManagedClaudeTokenExecution(ctx, config, owner, input, lease, closeHTTP)
+	}
 	var profile *nativeClaudeProfile
 	finish := func(joined bool) error {
 		defer closeHTTP()
@@ -514,6 +520,9 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 // never retakes a lease, launches login or reads/replays an approval code.
 func runClaudeRecovery(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, accountID domain.ID, account domain.Account) error {
 	state := account.Subscription
+	if state != nil && state.ManagedClaudeToken {
+		return runManagedClaudeTokenRecovery(ctx, config, client, credential, accountID, account)
+	}
 	if state == nil || !state.RecoveryRequired || state.Lease == nil || state.OwnerMachineID != credential.MachineID {
 		return subscription.Invalid()
 	}

@@ -2,7 +2,7 @@
 
 ## Scope
 
-The feature owns the compact AI Subscription presentation; composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to ; Claude lifecycle uses its independent capability 38 and original Runner; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
+The feature owns the compact AI Subscription presentation; composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to ; existing device-owned Claude lifecycle uses capability 38 and its original Runner; new Claude accounts use capability 109 and server setup-token; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
 
 ## Runtime and Language
 
@@ -112,6 +112,8 @@ Retain the existing login-first hierarchy, Back action, theme and account lifeti
 The approved 1280×800 preview illustrates initialization failure; it is not observed failure evidence for Codex 0.159.2. Preserve natural wrapping on narrow screens, the departure footer and existing controls. Failure may present existing owner-controlled inspection, cleanup and explicit retry actions locally for this feature; it adds no new repair capability, copy action, automatic focus movement, browser/device-code fallback or automatic retry. Grok retains its existing unsupported message; Claude account onboarding and management follow below. Confirmed naming keeps its original once-only focus behavior. Original Settings lifetime, late-callback suppression and once-only mutations remain unchanged.
 
 ## Claude account onboarding and management
+
+This section owns existing device-owned accounts. New server-managed accounts follow the separate managed-token section below.
 
 Claude Add account requires inventory 17, System `CLAUDE_SUBSCRIPTIONS_V1 = 38`
 and trusted native browser control. The existing 720px wizard Settings task dialog
@@ -352,3 +354,11 @@ remain unchanged. Automatic server acceptance freezes original failed-turn and
 consent proof before Runner cleanup, never resumes a session and never sends on
 mount, polling, reconnect or replay. Follow the
 [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).
+
+## Server-managed Claude onboarding
+
+New Claude Add account requires inventory 17, System `MANAGED_CLAUDE_TOKENS_V1 = 109` and trusted native browser control. One deliberate Add account saves default Claude metadata and immediately starts its sticky omitted-machine server login. The 720px Settings task has exactly Sign in → Account name; it neither reads Runner inventory nor selects a Runner. Duplicate clicks, Strict Mode, reconnect and polling preserve the original operation. Existing device-owned accounts retain the Runner-based flow above under System 38.
+
+Sign in opens the exact native setup-token manual URL through the existing original window/server/lifetime binding. Explicit Open browser again preserves that binding. The masked critical Approval code input receives focus and stays outside React state and shared caches. Submit validates original `code#state`, clears the DOM and outgoing bytes, and never retries uncertain input. Hide clears unsent input while retaining the original operation. Success requires a fresh original server operation, managed-token ownership, settled generation and connection, with no native-profile/Runner ownership. It advances once to the focused default Claude name. Save account name and Later retain the connected account.
+
+Management explains that rejection or expiry requires adding a new Claude account. It disables Sign in again, renewal and reuse of a disconnected managed account. Logout retains the original confirmation and cleanup behavior. Missing server support gives update guidance without Runner fallback. EN/KO, semantic themes, Escape dismissal, retained task lifetime and safe errors remain required. No layout fixture establishes real account or packaged platform acceptance.

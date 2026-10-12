@@ -77,5 +77,7 @@
   "claude-subscription.excluded.version": "이 Claude Code 버전은 지원되지 않습니다. Runner에 Claude Code 2.1.236을 설치하고 필요하면 실행 파일을 선택한 뒤 다시 검사하세요.",
   "claude-subscription.excluded.protocol": "네이티브 Claude 프로토콜이 검증되지 않았습니다. 실행 장치에서 네이티브 프로토콜 검증을 켜고 설치를 검사하세요. 버전 감지만으로 실행 준비가 확인되지는 않습니다.",
   "claude-subscription.excluded.protocolFailed": "네이티브 프로토콜 검증에 실패했습니다. 이 Runner의 설치를 확인한 뒤 네이티브 프로토콜 검증을 다시 명시적으로 실행하세요.",
-  "claude-subscription.excluded.protocolUnsupported": "이 설치에는 지원되는 네이티브 프로토콜이 없습니다. Runner에 지원되는 하네스 버전을 설치한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요."
+  "claude-subscription.excluded.protocolUnsupported": "이 설치에는 지원되는 네이티브 프로토콜이 없습니다. Runner에 지원되는 하네스 버전을 설치한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요.",
+  "claude-subscription.serverSummary": "이 서버에서 로그인합니다. 지원되는 실행 장치에서 이 계정을 한 번에 하나씩 사용할 수 있습니다.",
+  "claude-subscription.newAccountRequired": "토큰이 거부되거나 만료되면 새 Claude 계정을 추가하고 다시 로그인하세요. 이 계정의 토큰은 갱신할 수 없습니다."
 }

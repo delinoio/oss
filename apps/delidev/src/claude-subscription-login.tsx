@@ -76,6 +76,7 @@ enum Step {
   Terminal,
 }
 interface View {
+  server: boolean;
   step: Step;
   machine: string;
   name: string;
@@ -88,6 +89,7 @@ interface View {
   diagnostic?: NativeSubscriptionDiagnostic;
 }
 interface Pending {
+  server: boolean;
   opening: string;
   machine: string;
   account?: Resource;
@@ -103,6 +105,45 @@ interface Pending {
   codeClaimed: boolean;
   start?: () => Promise<void>;
   retry?: () => Promise<void>;
+}
+export function claudeSetupTokenURL(raw: string): boolean {
+  try {
+    const u = new URL(raw),
+      q = u.searchParams;
+    if (
+      raw.length > 8192 ||
+      !/^[!-~]+$/.test(raw) ||
+      u.href !== raw ||
+      u.protocol !== "https:" ||
+      u.host !== "claude.com" ||
+      u.pathname !== "/cai/oauth/authorize" ||
+      u.username ||
+      u.password ||
+      u.hash
+    )
+      return false;
+    const exact: Record<string, string> = {
+      code: "true",
+      client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+      response_type: "code",
+      redirect_uri: "https://platform.claude.com/oauth/code/callback",
+      scope: "user:inference",
+      code_challenge_method: "S256",
+    };
+    return (
+      [...q.entries()].length === 8 &&
+      [...q.entries()].every(
+        ([key, value]) =>
+          q.getAll(key).length === 1 &&
+          (key in exact
+            ? value === exact[key]
+            : ["state", "code_challenge"].includes(key) &&
+              /^[A-Za-z0-9_-]{43}$/.test(value)),
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 export function claudeLoginURL(raw: string): boolean {
   try {
@@ -457,7 +498,11 @@ export function useClaudeSubscriptionLogin(
     const machine = initial
       ? text(object(document(initial).subscription).owner_machine_id)
       : "";
+    const server =
+      !initial ||
+      object(document(initial).subscription).managed_claude_token === true;
     const p: Pending = {
+      server,
       opening: newRequestId(),
       machine,
       fixedRunner: Boolean(machine),
@@ -474,7 +519,8 @@ export function useClaudeSubscriptionLogin(
     };
     pending.current = p;
     setView({
-      step: Step.Runner,
+      server,
+      step: server ? Step.Login : Step.Runner,
       machine,
       name: "Claude",
       state: SubscriptionLoginState.PREPARING,
@@ -503,7 +549,7 @@ export function useClaudeSubscriptionLogin(
       | Parameters<typeof clients.subscription.requestSubscription>[0]
       | undefined;
     p.start = async () => {
-      if (!native || !isEntityId(p.machine))
+      if (!native || (!p.server && !isEntityId(p.machine)))
         throw new Error("Select original Runner");
       update(p, { step: Step.Login });
       if (!p.account) {
@@ -528,7 +574,7 @@ export function useClaudeSubscriptionLogin(
           expectedRevision: p.account.revision,
           requestId: newRequestId(),
         },
-        machineId: p.machine,
+        ...(p.server ? {} : { machineId: p.machine }),
         action: reauth ? SubscriptionAction.REFRESH : SubscriptionAction.LOGIN,
         deviceCode: false,
       };
@@ -546,10 +592,10 @@ export function useClaudeSubscriptionLogin(
         throw new Error("Invalid original operation");
       p.account = result.account;
       p.operation = result.operationId;
-      runner.remember(request.machineId ?? "");
+      if (!p.server) runner.remember(request.machineId ?? "");
       changed();
     };
-    if (reauth)
+    if (server || reauth)
       void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
   };
   useEffect(() => {
@@ -572,10 +618,15 @@ export function useClaudeSubscriptionLogin(
             s = object(d.subscription);
           if (!live(p)) return;
           if (
-            text(object(s.native_operation).id) !== p.operation ||
+            (p.server
+              ? s.managed_claude_token !== true ||
+                text(object(s.server_operation).id) !== p.operation ||
+                Boolean(s.owner_machine_id) ||
+                Boolean(s.native_profile_id)
+              : text(object(s.native_operation).id) !== p.operation ||
+                s.owner_machine_id !== p.machine ||
+                !isEntityId(text(s.native_profile_id))) ||
             s.generation !== result.generation ||
-            s.owner_machine_id !== p.machine ||
-            !isEntityId(text(s.native_profile_id)) ||
             s.recovery_required === true ||
             !isEntityId(text(object(d.connection).id))
           )
@@ -632,7 +683,9 @@ export function useClaudeSubscriptionLogin(
           return;
         if (
           result.userCode ||
-          !claudeLoginURL(result.url) ||
+          !(p.server
+            ? claudeSetupTokenURL(result.url)
+            : claudeLoginURL(result.url)) ||
           (p.url && p.url !== result.url) ||
           ![
             SubscriptionLoginMethod.BROWSER_CALLBACK,
@@ -765,7 +818,14 @@ export function useClaudeSubscriptionLogin(
       p,
       async () => {
         try {
-          if (code.length > 16384 || !code.every((b) => b >= 33 && b <= 126))
+          if (
+            code.length > 16384 ||
+            !code.every((b) => b >= 33 && b <= 126) ||
+            (p.server &&
+              (value.split("#").length !== 2 ||
+                value.split("#")[1] !==
+                  new URL(p.url).searchParams.get("state")))
+          )
             throw new Error("Invalid original input");
           const current = await fresh(p);
           if (!live(p)) return;
@@ -947,9 +1007,24 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
   useEffect(() => {
     if (visible && v.step === Step.Name)
       name.current?.focus({ preventScroll: true });
+    if (
+      visible &&
+      v.step === Step.Login &&
+      v.method === SubscriptionLoginMethod.BROWSER_CODE &&
+      !v.codeClaimed
+    )
+      code.current?.focus({ preventScroll: true });
     if (!visible && code.current) code.current.value = "";
-  }, [visible, v.step]);
-  const step = v.step === Step.Runner ? 0 : v.step === Step.Name ? 2 : 1;
+  }, [visible, v.step, v.method, v.codeClaimed]);
+  const step = v.server
+    ? v.step === Step.Name
+      ? 1
+      : 0
+    : v.step === Step.Runner
+      ? 0
+      : v.step === Step.Name
+        ? 2
+        : 1;
   const status: Partial<Record<SubscriptionLoginState, MessageKey>> = {
     [SubscriptionLoginState.PREPARING]: "claude-subscription.preparing",
     [SubscriptionLoginState.WAITING]: "claude-subscription.waiting",
@@ -983,11 +1058,13 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
         aria-label={copy("claude-subscription.steps")}
       >
         {(
-          [
-            "claude-subscription.runner",
-            "claude-subscription.login",
-            "claude-subscription.accountName",
-          ] as const
+          (v.server
+            ? ["claude-subscription.login", "claude-subscription.accountName"]
+            : [
+                "claude-subscription.runner",
+                "claude-subscription.login",
+                "claude-subscription.accountName",
+              ]) as MessageKey[]
         ).map((key, index) => (
           <li
             key={key}
@@ -1116,7 +1193,11 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
       ) : (
         <>
           <p>
-            {copy("claude-subscription.runnerSummary", { runner: runnerName })}
+            {v.server
+              ? copy("claude-subscription.serverSummary")
+              : copy("claude-subscription.runnerSummary", {
+                  runner: runnerName,
+                })}
           </p>
           {v.step === Step.Name ? (
             <>

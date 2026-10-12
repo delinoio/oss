@@ -108,6 +108,14 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			return nil, err
 		}
 		defer func() {
+			if nativeProfile != nil && len(nativeProfile.token) > 0 {
+				if nativeJoined && scanManagedClaudeTokenRuntime(home, nativeProfile.token) != nil {
+					nativeJoined = false
+				}
+			}
+			if nativeProfile != nil && len(nativeProfile.token) > 0 && returned != nil {
+				nativeProfile.tokenFailed = true
+			}
 			if err := finish(nativeJoined); err != nil {
 				output, returned = nil, err
 			}
@@ -155,9 +163,21 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		Permission: permission, Effort: effort, Instructions: instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
 	}
 	if nativeProfile != nil {
-		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
+		if len(nativeProfile.token) > 0 {
+			nativeConfig.ManagedToken = nativeProfile.token
+			nativeConfig.API.ManagedToken = nativeProfile.token
+			nativeConfig.Authentication = claude.TokenAuthentication
+			if err := binding.bindManagedClaudeToken(); err != nil {
+				return nil, err
+			}
+		} else {
+			nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
+		}
 		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
 			return nil, err
+		}
+		if len(nativeProfile.token) > 0 {
+			nativeProfile.managedLease.journal.ClaudeTokenExecutionID = input.ExecutionID
 		}
 		nativeProfile.managedLease.journal.ExecutionStarted = true
 		if err := writeJSON(nativeProfile.managedLease.journalPath, nativeProfile.managedLease.journal); err != nil {

@@ -23,13 +23,18 @@ func init() {
 		return
 	}
 	mode := strings.TrimPrefix(filepath.Base(root), "fixture-api-")
+	managedToken := strings.HasPrefix(mode, "managed-token-")
 	for _, key := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "ANTHROPIC_MODEL", "NODE_OPTIONS", "HTTPS_PROXY", "BASH_ENV"} {
-		if os.Getenv(key) != "" {
+		if os.Getenv(key) != "" && !(managedToken && key == "CLAUDE_CODE_OAUTH_TOKEN") {
 			os.Exit(70)
 		}
 	}
 	nativeSubscription := strings.HasPrefix(mode, "native-subscription-")
-	if nativeSubscription {
+	if managedToken {
+		if os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "synthetic-managed-token" || os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" || os.Getenv("ANTHROPIC_BASE_URL") != "" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "" || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") {
+			os.Exit(71)
+		}
+	} else if nativeSubscription {
 		for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"} {
 			if os.Getenv(key) != "" {
 				os.Exit(71)
@@ -92,6 +97,15 @@ func init() {
 		}
 		if mode == "native-subscription-foreign-provider" {
 			result["account"].(map[string]any)["apiProvider"] = "bedrock"
+		}
+	}
+	if managedToken {
+		result["account"] = map[string]any{"apiProvider": "firstParty", "tokenSource": "CLAUDE_CODE_OAUTH_TOKEN"}
+		if mode == "managed-token-api-source" {
+			result["account"].(map[string]any)["apiKeySource"] = "none"
+		}
+		if mode == "managed-token-foreign-source" {
+			result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
 		}
 	}
 	switch mode {
@@ -320,5 +334,33 @@ func TestAPIConfigurationNeverSerializesExecutionAuthority(t *testing.T) {
 		if err != nil || string(raw) != "{}" {
 			t.Fatal("private API launch configuration became serializable")
 		}
+	}
+}
+
+func TestManagedClaudeTokenNativeAuthority(t *testing.T) {
+	for _, mode := range []string{"managed-token-valid", "managed-token-api-source", "managed-token-foreign-source"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg, logs := apiFixtureConfig(t, mode)
+			cfg.ManagedToken = []byte("synthetic-managed-token")
+			cfg.API.ManagedToken = cfg.ManagedToken
+			cfg.Authentication = TokenAuthentication
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			stream, e := OpenAPIStream(ctx, cfg)
+			if mode == "managed-token-valid" {
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = stream.Close(); e != nil {
+					t.Fatal(e)
+				}
+			} else if e == nil {
+				_ = stream.Close()
+				t.Fatal("mixed native authority accepted")
+			}
+			if strings.Contains(logs.String(), "synthetic-managed-token") {
+				t.Fatal("token entered logs")
+			}
+		})
 	}
 }

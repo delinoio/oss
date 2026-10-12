@@ -117,6 +117,7 @@ type Service struct {
 	terminalOutputs               map[domain.ID]*terminalOutputRing
 	terminalOutputOrder           list.List
 	prFixRequests                 prFixRequestTracker
+	claudeTokenOpen               serverClaudeTokenOpener
 	subscriptionOpen              serverSubscriptionOpener
 	quotaOpen                     serverQuotaOpener
 	creditOpen                    serverCreditAccessOpener

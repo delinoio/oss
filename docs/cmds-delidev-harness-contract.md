@@ -2409,6 +2409,8 @@ response compatibility change adds no public interface, capability or migration.
 
 ## Claude native subscription execution profile
 
+This section owns existing device-owned accounts. New server-managed accounts follow the separate managed-token section below.
+
 The native subscription adapter reuses the pinned Claude Code `2.1.236`
 stream-json execution, original-input binding, Stop, continuation, transcript,
 usage and applied permission/model/effort checks. It requires an independently
@@ -2666,3 +2668,9 @@ before a separate `account/rateLimits/read`. The adapter refuses a second
 invocation. Independent joined process/file cleanup owns the original runtime;
 no credential writer, renewal, inference or Worker fallback is granted. Follow
 the [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).
+
+## Managed Claude token execution
+
+The server-managed token lane follows [the subscription contract](cmds-delidev-subscription-contract.md#server-managed-claude-tokens). It adds a separate token authentication mode to the pinned full stream-json adapter. Rebuild the child environment from bounded system lookup and fresh private directories, supply only the selected `CLAUDE_CODE_OAUTH_TOKEN`, and remove API keys, alternate bearer/provider helpers, relay URL, personal settings, SIMPLE and bare mode. Initialize must report first-party `tokenSource:CLAUDE_CODE_OAUTH_TOKEN` with no API-key source or inferred human identity. `system/init` must independently report `apiKeySource:none`. Full commands and existing applied settings still require proof.
+
+Protect the token in initialization, stream publication and diagnostic reflection checks. Retained session configuration and checkpoints clear token bytes. Managed-token fingerprints preserve their separate authentication mode across continuation without changing historical API/profile fingerprints. Continuation reacquires the current original exclusive lease and fresh token envelope. Bounded retained runtime/history scans reject raw and complete Base64 token forms before cleanup proof. Restart cleanup never reconstructs token bytes or launches a replacement authentication flow.

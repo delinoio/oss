@@ -49,7 +49,23 @@ func DiscoverCodex(ctx context.Context, config DiscoveryConfig) (domain.Installa
 	return result.Installations[0], nil
 }
 
-func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool) (result domain.HarnessDiscoveryOutput, returned error) {
+func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex bool) (domain.HarnessDiscoveryOutput, error) {
+	return discoverSelected(ctx, config, input, onlyCodex, false)
+}
+
+// DiscoverClaude isolates the server's installed Claude adapter without probing
+// other harnesses or reading a personal profile.
+func DiscoverClaude(ctx context.Context, config DiscoveryConfig) (domain.Installation, error) {
+	result, err := discoverSelected(ctx, config, domain.HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}}, false, true)
+	if err != nil {
+		return domain.Installation{}, err
+	}
+	if len(result.Installations) != 1 {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "The server Claude adapter is unavailable.", "Install the supported original CLI.")
+	}
+	return result.Installations[0], nil
+}
+func discoverSelected(ctx context.Context, config DiscoveryConfig, input domain.HarnessDiscoveryInput, onlyCodex, onlyClaude bool) (result domain.HarnessDiscoveryOutput, returned error) {
 	root, owner := config.Root, config.OwnerID
 	codexVersion := ""
 	var codexDiagnostic *domain.CodexDiagnostic
@@ -119,6 +135,14 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 	result.Installations = input.Selections.Installations()
 	if onlyCodex {
 		result.Installations = result.Installations[:1]
+	}
+	if onlyClaude {
+		for _, i := range result.Installations {
+			if i.Harness == domain.ClaudeCode {
+				result.Installations = []domain.Installation{i}
+				break
+			}
+		}
 	}
 	for index := range result.Installations {
 		if err := ctx.Err(); err != nil {

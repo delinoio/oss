@@ -317,3 +317,7 @@ other owners and unrelated references. Failed cleanup/retirement fences lifecycl
 removal and restore without failing or releasing Execute. Startup reconciles
 original cleanup only and never resends consumption. Follow the
 [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).
+
+## Managed Claude token envelopes
+
+Server-managed Claude setup-token seals a separate version-1 envelope under `Ref{Owner:accountID, ID:originalGeneration, Purpose:account-login}`. Its original server/account/generation UUIDs bind one bounded opaque token. It is neither a Codex auth file nor a human identity. Follow [the subscription lifecycle](cmds-delidev-subscription-contract.md#server-managed-claude-tokens) for original staging, cleanup and metadata publication. Protected Take delivers it only to an authorized capability-70 execution lease. It is never a public secret-read API or configuration export. Finish proves unchanged possession and cannot renew or rotate it. Local logout/reference retirement makes no provider-wide revocation claim.

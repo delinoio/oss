@@ -51,7 +51,7 @@ func TestCheckpointRestoresOnlyOriginalClosedEvidence(t *testing.T) {
 	}
 	clear(raw)
 	p := restored.previous
-	if !p.closed.Load() || p.stream != nil || p.config.API != (APIConfig{}) || p.current.input != ref.InputID || p.current.turnID != ref.NativeTurnID || !p.current.terminal.Successful() || !p.current.content.seen["\x00msg_fixture_checkpoint"] {
+	if !p.closed.Load() || p.stream != nil || (p.config.API.ServerOrigin != "" || p.config.API.Token != "" || len(p.config.API.ManagedToken) != 0 || len(p.config.ManagedToken) != 0) || p.current.input != ref.InputID || p.current.turnID != ref.NativeTurnID || !p.current.terminal.Successful() || !p.current.content.seen["\x00msg_fixture_checkpoint"] {
 		t.Fatal("restoration launched native work or lost original identities")
 	}
 	next, err := ContinueAPISession(context.Background(), restored, domain.NewID(), APIConfig{ServerOrigin: cfg.API.ServerOrigin, Token: nativeAPIFixtureToken}, ContinueSuccessfulRun)

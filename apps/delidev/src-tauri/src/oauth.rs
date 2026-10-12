@@ -2470,6 +2470,19 @@ fn validate_claude_subscription_authorization(raw: &str) -> Result<(), NativeFai
             return Err(invalid);
         }
     }
+    // The setup-token manual profile is separate from legacy auth-login.
+    // Preserve the CLI's exact inference-only state/PKCE and redirect; neither
+    // browser binding can exchange codes or manufacture native credentials.
+    if field("scope") == "user:inference" {
+        if fields.len() != 8
+            || field("code") != "true"
+            || field("state").len() != 43
+            || field("redirect_uri") != "https://platform.claude.com/oauth/code/callback"
+        {
+            return Err(invalid);
+        }
+        return Ok(());
+    }
     let scopes: Vec<_> = field("scope").split_whitespace().collect();
     if !scopes.contains(&"user:profile") || !scopes.contains(&"user:inference") {
         return Err(invalid);
@@ -2605,6 +2618,34 @@ mod claude_subscription_tests {
             )
             .is_err()
         );
+    }
+    #[test]
+    fn claude_setup_token_browser_accepts_only_manual_inference_profile() {
+        let mut url = url::Url::parse(&authorization()).unwrap();
+        let pairs: Vec<(String, String)> = url
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        url.set_query(None);
+        for (key, value) in pairs {
+            let value = if key == "scope" {
+                "user:inference".to_owned()
+            } else if key == "state" {
+                "s".repeat(43)
+            } else {
+                value
+            };
+            url.query_pairs_mut().append_pair(&key, &value);
+        }
+        assert!(validate_claude_subscription_authorization(url.as_str()).is_ok());
+        let original = url.to_string();
+        for changed in [
+            original.clone() + "&state=replacement",
+            original.replace("scope=user%3Ainference", "scope=user%3Aprofile"),
+            original.replace("state=", "unexpected="),
+        ] {
+            assert!(validate_claude_subscription_authorization(&changed).is_err());
+        }
     }
     #[test]
     fn claude_browser_rejects_substituted_authority() {

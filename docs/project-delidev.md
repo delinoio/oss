@@ -295,7 +295,7 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
-AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. Claude independently selects its owning Runner under capability 38 and then uses login/name steps; Grok remains unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
+AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming. existing device-owned Claude selects its owning Runner under capability 38; new managed Claude accounts use server login/name steps under capability 109; Grok remains unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in the originating change; this optional JSON amendment adds no migration.
 
 Ordered account source routing follows the catalog, desktop, sessions, protocol and
 portable configuration contracts. One Harness retains source-specific models and
@@ -465,3 +465,7 @@ automatic consent/failed-turn proof admits server access-only spending before
 Runner cleanup. Execute retains its original writer, process, outcome and cleanup;
 historical credit owners retain their original lane. No migration or Worker
 allocation is added, and native/account/platform acceptance remains separate.
+
+## Server-managed Claude accounts
+
+New Claude accounts use independently negotiated System 109 and Worker 70 under [the subscription contract](cmds-delidev-subscription-contract.md#server-managed-claude-tokens). The server owns one source-verified setup-token login and sealed generation without Runner selection. Eligible Workers execute sequentially under original exclusive leases. Existing device-owned Claude profiles, ChatGPT and API behavior remain independent. Rejected/expired managed tokens require a new account; no renewal, fallback or migration is added. The [Settings contract](apps-delidev-subscription-settings-contract.md#server-managed-claude-onboarding) owns the two-step flow. Static source and fixtures do not establish native/account/platform acceptance.

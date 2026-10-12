@@ -70,10 +70,30 @@ func (s SubscriptionState) validateNativeClaude(account Account) error {
 		return Fail(InvalidArgument, "Invalid native Claude subscription ownership.", "Preserve the original Runner, profile, generation and operation.")
 	}
 	if account.SubscriptionService != SubscriptionClaude {
-		if s.NativeProfileID != "" || s.NativeOperation != nil {
+		if o := s.ServerOperation; o != nil && (o.ClaudeCleanupConfirmed || o.NativeDiagnostic != nil || o.LoginMethod != 0 || o.CodeSubmissionID != "" || o.CodeConsumed) {
+			return invalid()
+		}
+		if s.ManagedClaudeToken || s.NativeProfileID != "" || s.NativeOperation != nil {
 			return invalid()
 		}
 		return nil
+	}
+	if s.ManagedClaudeToken {
+		if s.NativeProfileID != "" || s.OwnerMachineID != "" || s.NativeOperation != nil || s.Observation != nil || s.ResetCredits != nil || s.QuotaState != "" || s.QuotaObservedAt != nil || s.SpendControlReached != nil || s.SpendControlObservedAt != nil {
+			return invalid()
+		}
+		if s.Lease != nil && s.Lease.Action != SubscriptionExecute {
+			return invalid()
+		}
+		if o := s.ServerOperation; o != nil {
+			if o.Action != SubscriptionLogin && o.Action != SubscriptionLogout || o.Diagnostic != nil || o.CallbackForwarded || o.CleanupPhase != "" || o.ExpiresAt.Sub(o.StartedAt) > 15*time.Minute || o.LoginMethod != 0 && o.LoginMethod != SubscriptionBrowserCode || o.CodeSubmissionID != "" && o.CodeSubmissionID.Validate() != nil || o.CodeConsumed && o.CodeSubmissionID == "" || o.NativeDiagnostic != nil && (o.NativeDiagnostic.Validate() != nil || o.NativeDiagnostic.CorrelationID != o.ID) {
+				return invalid()
+			}
+		}
+		return nil
+	}
+	if s.ServerOperation != nil && (s.ServerOperation.ClaudeCleanupConfirmed || s.ServerOperation.NativeDiagnostic != nil || s.ServerOperation.LoginMethod != 0 || s.ServerOperation.CodeSubmissionID != "" || s.ServerOperation.CodeConsumed) {
+		return invalid()
 	}
 	if s.ServerOperation != nil || s.Observation != nil || s.ResetCredits != nil || s.QuotaState != "" || s.QuotaObservedAt != nil || s.SpendControlReached != nil || s.SpendControlObservedAt != nil {
 		return invalid()

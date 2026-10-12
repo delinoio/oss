@@ -25,7 +25,10 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
-import { claudeLoginURL } from "./claude-subscription-login";
+import {
+  claudeLoginURL,
+  claudeSetupTokenURL,
+} from "./claude-subscription-login";
 import { useSubscriptionLogin } from "./subscription-login";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
@@ -47,7 +50,11 @@ for (const [key, value] of Object.entries({
 }))
   authorization.searchParams.set(key, value);
 const originalURL = authorization.href;
-function fixture(dialog = false, diagnostics = false) {
+function fixture(dialog = false, diagnostics = false, server = false) {
+  const setupURL = new URL(originalURL);
+  setupURL.searchParams.set("scope", "user:inference");
+  setupURL.searchParams.set("state", "b".repeat(43));
+  const loginURL = server ? setupURL.href : originalURL;
   const machine = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.MACHINE,
@@ -100,9 +107,16 @@ function fixture(dialog = false, diagnostics = false) {
       documentJson: encode({
         ...document(current),
         subscription: {
-          owner_machine_id: machine.id,
-          native_profile_id: profile,
-          native_operation: { id: operation },
+          ...(server
+            ? {
+                managed_claude_token: true,
+                server_operation: { id: operation },
+              }
+            : {
+                owner_machine_id: machine.id,
+                native_profile_id: profile,
+                native_operation: { id: operation },
+              }),
           pending: { id: operation },
         },
       }),
@@ -111,7 +125,7 @@ function fixture(dialog = false, diagnostics = false) {
   });
   const progress = vi.fn(() => ({
     state,
-    url: state === SubscriptionLoginState.WAITING ? originalURL : "",
+    url: state === SubscriptionLoginState.WAITING ? loginURL : "",
     loginMethod: SubscriptionLoginMethod.BROWSER_CODE,
     generation,
   }));
@@ -178,7 +192,14 @@ function fixture(dialog = false, diagnostics = false) {
         ) : flow.hidden ? (
           <button onClick={flow.show}>View original operation</button>
         ) : (
-          <button onClick={() => flow.begin(SubscriptionServiceId.Claude)}>
+          <button
+            onClick={() =>
+              flow.begin(
+                SubscriptionServiceId.Claude,
+                server ? undefined : current,
+              )
+            }
+          >
             Add Claude
           </button>
         )}
@@ -232,10 +253,17 @@ function fixture(dialog = false, diagnostics = false) {
           ...document(current),
           connection: { id: newRequestId() },
           subscription: {
-            owner_machine_id: machine.id,
-            native_profile_id: profile,
             generation,
-            native_operation: { id: operation },
+            ...(server
+              ? {
+                  managed_claude_token: true,
+                  server_operation: { id: operation },
+                }
+              : {
+                  owner_machine_id: machine.id,
+                  native_profile_id: profile,
+                  native_operation: { id: operation },
+                }),
           },
         }),
       });
@@ -265,7 +293,7 @@ async function start(f: ReturnType<typeof fixture>) {
 it("creates and logs in once after explicit Runner selection and keeps sensitive data outside caches", async () => {
   const f = fixture();
   await start(f);
-  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.save).not.toHaveBeenCalled();
   expect(f.login).toHaveBeenCalledTimes(1);
   expect(f.login.mock.calls[0][0].machineId).toBe(f.machine.id);
   await waitFor(() =>
@@ -341,7 +369,7 @@ it("verifies original success before editing the name and Later keeps the connec
   await waitFor(() => expect(window.document.activeElement).toBe(name));
   fireEvent.click(screen.getByRole("button", { name: "Later" }));
   expect(document(f.current()).connection).toBeTruthy();
-  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.save).not.toHaveBeenCalled();
   expect(f.cancel).not.toHaveBeenCalled();
 });
 it("hides the original task without canceling and clears the approval input on hide", async () => {
@@ -360,7 +388,7 @@ it("hides the original task without canceling and clears the approval input on h
   );
   await screen.findByLabelText("Approval code");
   expect(f.login).toHaveBeenCalledTimes(1);
-  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.save).not.toHaveBeenCalled();
 });
 it("rejects a substituted browser profile", () => {
   expect(claudeLoginURL(originalURL)).toBe(true);
@@ -616,4 +644,54 @@ it("keeps Start blocked by a retained pending and uncertain original Runner diag
     screen.getByRole("button", { name: "Start sign-in" }).matches(":disabled"),
   ).toBe(true);
   f.client.clear();
+});
+
+it("starts one server login with no Runner query and advances once to the focused name", async () => {
+  const f = fixture(false, false, true);
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
+  const input = await screen.findByLabelText(
+    "Approval code",
+    {},
+    { timeout: 4000 },
+  );
+  expect(f.login).toHaveBeenCalledTimes(1);
+  expect(f.login.mock.calls[0][0].machineId).toBe("");
+  expect(f.list).not.toHaveBeenCalled();
+  expect(screen.queryByRole("combobox", { name: "Runner Device" })).toBeNull();
+  expect(window.document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: "original#" + "b".repeat(43) } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit code" }));
+  await waitFor(() => expect(f.submit).toHaveBeenCalledTimes(1));
+  expect(input).toHaveProperty("value", "");
+  f.success();
+  const name = await screen.findByLabelText(
+    "Account name",
+    {},
+    { timeout: 4000 },
+  );
+  await waitFor(() => expect(window.document.activeElement).toBe(name));
+  fireEvent.click(screen.getByRole("button", { name: "Later" }));
+  expect(f.cancel).not.toHaveBeenCalled();
+  expect(document(f.current()).connection).toBeTruthy();
+  expect(
+    JSON.stringify(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .map((q) => q.state.data),
+      (_k, v) => (typeof v === "bigint" ? v.toString() : v),
+    ),
+  ).not.toContain("user:inference");
+  f.client.clear();
+});
+it("accepts only the exact setup-token manual browser profile", () => {
+  const u = new URL(originalURL);
+  u.searchParams.set("scope", "user:inference");
+  u.searchParams.set("state", "b".repeat(43));
+  expect(claudeSetupTokenURL(u.href)).toBe(true);
+  expect(claudeSetupTokenURL(originalURL)).toBe(false);
+  expect(claudeSetupTokenURL(u.href + "&state=" + "c".repeat(43))).toBe(false);
+  u.searchParams.set("redirect_uri", "https://evil.invalid");
+  expect(claudeSetupTokenURL(u.href)).toBe(false);
 });

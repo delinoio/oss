@@ -93,7 +93,23 @@ func validateInitializeProfile(raw []byte, permission, apiKeySource string) erro
 	return validateInitializeMode(raw, permission, apiKeySource, false)
 }
 
+type AuthenticationMode uint8
+
+const (
+	APIAuthentication AuthenticationMode = iota
+	ProfileAuthentication
+	TokenAuthentication
+)
+
 func validateInitializeMode(raw []byte, permission, apiKeySource string, subscription bool) error {
+	mode := APIAuthentication
+	if subscription {
+		mode = ProfileAuthentication
+	}
+	return validateInitializeAuthentication(raw, permission, apiKeySource, mode)
+}
+func validateInitializeAuthentication(raw []byte, permission, apiKeySource string, mode AuthenticationMode) error {
+	subscription := mode == ProfileAuthentication
 	var result initializeResult
 	tokenSource := "none"
 	if apiKeySource != "" {
@@ -107,7 +123,11 @@ func validateInitializeMode(raw []byte, permission, apiKeySource string, subscri
 		return incompatible()
 	}
 	account := result.Account
-	if subscription {
+	if mode == TokenAuthentication {
+		if account.TokenSource != "CLAUDE_CODE_OAUTH_TOKEN" || account.APIKeySource != "" || account.Email != nil || account.Organization != nil || account.SubscriptionType != nil {
+			return incompatible()
+		}
+	} else if subscription {
 		if account.TokenSource != "" || account.APIKeySource != "" || account.Email == nil || domain.Text(*account.Email, "native identity", 512, true) != nil || account.SubscriptionType == nil || !slices.Contains([]string{"pro", "max", "team", "enterprise"}, *account.SubscriptionType) || account.Organization != nil && domain.Text(*account.Organization, "native organization", 512, false) != nil {
 			return incompatible()
 		}
@@ -125,7 +145,7 @@ func validateInitializeMode(raw []byte, permission, apiKeySource string, subscri
 		Account map[string]json.RawMessage `json:"account"`
 	}
 	_ = json.Unmarshal(raw, &fields)
-	if _, declared := fields.Account["apiKeySource"]; declared != (apiKeySource != "" && !subscription) {
+	if _, declared := fields.Account["apiKeySource"]; declared != (apiKeySource != "" && mode == APIAuthentication) {
 		return incompatible()
 	}
 	if subscription {

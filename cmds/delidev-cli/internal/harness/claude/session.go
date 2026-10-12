@@ -84,8 +84,12 @@ func OpenAPISession(ctx context.Context, config APIStreamConfig) (*APISession, e
 	// The stream owns its secret launch state. The controller needs only the
 	// immutable settings and transient reflection values for owned history reads.
 	origin, authority := config.API.ServerOrigin, sha256.Sum256([]byte(config.API.Token))
+	if len(config.ManagedToken) > 0 {
+		config.Authentication = TokenAuthentication
+	}
 	config.Process.ProtectedValues = config.ProtectedValues()
 	config.API = APIConfig{}
+	config.ManagedToken = nil
 	config.Process.Env = retainedLookupEnvironment(config.Process.Env)
 	config.Process.Args = nil
 	return &APISession{stream: stream, config: config, initial: initial, inputs: map[domain.ID]bool{}, history: &sessionHistory{}, authorities: map[[sha256.Size]byte]bool{authority: true}, owners: map[domain.ID]bool{config.Process.OwnerID: true}, serverOrigin: origin}, nil

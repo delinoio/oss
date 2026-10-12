@@ -18,6 +18,8 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 
 ## Native Claude subscriptions
 
+This section owns existing device-owned accounts. New server-managed accounts follow the separate managed-token section below.
+
 The originating change established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
 `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
 closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature
@@ -750,3 +752,15 @@ Missing support gives selected-server update guidance without Runner fallback.
 Existing confirmation, default-off consent and retained mutation lifetime remain
 unchanged. Logs include only closed operation, phase/code and cleanup metadata.
 Native/account/remote/platform acceptance remains separate from synthetic checks.
+
+## Server-managed Claude tokens
+
+System `MANAGED_CLAUDE_TOKENS_V1 = 109` and Worker `MANAGED_CLAUDE_TOKENS_V1 = 70` independently negotiate the new account lane. Preserve System 38, Worker 20 and all original device-owned profiles. An omitted-machine LOGIN creates one server-owned operation for a new disconnected Claude account. It does not require a registered or eligible Runner. Explicit-machine requests retain the original device-owned interpretation. Existing profiles cannot migrate into this lane.
+
+The verified Darwin ARM64 Claude Code `2.1.236` distribution owns `claude setup-token`, PKCE/state creation and the original `code#state` exchange. Other server platforms fail closed until their exact distribution is verified. The server uses a fresh private supervised PTY, empty configuration/secure-storage directories and a controlled browser opener. A bounded Ink screen parser accepts only the pinned terminal grammar, exact manual HTTPS authority, inference-only scope and semantic token-success region. It treats the token as opaque. Unknown escapes, ambiguous output, a second flow/token, missing semantic proof or nonzero exit cannot create a generation. Native account/platform acceptance remains separate from inspected source and synthetic fixtures.
+
+Only the initiating principal can read the original transient URL and submit its original code once. The durable submission and consumption claims precede memory retention and native input. Idle reads create no durable receipts. Expiry, cancellation, stale actor/revision, restart and lost memory cannot replay authentication or code. The original process and descendants must join and bounded inode-bound runtime cleanup must succeed before sealing one server/account/generation-bound token envelope in `AccountLogin`. Metadata publication follows checked reference retirement and original authority revalidation. An uncertain stage or cleanup retains the original operation for cleanup-only recovery; recovery cannot launch authentication or publish success.
+
+A Worker needs capability 70 and the independently verified original Claude installation under capability 20. Take checks the claimed original Execute job, account connection/generation, device/machine/instance, job revision, server epoch, cancellation and update admission before granting one exclusive execution lease. Only its protected response carries the token envelope. Receipt replay never redistributes it. Sequential eligible Workers receive the same settled generation after original cleanup; concurrent or older Workers receive no token. Workers reconstruct a fresh isolated execution environment with `CLAUDE_CODE_OAUTH_TOKEN`, no personal profile, API key, bearer helper or relay URL. Native readiness must prove the selected token source before input. Existing permission/model/effort, full-command, history, continuation, usage, publication and Stop checks remain required.
+
+Finish proves unchanged envelope possession and original lease authority; it cannot rotate tokens. Joined process cleanup, disposable profile removal and bounded retained-history secret checks precede release. Failed execution marks the account failed. Uncertain cleanup retains the exclusive lease. Restart reconciles only original process journals and disposable runtimes, with cleanup-only Finish preserving failure. Token rejection or expiry requires a new account and a fresh server login. There is no renewal credential, REFRESH, API fallback or profile migration. Logout cancels active work, waits for cleanup and removes only local protected references; it does not claim provider-wide revocation. Tokens, codes and URLs never enter resources, receipts, SQLite, logs, shared caches, synchronized state or retained history. No new RPC or SQLite migration is added.

@@ -1519,3 +1519,7 @@ consumption requires capability 101, including beside Execute; unsupported peers
 receive server-update guidance with no Worker fallback. Historical accepted
 operations and explicit-machine requests preserve their original lane. Follow
 the [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).
+
+## Managed Claude token allocations
+
+System `MANAGED_CLAUDE_TOKENS_V1 = 109` owns server setup-token lifecycle and execution admission. Worker `MANAGED_CLAUDE_TOKENS_V1 = 70` owns protected token execution, independently of original Claude capability 20. Preserve all previous declarations and allocations. Existing SubscriptionService request/progress/code/Take/Finish messages carry this distinct managed account interpretation; no new RPC or database migration is introduced. Omitted-machine new Claude LOGIN selects the server lane. Explicit-machine historical device-owned Claude forbids bundle bytes; managed-token EXECUTE delivers its independently bound protected envelope and accepts only unchanged return proof. Refresh/native-identity/profile claims remain forbidden in the managed-token lane. See [the owning contract](cmds-delidev-subscription-contract.md#server-managed-claude-tokens).

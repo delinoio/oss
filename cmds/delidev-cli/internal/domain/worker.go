@@ -118,6 +118,7 @@ const (
 	AutomaticTitlesCodexV1         WorkerCapability = "automatic-titles-codex-v1"
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
+	ManagedClaudeTokensV1          WorkerCapability = "managed-claude-tokens-v1"
 	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
 	CodexQuotaBlockV1              WorkerCapability = "codex-quota-block-v1"
 	SubscriptionPaidCreditsV1      WorkerCapability = "subscription-paid-credits-v1"

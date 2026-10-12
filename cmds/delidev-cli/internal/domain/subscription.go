@@ -23,6 +23,7 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	ManagedClaudeToken     bool                           `json:"managed_claude_token,omitempty"`
 	AutomaticCreditBlocks  []SubscriptionQuotaBlock       `json:"automatic_credit_blocks,omitempty"`
 	AutomaticCreditConsent *AutomaticResetCreditConsent   `json:"automatic_credit_consent,omitempty"`
 	AutomaticCreditEpisode *AutomaticResetCreditEpisode   `json:"automatic_credit_episode,omitempty"`
@@ -194,19 +195,24 @@ func (s SubscriptionState) Validate(account Account) error {
 // Server operations retain no executable paths, login URLs, codes or identity
 // suggestions. NativeStarted is the independent server credential lease.
 type ServerSubscriptionOperation struct {
-	ID                ID                       `json:"id"`
-	Action            SubscriptionAction       `json:"action"`
-	Epoch             ID                       `json:"epoch"`
-	FinishID          ID                       `json:"finish_id"`
-	Generation        ID                       `json:"generation,omitempty"`
-	Actor             Principal                `json:"actor"`
-	State             SubscriptionLoginState   `json:"state"`
-	NativeStarted     bool                     `json:"native_started"`
-	CallbackForwarded bool                     `json:"callback_forwarded"`
-	StartedAt         time.Time                `json:"started_at"`
-	ExpiresAt         time.Time                `json:"expires_at"`
-	Diagnostic        *CodexDiagnostic         `json:"diagnostic,omitempty"`
-	CleanupPhase      SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
+	ClaudeCleanupConfirmed bool                          `json:"claude_cleanup_confirmed,omitempty"`
+	LoginMethod            SubscriptionLoginMethod       `json:"login_method,omitempty"`
+	CodeSubmissionID       ID                            `json:"code_submission_id,omitempty"`
+	CodeConsumed           bool                          `json:"code_consumed,omitempty"`
+	NativeDiagnostic       *NativeSubscriptionDiagnostic `json:"native_diagnostic,omitempty"`
+	ID                     ID                            `json:"id"`
+	Action                 SubscriptionAction            `json:"action"`
+	Epoch                  ID                            `json:"epoch"`
+	FinishID               ID                            `json:"finish_id"`
+	Generation             ID                            `json:"generation,omitempty"`
+	Actor                  Principal                     `json:"actor"`
+	State                  SubscriptionLoginState        `json:"state"`
+	NativeStarted          bool                          `json:"native_started"`
+	CallbackForwarded      bool                          `json:"callback_forwarded"`
+	StartedAt              time.Time                     `json:"started_at"`
+	ExpiresAt              time.Time                     `json:"expires_at"`
+	Diagnostic             *CodexDiagnostic              `json:"diagnostic,omitempty"`
+	CleanupPhase           SubscriptionCleanupPhase      `json:"cleanup_phase,omitempty"`
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot

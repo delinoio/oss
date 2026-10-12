@@ -345,13 +345,17 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err != nil {
 				return err
 			}
-			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) {
 				return subscriptionDenied()
 			}
 			// A current adapter may wait for explicitly accepted lifecycle work
 			// without an installed harness. Acceptance/Take still own authority.
 			if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
-				if _, err := subscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
+				if slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+					if _, err := subscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
+						return err
+					}
+				} else if _, err := claudeSubscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
 					return err
 				}
 			}

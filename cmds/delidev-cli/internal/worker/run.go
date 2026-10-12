@@ -385,6 +385,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if claudeCapabilityExpected {
 				profile += "\x00native-claude-subscriptions-v1"
+				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1) {
+					profile += "\x00managed-claude-tokens-v1"
+				}
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
@@ -503,6 +506,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				}
 			}
 			if claudeCapabilityExpected {
+				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1) {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1)
+				}
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
 			}
 			if verifiedTitleProfile {

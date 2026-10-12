@@ -49,6 +49,7 @@ const (
 )
 
 type managedSubscriptionJournal struct {
+	ClaudeTokenExecutionID                                  domain.ID `json:"claude_token_execution_id,omitempty"`
 	CleanupFinish                                           domain.ID `json:"cleanup_finish,omitempty"`
 	LeaseRevision                                           uint64    `json:"lease_revision,omitempty"`
 	Version                                                 uint32    `json:"version"`
@@ -636,7 +637,7 @@ func managedSubscriptionCapability(resource *pb.Resource) bool {
 
 func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 	for _, v := range values {
-		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 {
+		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 || v == domain.ManagedClaudeTokensV1 {
 			return true
 		}
 	}

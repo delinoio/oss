@@ -75,6 +75,9 @@ func claudeActor(ctx context.Context) (domain.Principal, error) {
 	return actor, nil
 }
 func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
+	if req.Msg.MachineId == "" {
+		return s.requestClaudeToken(ctx, req)
+	}
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
 	actor, err := claudeActor(ctx)
@@ -151,6 +154,12 @@ func (s *Service) requestClaudeSubscription(ctx context.Context, req *connect.Re
 	return connect.NewResponse(&pb.RequestSubscriptionResponse{Account: rpc.Resource(r), OperationId: m.RequestId, Replayed: result.Replayed}), nil
 }
 func (s *Service) cancelClaudeSubscription(ctx context.Context, req *connect.Request[pb.CancelSubscriptionRequest]) (*connect.Response[pb.CancelSubscriptionResponse], error) {
+	if managed, e := s.managedClaude(ctx, domain.ID(req.Msg.Mutation.Id)); e != nil {
+		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+	} else if managed {
+		return s.cancelClaudeToken(ctx, req)
+	}
+
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
 	actor, err := claudeActor(ctx)
@@ -203,6 +212,12 @@ func (s *Service) clearClaudeLoginInput(operation domain.ID) {
 	delete(s.subscriptionProgress, operation)
 }
 func (s *Service) getClaudeSubscriptionProgress(ctx context.Context, req *connect.Request[pb.GetSubscriptionProgressRequest]) (*connect.Response[pb.GetSubscriptionProgressResponse], error) {
+	if managed, e := s.managedClaude(ctx, domain.ID(req.Msg.AccountId)); e != nil {
+		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+	} else if managed {
+		return s.getClaudeTokenProgress(ctx, req)
+	}
+
 	c := req.Header().Get(rpc.CorrelationHeader)
 	actor, err := claudeActor(ctx)
 	if err != nil {
@@ -287,6 +302,12 @@ func (s *Service) claudeSubscriptionLease(ctx context.Context, tx *store.Tx, id,
 	return r, a, nil
 }
 func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Request[pb.TakeSubscriptionRequest]) (response *connect.Response[pb.TakeSubscriptionResponse], returned error) {
+	if managed, e := s.managedClaude(ctx, domain.ID(req.Msg.Mutation.Id)); e != nil {
+		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+	} else if managed {
+		return s.takeClaudeToken(ctx, req)
+	}
+
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
@@ -539,6 +560,11 @@ func (s *Service) SubmitSubscriptionLoginCode(ctx context.Context, req *connect.
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if managed, e := s.managedClaude(ctx, domain.ID(m.Id)); e != nil {
+		return nil, rpc.Error(e, c)
+	} else if managed {
+		return s.submitClaudeTokenCode(ctx, req)
+	}
 	actor, err := claudeActor(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -647,6 +673,12 @@ func (s *Service) TakeSubscriptionLoginCode(ctx context.Context, req *connect.Re
 	return connect.NewResponse(response), nil
 }
 func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (*connect.Response[pb.FinishSubscriptionResponse], error) {
+	if managed, e := s.managedClaude(ctx, domain.ID(req.Msg.Mutation.Id)); e != nil {
+		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+	} else if managed {
+		return s.finishClaudeToken(ctx, req)
+	}
+
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
 	msg := req.Msg

@@ -175,7 +175,7 @@ func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 // creates no replacement capability and launches no native process. Public
 // completed-execution recovery still needs original report and ownership proof.
 func InspectCheckpoint(ctx context.Context, config APIStreamConfig, instructionsSHA256 string, raw []byte, ref CheckpointReference) error {
-	if config.Instructions != "" || config.API.Token != "" || !validHistoryDigest(instructionsSHA256) {
+	if config.Instructions != "" || config.API.Token != "" || len(config.ManagedToken) > 0 || len(config.API.ManagedToken) > 0 || !validHistoryDigest(instructionsSHA256) {
 		return historyUncertain()
 	}
 	closed, err := restoreCheckpoint(ctx, config, raw, ref, instructionsSHA256)
@@ -208,6 +208,8 @@ func restoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 		return nil, historyUncertain()
 	}
 	origin := config.API.ServerOrigin
+	config.Process.ProtectedValues = config.ProtectedValues()
+	config.ManagedToken = nil
 	config.API, config.Process.Args = APIConfig{}, nil
 	config.Process.Env = retainedLookupEnvironment(config.Process.Env)
 	h := &sessionHistory{messages: cp.Messages, compactions: cp.Compactions, actions: cp.Actions}
@@ -287,6 +289,9 @@ func checkpointConfigurationDigest(config APIStreamConfig, origin, instructionsS
 		WorkspaceRoots                                                                                            []string `json:",omitempty"`
 	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin, config.WorkspaceRoots}
 	raw, _ := json.Marshal(value)
+	if config.Authentication == TokenAuthentication || len(config.ManagedToken) > 0 {
+		return checkpointDigest(append([]byte("managed-claude-token-v1:"), raw...))
+	}
 	if config.Subscription != nil {
 		// Preserve existing API checkpoint bytes. Subscription checkpoints add only
 		// a digest-bound local reference, never profile files or credentials.

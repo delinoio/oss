@@ -38,6 +38,7 @@ const (
 )
 
 type APIConfig struct {
+	ManagedToken []byte `json:"-"`
 	ServerOrigin string `json:"-"`
 	Token        string `json:"-"`
 }
@@ -46,7 +47,8 @@ type APIConfig struct {
 // must durably accept the session and register the token before opening it. It
 // does not grant public execution or authorize resume without a history binding.
 type APIStreamConfig struct {
-	OrdinaryTools executionenv.Ordinary `json:"-"`
+	Authentication AuthenticationMode    `json:"-"`
+	OrdinaryTools  executionenv.Ordinary `json:"-"`
 
 	Process        process.Config             `json:"-"`
 	Version        string                     `json:"-"`
@@ -60,6 +62,7 @@ type APIStreamConfig struct {
 	Instructions   string                     `json:"-"`
 	API            APIConfig                  `json:"-"`
 	Subscription   *NativeSubscriptionProfile `json:"-"`
+	ManagedToken   []byte                     `json:"-"`
 }
 
 // NativeSubscriptionProfile is a device-local reference under an exclusive
@@ -77,6 +80,9 @@ func NativeHistoryHome(config APIStreamConfig) string { return historyHome(confi
 // subscription profiles deliver no relay token; caller values remain protected.
 func (config APIStreamConfig) ProtectedValues() []string {
 	values := slices.Clone(config.Process.ProtectedValues)
+	if len(config.ManagedToken) > 0 {
+		values = append(values, string(config.ManagedToken))
+	}
 	if config.Subscription == nil {
 		values = append(values, config.API.Token)
 	}
@@ -133,7 +139,18 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	if err != nil {
 		return process.Config{}, err
 	}
-	if config.Subscription != nil {
+	if len(config.ManagedToken) > 0 {
+		if config.Subscription != nil || len(config.ManagedToken) > maxSetupToken || !LoginCodeValid(config.ManagedToken) {
+			return process.Config{}, apiConfigurationError()
+		}
+		filtered := env[:0]
+		for _, entry := range env {
+			if !strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {
+				filtered = append(filtered, entry)
+			}
+		}
+		env = append(filtered, "CLAUDE_CODE_OAUTH_TOKEN="+string(config.ManagedToken), "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home)
+	} else if config.Subscription != nil {
 		if config.Subscription.ID.Validate() != nil || security.CheckPrivateDir(config.Subscription.Home) != nil {
 			return process.Config{}, apiConfigurationError()
 		}
@@ -260,7 +277,13 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 	// The process owner identity may be its OS supervisor, not the native PID.
 	// Ownership is proved by its private stdio scope and joined cleanup, never
 	// by equating a native self-reported PID with the supervisor's identity.
-	if err := validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil); err != nil {
+	mode := APIAuthentication
+	if config.Subscription != nil {
+		mode = ProfileAuthentication
+	} else if len(config.ManagedToken) > 0 {
+		mode = TokenAuthentication
+	}
+	if err := validateInitializeAuthentication(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", mode); err != nil {
 		return nil, err
 	}
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
