@@ -256,8 +256,8 @@ pub(crate) fn literal_dynamic_imports(code: &str) -> Vec<String> {
 }
 
 /// Maps an offset of a round's input text to the round's output text.
-/// Offsets inside a replaced range have no counterpart, except the range
-/// start, which maps to the start of its replacement.
+/// Offsets inside a replaced range have no counterpart, except the start of
+/// a non-empty replacement, which maps to the start of its replacement.
 fn forward_offset(offset: usize, edits: &[Edit]) -> Option<usize> {
     let mut delta: isize = 0;
     for edit in edits {
@@ -271,6 +271,11 @@ fn forward_offset(offset: usize, edits: &[Edit]) -> Option<usize> {
         } else if edit.end <= offset {
             delta += growth;
         } else if edit.start == offset {
+            // The start of a deletion is removed code; a replacement start
+            // maps to the start of its replacement.
+            if edit.replacement.is_empty() {
+                return None;
+            }
             break;
         } else if edit.start < offset {
             return None;
@@ -966,6 +971,28 @@ mod tests {
             .collect();
         // The insertion maps where `b()` did; `b()` keeps its own mapping.
         assert_eq!(tokens, [(0, 10), (4, 20), (4 + insertion.len() as u32, 20)]);
+    }
+
+    #[test]
+    fn deleted_code_keeps_no_mapping() {
+        let original = "a();b();c();";
+        let mut builder = sourcemap::SourceMapBuilder::new(None);
+        builder.add(0, 0, 10, 0, Some("src.ts"), None, false);
+        builder.add(0, 4, 20, 0, Some("src.ts"), None, false);
+        builder.add(0, 8, 30, 0, Some("src.ts"), None, false);
+        let map = builder.into_sourcemap();
+        // Delete `b();`: `c();` moves to column 4 and keeps its own mapping.
+        let chain = vec![vec![crate::plan::Edit {
+            start: 4,
+            end: 8,
+            replacement: String::new(),
+        }]];
+        let composed = super::compose_bundle_map(&map, original, "a();c();", &chain).unwrap();
+        let tokens: Vec<_> = composed
+            .tokens()
+            .map(|t| (t.get_dst_col(), t.get_src_line()))
+            .collect();
+        assert_eq!(tokens, [(0, 10), (4, 30)]);
     }
 
     #[test]
