@@ -336,6 +336,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 					return pending()
 				}
 				obligation.Phase = sessionDeletionMarkerPublished
+				if !migratingDigest && writeDeletionMarker(markerPath, marker) != nil {
+					return pending()
+				}
 			}
 			if migratingDigest {
 				obligation.PreviousDigest = ""
