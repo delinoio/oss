@@ -44,6 +44,7 @@ const (
 	validationThreadMetadata eventValidationStage = "thread-metadata"
 	validationLegacy         eventValidationStage = "legacy-notification"
 	validationStatus         eventValidationStage = "thread-status"
+	validationService        eventValidationStage = "technical-service"
 )
 
 // Log a closed classification instead of untrusted native method or content.
@@ -53,6 +54,8 @@ func validationStage(method string) eventValidationStage {
 		return validationRemoteControl
 	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
 		return validationWindowsSandbox
+	case "currentTime/read":
+		return validationService
 	case "error":
 		return validationNativeError
 	case "thread/settings/updated":
@@ -272,7 +275,13 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	native := *c.pendingEvent
 	c.pendingEvent = nil
-	event, err := c.observeEventLocked(native)
+	var event Event
+	var err error
+	if native.Kind == nativewire.ServerRequest && native.Method == "currentTime/read" {
+		event, err = c.replyCurrentTimeLocked(ctx, native)
+	} else {
+		event, err = c.observeEventLocked(native)
+	}
 	if err != nil {
 		if c.problem == nil {
 			c.problem = turnUncertain()

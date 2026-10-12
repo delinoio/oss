@@ -90,7 +90,7 @@ func (b *titleReasoningBudget) observe(event codex.Event) bool {
 // its explicit narrow metadata profile for every auxiliary capability.
 func validateTitleMetadata(kind codex.MetadataKind) error {
 	switch kind {
-	case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.FuzzySearchDiscarded, codex.GatewayOAuthStatusDiscarded, codex.WindowsSandboxWarningDiscarded, codex.WindowsSandboxSetupDiscarded:
+	case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.FuzzySearchDiscarded, codex.GatewayOAuthStatusDiscarded, codex.WindowsSandboxWarningDiscarded, codex.WindowsSandboxSetupDiscarded, codex.CurrentTimeReplySent:
 		return nil
 	default:
 		return domain.Fail(domain.Unsupported, "Codex emitted an unsupported title-runtime metadata event.", "Preserve the isolated runtime; the title profile accepts no auxiliary capability or interaction.")

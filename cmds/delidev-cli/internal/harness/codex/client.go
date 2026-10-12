@@ -54,6 +54,8 @@ type Client struct {
 	safety               modelSafetyLedger
 	managedForkHistory   bool
 	asyncMessages        bool
+	currentTimeClock     func() time.Time
+	currentTimeClaims    map[currentTimeRequestKey]struct{}
 	quotaUsed            atomic.Bool
 	skillsRoot           string
 	imageRoot            string
