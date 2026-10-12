@@ -781,7 +781,9 @@ function pollCallback() {
     (callback, delay, ...args) => {
       if (delay === 1000 && typeof callback === "function")
         poll = () => callback(...args);
-      return interval(callback, delay, ...args);
+      return interval(callback, delay, ...args) as unknown as ReturnType<
+        typeof setInterval
+      >;
     },
   );
   return () => poll();

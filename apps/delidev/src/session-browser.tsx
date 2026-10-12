@@ -271,7 +271,7 @@ function NativeSessionBrowser({
   const alive = useRef(true);
   const presentation = useRef("");
   const shortcutAdmission = useRef("");
-  const presentationVisible = useRef(() => false);
+  const presentationVisible = useRef<() => boolean>(() => false);
   const tabsStore = useSessionTabsStore();
   const activeRef = useRef(active);
   activeRef.current = active;
