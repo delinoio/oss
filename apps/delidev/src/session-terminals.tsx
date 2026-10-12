@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
@@ -73,8 +74,23 @@ export function SessionTerminals({
   useLocale();
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
-  const latest = useRef({ active, session, finishOpenIntent, openTerminal });
-  latest.current = { active, session, finishOpenIntent, openTerminal };
+  const directoryPending =
+    useSessionDirectoryPending(session.id) ||
+    Boolean(document(session).directory_job_id);
+  const latest = useRef({
+    active,
+    session,
+    finishOpenIntent,
+    openTerminal,
+    directoryPending,
+  });
+  latest.current = {
+    active,
+    session,
+    finishOpenIntent,
+    openTerminal,
+    directoryPending,
+  };
   const [openError, setOpenError] = useState<unknown>();
   const presentationRecords = tabsStore.terminalPresentation(session.id);
   const intents = useRetainedMutationIntents("terminal-control:");
@@ -177,6 +193,7 @@ export function SessionTerminals({
     },
   );
   const blocked =
+    directoryPending ||
     !active ||
     Boolean(openIntent) ||
     !supported ||
@@ -186,7 +203,7 @@ export function SessionTerminals({
   const resolution = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!openIntent) return;
-    if (!active) {
+    if (!active || directoryPending) {
       finishOpenIntent?.();
       return;
     }
@@ -203,6 +220,7 @@ export function SessionTerminals({
     const current = () =>
       !controller.signal.aborted &&
       latest.current.active &&
+      !latest.current.directoryPending &&
       latest.current.session.id === session.id;
     const run = async () => {
       try {
@@ -358,7 +376,14 @@ export function SessionTerminals({
       if (!sent && resolution.current === openIntent.requestId)
         resolution.current = undefined;
     };
-  }, [openIntent, active, supported, status.error, status.isFetching]);
+  }, [
+    openIntent,
+    active,
+    supported,
+    status.error,
+    status.isFetching,
+    directoryPending,
+  ]);
 
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.
@@ -830,6 +855,10 @@ function TerminalView({
       value.terminal.kind === EntityKind.TERMINAL &&
       value.terminal.sessionId === resource.sessionId &&
       value.terminal.revision >= (request.mutation?.expectedRevision ?? 1n),
+    false,
+    undefined,
+    undefined,
+    resource.sessionId,
   );
   const observeLatest = useRef(observe);
   observeLatest.current = observe;
@@ -837,7 +866,9 @@ function TerminalView({
     if (!control.busy && !control.uncertain) observeLatest.current(terminal);
   }, [terminal, control.busy, control.uncertain]);
   const pending = Object.keys(object(data.pending)).length > 0;
+  const directoryPending = useSessionDirectoryPending(terminal.sessionId);
   const blocked =
+    directoryPending ||
     rendererUnavailable ||
     deliveryError ||
     control.busy ||
@@ -847,6 +878,7 @@ function TerminalView({
     !!data.close_request_id ||
     state !== OutputState.Attached;
   const canType =
+    !directoryPending &&
     !rendererUnavailable &&
     !deliveryError &&
     !control.uncertain &&
@@ -1086,7 +1118,11 @@ function TerminalView({
       {control.uncertain ? (
         <>
           <p role="status">{copy("session-terminals.uncertainInput")}</p>
-          <button type="button" disabled={control.busy} onClick={control.retry}>
+          <button
+            type="button"
+            disabled={directoryPending || control.busy}
+            onClick={control.retry}
+          >
             {copy("session-terminals.retryTheSameTerminalOperation_92eff7")}
           </button>
         </>
@@ -1095,6 +1131,7 @@ function TerminalView({
         <button
           type="button"
           disabled={
+            directoryPending ||
             control.busy ||
             control.uncertain ||
             !!data.cleanup_verified ||

@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -83,18 +84,35 @@ export function QueuedInput({
     `edit-input:${resource.id}`,
     SessionQuery.editQueuedInput,
     (result) => saved(result.change?.input),
+    undefined,
+    false,
+    undefined,
+    undefined,
+    resource.sessionId,
   );
   const remove = useRetainedMutation(
     `remove-input:${resource.id}`,
     SessionQuery.removeQueuedInput,
     (result) => saved(result.change?.input),
+    undefined,
+    false,
+    undefined,
+    undefined,
+    resource.sessionId,
   );
   const steer = useRetainedMutation(
     `steer-input:${resource.id}`,
     SessionQuery.steerQueuedInput,
     (result) => saved(result.change?.input),
+    undefined,
+    false,
+    undefined,
+    undefined,
+    resource.sessionId,
   );
+  const directoryPending = useSessionDirectoryPending(resource.sessionId);
   const busy =
+    directoryPending ||
     readOnly ||
     [update, remove, steer].some(
       (operation) => operation.busy || operation.uncertain,

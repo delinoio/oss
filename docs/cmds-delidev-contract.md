@@ -456,3 +456,21 @@ Each server reserves live Project names and live Repository names in separate na
 The shared mutation transaction checks every live same-kind resource, excluding the original ID on an update. Archived Project configuration reserves its name. Deleted resources release the name, while their tombstoned IDs remain unavailable. Identity, authorization and revision conflicts retain their own outcomes. No persisted name index, migration, legacy conversion, automatic renaming or availability RPC is added.
 
 A confirmed collision returns Conflict with `configuration_name_conflict` in the existing ErrorDetail cause field. Its message and guidance contain no conflicting UUID, name or path. Structured collision logs contain only the resource kind and fixed cause. See the [storage](cmds-delidev-storage-contract.md#transactional-configuration-name-admission), [workspace](cmds-delidev-workspace-contract.md#repository-registration-name-collisions), [configuration transfer](cmds-delidev-configuration-transfer-contract.md#name-validation) and [desktop](apps-delidev-desktop-contract.md#configuration-name-correction) contracts.
+
+### Explicit session directory controls
+
+`session directory change --id ID --revision N --request-id ID
+[--repository-id ID] --path RELATIVE` requests one settled-root directory change.
+The current session revision and an explicit request ID are required. The path
+must be canonical and relative to an original prepared root; `.` selects that
+root. An omitted repository selects only the original General Chat root.
+The server and original Worker independently validate admission, existing native
+directory confinement, cleanup and applied settings before subsequent input.
+
+`session directory operation --id ID --request-id ID` reads the original
+actor-bound operation. Use this read after an uncertain change result; it never
+repeats Change or creates a replacement request. Output reports safe operation
+state and verified repository names and relative paths. It omits UUIDs, absolute
+native paths and raw job input, output and problem contents. A queued receipt
+is not completion. A succeeded result requires matching session, request, job
+and generation identities, canonical path and original prepared-root label.

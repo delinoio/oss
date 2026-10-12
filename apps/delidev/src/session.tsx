@@ -1,5 +1,7 @@
 import { createPortal } from "react-dom";
 import { useSessionInboxRead } from "./session-inbox-read";
+import { useSessionDirectory } from "./session-directory";
+import { useSessionDirectoryPending } from "./mutation";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -1267,7 +1269,10 @@ export function SessionView({
     if (send.error && !send.uncertain && !send.busy)
       images.controller.operationId = undefined;
   }, [send.error, send.uncertain, send.busy, images.controller]);
+  const directoryPending =
+    useSessionDirectoryPending(id) || Boolean(data.directory_job_id);
   const locked =
+    directoryPending ||
     send.busy ||
     send.uncertain ||
     images.busy ||
@@ -1359,8 +1364,22 @@ export function SessionView({
       return true;
     },
   });
+  const directory = useSessionDirectory(
+    session,
+    active,
+    send.busy ||
+      send.uncertain ||
+      images.busy ||
+      submissions.store.preparing(id) ||
+      revert.pending ||
+      revert.uncertain ||
+      Boolean(data.compaction_job_id),
+  );
   const contextLocked =
-    Boolean(data.compaction_job_id) || revert.pending || revert.uncertain;
+    directory.pending ||
+    Boolean(data.compaction_job_id) ||
+    revert.pending ||
+    revert.uncertain;
   const canSend =
     !contextLocked &&
     !locked &&
@@ -2060,7 +2079,12 @@ export function SessionView({
           >
             <button
               type="button"
-              disabled={!session || control.busy || control.uncertain}
+              disabled={
+                directoryPending ||
+                !session ||
+                control.busy ||
+                control.uncertain
+              }
               onClick={() => action(SessionAction.STOP)}
             >
               {copy("session.stop_cae7d5")}
@@ -2068,6 +2092,7 @@ export function SessionView({
             <button
               type="button"
               disabled={
+                directoryPending ||
                 !session ||
                 control.busy ||
                 control.uncertain ||
@@ -2084,12 +2109,19 @@ export function SessionView({
               {session ? (
                 <SessionForkAction
                   source={session}
-                  disabled={control.busy || control.uncertain}
+                  disabled={
+                    directoryPending || control.busy || control.uncertain
+                  }
                 />
               ) : null}
               <button
                 type="button"
-                disabled={!session || control.busy || control.uncertain}
+                disabled={
+                  directoryPending ||
+                  !session ||
+                  control.busy ||
+                  control.uncertain
+                }
                 onClick={() =>
                   action(
                     text(data.archive) === "archived"
@@ -2124,7 +2156,8 @@ export function SessionView({
                   ref={panelButtons[tool.panel]}
                   disabled={
                     tool.panel === SessionPanel.Terminals &&
-                    Boolean(object(data.fork).sidechat_parent_snapshot)
+                    (directoryPending ||
+                      Boolean(object(data.fork).sidechat_parent_snapshot))
                   }
                   onClick={() => togglePanel(tool.panel)}
                 >
@@ -2779,7 +2812,7 @@ export function SessionView({
                     <RunnerTaskRemediation
                       active={conversationActive}
                       machineId={text(data.machine_id)}
-                      disabled={control.busy || control.uncertain}
+                      disabled={directoryPending || control.busy || control.uncertain}
                       visible={Boolean(startupFailure)}
                       onPending={setRunnerRemediationPending}
                     />

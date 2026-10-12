@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { useSessionActive } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 import {
@@ -97,6 +98,8 @@ export function SessionForkAction({
 }) {
   useLocale();
   const show = useContext(Context);
+  const directoryPending = useSessionDirectoryPending(source.id);
+  disabled ||= directoryPending || Boolean(document(source).directory_job_id);
   const active = useSessionActive();
   const status = useQuery(
     SystemQuery.getStatus,

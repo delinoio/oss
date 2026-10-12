@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -321,8 +322,9 @@ export function SavedConnections({
       setBusy(false);
     }
   };
+  const directoryPending = useSessionDirectoryPending();
   const operate = async (profile: SavedConnection) => {
-    if (busy) return;
+    if (busy || directoryPending) return;
     readGeneration.current++;
     setBusy(true);
     setError(undefined);
@@ -531,7 +533,11 @@ export function SavedConnections({
                     <>
                       <SettingsActionButton
                         icon={SettingsActionIcon.Retry}
-                        disabled={busy || Boolean(attempt || edit || removal)}
+                        disabled={
+                          directoryPending ||
+                          busy ||
+                          Boolean(attempt || edit || removal)
+                        }
                         onClick={() => void operate(profile)}
                       >
                         {profile.state === SavedConnectionState.Paired

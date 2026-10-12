@@ -1597,3 +1597,18 @@ Mutation receipts distinguish pending, succeeded, recovery required and failed
 outcomes without granting authority to retry a new request or change an accepted
 session's configuration. Existing explicit skill selection keeps its wire
 identities and omission semantics.
+## Session directory namespace
+
+`SessionDirectoryService` reserves `ChangeSessionDirectory` and read-only
+`GetSessionDirectoryOperation`. System `CODEX_SESSION_DIRECTORY_V1 = 106` and Worker
+`CODEX_SESSION_DIRECTORY_V1 = 67` advertise the integrated typed controller and Worker adapter. The actual original native process still proves the pinned version, settled source, closed ownership and complete directory reload before effects; capability advertisement alone grants no native readiness or input authority.
+Change request fields are mutation 1, repository_id 2 and relative_path 3;
+operation reads bind session_id 1 and request_id 2. Generation fields retain
+generation_id 1, job_id 2, request_id 3, source_execution_id 4, repository_id 5,
+relative_path 6 and previous_generation_id 7. Operation fields are request_id 1,
+session_id 2, job 3 and generation 4; each response uses operation 1.
+
+These typed identities do not grant new roots or expose absolute filesystem
+paths, credentials, instructions or native configuration. Preserve original
+mutation receipts and immutable Worker-private generation proofs under the
+[session lifecycle contract](cmds-delidev-sessions-contract.md#settled-session-directory-generations).

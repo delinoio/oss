@@ -181,5 +181,18 @@
   "session.webSource": "소스",
   "session.webOriginalAction": "원본 작업",
   "session.webNativeResult": "네이티브 결과",
-  "session.webResultUnavailable": "네이티브 도구가 결과를 제공하지 않았습니다. 원본 기록은 보존되며 여기에서 검색을 다시 전송할 수 없습니다."
+  "session.webResultUnavailable": "네이티브 도구가 결과를 제공하지 않았습니다. 원본 기록은 보존되며 여기에서 검색을 다시 전송할 수 없습니다.",
+  "session.directoryChange": "디렉터리 변경",
+  "session.directoryCurrent": "현재 디렉터리: {{repository}} · {{path}}",
+  "session.directoryPending": "원래 디렉터리 변경이 대기 중입니다: {{repository}} · {{path}}",
+  "session.directoryObserve": "원래 디렉터리 변경 확인",
+  "session.directoryUncertain": "원래 결과를 확인하지 못했습니다. 변경을 반복하지 말고 상태를 확인하세요.",
+  "session.directoryVerified": "원래 Worker가 새 디렉터리를 검증했습니다.",
+  "session.directoryFailed": "원래 디렉터리 변경이 성공하지 못했습니다. 다시 변경하기 전에 세션을 확인하세요.",
+  "session.directoryScope": "원래 준비된 저장소와 그 안의 기존 디렉터리를 선택하세요. Worker는 다음 입력 전에 네이티브 설정을 검증합니다.",
+  "session.directoryRepository": "준비된 저장소",
+  "session.directoryRelative": "상대 디렉터리",
+  "session.directoryInvalid": "루트는 .을 사용하세요. 빈 요소, . 또는 .. 요소, 역슬래시와 절대 경로가 없는 정규 상대 경로를 입력하세요.",
+  "session.directoryRootsFailed": "준비된 저장소를 검증하지 못했습니다. 닫은 후 원래 세션을 확인하세요.",
+  "session.directoryLoading": "원래 준비된 저장소를 읽는 중…"
 }

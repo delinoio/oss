@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 
@@ -166,6 +167,9 @@ export function contextCapacity(
 
 export function SessionContext({ session }: { session: Resource }) {
   useLocale();
+  const directoryPending =
+    useSessionDirectoryPending(session.id) ||
+    Boolean(document(session).directory_job_id);
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = Boolean(
     status.data?.capabilities.includes(
@@ -474,7 +478,13 @@ export function SessionContext({ session }: { session: Resource }) {
       ) : null}
       <p>{copy("session-context.compactTheNativeWorkingContextAt_69b0dd")}</p>
       <button
-        disabled={!eligible || pending || mutation.busy || mutation.uncertain}
+        disabled={
+          directoryPending ||
+          !eligible ||
+          pending ||
+          mutation.busy ||
+          mutation.uncertain
+        }
         onClick={() =>
           void mutation.send({
             mutation: {

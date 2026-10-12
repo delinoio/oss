@@ -1163,3 +1163,52 @@ acceptance transaction repeat the complete managed generation comparison. A cach
 entry from a disabled or unselected package cannot enter a new generation. Already
 accepted session configurations and prepared snapshots retain their original
 package content and policy.
+## Settled session directory generations
+
+A directory transition is an explicit metadata action on the original settled
+Codex root session. It is not input, a new execution, workspace preparation or
+an inference grant. Retain the exact accepted assignment, version-2 completion,
+ordered accepted-input publication, original history root and previous immutable
+directory generation. The selected repository and canonical relative directory
+must remain beneath the original prepared roots; the Worker owns canonical
+filesystem, configuration, trust and instruction verification.
+
+Pending or uncertain transitions fence competing session writers. Promote a new
+immutable generation only after original Worker/process/account ownership and
+verified native continuation and cleanup. Preserve all historical assignments
+and checkpoints. A successor execution carries the current generation separately
+from its original history. Lost receipts are recovered by reading the original
+operation; lack of a receipt never permits repeating a native transition.
+
+The server retains the original requesting principal for operation reads and
+mutation replay. Current context revision and an exact succeeded context-action
+checkpoint remain separate from the historical assignment/publication. A
+completed compaction or Revert cannot be inferred from a directory choice.
+Successor and context-action restoration assignments freeze `PreviousDirectory`
+from the accepted predecessor independently of the currently promoted directory.
+Metadata credential registration reuses the original protected account scope,
+but the typed directory job cannot acquire an upstream inference request.
+Permanent deletion checks pending directory ownership inside its original
+planning transaction before publishing an irrevocable deletion journal.
+
+Directory admission requires a valid background inventory bound to the original
+job, execution and native thread, with explicit native absence and closed owner.
+Owner loss alone is insufficient. Missing/stale inventory or an unresolved
+claimed background action remains a recovery fence.
+
+A protected directory subscription settlement is synchronized as its exact
+original protobuf request before delivery. Cleanup retains a private ready
+checkpoint before settlement; reconnect may replay only the original finish
+receipt and publish that already completed generation. It never repeats cold
+Resume, regenerates a lease or reconstructs cleared authentication bytes. A
+failed transition may settle its original receipt without publishing a directory.
+Permanent deletion inventories directory job claims, ready records, generation
+runtime/checkpoint and exact settled lease journal/receipt, preserving unrelated
+account and session owners.
+
+Independent Fork maps the selected repository-relative location into its own
+original prepared roots. Its immutable child checkpoint carries destination
+reload proof and its own location metadata; it does not borrow the parent's
+generation owner. Ordinary continuations and context actions retain that child
+location. Native-shell composition preserves the original shell-history and
+rollout digests; only a comparison copy projects the selected effective cwd.

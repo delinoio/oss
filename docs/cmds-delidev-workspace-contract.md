@@ -640,3 +640,17 @@ preparation settlement freezes elapsed time; failed, canceled, uncertain and Sto
 settlements freeze unfinished time without implying preparation success. The
 Worker's operation report shape and original workspace/native cleanup authority
 remain unchanged. Missing historical timing cannot be derived from Job timestamps.
+### Closed-owner working-directory selection
+
+A closed-execution inspection can select an existing directory relative to an
+original prepared repository, or the original General Chat root. The selection
+holds anchored identities for every path component and rechecks the canonical
+path before native effects and publication. Reject absolute or parent-relative
+input, missing/non-directory entries, internal or escaped symbolic links, and
+same-name replacements. A released inspection cannot authorize selection or
+verification. Selecting a directory does not mutate the preparation manifest,
+primary path, root inventory, repository source or execution cleanup claim.
+This private filesystem check supplies no native settings, instruction reload,
+trust, historical continuation or fresh-input authority.
+
+Subsequent execution may derive an anchored directory selection from its live original execution lease. The lease retains the original prepared manifest and primary path; selecting a nested directory does not rewrite either or alter its cleanup claim. Closing the lease invalidates all derived selections. Directory-generation and native history/settings proof remain independent requirements before input.

@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp } from "./timestamp-display";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -229,9 +230,10 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
       ),
   );
   const mutations = [request, cancel, remove];
-  const blocked = mutations.some(
-    (mutation) => mutation.busy || mutation.uncertain,
-  );
+  const directoryPending = useSessionDirectoryPending(source?.id);
+  const blocked =
+    directoryPending ||
+    mutations.some((mutation) => mutation.busy || mutation.uncertain);
   const operationPending = Boolean(
     !sourceMissing && operationId && (!job || !terminal(state)),
   );

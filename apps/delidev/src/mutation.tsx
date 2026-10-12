@@ -34,7 +34,9 @@ import { useSettingsOpening } from "./settings-lifetime";
 interface Intent {
   input?: object;
   bytes?: number;
+  label?: string;
   acknowledge?: (result: unknown) => boolean;
+  settled?: (result: unknown) => boolean;
   busy: boolean;
   uncertain: boolean;
   error?: unknown;
@@ -49,7 +51,25 @@ function bindAcknowledgement<I extends DescMessage, O extends DescMessage>(
 ) {
   return (result: unknown) => acknowledge(result as MessageShape<O>, request);
 }
+// Connection replacement cannot dispose an original directory receipt owner.
+// Same-identity credential/transport refresh keeps its original actor scope.
+export class DirectoryConnectionBarrier<T> {
+  pending = false;
+  private selected?: { identity: unknown; value: T };
+  constructor(private changed?: () => void) {}
+  select(identity: unknown, value: T): T {
+    if (!this.selected || !this.pending || this.selected.identity === identity)
+      this.selected = { identity, value };
+    return this.selected.value;
+  }
+  observe = (pending: boolean) => {
+    if (this.pending === pending) return;
+    this.pending = pending;
+    this.changed?.();
+  };
+}
 class IntentRegistry {
+  directoryBarrier?: Pick<DirectoryConnectionBarrier<unknown>, "observe">;
   alive = true;
   revision = 0;
   entries = new Map<string, Intent>();
@@ -105,6 +125,12 @@ class IntentRegistry {
   }
   put(key: string, value: Intent) {
     this.entries.set(key, value);
+    this.directoryBarrier?.observe(
+      [...this.entries].some(
+        ([id, intent]) =>
+          id.startsWith("session-directory:") && Boolean(intent.input),
+      ),
+    );
     this.revision += 1;
     for (const listener of this.listeners) listener();
   }
@@ -201,6 +227,7 @@ function connectionOwned(key: string) {
   if (key.startsWith("tailscale:")) return true;
   return (
     existingRepositoryConfiguration(key) ||
+    key.startsWith("session-directory:") ||
     key.startsWith(sessionInboxReadPrefix) ||
     key.startsWith("native-command:") ||
     key.startsWith("native-command-run:") ||
@@ -220,11 +247,18 @@ export function useRepositoryConfigurationPending(id: string) {
     (intent) => intent.key === `${repositoryConfigurationPrefix}${id}`,
   );
 }
-export function MutationIntents({ children }: { children: ReactNode }) {
+export function MutationIntents({
+  children,
+  directoryBarrier,
+}: {
+  children: ReactNode;
+  directoryBarrier?: Pick<DirectoryConnectionBarrier<unknown>, "observe">;
+}) {
   useLocale();
   const opening = useSettingsOpening();
   const connection = useContext(ConnectionContext);
   const [registry] = useState(() => new IntentRegistry());
+  registry.directoryBarrier = directoryBarrier;
   useEffect(() => {
     const dispose = () => {
       registry.alive = false;
@@ -369,6 +403,8 @@ export function useRetainedMutation<
   acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
   retainOnError = false,
   rejected?: (request: MessageInitShape<I>) => void,
+  settled?: (result: MessageShape<O>) => boolean,
+  sessionOwner?: string,
 ) {
   const registry = useIntentRegistry(key);
   if (!registry)
@@ -415,8 +451,27 @@ export function useRetainedMutation<
       result: MessageShape<O>,
       request: MessageShape<I>,
     ) => boolean,
+    label?: string,
   ) => {
     const current = registry.entries.get(key) ?? empty;
+    const proposed = (current.input ?? input) as
+      | {
+          mutation?: { id?: string };
+          sessionId?: string;
+          parentSessionId?: string;
+        }
+      | undefined;
+    const target =
+      sessionOwner ??
+      proposed?.sessionId ??
+      proposed?.parentSessionId ??
+      proposed?.mutation?.id;
+    if (
+      !key.startsWith("session-directory:") &&
+      target &&
+      registry.entries.get(`session-directory:${target}`)?.input
+    )
+      return;
     if (
       current.job ||
       current.busy ||
@@ -435,7 +490,17 @@ export function useRetainedMutation<
         method.input,
         create(method.input, (current.input ?? input) as MessageInitShape<I>),
       );
-      bytes = wire.byteLength;
+      if (
+        label !== undefined &&
+        new TextEncoder().encode(label).byteLength > 4096
+      )
+        throw new ConnectError(
+          "The operation label exceeds its bound.",
+          Code.ResourceExhausted,
+        );
+      bytes =
+        wire.byteLength +
+        new TextEncoder().encode(current.label ?? label ?? "").byteLength;
       registry.reserve(key, bytes);
       retained = fromBinary(method.input, wire);
     } catch (error) {
@@ -476,12 +541,17 @@ export function useRetainedMutation<
       (originalAcknowledgement
         ? bindAcknowledgement<I, O>(originalAcknowledgement, retained)
         : undefined);
+    const settlement =
+      current.settled ??
+      (settled as ((result: unknown) => boolean) | undefined);
     setLocalError(undefined);
     registry.put(key, {
       ...current,
       input: retained,
       bytes,
+      label: current.label ?? label,
       acknowledge: verify,
+      settled: settlement,
       busy: true,
       error: undefined,
     });
@@ -510,7 +580,9 @@ export function useRetainedMutation<
         uncertain,
         input: uncertain ? retained : undefined,
         bytes: uncertain ? bytes : undefined,
+        label: uncertain ? (current.label ?? label) : undefined,
         acknowledge: uncertain ? verify : undefined,
+        settled: uncertain ? settlement : undefined,
         error,
       });
       if (!uncertain) reject(retained);
@@ -537,12 +609,26 @@ export function useRetainedMutation<
           uncertain: true,
           input: retained,
           bytes,
+          label: current.label ?? label,
           acknowledge: verify,
+          settled: settlement,
           error,
         });
         registry.notifyOutcome(key, retained, RetainedMutationPhase.Uncertain);
         return;
       }
+    }
+    if (settlement && !settlement(result)) {
+      registry.put(key, {
+        input: retained,
+        bytes,
+        label: current.label ?? label,
+        acknowledge: verify,
+        settled: settlement,
+        busy: false,
+        uncertain: false,
+      });
+      return;
     }
     // Publish verified result ownership before clearing the original intent.
     registry.notifyAcceptedResult(key, retained, result);
@@ -631,4 +717,56 @@ export function useRetainedMutation<
     busy: state.busy || Boolean(state.job),
     error: localError?.key === key ? localError.error : state.error,
   };
+}
+
+// A receipt read uses the original retained verifier. It never sends a mutation
+// or substitutes the current form/session revision for the original request.
+export function useRetainedMutationReceipt(key: string) {
+  const registry = useContext(Context);
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
+  return (result: unknown): boolean => {
+    const current = registry.entries.get(key);
+    if (
+      !registry.alive ||
+      !current?.input ||
+      current.busy ||
+      !current.acknowledge
+    )
+      return false;
+    try {
+      if (!current.acknowledge(result)) return false;
+    } catch (error) {
+      console.warn("delidev.mutation.receipt_verifier_failed", {
+        classification: clientFailure(error).code,
+      });
+      return false;
+    }
+    if (current.settled && !current.settled(result)) {
+      registry.put(key, { ...current, uncertain: false, error: undefined });
+      return true;
+    }
+    registry.notifyAcceptedResult(key, current.input, result);
+    registry.put(key, empty);
+    registry.notifyAccepted(key);
+    return true;
+  };
+}
+
+export function useSessionDirectoryPending(sessionId?: string) {
+  const registry = useContext(Context);
+  useSyncExternalStore(
+    registry?.subscribe ?? (() => () => {}),
+    () => registry?.revision ?? 0,
+    () => 0,
+  );
+  return Boolean(
+    registry &&
+    [...registry.entries].some(
+      ([key, intent]) =>
+        key.startsWith("session-directory:") &&
+        intent.input &&
+        (sessionId === undefined || key === `session-directory:${sessionId}`),
+    ),
+  );
 }

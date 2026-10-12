@@ -61,7 +61,11 @@ import type { ControlLocalWorker } from "./local-worker-controls";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
 import type { SkillTokenBinding } from "./skill-completion";
-import { MutationIntents, useRetainedMutationAccepted } from "./mutation";
+import {
+  DirectoryConnectionBarrier,
+  MutationIntents,
+  useRetainedMutationAccepted,
+} from "./mutation";
 import { connectionQueryClient } from "./cache";
 import type { PairingAuthority } from "./pairing-grant";
 import { TrayPresentation } from "./tray-presentation";
@@ -852,7 +856,18 @@ export function App({
   connectionEpoch?: number;
 }) {
   useLocale();
-  const connectionIdentity =
+  const [, updateDirectoryBarrier] = useState(0);
+  const directoryBarrier = useMemo(
+    () =>
+      new DirectoryConnectionBarrier<{
+        identity: unknown;
+        transport: Transport;
+        pairingAuthority?: PairingAuthority;
+        currentDeviceId?: string;
+      }>(() => updateDirectoryBarrier((value) => value + 1)),
+    [],
+  );
+  const proposedIdentity =
     pairingAuthority && currentDeviceId
       ? JSON.stringify([
           pairingAuthority.endpoint,
@@ -860,6 +875,15 @@ export function App({
           currentDeviceId,
         ])
       : transport;
+  const originalConnection = directoryBarrier.select(proposedIdentity, {
+    identity: proposedIdentity,
+    transport,
+    pairingAuthority,
+    currentDeviceId,
+  });
+  const connectionIdentity = originalConnection.identity;
+  const originalConnectionReady =
+    connectionReady && connectionIdentity === proposedIdentity;
   const connection = useMemo(
     () => ({ id: newRequestId(), ...connectionQueryClient() }),
     [connectionIdentity],
@@ -867,26 +891,32 @@ export function App({
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => {
-    if (connectionReady)
+    if (originalConnectionReady)
       void client.invalidateQueries({ refetchType: "active" });
-  }, [client, connectionReady, connectionEpoch]);
+  }, [client, originalConnectionReady, connectionEpoch]);
   return (
     <SidebarPreferenceBoundary>
-      <TransportProvider transport={transport}>
+      <TransportProvider transport={originalConnection.transport}>
         <QueryClientProvider key={connection.id} client={client}>
           <NotificationProvider>
-            <MutationIntents>
+            <MutationIntents directoryBarrier={directoryBarrier}>
               <SessionTabsProvider>
                 <SessionSubmissionsProvider>
                   <ImageDraftProvider>
                     <PRWorkflowProvider>
                       <ShortcutProvider>
                         <SessionNameEditorProvider>
-                          <SessionInboxReadBoundary ready={connectionReady}>
+                          <SessionInboxReadBoundary
+                            ready={originalConnectionReady}
+                          >
                             <Shell
-                              connectionReady={connectionReady}
-                              pairingAuthority={pairingAuthority}
-                              currentDeviceId={currentDeviceId}
+                              connectionReady={originalConnectionReady}
+                              pairingAuthority={
+                                originalConnection.pairingAuthority
+                              }
+                              currentDeviceId={
+                                originalConnection.currentDeviceId
+                              }
                               controlLocalWorker={controlLocalWorker}
                               chooseRepositoryFolder={chooseRepositoryFolder}
                               connectionSettings={connectionSettings}
