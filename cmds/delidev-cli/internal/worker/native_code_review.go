@@ -331,6 +331,12 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				return err
 			}
 			if event.Kind == codex.MetadataEvent {
+				if event.Safety != nil {
+					if !event.Safety.MatchesPassiveEvent(event, thread.Thread.ID, turn.TurnID) {
+						return publicationUncertain()
+					}
+					continue
+				}
 				if event.ThreadID != "" && event.ThreadID != thread.Thread.ID || event.TurnID != "" && event.TurnID != turn.TurnID {
 					return publicationUncertain()
 				}
@@ -345,6 +351,10 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				return publicationUncertain()
 			}
 			switch event.Kind {
+			case codex.ModelSafetyEvent:
+				if !event.Safety.MatchesPassiveEvent(event, thread.Thread.ID, turn.TurnID) {
+					return publicationUncertain()
+				}
 			case codex.CodeReviewEvent:
 				if event.CodeReview == nil || event.CodeReview.ActionID != input.ActionID {
 					return publicationUncertain()
