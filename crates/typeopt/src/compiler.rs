@@ -719,7 +719,7 @@ impl crate::pipeline::Backend for Backend<'_> {
             // retain compiler memory per candidate; syntax errors are caught
             // by the recheck after each round and rolled back there.
             return Ok(crate::pipeline::Emitted {
-                size: text.len(),
+                size: crate::bundle::chunk_code_len(text),
                 imports: crate::pipeline::bundle_static_imports(text),
             });
         }

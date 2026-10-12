@@ -533,11 +533,18 @@ fn composes_inline_and_referenced_maps() {
     ]);
     let report = optimize(temp.path(), &[]);
     same_behavior(temp.path());
-    // size.after counts the published chunk text, recomposed inline map
-    // included.
+    // size.after counts the published chunk code; inline source maps are
+    // metadata, like separate map files.
     let published: u64 = ["index.js", "inline.js", "external.js", "rooted.js"]
         .iter()
-        .map(|c| fs::metadata(temp.path().join("out").join(c)).unwrap().len())
+        .map(|c| {
+            let text = fs::read_to_string(temp.path().join("out").join(c)).unwrap();
+            let code = match text.find("//# sourceMappingURL=data:") {
+                Some(at) => &text[..at],
+                None => &text[..],
+            };
+            code.len() as u64
+        })
         .sum();
     assert_eq!(report["size"]["after"].as_u64(), Some(published));
     let console_maps_to_console = |js: &str, map: &sourcemap::SourceMap| {

@@ -426,6 +426,18 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
     }
 }
 
+/// Bytes of a chunk's code: the text without an inline `data:` source map
+/// comment. Source maps are debugging metadata and never count as size,
+/// whether inline or in separate files.
+pub(crate) fn chunk_code_len(text: &str) -> usize {
+    match map_reference(text) {
+        Some(comment) if comment.url.starts_with("data:") => {
+            text.len() - (comment.end - comment.start)
+        }
+        _ => text.len(),
+    }
+}
+
 /// The trailing `//# sourceMappingURL=<url>` or
 /// `/*# sourceMappingURL=<url> */` comment (with `#` or the legacy `@`) at
 /// the end of the chunk, possibly after code on the same line: its URL and
@@ -480,18 +492,17 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
 }
 
 /// Composes the source map of one edited chunk in place. Returns whether a
-/// map was composed (`Some(true)`), dropped because it could not be read
-/// (`Some(false)`) or absent (`None`), and how many bytes the chunk text
-/// grew because an inline map changed.
+/// map was composed (`Some(true)`), dropped because it could not be composed
+/// (`Some(false)`) or absent (`None`).
 fn update_chunk_map(
     root: &Path,
     target: &Path,
     original: &str,
     text: &str,
     chain: &[Vec<Edit>],
-) -> Result<(Option<bool>, isize)> {
+) -> Result<Option<bool>> {
     let location = match chunk_map(root, target, text) {
-        None => return Ok((None, 0)),
+        None => return Ok(None),
         Some(MapRef::Local(location)) => location,
         Some(MapRef::Uncomposable(url)) => {
             // Such a map describes the pre-optimization chunk and cannot be
@@ -503,7 +514,7 @@ fn update_chunk_map(
             let (start, end) = (comment.start, comment.end);
             let updated = format!("{}{}", &text[..start], &text[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
-            return Ok((Some(false), updated.len() as isize - text.len() as isize));
+            return Ok(Some(false));
         }
     };
     let decoded = match &location {
@@ -524,7 +535,7 @@ fn update_chunk_map(
             let mut bytes = Vec::new();
             map.to_writer(&mut bytes)?;
             std::fs::write(path, bytes).context("cannot write a chunk source map")?;
-            Ok((Some(true), 0))
+            Ok(Some(true))
         }
         (ChunkMap::Inline(url), Ok(map)) => {
             let at = text.rfind(&url).context("inline source map disappeared")?;
@@ -535,13 +546,13 @@ fn update_chunk_map(
                 &text[at + url.len()..]
             );
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
-            Ok((Some(true), updated.len() as isize - text.len() as isize))
+            Ok(Some(true))
         }
         // A map that no longer describes the chunk is worse than none.
         (ChunkMap::File(path), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable chunk source map");
             std::fs::remove_file(path)?;
-            Ok((Some(false), 0))
+            Ok(Some(false))
         }
         (ChunkMap::Inline(url), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable inline chunk source map");
@@ -551,7 +562,7 @@ fn update_chunk_map(
             let (start, end) = (comment.start, comment.end);
             let updated = format!("{}{}", &text[..start], &text[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
-            Ok((Some(false), updated.len() as isize - text.len() as isize))
+            Ok(Some(false))
         }
     }
 }
@@ -859,8 +870,6 @@ pub struct Staged {
     _staging: tempfile::TempDir,
     root: PathBuf,
     destination: PathBuf,
-    /// Bytes that recomposed inline source maps added to edited chunks.
-    pub inline_map_growth: isize,
 }
 
 impl Staged {
@@ -910,7 +919,6 @@ pub fn stage(
     let root = staging.path().join("out");
     copy(source, &root).context("cannot copy bundle directory")?;
     let mut edited = BTreeSet::new();
-    let mut inline_map_growth: isize = 0;
     let (mut maps, mut dropped) = (0usize, 0usize);
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
@@ -925,9 +933,7 @@ pub fn stage(
         std::fs::write(&target, text).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-        let (map, growth) = update_chunk_map(&root, &target, original, text, chain)?;
-        inline_map_growth += growth;
-        match map {
+        match update_chunk_map(&root, &target, original, text, chain)? {
             Some(true) => maps += 1,
             Some(false) => dropped += 1,
             None => {}
@@ -949,7 +955,6 @@ pub fn stage(
         _staging: staging,
         root,
         destination: destination.to_path_buf(),
-        inline_map_growth,
     })
 }
 
