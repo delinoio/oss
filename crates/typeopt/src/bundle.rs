@@ -379,40 +379,51 @@ enum ChunkMap {
 enum MapRef {
     /// A map that bundle mode can compose.
     Local(ChunkMap),
-    /// An absolute or protocol-relative URL that bundle mode cannot update.
-    Remote(String),
+    /// An explicit reference that bundle mode cannot compose: an absolute or
+    /// protocol-relative URL, or a local path that is missing or outside the
+    /// output.
+    Uncomposable(String),
 }
 
 /// Finds the source map of a chunk: its `sourceMappingURL` (inline, relative
 /// to the chunk or root-relative within the output), or the adjacent
 /// `<chunk>.map` of hidden source maps.
 fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
-    let path = match map_reference(text).map(|comment| comment.url) {
+    let root = root.canonicalize().ok()?;
+    let local = |path: PathBuf| {
+        path.canonicalize()
+            .ok()
+            .filter(|path| path.starts_with(&root) && path.is_file())
+    };
+    match map_reference(text).map(|comment| comment.url) {
         Some(url) if url.starts_with("data:") => {
-            return Some(MapRef::Local(ChunkMap::Inline(url.to_owned())));
+            Some(MapRef::Local(ChunkMap::Inline(url.to_owned())))
         }
+        // An explicit reference that cannot be resolved inside the output
+        // (remote, missing or outside) cannot be composed.
         Some(reference) => {
             let url = reference.split(['?', '#']).next().unwrap_or_default();
-            if url.contains("://") || url.starts_with("//") {
-                return Some(MapRef::Remote(reference.to_owned()));
-            }
-            match url.strip_prefix('/') {
+            let path = if url.contains("://") || url.starts_with("//") {
+                None
+            } else if let Some(rooted) = url.strip_prefix('/') {
                 // Root-relative: resolve under the output root, dropping
                 // leading segments of a deployment base path when needed.
-                Some(rooted) => {
-                    let segments: Vec<&str> = rooted.split('/').collect();
-                    (0..segments.len())
-                        .map(|skip| root.join(segments[skip..].join("/")))
-                        .find(|candidate| candidate.is_file())?
-                }
-                None => chunk.parent()?.join(url),
-            }
+                let segments: Vec<&str> = rooted.split('/').collect();
+                (0..segments.len()).find_map(|skip| local(root.join(segments[skip..].join("/"))))
+            } else {
+                chunk.parent().and_then(|dir| local(dir.join(url)))
+            };
+            Some(path.map_or_else(
+                || MapRef::Uncomposable(reference.to_owned()),
+                |path| MapRef::Local(ChunkMap::File(path)),
+            ))
         }
-        None => chunk.with_file_name(format!("{}.map", chunk.file_name()?.to_string_lossy())),
-    };
-    let path = path.canonicalize().ok()?;
-    (path.starts_with(root.canonicalize().ok()?) && path.is_file())
-        .then_some(MapRef::Local(ChunkMap::File(path)))
+        // Hidden source maps: an adjacent `<chunk>.map`, if present.
+        None => {
+            local(chunk.with_file_name(format!("{}.map", chunk.file_name()?.to_string_lossy())))
+                .map(|path| MapRef::Local(ChunkMap::File(path)))
+        }
+    }
 }
 
 /// The trailing `//# sourceMappingURL=<url>` or
@@ -482,13 +493,13 @@ fn update_chunk_map(
     let location = match chunk_map(root, target, text) {
         None => return Ok((None, 0)),
         Some(MapRef::Local(location)) => location,
-        Some(MapRef::Remote(url)) => {
-            // A remote map describes the pre-optimization chunk and cannot be
+        Some(MapRef::Uncomposable(url)) => {
+            // Such a map describes the pre-optimization chunk and cannot be
             // composed here; a missing map is better than a wrong one.
-            tracing::warn!("dropping a remote source map reference of an edited chunk");
+            tracing::warn!("dropping an uncomposable source map reference of an edited chunk");
             let comment = map_reference(text)
                 .filter(|comment| comment.url == url)
-                .context("cannot locate the remote source map comment of an edited chunk")?;
+                .context("cannot locate the source map comment of an edited chunk")?;
             let (start, end) = (comment.start, comment.end);
             let updated = format!("{}{}", &text[..start], &text[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;

@@ -570,8 +570,8 @@ fn composes_inline_and_referenced_maps() {
     console_maps_to_console(&edited, &composed);
 }
 
-/// A remote map cannot be composed, so an edited chunk drops its reference;
-/// an unedited chunk keeps it.
+/// A remote or missing map cannot be composed, so an edited chunk drops its
+/// reference; an unedited chunk keeps it.
 #[test]
 fn drops_remote_map_references_of_edited_chunks() {
     let code = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#;
@@ -579,11 +579,16 @@ fn drops_remote_map_references_of_edited_chunks() {
     let temp = bundle(&[
         (
             "index.js",
-            r#"import"./edited.js";import"./untouched.js";import"./literal.js";"#,
+            r#"import"./edited.js";import"./untouched.js";import"./literal.js";import"./missing.js";"#,
         ),
         (
             "edited.js",
             &format!("{code}\n/*# sourceMappingURL=//maps.example/edited.js.map */"),
+        ),
+        // A local reference to a missing map cannot be composed either.
+        (
+            "missing.js",
+            &format!("{code}\n//# sourceMappingURL=maps/missing.js.map"),
         ),
         // Directive-like text in a string is code, not a map reference.
         (
@@ -604,6 +609,12 @@ fn drops_remote_map_references_of_edited_chunks() {
     assert!(!edited.contains("sourceMappingURL"), "{edited}");
     assert_eq!(out(temp.path(), "untouched.js"), untouched);
     assert!(out(temp.path(), "literal.js").contains("maps.example/x.map\";"));
+    let missing = out(temp.path(), "missing.js");
+    assert!(
+        !missing.contains("verticalSpacing"),
+        "the fixture must be optimized"
+    );
+    assert!(!missing.contains("sourceMappingURL"), "{missing}");
 }
 
 fn listing(dir: &Path) -> Vec<String> {
