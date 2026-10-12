@@ -303,6 +303,29 @@ fn keeps_chunks_with_eval_unchanged() {
     assert!(saved(&report) > 0, "{report:#}");
 }
 
+/// A chunk that uses `import.meta` is an ES module even without imports or
+/// exports.
+#[test]
+fn optimizes_import_meta_chunks() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"const u=new URL("./worker.js",import.meta.url);console.log(u.pathname.endsWith("worker.js"));"#,
+        ),
+        (
+            "worker.js",
+            r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing,typeof import.meta.url);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    let worker = out(temp.path(), "worker.js");
+    assert!(!worker.contains("verticalSpacing"), "{worker}");
+    assert_eq!(
+        node(&temp.path().join("dist/worker.js")).stdout,
+        node(&temp.path().join("out/worker.js")).stdout
+    );
+}
+
 /// A standalone `.mjs` chunk is an ES module even without imports or exports.
 #[test]
 fn optimizes_standalone_mjs_chunks() {

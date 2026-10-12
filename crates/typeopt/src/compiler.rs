@@ -880,6 +880,13 @@ pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
     })
 }
 
+/// Whether a file uses `import.meta`, which only ES modules can parse.
+pub(crate) fn uses_import_meta(nodes: &[Node]) -> bool {
+    nodes.iter().any(|node| {
+        node.kind() == SyntaxKind::MetaProperty && node.keyword_token() == SyntaxKind::ImportKeyword
+    })
+}
+
 /// Whether the file has ES module statements (imports or exports).
 pub(crate) fn has_esm_statements(file: Node) -> bool {
     file.statements().iter().any(|statement| {

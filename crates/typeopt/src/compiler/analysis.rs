@@ -102,8 +102,10 @@ impl<'c> Ctx<'c> {
                     // backs every transformation, so such a module is an
                     // unchecked boundary exactly like JavaScript.
                     js: if crate::app::bundle_mode() {
-                        crate::app::bundle_boundary(&name, super::has_esm_statements(node))
-                            || super::uses_eval_or_with(&nodes)
+                        crate::app::bundle_boundary(
+                            &name,
+                            super::has_esm_statements(node) || super::uses_import_meta(&nodes),
+                        ) || super::uses_eval_or_with(&nodes)
                     } else {
                         is_js(node) || is_unchecked(node)
                     },
