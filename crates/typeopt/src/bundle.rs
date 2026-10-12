@@ -863,6 +863,25 @@ pub fn preflight(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Relative path and SHA-256 of every file of a bundle directory.
+pub type Fingerprint = BTreeMap<PathBuf, [u8; 32]>;
+
+/// Fingerprints a bundle directory, so publication can verify that it
+/// copies the same files that were analyzed.
+pub fn fingerprint(dir: &Path) -> Result<Fingerprint> {
+    use sha2::{Digest, Sha256};
+    let mut files = Vec::new();
+    files_under(dir, &mut files)?;
+    files
+        .into_iter()
+        .map(|file| {
+            let bytes = std::fs::read(&file).context("cannot read a bundle file")?;
+            let relative = file.strip_prefix(dir).unwrap_or(&file).to_path_buf();
+            Ok((relative, Sha256::digest(&bytes).into()))
+        })
+        .collect()
+}
+
 /// A complete bundle output in an operation-owned staging directory. It is
 /// published only by [`Staged::commit`]; dropping it removes the staging
 /// directory, so a failure after staging never leaves a published result.
@@ -889,6 +908,7 @@ pub fn stage(
     destination: &Path,
     snapshot: &Snapshot,
     outcome: &Outcome,
+    analyzed: &Fingerprint,
 ) -> Result<Staged> {
     ensure!(
         std::fs::symlink_metadata(destination)
@@ -918,6 +938,12 @@ pub fn stage(
     }
     let root = staging.path().join("out");
     copy(source, &root).context("cannot copy bundle directory")?;
+    // The edits describe the directory as analyzed: a bundler or watcher
+    // that changed it meanwhile would leave a mixed build.
+    anyhow::ensure!(
+        fingerprint(&root)? == *analyzed,
+        "the bundle directory changed during analysis; rerun typeopt on a stable build"
+    );
     let mut edited = BTreeSet::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
     for (name, text) in &outcome.texts {
@@ -987,6 +1013,19 @@ mod tests {
             .collect();
         // The insertion maps where `b()` did; `b()` keeps its own mapping.
         assert_eq!(tokens, [(0, 10), (4, 20), (4 + insertion.len() as u32, 20)]);
+    }
+
+    #[test]
+    fn fingerprints_detect_changed_and_added_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.js"), "a").unwrap();
+        let before = super::fingerprint(dir.path()).unwrap();
+        assert_eq!(super::fingerprint(dir.path()).unwrap(), before);
+        std::fs::write(dir.path().join("a.js"), "b").unwrap();
+        assert_ne!(super::fingerprint(dir.path()).unwrap(), before);
+        std::fs::write(dir.path().join("a.js"), "a").unwrap();
+        std::fs::write(dir.path().join("b.js"), "b").unwrap();
+        assert_ne!(super::fingerprint(dir.path()).unwrap(), before);
     }
 
     #[test]

@@ -272,6 +272,8 @@ mod app {
             "bundle mode passes"
         );
         bundle::preflight(&dir)?;
+        // Publication verifies that it copies the directory as analyzed.
+        let analyzed = bundle::fingerprint(&dir)?;
         let compiler = compiler::Project::load_bundle(&dir)?;
         let snapshot = compiler.snapshot()?;
         check_cancelled()?;
@@ -295,7 +297,7 @@ mod app {
         );
         let staged = args
             .out_dir
-            .map(|destination| bundle::stage(&dir, &destination, &snapshot, &outcome))
+            .map(|destination| bundle::stage(&dir, &destination, &snapshot, &outcome, &analyzed))
             .transpose()?;
         report.measure(started);
         // The report is part of the result: publish only after it was
