@@ -24,6 +24,37 @@ func TestRepositoryAcceptsRemoteCheckoutPaths(t *testing.T) {
 	}
 }
 
+func TestMachineValidateAcceptsCodexWebSearchWorkerCapability(t *testing.T) {
+	machine := Machine{
+		Name:               "worker",
+		OS:                 "linux",
+		Architecture:       "amd64",
+		WorkerCapabilities: []WorkerCapability{CodexWebSearchV1},
+	}
+	if err := machine.Validate(); err != nil {
+		t.Fatalf("advertised Codex web-search capability was rejected: %v", err)
+	}
+}
+
+func TestMachineValidateRejectsUnknownOrDuplicateWorkerCapabilities(t *testing.T) {
+	for name, capabilities := range map[string][]WorkerCapability{
+		"unknown":   {"unknown-v1"},
+		"duplicate": {CodexWebSearchV1, CodexWebSearchV1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			machine := Machine{
+				Name:               "worker",
+				OS:                 "linux",
+				Architecture:       "amd64",
+				WorkerCapabilities: capabilities,
+			}
+			if err := machine.Validate(); err == nil {
+				t.Fatalf("invalid Worker capability list was accepted: %v", capabilities)
+			}
+		})
+	}
+}
+
 func TestRepositoryRejectsInvalidGitRemoteNames(t *testing.T) {
 	for _, remote := range []string{"foo~bar", "foo..bar", "foo@{bar", "foo^bar", "foo?bar", "foo*bar", "foo[bar", "foo.lock", ".foo", "foo."} {
 		t.Run(remote, func(t *testing.T) {
