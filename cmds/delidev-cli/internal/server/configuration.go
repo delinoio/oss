@@ -608,16 +608,25 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 						return err
 					}
 					for _, row := range rows {
-						var owner struct {
-							Defaults *domain.HarnessDefaults `json:"harness_defaults"`
+						var defaults *domain.HarnessDefaults
+						switch defaultsKind {
+						case domain.ProjectKind:
+							owner, err := store.Decode[domain.Project](row)
+							if err != nil {
+								return err
+							}
+							defaults = owner.HarnessDefaults
+						case domain.SettingsKind:
+							owner, err := store.Decode[domain.Settings](row)
+							if err != nil {
+								return err
+							}
+							defaults = owner.HarnessDefaults
 						}
-						if err := domain.Decode(row.Data, &owner); err != nil {
-							return err
-						}
-						if owner.Defaults == nil {
+						if defaults == nil {
 							continue
 						}
-						for _, entry := range owner.Defaults.Entries {
+						for _, entry := range defaults.Entries {
 							if entry.Scope.ProviderID != id || entry.Scope.APIProtocol == "" {
 								continue
 							}

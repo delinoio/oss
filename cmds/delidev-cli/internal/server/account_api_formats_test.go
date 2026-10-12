@@ -71,6 +71,50 @@ func TestAccountReferencedProfilesAndCredentialClassAreImmutable(t *testing.T) {
 	}
 }
 
+func TestProviderProfileUpdateDecodesCompleteDefaultsOwners(t *testing.T) {
+	f := newOAuthFixture(t)
+
+	// Ordinary Project and Settings fields must not make the harness-default
+	// reference scan reject an unrelated provider profile update.
+	projectID := domain.NewID()
+	repositoryID := domain.NewID()
+	_, err := f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture.provider-profile-default-owners", nil, func(tx *store.Tx) (any, error) {
+		if _, err := tx.Put(domain.ProjectKind, projectID, 0, "", "", domain.Project{
+			Name:              "Provider profile update fixture",
+			Repositories:      []domain.ID{repositoryID},
+			PrimaryRepository: repositoryID,
+		}); err != nil {
+			return nil, err
+		}
+		settings, err := tx.List(store.Filter{Kind: domain.SettingsKind, Limit: 2})
+		if err != nil {
+			return nil, err
+		}
+		if len(settings) == 0 {
+			_, err = tx.Put(domain.SettingsKind, domain.NewID(), 0, "", "", domain.DefaultSettings())
+		}
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := domain.Provider{
+		Name:           "Custom",
+		Protocol:       domain.OpenAIResponses,
+		Endpoint:       "https://api.example.test/v1",
+		Authentication: domain.BearerAuth,
+	}
+	saved, err := saveAPIFormatConfiguration(f, domain.ProviderKind, provider, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.Endpoint = "https://api.example.test/v2"
+	if _, err := saveAPIFormatConfiguration(f, domain.ProviderKind, provider, saved); err != nil {
+		t.Fatalf("unreferenced provider profile update was rejected: %v", err)
+	}
+}
+
 // These HTTP/Worker fixtures exercise admission and relay behavior, not a real
 // OpenRouter account or an installed native harness.
 func TestSelectedAPIFormatControlsExecutionRelay(t *testing.T) {
