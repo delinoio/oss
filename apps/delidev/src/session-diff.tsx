@@ -223,6 +223,29 @@ export function RepositoryDiff({
     ),
   );
   const enabled = comparison !== Comparison.Branch || supportedBase;
+  // A failed explicit options refresh keeps the previous inventory (and any
+  // diff derived from it) only as a stale observation.
+  const optionsStale =
+    comparison === Comparison.Branch &&
+    options.isError &&
+    Boolean(options.data);
+  const [refreshing, setRefreshing] = useState(false);
+  const scope = [
+    sessionId,
+    repository,
+    comparison,
+    path,
+    chosenBase ? referenceKey(chosenBase) : "",
+  ].join("\u0000");
+  const scopeRef = useRef(scope),
+    mounted = useRef(true);
+  scopeRef.current = scope;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const query = {
     operation: "git-diff",
     repository_id: repository,
@@ -248,6 +271,41 @@ export function RepositoryDiff({
         ),
     },
   );
+  // Branch Refresh reads a fresh reference inventory first, then observes the
+  // diff only when the same scope still selects an available base.
+  const refresh = async () => {
+    if (comparison !== Comparison.Branch) {
+      void result.refetch();
+      return;
+    }
+    const token = scope,
+      wasEnabled = enabled,
+      previousBase = chosenBase;
+    setRefreshing(true);
+    try {
+      const fresh = await options.refetch();
+      if (!mounted.current || scopeRef.current !== token) return;
+      if (fresh.isError || !fresh.data) return;
+      const nextBase = baseRef ?? fresh.data.default;
+      const available =
+        nextBase !== undefined &&
+        fresh.data.choices.some(
+          (choice) =>
+            choice.available && sameReference(choice.reference, nextBase),
+        );
+      // A changed implicit default or a newly available base changes the
+      // diff query key, so that query observes automatically.
+      if (
+        wasEnabled &&
+        available &&
+        previousBase !== undefined &&
+        sameReference(previousBase, nextBase)
+      )
+        await result.refetch();
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  };
   const creation = useRetainedMutationIntents(`review:create:${sessionId}`),
     submission = useRetainedMutationIntents(`review:submit:${sessionId}`),
     edits = useRetainedMutationIntents(`review:edit:${sessionId}:`);
@@ -355,13 +413,10 @@ export function RepositoryDiff({
         <button
           type="button"
           className="diff-icon"
-          disabled={result.isFetching || options.isFetching}
+          disabled={refreshing || result.isFetching || options.isFetching}
           aria-label={copy("session-diff.refreshDiff_f700bc")}
           title={copy("session-diff.refreshDiff_f700bc")}
-          onClick={() => {
-            if (enabled) void result.refetch();
-            else void options.refetch();
-          }}
+          onClick={() => void refresh()}
         >
           ↻
         </button>
@@ -450,7 +505,7 @@ export function RepositoryDiff({
       {enabled && result.isFetching ? (
         <p role="status">{copy("session-diff.readingGitDiff_13bd34")}</p>
       ) : null}
-      {result.error && result.data ? (
+      {(result.error || optionsStale) && result.data && enabled ? (
         <p role="alert">
           {copy("session-diff.refreshFailedThePreviousComparisonIs_eef4e1")}
         </p>
@@ -539,7 +594,12 @@ export function RepositoryDiff({
           <LocalReviews
             sessionId={sessionId}
             diff={result.data}
-            reading={result.isFetching || Boolean(result.error) || !enabled}
+            reading={
+              result.isFetching ||
+              Boolean(result.error) ||
+              optionsStale ||
+              !enabled
+            }
             acceptedDeletionId={acceptedDeletionId}
           />
         </Disclosure>
