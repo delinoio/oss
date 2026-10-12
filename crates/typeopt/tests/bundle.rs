@@ -996,6 +996,32 @@ fn check_mode_reports_the_published_size() {
     );
 }
 
+/// A renamed chunk's adjacent map follows it and names the new file.
+#[test]
+fn renamed_maps_name_their_new_chunk() {
+    let mut builder = sourcemap::SourceMapBuilder::new(Some("settings-BBBBBBBB.js"));
+    builder.add(0, 0, 0, 0, Some("src/settings.ts"), None, false);
+    let mut map = Vec::new();
+    builder.into_sourcemap().to_writer(&mut map).unwrap();
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push((
+        "assets/settings-BBBBBBBB.js.map",
+        std::str::from_utf8(&map).unwrap(),
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    let chunk = assets
+        .iter()
+        .find(|a| a.starts_with("settings-") && a.ends_with(".js"))
+        .unwrap();
+    let map = sourcemap::SourceMap::from_slice(
+        &fs::read(temp.path().join("out/assets").join(format!("{chunk}.map"))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(map.get_file(), Some(chunk.as_str()));
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);
@@ -1075,6 +1101,7 @@ fn rejects_any_spelling_of_subresource_integrity() {
     for html in [
         r#"<SCRIPT TYPE="module" SRC="./index.js" INTEGRITY = "sha384-x"></SCRIPT>"#,
         r#"<link rel=modulepreload href=./index.js integrity=sha384-x>"#,
+        r#"<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'SHA256-abc='"><script type="module" src="./index.js"></script>"#,
     ] {
         let temp = bundle(&[
             ("index.html", html),

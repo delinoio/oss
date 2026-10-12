@@ -1259,8 +1259,8 @@ fn rehash(
 /// analysis in check and output modes:
 /// - symbolic links: analysis would follow them to their targets while the
 ///   staged copy would materialize separate files (or external contents);
-/// - HTML pages with Subresource Integrity: the digests would no longer match
-///   edited chunks.
+/// - HTML pages with Subresource Integrity or a Content Security Policy with
+///   hash sources: the digests would no longer match rewritten content.
 pub fn preflight(dir: &Path) -> Result<()> {
     fn reject_links(dir: &Path) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
@@ -1291,6 +1291,29 @@ pub fn preflight(dir: &Path) -> Result<()> {
             anyhow::bail!(
                 "HTML pages use Subresource Integrity, which bundle mode cannot update; compute \
                  integrity attributes after typeopt"
+            );
+        }
+        // A Content Security Policy that allows inline code by hash would
+        // block inline scripts whose chunk references bundle mode rewrites.
+        if is_html(file)
+            && std::fs::read_to_string(file).is_ok_and(|html| {
+                html_tags(&html).iter().any(|tag| {
+                    tag.name == "meta"
+                        && tag.attribute("http-equiv").is_some_and(|v| {
+                            v.trim().eq_ignore_ascii_case("content-security-policy")
+                        })
+                        && tag.attribute("content").is_some_and(|policy| {
+                            let policy = policy.to_ascii_lowercase();
+                            ["'sha256-", "'sha384-", "'sha512-"]
+                                .iter()
+                                .any(|source| policy.contains(source))
+                        })
+                })
+            })
+        {
+            anyhow::bail!(
+                "HTML pages use a Content Security Policy with hash sources, which bundle mode \
+                 cannot update; compute policy hashes after typeopt"
             );
         }
     }
