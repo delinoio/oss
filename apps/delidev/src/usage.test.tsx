@@ -1193,10 +1193,14 @@ it.each([
       .getByRole("rowheader", { name: "Codex" })
       .closest("tr")!;
     expect(row.cells[1].textContent).toContain(
-      BigInt("18446744073709551614").toLocaleString(english ? "en-US" : "ko-KR"),
+      BigInt("18446744073709551614").toLocaleString(
+        english ? "en-US" : "ko-KR",
+      ),
     );
     expect(row.cells[2].textContent).toContain("EUR 0");
-    expect(row.cells[3].textContent).toBe(english ? "3 recorded units" : "기록 3개");
+    expect(row.cells[3].textContent).toBe(
+      english ? "3 recorded units" : "기록 3개",
+    );
     for (const name of ["Claude Code", "OpenCode"])
       expect(
         within(panel).getByRole("rowheader", { name }).closest("tr")!.cells[3]
@@ -1246,18 +1250,20 @@ it.each([
   async ({ evidence, tokens, status, missingTotal }) => {
     const f = fixture();
     if (evidence === "absent totals") f.data.totals = undefined;
-    if (evidence === "unmeasured total") f.data.totals!.total!.measuredResponses = 0;
+    if (evidence === "unmeasured total")
+      f.data.totals!.total!.measuredResponses = 0;
     if (evidence === "absent total measure") f.data.totals!.total = undefined;
     if (evidence === "measured zero") f.data.totals!.total!.knownTotal = "0";
-    if (evidence === "empty interval") f.data.totals = create(UsageTotalsSchema);
+    if (evidence === "empty interval")
+      f.data.totals = create(UsageTotalsSchema);
     render(f.view());
     await screen.findByText("Incomplete coverage");
     const row = screen.getByRole("rowheader", { name: "Codex" }).closest("tr")!;
     expect(row.cells[1].firstChild!.textContent).toBe(tokens);
     expect(row.cells[2].firstChild!.textContent).toBe("—");
-    expect(row.cells[2].textContent.includes("No retained price estimate.")).toBe(
-      f.data.totals !== undefined && f.data.totals.responses > 0,
-    );
+    expect(
+      row.cells[2].textContent.includes("No retained price estimate."),
+    ).toBe(f.data.totals !== undefined && f.data.totals.responses > 0);
     expect(row.cells[3].firstChild!.textContent).toBe(status);
     expect(
       row.cells[3].textContent.includes("The tool did not report a total."),
@@ -1268,7 +1274,9 @@ it.each([
 it("retains legacy Codex Overview values and coverage after a failed refresh", async () => {
   const f = fixture();
   f.data.estimates = create(EstimateTotalsSchema, {
-    currencies: [{ currency: "USD", knownAmount: "2.50", completeResponses: 2 }],
+    currencies: [
+      { currency: "USD", knownAmount: "2.50", completeResponses: 2 },
+    ],
   });
   render(f.view());
   await screen.findByText("USD 2.50");
