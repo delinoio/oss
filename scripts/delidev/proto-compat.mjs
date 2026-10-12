@@ -17,6 +17,15 @@ export function retireCompatibility() {
     "packages/delidev-api-client/src/gen/delidev/v1",
   );
   for (const filename of readdirSync(directory)) {
+    // The pinned ES generator adds a blank EOF line to the new MCP module.
+    // Keep its generated output reproducible with the required whitespace check;
+    // remove this normalization when the generator emits one terminal newline.
+    if (filename === "mcp_pb.ts") {
+      const path = resolve(directory, filename);
+      const generated = readFileSync(path, "utf8");
+      const normalized = generated.trimEnd() + "\n";
+      if (generated !== normalized) writeFileSync(path, normalized);
+    }
     if (
       filename === "delidev_pb.ts" ||
       /^delidev-.*_connectquery\.ts$/.test(filename)
