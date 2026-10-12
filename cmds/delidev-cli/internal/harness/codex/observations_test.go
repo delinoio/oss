@@ -245,7 +245,7 @@ func TestNativeSettingsNotificationsCannotReplaceAcceptedAuthority(t *testing.T)
 }
 
 func TestAgentMessageQuestionsRemainPrivate(t *testing.T) {
-	for _, questions := range []any{nil, []any{}, []any{map[string]any{"private-question": "private-content"}}, true} {
+	for _, questions := range []any{nil, []any{}, []any{map[string]any{"title": "private-content", "options": []any{"original-option"}}}, true} {
 		c, turn := observationClient()
 		item := map[string]any{"type": "agentMessage", "id": "message", "text": "fixture", "questions": questions}
 		event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "item": item, "completedAtMs": 1})
