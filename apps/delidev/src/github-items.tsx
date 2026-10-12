@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  PullRequestWorkspace,
+  PRWorkspaceRows,
+  type PRSelection,
+} from "./pr-workspace";
 import { Timestamp } from "./timestamp-display";
 import { PRListHeader, PRListCards } from "./pr-list-cards";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -16,7 +21,7 @@ import {
   visiblePageIds,
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   FailureCode,
@@ -36,6 +41,7 @@ import { Problem } from "./ui";
 import { OpenGitHub } from "./github-opening";
 import {
   ItemKind,
+  ItemState,
   QueryOperation,
   type GitHubQuery,
   positive,
@@ -587,6 +593,13 @@ type QueryProps = {
   active?: boolean;
   standaloneCards?: boolean;
   pending?: ReactNode;
+  workspace?: {
+    supported: boolean;
+    reset: () => void;
+    selection?: string;
+    choose: (selection: PRSelection, button: HTMLButtonElement) => void;
+    enrich: (scope: Document) => void;
+  };
 };
 function QueryResult(props: QueryProps) {
   return props.query.page ? (
@@ -620,6 +633,23 @@ function SingleQueryResult({ active = true, ...props }: QueryProps) {
 }
 function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
   const { root, bindRoot } = useGitHubScrollRoot();
+  const [workspaceObservations, setWorkspaceObservations] = useState<
+    Map<string, Document>
+  >(new Map());
+  const enrich = props.workspace?.enrich;
+  const observeWorkspace = useCallback(
+    (key: string, value?: Document) => {
+      setWorkspaceObservations((old) => {
+        if (old.get(key) === value || (!value && !old.has(key))) return old;
+        const next = new Map(old);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        return next;
+      });
+      if (value) enrich?.(value);
+    },
+    [enrich],
+  );
   const scope = JSON.stringify([
     props.selected.id,
     String(props.selected.revision),
@@ -693,6 +723,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
           id: observation
             ? observation + ":" + text(row.id)
             : text(row.identity_source) + ":" + text(row.id),
+          number: text(row.number),
           revision: BigInt(
             Date.parse(text(row.updated_at) || text(item.updated_at)),
           ),
@@ -744,7 +775,10 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
             chain.error?.stalled ||
             chain.error?.failure.code === FailureCode.CursorExpired,
           )}
-          refresh={chain.refreshExplicit}
+          refresh={() => {
+            props.workspace?.reset();
+            chain.refreshExplicit();
+          }}
         />
       ) : null}
       {props.standaloneCards && chain.loading ? (
@@ -753,60 +787,90 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
       <Problem error={paginationError(chain.error?.failure)} />
       <ScrollPayloadWindow query={chain} root={root} active={active}>
         {(payload, projections) =>
-          payload.map(({ data, query }) => {
-            const ids = visiblePageIds(chain.pages, projections);
-            const observation =
-              query.operation === QueryOperation.Checks
-                ? "checks"
-                : query.operation === QueryOperation.Statuses
-                  ? "statuses"
-                  : undefined;
-            const field = observation === "checks" ? "runs" : "contexts";
-            const visible = observation
-              ? {
-                  ...data,
-                  [observation]: {
-                    ...object(data[observation]),
-                    [field]: items(object(data[observation])[field]).filter(
-                      (raw) =>
-                        ids.has(observation + ":" + text(object(raw).id)),
-                    ),
+          props.workspace ? (
+            <PRWorkspaceRows
+              pages={payload.map(({ data, query }) => {
+                const ids = visiblePageIds(chain.pages, projections);
+                return {
+                  query,
+                  data: {
+                    ...data,
+                    items: items(data.items).filter((raw) => {
+                      const item = object(raw);
+                      return ids.has(
+                        text(item.identity_source) + ":" + text(item.id),
+                      );
+                    }),
                   },
-                }
-              : {
-                  ...data,
-                  items: items(data.items).filter((raw) => {
-                    const item = object(raw);
-                    return ids.has(
-                      text(item.identity_source) + ":" + text(item.id),
-                    );
-                  }),
                 };
-            return props.standaloneCards ? (
-              <PRListCards
-                key={query.page}
-                data={visible}
-                query={query}
-                reading={Boolean(chain.loading)}
-                previous={Boolean(chain.error)}
-                emptyPage={!items(visible.items).length}
-                change={props.change}
-              />
-            ) : (
-              <QueryResultPage
-                key={query.page}
-                {...props}
-                query={query}
-                validated={visible}
-                result={{
-                  data,
-                  error: paginationError(chain.error?.failure),
-                  isFetching: Boolean(chain.loading),
-                  refetch: chain.refresh,
-                }}
-              />
-            );
-          })
+              })}
+              previous={Boolean(chain.loading || chain.error)}
+              allSeeds={chain.pages
+                .flatMap((page) => page.rows.map((row) => row.number))
+                .filter(Boolean)}
+              observations={workspaceObservations}
+              observe={observeWorkspace}
+              selected={props.selected}
+              enabled={props.workspace.supported && active}
+              chosen={props.workspace.selection}
+              choose={props.workspace.choose}
+            />
+          ) : (
+            payload.map(({ data, query }) => {
+              const ids = visiblePageIds(chain.pages, projections);
+              const observation =
+                query.operation === QueryOperation.Checks
+                  ? "checks"
+                  : query.operation === QueryOperation.Statuses
+                    ? "statuses"
+                    : undefined;
+              const field = observation === "checks" ? "runs" : "contexts";
+              const visible = observation
+                ? {
+                    ...data,
+                    [observation]: {
+                      ...object(data[observation]),
+                      [field]: items(object(data[observation])[field]).filter(
+                        (raw) =>
+                          ids.has(observation + ":" + text(object(raw).id)),
+                      ),
+                    },
+                  }
+                : {
+                    ...data,
+                    items: items(data.items).filter((raw) => {
+                      const item = object(raw);
+                      return ids.has(
+                        text(item.identity_source) + ":" + text(item.id),
+                      );
+                    }),
+                  };
+              return props.standaloneCards ? (
+                <PRListCards
+                  key={query.page}
+                  data={visible}
+                  query={query}
+                  reading={Boolean(chain.loading)}
+                  previous={Boolean(chain.error)}
+                  emptyPage={!items(visible.items).length}
+                  change={props.change}
+                />
+              ) : (
+                <QueryResultPage
+                  key={query.page}
+                  {...props}
+                  query={query}
+                  validated={visible}
+                  result={{
+                    data,
+                    error: paginationError(chain.error?.failure),
+                    isFetching: Boolean(chain.loading),
+                    refetch: chain.refresh,
+                  }}
+                />
+              );
+            })
+          )
         }
       </ScrollPayloadWindow>
       <ScrollContinuation
@@ -839,35 +903,44 @@ export function StandalonePullRequestResults({
   changeNavigation: (navigation: PullRequestNavigation) => void;
 }) {
   useLocale();
-  function change(next: GitHubQuery) {
-    const previous =
-      next.operation !== navigation.query.operation
-        ? [...navigation.previous.slice(-7), navigation.query]
-        : navigation.previous;
-    changeNavigation({ ...navigation, query: next, previous });
-  }
+  // The retained list owner never becomes the selected PR query owner. Layout,
+  // tab activation and selection do not change its pages, cursor or scroll.
+  const query =
+    navigation.query.operation === QueryOperation.List ||
+    navigation.query.operation === QueryOperation.Search
+      ? navigation.query
+      : (navigation.previous.find(
+          (q) =>
+            q.operation === QueryOperation.List ||
+            q.operation === QueryOperation.Search,
+        ) ?? {
+          kind: ItemKind.PullRequest,
+          operation: QueryOperation.List,
+          state: ItemState.Open,
+          page: 1,
+          page_size: 20,
+        });
   return (
-    <QueryResult
-      key={JSON.stringify(navigation.query)}
-      selected={selected}
-      query={navigation.query}
-      active={active}
-      standaloneCards={
-        navigation.query.operation === QueryOperation.List ||
-        navigation.query.operation === QueryOperation.Search
-      }
-      pending={pending}
-      change={change}
-      back={
-        navigation.previous.length
-          ? () =>
-              changeNavigation({
-                ...navigation,
-                query: navigation.previous[navigation.previous.length - 1]!,
-                previous: navigation.previous.slice(0, -1),
-              })
-          : undefined
-      }
-    />
+    <>
+      {pending}
+      <PullRequestWorkspace
+        key={JSON.stringify([selected.id, selected.revision.toString(), query])}
+        selected={selected}
+        active={active}
+        validate={githubResult}
+        list={(workspace) => (
+          <PaginatedQueryResult
+            selected={selected}
+            query={query}
+            active={active}
+            standaloneCards
+            workspace={workspace}
+            change={(query) =>
+              changeNavigation({ ...navigation, query, previous: [] })
+            }
+          />
+        )}
+      />
+    </>
   );
 }

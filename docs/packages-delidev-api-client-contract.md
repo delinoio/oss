@@ -487,3 +487,26 @@ reference-kind/detail/presence metadata. It contains no media locators or
 encrypted bytes. Shared clients retain these values through resource reads and
 search without authorizing media retrieval, execution or native input replay.
 Follow [the harness contract](cmds-delidev-harness-contract.md#codex-native-function-outputs).
+
+### Native startup timing metadata
+
+Generated Resource.startupTiming exposes optional SessionStartupTiming workspace
+and agent records with exact original job/execution IDs and UTC start/end strings.
+Session documentJson retains its prior closed shape. Consumers validate original
+attempt ownership and nonnegative intervals before display, use paired server
+clock/presence evidence for live time and retain unconfirmed observations without
+animation. Timing grants no execution, retry or recovery authority. Missing older
+peer metadata remains unavailable.
+
+## Pull request workspace client
+
+The generated IntegrationQuery client exposes independently negotiated workspace,
+commit-page and avatar-byte reads under System `PULL_REQUEST_WORKSPACE_V1`.
+Preserve original repository revision, numeric PR/repository and immutable
+base/head scope, actor/profile generation fences and signed continuation. The
+schema-version-1 decoders reject mixed or foreign observations and invalid counts.
+Avatar references are opaque scope, never URLs. Legacy QueryRepositoryIntegration
+List/Search and shared inspection exports remain unchanged. Connection disposal
+cancels and removes private tab/list/graph/avatar caches; unsupported peers retain
+safe flat-list and supported-tab fallbacks. Fixture validation is separate from
+real GitHub-account and packaged CEF/platform acceptance.
