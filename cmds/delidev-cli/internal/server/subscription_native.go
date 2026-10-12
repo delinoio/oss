@@ -209,11 +209,14 @@ func (r *serverQuotaRuntime) Close() error {
 	return subscription.CleanupRuntime(r.home, r.original)
 }
 
-func openServerQuota(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (returned serverQuotaNative, err error) {
+func openServerQuota(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverQuotaNative, error) {
+	return openExternalServerRuntime(ctx, root, owner, auth, logger, codex.QuotaProtocol, "quota")
+}
+func openExternalServerRuntime(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger, mode codex.ProtocolMode, lane string) (returned *serverQuotaRuntime, err error) {
 	version, phase := "", domain.CodexRuntime
 	defer func() { err = domain.WithCodexDiagnostic(version, phase, err) }()
 	runtimeRoot := filepath.Join(root, "subscription-runtime")
-	home := filepath.Join(runtimeRoot, "quota", string(owner))
+	home := filepath.Join(runtimeRoot, lane, string(owner))
 	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
 		return nil, subscriptionDenied()
 	}
@@ -261,9 +264,21 @@ func openServerQuota(ctx context.Context, root string, owner domain.ID, auth cod
 		return nil, subscriptionDenied()
 	}
 	nativeHome := filepath.Join(home, "codex")
-	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: codex.QuotaProtocol, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, ProtectedValues: []string{auth.Access}, Logger: logger}})
+	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: mode, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, ProtectedValues: []string{auth.Access}, Logger: logger}})
 	if e != nil {
 		return nil, e
 	}
 	return &serverQuotaRuntime{Client: native, home: home, original: info, owner: owner, logger: logger}, nil
+}
+
+// The spending interface is distinct from the quota-only interface. It receives
+// only the narrowed sealed access/account/plan input and retains no writer.
+type serverCreditAccessNative interface {
+	ConsumeExternalResetCredit(context.Context, domain.ServerCreditOperation, codex.QuotaAuthentication, func(domain.SubscriptionResetOutcome) error) (domain.SubscriptionResetOutcome, domain.SubscriptionQuotaObservation, error, error)
+	Close() error
+}
+type serverCreditAccessOpener func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error)
+
+func openServerCreditAccess(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (serverCreditAccessNative, error) {
+	return openExternalServerRuntime(ctx, root, owner, auth, logger, codex.CreditProtocol, "credit")
 }

@@ -302,3 +302,18 @@ independent cleanup and joined shutdown keep their existing ownership.
 ## cmds/delidev-cli/internal/workspace constraints
 
 - Repository Clone owns a separate original-job-bound private staging claim and has a ten-minute execution deadline. Capture the empty staging checkout's native identity before Git so completion cannot adopt its replacement. Use credential-free HTTPS/SSH URLs and the computer's existing Git credentials, with an explicit `origin` remote and no PAT, hooks or recursive submodules. Publish the validated checkout without replacing any destination. Cleanup requires the original claim, parent/staging native identities and joined process termination; uncertainty retains files for recovery. Published checkouts become user-owned Local folders and remain intact after registration failure or configuration deletion. This exception to snapshot-only scratch creation grants no snapshot/session deletion ownership.
+
+## Access-only server credit references
+
+System 101 credit operations retain the original sealed AccountLogin generation
+beside an Execute writer. Go verifies the account/user commitment and delivers
+only access token, account and plan to the distinct spending profile. ID and
+refresh tokens remain in Go. Original automatic consent and failed-turn proof
+freeze before cleanup; they grant no credential renewal or writeback. Execute
+Finish protects this captured reference through generation rotation. After joined
+credit native/file cleanup, short account serialization checks the exact original
+operation and retires only its obsolete reference. Preserve the current reference,
+other owners and unrelated references. Failed cleanup/retirement fences lifecycle,
+removal and restore without failing or releasing Execute. Startup reconciles
+original cleanup only and never resends consumption. Follow the
+[V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).

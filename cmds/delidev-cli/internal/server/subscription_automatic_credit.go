@@ -96,7 +96,8 @@ func (s *Service) originalQuotaBlock(tx *store.Tx, account domain.ID, a domain.A
 }
 
 // One account transaction owns both the episode fence and original operation.
-// Refresh and consumption reuse only the current active original Execute lease.
+// Admission freezes original Execute ownership; server reads and spending use
+// only that immutable proof after original Worker cleanup.
 // Restart/status cannot replay a completed or sending operation.
 func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domain.Account, block *domain.SubscriptionQuotaBlock, completed domain.ID) error {
 	st := a.Subscription
@@ -128,29 +129,45 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 				return err
 			}
 		}
+		// Reserve server ownership only before original cleanup. This snapshot is
+		// never recreated from idle metadata after a rejected or busy admission.
+		if st.Pending == nil && !st.ServerObservationActive() && (st.Observation == nil || !st.Observation.Active()) && (st.ServerOperation == nil || !st.ServerOperation.Active() && !st.ServerOperation.NativeStarted) {
+			lease := st.Lease
+			st.AutomaticCreditEpisode.ServerProof = &domain.ServerAutomaticCreditProof{EpisodeID: st.AutomaticCreditEpisode.ID, Epoch: lease.Epoch, LeaseID: lease.ID, OperationID: lease.OperationID, MachineID: lease.MachineID, DeviceID: lease.DeviceID, InstanceID: lease.InstanceID, LeaseRevision: lease.Revision, Consent: *consent, Block: *block}
+		}
 		a.ConfirmedExhausted = true
 	}
 	episode := st.AutomaticCreditEpisode
-	if episode == nil || episode.OperationID != "" || st.Lease == nil || st.Lease.ID != episode.LeaseID || st.Lease.Action != domain.SubscriptionExecute || st.Lease.Epoch != s.subscriptionServerEpoch() || episode.Generation != st.Generation || consent == nil || consent.Generation != st.Generation || consent.ConnectionID != a.Connection.ID || subscriptionActorValid(tx, consent.Actor) != nil || st.Pending != nil || st.ServerObservationActive() || st.Observation != nil && st.Observation.Active() {
+	if episode == nil || episode.OperationID != "" || episode.ServerProof == nil || episode.ServerProof.Epoch != s.subscriptionServerEpoch() || !frozenAutomaticCreditValid(st, *episode.ServerProof) || !quotaAccountReady(*a) || episode.Generation != st.Generation || consent.ConnectionID != a.Connection.ID || subscriptionActorValid(tx, consent.Actor) != nil || st.Pending != nil || st.ServerObservationActive() || st.Observation != nil && st.Observation.Active() {
 		return nil
 	}
-	if episode.RefreshOperationID != "" && (completed != episode.RefreshOperationID || st.Observation == nil || st.Observation.Phase != domain.SubscriptionObservationSucceeded) {
+	if episode.RefreshOperationID != "" && (completed != episode.RefreshOperationID || st.ServerQuota == nil || st.ServerQuota.ID != completed || st.ServerQuota.Phase != domain.SubscriptionObservationSucceeded) {
 		return nil
 	}
+
 	credit, available := domain.SelectAutomaticResetCredit(st.ResetCredits, now)
 	if !available {
 		stale := st.ResetCredits == nil || st.ResetCredits.ObservedAt.After(now) || now.Sub(st.ResetCredits.ObservedAt) > 5*time.Minute
 		if !stale || episode.RefreshOperationID != "" {
+			if episode.RefreshOperationID == "" {
+				episode.ServerProof = nil
+			}
 			return nil
 		}
 		operation := domain.NewID()
 		episode.RefreshOperationID = operation
-		st.Observation = &domain.SubscriptionObservationOperation{ID: operation, Action: domain.SubscriptionQuota, MachineID: st.Lease.MachineID, Actor: consent.Actor, ConnectionID: a.Connection.ID, Generation: st.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: now, AutomaticEpisodeID: episode.ID, AutomaticLeaseID: st.Lease.ID, AutomaticBlock: &domain.SubscriptionQuotaBlock{SessionID: episode.SessionID, ExecutionID: episode.ExecutionID, NativeThreadID: episode.NativeThreadID, NativeTurnID: episode.NativeTurnID, Reason: episode.Block}}
+		quota := newServerQuota(*a, operation, s.subscriptionServerEpoch(), consent.Actor, now)
+		quota.AutomaticEpisodeID = episode.ID
+		st.ServerQuota = &quota
 		return nil
 	}
 	operation := domain.NewID()
 	episode.OperationID = operation
-	st.Observation = &domain.SubscriptionObservationOperation{ID: operation, Action: domain.SubscriptionResetCredit, MachineID: st.Lease.MachineID, Actor: consent.Actor, ConnectionID: a.Connection.ID, Generation: st.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: now, CreditID: credit, NextCredit: credit == "", CreditsObservationID: st.ResetCredits.ObservationID, AutomaticEpisodeID: episode.ID, AutomaticLeaseID: st.Lease.ID, AutomaticBlock: &domain.SubscriptionQuotaBlock{SessionID: episode.SessionID, ExecutionID: episode.ExecutionID, NativeThreadID: episode.NativeThreadID, NativeTurnID: episode.NativeTurnID, Reason: episode.Block}}
+	input := domain.SubscriptionObservationOperation{ID: operation, Actor: consent.Actor, ConnectionID: a.Connection.ID, Generation: st.Generation, RequestedAt: now, CreditID: credit, NextCredit: credit == "", CreditsObservationID: st.ResetCredits.ObservationID}
+	op := newServerCredit(*a, input, s.subscriptionServerEpoch())
+	proof := *episode.ServerProof
+	op.Automatic = &proof
+	st.ServerCredit = &op
 	return nil
 }
 func freshSubscriptionExhaustion(a domain.Account, now time.Time) bool {

@@ -142,12 +142,32 @@ func init() {
 					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/login/completed", "params": completion})
 					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/updated", "params": map[string]any{"authMode": "chatgptAuthTokens", "planType": "plus"}})
 					continue
+				case "account/rateLimitResetCredit/consume":
+					var input struct {
+						Key    string  `json:"idempotencyKey"`
+						Credit *string `json:"creditId,omitempty"`
+					}
+					if domain.Decode(request.Params, &input) != nil || domain.ID(input.Key).Validate() != nil {
+						os.Exit(59)
+					}
+					if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "credit-key"), []byte(input.Key), 0600); err != nil {
+						os.Exit(60)
+					}
+					write(request.ID, map[string]any{"outcome": "reset"})
+					continue
 				case "account/rateLimits/read":
 					if len(request.Params) != 0 {
 						os.Exit(56)
 					}
 					if os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "quota-read"), []byte("once"), 0600) != nil {
 						os.Exit(57)
+					}
+					if mode == "quota-credit-read-failure" {
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": json.RawMessage(request.ID), "error": map[string]any{"code": -32000, "message": "synthetic read failure"}})
+						continue
+					}
+					if mode == "quota-credit-auth-file" {
+						_ = os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "auth.json"), []byte("forbidden"), 0600)
 					}
 					if mode == "quota-refresh" {
 						externalQuotaRequest = request.ID

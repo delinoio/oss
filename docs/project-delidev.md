@@ -458,3 +458,10 @@ client contracts jointly own server-observed group timing and independent closed
 detailed disclosures. Private Session records project through additive typed
 Resource metadata while legacy document JSON and native ownership stay intact.
 No migration, Worker report or execution authority is added.
+
+Server reset-credit V2 independently uses System 101 under the subscription,
+harness, credential, protocol/client and subscription Settings contracts. Frozen
+automatic consent/failed-turn proof admits server access-only spending before
+Runner cleanup. Execute retains its original writer, process, outcome and cleanup;
+historical credit owners retain their original lane. No migration or Worker
+allocation is added, and native/account/platform acceptance remains separate.

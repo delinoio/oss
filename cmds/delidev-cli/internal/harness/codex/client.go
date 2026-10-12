@@ -89,6 +89,7 @@ const (
 	ThreadProtocol       ProtocolMode = "thread"
 	SubscriptionProtocol ProtocolMode = "subscription"
 	QuotaProtocol        ProtocolMode = "quota-access-only"
+	CreditProtocol       ProtocolMode = "credit-access-only"
 )
 
 type handshakePhase string
@@ -126,13 +127,13 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
 	}
-	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol {
+	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol && config.Mode != CreditProtocol {
 		return nil, incompatible()
 	}
 	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
 		return nil, incompatible()
 	}
-	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
+	if ((config.Mode == QuotaProtocol || config.Mode == CreditProtocol) && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
 		return nil, incompatible()
 	}
 	phase = runtimePhase
@@ -167,7 +168,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		// keeps startup and account changes within the unchanged cleanup bounds.
 		config.Process.Args = append(config.Process.Args, "-c", "features.plugins=false")
 	}
-	if config.Mode == QuotaProtocol {
+	if config.Mode == QuotaProtocol || config.Mode == CreditProtocol {
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
 	}
 	if config.ManagedAuthentication {
@@ -227,7 +228,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// Thread control pins legacy native history explicitly. In this exact
 	// installed version that selector requires the experimental capability;
 	// discovery probes retain the stable, non-mutating handshake.
-	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol || config.Mode == QuotaProtocol}})
+	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol || (config.Mode == QuotaProtocol || config.Mode == CreditProtocol)}})
 	if err != nil {
 		return nil, handshakeError(wire, err)
 	}
@@ -303,7 +304,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err
 	}
-	if config.Mode == QuotaProtocol {
+	if config.Mode == QuotaProtocol || config.Mode == CreditProtocol {
 		if err := client.verifyManagedConfig(ctx, config.Process.Cwd); err != nil {
 			return nil, err
 		}

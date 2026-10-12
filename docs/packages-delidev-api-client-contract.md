@@ -515,3 +515,13 @@ mismatched causes are not typed causes; untyped transport messages never prove
 exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlation
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
+
+## Server reset-credit V2 negotiation
+
+Expose System 101 from the generated current schema. Desktop and CLI require this
+independent capability before a new omitted-machine reset-credit request. Preserve
+exact revision, connection, generation, inventory, selector and confirmation bytes
+through retained retry. An Execute lease or absent Runner does not select a Worker
+fallback. Historical explicit-machine and reconciliation records retain their
+original server ownership. Follow the
+[V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).

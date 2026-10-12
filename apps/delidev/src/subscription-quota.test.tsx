@@ -34,7 +34,7 @@ function fixture(
   server = false,
   supported = true,
   phase = "",
-  serverCredits = false,
+  serverCredits = true,
   creditPhase = "",
   cleanup = false,
   workerUncertain = false,
@@ -123,7 +123,7 @@ function fixture(
           SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
           SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
           ...(serverCredits
-            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1]
+            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2]
             : []),
           ...(supported
             ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]
@@ -386,7 +386,7 @@ it("blocks detail quota refresh while a different native lease kind owns the acc
 it.each([true, false])(
   "negotiates server quota without a Runner Device (supported: %s)",
   async (supported) => {
-    const value = fixture(undefined, undefined, "", true, supported);
+    const value = fixture(undefined, undefined, "", true, supported, "", false);
     render(<value.Harness />);
     await screen.findByText(/Last successful observation/);
     const button = screen.getByRole("button", {
@@ -689,7 +689,7 @@ it.each([
       false,
       true,
       "",
-      false,
+      true,
       "",
       false,
       false,
@@ -1230,3 +1230,42 @@ it.each(["queued", "sending", "uncertain"])(
     expect(value.reconcile).not.toHaveBeenCalled();
   },
 );
+
+it("uses the selected server for credit confirmation beside Execute", async () => {
+  const runner = newRequestId();
+  const value = fixture(
+    null,
+    { action: "execute", machine_id: runner },
+    runner,
+  );
+  render(<value.Harness />);
+  const use = await screen.findByRole("button", { name: "Use" });
+  await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(use);
+  fireEvent.click(screen.getByRole("button", { name: "Consume reset credit" }));
+  await waitFor(() => expect(value.request).toHaveBeenCalledTimes(1));
+  expect(value.request.mock.calls[0][0]).toMatchObject({
+    machineId: "",
+    nextCredit: true,
+    confirmed: true,
+  });
+});
+it("refuses unsupported server credit without Worker fallback", async () => {
+  const value = fixture(
+    null,
+    undefined,
+    newRequestId(),
+    false,
+    true,
+    "",
+    false,
+  );
+  render(<value.Harness />);
+  await screen.findByText(
+    "Update the selected server to consume reset credits.",
+  );
+  expect(
+    (screen.getByRole("button", { name: "Use" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(value.request).not.toHaveBeenCalled();
+});

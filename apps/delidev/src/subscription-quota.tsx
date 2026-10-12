@@ -81,9 +81,8 @@ export function serverCreditAvailable(
 ): boolean {
   return (
     supported &&
-    !text(state.owner_machine_id) &&
-    !Object.keys(object(state.lease)).length &&
-    text(state.server_quota_generation) === text(state.generation) &&
+    (!Object.keys(object(state.lease)).length ||
+      text(object(state.lease).action) === "execute") &&
     isEntityId(text(state.generation))
   );
 }
@@ -146,15 +145,11 @@ export function SubscriptionQuotaControls({
       SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2,
     ) === true;
   const quotaSupported = workerQuotaSupported || serverSupported;
-  const workerCreditsSupported =
-    status.data?.capabilities.includes(
-      SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
-    ) === true;
   const serverCreditsSupported =
     status.data?.capabilities.includes(
-      SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1,
+      SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2,
     ) === true;
-  const creditsSupported = workerCreditsSupported || serverCreditsSupported;
+  const creditsSupported = serverCreditsSupported;
   const data = document(current),
     state = object(data.subscription),
     connection = text(object(data.connection).id),
@@ -176,9 +171,7 @@ export function SubscriptionQuotaControls({
     state,
     serverCreditsSupported,
   );
-  const creditLaneAvailable = isEntityId(ownerMachine)
-    ? workerCreditsSupported
-    : serverCreditReady;
+  const creditLaneAvailable = serverCreditReady;
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
   const [expanded, setExpanded] = useState(false);
   const [consentConfirmation, setConsentConfirmation] = useState<Resource>();
@@ -373,7 +366,7 @@ export function SubscriptionQuotaControls({
     selectionOpener.current = opener;
     focusConfirmation.current = true;
     setConfirmation({
-      machine: serverCreditReady ? "" : ownerMachine,
+      machine: "",
       account: current,
       creditId,
       ordinal,
@@ -494,6 +487,7 @@ export function SubscriptionQuotaControls({
   const automaticReady =
     active &&
     automaticSupported &&
+    serverCreditsSupported &&
     serviceAccount(current) &&
     data.subscription_service === "chatgpt" &&
     quotaAccountAvailable(data) &&
@@ -685,9 +679,7 @@ export function SubscriptionQuotaControls({
               {creditReason}
             </p>
           ) : null}
-          {creditsSupported &&
-          !isEntityId(ownerMachine) &&
-          !serverCreditsSupported ? (
+          {!status.isPending && !status.error && !serverCreditsSupported ? (
             <p role="status" className="reset-credit-secondary">
               {copy("subscription-quota.serverCreditsUnavailable")}
             </p>

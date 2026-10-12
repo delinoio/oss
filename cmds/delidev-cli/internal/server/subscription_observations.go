@@ -112,11 +112,7 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		}
 		op := input.Operation
 		op.RequestedAt = time.Now().UTC()
-		// An omitted server selector cannot create a second owner while an
-		// execution holds the credential. Observe that exact original Worker.
-		if action == domain.SubscriptionResetCredit && op.MachineID == "" && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute {
-			op.MachineID = a.Subscription.Lease.MachineID
-		}
+
 		if action == domain.SubscriptionResetCredit {
 			if !input.Confirmed || !quotaAccountReady(a) || a.Subscription.ResetCredits == nil {
 				return nil, domain.InvalidSubscriptionObservation()

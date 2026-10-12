@@ -1507,3 +1507,15 @@ workspace/commits documents retain bounded source observations; avatars return
 sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
 Worker allocation, feature flag or database migration. Reconcile the capability
 and all declarations against current allocations before merge.
+
+## Access-only server reset-credit allocation
+
+System `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101` is independently allocated and
+activated with complete schema, registry, generated Go/TypeScript and client
+closure. Preserve System 19/49/50/77 and Worker 52. Existing observation,
+reconciliation, consent and marker-publication RPCs retain their declarations.
+No RPC, Worker capability or SQLite migration is added. New omitted-machine
+consumption requires capability 101, including beside Execute; unsupported peers
+receive server-update guidance with no Worker fallback. Historical accepted
+operations and explicit-machine requests preserve their original lane. Follow
+the [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).

@@ -114,7 +114,7 @@ func (c *Client) ConsumeManagedResetCredit(ctx context.Context, operation domain
 // ConsumeServerResetCredit requires the server's original durable send claim.
 // It cannot turn a quota record or a renderer selector into consumption authority.
 func (c *Client) ConsumeServerResetCredit(ctx context.Context, operation domain.ServerCreditOperation) (domain.SubscriptionResetOutcome, error) {
-	if c.managedHome == "" || operation.Validate() != nil || operation.Phase != domain.SubscriptionObservationSending || !operation.SendClaimed {
+	if c.managedHome == "" || operation.AccessOnly || operation.Validate() != nil || operation.Phase != domain.SubscriptionObservationSending || !operation.SendClaimed {
 		return "", incompatible()
 	}
 	return c.consumeManagedResetCredit(ctx, operation.ID, operation.CreditID)

@@ -279,7 +279,7 @@ allocation, migration, persistent preference or native behavior.
 
 ## Server quota V2 negotiation
 
-Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.
+Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Quota capability alone does not grant credit support. New credit confirmation follows independent System 101 below; historical operations retain their original owner. No broad settings redesign is introduced.
 
 ## Consolidated Manage refresh
 
@@ -336,3 +336,19 @@ Account rows show a compact Paid credits card above quota, with a 24px tabular b
 Format valid nonnegative decimal strings through string arithmetic and locale grouping, with two fractional digits and half-up rounding. Display actual zero as `0.00` and positive values below `0.01` as `<0.01`. Keep the unchanged exact source string available through a labelled information disclosure. Hover or focus reveals it; click, Enter and Space support persistent disclosure and touch. Escape closes the disclosure without closing its parent and retains or restores the original trigger focus when appropriate. Long values and bucket labels wrap within the existing parent scrolling boundary.
 
 Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Unlimited takes presentation precedence. A failed read with no observed balance shows Balance unavailable and the failure explanation, never zero. Retained failures and stale/future observations preserve original timestamps; freshness ends after five minutes and presentation cannot refresh evidence. Use semantic surface, border and text tokens, 8px card corners, compact padding and 12px secondary text in both themes and EN/KO. Preserve account actions, quota semantics, protected projections and credential-generation clearing. Presentation grants no account, execution, native or platform acceptance.
+
+## Server reset-credit V2 controls
+
+New manual credit confirmation requires System 101 and always sends an omitted
+machine selector to the selected server. No registered, connected or verified
+Runner is needed, including during an original Execute. Preserve exact account
+revision, connection, generation, fresh positive inventory and immutable credit
+or count-only next selection. Pending quota/credit/lifecycle, account recovery,
+removal and retained uncertain mutations keep their original fences. Unsupported
+servers show update guidance without a Runner fallback. Historical operations
+keep their original reconciliation controller and cleanup proof. Default-off
+automatic consent, confirmation, task lifetime and English/Korean presentation
+remain unchanged. Automatic server acceptance freezes original failed-turn and
+consent proof before Runner cleanup, never resumes a session and never sends on
+mount, polling, reconnect or replay. Follow the
+[V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).

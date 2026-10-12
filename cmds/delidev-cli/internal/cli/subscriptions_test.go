@@ -81,7 +81,7 @@ func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.G
 		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1)
 	}
 	if f.serverCredits {
-		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
+		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2)
 	}
 	if f.serverQuota {
 		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2)

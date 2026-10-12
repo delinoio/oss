@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -56,6 +58,9 @@ func newServerCreditFixture(t *testing.T, details bool) (*subscriptionFixture, *
 	n := &serverCreditFixture{serverQuotaFixture: q, outcome: domain.SubscriptionReset}
 	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		return n, nil
+	}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{n}, nil
 	}
 	return f, n
 }
@@ -184,7 +189,7 @@ func TestServerCreditReadFailurePreservesConsumptionAndCleanupFence(t *testing.T
 					t.Fatal("post-read error changed consumption")
 				}
 			} else {
-				if o.Phase != domain.SubscriptionObservationUncertain || !a.Subscription.RecoveryRequired {
+				if o.Phase != domain.SubscriptionObservationUncertain || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
 					t.Fatal("cleanup uncertainty lost recovery fence")
 				}
 				reconcile := &pb.ReconcileSubscriptionCreditRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, OperationId: string(o.ID), ConnectionId: string(o.ConnectionID), GenerationId: string(o.Generation)}
@@ -273,8 +278,8 @@ func TestServerCreditFencesLifecycleExecutionAndSavedInspection(t *testing.T) {
 	mutateCreditAccount(t, f, func(a *domain.Account) { a.Subscription.Generation = domain.NewID() })
 	f.service.runServerCredit(creditContext(), f.input.AccountID)
 	_, a = f.record()
-	if n.count() != 0 || a.Subscription.ServerCredit.Phase != domain.SubscriptionObservationFailed {
-		t.Fatal("changed generation consumed")
+	if n.count() != 0 || a.Subscription.ServerCredit.Phase != domain.SubscriptionObservationSending || !a.Subscription.ServerCredit.CleanupConfirmed {
+		t.Fatal("changed generation consumed or missing current reference released its retirement fence")
 	}
 }
 func TestServerCreditRejectsNonDirectBeforeNativeLaunch(t *testing.T) {
@@ -388,20 +393,27 @@ func TestServerCreditClosedOutcomesRemainDistinct(t *testing.T) {
 		})
 	}
 }
-func TestServerCreditOmittedMachinePreservesOriginalActiveWorker(t *testing.T) {
+func TestServerCreditOmittedMachineBesideOriginalActiveWorker(t *testing.T) {
 	f := newQuotaFixture(t)
 	mutateCreditAccount(t, f, func(a *domain.Account) {
 		a.Subscription.ResetCredits = &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: time.Now().UTC(), AvailableCount: 2}
 	})
 	lease := takeSubscriptionExecutionFixture(t, f)
+	_, before := f.record()
+	original := *before.Subscription.Lease
+	n := &serverCreditFixture{serverQuotaFixture: &serverQuotaFixture{}, outcome: domain.SubscriptionReset}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{n}, nil
+	}
 	req := requestServerCredit(f)
 	acceptCredit(t, f, req)
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
 	_, a := f.record()
-	if a.Subscription.ServerCredit != nil || a.Subscription.Observation.MachineID != f.input.MachineID || a.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
-		t.Fatal("server lane stole original active Worker")
+	if a.Subscription.ServerCredit == nil || !a.Subscription.ServerCredit.AccessOnly || a.Subscription.Observation != nil || *a.Subscription.Lease != original || a.Subscription.Lease.ID != domain.ID(lease.LeaseId) || n.count() != 1 {
+		t.Fatal("server credit changed Execute ownership")
 	}
-	f.claimObservation(req.Mutation.RequestId, lease)
 }
+
 func TestServerCreditPendingServerOwnersRejectConsumption(t *testing.T) {
 	for _, owner := range []string{"quota", "logout", "refresh", "recovery"} {
 		t.Run(owner, func(t *testing.T) {
@@ -426,5 +438,124 @@ func TestServerCreditPendingServerOwnersRejectConsumption(t *testing.T) {
 				t.Fatal("competing owner consumed")
 			}
 		})
+	}
+}
+
+type creditAccessFixture struct{ n *serverCreditFixture }
+
+func (c creditAccessFixture) ConsumeExternalResetCredit(ctx context.Context, o domain.ServerCreditOperation, _ codex.QuotaAuthentication, checkpoint func(domain.SubscriptionResetOutcome) error) (domain.SubscriptionResetOutcome, domain.SubscriptionQuotaObservation, error, error) {
+	outcome, err := c.n.ConsumeServerResetCredit(ctx, o)
+	if outcome.Valid() && checkpoint != nil {
+		if e := checkpoint(outcome); e != nil {
+			return outcome, domain.SubscriptionQuotaObservation{}, err, e
+		}
+	}
+	observed, qerr := c.n.ReadManagedQuota(ctx, domain.NewID())
+	return outcome, observed, err, qerr
+}
+func (c creditAccessFixture) Close() error { return c.n.Close(nil) }
+
+func TestServerCreditV2RotationRetainsCapturedReferenceUntilCleanup(t *testing.T) {
+	for _, clean := range []bool{true, false} {
+		t.Run(map[bool]string{true: "clean", false: "uncertain"}[clean], func(t *testing.T) {
+			f := newQuotaFixture(t)
+			lease := takeSubscriptionExecutionFixture(t, f)
+			mutateCreditAccount(t, f, func(a *domain.Account) {
+				a.Subscription.ResetCredits = &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: time.Now().UTC(), AvailableCount: 1}
+			})
+			_, before := f.record()
+			captured := credentials.Ref{Owner: f.input.AccountID, ID: before.Subscription.Generation, Purpose: credentials.AccountLogin}
+			n := &serverCreditFixture{serverQuotaFixture: &serverQuotaFixture{}, outcome: domain.SubscriptionReset}
+			if !clean {
+				n.closeError = errors.New("synthetic cleanup failure")
+			}
+			n.duringRead = func() {
+				raw := subscriptionTestBundle("fixture-account", "rotated", time.Now().UTC())
+				defer clear(raw)
+				if _, err := f.finish(lease, raw, true, false, true); err != nil {
+					t.Fatal(err)
+				}
+				raw, err := f.secrets.Get(creditContext(), captured)
+				clear(raw)
+				if err != nil {
+					t.Fatal("Execute retired active credit reference", err)
+				}
+			}
+			f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+				return creditAccessFixture{n}, nil
+			}
+			acceptCredit(t, f, requestServerCredit(f))
+			f.service.runServerCredit(creditContext(), f.input.AccountID)
+			_, after := f.record()
+			if after.Subscription.Lease != nil || after.Subscription.Generation == captured.ID || after.Health != domain.AccountReady || after.Subscription.RecoveryRequired || after.Subscription.ServerCredit.Outcome != domain.SubscriptionReset {
+				t.Fatal("credit changed original Execute settlement")
+			}
+			raw, err := f.secrets.Get(creditContext(), captured)
+			clear(raw)
+			if (err == nil) == clean {
+				t.Fatal("captured reference cleanup mismatch", err)
+			}
+			raw, err = f.secrets.Get(creditContext(), credentials.Ref{Owner: f.input.AccountID, ID: after.Subscription.Generation, Purpose: credentials.AccountLogin})
+			clear(raw)
+			if err != nil {
+				t.Fatal("current reference retired", err)
+			}
+			f.service.runServerCredit(creditContext(), f.input.AccountID)
+			if n.count() != 1 {
+				t.Fatal("rotation replayed consumption")
+			}
+		})
+	}
+}
+func TestServerCreditV2HistoricalManagedOperationRetainsLane(t *testing.T) {
+	f, n := newServerCreditFixture(t, true)
+	acceptCredit(t, f, requestServerCredit(f))
+	mutateCreditAccount(t, f, func(a *domain.Account) { a.Subscription.ServerCredit.AccessOnly = false })
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		t.Fatal("historical owner adopted access-only lane")
+		return nil, nil
+	}
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	_, a := f.record()
+	if n.count() != 1 || a.Subscription.ServerCredit.AccessOnly || a.Subscription.ServerCredit.Outcome != domain.SubscriptionReset {
+		t.Fatal("historical lane changed")
+	}
+}
+
+func TestServerCreditV2UnknownOutcomeRetainsOriginalReferenceAfterRotation(t *testing.T) {
+	f := newQuotaFixture(t)
+	lease := takeSubscriptionExecutionFixture(t, f)
+	mutateCreditAccount(t, f, func(a *domain.Account) {
+		a.Subscription.ResetCredits = &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: time.Now().UTC(), AvailableCount: 1}
+	})
+	_, before := f.record()
+	captured := credentials.Ref{Owner: f.input.AccountID, ID: before.Subscription.Generation, Purpose: credentials.AccountLogin}
+	n := &serverCreditFixture{serverQuotaFixture: &serverQuotaFixture{}, consumeError: domain.Fail(domain.Unavailable, "Synthetic lost provider result.", "")}
+	n.duringRead = func() {
+		raw := subscriptionTestBundle("fixture-account", "rotated", time.Now().UTC())
+		defer clear(raw)
+		if _, err := f.finish(lease, raw, true, false, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{n}, nil
+	}
+	req := requestServerCredit(f)
+	acceptCredit(t, f, req)
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	_, after := f.record()
+	o := after.Subscription.ServerCredit
+	if n.count() != 1 || o.ID != domain.ID(req.Mutation.RequestId) || o.Generation != captured.ID || o.Phase != domain.SubscriptionObservationUncertain || !o.CleanupConfirmed || after.Health != domain.AccountReady || after.Subscription.RecoveryRequired {
+		t.Fatal("uncertainty transferred original provider key or Execute owner")
+	}
+	raw, err := f.secrets.Get(creditContext(), captured)
+	clear(raw)
+	if err != nil {
+		t.Fatal("unresolved provider send lost original reference", err)
+	}
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	if n.count() != 1 {
+		t.Fatal("unknown rotated outcome replayed")
 	}
 }

@@ -160,7 +160,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 		}
 		o := st.ServerQuota
 		original = *o
-		if !o.AccessOnly || !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil {
+		if !o.AccessOnly || !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil || !automaticQuotaBinding(st, *o, s.subscriptionServerEpoch()) {
 			if o.AccessOnly {
 				// This rejected queued claim opened no native owner. Keep its
 				// reference fence through the same checked finish path.
@@ -350,7 +350,7 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		if o == nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.Actor != original.Actor || o.AccessOnly != original.AccessOnly || o.Phase != domain.SubscriptionObservationSending || !o.CleanupConfirmed {
 			return nil, subscriptionDenied()
 		}
-		authorized := quotaAccountReady(a) && st.Pending == nil && (st.Lease == nil || st.Lease.Action == domain.SubscriptionExecute) && st.Generation == original.Generation && a.Connection.ID == original.ConnectionID && subscriptionActorValid(tx, original.Actor) == nil
+		authorized := quotaAccountReady(a) && st.Pending == nil && (st.Lease == nil || st.Lease.Action == domain.SubscriptionExecute) && st.Generation == original.Generation && a.Connection.ID == original.ConnectionID && subscriptionActorValid(tx, original.Actor) == nil && automaticQuotaBinding(st, original, s.subscriptionServerEpoch())
 		if !authorized {
 			code = domain.Canceled
 		}
@@ -380,6 +380,11 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 			st.QuotaState = domain.ObservationFailed
 		}
 		o.ErrorCode = code
+		if code == "" && original.AutomaticEpisodeID != "" {
+			if err := s.admitAutomaticCredit(tx, id, &a, nil, original.ID); err != nil {
+				return nil, err
+			}
+		}
 		if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
@@ -501,9 +506,17 @@ func (s *Service) checkQuotaBinding(ctx context.Context, id domain.ID, o domain.
 			return err
 		}
 		st := a.Subscription
-		if !quotaAccountReady(a) || st.Pending != nil || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerQuota == nil || st.ServerQuota.ID != o.ID || st.ServerQuota.Epoch != o.Epoch || st.ServerQuota.Phase != domain.SubscriptionObservationSending || st.ServerQuota.Actor != o.Actor || subscriptionActorValid(tx, o.Actor) != nil {
+		if !quotaAccountReady(a) || st.Pending != nil || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerQuota == nil || st.ServerQuota.ID != o.ID || st.ServerQuota.Epoch != o.Epoch || st.ServerQuota.Phase != domain.SubscriptionObservationSending || st.ServerQuota.Actor != o.Actor || subscriptionActorValid(tx, o.Actor) != nil || !automaticQuotaBinding(st, o, s.subscriptionServerEpoch()) {
 			return subscriptionDenied()
 		}
 		return nil
 	})
+}
+
+func automaticQuotaBinding(st *domain.SubscriptionState, o domain.ServerQuotaOperation, epoch domain.ID) bool {
+	if o.AutomaticEpisodeID == "" {
+		return true
+	}
+	e := st.AutomaticCreditEpisode
+	return e != nil && e.ID == o.AutomaticEpisodeID && e.RefreshOperationID == o.ID && e.ServerProof != nil && e.ServerProof.Epoch == epoch && e.Generation == o.Generation && frozenAutomaticCreditValid(st, *e.ServerProof)
 }

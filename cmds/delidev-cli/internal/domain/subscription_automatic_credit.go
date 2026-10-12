@@ -29,17 +29,18 @@ func (b CodexQuotaBlock) Valid() bool {
 // The episode is recorded even when inventory or native ownership prevents
 // admission. Time passing, restarts and repeated failures do not rearm it.
 type AutomaticResetCreditEpisode struct {
-	ID                 ID              `json:"id"`
-	RefreshOperationID ID              `json:"refresh_operation_id,omitempty"`
-	SessionID          ID              `json:"session_id,omitempty"`
-	LeaseID            ID              `json:"lease_id,omitempty"`
-	Generation         ID              `json:"generation"`
-	ExecutionID        ID              `json:"execution_id"`
-	NativeThreadID     NativeIdentity  `json:"native_thread_id"`
-	NativeTurnID       NativeIdentity  `json:"native_turn_id"`
-	Block              CodexQuotaBlock `json:"block"`
-	ObservedAt         time.Time       `json:"observed_at"`
-	OperationID        ID              `json:"operation_id,omitempty"`
+	ServerProof        *ServerAutomaticCreditProof `json:"server_proof,omitempty"`
+	ID                 ID                          `json:"id"`
+	RefreshOperationID ID                          `json:"refresh_operation_id,omitempty"`
+	SessionID          ID                          `json:"session_id,omitempty"`
+	LeaseID            ID                          `json:"lease_id,omitempty"`
+	Generation         ID                          `json:"generation"`
+	ExecutionID        ID                          `json:"execution_id"`
+	NativeThreadID     NativeIdentity              `json:"native_thread_id"`
+	NativeTurnID       NativeIdentity              `json:"native_turn_id"`
+	Block              CodexQuotaBlock             `json:"block"`
+	ObservedAt         time.Time                   `json:"observed_at"`
+	OperationID        ID                          `json:"operation_id,omitempty"`
 }
 
 func (c AutomaticResetCreditConsent) Validate() error {
@@ -49,6 +50,9 @@ func (c AutomaticResetCreditConsent) Validate() error {
 	return nil
 }
 func (e AutomaticResetCreditEpisode) Validate() error {
+	if e.ServerProof != nil && (e.ServerProof.Validate() != nil || e.ServerProof.EpisodeID != e.ID || e.ServerProof.LeaseID != e.LeaseID || e.ServerProof.Consent.Generation != e.Generation || e.ServerProof.Block.ExecutionID != e.ExecutionID || e.ServerProof.Block.SessionID != e.SessionID || e.ServerProof.Block.NativeThreadID != e.NativeThreadID || e.ServerProof.Block.NativeTurnID != e.NativeTurnID || e.ServerProof.Block.Reason != e.Block) {
+		return InvalidSubscriptionObservation()
+	}
 	if e.ID.Validate() != nil || e.Generation.Validate() != nil || e.ExecutionID.Validate() != nil || e.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || e.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || !e.Block.Valid() || e.ObservedAt.Unix() <= 0 || e.ObservedAt.Year() > 9999 || e.OperationID != "" && e.OperationID.Validate() != nil || e.RefreshOperationID != "" && e.RefreshOperationID.Validate() != nil || e.SessionID != "" && e.SessionID.Validate() != nil || e.LeaseID != "" && e.LeaseID.Validate() != nil {
 		return InvalidSubscriptionObservation()
 	}

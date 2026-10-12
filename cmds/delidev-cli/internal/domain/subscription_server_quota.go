@@ -7,17 +7,18 @@ import "time"
 // claim, reset-credit consumption, login or execution authority.
 type ServerQuotaOperation struct {
 	// AccessOnly separates V2 observations from historical managed-auth owners.
-	AccessOnly       bool                         `json:"access_only,omitempty"`
-	ID               ID                           `json:"id"`
-	Epoch            ID                           `json:"epoch"`
-	FinishID         ID                           `json:"finish_id"`
-	ConnectionID     ID                           `json:"connection_id"`
-	Generation       ID                           `json:"generation"`
-	Actor            Principal                    `json:"actor"`
-	Phase            SubscriptionObservationPhase `json:"phase"`
-	RequestedAt      time.Time                    `json:"requested_at"`
-	CleanupConfirmed bool                         `json:"cleanup_confirmed"`
-	ErrorCode        Code                         `json:"error_code,omitempty"`
+	AutomaticEpisodeID ID                           `json:"automatic_episode_id,omitempty"`
+	AccessOnly         bool                         `json:"access_only,omitempty"`
+	ID                 ID                           `json:"id"`
+	Epoch              ID                           `json:"epoch"`
+	FinishID           ID                           `json:"finish_id"`
+	ConnectionID       ID                           `json:"connection_id"`
+	Generation         ID                           `json:"generation"`
+	Actor              Principal                    `json:"actor"`
+	Phase              SubscriptionObservationPhase `json:"phase"`
+	RequestedAt        time.Time                    `json:"requested_at"`
+	CleanupConfirmed   bool                         `json:"cleanup_confirmed"`
+	ErrorCode          Code                         `json:"error_code,omitempty"`
 }
 
 func (o ServerQuotaOperation) Active() bool {
@@ -31,6 +32,9 @@ func (o ServerQuotaOperation) Validate() error {
 		if id.Validate() != nil {
 			return InvalidSubscriptionObservation()
 		}
+	}
+	if o.AutomaticEpisodeID != "" && (!o.AccessOnly || o.AutomaticEpisodeID.Validate() != nil) {
+		return InvalidSubscriptionObservation()
 	}
 	if o.RequestedAt.IsZero() || !ValidSubscriptionObservationCode(o.ErrorCode) || o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
 		return InvalidSubscriptionObservation()
@@ -52,5 +56,5 @@ func (s SubscriptionState) AccessOnlyQuota() bool {
 }
 
 func (s SubscriptionState) ExclusiveServerObservationActive() bool {
-	return s.ServerCreditActive() || s.ServerQuotaActive() && !s.AccessOnlyQuota()
+	return s.ServerCreditActive() && !s.AccessOnlyCredit() || s.ServerQuotaActive() && !s.AccessOnlyQuota()
 }

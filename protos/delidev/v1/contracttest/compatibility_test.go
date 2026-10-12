@@ -30,7 +30,7 @@ func TestCurrentDescriptorsHaveNoLegacyAggregate(t *testing.T) {
 	if (&pb.Resource{}).ProtoReflect().Descriptor().Fields().ByName("id").Number() != 1 {
 		t.Fatal("resource wire allocation changed")
 	}
-	if pb.SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1 != 42 || pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 != 22 || pb.SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1 != 43 || pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1 != 23 {
+	if pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 != 101 || pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1 != 49 || pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2 != 50 || pb.SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1 != 42 || pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 != 22 || pb.SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1 != 43 || pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1 != 23 {
 		t.Fatal("separate original capability owners changed")
 	}
 }

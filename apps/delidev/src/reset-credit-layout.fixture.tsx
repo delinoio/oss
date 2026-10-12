@@ -67,7 +67,7 @@ const transport = createRouterTransport((router) => {
       capabilities: [
         SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
         SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2,
-        SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1,
+        SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2,
         SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
       ],
     }),

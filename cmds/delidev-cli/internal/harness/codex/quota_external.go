@@ -23,7 +23,33 @@ type QuotaAuthentication struct {
 // ReadExternalQuota is a single-use quota-only protocol. External authentication
 // is in memory; every replacement-token callback is refused, never renewed.
 func (c *Client) ReadExternalQuota(parent context.Context, observation domain.ID, auth QuotaAuthentication) (domain.SubscriptionQuotaObservation, error) {
-	if c.mode != QuotaProtocol || !c.quotaUsed.CompareAndSwap(false, true) || observation.Validate() != nil || auth.Access == "" || auth.Account == "" {
+	return c.readExternalAccount(parent, observation, auth, nil)
+}
+
+// CreditProtocol has a separate once-only spending entry point. QuotaProtocol
+// cannot call it, and no managed authentication bundle reaches this process.
+func (c *Client) ConsumeExternalResetCredit(parent context.Context, operation domain.ServerCreditOperation, auth QuotaAuthentication, checkpoint func(domain.SubscriptionResetOutcome) error) (domain.SubscriptionResetOutcome, domain.SubscriptionQuotaObservation, error, error) {
+	if c.mode != CreditProtocol || !operation.AccessOnly || operation.Validate() != nil || operation.Phase != domain.SubscriptionObservationSending || !operation.SendClaimed {
+		return "", domain.SubscriptionQuotaObservation{}, incompatible(), nil
+	}
+	result := &externalCreditResult{operation: operation, checkpoint: checkpoint}
+	observed, err := c.readExternalAccount(parent, domain.NewID(), auth, result)
+	if !result.attempted {
+		return "", observed, err, nil
+	}
+	return result.outcome, observed, result.err, err
+}
+
+type externalCreditResult struct {
+	checkpoint func(domain.SubscriptionResetOutcome) error
+	operation  domain.ServerCreditOperation
+	attempted  bool
+	outcome    domain.SubscriptionResetOutcome
+	err        error
+}
+
+func (c *Client) readExternalAccount(parent context.Context, observation domain.ID, auth QuotaAuthentication, credit *externalCreditResult) (domain.SubscriptionQuotaObservation, error) {
+	if (credit == nil && c.mode != QuotaProtocol || credit != nil && c.mode != CreditProtocol) || !c.quotaUsed.CompareAndSwap(false, true) || observation.Validate() != nil || auth.Access == "" || auth.Account == "" {
 		return domain.SubscriptionQuotaObservation{}, incompatible()
 	}
 	if _, err := os.Lstat(filepath.Join(c.home, "auth.json")); !os.IsNotExist(err) {
@@ -112,6 +138,35 @@ func (c *Client) ReadExternalQuota(parent context.Context, observation domain.ID
 	case <-completed:
 	case <-ctx.Done():
 		return domain.SubscriptionQuotaObservation{}, incompatible()
+	}
+	if refused.Load() || invalid.Load() {
+		return domain.SubscriptionQuotaObservation{}, incompatible()
+	}
+	if credit != nil {
+		credit.attempted = true
+		var consumed struct {
+			Outcome domain.SubscriptionResetOutcome `json:"outcome"`
+		}
+		input := struct {
+			Key    string  `json:"idempotencyKey"`
+			Credit *string `json:"creditId,omitempty"`
+		}{Key: string(credit.operation.ID)}
+		if credit.operation.CreditID != "" {
+			input.Credit = &credit.operation.CreditID
+		}
+		credit.err = c.externalQuotaCall(ctx, "account/rateLimitResetCredit/consume", input, &consumed)
+		if credit.err == nil {
+			if !consumed.Outcome.Valid() {
+				credit.err = incompatible()
+			} else {
+				credit.outcome = consumed.Outcome
+			}
+		}
+		if credit.outcome.Valid() && credit.checkpoint != nil {
+			if err := credit.checkpoint(credit.outcome); err != nil {
+				return domain.SubscriptionQuotaObservation{}, err
+			}
+		}
 	}
 	var value nativeQuotaRead
 	if err := c.externalQuotaCall(ctx, "account/rateLimits/read", nativewire.OmittedParams{}, &value); err != nil {

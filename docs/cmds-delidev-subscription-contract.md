@@ -213,7 +213,7 @@ Settings Add account is an explicit event that creates a default service-named a
 
 - Subscription login/refresh/logout may omit --machine-id only after capability 30 negotiation. Explicit machine selection retains the Worker lane; no CLI account command implicitly starts server/Worker. Device-code auth remains an explicit CLI alternative, never browser fallback. Dedicated original login-progress output may show transient original state/name/generation; operational logs must not contain it.
 
-- Server-owned ChatGPT reset credits follow the feature under the subscription contract. System 49 separately negotiates omitted-machine consumption through the settled original server credential generation; active executions and explicit machines retain the Worker lane. Preserve immutable actor/epoch/connection/generation/inventory/key/selection, once-only durable sends, explicit same-key reconciliation after confirmed native/file cleanup, independent quota outcomes, cross-domain ownership fences and joined shutdown. No new RPC, Worker/entity allocation or migration. Keep fixture/build checks separate from real native/account/platform acceptance.
+- Server-owned ChatGPT reset credits follow the feature under the subscription contract. System 49 retains historical managed-auth credit ownership. System 101 negotiates new omitted-machine access-only consumption beside Execute; explicit machines and accepted historical operations retain the Worker or original managed-auth lane. Preserve immutable actor/epoch/connection/generation/inventory/key/selection, once-only durable sends, explicit same-key reconciliation after confirmed native/file cleanup, independent quota outcomes, cross-domain ownership fences and joined shutdown. No new RPC, Worker/entity allocation or migration. Keep fixture/build checks separate from real native/account/platform acceptance.
 
 ### cmds/delidev-cli/internal/domain constraints
 
@@ -333,7 +333,7 @@ A fresh subscription lifecycle Take may return Canceled with exact cause `subscr
 
 Subscription lifecycle Take treats only Canceled with exact cause `subscription_take_not_admitted` as an operation-local no-grant refusal. Retire its original private claim without Finish, retry or native launch; preserve other accounts on the joined lane. Execute, ordinary Canceled, RecoveryRequired, unknown delivery and uncertain Finish retain existing lane/recovery fences.
 
-- Automatic reset credits use Worker 52 only with verified managed Codex. Publish the closed failed-turn marker after original execution progress, claim and consume through the same retained native lease, and fence/join its observer before native cleanup. No idle process, restart, Sidechat or Fork may adopt automatic spending. Preserve explicit reconciliation and original uncertainty under the subscription contract.
+- Automatic reset credits use Worker 52 only with verified managed Codex. Publish the closed failed-turn marker after original execution progress. New System 101 episodes freeze this original proof before cleanup and spend on the server. Historical accepted Worker observations claim and consume through their retained native lease and fence/join their observer before native cleanup. No idle process, restart, Sidechat or Fork may adopt automatic spending. Preserve explicit reconciliation and original uncertainty under the subscription contract.
 
 ## Storage
 
@@ -538,10 +538,11 @@ workflow. Preserve capabilities 19, 30 and 46. Reuse RequestSubscriptionObservat
 and ReconcileSubscriptionCredit without a new RPC, Worker capability, database
 migration or credential conversion.
 
-An omitted machine selects the original settled server credential generation
-and protected AccountLogin reference. An active execution resolves an omitted
-selector to its exact original Worker; explicit-machine requests retain the
-Worker lane. Never manufacture a Runner, transfer accepted consumption or acquire
+Historical V1 admission selected the settled server credential generation and
+protected AccountLogin reference. Active execution resolved its omitted selector
+to the original Worker. New omitted-machine requests use the independent V2
+access-only lane below; explicit-machine requests and accepted historical
+operations retain their original Worker or managed-auth lane. Never manufacture a Runner, transfer accepted consumption or acquire
 a second credential writer. Fresh inventory and explicit confirmation bind the
 account revision, connection, generation and inventory ID. A positive count
 permits an available unexpired exact credit, or explicit native next-credit
@@ -569,13 +570,13 @@ transfer a retained attempt.
 
 Checkpoint reset/alreadyRedeemed/nothingToReset/noCredit before a separate quota
 read and cleanup. Read failure cannot erase consumption, replace last-success
-quota or invent recovery. Active credit ownership fences lifecycle, execution
+quota or invent recovery. Historical managed-auth credit ownership fences lifecycle, execution
 credentials, account deletion, failed-subscription cleanup, saved-storage
 inspection and backup/restore. The existing bounded controller joins native tasks
 before protected stores close. Cleanup checkpoints remain independent of outcome
 and finish publication; lost finish or restart cannot authorize another send.
 
-Desktop Review, Confirm and original-operation reconciliation negotiate 49,
+Historical desktop Review, Confirm and original-operation reconciliation negotiate 49,
 retain exact request retries and preserve English/Korean guidance and Settings
 lifetime. CLI consumption/reconciliation require --confirm; omitted-machine
 consumption independently negotiates 49. Missing support, zero/unknown inventory,
@@ -642,13 +643,12 @@ admission stops conservatively rather than evicting a spending fence.
 A fresh positive inventory selects a copy of eligible, unexpired Codex credits by
 expiry (no expiry last), grant time and full ID, preserving display order. A
 positive count without individual details permits only native next-credit
-selection. Stale inventory permits one read-only refresh on the same original
-lease; missing, zero or failed results do not admit consumption. The retained
-observer publishes and claims the admitted operation once, before joined native
-cleanup. No idle Worker lease may adopt an automatic operation. Explicit
-same-key reconciliation retains the original selector and provider key but removes
-automatic lease authority and follows the existing confirmed-cleanup/recovery
-contract. Consumption outcomes and quota recovery remain separate.
+selection. New episodes use the V2 server lane below. Stale inventory permits
+one server access-only quota refresh tied to the frozen episode. Missing, zero,
+malformed or failed results cannot spend. Historical accepted Worker observations
+retain their original lease and cleanup interpretation. Explicit same-key
+reconciliation preserves the original selector, provider key and cleanup fence.
+Consumption outcomes and quota recovery remain separate.
 
 The approved Settings confirmation uses the existing task lifetime, retained
 mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
@@ -691,3 +691,62 @@ Account rows show a compact Paid credits card above quota, with a 24px tabular b
 Format valid nonnegative decimal strings through string arithmetic and locale grouping, with two fractional digits and half-up rounding. Display actual zero as `0.00` and positive values below `0.01` as `<0.01`. Keep the unchanged exact source string available through a labelled information disclosure. Hover or focus reveals it; click, Enter and Space support persistent disclosure and touch. Escape closes the disclosure without closing its parent and retains or restores the original trigger focus when appropriate. Long values and bucket labels wrap within the existing parent scrolling boundary.
 
 Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Unlimited takes presentation precedence. A failed read with no observed balance shows Balance unavailable and the failure explanation, never zero. Retained failures and stale/future observations preserve original timestamps; freshness ends after five minutes and presentation cannot refresh evidence. Use semantic surface, border and text tokens, 8px card corners, compact padding and 12px secondary text in both themes and EN/KO. Preserve account actions, quota semantics, protected projections and credential-generation clearing. Presentation grants no account, execution, native or platform acceptance.
+
+## Server-owned ChatGPT reset credits V2
+
+System `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101` independently negotiates new
+omitted-machine manual requests and automatic server consumption. A ready sealed
+ChatGPT generation can use this lane with no registered, connected or verified
+Runner and beside an original Execute lease. Explicit-machine requests and
+historical claims retain their original interpretation. Preserve System 19, 49,
+50 and 77 and Worker 52. No RPC, Worker allocation or SQLite migration is added.
+
+The optional `access_only` credit field separates new owners from historical
+managed-auth writers. Go validates the original sealed account/user commitment
+and narrows native input to access token, account and plan. The distinct
+`CreditProtocol` verifies the installed server profile, ephemeral store, disabled
+plugins, official OpenAI provider and configured Direct route before authentication
+and the original durable send claim. Refuse renewal callbacks and auth.json
+creation. Deliver neither ID nor refresh tokens; do not write credentials back.
+QuotaProtocol remains read-only. Unsupported profiles cannot fall back to a Worker.
+
+Manual confirmation binds fresh positive inventory and exact credit/next selection.
+Recheck inventory before the first send. The UUIDv7 provider idempotency key,
+selector, actor, connection and generation remain immutable through explicit
+reconciliation. Checkpoint every closed consumption outcome before the separate
+quota read. Failed reads retain last-success quota and cannot invent recovery.
+
+Automatic admission proves the original active failed Execute, authenticated
+Worker/device/instance, lease revision and server epoch, immutable selection,
+native thread/turn and exact consent before cleanup. Freeze these facts and the
+full consent including ConfirmedAt in the episode and credit operation. Only this
+atomic admission can create a server claim; idle or already-cleaned metadata
+cannot recreate it. Runner cleanup or disconnect after acceptance alone cannot
+revoke the claim. Before send, the original actor, connection, generation, epoch
+and exact consent must still match. Disable then re-enable creates a different
+consent and cancels the old claim. One server quota refresh uses the same frozen
+episode before deterministic selection. Preserve the one-operation episode fence,
+1,024 retained markers and fresh observed recovery rearming. Worker 52 publishes
+markers but receives no new-lane consumption instruction. No automatic Resume is
+introduced.
+
+Access-only credit and Execute own independent native processes, outcomes and
+cleanup obligations. Execute Finish retains the captured AccountLogin generation
+through rotation. Joined credit process/file cleanup and checked retirement delete
+only an obsolete captured reference, preserving the current generation and every
+other reference. Failed retirement retains the credit fence; credit cleanup
+uncertainty never fails, releases or replaces Execute or its credential writer.
+Lifecycle, removal, competing quota/credit owners and restore remain fenced.
+Restart reconciles only original runtime/reference cleanup; it never repeats
+external login, quota or consumption. Old-epoch queued automatic operations cancel.
+Possible sends retain their outcome or uncertainty and original key. Unresolved
+provider sends retain their captured credential reference even after native
+cleanup; replacement generation or consent cannot adopt reconciliation. Only explicit
+same-key reconciliation after confirmed original cleanup may create another
+attempt, under the original still-valid bindings and consent.
+
+Desktop and CLI require System 101 for new omitted-machine credit consumption.
+Missing support gives selected-server update guidance without Runner fallback.
+Existing confirmation, default-off consent and retained mutation lifetime remain
+unchanged. Logs include only closed operation, phase/code and cleanup metadata.
+Native/account/remote/platform acceptance remains separate from synthetic checks.

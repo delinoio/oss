@@ -2651,3 +2651,18 @@ Stop, Archive and account disconnection fence new Ready admission and inference.
 Managed Codex Thread initialization retains the private original process-bound helper proof under the [subscription cleanup contract](cmds-delidev-subscription-contract.md#original-managed-codex-execution-helpers). Pin the canonical home, retained native directory identities, canonical verified executable identity and prelaunch bounded directory inventory before launch. Capture and validate the exact original Unix `apply_patch`, `applypatch` and `codex-execve-wrapper` aliases after initialized startup and before thread input admission. This proof is private, in memory and unavailable to historical runtime recovery, other execution owners or public RPCs. Windows regular batch scripts and other aliases grant no removal authority.
 
 Closure returns original process-join and helper-retirement results independently. Only a joined original native tree permits retirement through retained no-follow parent operations. Changed/foreign entries, missing startup proof and failed removal/synchronization remain recovery-required. Native destructor absence requires its unchanged retained original parent; basename lookup at cleanup cannot adopt entries. Preserve unrelated native files, lock files and history. The Worker must still run final original authentication comparison/removal and the complete unchanged bounded raw/encoded-credential scan after process join if helper retirement fails. Helper cleanup cannot settle native execution, input, history or credential ownership alone. Accepted-input native failures remain failed with once-only reporting and no replay even when both cleanup owners succeed. No capability, public protocol, migration or automatic historical-account recovery is introduced.
+
+## Access-only reset-credit native profile
+
+The distinct `CreditProtocol` composes the private external-auth handshake and
+notification validation from QuotaProtocol, while keeping the quota interface
+read-only. Its narrowed authentication contains only access token, account and
+plan. Verify ephemeral credentials, disabled plugins and official provider before
+supplying access. Refuse every replacement-token request and unexpected managed
+auth file. One valid server access-only operation with its durable send claim may
+invoke official `account/rateLimitResetCredit/consume` with the original UUIDv7
+idempotencyKey and immutable exact/next selector. Checkpoint its closed outcome
+before a separate `account/rateLimits/read`. The adapter refuses a second
+invocation. Independent joined process/file cleanup owns the original runtime;
+no credential writer, renewal, inference or Worker fallback is granted. Follow
+the [V2 credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -106,26 +108,19 @@ func TestAutomaticCreditDefaultOffAndOriginalOnceOnlyClaim(t *testing.T) {
 			admitFixture(t, f, &b, "")
 			_, a := f.record()
 			if !enabled {
-				if a.Subscription.Observation != nil || a.Subscription.AutomaticCreditEpisode != nil {
+				if a.Subscription.ServerCredit != nil || a.Subscription.AutomaticCreditEpisode != nil {
 					t.Fatal("off admitted spending")
 				}
 				return
 			}
-			op := *a.Subscription.Observation
-			if op.Action != domain.SubscriptionResetCredit || !op.NextCredit || op.AutomaticLeaseID != a.Subscription.Lease.ID {
-				t.Fatal("original authority lost")
+			op := *a.Subscription.ServerCredit
+			if !op.AccessOnly || !op.NextCredit || op.Automatic == nil || op.Automatic.LeaseID != a.Subscription.Lease.ID || a.Subscription.Observation != nil {
+				t.Fatal("original frozen server authority lost")
 			}
 			admitFixture(t, f, &b, "")
 			_, a = f.record()
-			if a.Subscription.Observation.ID != op.ID {
+			if a.Subscription.ServerCredit.ID != op.ID {
 				t.Fatal("duplicate spent twice")
-			}
-			lease := a.Subscription.Lease
-			f.claimObservation(string(op.ID), &pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)})
-			admitFixture(t, f, &b, "")
-			_, a = f.record()
-			if a.Subscription.Observation.ID != op.ID || a.Subscription.Observation.Phase != domain.SubscriptionObservationSending {
-				t.Fatal("sending claim replayed")
 			}
 		})
 	}
@@ -134,36 +129,41 @@ func TestAutomaticCreditStaleRefreshOnceAndRecoveredRedelivery(t *testing.T) {
 	f, b := automaticCreditFixture(t, true, true)
 	admitFixture(t, f, &b, "")
 	_, a := f.record()
-	refresh := a.Subscription.Observation.ID
-	if a.Subscription.Observation.Action != domain.SubscriptionQuota {
-		t.Fatal("stale inventory spent")
+	refresh := a.Subscription.ServerQuota.ID
+	if a.Subscription.ServerCredit != nil || a.Subscription.Observation != nil || a.Subscription.ServerQuota.AutomaticEpisodeID != a.Subscription.AutomaticCreditEpisode.ID {
+		t.Fatal("stale inventory spent or used Worker")
 	}
 	admitFixture(t, f, &b, "")
 	_, a = f.record()
-	if a.Subscription.Observation.ID != refresh {
+	if a.Subscription.ServerQuota.ID != refresh {
 		t.Fatal("refreshed twice")
 	}
 	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
-		a.Subscription.Observation.Phase = domain.SubscriptionObservationSucceeded
+		a.Subscription.ServerQuota.Phase = domain.SubscriptionObservationSucceeded
+		a.Subscription.ServerQuota.CleanupConfirmed = true
 		a.Subscription.ResetCredits.ObservedAt = tx.ObservationTime()
+		a.Subscription.Lease = nil
 		return f.service.admitAutomaticCredit(tx, f.input.AccountID, a, nil, refresh)
 	})
 	_, a = f.record()
-	consume := a.Subscription.Observation.ID
-	if consume == refresh || a.Subscription.Observation.Action != domain.SubscriptionResetCredit {
-		t.Fatal("fresh inventory not consumed")
+	consume := a.Subscription.ServerCredit.ID
+	if consume == refresh || a.Subscription.Observation != nil {
+		t.Fatal("fresh server inventory not consumed")
 	}
 	automaticFixtureMutation(t, f, func(_ *store.Tx, a *domain.Account) error {
 		a.Subscription.AutomaticCreditEpisode = nil
-		a.Subscription.Observation.Phase = domain.SubscriptionObservationSucceeded
+		a.Subscription.ServerCredit.Phase = domain.SubscriptionObservationFailed
+		a.Subscription.ServerCredit.CleanupConfirmed = true
 		return nil
 	})
-	admitFixture(t, f, &b, "")
+	// Retained turn fences survive recovery. Original proof cannot be recreated
+	// after cleanup, even if the old marker is delivered again.
 	_, a = f.record()
-	if a.Subscription.Observation.ID != consume || a.Subscription.AutomaticCreditEpisode != nil {
-		t.Fatal("redelivery rearmed original failed turn")
+	if len(a.Subscription.AutomaticCreditBlocks) != 1 {
+		t.Fatal("original turn fence lost")
 	}
 }
+
 func TestAutomaticCreditRateLimitNeedsSubscriptionExhaustion(t *testing.T) {
 	f, b := automaticCreditFixture(t, true, false)
 	b.Reason = domain.CodexRateLimitExceeded
@@ -207,17 +207,49 @@ func TestAutomaticCreditPublicationOriginalOwnerAndDisableAfterAdmission(t *test
 	lease := a.Subscription.Lease
 	f.publishObservation("", &pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)}, domain.SubscriptionObservationResult{QuotaBlock: &b})
 	r, a := f.record()
-	op := a.Subscription.Observation.ID
+	op := a.Subscription.ServerCredit.ID
 	_, err := f.client.SetAutomaticResetCreditConsent(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.SetAutomaticResetCreditConsentRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, ConnectionId: string(a.Connection.ID), GenerationId: string(a.Subscription.Generation)}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.claimObservation(string(op), &pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)})
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
 	_, a = f.record()
-	if a.Subscription.AutomaticCreditConsent != nil || a.Subscription.Observation.Phase != domain.SubscriptionObservationSending {
-		t.Fatal("disable cancelled admitted settlement")
+	if a.Subscription.ServerCredit.ID != op || a.Subscription.ServerCredit.Phase != domain.SubscriptionObservationFailed || a.Subscription.ServerCredit.EverSent || a.Subscription.Observation != nil {
+		t.Fatal("revoked consent sent or adopted Worker")
 	}
 }
+func TestAutomaticCreditCleanupAndDisconnectAfterAdmissionDoNotRevoke(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, false)
+	admitFixture(t, f, &b, "")
+	_, a := f.record()
+	proof := *a.Subscription.ServerCredit.Automatic
+	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+		a.Subscription.Lease = nil
+		sr, session, err := sessionRecord(tx, b.SessionID)
+		if err != nil {
+			return err
+		}
+		session.Execution.CleanupVerified = true
+		if _, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.SessionID, "", session); err != nil {
+			return err
+		}
+		mr, err := tx.Get(domain.MachineKind, f.input.MachineID)
+		if err != nil {
+			return err
+		}
+		return tx.Delete(domain.MachineKind, mr.ID, mr.Revision)
+	})
+	n := &serverCreditFixture{serverQuotaFixture: &serverQuotaFixture{}, outcome: domain.SubscriptionReset}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{n}, nil
+	}
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	_, a = f.record()
+	if n.count() != 1 || a.Subscription.ServerCredit.Outcome != domain.SubscriptionReset || *a.Subscription.ServerCredit.Automatic != proof || a.Subscription.Observation != nil {
+		t.Fatal("cleanup/disconnect revoked accepted immutable proof")
+	}
+}
+
 func TestAutomaticCreditRejectsForeignAndRetiredProof(t *testing.T) {
 	for _, change := range []string{"turn", "epoch", "cleanup", "mode"} {
 		t.Run(change, func(t *testing.T) {
@@ -267,7 +299,7 @@ func TestAutomaticCreditRejectsForeignAndRetiredProof(t *testing.T) {
 				t.Fatal("foreign or retired authority accepted")
 			}
 			_, a := f.record()
-			if a.Subscription.Observation != nil {
+			if a.Subscription.Observation != nil || a.Subscription.ServerCredit != nil {
 				t.Fatal("rejection persisted spending")
 			}
 		})
@@ -277,13 +309,13 @@ func TestAutomaticCreditFailedRefreshAndFreshRateLimitProof(t *testing.T) {
 	f, b := automaticCreditFixture(t, true, true)
 	admitFixture(t, f, &b, "")
 	_, a := f.record()
-	op := a.Subscription.Observation.ID
+	op := a.Subscription.ServerQuota.ID
 	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
-		a.Subscription.Observation.Phase = domain.SubscriptionObservationFailed
+		a.Subscription.ServerQuota.Phase = domain.SubscriptionObservationFailed
 		return f.service.admitAutomaticCredit(tx, f.input.AccountID, a, nil, op)
 	})
 	_, a = f.record()
-	if a.Subscription.Observation.ID != op || a.Subscription.AutomaticCreditEpisode.OperationID != "" {
+	if a.Subscription.ServerQuota.ID != op || a.Subscription.AutomaticCreditEpisode.OperationID != "" {
 		t.Fatal("failed refresh spent or replaced its key")
 	}
 	f, b = automaticCreditFixture(t, true, false)
@@ -299,7 +331,7 @@ func TestAutomaticCreditFailedRefreshAndFreshRateLimitProof(t *testing.T) {
 	})
 	admitFixture(t, f, &b, "")
 	_, a = f.record()
-	if a.Subscription.Observation == nil || a.Subscription.Observation.Action != domain.SubscriptionResetCredit {
+	if a.Subscription.ServerCredit == nil || !a.Subscription.ServerCredit.AccessOnly {
 		t.Fatal("fresh subscription proof did not qualify rate limit")
 	}
 }
@@ -335,6 +367,14 @@ func TestAutomaticCreditPortableExcludesStandingAuthority(t *testing.T) {
 func TestAutomaticCreditUncertainFinishClearsGenerationConsentAndReconcilesSameKey(t *testing.T) {
 	f, b := automaticCreditFixture(t, true, false)
 	admitFixture(t, f, &b, "")
+	automaticFixtureMutation(t, f, func(_ *store.Tx, a *domain.Account) error {
+		op := a.Subscription.ServerCredit
+		p := op.Automatic
+		a.Subscription.Observation = &domain.SubscriptionObservationOperation{ID: op.ID, Action: domain.SubscriptionResetCredit, MachineID: p.MachineID, Actor: op.Actor, ConnectionID: op.ConnectionID, Generation: op.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: op.RequestedAt, CreditID: op.CreditID, NextCredit: op.NextCredit, CreditsObservationID: op.CreditsObservationID, AutomaticEpisodeID: p.EpisodeID, AutomaticLeaseID: p.LeaseID, AutomaticBlock: &p.Block}
+		a.Subscription.ServerCredit = nil
+		a.Subscription.AutomaticCreditEpisode.ServerProof = nil
+		return nil
+	})
 	r, a := f.record()
 	original := *a.Subscription.Observation
 	l := a.Subscription.Lease
@@ -386,7 +426,7 @@ func TestAutomaticCreditNotificationNeedsPriorUsableEdge(t *testing.T) {
 			}
 			admitFixture(t, f, &b, "")
 			_, a := f.record()
-			if a.Subscription.Observation == nil {
+			if a.Subscription.ServerCredit == nil {
 				t.Fatal("notification baseline incorrectly blocked spending admission")
 			}
 			entries, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.InboxKind, Limit: 100})
@@ -411,5 +451,82 @@ func TestAutomaticCreditNotificationNeedsPriorUsableEdge(t *testing.T) {
 				t.Fatalf("baseline %s notified %d, want %d", baseline, count, want)
 			}
 		})
+	}
+}
+
+func TestAutomaticCreditConsentReplacementAndRestartCannotSend(t *testing.T) {
+	for _, change := range []string{"reenable", "epoch"} {
+		t.Run(change, func(t *testing.T) {
+			f, b := automaticCreditFixture(t, true, false)
+			admitFixture(t, f, &b, "")
+			_, before := f.record()
+			key := before.Subscription.ServerCredit.ID
+			automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+				if change == "reenable" {
+					c := *a.Subscription.AutomaticCreditConsent
+					c.ConfirmedAt = tx.ObservationTime().Add(time.Nanosecond)
+					a.Subscription.AutomaticCreditConsent = &c
+				} else {
+					a.Subscription.ServerCredit.AttemptEpoch = domain.NewID()
+				}
+				return nil
+			})
+			if change == "epoch" {
+				if err := f.service.initializeServerCredits(creditContext()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.service.runServerCredit(creditContext(), f.input.AccountID)
+			_, after := f.record()
+			if after.Subscription.ServerCredit.ID != key || after.Subscription.ServerCredit.EverSent || after.Subscription.ServerCredit.Phase != domain.SubscriptionObservationFailed || after.Subscription.Observation != nil {
+				t.Fatal("replacement/restart consumed or transferred claim")
+			}
+		})
+	}
+}
+func TestAutomaticCreditStaleRefreshRunsOnlyOnServer(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, true)
+	admitFixture(t, f, &b, "")
+	_, before := f.record()
+	refresh := before.Subscription.ServerQuota.ID
+	automaticFixtureMutation(t, f, func(_ *store.Tx, a *domain.Account) error { a.Subscription.Lease = nil; return nil })
+	now := time.Now().UTC()
+	zero := 0.0
+	q := &serverQuotaFixture{observed: domain.SubscriptionQuotaObservation{ObservedAt: now, Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &zero}}, Credits: &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: now, AvailableCount: 1}}}
+	f.service.quotaOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
+		return quotaNativeFixture{q}, nil
+	}
+	n := &serverCreditFixture{serverQuotaFixture: q, outcome: domain.SubscriptionReset}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{n}, nil
+	}
+	f.service.runServerQuota(creditContext(), f.input.AccountID)
+	_, after := f.record()
+	if after.Subscription.ServerQuota.ID != refresh || after.Subscription.ServerCredit == nil || after.Subscription.Observation != nil {
+		t.Fatal("server refresh did not select frozen episode")
+	}
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	f.service.runServerQuota(creditContext(), f.input.AccountID)
+	_, after = f.record()
+	if n.count() != 1 || q.reads.Load() != 2 || after.Subscription.ServerCredit.Outcome != domain.SubscriptionReset {
+		t.Fatal("server refresh/spend replayed or failed")
+	}
+}
+func TestAutomaticCreditZeroInventoryDoesNotFreezeFutureAuthority(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, false)
+	automaticFixtureMutation(t, f, func(_ *store.Tx, a *domain.Account) error { a.Subscription.ResetCredits.AvailableCount = 0; return nil })
+	admitFixture(t, f, &b, "")
+	_, a := f.record()
+	if a.Subscription.ServerCredit != nil || a.Subscription.ServerQuota != nil || a.Subscription.AutomaticCreditEpisode.ServerProof != nil {
+		t.Fatal("zero inventory reserved delayed spending authority")
+	}
+	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+		a.Subscription.Lease = nil
+		a.Subscription.ResetCredits.AvailableCount = 1
+		return f.service.admitAutomaticCredit(tx, f.input.AccountID, a, nil, domain.NewID())
+	})
+	_, a = f.record()
+	if a.Subscription.ServerCredit != nil {
+		t.Fatal("later inventory adopted unaccepted cleaned episode")
 	}
 }
