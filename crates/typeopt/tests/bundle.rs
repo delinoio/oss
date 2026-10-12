@@ -988,6 +988,17 @@ fn resolves_module_scripts_against_the_document_base() {
     assert!(!out(temp.path(), "modern/index.js").contains("verticalSpacing"));
 }
 
+/// Symbolic links would make analysis and the staged copy disagree.
+#[test]
+fn rejects_bundles_with_symbolic_links() {
+    let temp = bundle(&[("real.js", "console.log(1);")]);
+    std::os::unix::fs::symlink("real.js", temp.path().join("dist/alias.js")).unwrap();
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("symbolic links"));
+    assert!(!temp.path().join("out").exists());
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [

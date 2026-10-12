@@ -663,10 +663,29 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
     Ok(renamed.len())
 }
 
-/// Rejects bundles whose HTML pages use Subresource Integrity: the digests
-/// would no longer match edited chunks. Check and output modes both run it
-/// before analysis.
-pub fn check_integrity(dir: &Path) -> Result<()> {
+/// Rejects bundles that bundle mode cannot publish faithfully, before
+/// analysis in check and output modes:
+/// - symbolic links: analysis would follow them to their targets while the
+///   staged copy would materialize separate files (or external contents);
+/// - HTML pages with Subresource Integrity: the digests would no longer match
+///   edited chunks.
+pub fn preflight(dir: &Path) -> Result<()> {
+    fn reject_links(dir: &Path) -> Result<()> {
+        for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            anyhow::ensure!(
+                !kind.is_symlink(),
+                "bundle directories with symbolic links are unsupported; copy the linked files \
+                 into the bundle"
+            );
+            if kind.is_dir() {
+                reject_links(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    reject_links(dir)?;
     let mut files = Vec::new();
     files_under(dir, &mut files)?;
     for file in &files {
