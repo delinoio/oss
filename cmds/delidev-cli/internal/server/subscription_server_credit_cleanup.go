@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -44,18 +45,20 @@ func (s *Service) reconcileRetainedServerCredits(ctx context.Context) error {
 		return err
 	}
 	for _, owner := range owners {
+		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err := func() error {
+			defer cancel()
 			if !owner.Operation.CleanupConfirmed {
-				if err := reconcileServerCreditRuntime(ctx, s.Store.Root(), owner.Operation); err != nil {
+				if err := reconcileServerCreditRuntime(bounded, s.Store.Root(), owner.Operation); err != nil {
 					return err
 				}
 			}
-			unlock, err := s.lockAccounts(ctx)
+			unlock, err := s.lockAccounts(bounded)
 			if err != nil {
 				return err
 			}
 			defer unlock()
-			_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.credit.reconcile.cleanup", owner, func(tx *store.Tx) (any, error) {
+			_, err = s.Store.Mutate(bounded, domain.NewID(), "subscription.server.credit.reconcile.cleanup", owner, func(tx *store.Tx) (any, error) {
 				r, a, err := subscriptionAccount(tx, owner.Account, 0)
 				if err != nil {
 					return nil, err
@@ -71,10 +74,10 @@ func (s *Service) reconcileRetainedServerCredits(ctx context.Context) error {
 				return err
 			}
 			owner.Operation.CleanupConfirmed = true
-			if err = s.retireServerCreditReference(ctx, owner.Account, owner.Operation); err != nil {
+			if err = s.retireServerCreditReference(bounded, owner.Account, owner.Operation); err != nil {
 				return err
 			}
-			_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.credit.reconciled", owner, func(tx *store.Tx) (any, error) {
+			_, err = s.Store.Mutate(bounded, domain.NewID(), "subscription.server.credit.reconciled", owner, func(tx *store.Tx) (any, error) {
 				r, a, err := subscriptionAccount(tx, owner.Account, 0)
 				if err != nil {
 					return nil, err
