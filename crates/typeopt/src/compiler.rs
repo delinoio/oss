@@ -787,6 +787,23 @@ impl<'a> Backend<'a> {
             release_program(old);
         }
     }
+
+    /// Releases the retained program unless it checked `texts`. A check
+    /// runs on the texts of a new round, and later plans and checks read
+    /// only the texts of the latest check, so the retained program is not
+    /// read again; releasing it before the rebuild keeps one fewer program
+    /// alive at the peak.
+    fn release_stale(&mut self, texts: &BTreeMap<String, String>) {
+        let key = texts_key(texts);
+        if let Some((cached, old)) = self.checked.take() {
+            if cached == key {
+                self.checked = Some((cached, old));
+            } else {
+                tracing::debug!("released the program of the previous check before the rebuild");
+                release_program(old);
+            }
+        }
+    }
 }
 
 impl Drop for Backend<'_> {
@@ -828,6 +845,7 @@ impl crate::pipeline::Backend for Backend<'_> {
     }
 
     fn check(&mut self, texts: &BTreeMap<String, String>) -> Result<Vec<String>> {
+        self.release_stale(texts);
         let (version, fresh) = self.program_for(texts);
         let result = (|| {
             let _scope = enter_program(Some(version));
@@ -935,6 +953,10 @@ fn build(config: Rc<ParsedCommandLine>, fs: Rc<dyn Fs>, cwd: &str) -> &'static G
         create_module_resolver: None,
         skip_module_resolution: false,
     }));
+    // A parse of a file that an earlier program published gets a freeable
+    // file version, which `release_program` frees with its last holder.
+    // Without it, every rebuild leaks the parse of every file.
+    mark_freeable_parses(&np);
     new_program_version(&np, None)
 }
 

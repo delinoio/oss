@@ -2452,7 +2452,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2775,7 +2775,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3965,7 +3965,7 @@ dependencies = [
  "gobject-sys 0.22.9",
  "libc",
  "system-deps 9.0.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4106,9 +4106,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "goport_core"
+version = "7.0.0-dev"
+source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
+dependencies = [
+ "bumpalo",
+ "flate2",
+ "goport_util",
+ "indexmap 2.14.0",
+ "jiff",
+ "memchr",
+ "miow",
+ "nix",
+ "rustc-hash",
+ "rustix",
+ "same-file",
+ "signal-hook 0.4.4",
+ "smallvec 1.15.1",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "goport_lsproto"
 version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=b4144b4769d13bbfe9e648840fe6297893981427#b4144b4769d13bbfe9e648840fe6297893981427"
+source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
 dependencies = [
  "goport_util",
  "indexmap 2.14.0",
@@ -4118,7 +4139,7 @@ dependencies = [
 [[package]]
 name = "goport_util"
 version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=b4144b4769d13bbfe9e648840fe6297893981427#b4144b4769d13bbfe9e648840fe6297893981427"
+source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
 dependencies = [
  "indexmap 2.14.0",
  "lzma-rust2",
@@ -6146,7 +6167,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7717,7 +7738,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8417,7 +8438,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9963,7 +9984,7 @@ dependencies = [
  "getrandom 0.4.1",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10002,7 +10023,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10584,10 +10605,11 @@ dependencies = [
 [[package]]
 name = "ts_goport"
 version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=b4144b4769d13bbfe9e648840fe6297893981427#b4144b4769d13bbfe9e648840fe6297893981427"
+source = "git+https://github.com/kdy1/ts-rust?rev=a1dc8be88dfb837b4fb199d4355fa0a4d9eced96#a1dc8be88dfb837b4fb199d4355fa0a4d9eced96"
 dependencies = [
  "bumpalo",
  "flate2",
+ "goport_core",
  "goport_lsproto",
  "goport_util",
  "indexmap 2.14.0",
@@ -11355,7 +11377,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
