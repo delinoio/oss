@@ -114,7 +114,7 @@ it("validates exact jobs/executions and UTC intervals without historical backfil
       ...f.session,
       startupTiming: {
         ...f.session.startupTiming,
-        agent: { ...f.session.startupTiming!.agent, ...change },
+        agent: { ...f.session.startupTiming!.agent!, ...change },
       },
     });
     expect(startupTimingGroups(changed).agent).toBeUndefined();
@@ -165,7 +165,7 @@ it("ticks closed groups from server time, freezes at acceptance, and stops on st
     startupTiming: {
       ...f.session.startupTiming,
       agent: {
-        ...f.session.startupTiming!.agent,
+        ...f.session.startupTiming!.agent!,
         finishedAt: "2026-10-12T00:00:20Z",
       },
     },
