@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useShortcuts, useTerminalTabShortcuts } from "./shortcut-provider";
-import { ShortcutId, ShortcutInput, sessionShortcutBindings } from "./shortcuts";
+import {
+  ShortcutId,
+  ShortcutInput,
+  sessionShortcutBindings,
+} from "./shortcuts";
 import { Surface } from "./surface";
 import { createPortal } from "react-dom";
 import "./terminal-dock.css";

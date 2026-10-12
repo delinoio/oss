@@ -1251,7 +1251,10 @@ export function SessionView({
   // Departure or a later explicit pane selection cancels an unsent intent. A
   // sent request keeps its retained controller and finishes on its own.
   useEffect(() => {
-    if (terminalOpenIntent && (!active || tabs.selected !== terminalOpenIntent.origin))
+    if (
+      terminalOpenIntent &&
+      (!active || tabs.selected !== terminalOpenIntent.origin)
+    )
       setTerminalOpenIntent(undefined);
   }, [terminalOpenIntent, active, tabs.selected]);
   const waitingRevision = `${session?.revision ?? 0n}:${live.generation}:${[

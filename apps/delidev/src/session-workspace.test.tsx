@@ -119,7 +119,9 @@ function fixture(
     terminalCreate = vi.fn(
       (request: {
         preferredTerminalId?: string;
-      }): { terminal: typeof terminal } | Promise<{ terminal: typeof terminal }> => ({
+      }):
+        | { terminal: typeof terminal }
+        | Promise<{ terminal: typeof terminal }> => ({
         terminal:
           terminals.find((row) => row.id === request.preferredTerminalId) ??
           terminal,
@@ -792,28 +794,28 @@ it.each([580, 120])(
     const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
     const view = render(f.view());
     try {
-    const composer = await screen.findByRole("textbox", { name: "Message" });
-    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    // The verified original terminal opens its direct tab; Conversation stays
-    // mounted until that atomic admission returns.
-    expect(composer.closest("[inert]")).toBeNull();
-    expect(
-      (await screen.findByRole("tab", { name: "Terminal 1" })).getAttribute(
-        "aria-selected",
-      ),
-    ).toBe("true");
-    expect(composer.isConnected).toBe(true);
-    expect(composer.closest("[inert]")).not.toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "Maximize terminal dock" }),
-    ).toBeNull();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
-    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-    expect(composer).toHaveProperty("value", "Original draft");
-    expect(height).toBeGreaterThan(0);
-    expect(f.control).not.toHaveBeenCalled();
+      const composer = await screen.findByRole("textbox", { name: "Message" });
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+      // The verified original terminal opens its direct tab; Conversation stays
+      // mounted until that atomic admission returns.
+      expect(composer.closest("[inert]")).toBeNull();
+      expect(
+        (await screen.findByRole("tab", { name: "Terminal 1" })).getAttribute(
+          "aria-selected",
+        ),
+      ).toBe("true");
+      expect(composer.isConnected).toBe(true);
+      expect(composer.closest("[inert]")).not.toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Maximize terminal dock" }),
+      ).toBeNull();
+      expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+      fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+      expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+      expect(composer).toHaveProperty("value", "Original draft");
+      expect(height).toBeGreaterThan(0);
+      expect(f.control).not.toHaveBeenCalled();
     } finally {
       view.unmount();
       f.releaseTerminal();
@@ -2023,7 +2025,9 @@ it.each([false, true])(
       if (departed) {
         expect(f.terminalWatches).not.toHaveBeenCalled();
         expect(
-          screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+          screen
+            .getByRole("tab", { name: "Files" })
+            .getAttribute("aria-selected"),
         ).toBe("true");
         expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
       } else {

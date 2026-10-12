@@ -207,7 +207,10 @@ describe("terminal presentation numbers", () => {
     expect([numbers.number("uuid-a"), numbers.number("uuid-b")]).toEqual([
       1, 2,
     ]);
-    store.close("s", sessionTabKey({ kind: SessionTabKind.Terminal, id: "uuid-a" }));
+    store.close(
+      "s",
+      sessionTabKey({ kind: SessionTabKind.Terminal, id: "uuid-a" }),
+    );
     open(store, "s", "uuid-c");
     open(store, "s", "uuid-a");
     expect(numbers.number("uuid-a")).toBe(1);
@@ -247,6 +250,8 @@ describe("terminal presentation numbers", () => {
     open(store, "s", "next");
     expect(store.terminalPresentation("s").number("gone")).toBe(1);
     expect(store.terminalPresentation("s").number("next")).toBe(2);
-    expect(new SessionTabsStore().terminalPresentation("s").number("next")).toBe(1);
+    expect(
+      new SessionTabsStore().terminalPresentation("s").number("next"),
+    ).toBe(1);
   });
 });

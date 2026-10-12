@@ -67,7 +67,9 @@ it("labels each direct terminal tab with a friendly number and no internal ID", 
   expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
   const attributes = [
     ...document.querySelectorAll("[aria-label], [title]"),
-  ].map((node) => `${node.getAttribute("aria-label")}${node.getAttribute("title")}`);
+  ].map(
+    (node) => `${node.getAttribute("aria-label")}${node.getAttribute("title")}`,
+  );
   for (const id of ids)
     for (const value of attributes) expect(value).not.toContain(id.slice(0, 8));
   expect(

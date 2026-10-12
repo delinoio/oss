@@ -444,7 +444,9 @@ it("gates initial reads and polling on advertised terminal support", async () =>
     });
   try {
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("button", { name: "Refresh terminals" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Refresh terminals" }),
+    ).toBeNull();
     await waitForPoll();
     expect(listResources).not.toHaveBeenCalled();
     statusPending = false;
