@@ -9,7 +9,6 @@ import { QuitConnectionProvider, useQuitConnection } from "./quit-confirmation";
 import { createDesktopFetch } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
 import { OAuthNativeProvider, type OAuthNativeControl } from "./account-oauth";
-import { ServerPresentationKind } from "./server-presentation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -439,7 +438,6 @@ function LocalDesktop() {
                   setInlineRecoveryTarget(target);
                   setInlineRecovery(Boolean(target));
                 }}
-                serverPresentation={{ kind: ServerPresentationKind.Local }}
                 pairingAuthority={
                   previous.current
                     ? {
@@ -780,10 +778,6 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
                     ? (connectionTarget ?? undefined)
                     : pageSlots?.current
                 }
-                serverPresentation={{
-                  kind: ServerPresentationKind.Saved,
-                  name: profile.name,
-                }}
                 pairingAuthority={{
                   endpoint: profile.endpoint,
                   serverId: profile.server_id,

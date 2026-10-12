@@ -13,7 +13,6 @@ import {
 } from "../local-server";
 import { type ControlLocalWorker } from "../local-worker-controls";
 import { type LocalWorkerProof } from "../local-worker";
-import { ServerPresentationKind } from "../server-presentation";
 import { verifyLocalServer } from "../connection";
 import {
   WorkerNetworkControlProvider,
@@ -141,7 +140,6 @@ function QaApp({ authority }: { authority: Bootstrap }) {
               transport={transport}
               pairingAuthority={authority}
               currentDeviceId={authority.deviceId}
-              serverPresentation={{ kind: ServerPresentationKind.Local }}
               readLocalWorker={readWorker}
               controlLocalWorker={controlWorker}
               localServer={localServer}
