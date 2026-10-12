@@ -915,7 +915,10 @@ fn references(text: &str, name: &str) -> Vec<usize> {
                 c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '(' | '=' | '<' | '>' | ',')
             })
             .map_or(0, |d| d + 1);
-        let token = &text[token_start..at];
+        // Escapes (`https:\/\/`, `&#47;`, `%2F`) do not hide another host.
+        let token = crate::compiler::percent_decode(&decode_references_lossy(
+            &decode_backslash_escapes_lossy(&text[token_start..at]),
+        ));
         let external = token.contains("://") || token.starts_with("//");
         // An unquoted HTML attribute value may follow `=` after whitespace.
         let after_assignment = text[..at]
@@ -1589,6 +1592,8 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert!(out.contains("sourceMappingURL=index-NEW12345.js.map"));
         assert!(out.contains("see index-DnKDBunT.js later"));
         assert!(out.contains("xindex-DnKDBunT.jsx"));
+        // Escaped slashes still name another host.
+        assert!(references(r#""https:\/\/cdn.example\/index-DnKDBunT.js""#, name).is_empty());
         // Another host's file with the same name keeps its URL.
         let external = r#"src="https://cdn.example/index-DnKDBunT.js" u='//cdn.example/x/index-DnKDBunT.js' l="/assets/index-DnKDBunT.js""#;
         assert_eq!(references(external, name).len(), 1);
