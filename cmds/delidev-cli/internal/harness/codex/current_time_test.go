@@ -29,6 +29,19 @@ func (f *threadFixture) currentTimeReply(id, raw json.RawMessage) bool {
 	return file.Close() == nil && err == nil
 }
 
+func boundCurrentTimeFixture(t *testing.T, mode string) (*Client, string, ThreadResult, ThreadSettings) {
+	t.Helper()
+	c, capture, result, settings := boundTurnFixture(t, mode)
+	// Initialization and StartThread leave these original notifications in wire
+	// order. Verify both before testing the next time request or its metadata.
+	for _, kind := range []MetadataKind{RemoteControlDisabled, ThreadIdentityChecked} {
+		if event := nextKind(t, c, MetadataEvent); event.Metadata != kind {
+			t.Fatalf("original startup observation missing: want %s, got %s", kind, event.Metadata)
+		}
+	}
+	return c, capture, result, settings
+}
+
 func currentTimeRequest(t *testing.T, c *Client) nativewire.Event {
 	t.Helper()
 	fixtureSignal(t, c, "current-time", map[string]any{"requestId": 17, "params": map[string]any{"threadId": c.thread}})
@@ -42,7 +55,7 @@ func currentTimeRequest(t *testing.T, c *Client) nativewire.Event {
 }
 
 func TestCurrentTimeWholeWorkerSecondsDoNotAcknowledgeOrCompleteTurn(t *testing.T) {
-	c, capture, _, _ := boundTurnFixture(t, "current-time")
+	c, capture, _, _ := boundCurrentTimeFixture(t, "current-time")
 	accepted, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +109,7 @@ func TestCurrentTimeWholeWorkerSecondsDoNotAcknowledgeOrCompleteTurn(t *testing.
 }
 
 func TestCurrentTimeStaleReplacedAndStoppedRequestsNeverResample(t *testing.T) {
-	c, _, _, _ := boundTurnFixture(t, "current-time")
+	c, _, _, _ := boundCurrentTimeFixture(t, "current-time")
 	samples := 0
 	c.currentTimeClock = func() time.Time { samples++; return time.Unix(1700000000, 123) }
 	request := currentTimeRequest(t, c)
@@ -172,7 +185,7 @@ func currentTimeResponses(t *testing.T, capture string) []map[string]any {
 }
 
 func TestCurrentTimeFreshArrivalReplayThroughNextEventWritesOnce(t *testing.T) {
-	c, capture, _, _ := boundTurnFixture(t, "current-time")
+	c, capture, _, _ := boundCurrentTimeFixture(t, "current-time")
 	samples := 0
 	c.currentTimeClock = func() time.Time { samples++; return time.Unix(1700000000, 123) }
 	signal := func() {
@@ -197,7 +210,7 @@ func TestCurrentTimeFreshArrivalReplayThroughNextEventWritesOnce(t *testing.T) {
 }
 
 func TestCurrentTimeNumericAndTextIDsHaveSeparateClaims(t *testing.T) {
-	c, capture, _, _ := boundTurnFixture(t, "current-time")
+	c, capture, _, _ := boundCurrentTimeFixture(t, "current-time")
 	samples := 0
 	c.currentTimeClock = func() time.Time { samples++; return time.Unix(1700000000, 123) }
 	for _, id := range []any{17, "17", int64(9223372036854775807), int64(-9223372036854775808)} {
@@ -214,7 +227,7 @@ func TestCurrentTimeNumericAndTextIDsHaveSeparateClaims(t *testing.T) {
 }
 
 func TestCurrentTimeClaimBoundNeverEvictsAnsweredIdentity(t *testing.T) {
-	c, capture, _, _ := boundTurnFixture(t, "current-time")
+	c, capture, _, _ := boundCurrentTimeFixture(t, "current-time")
 	c.currentTimeClaims = make(map[currentTimeRequestKey]struct{}, maxCurrentTimeClaims)
 	for i := 0; i < maxCurrentTimeClaims; i++ {
 		c.currentTimeClaims[currentTimeRequestKey{kind: NumberRequestID, number: int64(1000 + i)}] = struct{}{}
@@ -240,7 +253,7 @@ func TestCurrentTimeClaimBoundNeverEvictsAnsweredIdentity(t *testing.T) {
 }
 
 func TestCurrentTimeUnownedAndCanceledArrivalsDoNotClaimID(t *testing.T) {
-	c, _, _, _ := boundTurnFixture(t, "current-time")
+	c, _, _, _ := boundCurrentTimeFixture(t, "current-time")
 	request := currentTimeRequest(t, c)
 	samples := 0
 	c.currentTimeClock = func() time.Time { samples++; return time.Now() }
@@ -260,7 +273,7 @@ func TestCurrentTimeUnownedAndCanceledArrivalsDoNotClaimID(t *testing.T) {
 }
 
 func TestCurrentTimeRetiredArrivalNeverSamplesOrClaims(t *testing.T) {
-	c, _, _, _ := boundTurnFixture(t, "current-time")
+	c, _, _, _ := boundCurrentTimeFixture(t, "current-time")
 	request := currentTimeRequest(t, c)
 	if retired, err := c.wire.RetireRequest(request); err != nil || !retired {
 		t.Fatal("original arrival was not retired", err)
@@ -273,7 +286,7 @@ func TestCurrentTimeRetiredArrivalNeverSamplesOrClaims(t *testing.T) {
 }
 
 func TestCurrentTimePipeFailureRetainsIDClaimAndJoinsOriginalConnection(t *testing.T) {
-	c, capture, _, _ := boundTurnFixture(t, "current-time-closed-input")
+	c, capture, _, _ := boundCurrentTimeFixture(t, "current-time-closed-input")
 	request := currentTimeRequest(t, c)
 	samples := 0
 	c.currentTimeClock = func() time.Time { samples++; return time.Unix(1700000000, 123) }
