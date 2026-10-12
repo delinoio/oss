@@ -306,7 +306,12 @@ export function PRWorkspaceRows({
       aria-label={copy("github-items.pullRequests_d9e3f2")}
     >
       {pages.map((page) => (
-        <div className="pr-list-applied" key={`metadata:${page.query.page}`}>
+        <div
+          className="pr-list-applied"
+          key={`metadata:${page.query.page}`}
+          role="region"
+          aria-label={copy("pr-cards.pageLabel", { page: page.query.page })}
+        >
           <p>
             {copy("pr-cards.applied", {
               state: copy(
@@ -335,6 +340,9 @@ export function PRWorkspaceRows({
               mode={TimestampMode.Exact}
             />
           </p>
+          {!items(page.data.items).length ? (
+            <p>{copy("pr-cards.emptyPage", { page: page.query.page })}</p>
+          ) : null}
           {page.data.total_count != null ? (
             <p>
               {copy("pr-workspace.matches", {
@@ -450,9 +458,6 @@ export function PRWorkspaceRows({
           </article>
         );
       })}
-      {!seeds.length ? (
-        <p>{copy("pr-cards.emptyPage", { page: pages[0]?.query.page ?? 1 })}</p>
-      ) : null}
     </section>
   );
 }

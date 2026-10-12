@@ -1063,13 +1063,17 @@ it("rejects late repository results even when the transport ignores cancellation
   await choose(value.rows[0]);
   await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
   await choose(other);
-  await screen.findByText("Current B title");
+  await screen.findByRole("heading", { name: "#17 Current B title" });
   await act(async () => {
     release();
     await pending;
   });
-  expect(screen.queryByText("Late A title")).toBeNull();
-  expect(screen.getByText("Current B title")).toBeTruthy();
+  expect(
+    screen.queryByRole("heading", { name: "#17 Late A title" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "#17 Current B title" }),
+  ).toBeTruthy();
 });
 
 it("disposes pending search timers while inactive and resumes retained filters", async () => {
