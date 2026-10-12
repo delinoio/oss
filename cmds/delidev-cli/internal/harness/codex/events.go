@@ -125,6 +125,7 @@ const (
 	MetadataEvent                 EventKind = "metadata"
 	ModelSafetyEvent              EventKind = "model-safety"
 	UsageEvent                    EventKind = "usage"
+	DynamicToolEvent              EventKind = "dynamic-tool"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
 	ToolStartedEvent              EventKind = "tool-started"
