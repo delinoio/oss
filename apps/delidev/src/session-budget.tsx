@@ -187,14 +187,23 @@ function BudgetEditor({
     </form>
   );
 }
+/** Closed readiness of the current session's budget evidence. */
+export enum BudgetEvidence {
+  Pending = "pending",
+  Failed = "failed",
+  Ready = "ready",
+  Blocked = "blocked",
+}
 export function SessionBudget({
   resource,
   changed,
   blocked,
+  evidence,
 }: {
   resource: Resource;
   changed: (value: Resource) => void;
   blocked: (value: boolean) => void;
+  evidence?: (sessionId: string, status: BudgetEvidence) => void;
 }) {
   useLocale();
   const result = useQuery(
@@ -208,6 +217,17 @@ export function SessionBudget({
   useEffect(() => {
     blocked(view?.state === BudgetState.THRESHOLD_REACHED);
   }, [view?.state, blocked]);
+  const status =
+    view?.state === BudgetState.THRESHOLD_REACHED
+      ? BudgetEvidence.Blocked
+      : result.error
+        ? BudgetEvidence.Failed
+        : view
+          ? BudgetEvidence.Ready
+          : BudgetEvidence.Pending;
+  useEffect(() => {
+    evidence?.(resource.id, status);
+  }, [resource.id, status, evidence]);
   useEffect(() => {
     if (view?.session && !result.error) setMissing(false);
   }, [result.dataUpdatedAt, view?.session, result.error]);

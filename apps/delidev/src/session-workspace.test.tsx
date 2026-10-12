@@ -272,7 +272,11 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true) => (
+  const view = (
+    value = "Original draft",
+    active = true,
+    embedded = false,
+  ) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
@@ -283,6 +287,7 @@ function fixture(
                 draft={value}
                 setDraft={draft}
                 active={active}
+                embedded={embedded}
               />
             </SessionTabsProvider>
           </SessionNameEditorProvider>
@@ -1511,6 +1516,268 @@ it("keeps initial startup Info available for a reached original budget", async (
   expect(f.control).not.toHaveBeenCalled();
   expect(f.enqueue).not.toHaveBeenCalled();
 });
+function deferred() {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { gate, release };
+}
+async function startupInfo(container: HTMLElement) {
+  await screen.findByText("Waiting for response");
+  return container.querySelector<HTMLElement>(".session-information")!;
+}
+function interactionRow(sessionId: string, closure: string) {
+  return create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId,
+    kind: EntityKind.INTERACTION,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({ type: "native-approval", closure }),
+  });
+}
+function expectStartupPreserved(
+  f: ReturnType<typeof fixture>,
+  composer: HTMLElement,
+) {
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(composer).toHaveProperty("value", "Retained startup draft");
+  expect(document.activeElement).toBe(composer);
+  expect(f.enqueue).not.toHaveBeenCalled();
+  expect(f.control).not.toHaveBeenCalled();
+  expect(f.recover).not.toHaveBeenCalled();
+  expect(f.setBudget).not.toHaveBeenCalled();
+}
+it.each(["pending", "failed"] as const)(
+  "keeps startup Info visible until current successful non-blocking budget evidence exists (%s)",
+  async (mode) => {
+    const held = deferred();
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    if (mode === "pending")
+      f.budget.mockImplementation((async () => {
+        await held.gate;
+        return {
+          view: create(SessionBudgetViewSchema, { session: f.session }),
+        };
+      }) as never);
+    else
+      f.budget.mockImplementationOnce(() => {
+        throw new ConnectError("Budget unavailable", Code.Unavailable);
+      });
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    await waitFor(() => expect(f.budget).toHaveBeenCalled());
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+    // The Info fence does not remove the progress presentation.
+    expect(screen.getByText("Waiting for response")).toBeTruthy();
+    if (mode === "pending") {
+      held.release();
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    } else {
+      const retry = await waitFor(() => {
+        const button = info.querySelector<HTMLButtonElement>(
+          ".session-budget header button",
+        );
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      expect(info).toHaveProperty("hidden", false);
+      fireEvent.click(retry);
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    }
+    expectStartupPreserved(f, composer);
+  },
+);
+it("does not reuse budget evidence from another session identity", async () => {
+  const first = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  const mounted = render(first.view("Retained startup draft"));
+  const info = await startupInfo(mounted.container);
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  mounted.unmount();
+  const held = deferred();
+  const second = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  second.budget.mockImplementation((async () => {
+    await held.gate;
+    return {
+      view: create(SessionBudgetViewSchema, { session: second.session }),
+    };
+  }) as never);
+  const next = render(second.view("Retained startup draft"));
+  const nextInfo = await startupInfo(next.container);
+  expect(nextInfo).toHaveProperty("hidden", false);
+  held.release();
+  await waitFor(() => expect(nextInfo).toHaveProperty("hidden", true));
+});
+it.each(["transcript", "queue", "interactions"] as const)(
+  "keeps startup Info visible while a %s refresh retains stale complete pages",
+  async (read) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    const held = deferred();
+    const kind =
+      read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    if (read === "queue")
+      f.listQueue.mockImplementation((async () => {
+        await held.gate;
+        return { inputs: [], nextPageToken: "" };
+      }) as never);
+    else
+      f.list.mockImplementation(async (request) => {
+        if (request.filter?.kind === kind) await held.gate;
+        return { resources: [], nextPageToken: "" };
+      });
+    act(() => {
+      void f.client.invalidateQueries();
+    });
+    await waitFor(() => expect(info).toHaveProperty("hidden", false));
+    expect(info.hasAttribute("inert")).toBe(false);
+    // Retained presentation stays; only Info visibility follows the fence.
+    expect(screen.getByText("Waiting for response")).toBeTruthy();
+    expect(document.activeElement).toBe(composer);
+    held.release();
+    await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    expectStartupPreserved(f, composer);
+  },
+);
+it.each(["failed", "incomplete"] as const)(
+  "keeps startup Info visible for %s interaction evidence",
+  async (mode) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    f.list.mockImplementation(async (request) => {
+      if (request.filter?.kind === EntityKind.INTERACTION) {
+        if (mode === "failed")
+          throw new ConnectError("Interactions unavailable", Code.Unavailable);
+        return { resources: [], nextPageToken: "tail" };
+      }
+      return { resources: [], nextPageToken: "" };
+    });
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    await waitFor(() =>
+      expect(
+        f.list.mock.calls.some(
+          ([request]) => request.filter?.kind === EntityKind.INTERACTION,
+        ),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(info).toHaveProperty("hidden", false);
+    expect(f.enqueue).not.toHaveBeenCalled();
+  },
+);
+it("keeps startup Info visible for an open approval", async () => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  f.list.mockImplementation(async (request) => ({
+    resources:
+      request.filter?.kind === EntityKind.INTERACTION
+        ? [interactionRow(f.session.id, "open")]
+        : [],
+    nextPageToken: "",
+  }));
+  const { container } = render(f.view("Retained startup draft"));
+  await waitFor(() =>
+    expect(
+      f.list.mock.calls.some(
+        ([request]) => request.filter?.kind === EntityKind.INTERACTION,
+      ),
+    ).toBe(true),
+  );
+  const info = container.querySelector<HTMLElement>(".session-information")!;
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(info).toHaveProperty("hidden", false);
+  expect(f.control).not.toHaveBeenCalled();
+});
+it.each(["held", "rejected"] as const)(
+  "restores startup Info as soon as a later local follow-up is %s",
+  async (mode) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      initialResponseWaiting(),
+    );
+    const held = deferred();
+    f.enqueue.mockImplementation((async () => {
+      await held.gate;
+      throw new ConnectError("Follow-up rejected", Code.InvalidArgument);
+    }) as never);
+    const { container } = render(f.view("Retained startup draft"));
+    const info = await startupInfo(container);
+    await waitFor(() => expect(info).toHaveProperty("hidden", true));
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(1));
+    // Visible before any enqueue response.
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(composer);
+    if (mode === "rejected") {
+      held.release();
+      await waitFor(() => expect(container.textContent).toMatch(/rejected/i));
+      expect(info).toHaveProperty("hidden", false);
+      expect(f.enqueue).toHaveBeenCalledTimes(1);
+    }
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  },
+);
+it.each(["parent-snapshot", "embedded"] as const)(
+  "keeps Sidechat child Info in every initial execution phase (%s)",
+  async (mode) => {
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+      ...initialResponseWaiting(),
+      ...(mode === "parent-snapshot"
+        ? {
+            fork: {
+              source_session_id: newRequestId(),
+              sidechat_parent_snapshot: {},
+            },
+          }
+        : {}),
+    });
+    const { container } = render(
+      f.view("Retained startup draft", true, mode === "embedded"),
+    );
+    const info = await startupInfo(container);
+    await waitFor(() => expect(f.budget).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+    expect(f.control).not.toHaveBeenCalled();
+    expect(f.enqueue).not.toHaveBeenCalled();
+  },
+);
 it("hands focus to the session heading when the original composer is unavailable before hiding", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
     ...initialResponseWaiting(),

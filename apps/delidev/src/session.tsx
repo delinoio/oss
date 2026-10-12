@@ -118,13 +118,14 @@ import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
 import { CodexReasoning, codexReasoning } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
-import { SessionBudget } from "./session-budget";
+import { BudgetEvidence, SessionBudget } from "./session-budget";
 import {
   ExecutionConfiguration,
   SavedExecutionChips,
 } from "./execution-configuration";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -1013,6 +1014,21 @@ export function SessionView({
     focusTarget?.scrollIntoView?.({ block: "nearest" });
   }, [infoReveal]);
   const [budgetBlocked, setBudgetBlocked] = useState(false);
+  // Startup Info hiding needs current successful budget evidence, not merely
+  // the absence of a threshold-reached report. Evidence is scoped to the session.
+  const [budgetEvidence, setBudgetEvidence] = useState<{
+    id: string;
+    status: BudgetEvidence;
+  }>();
+  const reportBudgetEvidence = useCallback(
+    (sessionId: string, status: BudgetEvidence) =>
+      setBudgetEvidence((previous) =>
+        previous?.id === sessionId && previous.status === status
+          ? previous
+          : { id: sessionId, status },
+      ),
+    [],
+  );
   const [runnerRemediationPending, setRunnerRemediationPending] =
     useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
@@ -1897,6 +1913,42 @@ export function SessionView({
       !queue.nextPageToken,
     queue: pending,
   });
+  // Hide-boundary freshness only. A refresh keeps its retained pages displayed
+  // (the startup list stays), but retained pages are not current proof that no
+  // response, follow-up or interaction arrived, so Info stays visible meanwhile.
+  const startupTranscriptCurrent =
+    Boolean(messages.data) &&
+    !messages.error &&
+    !messages.isPending &&
+    !messages.isFetching &&
+    !messages.nextPageToken;
+  const startupQueueCurrent =
+    Boolean(queue.data) &&
+    !queue.error &&
+    !queue.isPending &&
+    !queue.isFetching &&
+    !queue.nextPageToken;
+  const startupInteractionsCurrent =
+    Boolean(interactions.data) &&
+    !interactions.error &&
+    !interactions.isPending &&
+    !interactions.isFetching &&
+    !interactions.nextPageToken;
+  const startupBudgetCurrent =
+    budgetEvidence?.id === id && budgetEvidence.status === BudgetEvidence.Ready;
+  // A projected later follow-up (not the original Queued/Claimed/Accepted
+  // input) is local evidence that startup is no longer pristine.
+  const startupLocalFollowUp = projectedSubmissions.some((row) =>
+    [
+      SubmissionPhase.Preparing,
+      SubmissionPhase.Sending,
+      SubmissionPhase.Rejected,
+      SubmissionPhase.Uncertain,
+    ].includes(row.phase),
+  );
+  // Sidechat children keep their own Info in every initial execution phase.
+  const sidechatChild =
+    embedded || Boolean(object(data.fork).sidechat_parent_snapshot);
   // Retained startup metadata is historical. Presence is consumed only while
   // the original progress projection still has a current startup to display.
   const observeStartupOwner =
@@ -1955,15 +2007,13 @@ export function SessionView({
     active &&
     conversationActive &&
     !budgetBlocked &&
-    initialSessionStartup(
-      session,
-      progress,
-      Boolean(queue.data) &&
-        !queue.error &&
-        !queue.isPending &&
-        !queue.nextPageToken,
-      pending,
-    );
+    startupBudgetCurrent &&
+    !sidechatChild &&
+    !startupLocalFollowUp &&
+    startupTranscriptCurrent &&
+    startupQueueCurrent &&
+    startupInteractionsCurrent &&
+    initialSessionStartup(session, progress, startupQueueCurrent, pending);
   useLayoutEffect(() => {
     // Commit visibility only after moving focus out of the still-visible Info.
     // Keep the original controllers active; presentation must not recreate reads.
@@ -3191,6 +3241,7 @@ export function SessionView({
                           resource={session}
                           changed={setAcknowledged}
                           blocked={setBudgetBlocked}
+                          evidence={reportBudgetEvidence}
                         />
                       </section>
                       <ExecutionConfiguration
