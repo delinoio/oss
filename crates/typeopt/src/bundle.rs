@@ -235,11 +235,12 @@ pub(crate) fn literal_dynamic_imports(code: &str) -> Vec<String> {
         {
             continue;
         }
-        let rest = code[from..].trim_start();
-        let Some(rest) = rest.strip_prefix('(') else {
+        // Whitespace and comments may surround the parenthesis.
+        let open = crate::pipeline::skip_js_trivia(code, from);
+        if bytes.get(open) != Some(&b'(') {
             continue;
-        };
-        let rest = rest.trim_start();
+        }
+        let rest = &code[crate::pipeline::skip_js_trivia(code, open + 1)..];
         let Some(quote) = rest
             .chars()
             .next()
@@ -1016,6 +1017,17 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert!(out.contains("sourceMappingURL=index-NEW12345.js.map"));
         assert!(out.contains("see index-DnKDBunT.js later"));
         assert!(out.contains("xindex-DnKDBunT.jsx"));
+    }
+
+    #[test]
+    fn finds_literal_dynamic_imports_across_comments() {
+        assert_eq!(
+            super::literal_dynamic_imports(
+                "import/* a */(\"./a.js\");import(/* b */'./b.js');import \
+                 (\n`./c.js`);x.import('no');import(name);"
+            ),
+            ["./a.js", "./b.js", "./c.js"]
+        );
     }
 
     #[test]

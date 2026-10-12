@@ -81,6 +81,30 @@ pub fn static_imports(code: &str) -> Vec<String> {
     imports
 }
 
+/// Offset of the first byte at or after `at` that is not whitespace or part
+/// of a `/* */` or `//` comment.
+pub fn skip_js_trivia(code: &str, mut at: usize) -> usize {
+    let bytes = code.as_bytes();
+    loop {
+        while at < bytes.len() && bytes[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        if bytes[at.min(bytes.len())..].starts_with(b"/*") {
+            match code[at + 2..].find("*/") {
+                Some(end) => at += 2 + end + 2,
+                None => return bytes.len(),
+            }
+        } else if bytes[at.min(bytes.len())..].starts_with(b"//") {
+            match code[at..].find('\n') {
+                Some(end) => at += end + 1,
+                None => return bytes.len(),
+            }
+        } else {
+            return at.min(bytes.len());
+        }
+    }
+}
+
 /// Static module specifiers of bundler output in source order, independent
 /// of line layout: every `from"…"` and side-effect `import"…"` at a token
 /// boundary, with optional whitespace and comments before the quote. Minified
@@ -110,25 +134,7 @@ pub fn bundle_static_imports(code: &str) -> Vec<String> {
             continue;
         }
         // Whitespace and comments may separate the keyword from the quote.
-        let mut quote_at = at;
-        loop {
-            while quote_at < bytes.len() && bytes[quote_at].is_ascii_whitespace() {
-                quote_at += 1;
-            }
-            if bytes[quote_at..].starts_with(b"/*") {
-                match code[quote_at + 2..].find("*/") {
-                    Some(end) => quote_at += 2 + end + 2,
-                    None => break,
-                }
-            } else if bytes[quote_at..].starts_with(b"//") {
-                match code[quote_at..].find('\n') {
-                    Some(end) => quote_at += end + 1,
-                    None => break,
-                }
-            } else {
-                break;
-            }
-        }
+        let quote_at = skip_js_trivia(code, at);
         let Some(&quote) = bytes.get(quote_at) else {
             break;
         };
