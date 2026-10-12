@@ -1009,6 +1009,7 @@ it("retains compact response waiting after the original native user message appe
     outcome: "running",
     dispatch: "claimed",
     pending_inputs: 0,
+    last_input_sequence: 1,
     preparation: { job_id: newRequestId(), state: "ready" },
     active_execution_id: execution,
     initial_execution: { id: execution, input_id: input },
