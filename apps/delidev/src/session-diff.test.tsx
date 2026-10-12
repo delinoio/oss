@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRouterTransport, ConnectError, Code } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   ResourceService,
@@ -826,6 +826,36 @@ it("opens the repository-switch tab with the negotiated base and reuses it when 
     target: { value: f.other },
   });
   await waitFor(() => expect(f.store.snapshot(f.sessionId).selected).toBe(key));
+  expect(f.comparisons()).toHaveLength(2);
+});
+
+it("clears a completed repository selection so reselecting its originating tab keeps that tab's repository", async () => {
+  const f = tabsFixture();
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  const otherKey = f.store.snapshot(f.sessionId).selected;
+  // The next selection originates from the other-repository tab.
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.primary },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(2));
+  expect(f.store.snapshot(f.sessionId).selected).not.toBe(otherKey);
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Diff repository") as HTMLSelectElement).value,
+    ).toBe(f.primary),
+  );
+  // Reselecting the originating tab must show that tab's own repository.
+  act(() => f.store.select(f.sessionId, otherKey));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Diff repository") as HTMLSelectElement).value,
+    ).toBe(f.other),
+  );
   expect(f.comparisons()).toHaveLength(2);
 });
 

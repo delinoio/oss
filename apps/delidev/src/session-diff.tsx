@@ -113,6 +113,10 @@ export function SessionDiff({
     const current = pendingRef.current;
     if (!openComparison || !current || current.repository !== value.repository)
       return;
+    // The selection is complete once its descriptor is accepted. Clear it so
+    // reselecting the originating tab later cannot revive a stale repository.
+    pendingRef.current = undefined;
+    setPendingSelection(undefined);
     openComparison(value);
   };
   return (
