@@ -278,9 +278,7 @@ it("preserves authoritative count, confirms the selected credit and retains the 
   expect(screen.getByText("2 available reset credits")).toBeTruthy();
   expect(screen.getByText("1 returned details")).toBeTruthy();
   expect(value.request).not.toHaveBeenCalled();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Consume reset credit" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Consume reset credit" }));
   fireEvent.click(
     await screen.findByRole("button", {
       name: "Retry original quota or credit request",
@@ -1096,9 +1094,7 @@ it("keeps automatic credits off until exact confirmation and disables them expli
   ).toBeTruthy();
   expect(screen.getByText("Quota fixture")).toBeTruthy();
   expect(
-    screen.getByText(
-      "Uses the earliest-expiring eligible reset credit first.",
-    ),
+    screen.getByText("Uses the earliest-expiring eligible reset credit first."),
   ).toBeTruthy();
   expect(
     screen.getByText(
@@ -1106,18 +1102,12 @@ it("keeps automatic credits off until exact confirmation and disables them expli
     ),
   ).toBeTruthy();
   expect(
-    screen.getByText(
-      "Automatic use continues after this dialog closes.",
-    ),
+    screen.getByText("Automatic use continues after this dialog closes."),
   ).toBeTruthy();
   expect(
-    screen.getByText(
-      "Failed sessions do not resume automatically.",
-    ),
+    screen.getByText("Failed sessions do not resume automatically."),
   ).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Enable automatic use" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Enable automatic use" }));
   await waitFor(() => expect(value.consent).toHaveBeenCalledTimes(1));
   expect(value.consent.mock.calls[0][0]).toMatchObject({
     connectionId: value.connection,
@@ -1159,9 +1149,7 @@ it("fences a consent confirmation after account revision replacement", async () 
     ).disabled,
   ).toBe(true);
   expect(value.consent).not.toHaveBeenCalled();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Cancel" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(
     (
       (await screen.findByRole("checkbox", {
@@ -1196,9 +1184,7 @@ it.each(["light", "dark"])(
           "서버 실행 중에 동작합니다. 다시 로그인하면 재승인이 필요합니다.",
         ),
       ).toBeTruthy();
-      fireEvent.click(
-        screen.getByRole("button", { name: "취소" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "취소" }));
       expect(value.consent).not.toHaveBeenCalled();
     } finally {
       await i18n.changeLanguage("en");

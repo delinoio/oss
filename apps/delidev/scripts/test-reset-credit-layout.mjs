@@ -87,7 +87,9 @@ try {
             if (state === "uncertain") {
               const results = page.getByRole("region", {
                 name:
-                  language === "en" ? "Results and recovery" : "사용 결과 및 복구",
+                  language === "en"
+                    ? "Results and recovery"
+                    : "사용 결과 및 복구",
               });
               await results.waitFor();
               await results
@@ -119,19 +121,24 @@ try {
               });
               await page.waitForFunction(
                 () =>
-                  !document.querySelector(".reset-credit-automatic input").disabled,
+                  !document.querySelector(".reset-credit-automatic input")
+                    .disabled,
               );
               await automatic.click();
               const dialog = page.getByRole("dialog");
               await dialog.waitFor();
-              assert.equal(await dialog.locator(".reset-credit-rules li").count(), 3);
+              assert.equal(
+                await dialog.locator(".reset-credit-rules li").count(),
+                3,
+              );
               assert(
                 await dialog
                   .locator(".reset-credit-consent")
                   .evaluate((node) => node.scrollWidth <= node.clientWidth),
               );
               const enable = dialog.getByRole("button", {
-                name: language === "en" ? "Enable automatic use" : "자동 사용 켜기",
+                name:
+                  language === "en" ? "Enable automatic use" : "자동 사용 켜기",
                 exact: true,
               });
               assert((await enable.boundingBox()).height >= 40 * zoom);
@@ -149,7 +156,8 @@ try {
             } else {
               await page.waitForFunction(
                 () =>
-                  !document.querySelector(".reset-credit-summary button").disabled,
+                  !document.querySelector(".reset-credit-summary button")
+                    .disabled,
               );
               await use.focus();
               await page.keyboard.press("Enter");
@@ -168,8 +176,12 @@ try {
               assert.equal(await rows.count(), 3);
               assert.equal(await rows.locator("button").count(), 2);
               assert(
-                (await page.locator(".reset-credit-summary").textContent()).includes(
-                  language === "en" ? "3 available reset credits" : "사용 가능 3개",
+                (
+                  await page.locator(".reset-credit-summary").textContent()
+                ).includes(
+                  language === "en"
+                    ? "3 available reset credits"
+                    : "사용 가능 3개",
                 ),
               );
               assert.deepEqual(
@@ -186,15 +198,17 @@ try {
                 );
                 if (await row.locator("button").count())
                   assert(
-                  (await row.locator("button").boundingBox()).height >= 40 * zoom,
-                );
+                    (await row.locator("button").boundingBox()).height >=
+                      40 * zoom,
+                  );
                 assert.equal(
                   await row.locator("time").getAttribute("datetime"),
                   "2099-01-01T00:00:00Z",
                 );
               }
               const select = page.getByRole("button", {
-                name: language === "en" ? "Select Reset credit 2" : "리셋권 2 선택",
+                name:
+                  language === "en" ? "Select Reset credit 2" : "리셋권 2 선택",
                 exact: true,
               });
               await select.focus();
@@ -212,9 +226,7 @@ try {
               assert(
                 (
                   await page.locator(".reset-credit-confirmation").textContent()
-                ).includes(
-                  language === "en" ? "Reset credit 2" : "리셋권 2",
-                ),
+                ).includes(language === "en" ? "Reset credit 2" : "리셋권 2"),
               );
               assert(
                 (
@@ -233,7 +245,9 @@ try {
                 })
                 .click();
               assert(
-                await select.evaluate((node) => node === document.activeElement),
+                await select.evaluate(
+                  (node) => node === document.activeElement,
+                ),
               );
             }
             assert(

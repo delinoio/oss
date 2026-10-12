@@ -932,7 +932,9 @@ export function SubscriptionQuotaControls({
             {serverSupported &&
             text(serverObservation.error_code) === "unavailable" ? (
               <p role="status">
-                {copy("subscription-quota.serverQuotaAuthenticationUnavailable")}
+                {copy(
+                  "subscription-quota.serverQuotaAuthenticationUnavailable",
+                )}
               </p>
             ) : null}
             {text(serverObservation.id) ? (
@@ -950,7 +952,8 @@ export function SubscriptionQuotaControls({
             ) : null}
             {text(observation.id) ? (
               <p role="status">
-                {text(observation.action)} · {statusLabel(text(observation.phase))}
+                {text(observation.action)} ·{" "}
+                {statusLabel(text(observation.phase))}
                 {outcomeLabels[text(observation.outcome)]
                   ? copy("subscription-quota.message_2fa20b", {
                       v0: outcomeLabels[text(observation.outcome)],
@@ -969,7 +972,8 @@ export function SubscriptionQuotaControls({
                     )}
                   </p>
                 </div>
-                {reconcilingServer && serverCredit.cleanup_confirmed !== true ? (
+                {reconcilingServer &&
+                serverCredit.cleanup_confirmed !== true ? (
                   <p className="reset-credit-secondary">
                     {copy("subscription-quota.cleanupBeforeReconciliation")}
                   </p>
@@ -980,7 +984,8 @@ export function SubscriptionQuotaControls({
                   disabled={
                     !creditReady ||
                     !creditsSupported ||
-                    (reconcilingServer && serverCredit.cleanup_confirmed !== true)
+                    (reconcilingServer &&
+                      serverCredit.cleanup_confirmed !== true)
                   }
                   onClick={() =>
                     void reconcile.send({
@@ -1051,7 +1056,9 @@ export function SubscriptionQuotaControls({
                 disabled={preferences.busy}
                 onClick={preferences.retry}
               >
-                {copy("subscription-quota.retryOriginalRecoveryPreference_fa3cb3")}
+                {copy(
+                  "subscription-quota.retryOriginalRecoveryPreference_fa3cb3",
+                )}
               </SettingsActionButton>
             ) : null}
             {observation.action === "reset-credit" || text(serverCredit.id) ? (
