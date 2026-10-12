@@ -194,12 +194,12 @@
   "settings.appInformation.loading": "앱 정보를 불러오는 중입니다…",
   "settings.appInformation.unavailable": "이 브라우저에서는 앱 정보를 확인할 수 없습니다.",
   "settings.appInformation.contextError": "앱 정보를 확인하지 못했습니다.",
-  "settings.appInformation.macIntel": "macOS · Intel",
-  "settings.appInformation.macApple": "macOS · Apple Silicon",
-  "settings.appInformation.windowsX64": "Windows · x64",
-  "settings.appInformation.windowsArm": "Windows · ARM64",
-  "settings.appInformation.linuxX64": "Linux · x64",
-  "settings.appInformation.linuxArm": "Linux · ARM64",
+  "settings.appInformation.macIntel": "macOS · Intel 프로세서",
+  "settings.appInformation.macApple": "macOS · Apple 실리콘",
+  "settings.appInformation.windowsX64": "Windows · x64 프로세서",
+  "settings.appInformation.windowsArm": "Windows · ARM64 프로세서",
+  "settings.appInformation.linuxX64": "Linux · x64 프로세서",
+  "settings.appInformation.linuxArm": "Linux · ARM64 프로세서",
   "settings.appInformation.updates": "앱 업데이트",
   "settings.appInformation.updateHelp": "업데이트를 확인한 후 다운로드와 설치를 진행할 수 있습니다.",
   "settings.appInformation.related": "관련 정보",
@@ -209,5 +209,6 @@
   "settings.appInformation.sourceNotices": "이 링크는 현재 저장소의 소스 고지를 보여줍니다. 설치된 패키지의 전체 목록은 아닙니다.",
   "settings.appInformation.opening": "기본 브라우저에서 여는 중입니다…",
   "settings.appInformation.openError": "링크를 열지 못했습니다. 직접 다시 시도하세요.",
-  "settings.appInformation.navigate": "앱 정보 열기"
+  "settings.appInformation.navigate": "앱 정보 열기",
+  "settings.productResourceRevision": "{{v0}} · 리비전 {{v1}}"
 }

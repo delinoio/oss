@@ -443,8 +443,10 @@ function RepositorySaveReview({
       ) : null}
       {fresh ? (
         <p>
-          {productResourceName(productLabel, fresh)} · revision{" "}
-          {fresh.revision.toString()}
+          {copy("settings.productResourceRevision", {
+            v0: productResourceName(productLabel, fresh),
+            v1: fresh.revision.toString(),
+          })}
         </p>
       ) : null}
       {fresh ? (
