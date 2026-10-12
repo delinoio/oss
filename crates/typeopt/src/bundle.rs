@@ -913,6 +913,9 @@ fn rehash(
         })
         .collect();
     let mut renamed = BTreeMap::<String, String>::new();
+    // Names a new file must not take: every file in the bundle (a rename
+    // would replace it) and every name already assigned.
+    let mut taken: BTreeSet<String> = files.iter().map(|f| base(f)).collect();
     for old in &renaming {
         // Renamed files this file reaches, including itself.
         let mut reach = BTreeSet::from([old.clone()]);
@@ -943,10 +946,15 @@ fn rehash(
                 .map(|&b| alphabet[(b % 64) as usize] as char)
                 .collect();
             new_name = format!("{name}{separator}{hash}.{ext}");
-            if hashed_name(&new_name).is_some() && new_name != *old {
+            if hashed_name(&new_name).is_some()
+                && !taken.contains(&new_name)
+                && !taken.contains(&format!("{new_name}.map"))
+            {
                 break;
             }
         }
+        taken.insert(new_name.clone());
+        taken.insert(format!("{new_name}.map"));
         renamed.insert(old.clone(), new_name);
     }
     // A reference can spell a name with URL or HTML escapes (`%2D`,
