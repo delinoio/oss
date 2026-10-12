@@ -136,6 +136,9 @@ func TestMCPSelectionsPreserveLegacyOmissionAndPortableRebinding(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	id, definition, worker := domain.NewID(), domain.NewID(), domain.NewID()
 	agent := domain.Agent{Name: "Portable MCP Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: domain.NewID(), NativeID: "fixture"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: domain.NewID(), Weight: 1}}}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}, MCP: &domain.MCPSelectionList{Selections: []domain.MCPSelection{{DefinitionID: definition, WorkerDeviceID: worker, Unresolved: true, Name: "Original safe name"}}}}
+	// Portable v7 retains the lower layer's typed harness selector contract.
+	agent.HarnessSettings = &domain.HarnessSettings{Version: 1}
+	agent.Routes[0].ModelSelection = domain.OverrideHarnessSetting("fixture")
 	doctorPut(t, s, domain.AgentKind, id, 0, agent)
 	err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
 		legacy := agent
