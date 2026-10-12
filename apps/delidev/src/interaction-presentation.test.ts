@@ -36,15 +36,26 @@ function row(data: Record<string, unknown>, revision = 9n) {
     documentJson: encode(data),
   });
 }
+const acceptedResponse = {
+  id: newRequestId(),
+  state: "accepted",
+  input: { answers: { original: ["A"] } },
+  accepted_at: "2026-01-02T03:04:05.123456789Z",
+  claim: {
+    id: newRequestId(),
+    job_id: newRequestId(),
+    machine_id: newRequestId(),
+    instance_id: newRequestId(),
+    device_id: newRequestId(),
+    claimed_at: "2026-01-02T03:04:06Z",
+  },
+  delivery: { state: "transmitted", sequence: 10 },
+  acceptance: { evidence: "native-question-output", sequence: 11 },
+};
 const accepted = {
   ...original,
   closure: "native-closed",
-  response: {
-    state: "accepted",
-    claim: { id: newRequestId() },
-    delivery: { state: "transmitted", sequence: 10 },
-    acceptance: { evidence: "native-question-output", sequence: 11 },
-  },
+  response: acceptedResponse,
 };
 it("keeps pending, unknown and contradictory responses compact without inferring acceptance", () => {
   for (const state of [
@@ -72,6 +83,70 @@ it("keeps pending, unknown and contradictory responses compact without inferring
     interactionProjection(row({ ...accepted, response: { state: "accepted" } }))
       .presentation,
   ).toBe(InteractionPresentation.Pending);
+});
+it("keeps accepted questions with a malformed envelope pending and unavailable", () => {
+  const withResponse = (patch: Record<string, unknown>) => ({
+    ...accepted,
+    response: { ...acceptedResponse, ...patch },
+  });
+  const malformed: Record<string, unknown>[] = [
+    { claim: {} },
+    { claim: { id: newRequestId() } },
+    { claim: { ...acceptedResponse.claim, device_id: "device" } },
+    { claim: { ...acceptedResponse.claim, claimed_at: "yesterday" } },
+    { id: undefined },
+    { id: "not-a-uuid" },
+    { input: undefined },
+    { input: {} },
+    { input: { answers: { original: "A" } } },
+    { accepted_at: undefined },
+    { accepted_at: "2026-01-02" },
+    { delivery: undefined },
+    { delivery: { state: "not-sent", sequence: 10 } },
+    { delivery: { state: "transmitted", sequence: "10" } },
+    { delivery: { state: "transmitted", sequence: -1 } },
+    { delivery: { state: "transmitted", sequence: 1.5 } },
+    { delivery: { state: "transmitted", sequence: 2 ** 53 } },
+    { delivery: { state: "transmitted" } },
+    { acceptance: undefined },
+    { acceptance: { evidence: "native-opencode-question-reply", sequence: 11 } },
+    { acceptance: { evidence: "native-question-output", sequence: "11" } },
+    { acceptance: { evidence: "native-question-output", sequence: 10 } },
+    { acceptance: { evidence: "native-question-output", sequence: 9 } },
+    { acceptance: { evidence: "native-question-output", sequence: 10.5 } },
+    { acceptance: { evidence: "native-question-output", sequence: 2 ** 53 } },
+  ];
+  for (const patch of malformed) {
+    const projection = interactionProjection(row(withResponse(patch)));
+    expect(projection.presentation, JSON.stringify(patch)).toBe(
+      InteractionPresentation.Pending,
+    );
+    expect(projection.unavailable, JSON.stringify(patch)).toBe(true);
+    expect(displayedInteraction(projection, new Set())).toBe(true);
+  }
+  const missingCreatedAt = { ...acceptedResponse } as Record<string, unknown>;
+  delete missingCreatedAt.accepted_at;
+  const missingInput = { ...acceptedResponse } as Record<string, unknown>;
+  delete missingInput.input;
+  for (const response of [missingCreatedAt, missingInput]) {
+    const projection = interactionProjection(
+      row({ ...accepted, response }),
+    );
+    expect(projection.presentation).toBe(InteractionPresentation.Pending);
+    expect(projection.unavailable).toBe(true);
+  }
+  const complete = interactionProjection(row(accepted));
+  expect(complete.presentation).toBe(InteractionPresentation.Retired);
+  expect(complete.unavailable).toBe(false);
+  expect(displayedInteraction(complete, new Set())).toBe(false);
+  expect(
+    displayedInteraction(complete, new Set([complete.mutationKey])),
+  ).toBe(true);
+  expect(
+    interactionProjection(
+      row(withResponse({ delivery: { state: "uncertain", sequence: 0 } })),
+    ).presentation,
+  ).toBe(InteractionPresentation.Retired);
 });
 it("retires only accepted or safely closed questions and keeps receipt recovery", () => {
   for (const data of [
