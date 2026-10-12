@@ -1558,7 +1558,9 @@ try {
             });
           await input.press("Escape");
           assert.equal(await input.inputValue(), committed);
-          await assertLabelStable(`${fixtureLanguage}/${theme}/${width} closed`);
+          await assertLabelStable(
+            `${fixtureLanguage}/${theme}/${width} closed`,
+          );
           await input.click();
           await input.fill("unsupported language");
           await page
