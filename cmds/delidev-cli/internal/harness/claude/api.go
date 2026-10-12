@@ -152,7 +152,12 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 				filtered = append(filtered, entry)
 			}
 		}
-		env = append(filtered, "CLAUDE_CODE_OAUTH_TOKEN="+string(config.ManagedToken), "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home)
+		// The pinned Claude CLI's host-managed provider mode preserves native
+		// OAuth in the parent while its shared child-environment builder removes
+		// OAuth credentials from Bash, hooks, and MCP subprocesses. Do not use
+		// CLAUDE_CODE_SUBPROCESS_ENV_SCRUB here: that mode forces permission to
+		// default and would discard the user's selected permission contract.
+		env = append(filtered, "CLAUDE_CODE_OAUTH_TOKEN="+string(config.ManagedToken), "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1")
 	} else if config.Subscription != nil {
 		if config.Subscription.ID.Validate() != nil || security.CheckPrivateDir(config.Subscription.Home) != nil {
 			return process.Config{}, apiConfigurationError()
