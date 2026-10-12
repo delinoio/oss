@@ -32,8 +32,9 @@ impl HtmlTag {
     }
 }
 
-/// Start tags of an HTML document. Comments are skipped; attribute names are
-/// case-insensitive and may have whitespace around `=`; values may be
+/// Start tags of an HTML document. Comments and the contents of raw-text
+/// elements (`script`, `style`, `textarea`, `title`) are skipped; attribute
+/// names are case-insensitive and may have whitespace around `=`; values may be
 /// double-quoted, single-quoted or unquoted.
 pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
     let bytes = html.as_bytes();
@@ -99,6 +100,15 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
                 continue;
             }
             attributes.push((attribute, value));
+        }
+        // Raw-text elements contain no markup: skip to their end tag so
+        // script or style text that looks like a tag is not reported.
+        if matches!(name.as_str(), "script" | "style" | "textarea" | "title") {
+            let close = format!("</{name}");
+            i = html
+                .get(i.min(html.len())..)
+                .and_then(|rest| rest.to_ascii_lowercase().find(&close))
+                .map_or(html.len(), |end| i + end);
         }
         tags.push(HtmlTag { name, attributes });
     }
@@ -646,6 +656,13 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert_eq!(tags[0].attribute("integrity"), Some("sha384-x"));
         assert_eq!(tags[0].attribute("defer"), Some(""));
         assert_eq!(tags[1].attribute("href"), Some("b.js"));
+        // Markup inside script text is not a tag.
+        let tags = html_tags(
+            r#"<script>const s='<script type="module" src="./legacy.js" integrity=x>';</SCRIPT><p>"#,
+        );
+        let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["script", "p"]);
+        assert_eq!(tags[0].attribute("src"), None);
     }
 
     #[test]
