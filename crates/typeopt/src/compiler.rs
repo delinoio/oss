@@ -1119,8 +1119,9 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
             // A script resolves against the first `<base href>` parsed before
             // it, or against the page.
             let mut base: Option<url::Url> = None;
-            // Template and noscript contents are inert: their base and
-            // script elements neither apply nor run.
+            // A base inside template or noscript content does not apply.
+            // Scripts and handlers there are still counted: template content
+            // can be cloned into the document and run later.
             let mut inert = 0usize;
             for tag in &tags {
                 match tag.name.as_str() {
@@ -1132,10 +1133,43 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                         inert = inert.saturating_sub(1);
                         continue;
                     }
-                    _ if inert > 0 => continue,
                     _ => {}
                 }
+                // Event handlers and `javascript:` URLs are inline code that
+                // can import chunks.
+                for (attribute, value) in &tag.attributes {
+                    let code = if attribute.starts_with("on") {
+                        Some(value.as_str())
+                    } else {
+                        let trimmed = value.trim_start();
+                        trimmed
+                            .get(..11)
+                            .filter(|scheme| scheme.eq_ignore_ascii_case("javascript:"))
+                            .map(|_| &trimmed[11..])
+                    };
+                    let Some(code) = code else {
+                        continue;
+                    };
+                    let dynamic = crate::bundle::literal_dynamic_imports(code);
+                    if dynamic.non_literal {
+                        found.all_public = true;
+                    }
+                    for raw in dynamic.literals {
+                        match crate::bundle::decode_js_string(&raw).filter(|_| !raw.contains("${"))
+                        {
+                            Some(specifier) => {
+                                if let Some(file) =
+                                    resolve(root, base.as_ref().unwrap_or(&page), &specifier)
+                                {
+                                    found.imported.insert(file);
+                                }
+                            }
+                            None => found.all_public = true,
+                        }
+                    }
+                }
                 if tag.name == "base"
+                    && inert == 0
                     && base.is_none()
                     && let Some(href) = tag.attribute("href")
                 {
