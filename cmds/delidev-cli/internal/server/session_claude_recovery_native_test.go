@@ -253,7 +253,7 @@ func assertClaudeRecoveryComparison(t *testing.T, ctx context.Context, root stri
 			AccountID: request.AccountID, ConnectionID: request.ConnectionID, Completion: request.Completion, InputMode: request.InputMode, AcceptedInputs: request.AcceptedInputs},
 	}
 	copy(ref.Checkpoint.PromptDigest[:], digest)
-	manager := &workspace.Manager{Root: root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+	manager := &workspace.Manager{NamedDirectories: true, Root: root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
 	for range 2 {
 		proof, err := worker.InspectCompletedExecution(ctx, manager, ref)
 		if err != nil || proof != expected {

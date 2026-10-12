@@ -133,6 +133,10 @@ func TestTitleSendClaimPrecedesNativeProfileVerification(t *testing.T) {
 	if workerClient.calls.Load() != 1 || domain.SafeError(err).Code != domain.ServerUnavailable {
 		t.Fatalf("title registration did not fail before native profile verification: calls=%d error=%v", workerClient.calls.Load(), err)
 	}
+	entries, err := os.ReadDir(filepath.Join(config.Root, "title-runtimes"))
+	if err != nil || len(entries) != 0 {
+		t.Fatal("failed registration retained its private title runtime", len(entries), err)
+	}
 }
 
 // TestOptInInstalledCodexTitleInference exercises one real pinned Codex title

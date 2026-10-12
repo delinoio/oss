@@ -1,5 +1,9 @@
 # DeliDev v1 Connect contract
 
+## Named managed checkout negotiation
+
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` is allocated and activated with the complete frozen checkout layout. Preserve Worker 19 remote clone ownership and every existing numeric assignment. Private version-1 preparation/result JSON adds optional immutable `directory_name`; historical omission preserves bytes and UUID paths. Original session/Schedule admission, assignment, execution, storage/restoration and independent Fork separately require the negotiated capability. Unsupported peers cannot receive named work or substitute UUID directories. No public RPC, System capability or SQLite migration is added. Go and TypeScript Worker descriptors expose the new enum; other service/query declarations remain unchanged. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names) and [storage contract](cmds-delidev-storage-contract.md#frozen-live-checkout-layout).
+
 ## Read-only schedule calendar preview
 
 `ScheduleService.PreviewScheduleCalendar` accepts owner and paired-client
@@ -1471,3 +1475,31 @@ count, server UTC observation time and replay state. This operation acknowledges
 inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
+
+## Startup group timing envelope
+
+Resource.startup_timing uses field 10. SessionStartupTiming has workspace 1 and
+agent 2. StartupGroupTiming has job_id 1, execution_id 2, started_at 3 and
+finished_at 4. The complete additive declaration allocation and generated split
+Go/TypeScript bindings belong to the feature under the shared allocation workflow.
+The metadata is optional and server-owned. The common Session Resource projection
+strips its private startup_timing key from document_json across individual/list,
+change and event reads, including malformed private timing. Legacy closed Session
+JSON and old protobuf peers remain compatible. No Worker report, new RPC,
+capability or database migration is added.
+
+## Tailscale connection protocol
+
+System `TAILSCALE_CONNECTIONS_V1 = 93` negotiates `TailscaleService` in
+`v1/tailscale.proto`. The complete additive field and method ownership is recorded
+in the allocation ledger. Preserve DeviceType client/Worker meaning and all
+existing capability numbers. Generated Go, Connect Go, TypeScript and Connect
+Query bindings come from the pinned generators.
+
+Local authenticated discovery/access and original outgoing request operations
+remain separate from public bounded target request/status/key-proved cancellation
+and encrypted Worker delivery. Authenticated owner/client decisions retain the
+original actor, transcript and existing Device pairing receipt. Bounded JSON
+projections follow the closed states and private/public separation in the
+[connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
+No new SQLite entity or migration is introduced.

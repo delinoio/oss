@@ -30,6 +30,10 @@ func TestSidechatReferenceRetainsParentOwnershipUntilChildDeletion(t *testing.T)
 			}
 			sourceInput, _ := requestFor(checkout)
 			sourceInput.Type = kind
+			if kind == domain.Worktree {
+				m.NamedDirectories = true
+				sourceInput.Repositories[0].DirectoryName = "oss"
+			}
 			if kind == domain.GeneralChat {
 				sourceInput.Repositories = []RepositorySpec{}
 				sourceInput.PrimaryRepository = ""

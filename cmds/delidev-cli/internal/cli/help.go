@@ -111,8 +111,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
   session diagnostics --id ID [--execution-id ID] [--page-size 50] [--page-token TOKEN]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
-  session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
-  session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
+  session diff --id ID --repository-id ID [--comparison branch|working-tree|staged|creation] [--base-type local-branch|remote-branch|commit --base-name NAME [--base-remote REMOTE]] [--path RELATIVE]
+  session review-context --id ID --repository-id ID [--comparison branch|working-tree|staged|creation] [--base-type local-branch|remote-branch|commit --base-name NAME [--base-remote REMOTE]] [--path RELATIVE]
+    Both commands default to working-tree when --comparison is omitted.
+    Base flags are valid only with --comparison branch; --base-type and --base-name are required.
+    --base-remote is required for remote-branch; omit it for local-branch and commit.
   session review create|edit|delete|submit|list|get --id SESSION [--review-id ID] [--revision N] [--input PATH]
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]

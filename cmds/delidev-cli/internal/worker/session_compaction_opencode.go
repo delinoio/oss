@@ -72,7 +72,7 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	if domain.Decode(i.Assignment.Preparation, &prep) != nil || domain.Decode(i.Assignment.Manifest, &manifest) != nil || workspace.ValidateResult(prep, manifest, runtime.GOOS) != nil {
 		return nil, domain.CompactionUncertain()
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: logger}
 	previous := workspace.ExecutionPredecessor{JobID: i.SourceJobID, ExecutionID: i.Assignment.ExecutionID}
 	if i.Previous != nil {
 		previous = workspace.ExecutionPredecessor{JobID: i.Previous.JobID, ExecutionID: i.Previous.ActionID}

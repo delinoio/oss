@@ -60,7 +60,7 @@ func newStorageFixture(t *testing.T) *storageFixture {
 	if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
 		t.Fatal(err)
 	}
-	f.manager = &workspace.Manager{Root: filepath.Join(t.TempDir(), "worker"), Logger: service.logger}
+	f.manager = &workspace.Manager{NamedDirectories: true, Root: filepath.Join(t.TempDir(), "worker"), Logger: service.logger}
 	preparation := workspace.PrepareRequest{SessionID: f.session, MachineID: f.machine, Type: domain.GeneralChat}
 	manifest, err := f.manager.Prepare(context.Background(), preparation)
 	if err != nil {

@@ -59,7 +59,7 @@ Run package Go tests with race detection and `go vet ./cmds/delidev-cli/...`. Te
 
 ## Dependencies and Integrations
 
-Uses the existing System/Device Connect services, private filesystem primitives and Worker/device pairing implementation. No new server RPC, schema migration, credential broker, OS service or remote supervisor is introduced.
+Uses the existing System/Device Connect services, private filesystem primitives and Worker/device pairing implementation. The saved-profile core introduces no server RPC, schema migration, credential broker, OS service or remote supervisor. The additive TailscaleService below owns native discovery and approval.
 
 ## Change Triggers
 
@@ -88,3 +88,80 @@ Explicit-port authorities retain loopback IP-family checks and require a valid
 nonzero decimal port. Malformed hosts, numeric IPv4 aliases and foreign hosts
 remain denied. Exact configured browser origins and authenticated RPC checks
 remain independent; this changes no listener or privileged-port ownership.
+
+## Tailscale connections
+
+The installed-client adapter is `cmds/delidev-cli/internal/tailscale`. Go owns
+bounded native observations and one original foreground Serve child through the
+existing process journal. Native desktop infrastructure retains its executable
+and product-window admission. The renderer uses TailscaleService Connect RPC;
+Tailscale identity headers, names and peer visibility grant no trust.
+
+Discovery is a cancellable five-second, 1 MiB `status --json` read with a maximum
+of 512 peers. Inventory stays in the current Settings presentation. Report
+Running, NeedsLogin, NeedsMachineAuth, Stopped, Starting and NoState distinctly.
+Tags establish tagged ownership; nonzero AltSharerUserID establishes shared
+provenance; exact nonzero Self.UserID equality establishes own devices only when
+ShareeNode does not indicate the shared-to direction. Other provenance stays
+unknown. Online and checked DeliDev support are separate observations.
+
+Check refreshes the original visible peer identity and sends a single bounded
+normal-TLS request to its canonical HTTPS hostname on port 8443. No redirects,
+ambient proxies, alternate ports, scans, certificate bypass or automatic setup
+is allowed. Unsupported or offline peers retain manual pairing and SSH paths.
+
+Access defaults to Off. Enable requires Running, exact Self FQDN certificate
+eligibility in CertDomains and Self.CapMap membership for `https`. Refuse existing
+TCP, Web, Services, Foreground or Funnel configuration. The validated installed CLI runs
+only `serve --https=8443 http://127.0.0.1:<ingress-port>` in foreground mode. Its
+original IPN watcher owns SessionID creation and parent ETag/If-Match CAS; a race
+or port conflict fails without overwriting foreign configuration. Preserve the
+original child journal before releasing its start barrier and require the sole
+new foreground root proxy plus normal HTTPS proof before Ready.
+
+The separate ephemeral loopback ingress mounts connection identity, bounded
+approval and existing authenticated Connect business transports. It excludes
+private generation challenges, native relays, locators and UI paths. Authenticated
+status exposes the public ingress origin instead of the private listener.
+Disable, native child exit, server Stop and Quit fence ingress before joining
+only the retained child. Never call global reset or port-wide off. Reconcile a
+retained owner even when Enabled is false. Unknown native cleanup stays required.
+Persist opt-in server/origin intent; restart readmits current identity and cannot
+rewrite an existing origin or saved profile. Independent outbound Workers retain
+their existing lifetimes.
+
+Private `tailscale/access.json` retains at most 1,024 exact access receipts and
+128 KiB. Original enable/disable retries cannot reapply superseded intent. Approval
+and outgoing journals retain at most 256 records per directory, each at most
+64 KiB; no peer inventory is persisted. Existing private filesystem checks and
+UUID-v7 path validation apply. These records are not configuration exports or
+SQLite migrations.
+
+First connection requests expire after five minutes. Their confirmation transcript
+binds both X25519 ephemeral public keys, original request/server/origin, literal
+name, client/Worker role, expiry and the selected server/origin for Worker setup.
+The target's authenticated original owner/client explicitly allows or denies the
+matching code. Client approval freezes the original CreatePairing UUID and
+random verifier before its receipt; AES-GCM encrypts the single-use existing
+device-pairing grant to the requester with the complete transcript as associated
+data. Exact receipt recovery preserves original pairing material after expiry;
+expiry never authorizes a fresh grant. Pending cancellation proves the requesting
+private key through the encrypted original transcript and creates no device.
+
+Outgoing client completion uses the existing saved-profile pairing journal and
+immutable canonical origin. Approved Worker setup encrypts the selected server's
+original Worker grant to the target approval key, reauthenticates the original
+approver and pairs an independent outbound scope under
+`tailscale/workers/<original-request-id>`. Prepare the original pairing request/token journal before accepting delivery,
+then retry only that journal. Startup uses the existing detached Worker controller. Missing original journals require recovery, never replacement
+registration. Client/Worker completion does not create an Agent Worker or infer
+harness/account readiness.
+
+CLI commands are `tailscale discover|check|access|enable|disable|connect|register-worker|
+inspect|requests|approvals|decide|cancel`. Mutations require original request UUIDs;
+inspect reconciles only that original request. Product output contains public
+metadata, confirmation codes and opaque IDs, never private keys, pairing grants,
+raw CLI output, peer inventories in logs or native secrets. Structured logs retain
+operation, phase and safe error code. Real installed Tailscale, two-device TLS,
+SSH and packaged-platform acceptance remain separate from fixtures and source
+validation.

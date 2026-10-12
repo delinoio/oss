@@ -91,7 +91,7 @@ func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
 			t.Fatal("schedule depended on a connected checkout")
 		}
 	}
-	manager := workspace.Manager{Root: f.workerRoot, Git: workspace.Git{Executable: testgit.Executable(t, sources)}}
+	manager := workspace.Manager{NamedDirectories: true, Root: f.workerRoot, Git: workspace.Git{Executable: testgit.Executable(t, sources)}}
 	manifest, err := manager.Prepare(ctx, preparation)
 	if err != nil {
 		t.Fatal(err)
@@ -256,13 +256,21 @@ func TestRemoteWorkspaceSelectionPinsURLAndIgnoresCheckout(t *testing.T) {
 		}
 		repository, _ := store.Decode[domain.Repository](r)
 		repository.RemoteURL = "https://github.com/fixture/reconfigured.git"
+		repository.Name = "Renamed repository"
 		_, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", repository)
 		return err
 	})
 	job, _ := store.Decode[domain.Job](f.record(t, domain.JobKind, jobRecord.ID))
 	var accepted workspace.PrepareRequest
-	if domain.Decode(job.Input, &accepted) != nil || accepted.Repositories[0].RemoteURL != pinned.Repositories[0].RemoteURL || accepted.Repositories[0].SourceKind != workspace.RemoteCloneSource {
-		t.Fatal("configuration edit changed accepted schedule source")
+	if domain.Decode(job.Input, &accepted) != nil || accepted.Repositories[0].RemoteURL != pinned.Repositories[0].RemoteURL || accepted.Repositories[0].SourceKind != workspace.RemoteCloneSource || accepted.Repositories[0].DirectoryName != pinned.Repositories[0].DirectoryName {
+		t.Fatal("configuration edit changed accepted schedule source or frozen name")
+	}
+	later, err := read(domain.Worktree)
+	if err != nil || later.Repositories[0].DirectoryName != "Renamed repository" || pinned.Repositories[0].DirectoryName == later.Repositories[0].DirectoryName {
+		t.Fatal("new acceptance did not freeze the renamed registration", err)
+	}
+	if local.Repositories[0].DirectoryName != "" {
+		t.Fatal("Local acquired a managed directory name")
 	}
 	f.mutate(t, func(tx *store.Tx) error {
 		r, err := tx.Get(domain.MachineKind, f.machine)

@@ -41,7 +41,7 @@ func newImageContinuationFixture(t *testing.T, images bool) (*continuationFixtur
 	if domain.Decode(preparation.DocumentJson, &job) != nil || domain.Decode(job.Input, &request) != nil {
 		t.Fatal("invalid preparation")
 	}
-	manager := workspace.Manager{Root: base.workerRoot}
+	manager := workspace.Manager{NamedDirectories: true, Root: base.workerRoot}
 	manifest, err := manager.Prepare(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)

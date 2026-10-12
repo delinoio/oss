@@ -226,6 +226,11 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if domain.Decode(job.Input, &input.Preparation) != nil || domain.Decode(job.Output, &input.Manifest) != nil {
 			return nil, workspace.ResultUncertain()
 		}
+		if _, machine, err := activeMachine(tx, session.MachineID); err != nil {
+			return nil, err
+		} else if err := requireNamedPreparation(machine, job.Input); err != nil {
+			return nil, err
+		}
 		wasStored := session.Storage != nil && session.Storage.State == domain.WorkspaceStored
 		if wasStored {
 			input.PreviousState = domain.WorkspaceStored

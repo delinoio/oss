@@ -77,7 +77,7 @@ func TestWorkspaceReadRelayWhileExecutionRemainsClaimed(t *testing.T) {
 	if connect.CodeOf(busy.err) != connect.CodeResourceExhausted {
 		t.Fatal("unbounded read concurrency", busy.err)
 	}
-	m := workspace.Manager{Root: f.workerRoot}
+	m := workspace.Manager{NamedDirectories: true, Root: f.workerRoot}
 	result, err := m.ReadWorkspace(ctx, request)
 	if err != nil {
 		t.Fatal(err)
