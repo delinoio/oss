@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -178,11 +178,17 @@ it("retains saved rows after a failed inventory read and keeps pending private p
   fireEvent.click(
     screen.getByRole("button", { name: "Close Add a server connection" }),
   );
+  for (let visit = 0; visit < 2; visit++) {
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Add a server connection" }),
+    ).toBeNull();
+    expect(value.actions.pair).toHaveBeenCalledTimes(1);
+  }
   fireEvent.click(
     screen.getByRole("button", { name: "Continue Add a server connection" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   expect(
     (
       screen.getByLabelText(
@@ -214,11 +220,17 @@ it("retains original saved-profile rename and removal receipts across page movem
   fireEvent.click(
     screen.getByRole("button", { name: "Close Rename Studio server" }),
   );
+  for (let visit = 0; visit < 2; visit++) {
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Rename Studio server" }),
+    ).toBeNull();
+    expect(value.actions.rename).toHaveBeenCalledTimes(1);
+  }
   fireEvent.click(
     screen.getByRole("button", { name: "Continue Rename Studio server" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Retry original name edit" }),
   );
@@ -238,11 +250,17 @@ it("retains original saved-profile rename and removal receipts across page movem
   fireEvent.click(
     screen.getByRole("button", { name: "Close Confirm connection removal" }),
   );
+  for (let visit = 0; visit < 2; visit++) {
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm connection removal" }),
+    ).toBeNull();
+    expect(value.actions.remove).toHaveBeenCalledTimes(1);
+  }
   fireEvent.click(
     screen.getByRole("button", { name: "Continue Confirm connection removal" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Retry original connection removal" }),
   );
@@ -256,4 +274,161 @@ it("retains original saved-profile rename and removal receipts across page movem
   expect(vi.mocked(value.actions.remove).mock.calls[0]?.[2]).toBe(
     value.profile.revision,
   );
+});
+
+it.each([
+  {
+    action: "Add server",
+    title: "Add a server connection",
+    field: "Connection name",
+  },
+  {
+    action: "Rename Studio server",
+    title: "Rename Studio server",
+    field: "New connection name",
+  },
+  {
+    action: "Remove Studio server",
+    title: "Confirm connection removal",
+    field: undefined,
+  },
+])(
+  "retains dismissed $title across page moves and explicit Continue",
+  async ({ action, title, field }) => {
+    const value = fixture();
+    render(<value.Harness />);
+    await screen.findByRole("button", { name: "Open Studio server" });
+    if (action !== "Add server")
+      fireEvent.click(screen.getByLabelText("Actions for Studio server"));
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    const dialog = screen.getByRole("dialog", {
+      name: title,
+    }) as HTMLDialogElement;
+    const input = field
+      ? (screen.getByLabelText(field) as HTMLInputElement)
+      : undefined;
+    if (input)
+      fireEvent.change(input, { target: { value: "Retained draft" } });
+    for (const dismissal of ["Close", "Escape"]) {
+      if (dismissal === "Close")
+        fireEvent.click(
+          screen.getByRole("button", { name: `Close ${title}` }),
+        );
+      else fireEvent(dialog, new Event("cancel", { cancelable: true }));
+      expect(dialog.open).toBe(false);
+      const navigation = screen.getByRole("button", {
+        name: "Toggle Settings",
+      });
+      navigation.focus();
+      for (let visit = 0; visit < 2; visit++) {
+        fireEvent.click(navigation);
+        fireEvent.click(navigation);
+        expect(dialog.open).toBe(false);
+        expect(
+          screen.getByRole("button", { name: `Continue ${title}` }),
+        ).toBeTruthy();
+        expect(document.activeElement).toBe(navigation);
+      }
+      fireEvent.click(
+        screen.getByRole("button", { name: `Continue ${title}` }),
+      );
+      expect(screen.getByRole("dialog", { name: title })).toBe(dialog);
+      expect(dialog.open).toBe(true);
+      if (field) {
+        expect(screen.getByLabelText(field)).toBe(input);
+        expect(input?.value).toBe("Retained draft");
+      }
+      expect(value.actions.pair).not.toHaveBeenCalled();
+      expect(value.actions.rename).not.toHaveBeenCalled();
+      expect(value.actions.remove).not.toHaveBeenCalled();
+    }
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    const navigation = screen.getByRole("button", { name: "Toggle Settings" });
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(navigation);
+    fireEvent.click(navigation);
+    expect(dialog.open).toBe(false);
+    const resume = screen.getByRole("button", { name: `Continue ${title}` });
+    expect(document.activeElement).toBe(resume);
+    fireEvent.click(resume);
+    if (action === "Rename Studio server") {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Discard name edit" }),
+      );
+      const menu = screen.getByLabelText("Actions for Studio server");
+      if (!(menu.closest("details") as HTMLDetailsElement).open)
+        fireEvent.click(menu);
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      expect(screen.getByRole("dialog", { name: title })).toBeTruthy();
+    } else if (action === "Remove Studio server") {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Keep connection" }),
+      );
+      const menu = screen.getByLabelText("Actions for Studio server");
+      if (!(menu.closest("details") as HTMLDetailsElement).open)
+        fireEvent.click(menu);
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      expect(screen.getByRole("dialog", { name: title })).toBeTruthy();
+    }
+  },
+);
+it("presents a new Add task without remounting the retained form", async () => {
+  const value = fixture();
+  let complete!: () => void;
+  vi.mocked(value.actions.pair).mockImplementation(
+    (id) =>
+      new Promise((resolve) => {
+        complete = () => resolve({ ...value.profile, id });
+      }),
+  );
+  render(<value.Harness />);
+  await screen.findByRole("button", { name: "Open Studio server" });
+  fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+  const dialog = screen.getByRole("dialog", {
+    name: "Add a server connection",
+  });
+  const input = screen.getByLabelText("Connection name") as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "First server" } });
+  fireEvent.change(screen.getByLabelText("Private client pairing document"), {
+    target: {
+      value: JSON.stringify({
+        version: 1,
+        endpoint: value.profile.endpoint,
+        server_id: value.profile.server_id,
+        pairing_id: value.profile.pairing_id,
+        code: "private-fixture",
+      }),
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Pair this server" }));
+  const original = vi.mocked(value.actions.pair).mock.calls[0];
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close Add a server connection" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
+  expect(value.actions.pair).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(value.actions.pair).mock.calls[0]).toEqual(original);
+  expect(
+    screen.queryByRole("dialog", { name: "Add a server connection" }),
+  ).toBeNull();
+  await act(async () => complete());
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Add server" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+  expect(
+    screen.getByRole("dialog", { name: "Add a server connection" }),
+  ).toBe(dialog);
+  expect(screen.getByLabelText("Connection name")).toBe(input);
+  expect(input.value).toBe("");
+  expect(
+    screen.queryByRole("button", {
+      name: "Continue Add a server connection",
+    }),
+  ).toBeNull();
+  expect(value.actions.pair).toHaveBeenCalledTimes(1);
 });
