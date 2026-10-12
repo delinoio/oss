@@ -216,6 +216,17 @@ func TestPortableConfigurationFormatsVersionFour(t *testing.T) {
 	for _, version := range []uint32{1, 2, 3, 4} {
 		selection := transferSelection()
 		selection.Bundle.Version = version
+		if version == 4 {
+			// Version 4 predates typed Harness selectors; keep this format test's
+			// Agent fixture out of the legacy bundle instead of downgrading it.
+			entries := selection.Bundle.Entries[:0]
+			for _, entry := range selection.Bundle.Entries {
+				if entry.Kind != domain.AgentKind {
+					entries = append(entries, entry)
+				}
+			}
+			selection.Bundle.Entries = entries
+		}
 		if version != 4 {
 			s, _ := newDoctorFixture(t)
 			assertRejectedPortableVersion(t, s, selection)
