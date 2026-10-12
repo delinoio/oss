@@ -271,11 +271,7 @@ impl Project {
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
         let scripts = html_module_scripts(dir)?;
-        let loaded_by_html = |chunk: &String| {
-            std::path::Path::new(chunk)
-                .file_name()
-                .is_some_and(|n| scripts.contains(n.to_string_lossy().as_ref()))
-        };
+        let loaded_by_html = |chunk: &String| scripts.contains(chunk);
         let mut modules = imported.clone();
         modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
         // A chunk that no chunk imports (an HTML entry, a worker or a file
@@ -818,31 +814,57 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
     Ok(out)
 }
 
-/// File names that HTML pages in the bundle load with `<script type="module">`.
+/// Canonical paths of bundle files that HTML pages load with
+/// `<script type="module">`. A relative `src` resolves against its page; a
+/// root-relative `src` resolves against the bundle directory, dropping
+/// leading segments of a deployment base path when needed. External URLs
+/// are ignored.
 fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeSet<String>> {
-    fn walk(dir: &std::path::Path, out: &mut std::collections::BTreeSet<String>) -> Result<()> {
+    fn resolve(dir: &std::path::Path, page: &std::path::Path, src: &str) -> Option<String> {
+        let src = src.split(['?', '#']).next()?;
+        if src.is_empty()
+            || src.contains("://")
+            || src.starts_with("//")
+            || src.starts_with("data:")
+        {
+            return None;
+        }
+        let candidates: Vec<std::path::PathBuf> = match src.strip_prefix('/') {
+            Some(rooted) => {
+                let segments: Vec<&str> = rooted.split('/').collect();
+                (0..segments.len())
+                    .map(|skip| dir.join(segments[skip..].join("/")))
+                    .collect()
+            }
+            None => vec![page.parent()?.join(src)],
+        };
+        candidates
+            .into_iter()
+            .filter_map(|c| c.canonicalize().ok())
+            .find(|c| c.starts_with(dir) && c.is_file())
+            .map(|c| c.to_string_lossy().into_owned())
+    }
+    fn walk(
+        root: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut std::collections::BTreeSet<String>,
+    ) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
             let entry = entry?;
             let path = entry.path();
             if entry.file_type()?.is_dir() {
-                walk(&path, out)?;
+                walk(root, &path, out)?;
             } else if path.extension().is_some_and(|e| e == "html") {
                 let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
-                let mut rest = html.as_str();
-                while let Some(at) = rest.find("<script") {
-                    rest = &rest[at..];
-                    let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
-                    rest = &rest[tag.len()..];
-                    let module = tag.contains("type=module")
-                        || tag.contains("type=\"module\"")
-                        || tag.contains("type='module'");
-                    let Some(src) = tag.find("src=") else {
-                        continue;
-                    };
-                    let value = tag[src + 4..].trim_start_matches(['"', '\'']);
-                    let value = &value[..value.find(['"', '\'', ' ', '>']).unwrap_or(value.len())];
-                    if module && let Some(name) = value.rsplit('/').next() {
-                        out.insert(name.to_owned());
+                for tag in crate::bundle::html_tags(&html) {
+                    if tag.name == "script"
+                        && tag
+                            .attribute("type")
+                            .is_some_and(|t| t.trim().eq_ignore_ascii_case("module"))
+                        && let Some(src) = tag.attribute("src")
+                        && let Some(path) = resolve(root, &path, src.trim())
+                    {
+                        out.insert(path);
                     }
                 }
             }
@@ -850,7 +872,7 @@ fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeS
         Ok(())
     }
     let mut out = std::collections::BTreeSet::new();
-    walk(dir, &mut out)?;
+    walk(dir, dir, &mut out)?;
     Ok(out)
 }
 

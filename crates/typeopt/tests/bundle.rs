@@ -598,6 +598,45 @@ fn rejects_pages_with_subresource_integrity() {
 }
 
 #[test]
+fn rejects_any_spelling_of_subresource_integrity() {
+    for html in [
+        r#"<SCRIPT TYPE="module" SRC="./index.js" INTEGRITY = "sha384-x"></SCRIPT>"#,
+        r#"<link rel=modulepreload href=./index.js integrity=sha384-x>"#,
+    ] {
+        let temp = bundle(&[
+            ("index.html", html),
+            (
+                "index.js",
+                r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+            ),
+        ]);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(!output.status.success(), "{html}");
+    }
+}
+
+/// HTML module scripts are matched by resolved path, not by file name: a
+/// classic script that shares a module's file name stays unchanged.
+#[test]
+fn matches_html_module_scripts_by_path() {
+    let legacy = r#"function legacyGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var legacyState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/legacy/index.js"></script><script type="module" src="/app/modern/index.js"></script>"#,
+        ),
+        ("legacy/index.js", legacy),
+        (
+            "modern/index.js",
+            r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "legacy/index.js"), legacy);
+    assert!(!out(temp.path(), "modern/index.js").contains("verticalSpacing"));
+}
+
+#[test]
 fn bundle_output_is_deterministic() {
     let chunks = [
         (

@@ -16,6 +16,95 @@ use crate::{
     plan::Edit,
 };
 
+/// One HTML start tag: lowercase name and attributes as lowercase name and
+/// raw value (without quotes; empty for boolean attributes).
+pub(crate) struct HtmlTag {
+    pub name: String,
+    pub attributes: Vec<(String, String)>,
+}
+
+impl HtmlTag {
+    pub fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
+    }
+}
+
+/// Start tags of an HTML document. Comments are skipped; attribute names are
+/// case-insensitive and may have whitespace around `=`; values may be
+/// double-quoted, single-quoted or unquoted.
+pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
+    let bytes = html.as_bytes();
+    let mut tags = Vec::new();
+    let mut i = 0;
+    while let Some(offset) = html[i..].find('<') {
+        i += offset + 1;
+        if html[i..].starts_with("!--") {
+            i = html[i..].find("-->").map_or(html.len(), |end| i + end + 3);
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
+            i += 1;
+        }
+        if i == start {
+            continue;
+        }
+        let name = html[start..i].to_ascii_lowercase();
+        let mut attributes = Vec::new();
+        loop {
+            while i < bytes.len() && (bytes[i].is_ascii_whitespace() || bytes[i] == b'/') {
+                i += 1;
+            }
+            if i >= bytes.len() || bytes[i] == b'>' {
+                i += 1;
+                break;
+            }
+            let name_start = i;
+            while i < bytes.len()
+                && !bytes[i].is_ascii_whitespace()
+                && !matches!(bytes[i], b'=' | b'>' | b'/')
+            {
+                i += 1;
+            }
+            let attribute = html[name_start..i].to_ascii_lowercase();
+            let mut j = i;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            let mut value = String::new();
+            if j < bytes.len() && bytes[j] == b'=' {
+                j += 1;
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j < bytes.len() && matches!(bytes[j], b'"' | b'\'') {
+                    let quote = bytes[j] as char;
+                    let end = html[j + 1..].find(quote).map_or(html.len(), |e| j + 1 + e);
+                    value = html[j + 1..end].to_owned();
+                    j = (end + 1).min(html.len());
+                } else {
+                    let end = html[j..]
+                        .find(|c: char| c.is_ascii_whitespace() || c == '>')
+                        .map_or(html.len(), |e| j + e);
+                    value = html[j..end].to_owned();
+                    j = end;
+                }
+                i = j;
+            }
+            if attribute.is_empty() {
+                i += 1;
+                continue;
+            }
+            attributes.push((attribute, value));
+        }
+        tags.push(HtmlTag { name, attributes });
+    }
+    tags
+}
+
 /// Maps an offset of a round's input text to the round's output text.
 /// Offsets inside a replaced range have no counterpart, except the range
 /// start, which maps to the start of its replacement.
@@ -265,7 +354,11 @@ pub fn publish(
     files_under(&root, &mut files)?;
     for file in &files {
         if file.extension().is_some_and(|e| e == "html")
-            && std::fs::read_to_string(file).is_ok_and(|html| html.contains("integrity="))
+            && std::fs::read_to_string(file).is_ok_and(|html| {
+                html_tags(&html)
+                    .iter()
+                    .any(|tag| tag.attribute("integrity").is_some())
+            })
         {
             anyhow::bail!(
                 "HTML pages use Subresource Integrity, which bundle mode cannot update; compute \
@@ -326,7 +419,22 @@ pub fn publish(
 
 #[cfg(test)]
 mod tests {
-    use super::hashed_name;
+    use super::{hashed_name, html_tags};
+
+    #[test]
+    fn parses_html_attributes_like_browsers() {
+        let tags = html_tags(
+            "<!-- <script src=a.js> --><SCRIPT Type = \"module\" SRC='/x/a.js' INTEGRITY = \
+             sha384-x defer></script><link rel=modulepreload href=b.js>",
+        );
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].name, "script");
+        assert_eq!(tags[0].attribute("type"), Some("module"));
+        assert_eq!(tags[0].attribute("src"), Some("/x/a.js"));
+        assert_eq!(tags[0].attribute("integrity"), Some("sha384-x"));
+        assert_eq!(tags[0].attribute("defer"), Some(""));
+        assert_eq!(tags[1].attribute("href"), Some("b.js"));
+    }
 
     #[test]
     fn recognizes_vite_and_rollup_hash_patterns() {
