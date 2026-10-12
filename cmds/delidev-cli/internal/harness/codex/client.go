@@ -25,6 +25,7 @@ const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
 	ManagedForkHistory    bool
+	AsyncMessages         bool
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
 	EnableImageGeneration bool
@@ -46,6 +47,7 @@ type Config struct {
 type Client struct {
 	safety               modelSafetyLedger
 	managedForkHistory   bool
+	asyncMessages        bool
 	quotaUsed            atomic.Bool
 	skillsRoot           string
 	imageRoot            string
