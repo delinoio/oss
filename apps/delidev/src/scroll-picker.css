@@ -75,11 +75,7 @@
 /* Top-layer popovers keep their DOM owner. Sidebar lists suppress both boundary
    affordances and chaining; independently owned task dialogs keep their policy.
    The compact sidebar dialog itself remains a sidebar owner. */
-:is(
-    .sidebar-list,
-    .sidebar-surface-content,
-    .subscription-rail-popover
-  )
+:is(.sidebar-list, .sidebar-surface-content, .subscription-rail-popover)
   .scroll-picker-popup:not(dialog:not(.sidebar-pane-dialog) *) {
   overscroll-behavior: none;
 }

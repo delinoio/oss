@@ -152,7 +152,9 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   await screen.findByText("Your sessions, in one place");
   await waitFor(() => expect(value.status).toHaveBeenCalled());
   expect(
-    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+    screen
+      .getByLabelText("Application sidebar")
+      .querySelector(".sidebar-footer"),
   ).toBeNull();
   expect(bridge.createTransport).toHaveBeenCalledWith(
     expect.objectContaining({ origin: value.profile.endpoint }),
@@ -318,7 +320,9 @@ it("refreshes a window label without replacing transport or open settings and ig
   await act(async () => changed());
   expect(screen.getByText("Renamed window")).toBe(label);
   expect(
-    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+    screen
+      .getByLabelText("Application sidebar")
+      .querySelector(".sidebar-footer"),
   ).toBeNull();
   expect(screen.queryByText("Older result")).toBeNull();
   view.unmount();

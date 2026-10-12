@@ -353,7 +353,9 @@ try {
             const list = pane.querySelector(".sidebar-list");
             const paneBounds = pane.getBoundingClientRect();
             const listBounds = list.getBoundingClientRect();
-            const bottomPadding = parseFloat(getComputedStyle(pane).paddingBottom);
+            const bottomPadding = parseFloat(
+              getComputedStyle(pane).paddingBottom,
+            );
             return (
               pane.lastElementChild === list &&
               Math.abs(

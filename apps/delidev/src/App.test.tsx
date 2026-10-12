@@ -2511,7 +2511,9 @@ it("refreshes reads after recovery without replacing the connection's session dr
     version: "0.1.0",
   });
   expect(
-    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+    screen
+      .getByLabelText("Application sidebar")
+      .querySelector(".sidebar-footer"),
   ).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe(
@@ -2696,7 +2698,9 @@ it("retains session drafts after a failed status refresh without restoring a sid
     code: Code.Unavailable,
   });
   expect(
-    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+    screen
+      .getByLabelText("Application sidebar")
+      .querySelector(".sidebar-footer"),
   ).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe(
