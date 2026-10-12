@@ -1,5 +1,9 @@
 import { listen } from "@tauri-apps/api/event";
-import { useSessionTabsStore, SessionTabKind } from "./session-tabs";
+import {
+  useSessionTabsStore,
+  SessionTabKind,
+  sessionTabKey,
+} from "./session-tabs";
 import { shortcutModalVisible } from "./shortcuts";
 // SPDX-License-Identifier: Apache-2.0
 import {
@@ -254,6 +258,7 @@ function NativeSessionBrowser({
         tabId?: string;
         version: number;
         owner: BrowserOwner;
+        selection: string;
       }
     | undefined
   >(undefined);
@@ -272,6 +277,11 @@ function NativeSessionBrowser({
   const presentation = useRef("");
   const shortcutAdmission = useRef("");
   const presentationVisible = useRef<() => boolean>(() => false);
+  const selectionAdmitted = useRef(() => false);
+  const reconcileSelection = useRef(() => {});
+  const nativeState = useRef(state);
+  const selectionTarget = useRef("");
+  const selectionAttempt = useRef("");
   const tabsStore = useSessionTabsStore();
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -282,6 +292,11 @@ function NativeSessionBrowser({
     accountId,
   });
   owner.current = { profileId, retry, sessionId: session.id, accountId };
+  const currentOwner = (original: BrowserOwner) =>
+    owner.current.profileId === original.profileId &&
+    owner.current.retry === original.retry &&
+    owner.current.sessionId === original.sessionId &&
+    owner.current.accountId === original.accountId;
   const observe = (
     result: BrowserState,
     original: BrowserOwner,
@@ -292,16 +307,14 @@ function NativeSessionBrowser({
       !alive.current ||
       !activeRef.current ||
       !needsPresentation.current ||
-      owner.current.profileId !== original.profileId ||
-      owner.current.retry !== original.retry ||
-      owner.current.sessionId !== original.sessionId ||
-      owner.current.accountId !== original.accountId ||
+      !currentOwner(original) ||
       !viewId ||
       presentation.current !== viewId ||
       actionVersion.current !== version ||
       !presentationVisible.current()
     )
       return false;
+    nativeState.current = result;
     setState(result);
     if (!result.removal_pending && original.profileId)
       tabsStore.refreshPages(
@@ -345,6 +358,11 @@ function NativeSessionBrowser({
   }, []);
   useEffect(() => {
     if (!profileId || !viewport.current) return;
+    // A replacement presentation fences all earlier commands and their settlement.
+    ++actionVersion.current;
+    pendingAction.current = undefined;
+    setBusy(false);
+    setPresenting(false);
     let disposed = false,
       opened = false,
       opening = false,
@@ -360,6 +378,7 @@ function NativeSessionBrowser({
     const original = owner.current;
     let reading = false;
     const visible = () =>
+      currentOwner(original) &&
       activeRef.current &&
       needsPresentation.current &&
       node.isConnected &&
@@ -385,6 +404,11 @@ function NativeSessionBrowser({
       node.getBoundingClientRect().height >= 1;
     presentationVisible.current = () =>
       !disposed && !hiding && !hideRequired && visible();
+    selectionAdmitted.current = () =>
+      opened && !opening && !resizing && presentationVisible.current();
+    const stopSelection = tabsStore.subscribe(() =>
+      reconcileSelection.current(),
+    );
     const bounds = () => {
       const r = node.getBoundingClientRect();
       let left = Math.max(0, r.left),
@@ -500,13 +524,20 @@ function NativeSessionBrowser({
           if (pending) {
             if (
               pending.version !== version ||
+              actionVersion.current !== version ||
+              !currentOwner(pending.owner) ||
               pending.owner.profileId !== original.profileId ||
               pending.owner.retry !== original.retry ||
               pending.owner.sessionId !== original.sessionId ||
               pending.owner.accountId !== original.accountId
             ) {
-              setBusy(false);
-              setPresenting(false);
+              if (
+                currentOwner(pending.owner) &&
+                actionVersion.current === pending.version
+              ) {
+                setBusy(false);
+                setPresenting(false);
+              }
               return;
             }
             // A picker action restores the original presentation only after its
@@ -528,9 +559,9 @@ function NativeSessionBrowser({
               ) {
                 if (
                   openPage &&
-                  [BrowserAction.NewTab, BrowserAction.SelectTab].includes(
-                    pending.action,
-                  )
+                  pending.action === BrowserAction.NewTab &&
+                  tabsStore.snapshot(original.sessionId).selected ===
+                    pending.selection
                 ) {
                   const tab = changed.tabs.tabs.find(
                     (value) => value.id === changed.tabs.selected,
@@ -545,10 +576,20 @@ function NativeSessionBrowser({
                 }
               }
             } catch {
-              if (!disposed)
+              if (
+                !disposed &&
+                currentOwner(pending.owner) &&
+                presentation.current === viewId &&
+                actionVersion.current === pending.version &&
+                presentationVisible.current()
+              )
                 setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
             } finally {
-              if (!disposed) {
+              if (
+                !disposed &&
+                currentOwner(pending.owner) &&
+                actionVersion.current === pending.version
+              ) {
                 setBusy(false);
                 setPresenting(false);
               }
@@ -575,14 +616,20 @@ function NativeSessionBrowser({
           }
         } catch {
           failed = true;
-          pendingAction.current = undefined;
-          if (!disposed) {
+          if (
+            !disposed &&
+            currentOwner(original) &&
+            presentation.current === viewId &&
+            actionVersion.current === version
+          ) {
+            pendingAction.current = undefined;
             setBusy(false);
             setPresenting(false);
             setFailure(ownedMessage("session-browser.extra.08759b664829"));
           }
         } finally {
           opening = false;
+          reconcileSelection.current();
           if (queued) {
             queued = false;
             void update();
@@ -619,6 +666,7 @@ function NativeSessionBrowser({
             setFailure(ownedMessage("session-browser.extra.1b8cff3d45fb"));
         } finally {
           resizing = false;
+          reconcileSelection.current();
           if (queued) {
             queued = false;
             void update();
@@ -671,6 +719,7 @@ function NativeSessionBrowser({
         })
         .finally(() => {
           reading = false;
+          reconcileSelection.current();
           if (queued) {
             queued = false;
             void update();
@@ -683,6 +732,7 @@ function NativeSessionBrowser({
       window.removeEventListener("resize", move);
       observer.disconnect();
       visibility.disconnect();
+      stopSelection();
       window.clearInterval(timer);
       void hide();
     };
@@ -690,10 +740,28 @@ function NativeSessionBrowser({
     // Reopening after a modal restores native local tabs without another registration.
   }, [profileId, retry]);
   const control = async (action: BrowserAction, tabId?: string) => {
-    if (!profileId || actionBusy.current || state?.removal_pending) return;
+    if (
+      !profileId ||
+      !alive.current ||
+      !activeRef.current ||
+      actionBusy.current ||
+      nativeState.current?.removal_pending ||
+      (presentation.current && !selectionAdmitted.current()) ||
+      (!presentation.current &&
+        (!openPage ||
+          !viewport.current?.isConnected ||
+          viewport.current.parentElement?.closest("[hidden], [inert]") ||
+          shortcutModalVisible()))
+    )
+      return;
     const original = owner.current;
     const viewId = presentation.current;
     const version = ++actionVersion.current;
+    const selection = tabsStore.snapshot(original.sessionId).selected;
+    const currentAction = () =>
+      alive.current &&
+      currentOwner(original) &&
+      actionVersion.current === version;
     setBusy(true);
     setFailure(undefined);
     if (openPage && !presentation.current) {
@@ -702,6 +770,7 @@ function NativeSessionBrowser({
         tabId,
         version,
         owner: { ...original, profileId },
+        selection,
       };
       setPresenting(true);
       return;
@@ -719,11 +788,8 @@ function NativeSessionBrowser({
       if (observe(result, original, viewId, version)) {
         if (
           openPage &&
-          [
-            BrowserAction.NewTab,
-            BrowserAction.SelectTab,
-            BrowserAction.Navigate,
-          ].includes(action)
+          action === BrowserAction.NewTab &&
+          tabsStore.snapshot(original.sessionId).selected === selection
         ) {
           const tab = result.tabs.tabs.find(
             (value) => value.id === result.tabs.selected,
@@ -738,25 +804,72 @@ function NativeSessionBrowser({
         }
       }
     } catch {
-      if (alive.current)
+      if (
+        currentAction() &&
+        presentation.current === viewId &&
+        presentationVisible.current()
+      )
         setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
     } finally {
-      if (alive.current) setBusy(false);
+      if (currentAction()) {
+        setBusy(false);
+        reconcileSelection.current();
+      }
     }
   };
-  useEffect(() => {
+  reconcileSelection.current = () => {
+    const snapshot = tabsStore.snapshot(owner.current.sessionId);
+    const page = snapshot.tabs.find(
+      (tab) =>
+        tab.kind === SessionTabKind.Page &&
+        sessionTabKey(tab) === snapshot.selected,
+    );
+    const target =
+      page?.kind === SessionTabKind.Page
+        ? JSON.stringify([
+            owner.current.profileId,
+            owner.current.retry,
+            presentation.current,
+            snapshot.selected,
+          ])
+        : "";
+    if (selectionTarget.current !== target) {
+      selectionTarget.current = target;
+      selectionAttempt.current = "";
+    }
+    const current = nativeState.current;
     if (
+      !openPage ||
+      page?.kind !== SessionTabKind.Page ||
+      !alive.current ||
+      !activeRef.current ||
+      !selectionAdmitted.current() ||
       !presentation.current ||
-      !active ||
-      !selectedPage ||
-      selectedPage.profile !== profileId ||
-      !state ||
-      state.tabs.selected === selectedPage.id ||
-      !state.tabs.tabs.some((tab) => tab.id === selectedPage.id)
+      actionBusy.current ||
+      page.profile !== owner.current.profileId ||
+      !current ||
+      current.removal_pending ||
+      current.tabs.selected === page.id ||
+      !current.tabs.tabs.some((tab) => tab.id === page.id) ||
+      selectionAttempt.current === target
     )
       return;
-    void control(BrowserAction.SelectTab, selectedPage.id);
-  }, [active, selectedPage?.id, profileId, state?.tabs.selected]);
+    // Retain only the latest exact attempt. A rejected or uncertain selection
+    // cannot become an automatic retry when another native poll arrives.
+    selectionAttempt.current = target;
+    void control(BrowserAction.SelectTab, page.id);
+  };
+  useEffect(() => {
+    reconcileSelection.current();
+  }, [
+    active,
+    busy,
+    selectedPage?.id,
+    selectedPage?.profile,
+    profileId,
+    retry,
+    state,
+  ]);
   useEffect(() => {
     if (!profileId || !openPage) return;
     let disposed = false;

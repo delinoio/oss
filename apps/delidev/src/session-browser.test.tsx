@@ -27,7 +27,7 @@ import {
   SessionTabsStore,
   SessionTabKind,
   sessionTabKey,
-  useSessionTabsStore,
+  useSessionTabs,
 } from "./session-tabs";
 import { BrowserHostProvider } from "./host-capabilities";
 const native = vi.hoisted(() => vi.fn());
@@ -75,7 +75,7 @@ it("an unavailable browser host does not register a profile or call native code"
   ).toBeTruthy();
   expect(native).not.toHaveBeenCalled();
 });
-function fixture({ tabbed = false } = {}) {
+function fixture({ tabbed = false, shared = false } = {}) {
   const accountId = newRequestId(),
     profileId = newRequestId(),
     tabId = newRequestId();
@@ -114,31 +114,57 @@ function fixture({ tabbed = false } = {}) {
   });
   const openPage = vi.fn();
   let store!: SessionTabsStore;
-  function Browser({ active = true }: { active?: boolean }) {
-    store = useSessionTabsStore();
+  function Browser({
+    active = true,
+    originalAccount = accountId,
+  }: {
+    active?: boolean;
+    originalAccount?: string;
+  }) {
+    const tabs = useSessionTabs(session.id);
+    store = tabs.store;
     return (
       <SessionBrowser
         session={session}
-        accountId={accountId}
+        accountId={originalAccount}
         close={() => {}}
-        active={active}
-        openPage={tabbed ? openPage : undefined}
+        active={
+          active &&
+          (!shared ||
+            tabs.tab.kind === SessionTabKind.Browser ||
+            (tabs.tab.kind === SessionTabKind.Page &&
+              tabs.tab.profile === profileId))
+        }
+        selectedPage={
+          shared && tabs.tab.kind === SessionTabKind.Page ? tabs.tab : undefined
+        }
+        openPage={tabbed || shared ? openPage : undefined}
       />
     );
   }
-  function View({ active = true }: { active?: boolean }) {
+  function View({
+    active = true,
+    originalAccount = accountId,
+  }: {
+    active?: boolean;
+    originalAccount?: string;
+  }) {
     return (
       <TransportProvider transport={transport}>
         <QueryClientProvider client={client}>
           <MutationIntents>
             <SessionTabsProvider>
-              <Browser active={active} />
+              <Browser active={active} originalAccount={originalAccount} />
             </SessionTabsProvider>
           </MutationIntents>
         </QueryClientProvider>
       </TransportProvider>
     );
   }
+  if (shared)
+    openPage.mockImplementation((page) =>
+      store.open(session.id, { kind: SessionTabKind.Page, ...page }),
+    );
   return {
     accountId,
     profileId,
@@ -1016,3 +1042,304 @@ it("refreshes existing page metadata from a pending picker action after original
   ).toHaveLength(1);
   view.unmount();
 });
+
+async function openShared(f: ReturnType<typeof fixture>) {
+  const pages = f.local.tabs.tabs.slice(1).map((tab) => ({
+    kind: SessionTabKind.Page as const,
+    profile: f.profileId,
+    id: tab.id,
+    title: new URL(tab.url).pathname,
+    label: tab.url,
+  }));
+  await act(async () => {
+    f.store.open(f.session.id, pageDescriptor(f));
+    for (const page of pages) f.store.open(f.session.id, page);
+    f.store.open(f.session.id, { kind: SessionTabKind.Browser });
+  });
+  await open();
+  await waitFor(() =>
+    expect(f.store.snapshot(f.session.id).selected).toBe(
+      sessionTabKey(pageDescriptor(f)),
+    ),
+  );
+  return pages;
+}
+function addPages(f: ReturnType<typeof fixture>) {
+  f.local.tabs.tabs.push(
+    { id: newRequestId(), url: "https://fixture.test/b" },
+    { id: newRequestId(), url: "https://fixture.test/c" },
+  );
+}
+function selectionCalls() {
+  return native.mock.calls.filter(([, args]) => args.action === "select-tab");
+}
+it.each(["Back", "Reload", "Go"])(
+  "reconciles only the latest shared page after pending %s without reselecting the old result",
+  async (action) => {
+    const f = fixture({ shared: true });
+    addPages(f);
+    let finish!: (value: typeof f.local) => void;
+    native.mockImplementation(async (_operation, args) => {
+      if (
+        args.action ===
+        { Back: "back", Reload: "reload", Go: "navigate" }[action]
+      )
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      if (args.action === "select-tab")
+        return {
+          ...f.local,
+          tabs: { ...f.local.tabs, selected: args.tabId },
+        };
+      return f.local;
+    });
+    const view = render(
+      <StrictMode>
+        <f.View />
+      </StrictMode>,
+    );
+    const [b, c] = await openShared(f);
+    f.openPage.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    await act(async () => f.store.select(f.session.id, sessionTabKey(b)));
+    await act(async () => f.store.select(f.session.id, sessionTabKey(c)));
+    expect(selectionCalls()).toHaveLength(0);
+    await act(async () => finish(f.local));
+    await waitFor(() => expect(selectionCalls()).toHaveLength(1));
+    expect(selectionCalls()[0][1].tabId).toBe(c.id);
+    expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(c));
+    expect(f.openPage).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Go" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    view.unmount();
+  },
+);
+it.each([
+  "inactive",
+  "modal",
+  "inert",
+  "foreign",
+  "removed",
+  "replaced",
+  "account",
+  "disposed",
+])(
+  "does not send a stale selection when pending navigation settles after %s",
+  async (replacement) => {
+    const f = fixture({ shared: true });
+    addPages(f);
+    let finish!: (value: typeof f.local) => void;
+    native.mockImplementation(async (_operation, args) => {
+      if (args.action === "navigate")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return f.local;
+    });
+    const view = render(<f.View />);
+    const [b] = await openShared(f);
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    await act(async () => f.store.select(f.session.id, sessionTabKey(b)));
+    const modal = document.createElement("dialog");
+    if (replacement === "inactive") view.rerender(<f.View active={false} />);
+    if (replacement === "modal") {
+      modal.setAttribute("open", "");
+      await act(async () => document.body.append(modal));
+    }
+    if (replacement === "inert")
+      await act(async () => view.container.setAttribute("inert", ""));
+    if (replacement === "foreign")
+      await act(async () =>
+        f.store.open(f.session.id, { ...b, profile: newRequestId() }),
+      );
+    if (replacement === "removed")
+      await act(async () => f.store.close(f.session.id, sessionTabKey(b)));
+    if (replacement === "account")
+      view.rerender(<f.View originalAccount={newRequestId()} />);
+    if (replacement === "replaced") {
+      // Reopening replaces native ownership before the old callback completes.
+      modal.setAttribute("open", "");
+      await act(async () => document.body.append(modal));
+      await waitFor(() =>
+        expect(
+          native.mock.calls.some(([, args]) => args.action === "hide"),
+        ).toBe(true),
+      );
+      await act(async () => modal.remove());
+      await waitFor(() =>
+        expect(
+          native.mock.calls.filter(([op]) => op === "open_browser"),
+        ).toHaveLength(2),
+      );
+    }
+    if (replacement === "disposed") view.unmount();
+    try {
+      await act(async () => finish(f.local));
+      if (replacement === "replaced") {
+        const original = native.mock.calls.find(
+          ([op]) => op === "open_browser",
+        )![1];
+        expect(
+          selectionCalls().filter(
+            ([, args]) => args.viewId === original.viewId,
+          ),
+        ).toHaveLength(0);
+      } else expect(selectionCalls()).toHaveLength(0);
+    } finally {
+      modal.remove();
+      view.unmount();
+    }
+  },
+);
+it("does not retry a rejected shared selection on unchanged native polls", async () => {
+  const poll = pollCallback();
+  const f = fixture({ shared: true });
+  addPages(f);
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "select-tab") throw new Error("uncertain selection");
+    return f.local;
+  });
+  const view = render(
+    <StrictMode>
+      <f.View />
+    </StrictMode>,
+  );
+  const [b] = await openShared(f);
+  await act(async () => f.store.select(f.session.id, sessionTabKey(b)));
+  await screen.findByText(
+    "The browser action failed. Check its address and the current server and account authorization.",
+  );
+  await act(async () => {
+    poll();
+  });
+  await act(async () => {
+    poll();
+  });
+  expect(selectionCalls()).toHaveLength(1);
+  expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(b));
+  view.unmount();
+});
+it.each(["page", "picker"])(
+  "does not select a new %s result after the original shared selection changes",
+  async (origin) => {
+    const f = fixture({ shared: true });
+    addPages(f);
+    let finish!: (value: typeof f.local) => void;
+    native.mockImplementation(async (_operation, args) => {
+      if (args.action === "new-tab")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      if (args.action === "select-tab")
+        return { ...f.local, tabs: { ...f.local.tabs, selected: args.tabId } };
+      return f.local;
+    });
+    const view = render(<f.View />);
+    const [b] = await openShared(f);
+    if (origin === "picker") {
+      await act(async () =>
+        f.store.select(f.session.id, SessionTabKind.Browser),
+      );
+      await waitFor(() =>
+        expect(
+          native.mock.calls.some(([, args]) => args.action === "hide"),
+        ).toBe(true),
+      );
+    }
+    f.openPage.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    await act(async () => f.store.select(f.session.id, sessionTabKey(b)));
+    const created = newRequestId();
+    await act(async () =>
+      finish({
+        ...f.local,
+        tabs: {
+          tabs: [
+            ...f.local.tabs.tabs,
+            { id: created, url: "https://fixture.test/new" },
+          ],
+          selected: created,
+        },
+      }),
+    );
+    await waitFor(() => expect(selectionCalls()).toHaveLength(1));
+    expect(selectionCalls()[0][1].tabId).toBe(b.id);
+    expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(b));
+    expect(f.openPage).not.toHaveBeenCalled();
+    view.unmount();
+  },
+);
+
+it("preserves a newer shared page when closing the original native page completes", async () => {
+  const f = fixture({ shared: true });
+  addPages(f);
+  let finish!: (value: typeof f.local) => void;
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "close-tab")
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    if (args.action === "select-tab")
+      return { ...f.local, tabs: { ...f.local.tabs, selected: args.tabId } };
+    return f.local;
+  });
+  const view = render(<f.View />);
+  const [b, c] = await openShared(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close tab https://fixture.test/page" }),
+  );
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  await act(async () => f.store.select(f.session.id, sessionTabKey(b)));
+  await act(async () =>
+    finish({
+      ...f.local,
+      tabs: { tabs: f.local.tabs.tabs.slice(1), selected: c.id },
+    }),
+  );
+  await waitFor(() => expect(selectionCalls()).toHaveLength(1));
+  expect(selectionCalls()[0][1].tabId).toBe(b.id);
+  expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(b));
+  view.unmount();
+});
+it.each(["removal-pending", "absent page"])(
+  "does not reconcile a newer shared page against %s native inventory",
+  async (condition) => {
+    const f = fixture({ shared: true });
+    addPages(f);
+    let finish!: (value: typeof f.local) => void;
+    native.mockImplementation(async (_operation, args) => {
+      if (args.action === "reload")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return f.local;
+    });
+    const view = render(<f.View />);
+    const [b] = await openShared(f);
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    await act(async () => f.store.select(f.session.id, sessionTabKey(b)));
+    await act(async () =>
+      finish({
+        ...f.local,
+        removal_pending: condition === "removal-pending",
+        tabs: {
+          ...f.local.tabs,
+          tabs:
+            condition === "absent page"
+              ? f.local.tabs.tabs.filter((tab) => tab.id !== b.id)
+              : f.local.tabs.tabs,
+        },
+      }),
+    );
+    expect(selectionCalls()).toHaveLength(0);
+    expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(b));
+    view.unmount();
+  },
+);

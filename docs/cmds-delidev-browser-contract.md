@@ -93,7 +93,14 @@ in the original session. URL-derived title and accessible URL changes preserve
 identity, order, selection and focus. Unchanged or foreign page metadata does not
 publish or create descriptors. Serial reads retain the original presentation and
 action generation; inactive, covered, disposed or replaced presentations and
-pre-action reads cannot overwrite current labels.
+pre-action reads cannot overwrite current labels. After a busy action settles,
+shared-to-native selection uses the latest live original profile/page descriptor
+and admitted presentation. Inactive, covered, inert, replaced, removed or absent
+pages cannot submit a stale selection. Retain one latest exact selection attempt
+per presentation and requested page; failed or uncertain selection does not replay
+on unchanged polling. Navigation and selection results refresh existing labels
+without selecting their older result. Explicit New page may select its created
+result only while the original requested shared selection remains current.
 The original 16-page gate and explicit resource Close remain separate from shared
 presentation Close. Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
