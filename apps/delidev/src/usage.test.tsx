@@ -1255,7 +1255,9 @@ it.each(["response", "native"] as const)(
       expect(history.hidden).toBe(true);
       expect(focus).toHaveBeenCalledTimes(activation);
       const panel = screen.getByRole("tabpanel", { name: "Model prices" });
-      const selector = within(panel).getByRole("combobox");
+      const selector = within(panel).getByRole("combobox", {
+        name: "Pricing model",
+      });
       expect(selector.getAttribute("data-value")).toBe(
         priceIdentity({
           nativeId: f.ids.model,
