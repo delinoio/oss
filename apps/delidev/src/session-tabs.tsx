@@ -186,8 +186,38 @@ export class SessionTabsStore {
     id: string,
     profile: string,
     pageId: string,
-    _nativeSelected = "",
+    nativeSelected = "",
   ) {
+    // Legacy CloseTab acknowledgments carry native selection; direct-page
+    // operation receipts omit it and use the shared strip's left neighbor.
+    if (nativeSelected) {
+      const previous = this.snapshot(id);
+      const key = sessionTabKey({
+        kind: SessionTabKind.Page,
+        profile,
+        id: pageId,
+        title: "",
+      });
+      if (!previous.tabs.some((tab) => sessionTabKey(tab) === key)) return;
+      const tabs = previous.tabs.filter((tab) => sessionTabKey(tab) !== key);
+      let selected = previous.selected;
+      if (selected === key) {
+        const survivor = tabs.find(
+          (tab) =>
+            tab.kind === SessionTabKind.Page &&
+            tab.profile === profile &&
+            tab.id === nativeSelected,
+        );
+        if (survivor) selected = sessionTabKey(survivor);
+        else {
+          if (!tabs.some((tab) => tab.kind === SessionTabKind.Browser))
+            tabs.push({ kind: SessionTabKind.Browser });
+          selected = SessionTabKind.Browser;
+        }
+      }
+      this.publish(id, { tabs, selected });
+      return;
+    }
     const key = sessionTabKey({
       kind: SessionTabKind.Page,
       profile,

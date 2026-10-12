@@ -1869,7 +1869,7 @@ it("shares default-shell additional creation between + and pre-PTY terminal inpu
     </QueryClientProvider>,
   );
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal\s*·\s*1/ }));
     const input = await screen.findByRole("textbox", {
       name: "Terminal input",
     });
