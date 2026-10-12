@@ -82,7 +82,7 @@ it("saves and inspects a real immutable model price through desktop settings and
   fireEvent.click(screen.getByRole("tab", { name: "Model prices" }));
   await choose(
     screen.getByRole("combobox", { name: "Pricing model" }),
-    "Pricing API · pricing-fixture",
+    "Pricing API · Model unavailable · 1",
   );
   await screen.findByText(/No exact reference rate is available/);
   await waitFor(() =>
