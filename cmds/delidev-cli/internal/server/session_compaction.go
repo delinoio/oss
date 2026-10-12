@@ -32,6 +32,9 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 }
 func contextActionSourceForReview(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert, codeReview bool) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
+	if err := tx.RequireNoNativeCodeReview(sr.ID); err != nil {
+		return empty, err
+	}
 	p := session.Execution
 	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
 		return empty, domain.CompactionUncertain()

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -51,6 +52,14 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 			accepted, err := client.CreateNativeCodeReview(ctx, ownerRequest(f.identity, creation))
 			if err != nil {
 				t.Fatal(err)
+			}
+			resume := &pb.ControlSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}
+			if _, err := client.ControlSession(ctx, ownerRequest(f.identity, resume)); connect.CodeOf(err) != connect.CodeAborted {
+				t.Fatal("review admission did not fence ordinary continuation", err)
+			}
+			compact := &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID())}
+			if _, err := client.CompactSession(ctx, ownerRequest(f.identity, compact)); connect.CodeOf(err) != connect.CodeAborted {
+				t.Fatal("review admission did not fence compaction", err)
 			}
 			repeated, err := client.CreateNativeCodeReview(ctx, ownerRequest(f.identity, creation))
 			if err != nil || !repeated.Msg.Replayed || repeated.Msg.Review.Job.Id != accepted.Msg.Review.Job.Id {
