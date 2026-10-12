@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ## Owning contracts
 
+- [DeliDev Worker-owned managed MCP](../../docs/cmds-delidev-managed-mcp-contract.md)
+
 - [API account browser OAuth](../../docs/cmds-delidev-account-oauth-contract.md)
 - [DeliDev provider and model catalog](../../docs/cmds-delidev-catalog-contract.md)
 - [DeliDev Claude native context and manual compaction contract](../../docs/cmds-delidev-claude-compaction-contract.md)

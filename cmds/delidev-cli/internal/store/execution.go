@@ -186,6 +186,10 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
+	configuration.ManagedMCP, err = t.ResolveManagedMCP(agent.ManagedMCP, session.MachineID, agent.Harness)
+	if err != nil {
+		return empty, err
+	}
 	settingsRecord, settings, err := t.SessionDefaultSettings()
 	if err != nil {
 		return empty, err

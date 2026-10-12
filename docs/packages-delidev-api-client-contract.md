@@ -515,3 +515,7 @@ mismatched causes are not typed causes; untyped transport messages never prove
 exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlation
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
+
+## Managed MCP clients
+
+The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns typed Worker-scoped management, write-only credential inputs and original-operation reads. Export `ManagedMCPQuery` with the generated service/message/enum bindings. Management capability does not grant runtime MCP authority. Retained uncertain mutations can be acknowledged only through the original read response and verifier; the desktop does not resend authentication exchanges automatically.

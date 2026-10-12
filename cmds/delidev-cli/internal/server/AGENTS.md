@@ -8,6 +8,8 @@
 
 - [Tailscale connections and ingress](../../../../docs/cmds-delidev-connections-contract.md#tailscale-connections)
 
+- [DeliDev Worker-owned managed MCP](../../../../docs/cmds-delidev-managed-mcp-contract.md)
+
 - [DeliDev desktop client](../../../../docs/apps-delidev-desktop-contract.md)
 - [API account browser OAuth](../../../../docs/cmds-delidev-account-oauth-contract.md)
 - [DeliDev account lifecycle](../../../../docs/cmds-delidev-accounts-contract.md)

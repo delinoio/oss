@@ -1481,3 +1481,7 @@ Resource document_json always excludes this key. Native assignments, closed
 progress attempts, checkpoints and digests do not include display timing.
 Legacy omission receives no backfill; replacement jobs retain independent current
 identity and original deletion ownership. No schema or migration is added.
+
+## Managed MCP generations
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) uses existing server resources plus private, locked Worker JSON journals; no SQLite migration is needed. Accepted catalog revisions and execution copies retain original native credential references. Tombstoning a current definition does not delete immutable generations or historical attribution. Pending metadata never grants execution authority.

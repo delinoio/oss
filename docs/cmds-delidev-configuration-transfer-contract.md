@@ -140,3 +140,7 @@ Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-l
 ## Name validation
 
 Preview validates the complete prospective import overlay against all live target Project and Repository names. Equivalent names within the bundle or target namespace reject the preview. Apply and deferred inspection completion repeat validation against the current target before any configuration publication. A late collision settles the original failure without partial configuration. Matching names never imply reuse, merging or replacement: explicit ID bindings and complete remapped values remain required. Comparison follows the [command naming contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness).
+
+## Managed MCP portable boundary
+
+[Managed MCP](cmds-delidev-managed-mcp-contract.md) requires portable format 8 only when an Agent document contains `managed_mcp`. Exports without this feature preserve the existing format. The presence classifier raises the minimum and preserves any later owning feature version. Baseline format 4 remains accepted without managed fields; format 8 requires safe unresolved selections. Worker catalog definitions and vault references are excluded. Imported original Worker bindings remain unresolved until explicit rebind and never grant runtime or credential authority.

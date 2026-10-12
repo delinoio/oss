@@ -26,6 +26,7 @@ type WorkerCapability int32
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1         WorkerCapability = 58
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_MCP_V1                 WorkerCapability = 59
 	WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1 WorkerCapability = 53
 	WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1           WorkerCapability = 52
 	WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1      WorkerCapability = 22
@@ -71,6 +72,7 @@ var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
 		58: "WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
+		59: "WORKER_CAPABILITY_MANAGED_MCP_V1",
 		53: "WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1",
 		52: "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
 		22: "WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1",
@@ -112,6 +114,7 @@ var (
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
 		"WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1":            58,
+		"WORKER_CAPABILITY_MANAGED_MCP_V1":                    59,
 		"WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1":    53,
 		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
 		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
@@ -4691,10 +4694,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\x88\x0f\n" +
+	"\x06_total*\xae\x0f\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
-	"(WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1\x10:\x124\n" +
+	"(WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1\x10:\x12$\n" +
+	" WORKER_CAPABILITY_MANAGED_MCP_V1\x10;\x124\n" +
 	"0WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1\x105\x12*\n" +
 	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +
 	"+WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1\x10\x16\x121\n" +

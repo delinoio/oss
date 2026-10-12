@@ -458,3 +458,7 @@ client contracts jointly own server-observed group timing and independent closed
 detailed disclosures. Private Session records project through additive typed
 Resource metadata while legacy document JSON and native ownership stay intact.
 No migration, Worker report or execution authority is added.
+
+## Worker-owned managed MCP
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns `cmds/delidev-cli/internal/managedmcp`, the typed management service and desktop MCP Settings. Worker definitions/secrets, bounded server metadata, additive Agent selections and immutable execution generations remain distinct authorities. Management and explicit OAuth never advertise native runtime acceptance.
