@@ -10,6 +10,7 @@ import (
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
+	Directory                 *SessionDirectoryLocation  `json:"directory,omitempty"`
 	OpenCodeCreationProof     *OpenCodeForkCreationProof `json:"opencode_creation_proof,omitempty"`
 	OpenCodeCreationRequestID ID                         `json:"opencode_creation_request_id,omitempty"`
 	Startup                   *ExecutionStartupSelection `json:"startup,omitempty"`
@@ -57,6 +58,7 @@ func (f ForkOrigin) VerifyOpenCodeCreation(child ID) bool {
 }
 
 type ForkJobInput struct {
+	Directory              *SessionDirectoryRef       `json:"directory,omitempty"`
 	Retry                  *SidechatRetryFork         `json:"retry,omitempty"`
 	SubscriptionGeneration ID                         `json:"subscription_generation,omitempty"`
 	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
@@ -81,6 +83,9 @@ type ForkJobInput struct {
 }
 
 func (i ForkJobInput) Validate() error {
+	if i.Directory != nil && (i.Directory.Validate() != nil || i.Purpose != IndependentFork || i.SourceAssignment.Configuration.Harness != Codex) {
+		return DirectoryUncertain()
+	}
 	if i.Retry != nil && (i.Purpose != SidechatFork || i.Retry.Validate(i.ChildSessionID) != nil) {
 		return SidechatUnavailable()
 	}
@@ -180,6 +185,9 @@ func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 
 // Validate checks the child-owned publication seed without reopening its parent.
 func (f ForkOrigin) Validate() error {
+	if f.Directory != nil && (f.Directory.Validate() != nil || f.Snapshot.Configuration.Harness != Codex || f.SidechatParentSnapshot != nil) {
+		return DirectoryUncertain()
+	}
 	if f.Startup != nil && (f.Startup.Validate(f.Snapshot.Configuration.Harness) != nil || f.Startup.ExecutableSHA256 == "") {
 		return Fail(RecoveryRequired, "The child lost its original executable selection.", "Preserve the child-owned Fork seed.")
 	}

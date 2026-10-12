@@ -1,0 +1,204 @@
+// SPDX-License-Identifier: Apache-2.0
+package worker
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+)
+
+func directoryCheckpointFixture(t *testing.T) (string, Credential, codexDirectoryCheckpoint, domain.SessionDirectoryRef) {
+	t.Helper()
+	f := newCheckpointFixture(t)
+	f.input.Configuration.Accounts = append(f.input.Configuration.Accounts, domain.WeightedAccount{ID: domain.NewID(), Weight: 1})
+	f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
+	f.ref.ConfigurationDigest = f.input.ConfigurationDigest
+	manifest := workspace.Manifest{SessionID: f.input.SessionID, MachineID: f.input.MachineID, Type: domain.GeneralChat, State: workspace.Ready, PrimaryPath: f.root, Repositories: []workspace.PreparedRepository{}}
+	f.input.Manifest, _ = json.Marshal(manifest)
+	f.job.Input, _ = json.Marshal(f.input)
+	f.ref.AssignmentInputDigest = executionInputDigest(f.job.Input)
+	if err := f.retain(); err != nil {
+		t.Fatal(err)
+	}
+	progress := domain.ExecutionProgress{JobID: f.jobID, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: string(f.completion.NativeThreadID), NativeTurnID: string(f.completion.NativeTurnID), LastSequence: f.completion.LastSequence, Outcome: domain.ExecutionSucceeded, CleanupVerified: true, Observed: domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}}
+	input := domain.SessionDirectoryInput{RequestingActor: domain.Principal{Type: domain.OwnerDevice}, Version: 1, RequestID: domain.NewID(), GenerationID: domain.NewID(), SourceJobID: f.jobID, HistoryExecutionID: f.input.ExecutionID, Assignment: f.input, Completion: f.ref.Completion, PreviousExecution: progress, RelativePath: "nested"}
+	if err := input.Validate(); err != nil {
+		t.Fatal("invalid fixture", err)
+	}
+	source, err := directorySourceCheckpoint(f.root, input, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(f.root, "nested")
+	if err := os.Mkdir(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	selected := source.Native
+	selected.Effective.Cwd = nested
+	selected.Effective.WorkspaceRoots = []string{f.root}
+	inputRaw, _ := json.Marshal(input)
+	owner := directoryOwnership{ServerID: domain.NewID(), DeviceID: domain.NewID(), JobID: domain.NewID(), InstanceID: domain.NewID(), Revision: 2, AssignmentDigest: strings.Repeat("a", 64), InputDigest: executionInputDigest(inputRaw)}
+	registration := directoryRegistration{Ownership: owner, RequestID: domain.NewID(), CredentialDigest: strings.Repeat("b", 64)}
+	registrationRaw, _ := json.Marshal(registration)
+	intent := directoryNativeIntent{Ownership: owner, GenerationID: input.GenerationID, RegistrationDigest: executionInputDigest(registrationRaw), Native: codex.DirectoryIntent{RequestID: input.RequestID, Source: source.Native, Destination: nested, WorkspaceRoots: []string{f.root}}}
+	intentRaw, _ := json.Marshal(intent)
+	if err := writeDirectoryClaim(f.root, owner.JobID, directoryRegistrationClaim, registration); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeDirectoryClaim(f.root, owner.JobID, directoryNativeClaim, intent); err != nil {
+		t.Fatal(err)
+	}
+	p := codexDirectoryCheckpoint{Version: 1, Ownership: owner, Input: input, RegistrationDigest: executionInputDigest(registrationRaw), NativeIntentDigest: executionInputDigest(intentRaw), Source: source, Before: source.Native, Selected: selected, Reload: codex.DirectoryReloadEvidence{ConfigDigest: strings.Repeat("c", 64), Instructions: []codex.DirectoryInstructionEvidence{}}}
+	ref, err := retainDirectoryCheckpoint(f.root, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := domain.SessionDirectoryResult{Version: 1, RequestID: input.RequestID, GenerationID: input.GenerationID, ExecutionID: f.input.ExecutionID, Checkpoint: ref, CleanupVerified: true}
+	output, _ := json.Marshal(result)
+	j := journal{Version: 1, JobID: owner.JobID, InstanceID: owner.InstanceID, Revision: owner.Revision, Digest: owner.AssignmentDigest, State: journalFinished, ReportID: domain.NewID(), Output: output}
+	if err := writeJSON(filepath.Join(f.root, "jobs", string(owner.JobID)+".json"), j); err != nil {
+		t.Fatal(err)
+	}
+	return f.root, Credential{ServerID: owner.ServerID, DeviceID: owner.DeviceID}, p, ref
+}
+
+func TestDirectoryCheckpointRequiresOriginalClaimsJournalAndSource(t *testing.T) {
+	for _, changed := range []string{"none", "native claim absent", "registration changed", "journal uncertain", "source missing", "foreign device", "generation changed", "checkpoint changed"} {
+		t.Run(changed, func(t *testing.T) {
+			root, credential, p, ref := directoryCheckpointFixture(t)
+			switch changed {
+			case "native claim absent":
+				path, _ := directoryClaimPath(root, ref.JobID, directoryNativeClaim, false)
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			case "registration changed":
+				path, _ := directoryClaimPath(root, ref.JobID, directoryRegistrationClaim, false)
+				if err := os.WriteFile(path, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "journal uncertain":
+				path := filepath.Join(root, "jobs", string(ref.JobID)+".json")
+				var j journal
+				raw, _ := os.ReadFile(path)
+				_ = json.Unmarshal(raw, &j)
+				j.State = journalStarted
+				if err := writeJSON(path, j); err != nil {
+					t.Fatal(err)
+				}
+			case "source missing":
+				path, _ := executionCheckpointPath(root, p.Source.Completion.ExecutionID)
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			case "foreign device":
+				credential.DeviceID = domain.NewID()
+			case "generation changed":
+				ref.GenerationID = domain.NewID()
+			case "checkpoint changed":
+				path, _ := directoryCheckpointPath(root, ref.GenerationID, false)
+				if err := os.WriteFile(path, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := readDirectoryCheckpoint(root, credential, p.Input.Assignment, ref)
+			if changed == "none" {
+				if err != nil || !sameDirectoryValue(got, p) {
+					t.Fatal("retained immutable generation", err)
+				}
+			} else if err == nil {
+				t.Fatal("lost directory proof granted authority")
+			}
+		})
+	}
+}
+func TestDirectoryNativeClaimCannotBeReplaced(t *testing.T) {
+	root, _, p, _ := directoryCheckpointFixture(t)
+	if err := writeDirectoryClaim(root, p.Ownership.JobID, directoryNativeClaim, map[string]string{"replacement": "new"}); err == nil {
+		t.Fatal("original native intent overwritten")
+	}
+}
+
+func TestDirectoryProjectionRequiresExistingAccountSwitchProof(t *testing.T) {
+	for _, mode := range []string{"original", "explicit switch", "unproven switch", "foreign prior account", "foreign source", "wrong previous directory"} {
+		t.Run(mode, func(t *testing.T) {
+			root, credential, p, ref := directoryCheckpointFixture(t)
+			input := p.Input.Assignment
+			input.Directory = &ref
+			input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
+			input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
+			previous := p.Input.PreviousExecution
+			previous.NativeHistory = domain.FullNativeHistory
+			input.Continuation = &domain.ExecutionContinuation{Previous: previous, PreviousDirectory: p.Source.Directory, HistoryExecutionID: p.Input.HistoryExecutionID, HistoryRequestID: domain.NewID(), Completion: p.Input.Completion, AssignmentInputDigest: p.Source.AssignmentInputDigest, InputMode: p.Input.Assignment.Input.Mode, PromptDigest: domain.BindSessionInput(p.Input.Assignment.InputID, p.Input.Assignment.Input).PromptDigest, Intent: domain.ContinueExplicitly}
+			source := p.Source
+			switch mode {
+			case "explicit switch":
+				input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = input.AccountID, input.ConnectionID
+				input.AccountID, input.ConnectionID = input.Configuration.Accounts[1].ID, domain.NewID()
+			case "unproven switch":
+				input.AccountID, input.ConnectionID = domain.NewID(), domain.NewID()
+			case "foreign prior account":
+				input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = domain.NewID(), domain.NewID()
+			case "foreign source":
+				source.AccountID = domain.NewID()
+			case "wrong previous directory":
+				input.Continuation.PreviousDirectory = &ref
+			}
+			if mode == "original" || mode == "explicit switch" {
+				if err := input.Validate(); err != nil {
+					t.Fatal("accepted continuation fixture", err)
+				}
+			}
+			got, _, err := directoryContinuationProjection(context.Background(), root, credential, input, source)
+			if mode == "original" || mode == "explicit switch" {
+				if err != nil {
+					t.Fatal("verified directory continuation rejected", err)
+				}
+				if got.Native.Effective.Cwd != p.Selected.Effective.Cwd {
+					t.Fatal("lost selected cwd")
+				}
+			} else if err == nil {
+				t.Fatal("unproven authority inherited")
+			}
+		})
+	}
+}
+
+func TestDirectoryForkMapsLocationIntoOnlyOriginalChildRoots(t *testing.T) {
+	sourceRoot, childRoot := t.TempDir(), t.TempDir()
+	sourceRoot, _ = filepath.EvalSymlinks(sourceRoot)
+	childRoot, _ = filepath.EvalSymlinks(childRoot)
+	repository := domain.NewID()
+	for _, root := range []string{sourceRoot, childRoot} {
+		if err := os.Mkdir(filepath.Join(root, "nested"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := workspace.Manifest{PrimaryPath: sourceRoot, Repositories: []workspace.PreparedRepository{{ID: repository, Path: sourceRoot}}}
+	child := workspace.Manifest{PrimaryPath: childRoot, Repositories: []workspace.PreparedRepository{{ID: repository, Path: childRoot}}}
+	location := &domain.SessionDirectoryLocation{RepositoryID: repository, RelativePath: "nested"}
+	path, err := mappedForkDirectory(source, child, location, filepath.Join(sourceRoot, "nested"))
+	if err != nil || path != filepath.Join(childRoot, "nested") {
+		t.Fatal("child location mapping", err)
+	}
+	before, _ := json.Marshal(child)
+	for _, bad := range []domain.SessionDirectoryLocation{{RepositoryID: domain.NewID(), RelativePath: "nested"}, {RepositoryID: repository, RelativePath: "../escape"}, {RepositoryID: repository, RelativePath: "missing"}} {
+		if _, err := mappedForkDirectory(source, child, &bad, filepath.Join(sourceRoot, "nested")); err == nil {
+			t.Fatal("foreign child path adopted")
+		}
+	}
+	if _, err := mappedForkDirectory(source, child, location, sourceRoot); err == nil {
+		t.Fatal("source generation not matched")
+	}
+	after, _ := json.Marshal(child)
+	if string(before) != string(after) {
+		t.Fatal("child roots expanded")
+	}
+}

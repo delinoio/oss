@@ -38,6 +38,9 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	if f.handleNativeShell(id, method, raw, write) {
 		return true
 	}
+	if f.handleDirectory(id, method, raw, write) {
+		return true
+	}
 	if f.handleRevert(id, method, raw, write) {
 		return true
 	}
@@ -222,6 +225,10 @@ func openThreadFixtureConfigured(t *testing.T, mode string, configure func(*Conf
 	t.Helper()
 	config := fixtureConfig(t, mode)
 	config.Mode = ThreadProtocol
+	if strings.HasPrefix(mode, "thread-directory-") {
+		config.Version = "0.162.0"
+		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")
+	}
 	if strings.HasPrefix(mode, "thread-revert-") {
 		config.RevertHistory = true
 		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")

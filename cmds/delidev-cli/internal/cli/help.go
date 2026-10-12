@@ -137,6 +137,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session native-shell run --id ID --revision N --command COMMAND --confirm-full-access [--timeout-ms N]
   session native-shell status --id ID --action ACTION
   session native-shell cancel --id ID --action ACTION --revision N
+  session directory change --id ID --revision N --request-id ID [--repository-id ID] --path RELATIVE
+  session directory operation --id ID --request-id ID
   session compact --id ID --revision N
   session context --id ID
   session switch-account --id ID --revision N --account-id ID

@@ -139,7 +139,7 @@ func (s *Service) StartForward(ctx context.Context, req *connect.Request[pb.Star
 		if session.IsSidechat() {
 			return nil, domain.SidechatUnavailable()
 		}
-		if !session.WorkspaceAvailable() {
+		if !session.WorkspaceAvailable() || session.DirectoryJobID != "" {
 			return nil, domain.Fail(domain.Conflict, "Workspace storage retains this session.", "Settle the original storage operation and restore the workspace before starting a forward.")
 		}
 		if session.MachineID != domain.ID(m.MachineId) || session.Archive != domain.NotArchived {
@@ -311,7 +311,7 @@ func (s *Service) peerForward(tx *store.Tx, actor domain.Principal, peer *pb.For
 		return r, v, side, forwardUnavailable()
 	}
 	_, session, err := sessionRecord(tx, r.SessionID)
-	if err != nil || session.Archive != domain.NotArchived || !session.WorkspaceAvailable() || session.MachineID != v.MachineID {
+	if err != nil || session.Archive != domain.NotArchived || (!session.WorkspaceAvailable() || session.DirectoryJobID != "") || session.MachineID != v.MachineID {
 		return r, v, side, forwardUnavailable()
 	}
 	reader := &workspaceReader{machine: v.MachineID, instance: v.WorkerInstanceID, device: v.WorkerDeviceID}
@@ -711,7 +711,7 @@ func finishForwardArchive(tx *store.Tx, id domain.ID) error {
 		}
 		return err
 	}
-	if session.Archive != domain.ArchivePending || session.ActiveExecutionID != "" || session.CompactionJobID != "" || session.Recovery != domain.NoRecovery {
+	if session.Archive != domain.ArchivePending || session.ActiveExecutionID != "" || session.CompactionJobID != "" || session.DirectoryJobID != "" || session.Recovery != domain.NoRecovery {
 		return nil
 	}
 	pending, err := tx.SessionForwardsPending(id)

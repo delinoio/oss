@@ -82,7 +82,7 @@ func workspaceReadScope(tx *store.Tx, id domain.ID) (workspace.PrepareRequest, w
 	if err != nil {
 		return input, manifest, err
 	}
-	if !session.WorkspaceAvailable() || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
+	if (!session.WorkspaceAvailable() || session.DirectoryJobID != "") || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
 		return input, manifest, workspaceReadUnavailable()
 	}
 	if err := tx.WorkerUpdateAdmission(session.MachineID); err != nil {

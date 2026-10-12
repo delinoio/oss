@@ -31,7 +31,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	if !session.WorkspaceAvailable() || session.Fork != nil || session.InitialExecution == nil || session.Execution == nil || session.CompactionJobID != "" || session.Execution.ContextRevision != session.ContextRevision || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionSucceeded || !session.Execution.CleanupVerified || session.Execution.Waiting != (domain.NativeWaiting{}) || session.Execution.UnconfirmedResponses != 0 || session.Execution.NativeTurnID != string(expected) || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
+	if !session.WorkspaceAvailable() || session.Fork != nil || session.InitialExecution == nil || session.Execution == nil || session.CompactionJobID != "" || session.DirectoryJobID != "" || session.Execution.ContextRevision != session.ContextRevision || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionSucceeded || !session.Execution.CleanupVerified || session.Execution.Waiting != (domain.NativeWaiting{}) || session.Execution.UnconfirmedResponses != 0 || session.Execution.NativeTurnID != string(expected) || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
 		return r, session, input, forkConflict()
 	}
 	prior, err := tx.SessionExecutionJob(id, session.ExecutionSelection().ID)
@@ -77,6 +77,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 		selected.ExecutableSHA256 = job.Startup.Ready.ExecutableSHA256
 		input.Startup = &selected
 	}
+	input.Directory = session.Directory
 	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, session.Execution.NativePublication(), *session.InitialExecution
 	return r, session, input, nil
 }
@@ -369,7 +370,7 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if err != nil {
 		return err
 	}
-	if now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest || source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID || source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID {
+	if !sameDirectoryRef(now.Directory, input.Directory) || now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest || source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID || source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID {
 		return forkConflict()
 	}
 	if input.Purpose == domain.SidechatFork {
@@ -470,7 +471,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	if _, err := tx.PutJob(preparationID, 0, input.ChildSessionID, r.ProjectID, domain.Job{Type: domain.PrepareWorkspaceJob, State: domain.JobSucceeded, MachineID: job.MachineID, Input: output.Preparation, Output: output.Manifest, AcceptedAt: job.AcceptedAt, FinishedAt: &now}); err != nil {
 		return nil, err
 	}
-	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{Startup: input.Startup, SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
+	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{Directory: forkDirectoryLocation(input), Startup: input.Startup, SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
 	if input.Purpose == domain.SidechatFork {
 		snapshot, err := input.ChildSnapshot()
 		if err != nil {
@@ -591,4 +592,11 @@ func outputFinish(raw json.RawMessage) domain.ID {
 		return ""
 	}
 	return result.ManagedFinish
+}
+
+func forkDirectoryLocation(input domain.ForkJobInput) *domain.SessionDirectoryLocation {
+	if input.Directory != nil {
+		return &domain.SessionDirectoryLocation{RepositoryID: input.Directory.RepositoryID, RelativePath: input.Directory.RelativePath}
+	}
+	return input.SourceAssignment.ForkDirectory
 }

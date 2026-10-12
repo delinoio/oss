@@ -16,5 +16,11 @@ func decodeAssignedJob(raw []byte, target *domain.Job) error {
 	if err := domain.DecodeCompactionJob(raw, target); err == nil {
 		return nil
 	}
+	if domain.DecodeWithLimit(raw, target, domain.MaxCompactionJobBytes) == nil && target.Type == domain.ChangeSessionDirectoryJob && target.Validate() == nil {
+		var input domain.SessionDirectoryInput
+		if domain.DecodeWithLimit(target.Input, &input, domain.MaxCompactionInputBytes) == nil && input.Validate() == nil {
+			return nil
+		}
+	}
 	return workspace.DecodeStorageJob(raw, target)
 }

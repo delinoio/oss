@@ -182,7 +182,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if c.PreviousAccountID != "" {
 			account, connection = c.PreviousAccountID, c.PreviousConnectionID
 		}
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ForkDirectory: input.ForkDirectory, Directory: c.PreviousDirectory, ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeCheckpointWorkspaceRoots(manifest, c.PreviousDirectory, input.ForkDirectory != nil)})
 		if err != nil {
 			return nil, err
 		}
@@ -232,6 +232,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, err
 		}
 		checkpoint.Native = native
+		if input.ForkDirectory != nil {
+			checkpoint.DirectoryReload, err = readForkDirectoryReload(manager.Root, input)
+			if err != nil {
+				return nil, err
+			}
+		}
 		nativeHome = filepath.Join(runtimeRoot, string(f.RuntimeID), "codex")
 		env, err = replaceCodexHome(env, nativeHome)
 		if err != nil {
@@ -247,6 +253,37 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codexExecutionProvider(input.Configuration.Subscription), Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
+	var directoryGeneration *codexDirectoryCheckpoint
+	var directorySelection *workspace.DirectorySelection
+	if input.Directory != nil {
+		if input.Continuation == nil || input.Fork != nil {
+			return nil, domain.DirectoryUncertain()
+		}
+		checkpoint, directoryGeneration, err = directoryContinuationProjection(ctx, manager.Root, config.execution.Credential, input, checkpoint)
+		if err != nil {
+			return nil, err
+		}
+		directorySelection, err = lease.SelectDirectory(input.Directory.RepositoryID, input.Directory.RelativePath)
+		if err != nil {
+			return nil, err
+		}
+		defer directorySelection.Close()
+		if directorySelection.Path() != checkpoint.Native.Effective.Cwd {
+			return nil, domain.DirectoryUncertain()
+		}
+		settings = directoryThreadSettings(checkpoint.Native.Effective, directorySelection.Path(), manifest.WorkspaceRoots(), instructions, input.Configuration.Options)
+	}
+	if input.Directory == nil && input.ForkDirectory != nil {
+		directorySelection, err = lease.SelectDirectory(input.ForkDirectory.RepositoryID, input.ForkDirectory.RelativePath)
+		if err != nil {
+			return nil, err
+		}
+		defer directorySelection.Close()
+		if directorySelection.Path() != checkpoint.Native.Effective.Cwd {
+			return nil, domain.DirectoryUncertain()
+		}
+		settings = directoryThreadSettings(checkpoint.Native.Effective, directorySelection.Path(), manifest.WorkspaceRoots(), instructions, input.Configuration.Options)
+	}
 	if input.Fork != nil {
 		settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
 		settings.Options.ServiceTier = valueOrEmpty(checkpoint.Native.Effective.ServiceTier)
@@ -327,7 +364,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, subscription.Invalid()
 		}
 	}
-	if err := codex.ValidateThreadSettings(settings); err != nil {
+	if directoryGeneration != nil || input.ForkDirectory != nil {
+		err = codex.ValidateDirectoryThreadSettings(checkpoint.Native, settings)
+	} else {
+		err = codex.ValidateThreadSettings(settings)
+	}
+	if err != nil {
 		return nil, err
 	}
 	publicationConfig := *connection
@@ -385,7 +427,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, err
 	}
-	nativeConfig := codex.Config{WebSearch: settings.Options.WebSearch, ManagedSkills: managedSkills, EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	nativeConfig := codex.Config{WebSearch: settings.Options.WebSearch, ManagedSkills: managedSkills, EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && (input.Fork != nil || input.Directory != nil && checkpoint.Native.ForkHistory != nil) && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -461,7 +503,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
-		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		if directoryGeneration != nil || input.ForkDirectory != nil {
+			bound, err = client.ResumeDirectoryContinuation(ctx, input.ThreadRequestID, checkpoint.Native, settings)
+		} else {
+			bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		}
 		if err == nil {
 			intent := codex.ContinueAfterSuccess
 			if c.Intent == domain.ContinueExplicitly {
@@ -475,15 +521,27 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				shellHistory = &p
 			}
 			if shellHistory != nil {
-				_, err = client.VerifyNativeShellContinuation(ctx, c.HistoryRequestID, *shellHistory)
+				if directoryGeneration != nil {
+					_, err = client.VerifyDirectoryNativeShellContinuation(ctx, c.HistoryRequestID, *shellHistory, *bound.Effective)
+				} else {
+					_, err = client.VerifyNativeShellContinuation(ctx, c.HistoryRequestID, *shellHistory)
+				}
 			} else if compacted != nil {
-				_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+				if directoryGeneration != nil {
+					_, err = client.VerifyDirectoryCompactedContinuation(ctx, c.HistoryRequestID, *compacted, *bound.Effective)
+				} else {
+					_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+				}
 			} else {
 				_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
 			}
 		}
 	} else if f := input.Fork; f != nil {
-		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		if input.ForkDirectory != nil {
+			bound, err = client.ResumeDirectoryContinuation(ctx, input.ThreadRequestID, checkpoint.Native, settings)
+		} else {
+			bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		}
 		if err == nil {
 			_, err = client.VerifyContinuation(ctx, f.HistoryRequestID, checkpoint.Native, codex.ContinueAfterSuccess)
 		}
@@ -493,12 +551,24 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, err
 	}
+	if err := verifyDirectoryReload(ctx, client, domain.NewID(), bound, directoryGeneration, directorySelection); err != nil {
+		return nil, err
+	}
+	if input.ForkDirectory != nil && directoryGeneration == nil {
+		bound.DirectoryReload, err = verifyInheritedDirectoryReload(ctx, client, bound, checkpoint.DirectoryReload, directorySelection)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := mapper.BindThread(ctx, bound); err != nil {
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
+	}
+	if directorySelection != nil && directorySelection.Verify() != nil {
+		return nil, domain.DirectoryUncertain()
 	}
 	var background *nativeBackgroundController
 	if config.backgroundSupported && client.Version() == codex.NativeShellVersion && input.Configuration.SidechatPolicy == "" {

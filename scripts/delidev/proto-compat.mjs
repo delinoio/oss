@@ -20,7 +20,7 @@ export function retireCompatibility() {
     // The pinned ES generator adds a blank EOF line to the new MCP module.
     // Keep its generated output reproducible with the required whitespace check;
     // remove this normalization when the generator emits one terminal newline.
-    if (filename === "mcp_pb.ts") {
+    if (["mcp_pb.ts", "session_directory_pb.ts"].includes(filename)) {
       const path = resolve(directory, filename);
       const generated = readFileSync(path, "utf8");
       const normalized = generated.trimEnd() + "\n";

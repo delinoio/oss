@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -16,13 +17,16 @@ import (
 // snapshot. It contains no credential, arbitrary config, or base-instruction
 // override. Account authority and durable snapshot acceptance belong upstream.
 type ThreadSettings struct {
-	Model          string
-	Provider       string
-	Effort         string
-	Cwd            string
-	WorkspaceRoots []string
-	Instructions   string
-	Options        domain.AgentOptions
+	directorySource *ContinuationCheckpoint
+	directoryClaim  func() error
+	directoryFork   bool
+	Model           string
+	Provider        string
+	Effort          string
+	Cwd             string
+	WorkspaceRoots  []string
+	Instructions    string
+	Options         domain.AgentOptions
 }
 
 type ApprovalPolicy string
@@ -103,10 +107,14 @@ type EffectiveSettings struct {
 // ThreadResult retains a proven native identity even when effective settings
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
-	SkillInputs []HistoricalInput `json:"-"`
-	RequestID   domain.ID
-	Thread      *Thread
-	Effective   *EffectiveSettings
+	// DirectorySources is Worker-private reload evidence, never public observation.
+	DirectoryStartedAt time.Time                `json:"-"`
+	DirectoryReload    *DirectoryReloadEvidence `json:"-"`
+	DirectorySources   []string                 `json:"-"`
+	SkillInputs        []HistoricalInput        `json:"-"`
+	RequestID          domain.ID
+	Thread             *Thread
+	Effective          *EffectiveSettings
 }
 
 type threadMethod string
@@ -222,7 +230,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		return p, unsupportedSettings()
 	}
 	if len(s.WorkspaceRoots) > 0 {
-		if !slices.Contains(s.WorkspaceRoots, s.Cwd) {
+		if !slices.Contains(s.WorkspaceRoots, s.Cwd) && !directoryInsideOriginalRoots(s.Cwd, s.WorkspaceRoots) {
 			return p, unsupportedSettings()
 		}
 		for i, root := range s.WorkspaceRoots {
@@ -369,6 +377,27 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		c.logger.InfoContext(ctx, "Codex native thread operation", "owner_id", c.ownerID, "request_id", requestID, "operation", method, "stage", "native-thread-binding", "options", (domain.ExecutionConfiguration{Effort: settings.Effort, Options: settings.Options}).SelectedNativeOptionNames(), "code", code)
 	}()
+	if settings.directorySource != nil {
+		if method != resumeThread || settings.directoryClaim == nil {
+			return result, directoryUncertain()
+		}
+		if err := c.noForkWorkLocked(ctx, settings.directorySource.ThreadID); err != nil {
+			return result, err
+		}
+		inventory, inventoryErr := c.wire.Call(ctx, domain.NewID(), "thread/backgroundTerminals/list", struct {
+			ThreadID domain.ID `json:"threadId"`
+			Limit    uint32    `json:"limit"`
+		}{settings.directorySource.ThreadID, 1})
+		if inventoryErr != nil || inventory.ErrorCode != nil || emptyDirectoryBackgroundInventory(inventory.Result) != nil {
+			return result, directoryUncertain()
+		}
+		if err := settings.directoryClaim(); err != nil {
+			return result, err
+		}
+	}
+	if settings.directorySource != nil {
+		result.DirectoryStartedAt = time.Now()
+	}
 	response, err := c.wire.Call(ctx, requestID, string(method), params)
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
@@ -387,6 +416,15 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	}
 	thread, effective, err := decodeBoundThreadProfile(response.Result, settings, threadID, method, c.version, c.revertHistory)
 	result.Thread, result.Effective = thread, effective
+	if settings.directorySource != nil && err == nil {
+		var reload boundThreadWire
+		if domain.Decode(response.Result, &reload) != nil || reload.InstructionSources == nil {
+			c.problem = directoryUncertain()
+			return result, c.problem
+		}
+		result.DirectorySources = slices.Clone(reload.InstructionSources)
+	}
+
 	if threadID != "" {
 		// A mismatched native response cannot replace the resumed identity's
 		// inspection authority, even while mutations are blocked for recovery.

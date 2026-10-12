@@ -34,6 +34,8 @@ func decodeWorkerClaim(raw []byte) (store.Record, domain.Job, error) {
 	}
 	var err error
 	switch envelope.Type {
+	case domain.ChangeSessionDirectoryJob:
+		err = domain.DecodeWithLimit(record.Data, &job, domain.MaxCompactionJobBytes)
 	case domain.CompactSessionJob:
 		err = domain.DecodeCompactionJob(record.Data, &job)
 	case domain.WorkspaceStorageJob:

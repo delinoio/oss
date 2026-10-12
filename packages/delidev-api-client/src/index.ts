@@ -19,6 +19,7 @@ export * from "./gen/delidev/v1/resource_pb.js";
 export * from "./gen/delidev/v1/schedule_pb.js";
 export * from "./gen/delidev/v1/search_pb.js";
 export * from "./gen/delidev/v1/session_pb.js";
+export * from "./gen/delidev/v1/session_directory_pb.js";
 export * from "./gen/delidev/v1/skills_pb.js";
 export * from "./gen/delidev/v1/subscription_pb.js";
 export * from "./gen/delidev/v1/system_pb.js";
@@ -38,6 +39,7 @@ export * as AccountQuery from "./gen/delidev/v1/account-AccountService_connectqu
 export * as ProviderQuery from "./gen/delidev/v1/provider-ProviderService_connectquery.js";
 export * as NativeModelQuery from "./gen/delidev/v1/native_models-NativeModelService_connectquery.js";
 export * as SessionQuery from "./gen/delidev/v1/session-SessionService_connectquery.js";
+export * as SessionDirectoryQuery from "./gen/delidev/v1/session_directory-SessionDirectoryService_connectquery.js";
 export * as InteractionQuery from "./gen/delidev/v1/interaction-InteractionService_connectquery.js";
 export * as InboxQuery from "./gen/delidev/v1/inbox-InboxService_connectquery.js";
 export * as ScheduleQuery from "./gen/delidev/v1/schedule-ScheduleService_connectquery.js";

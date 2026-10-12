@@ -22,22 +22,27 @@ import (
 // A coordinator still has to prove current authority, terminal publication and
 // cleanup independently; this file cannot clear a lost completion report.
 type CodexExecutionCheckpoint struct {
-	Version               uint32                       `json:"version"`
-	JobID                 domain.ID                    `json:"job_id"`
-	SessionID             domain.ID                    `json:"session_id"`
-	MachineID             domain.ID                    `json:"machine_id"`
-	HistoryExecutionID    domain.ID                    `json:"history_execution_id"`
-	AssignmentInputDigest string                       `json:"assignment_input_digest"`
-	ConfigurationDigest   string                       `json:"configuration_digest"`
-	AccountID             domain.ID                    `json:"account_id"`
-	ConnectionID          domain.ID                    `json:"connection_id"`
-	Completion            domain.ExecutionCompletion   `json:"completion"`
-	Native                codex.ContinuationCheckpoint `json:"native"`
+	ForkDirectory         *domain.SessionDirectoryLocation `json:"fork_directory,omitempty"`
+	DirectoryReload       *codex.DirectoryReloadEvidence   `json:"directory_reload,omitempty"`
+	Directory             *domain.SessionDirectoryRef      `json:"directory,omitempty"`
+	Version               uint32                           `json:"version"`
+	JobID                 domain.ID                        `json:"job_id"`
+	SessionID             domain.ID                        `json:"session_id"`
+	MachineID             domain.ID                        `json:"machine_id"`
+	HistoryExecutionID    domain.ID                        `json:"history_execution_id"`
+	AssignmentInputDigest string                           `json:"assignment_input_digest"`
+	ConfigurationDigest   string                           `json:"configuration_digest"`
+	AccountID             domain.ID                        `json:"account_id"`
+	ConnectionID          domain.ID                        `json:"connection_id"`
+	Completion            domain.ExecutionCompletion       `json:"completion"`
+	Native                codex.ContinuationCheckpoint     `json:"native"`
 }
 
 // ExecutionCheckpointRef comes from the exact preceding immutable assignment
 // and its accepted completion. It intentionally contains no prompt or token.
 type ExecutionCheckpointRef struct {
+	ForkDirectory   *domain.SessionDirectoryLocation
+	Directory       *domain.SessionDirectoryRef
 	ContextRevision uint64 `json:"context_revision,omitempty"`
 	// Copy this private comparison flag only from the accepted configuration.
 	Subscription          bool
@@ -73,6 +78,9 @@ func (r ExecutionCheckpointRef) validate() error {
 }
 
 func (r ExecutionCheckpointRef) validateForHarness(harness domain.Harness) error {
+	if r.Directory != nil && (harness != domain.Codex || r.Directory.Validate() != nil) {
+		return executionCheckpointUncertain()
+	}
 	for _, id := range []domain.ID{r.JobID, r.SessionID, r.MachineID, r.HistoryExecutionID, r.AccountID, r.ConnectionID} {
 		if id.Validate() != nil {
 			return executionCheckpointUncertain()
@@ -122,7 +130,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.Native.ContextRevision != ref.ContextRevision || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || !sameDirectoryValue(p.ForkDirectory, ref.ForkDirectory) || !sameDirectoryValue(p.Directory, ref.Directory) || p.Version != 1 || p.Native.ContextRevision != ref.ContextRevision || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -210,12 +218,13 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	if err != nil || !bytes.Equal(actual, expected) {
 		return "", executionCheckpointUncertain()
 	}
-	ref := ExecutionCheckpointRef{ContextRevision: input.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
+	ref := ExecutionCheckpointRef{Directory: input.Directory, ContextRevision: input.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
 	var manifest workspace.Manifest
 	if domain.Decode(input.Manifest, &manifest) != nil {
 		return "", executionCheckpointUncertain()
 	}
-	ref.WorkspaceRoots = nativeWorkspaceRoots(manifest)
+	ref.ForkDirectory = input.ForkDirectory
+	ref.WorkspaceRoots = nativeCheckpointWorkspaceRoots(manifest, input.Directory, input.ForkDirectory != nil)
 	ref.AcceptedInputs = acceptedInputs
 	nativeInputs, err := ref.nativeInputs()
 	if err != nil {
@@ -236,7 +245,7 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 		ref.HistoryExecutionID = input.Fork.RuntimeID
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
-	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: domain.ID(completion.NativeTurnID), Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
+	checkpoint := CodexExecutionCheckpoint{ForkDirectory: input.ForkDirectory, DirectoryReload: bound.DirectoryReload, Directory: input.Directory, Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: domain.ID(completion.NativeTurnID), Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
 	if len(contextProofs) > 1 {
 		return "", executionCheckpointUncertain()
 	}
@@ -290,4 +299,11 @@ func sameHistoricalPrompts(a, b []codex.HistoricalInput) bool {
 		}
 	}
 	return true
+}
+
+func nativeCheckpointWorkspaceRoots(manifest workspace.Manifest, directory *domain.SessionDirectoryRef, inherited ...bool) []string {
+	if directory != nil || len(inherited) > 0 && inherited[0] {
+		return manifest.WorkspaceRoots()
+	}
+	return nativeWorkspaceRoots(manifest)
 }

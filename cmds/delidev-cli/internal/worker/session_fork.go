@@ -34,18 +34,19 @@ const (
 )
 
 type ForkCheckpoint struct {
-	SidechatPolicy      domain.SidechatPolicy        `json:"sidechat_policy,omitempty"`
-	Version             uint32                       `json:"version"`
-	JobID               domain.ID                    `json:"job_id"`
-	JobInputDigest      string                       `json:"job_input_digest"`
-	SessionID           domain.ID                    `json:"session_id"`
-	MachineID           domain.ID                    `json:"machine_id"`
-	RuntimeID           domain.ID                    `json:"runtime_id"`
-	ConfigurationDigest string                       `json:"configuration_digest"`
-	AccountID           domain.ID                    `json:"account_id"`
-	ConnectionID        domain.ID                    `json:"connection_id"`
-	ManifestDigest      string                       `json:"manifest_digest"`
-	Native              codex.ContinuationCheckpoint `json:"native"`
+	DirectoryReload     *codex.DirectoryReloadEvidence `json:"directory_reload,omitempty"`
+	SidechatPolicy      domain.SidechatPolicy          `json:"sidechat_policy,omitempty"`
+	Version             uint32                         `json:"version"`
+	JobID               domain.ID                      `json:"job_id"`
+	JobInputDigest      string                         `json:"job_input_digest"`
+	SessionID           domain.ID                      `json:"session_id"`
+	MachineID           domain.ID                      `json:"machine_id"`
+	RuntimeID           domain.ID                      `json:"runtime_id"`
+	ConfigurationDigest string                         `json:"configuration_digest"`
+	AccountID           domain.ID                      `json:"account_id"`
+	ConnectionID        domain.ID                      `json:"connection_id"`
+	ManifestDigest      string                         `json:"manifest_digest"`
+	Native              codex.ContinuationCheckpoint   `json:"native"`
 }
 
 func replaceCodexHome(env []string, home string) ([]string, error) {
@@ -115,9 +116,18 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if assignment.Fork != nil {
 		historyID = assignment.Fork.RuntimeID
 	}
-	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ContextRevision: assignment.ContextRevision, ApprovalsReviewer: assignment.Configuration.Options.ApprovalsReviewer, Subscription: assignment.Configuration.Subscription, JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ForkDirectory: assignment.ForkDirectory, Directory: assignment.Directory, ContextRevision: assignment.ContextRevision, ApprovalsReviewer: assignment.Configuration.Options.ApprovalsReviewer, Subscription: assignment.Configuration.Subscription, JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeCheckpointWorkspaceRoots(manifest, assignment.Directory, assignment.ForkDirectory != nil)})
 	if err != nil {
 		return nil, err
+	}
+	if input.Directory != nil {
+		projected := assignment
+		projected.Directory = input.Directory
+		projected.Continuation = &domain.ExecutionContinuation{PreviousDirectory: assignment.Directory, Previous: input.Progress, Completion: input.Completion, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), InputMode: assignment.Input.Mode}
+		checkpoint, _, err = directoryContinuationProjection(ctx, config.Root, config.execution.Credential, projected, checkpoint)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if assignment.Version != 4 && !domain.CodexVersionAllowed(assignment.Installation.Version) {
 		return nil, executionCheckpointUncertain()
@@ -185,7 +195,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
+	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: checkpoint.Native.Effective.Cwd, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
 	sourceConfig := codex.Config{WebSearch: assignment.Configuration.Options.WebSearch, RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
@@ -265,7 +275,15 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codexExecutionProvider(assignment.Configuration.Subscription), Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: instructions, Options: assignment.Configuration.Options}
+	selectedLocation := forkSelectedLocation(input)
+	childCwd := childManifest.PrimaryPath
+	if selectedLocation != nil {
+		childCwd, err = mappedForkDirectory(manifest, childManifest, selectedLocation, checkpoint.Native.Effective.Cwd)
+		if err != nil {
+			return nil, err
+		}
+	}
+	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codexExecutionProvider(assignment.Configuration.Subscription), Effort: assignment.Configuration.Effort, Cwd: childCwd, WorkspaceRoots: nativeCheckpointWorkspaceRoots(childManifest, nil, selectedLocation != nil), Instructions: instructions, Options: assignment.Configuration.Options}
 	// Pin native defaults to the original effective observations. Configuration
 	// itself remains byte-identical; observed defaults cannot become new choices.
 	settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
@@ -375,7 +393,22 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		preNative = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, executionCheckpointUncertain()
 	}
-	bound, forkErr := client.ForkThread(ctx, input.NativeRequestID, source, settings)
+	var bound codex.ThreadResult
+	var forkErr error
+	if selectedLocation != nil {
+		bound, forkErr = client.ForkDirectoryThread(ctx, input.NativeRequestID, source, settings)
+	} else {
+		bound, forkErr = client.ForkThread(ctx, input.NativeRequestID, source, settings)
+	}
+	var reload *codex.DirectoryReloadEvidence
+	if forkErr == nil && selectedLocation != nil {
+		proof, e := client.ReadDirectoryReloadEvidence(ctx, domain.NewID(), bound)
+		if e != nil {
+			forkErr = e
+		} else {
+			reload = &proof
+		}
+	}
 
 	if managed != nil {
 		bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
@@ -411,7 +444,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	native.ContextRevision = 0
 	native.PaginatedHistory = bound.Thread.History == codex.PaginatedHistory
 	native.ThreadID, native.SessionID, native.Effective = bound.Thread.ID, bound.Thread.SessionID, *bound.Effective
-	file := ForkCheckpoint{Version: input.Version, SidechatPolicy: childSnapshot.Configuration.SidechatPolicy, JobID: owner, JobInputDigest: executionInputDigest(job.Input), SessionID: input.ChildSessionID, MachineID: job.MachineID, RuntimeID: input.RuntimeID, ConfigurationDigest: childSnapshot.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, ManifestDigest: executionInputDigest(mustForkJSON(childManifest)), Native: native}
+	file := ForkCheckpoint{DirectoryReload: reload, Version: input.Version, SidechatPolicy: childSnapshot.Configuration.SidechatPolicy, JobID: owner, JobInputDigest: executionInputDigest(job.Input), SessionID: input.ChildSessionID, MachineID: job.MachineID, RuntimeID: input.RuntimeID, ConfigurationDigest: childSnapshot.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, ManifestDigest: executionInputDigest(mustForkJSON(childManifest)), Native: native}
 	raw, err := json.Marshal(file)
 	if err != nil || len(raw) > maxExecutionCheckpointBytes {
 		return nil, executionCheckpointUncertain()
@@ -516,4 +549,58 @@ func readForkCheckpoint(root string, input domain.ExecutionJobInput) (codex.Cont
 		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
 	}
 	return result.Native, nil
+}
+
+func forkSelectedLocation(input domain.ForkJobInput) *domain.SessionDirectoryLocation {
+	if input.Directory != nil {
+		return &domain.SessionDirectoryLocation{RepositoryID: input.Directory.RepositoryID, RelativePath: input.Directory.RelativePath}
+	}
+	return input.SourceAssignment.ForkDirectory
+}
+func mappedForkDirectory(source, child workspace.Manifest, location *domain.SessionDirectoryLocation, sourceCwd string) (string, error) {
+	if location == nil || location.Validate() != nil {
+		return "", domain.DirectoryUncertain()
+	}
+	original, destination := source.PrimaryPath, child.PrimaryPath
+	if location.RepositoryID != "" {
+		original, destination = "", ""
+		for _, r := range source.Repositories {
+			if r.ID == location.RepositoryID {
+				original = r.Path
+			}
+		}
+		for _, r := range child.Repositories {
+			if r.ID == location.RepositoryID {
+				destination = r.Path
+			}
+		}
+	}
+	if original == "" || destination == "" || filepath.Join(original, filepath.FromSlash(location.RelativePath)) != sourceCwd {
+		return "", domain.DirectoryUncertain()
+	}
+	selected := filepath.Join(destination, filepath.FromSlash(location.RelativePath))
+	canonical, e := filepath.EvalSymlinks(selected)
+	info, statErr := os.Stat(selected)
+	if e != nil || statErr != nil || canonical != selected || !info.IsDir() {
+		return "", domain.DirectoryUncertain()
+	}
+	return selected, nil
+}
+func readForkDirectoryReload(root string, input domain.ExecutionJobInput) (*codex.DirectoryReloadEvidence, error) {
+	if _, err := readForkCheckpoint(root, input); err != nil {
+		return nil, err
+	}
+	var p ForkCheckpoint
+	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(input.Fork.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
+	if err != nil || domain.Decode(raw, &p) != nil || p.DirectoryReload == nil {
+		return nil, domain.DirectoryUncertain()
+	}
+	return p.DirectoryReload, nil
+}
+func verifyInheritedDirectoryReload(ctx context.Context, native *codex.Client, bound codex.ThreadResult, expected *codex.DirectoryReloadEvidence, selection *workspace.DirectorySelection) (*codex.DirectoryReloadEvidence, error) {
+	observed, err := native.ReadDirectoryReloadEvidence(ctx, domain.NewID(), bound)
+	if err != nil || expected == nil || !sameDirectoryValue(observed, *expected) || selection == nil || selection.Verify() != nil {
+		return nil, domain.DirectoryUncertain()
+	}
+	return &observed, nil
 }

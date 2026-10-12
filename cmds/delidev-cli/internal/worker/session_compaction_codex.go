@@ -56,7 +56,7 @@ func codexCheckpointForContinuation(root string, input domain.ExecutionJobInput,
 	if c.PreviousAccountID != "" {
 		account, connection = c.PreviousAccountID, c.PreviousConnectionID
 	}
-	return ReadCodexExecutionCheckpoint(root, ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: digest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	return ReadCodexExecutionCheckpoint(root, ExecutionCheckpointRef{ForkDirectory: input.ForkDirectory, Directory: c.PreviousDirectory, ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: digest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeCheckpointWorkspaceRoots(manifest, c.PreviousDirectory, input.ForkDirectory != nil)})
 }
 
 func executeCodexSessionCompaction(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.SessionCompactionInput) (output json.RawMessage, returned error) {
@@ -184,6 +184,23 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		return nil, err
 	}
 	settings := codex.ThreadSettings{Model: i.Assignment.Configuration.NativeModel, Provider: codexExecutionProvider(i.Assignment.Configuration.Subscription), Effort: i.Assignment.Configuration.Effort, Cwd: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), Instructions: instructions, Options: i.Assignment.Configuration.Options}
+	var directoryGeneration *codexDirectoryCheckpoint
+	var directorySelection *workspace.DirectorySelection
+	if i.Restore.Directory != nil {
+		source, directoryGeneration, err = directoryContinuationProjection(ctx, config.Root, c.Credential, i.Restore, source)
+		if err != nil {
+			return nil, err
+		}
+		directorySelection, err = lease.SelectDirectory(i.Restore.Directory.RepositoryID, i.Restore.Directory.RelativePath)
+		if err != nil {
+			return nil, err
+		}
+		defer directorySelection.Close()
+		if directorySelection.Path() != source.Native.Effective.Cwd {
+			return nil, domain.DirectoryUncertain()
+		}
+		settings = directoryThreadSettings(source.Native.Effective, directorySelection.Path(), manifest.WorkspaceRoots(), instructions, i.Assignment.Configuration.Options)
+	}
 	if codex.ValidateThreadSettings(settings) != nil {
 		return nil, domain.CompactionUncertain()
 	}
@@ -270,7 +287,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		cancelAction = context.AfterFunc(ctx, cancel)
 	}
 	defer cancelAction()
-	nativeConfig := codex.Config{WebSearch: settings.Options.WebSearch, NativeShell: i.NativeShell != nil, RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
+	nativeConfig := codex.Config{WebSearch: settings.Options.WebSearch, NativeShell: i.NativeShell != nil, ManagedForkHistory: i.Assignment.Configuration.Subscription && source.Native.ForkHistory != nil, EnableImageGeneration: i.Assignment.NativeImageGeneration, SkillsRoot: config.Root, RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
 	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -347,14 +364,28 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if managed != nil && config.observations != nil {
 		unregister = config.observations.register(i.Assignment.AccountID, native, managed)
 	}
-	if _, err := native.ResumeThread(ctx, i.Restore.ThreadRequestID, source.Native.ThreadID, settings); err != nil {
+	var bound codex.ThreadResult
+	if directoryGeneration != nil || i.Restore.ForkDirectory != nil {
+		bound, err = native.ResumeDirectoryContinuation(ctx, i.Restore.ThreadRequestID, source.Native, settings)
+	} else {
+		bound, err = native.ResumeThread(ctx, i.Restore.ThreadRequestID, source.Native.ThreadID, settings)
+	}
+	if err != nil {
 		return nil, err
 	}
 
 	if shellHistory != nil {
-		_, err = native.VerifyNativeShellContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *shellHistory)
+		if directoryGeneration != nil {
+			_, err = native.VerifyDirectoryNativeShellContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *shellHistory, *bound.Effective)
+		} else {
+			_, err = native.VerifyNativeShellContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *shellHistory)
+		}
 	} else if prior != nil {
-		_, err = native.VerifyCompactedContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *prior)
+		if directoryGeneration != nil {
+			_, err = native.VerifyDirectoryCompactedContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *prior, *bound.Effective)
+		} else {
+			_, err = native.VerifyCompactedContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *prior)
+		}
 	} else {
 		proofIntent := codex.ContinueAfterSuccess
 		if i.Revert != nil {
@@ -364,6 +395,21 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	if err != nil {
 		return nil, err
+	}
+	if err := verifyDirectoryReload(ctx, native, domain.NewID(), bound, directoryGeneration, directorySelection); err != nil {
+		return nil, err
+	}
+	if prior != nil && directoryGeneration != nil {
+		projected, projectionErr := codex.ProjectDirectoryCompaction(*prior, source.Native.Effective)
+		if projectionErr != nil {
+			return nil, projectionErr
+		}
+		prior = &projected
+	}
+	if i.Restore.ForkDirectory != nil && directoryGeneration == nil {
+		if _, err := verifyInheritedDirectoryReload(ctx, native, bound, source.DirectoryReload, directorySelection); err != nil {
+			return nil, err
+		}
 	}
 	commandClaim := sessionCompactionCommand{ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, RegistrationRequestID: registration, CredentialDigest: registrationClaim.CredentialDigest}
 	if err := writeCompactionClaim(config.Root, owner, compactionCommandClaim, commandClaim); err != nil {
@@ -512,7 +558,11 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 	canonical, err := json.Marshal(p)
 	original, originalErr := json.Marshal(p.Input.Assignment)
 	native, nativeErr := json.Marshal(p.Native)
-	sourceBytes, sourceErr := json.Marshal(source.Native)
+	expectedSource, _, projectionErr := directoryContinuationProjection(ctx, root, credential, p.Input.Restore, source)
+	if projectionErr != nil {
+		return empty, projectionErr
+	}
+	sourceBytes, sourceErr := json.Marshal(expectedSource.Native)
 	retainedSource, retainedSourceErr := json.Marshal(p.Native.Source)
 	if err != nil || originalErr != nil || nativeErr != nil || sourceErr != nil || retainedSourceErr != nil || !bytes.Equal(data, canonical) || !bytes.Equal(sourceBytes, retainedSource) || executionInputDigest(original) != input.Continuation.AssignmentInputDigest || executionInputDigest(native) != ref.NativeDigest || p.Native.Revert == nil && (len(p.Native.Records) == 0 || p.Native.Records[len(p.Native.Records)-1].ActionID != ref.ActionID) {
 		return empty, domain.CompactionUncertain()

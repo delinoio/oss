@@ -577,3 +577,38 @@ func TestSessionDeletionOwnsCurrentAndRetiredSkillSnapshots(t *testing.T) {
 		t.Fatal("original snapshot identity lost")
 	}
 }
+
+func TestSessionDeletionRetainsPendingDirectoryOwnership(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	server := domain.NewID()
+	if err := s.BindIdentity(ctx, server); err != nil {
+		t.Fatal(err)
+	}
+	sr, _, _ := deletionSession(t, s, "directory-owned")
+	_, err := s.Mutate(ctx, domain.NewID(), "fixture.directory-pending", nil, func(tx *Tx) (any, error) {
+		session, err := Decode[domain.Session](sr)
+		if err != nil {
+			return nil, err
+		}
+		session.DirectoryJobID = domain.NewID()
+		return tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, "", session)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.Get(ctx, domain.SessionKind, sr.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.DeleteSession(ctx, domain.NewID(), sr.ID, server, current.Revision); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatalf("pending directory deletion admitted: %v", err)
+	}
+	retained, err := s.Get(ctx, domain.SessionKind, sr.ID)
+	if err != nil || retained.Revision != current.Revision {
+		t.Fatal("deletion changed protected session", err)
+	}
+	if _, err := s.GetSessionDeletion(ctx, sr.ID); !os.IsNotExist(err) {
+		t.Fatal("deletion published an irrevocable journal", err)
+	}
+}

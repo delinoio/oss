@@ -76,6 +76,9 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if err != nil {
 		return empty, executionDenied()
 	}
+	if job.Type == domain.ChangeSessionDirectoryJob {
+		return a.directoryScope(tx, grant, jobRecord, job)
+	}
 	if job.Type == domain.CompactSessionJob {
 		return a.compactionScope(tx, grant, jobRecord, job)
 	}
@@ -275,6 +278,11 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 // inferenceScope adds readiness to live account and assignment authority. Registration
 // and original-process initialization use scope alone and cannot infer through it.
 func (a *executionAuthority) inferenceScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
+	if r, err := tx.Get(domain.JobKind, grant.JobID); err != nil {
+		return apiproxy.Scope{}, executionDenied()
+	} else if j, e := store.Decode[domain.Job](r); e != nil || j.Type == domain.ChangeSessionDirectoryJob {
+		return apiproxy.Scope{}, executionDenied()
+	}
 	scope, err := a.scope(tx, grant)
 	if err == nil {
 		r, e := tx.Get(domain.JobKind, grant.JobID)
@@ -300,7 +308,7 @@ func (a *executionAuthority) resolve(ctx context.Context, grant store.ExecutionG
 	var scope apiproxy.Scope
 	err := a.service.Store.Read(ctx, func(tx *store.Tx) error {
 		var err error
-		scope, err = a.scope(tx, grant)
+		scope, err = a.inferenceScope(tx, grant)
 		if err == nil {
 			err = requireExecutionStartupReady(tx, grant.JobID)
 		}
@@ -756,7 +764,13 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, executionDenied()
 		}
-		if job.Type == domain.CompactSessionJob {
+		if job.Type == domain.ChangeSessionDirectoryJob {
+			var input domain.SessionDirectoryInput
+			if domain.DecodeWithLimit(job.Input, &input, domain.MaxCompactionInputBytes) != nil || input.Validate() != nil {
+				return nil, executionDenied()
+			}
+			grant.ExecutionID = input.GenerationID
+		} else if job.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
 			if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil {
 				return nil, executionDenied()
@@ -796,6 +810,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				if job.Type == domain.ExecuteSessionJob {
 					var input domain.ExecutionJobInput
 					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version))
+				} else if job.Type == domain.ChangeSessionDirectoryJob {
+					var input domain.SessionDirectoryInput
+					supported = domain.DecodeWithLimit(job.Input, &input, domain.MaxCompactionInputBytes) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex

@@ -75,6 +75,7 @@ func globals(args []string) (options, []string, error) {
 				o.server = value
 			case "--request-id":
 				o.requestID = domain.ID(value)
+				o.requestIDExplicit = true
 				if err := o.requestID.Validate(); err != nil {
 					return o, nil, err
 				}

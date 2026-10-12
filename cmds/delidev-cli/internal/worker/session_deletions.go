@@ -441,6 +441,21 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 		if copy.ExecutionID != "" {
 			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ExecutionID)), filepath.Join(root, "pr-git", string(copy.ExecutionID)))
 		}
+		if copy.Type == domain.ChangeSessionDirectoryJob {
+			journals, err := directoryLeaseJournals(root, copy.JobID, copy.InstanceID)
+			if err != nil {
+				return nil, domain.SessionDeletionPending()
+			}
+			for _, path := range journals {
+				raw, err := security.ReadPrivate(path, 16<<10)
+				var journal managedSubscriptionJournal
+				if err != nil || domain.Decode(raw, &journal) != nil || journal.State != managedReported {
+					return nil, domain.SessionDeletionPending()
+				}
+				paths = append(paths, path, path+".directory-finish.pb")
+			}
+			paths = append(paths, filepath.Join(root, "runtimes", string(copy.ActionID)), filepath.Join(root, "directory-checkpoints", string(copy.ActionID)+".json"))
+		}
 		if copy.Type == domain.CompactSessionJob {
 			// An action owns its replacement runtime and retained checkpoint;
 			// the original conversation execution keeps its separate identity.

@@ -395,3 +395,32 @@ func TestUnmergedVersion25LayoutsRequireRecoveryWithoutModification(t *testing.T
 		})
 	}
 }
+
+func TestDirectoryJobEntityKeepsFiniteOriginalInputEnvelope(t *testing.T) {
+	s, _ := openTest(t)
+	for _, size := range []int{2 << 20, domain.MaxCompactionInputBytes + 1} {
+		input, err := json.Marshal(strings.Repeat("x", size))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var saved Record
+		_, err = s.Mutate(context.Background(), domain.NewID(), "directory.bounded", nil, func(tx *Tx) (any, error) {
+			var e error
+			saved, e = tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.ChangeSessionDirectoryJob, State: domain.JobQueued, MachineID: domain.NewID(), Input: input})
+			return saved, e
+		})
+		if size > domain.MaxCompactionInputBytes {
+			if err == nil {
+				t.Fatal("directory envelope exceeded original finite bound")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := Decode[domain.Job](saved)
+		if err != nil || len(job.Input) != len(input) {
+			t.Fatal("bounded directory assignment failed strict round trip", err)
+		}
+	}
+}

@@ -302,6 +302,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		if err == nil {
 			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
+			directoryExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_DIRECTORY_V1)
 			revertExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
@@ -372,6 +373,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
+			}
+			directoryInstallation := codexTitleInstallation(attached.Msg.Machine)
+			directoryExpected = directoryExpected && directoryInstallation != nil && directoryInstallation.Version == codex.NativeShellVersion
+			if directoryExpected {
+				profile += "\x00session-directory-v1"
 			}
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
@@ -506,6 +512,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 
+			}
+			if directoryExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_DIRECTORY_V1)
 			}
 			if revertExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
@@ -967,7 +976,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				cancel(publicationUncertain())
 				return
 			}
-			work.native = envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob
+			work.native = envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob || envelope.Type == domain.ChangeSessionDirectoryJob
 			if _, loaded := active.LoadOrStore(resource.Id, work); loaded {
 				stopJob()
 				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received a duplicate live assignment.", "Reconcile its original operation before another send."))
@@ -1161,6 +1170,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
+	if job.Type == domain.ChangeSessionDirectoryJob {
+		var input domain.SessionDirectoryInput
+		if domain.DecodeWithLimit(job.Input, &input, domain.MaxCompactionInputBytes) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
+			return journal{}, domain.DirectoryUncertain()
+		}
+	}
 	if job.Type == domain.CompactSessionJob {
 		var input domain.SessionCompactionInput
 		if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
@@ -1225,7 +1240,19 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		if result.State != journalStarted {
 			return journal{}, domain.Fail(domain.RecoveryRequired, "A Worker journal has an unknown state.", "Preserve it for recovery.")
 		}
-		result.Problem = domain.Fail(domain.RecoveryRequired, "Execution began without a durable completion record.", "Reconcile the accepted operation before retrying.")
+		if job.Type == domain.ChangeSessionDirectoryJob {
+			output, recovered, err := recoverDirectorySettlement(ctx, config, resource, instance, job)
+			if err != nil {
+				return journal{}, &managedExecutionUncertain{err}
+			}
+			if recovered {
+				result.Output = output
+			} else {
+				result.Problem = domain.DirectoryUncertain()
+			}
+		} else {
+			result.Problem = domain.Fail(domain.RecoveryRequired, "Execution began without a durable completion record.", "Reconcile the accepted operation before retrying.")
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return journal{}, err
 	} else {
@@ -1266,6 +1293,8 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		}
 	}
 	switch job.Type {
+	case domain.ChangeSessionDirectoryJob:
+		return executeSessionDirectory(ctx, config, owner, job)
 	case domain.CompactSessionJob:
 		var input domain.SessionCompactionInput
 		if domain.Decode(job.Input, &input) != nil {

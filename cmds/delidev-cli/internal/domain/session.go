@@ -251,6 +251,8 @@ type Session struct {
 
 	NativeShell           *NativeShellRef         `json:"native_shell,omitempty"`
 	LastNativeShellJobID  ID                      `json:"last_native_shell_job_id,omitempty"`
+	DirectoryJobID        ID                      `json:"directory_job_id,omitempty"`
+	Directory             *SessionDirectoryRef    `json:"directory,omitempty"`
 	StartupProgress       *SessionStartupProgress `json:"startup_progress,omitempty"`
 	SidechatRetries       []SidechatRetry         `json:"sidechat_retries,omitempty"`
 	SidechatCurrentAnswer ID                      `json:"sidechat_current_answer,omitempty"`

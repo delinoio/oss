@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -291,6 +292,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		Exclude      bool           `json:"excludeTurns"`
 		DeferGoal    bool           `json:"deferGoalContinuation"`
 	}{source.checkpoint.ThreadID, source.checkpoint.TurnID, source.path, params.Model, params.ModelProvider, params.Cwd, params.WorkspaceRoots, params.DeveloperInstructions, params.ApprovalPolicy, params.ApprovalsReviewer, params.Sandbox, params.ServiceTier, params.Config, true, true}
+	started := time.Now()
 	response, err := c.wire.Call(ctx, requestID, string(forkThread), request)
 	if err != nil {
 		c.problem = threadUncertain()
@@ -308,6 +310,14 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	}
 	thread, effective, err := decodeBoundThreadProfile(response.Result, settings, "", forkThread, c.version, c.revertHistory)
 	result.Thread, result.Effective = thread, effective
+	if settings.directoryFork {
+		var reload boundThreadWire
+		if domain.Decode(response.Result, &reload) != nil || reload.InstructionSources == nil {
+			return result, directoryUncertain()
+		}
+		result.DirectorySources = slices.Clone(reload.InstructionSources)
+		result.DirectoryStartedAt = started
+	}
 	if thread != nil {
 		c.thread = thread.ID
 	}
@@ -523,4 +533,14 @@ func managedForkItem(raw json.RawMessage, kind string) bool {
 		}
 	}
 	return len(plain) > 0
+}
+
+// ForkDirectoryThread maps an authenticated selected location to the child's
+// original roots and requires the same cold-start reload evidence as Resume.
+func (c *Client) ForkDirectoryThread(ctx context.Context, request domain.ID, source *ForkSource, settings ThreadSettings) (ThreadResult, error) {
+	if !directoryInsideOriginalRoots(settings.Cwd, settings.WorkspaceRoots) {
+		return ThreadResult{}, directoryUncertain()
+	}
+	settings.directoryFork = true
+	return c.ForkThread(ctx, request, source, settings)
 }

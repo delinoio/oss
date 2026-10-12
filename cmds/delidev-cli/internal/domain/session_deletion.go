@@ -110,7 +110,7 @@ func (w SessionDeletionWork) Validate() error {
 			if c.ActionID != "" {
 				return SessionDeletionPending()
 			}
-		case CompactSessionJob:
+		case CompactSessionJob, ChangeSessionDirectoryJob:
 			if c.ActionID.Validate() != nil || c.ExecutionID != "" {
 				return SessionDeletionPending()
 			}

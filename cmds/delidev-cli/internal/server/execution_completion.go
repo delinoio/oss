@@ -209,6 +209,9 @@ func retainNativeUncertainty(tx *store.Tx, jobID domain.ID, input domain.Executi
 // make its claimed input editable. Native terminal facts remain independent of
 // cleanup: even a published success still needs its original owned journals.
 func finishLostNativeExecution(tx *store.Tx, record store.Record, job domain.Job) error {
+	if job.Type == domain.ChangeSessionDirectoryJob {
+		return loseSessionDirectory(tx, record, job)
+	}
 	if job.Type == domain.CompactSessionJob {
 		return loseSessionCompaction(tx, record, job)
 	}

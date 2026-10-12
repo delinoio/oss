@@ -900,6 +900,11 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	if e != nil {
 		return v, e
 	}
+	// This check is inside deletion planning, before its irrevocable journal
+	// publication, under the same transaction as directory admission.
+	if value.DirectoryJobID != "" {
+		return v, domain.DirectoryUncertain()
+	}
 	if e := t.WorkerUpdateAdmission(value.MachineID); e != nil {
 		return v, e
 	}
@@ -1005,6 +1010,13 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 				return v, domain.SessionDeletionPending()
 			}
 			copy.SnapshotID = input.SnapshotID
+		}
+		if j.Type == domain.ChangeSessionDirectoryJob {
+			var input domain.SessionDirectoryInput
+			if domain.DecodeWithLimit(original.Input, &input, domain.MaxCompactionInputBytes) != nil || input.Validate() != nil || input.Assignment.SessionID != v.SessionID {
+				return v, domain.SessionDeletionPending()
+			}
+			copy.ActionID = input.GenerationID
 		}
 		if j.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
