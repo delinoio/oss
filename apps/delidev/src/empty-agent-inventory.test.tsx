@@ -76,12 +76,14 @@ function fixture(
     value = "",
     locked = false,
     source = transport,
+    pending = false,
   }: {
     active?: boolean;
     allowed?: string[];
     value?: string;
     locked?: boolean;
     source?: typeof transport;
+    pending?: boolean;
   }) {
     return (
       <TransportProvider transport={source}>
@@ -95,6 +97,7 @@ function fixture(
               allowed={allowed}
               showStatus
               change={change}
+              emptyInventoryActionPending={pending}
               emptyInventoryAction={{
                 label: copy("new-session.createAgentWorker"),
                 invoke,
@@ -434,5 +437,24 @@ it("requires a new complete read when the authenticated transport changes", asyn
     expect(screen.queryByText("Loading Agent Worker choices…")).toBeNull(),
   );
   expect(screen.getByRole("combobox", { name: "Agent Worker" })).toBeTruthy();
+  expect(f.change).not.toHaveBeenCalled();
+});
+
+it("withholds the creation entry while the caller still restores a retained Agent", async () => {
+  const f = fixture(() => ({ resources: [] }));
+  const view = render(<f.View pending />);
+  expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+  expect(screen.getByRole("combobox", { name: "Agent Worker" })).toBeTruthy();
+  view.rerender(<f.View />);
+  expect(
+    await screen.findByRole("button", { name: "Create agent worker" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("Loading Agent Worker choices…")).toBeNull();
   expect(f.change).not.toHaveBeenCalled();
 });

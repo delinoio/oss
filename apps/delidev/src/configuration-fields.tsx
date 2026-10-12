@@ -818,9 +818,13 @@ export function ResourceChoice({
   resolvedChoice,
   selectionResetToken = 0,
   emptyInventoryAction,
+  emptyInventoryActionPending = false,
 }: {
   selectionResetToken?: number;
   emptyInventoryAction?: { label: string; invoke: () => void };
+  // True while the caller still restores a retained Agent selection, so the
+  // empty-inventory creation entry must not be offered yet.
+  emptyInventoryActionPending?: boolean;
   label: string;
   resourceLabel?: string;
   kind: EntityKind;
@@ -1278,7 +1282,7 @@ export function ResourceChoice({
     (total, page) => total + (page.payload[0]?.count ?? 0),
     0,
   );
-  const createFromEmptyInventory = Boolean(
+  const emptyInventoryProven = Boolean(
     emptyInventoryAction &&
     kind === EntityKind.AGENT &&
     active &&
@@ -1293,6 +1297,10 @@ export function ResourceChoice({
     firstInventory?.transport === transport &&
     firstInventory.completeEmpty,
   );
+  const createFromEmptyInventory =
+    emptyInventoryProven && !emptyInventoryActionPending;
+  const awaitingRestoration =
+    emptyInventoryProven && emptyInventoryActionPending;
   return (
     <div className="resource-choice">
       {createFromEmptyInventory ? (
@@ -1335,7 +1343,8 @@ export function ResourceChoice({
           {copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}
         </p>
       ) : null}
-      {(showStatus || reportRead || markRequired) && result.loading ? (
+      {(showStatus || reportRead || markRequired) &&
+      (result.loading || awaitingRestoration) ? (
         <p role="status">
           {copy("configuration-fields.sentence.3d9404257563", {
             v0: resourceLabel,

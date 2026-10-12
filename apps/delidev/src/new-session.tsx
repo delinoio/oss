@@ -444,6 +444,19 @@ export function NewSession({
     workspace,
     blocked,
   ]);
+  // Offer Agent Worker creation only after the creation preference read and the
+  // retained Agent's exact read and eligibility have settled. Read errors settle
+  // the wait so they never block ordinary creation.
+  const agentRestorationPending =
+    preferences.reading ||
+    Boolean(
+      preferences.pair?.agent_id &&
+      !touched.current &&
+      !restoration.current.agent &&
+      (rememberedAgent.isFetching ||
+        (project && selectedProject.isFetching) ||
+        agentEligible),
+    );
   const editAgent = (id: string) => {
     touched.current = true;
     restoration.current.agent = false;
@@ -1182,6 +1195,7 @@ export function NewSession({
                         }
                         resolvedChoice={agentChoice}
                         change={editAgent}
+                        emptyInventoryActionPending={agentRestorationPending}
                         emptyInventoryAction={{
                           label: copy("new-session.createAgentWorker"),
                           invoke: () =>
