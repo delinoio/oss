@@ -1140,29 +1140,6 @@ function TerminalView({
       <footer role="status">
         {copy(`session-terminals.${state}`)} · {statusLabel(text(data.state))}
       </footer>
-      <div className="terminal-resource-details" hidden={!details}>
-        <p>
-          <LocalizedText
-            id="session-terminals.worker_5a5ff9"
-            components={{
-              s0: (
-                <>
-                  {productLabel(PresentationKind.Runner, text(data.machine_id))}
-                </>
-              ),
-              s1: <br />,
-              s2: <>{text(data.shell)}</>,
-              s3: <br />,
-              s4: <>{text(data.cwd)}</>,
-            }}
-          />
-        </p>
-        <p>
-          {data.cleanup_verified
-            ? copy("session-terminals.processCleanupVerified_024000")
-            : copy("session-terminals.processCleanupPending_efa78d")}
-        </p>
-      </div>
       <Problem error={error || control.error} />
       {state === OutputState.Detached ||
       rendererUnavailable ||
