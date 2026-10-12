@@ -245,25 +245,26 @@ enum ChunkMap {
     File(PathBuf),
 }
 
+/// A chunk's source map reference.
+enum MapRef {
+    /// A map that bundle mode can compose.
+    Local(ChunkMap),
+    /// An absolute or protocol-relative URL that bundle mode cannot update.
+    Remote(String),
+}
+
 /// Finds the source map of a chunk: its `sourceMappingURL` (inline, relative
 /// to the chunk or root-relative within the output), or the adjacent
 /// `<chunk>.map` of hidden source maps.
-fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<ChunkMap> {
-    let reference = sourcemap::locate_sourcemap_reference_slice(text.as_bytes())
-        .ok()
-        .flatten();
-    let path = match reference {
-        Some(reference) if reference.get_url().starts_with("data:") => {
-            return Some(ChunkMap::Inline(reference.get_url().to_owned()));
+fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
+    let path = match map_reference(text).map(|comment| comment.url) {
+        Some(url) if url.starts_with("data:") => {
+            return Some(MapRef::Local(ChunkMap::Inline(url.to_owned())));
         }
         Some(reference) => {
-            let url = reference
-                .get_url()
-                .split(['?', '#'])
-                .next()
-                .unwrap_or_default();
+            let url = reference.split(['?', '#']).next().unwrap_or_default();
             if url.contains("://") || url.starts_with("//") {
-                return None;
+                return Some(MapRef::Remote(reference.to_owned()));
             }
             match url.strip_prefix('/') {
                 // Root-relative: resolve under the output root, dropping
@@ -280,23 +281,52 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<ChunkMap> {
         None => chunk.with_file_name(format!("{}.map", chunk.file_name()?.to_string_lossy())),
     };
     let path = path.canonicalize().ok()?;
-    (path.starts_with(root.canonicalize().ok()?) && path.is_file()).then_some(ChunkMap::File(path))
+    (path.starts_with(root.canonicalize().ok()?) && path.is_file())
+        .then_some(MapRef::Local(ChunkMap::File(path)))
 }
 
-/// Span of the `//# sourceMappingURL=<url>` or `/*# sourceMappingURL=<url> */`
-/// comment (with `#` or the legacy `@`) that carries `url`.
-fn map_comment_span(text: &str, url: &str) -> Option<(usize, usize)> {
-    let at = text.rfind(url)?;
-    let marker = text[..at].strip_suffix("sourceMappingURL=")?;
-    let pragma = marker.trim_end_matches([' ', '\t']);
-    let opener = pragma.strip_suffix(['#', '@'])?;
-    let start = opener.len().checked_sub(2)?;
-    let end = at + url.len();
-    match &text[start..opener.len()] {
-        "//" => Some((start, end)),
-        "/*" => text[end..].find("*/").map(|close| (start, end + close + 2)),
-        _ => None,
+/// The last `//# sourceMappingURL=<url>` or `/*# sourceMappingURL=<url> */`
+/// comment (with `#` or the legacy `@`): its URL and the byte span of the
+/// whole comment.
+struct MapComment<'a> {
+    url: &'a str,
+    start: usize,
+    end: usize,
+}
+
+fn map_reference(text: &str) -> Option<MapComment<'_>> {
+    const MARKER: &str = "sourceMappingURL=";
+    let mut limit = text.len();
+    while let Some(at) = text[..limit].rfind(MARKER) {
+        limit = at;
+        let url_start = at + MARKER.len();
+        let url_end = text[url_start..]
+            .find(|c: char| c.is_whitespace() || c == '*')
+            .map_or(text.len(), |e| url_start + e);
+        let pragma = text[..at].trim_end_matches([' ', '\t']);
+        let Some(opener) = pragma.strip_suffix(['#', '@']) else {
+            continue;
+        };
+        let Some(start) = opener.len().checked_sub(2) else {
+            continue;
+        };
+        let end = match text.get(start..opener.len()) {
+            Some("//") => url_end,
+            Some("/*") => match text[url_end..].find("*/") {
+                Some(close) => url_end + close + 2,
+                None => continue,
+            },
+            _ => continue,
+        };
+        if url_end > url_start {
+            return Some(MapComment {
+                url: &text[url_start..url_end],
+                start,
+                end,
+            });
+        }
     }
+    None
 }
 
 /// Composes the source map of one edited chunk in place. Returns whether a
@@ -310,8 +340,21 @@ fn update_chunk_map(
     text: &str,
     chain: &[Vec<Edit>],
 ) -> Result<(Option<bool>, isize)> {
-    let Some(location) = chunk_map(root, target, text) else {
-        return Ok((None, 0));
+    let location = match chunk_map(root, target, text) {
+        None => return Ok((None, 0)),
+        Some(MapRef::Local(location)) => location,
+        Some(MapRef::Remote(url)) => {
+            // A remote map describes the pre-optimization chunk and cannot be
+            // composed here; a missing map is better than a wrong one.
+            tracing::warn!("dropping a remote source map reference of an edited chunk");
+            let comment = map_reference(text)
+                .filter(|comment| comment.url == url)
+                .context("cannot locate the remote source map comment of an edited chunk")?;
+            let (start, end) = (comment.start, comment.end);
+            let updated = format!("{}{}", &text[..start], &text[end..]);
+            std::fs::write(target, &updated).context("cannot write an edited chunk")?;
+            return Ok((Some(false), updated.len() as isize - text.len() as isize));
+        }
     };
     let decoded = match &location {
         ChunkMap::Inline(url) => sourcemap::decode_data_url(url).map_err(anyhow::Error::from),
@@ -352,8 +395,10 @@ fn update_chunk_map(
         }
         (ChunkMap::Inline(url), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable inline chunk source map");
-            let (start, end) = map_comment_span(text, &url)
+            let comment = map_reference(text)
+                .filter(|comment| comment.url == url)
                 .context("cannot locate the unreadable inline source map comment")?;
+            let (start, end) = (comment.start, comment.end);
             let updated = format!("{}{}", &text[..start], &text[end..]);
             std::fs::write(target, &updated).context("cannot write an edited chunk")?;
             Ok((Some(false), updated.len() as isize - text.len() as isize))
@@ -761,16 +806,20 @@ mod tests {
     fn locates_source_map_comments_exactly() {
         let url = "data:application/json;base64,e30=";
         let line = format!("const u=\"http://x\";f();\n//# sourceMappingURL={url}");
-        let (start, end) = super::map_comment_span(&line, url).unwrap();
-        assert_eq!(&line[..start], "const u=\"http://x\";f();\n");
-        assert_eq!(end, line.len());
+        let comment = super::map_reference(&line).unwrap();
+        assert_eq!(comment.url, url);
+        assert_eq!(&line[..comment.start], "const u=\"http://x\";f();\n");
+        assert_eq!(comment.end, line.len());
         let block = format!("const u=\"http://x\";f();/*# sourceMappingURL={url} */g();");
-        let (start, end) = super::map_comment_span(&block, url).unwrap();
+        let comment = super::map_reference(&block).unwrap();
+        assert_eq!(comment.url, url);
         assert_eq!(
-            format!("{}{}", &block[..start], &block[end..]),
+            format!("{}{}", &block[..comment.start], &block[comment.end..]),
             "const u=\"http://x\";f();g();"
         );
-        assert!(super::map_comment_span(&format!("x={url}"), url).is_none());
+        let legacy = "f();\n//@ sourceMappingURL=a.js.map";
+        assert_eq!(super::map_reference(legacy).unwrap().url, "a.js.map");
+        assert!(super::map_reference(&format!("x=\"sourceMappingURL={url}\"")).is_none());
     }
 
     #[test]

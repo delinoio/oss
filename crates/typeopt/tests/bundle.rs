@@ -556,6 +556,31 @@ fn composes_inline_and_referenced_maps() {
     console_maps_to_console(&edited, &composed);
 }
 
+/// A remote map cannot be composed, so an edited chunk drops its reference;
+/// an unedited chunk keeps it.
+#[test]
+fn drops_remote_map_references_of_edited_chunks() {
+    let code = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#;
+    let untouched = "console.log(1);\n//# sourceMappingURL=https://maps.example/untouched.js.map";
+    let temp = bundle(&[
+        ("index.js", r#"import"./edited.js";import"./untouched.js";"#),
+        (
+            "edited.js",
+            &format!("{code}\n/*# sourceMappingURL=//maps.example/edited.js.map */"),
+        ),
+        ("untouched.js", untouched),
+    ]);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    let edited = out(temp.path(), "edited.js");
+    assert!(
+        !edited.contains("verticalSpacing"),
+        "the fixture must be optimized"
+    );
+    assert!(!edited.contains("sourceMappingURL"), "{edited}");
+    assert_eq!(out(temp.path(), "untouched.js"), untouched);
+}
+
 fn listing(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
