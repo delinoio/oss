@@ -2,6 +2,8 @@
 import { expect, it, vi } from "vitest";
 import {
   captureShortcut,
+  customizationBindings,
+  readOnlyShortcutSuppression,
   effectiveShortcutDefinitions,
   parseShortcutOverrides,
   editableShortcutCatalog,
@@ -336,4 +338,67 @@ it("keeps Open terminals fixed in the read-only Session catalog without expandin
     }),
   ).toThrow();
   expect(validShortcutChord({ key: "`", shift: false })).toBe(false);
+});
+
+it("preserves each editable E override and suppresses only the Files default across scopes", () => {
+  const definitions = [
+    {
+      id: ShortcutId.OpenFiles,
+      scope: Surface.Sessions,
+      label: "shortcuts.openFiles" as const,
+      bindings: sessionShortcutBindings[ShortcutId.OpenFiles],
+      enabled: true,
+    },
+  ];
+  for (const action of editableShortcutCatalog) {
+    const overrides = {
+      [action.id]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "e", shift: false },
+      },
+    } as const;
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    expect(customizationBindings(ShortcutId.OpenFiles, overrides)).toEqual([]);
+    expect(
+      effectiveShortcutDefinitions(definitions, overrides)[0],
+    ).toMatchObject({
+      bindings: [],
+      enabled: false,
+      unavailableReason: "shortcuts.filesSuppressed",
+    });
+    expect(customizationBindings(action.id, overrides)).toEqual([
+      { key: "e", shift: false, primary: true },
+    ]);
+    expect(customizationBindings(ShortcutId.OpenTerminals, overrides)).toEqual(
+      sessionShortcutBindings[ShortcutId.OpenTerminals],
+    );
+    for (const restored of [
+      {},
+      { [action.id]: { state: ShortcutOverrideState.Disabled } },
+      {
+        [action.id]: {
+          state: ShortcutOverrideState.Binding,
+          chord: { key: "e", shift: true },
+        },
+      },
+      {
+        [action.id]: {
+          state: ShortcutOverrideState.Binding,
+          chord: { key: "j", shift: false },
+        },
+      },
+    ] as const) {
+      expect(
+        readOnlyShortcutSuppression(ShortcutId.OpenFiles, restored),
+      ).toBeUndefined();
+      expect(effectiveShortcutDefinitions(definitions, restored)[0]).toEqual(
+        definitions[0],
+      );
+    }
+  }
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(() =>
+    parseShortcutOverrides({ [ShortcutId.OpenFiles]: { state: "disabled" } }),
+  ).toThrow();
 });

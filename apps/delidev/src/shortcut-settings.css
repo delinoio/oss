@@ -49,7 +49,8 @@
   line-height: 20px;
   margin: 0;
 }
-.shortcut-settings-row small {
+.shortcut-settings-row small,
+.shortcut-settings-group dt small {
   display: block;
   font-size: 12px;
   line-height: 18px;

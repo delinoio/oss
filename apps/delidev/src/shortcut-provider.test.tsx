@@ -289,6 +289,17 @@ function HelpActions({
       helpKeydown: holdHelp,
     },
     {
+      id: ShortcutId.OpenFiles,
+      scope: Surface.Sessions,
+      label: "shortcuts.openFiles",
+      bindings: sessionShortcutBindings[ShortcutId.OpenFiles],
+      input: ShortcutInput.Allow,
+      run: () => {
+        run();
+        input.current?.focus();
+      },
+    },
+    {
       id: ShortcutId.OpenTerminals,
       scope: Surface.Sessions,
       label: "shortcuts.openTerminals",
@@ -790,5 +801,36 @@ it.each([
       screen.getByRole("textbox", { name: "Destination" }),
     );
     await act(() => i18n.changeLanguage("en"));
+  },
+);
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])(
+  "opens Files once from owned Help and preserves destination focus on %s",
+  async (platform) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const run = vi.fn(() => expect(screen.queryByRole("dialog")).toBeNull());
+    render(
+      <StrictMode>
+        <ShortcutProvider>
+          <HelpActions run={run} />
+        </ShortcutProvider>
+      </StrictMode>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+    expect(screen.getByText("Open Files")).toBeTruthy();
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Close keyboard shortcuts" }),
+      {
+        key: "e",
+        code: "KeyE",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+      },
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+    await act(async () => {});
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Destination" }),
+    );
   },
 );

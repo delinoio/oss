@@ -5,6 +5,8 @@
   "shortcuts.global": "Common",
   "shortcuts.help": "Open shortcut help",
   "shortcuts.openSettings": "Open Settings",
+  "shortcuts.openFiles": "Open Files",
+  "shortcuts.filesSuppressed": "The default Files shortcut is disabled because a saved custom shortcut uses Command or Control + E.",
   "shortcuts.openTerminals": "Open terminals",
   "shortcuts.terminalsUnavailable": "Terminals are unavailable in a read-only Sidechat.",
   "shortcuts.newSession": "New session",

@@ -628,3 +628,41 @@ it("shows localized read-only Open Settings and rejects its chord during capture
   expect(within(entry).queryByRole("button")).toBeNull();
   expect(within(entry).getByText("Ctrl + ,")).toBeTruthy();
 });
+
+it.each([SupportedLanguage.English, SupportedLanguage.Korean])(
+  "uses committed Files suppression in the static catalog and restores it live in %s",
+  async (language) => {
+    await act(() => i18n.changeLanguage(language));
+    const f = fixture();
+    render(<Owner bridge={f.bridge} />);
+    await act(async () => {});
+    const label =
+      language === SupportedLanguage.English ? "Open Files" : "파일 열기";
+    const reason =
+      language === SupportedLanguage.English
+        ? "The default Files shortcut is disabled because a saved custom shortcut uses Command or Control + E."
+        : "저장된 사용자 지정 단축키가 Command 또는 Control + E를 사용하므로 기본 파일 단축키가 비활성화되었습니다.";
+    const row = screen.getByText(label).closest("dl > div")!;
+    expect(row.querySelector("kbd")?.textContent).toBeTruthy();
+    await act(async () =>
+      f.publish({
+        revision: 2,
+        problem: null,
+        overrides: {
+          [ShortcutId.SearchFocus]: {
+            state: ShortcutOverrideState.Binding,
+            chord: { key: "e", shift: false },
+          },
+        },
+      }),
+    );
+    expect(within(row as HTMLElement).getByText(reason)).toBeTruthy();
+    expect(row.querySelector("kbd")).toBeNull();
+    await act(async () =>
+      f.publish({ revision: 3, problem: null, overrides: {} }),
+    );
+    expect(screen.queryByText(reason)).toBeNull();
+    expect(row.querySelector("kbd")?.textContent).toBeTruthy();
+    await act(() => i18n.changeLanguage(SupportedLanguage.English));
+  },
+);
