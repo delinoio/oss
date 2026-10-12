@@ -788,8 +788,8 @@ fn redacted_message(d: &Diagnostic) -> String {
     template.localize(&ts_goport::locale::DEFAULT)
 }
 /// JavaScript chunks of a bundler output directory, sorted, as canonical
-/// paths. Classic worker scripts (`importScripts`) are not ES modules and stay
-/// outside the program.
+/// paths. Classic scripts, including `importScripts` workers, belong to the
+/// program as unchecked boundaries, so the chunks they reach stay observed.
 fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
     fn walk(dir: &std::path::Path, out: &mut Vec<String>) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
@@ -798,11 +798,6 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
             if entry.file_type()?.is_dir() {
                 walk(&path, out)?;
             } else if path.extension().is_some_and(|e| e == "js" || e == "mjs") {
-                let text = std::fs::read_to_string(&path).context("cannot read a bundle chunk")?;
-                if text.contains("importScripts(") {
-                    tracing::info!("skipping classic worker script chunk");
-                    continue;
-                }
                 out.push(path.canonicalize()?.to_string_lossy().into_owned());
             }
         }

@@ -346,6 +346,35 @@ fn keeps_initialization_of_every_import_on_a_minified_line() {
     ]);
 }
 
+/// A classic `importScripts` worker stays in the program as a boundary: an
+/// export it reaches through `import()` survives.
+#[test]
+fn keeps_exports_that_classic_workers_reach() {
+    let worker = r#"typeof importScripts=="function"&&importScripts("vendor.js");import("./shared.js").then(m=>console.log(m.workerOnly()));"#;
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{used as u}from"./shared.js";console.log(u());"#,
+        ),
+        (
+            "shared.js",
+            r#"function used(){return"main"}function workerOnly(){return"worker"}export{used,workerOnly};"#,
+        ),
+        ("sw.js", worker),
+    ]);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "sw.js"), worker);
+    assert_eq!(
+        node(&temp.path().join("dist/sw.js")).stdout,
+        node(&temp.path().join("out/sw.js")).stdout
+    );
+    // A bundle with only a classic worker is a valid, unchanged result.
+    let only = bundle(&[("sw.js", worker)]);
+    optimize(only.path(), &[]);
+    assert_eq!(out(only.path(), "sw.js"), worker);
+}
+
 #[test]
 fn never_publishes_typescript_only_syntax() {
     let (temp, _) = run(&[(
