@@ -16,10 +16,11 @@ import (
 )
 
 type deletionWorkspaceProof struct {
-	Version  uint32    `json:"version"`
-	Digest   string    `json:"digest"`
-	Manifest *Manifest `json:"manifest,omitempty"`
-	Removed  bool      `json:"removed"`
+	Version  uint32                         `json:"version"`
+	Identity domain.SessionDeletionIdentity `json:"identity,omitempty"`
+	Digest   string                         `json:"digest"`
+	Manifest *Manifest                      `json:"manifest,omitempty"`
+	Removed  bool                           `json:"removed"`
 }
 
 // DeleteOwnedWorkspace holds the same lock as preparation, execution and reads.
@@ -58,6 +59,12 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return domain.SessionDeletionPending()
 	}
 	defer publication.Close()
+	// Legacy evidence is imported only before the Worker commits its current
+	// admission fence. Cleanup must preserve any legacy proof restored later.
+	stage = "legacy-proof-absence"
+	if err := RequireNoLegacyDeletionWorkspaceProof(m.Root, w); err != nil {
+		return err
+	}
 	if err := m.requireNoSidechatReferences(ctx, w.SessionID); err != nil {
 		return err
 	}
@@ -79,11 +86,18 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
-	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
-	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
+	paths, e := SessionDeletionProofPaths(m.Root, w)
+	if e != nil {
+		return e
+	}
+	if e := RequireNoLegacyDeletionWorkspaceProof(m.Root, w); e != nil {
+		return e
+	}
+	proofPath := paths.Workspace
+	proof := deletionWorkspaceProof{Version: 2, Identity: w.Identity(), Digest: w.Digest()}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
 	if e == nil {
-		if domain.Decode(b, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() {
+		if domain.Decode(b, &proof) != nil || !validDeletionWorkspaceProof(proof, w) {
 			return domain.SessionDeletionPending()
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
@@ -110,6 +124,13 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		}
 	}
 	stage = "owned-manifest"
+	if proof.Manifest == nil {
+		// The retained proof admitted absence, not a newly appearing workspace.
+		// This applies to exact legacy import as well as current keyed progress.
+		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+	}
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
 		if manifest.SessionID != w.SessionID || manifest.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, manifest.InputDigest) {

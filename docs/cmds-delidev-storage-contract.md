@@ -1458,3 +1458,27 @@ ownership remain unchanged.
 ## Transactional configuration name admission
 
 `Tx.Put` checks normalized Project and Repository names before publication in the serialized mutation transaction. Admission checks and native inspection do not reserve names. Final asynchronous writes repeat the check. A rejected write leaves resource documents, revisions, references, immutable history and events unchanged; an existing coordinator may atomically settle its failed job. Receipts and original-request replay keep their existing rules. Tombstones reserve IDs but do not reserve display names. No table or SQLite migration is added. The [command contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness) owns normalization and the collision cause.
+
+## Original Worker deletion proof ownership
+
+Worker cleanup progress, its operation lock and the workspace-removal proof use
+one validated original server/session/deletion/machine/device identity. Their
+bounded private paths include the session and an identity digest. The complete
+immutable work digest and original report UUID remain independent checks. Retain
+the Worker progress, report and operation-lock metadata; retire only the bounded
+workspace-removal evidence after completion. Two historical devices on one machine cannot consume or overwrite each other's proof.
+
+The session-only Worker file remains an admission fence for preparation,
+execution, reads and Sidechat. Its current metadata grants no cleanup authority.
+Import a historical progress proof only for the exact accepted work digest and
+original report/stages. Synchronize keyed evidence before replacing the historical
+file with its fence. Import a historical workspace proof only for that same exact
+work. An interrupted equal publication pair may finish; missing, changed or
+foreign scope remains pending. A legacy proof cannot acquire newly added owners.
+
+After original copy/workspace cleanup, synchronize complete Worker progress before
+retiring its bounded workspace proof. Retain the report receipt and retirement
+stage across interruption. Completed replay checks the original managed copies
+and both keyed and historical workspace-proof names for absence. Restored native
+content or a proof after committed retirement cannot grant new removal authority.
+This private metadata transition adds no protocol allocation or database migration.

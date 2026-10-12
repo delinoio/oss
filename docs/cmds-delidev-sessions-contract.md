@@ -1040,3 +1040,13 @@ bounds include the projected JSON bytes. A projection that exceeds the existing
 list-read failure path. No per-row database read, additional RPC, protocol
 allocation, migration or new response/execution authority is introduced. Older
 servers omit the field; clients that ignore additive JSON keep their display.
+
+## Independent original Worker deletion acknowledgements
+
+Each original paired-device cleanup obligation retains its own identity-keyed
+progress, operation lock and original report UUID. Another historical device on
+the same machine cannot acknowledge from that proof. Session-wide native
+admission remains fenced independently of per-obligation progress. Exact legacy
+work may retain its original receipt and stages through synchronized import;
+mismatched/restored scope stays pending. The storage contract owns proof
+retirement and completed absence inventories. No new RPC or migration is added.

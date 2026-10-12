@@ -621,3 +621,24 @@ keep their existing ownership boundaries.
 ## Repository registration name collisions
 
 Repository saves check server-wide same-kind name uniqueness at admission and after the original checkout inspections finish. Concurrent accepted inspections cannot both publish equivalent names. Clone completion uses the same transactional publication gate and settles a definitive name collision in the original job. The reported checkout has already transferred to user-owned Local lifetime; registration failure retains its original inspection metadata and grants no deletion authority. Native source proof, job ownership and revision conflicts keep their existing categories. See the [command naming contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness).
+
+## Obligation-owned permanent deletion proofs
+
+Permanent cleanup retains the original session workspace/observation/publication
+locks and immutable manifest checks. The external workspace-removal proof belongs
+to the original server/session/deletion/machine/device obligation, with its full
+work digest. The session-wide admission fence remains separate. Exact historical
+workspace evidence is synchronized into its keyed path before its old name is
+retired; equal interrupted pairs preserve original removal stages and manifests.
+Mismatched obligations never borrow a removed workspace or foreign proof.
+
+The Worker retires this non-content proof only after original complete progress
+commits. Both bounded proof names enter completed absence checks. Reappearance
+keeps acknowledgement pending; original Local directories, independent child
+copies and shared account/browser data retain their separate ownership.
+
+Legacy import belongs to the original Worker admission transition, before the
+version-2 session fence commits. Workspace cleanup checks legacy proof absence
+under its original locks before cleanup and again before loading keyed progress.
+An exact legacy proof restored after admission remains unchanged and keeps
+acknowledgement pending; cleanup cannot import it or reuse its removal stages.

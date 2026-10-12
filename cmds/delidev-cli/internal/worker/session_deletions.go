@@ -21,11 +21,13 @@ import (
 )
 
 type sessionDeletionProof struct {
-	Version        uint32    `json:"version"`
-	Digest         string    `json:"digest"`
-	ReportID       domain.ID `json:"report_id"`
-	RemovalStarted bool      `json:"removal_started"`
-	Complete       bool      `json:"complete"`
+	Version          uint32                         `json:"version"`
+	Identity         domain.SessionDeletionIdentity `json:"identity,omitempty"`
+	WorkspaceRetired bool                           `json:"workspace_retired,omitempty"`
+	Digest           string                         `json:"digest"`
+	ReportID         domain.ID                      `json:"report_id"`
+	RemovalStarted   bool                           `json:"removal_started"`
+	Complete         bool                           `json:"complete"`
 }
 
 func sessionDeletionPath(root string, id domain.ID) string {
@@ -81,7 +83,7 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 // Tombstones close native admission before cleanup. A once-persisted plan may
 // resume removals after a crash; it never replays preparation or native input.
 func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDeletionWork) (sessionDeletionProof, error) {
-	proof := sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID()}
+	proof := sessionDeletionProof{Version: 2, Identity: w.Identity(), Digest: w.Digest(), ReportID: domain.NewID()}
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
 	}
@@ -94,42 +96,16 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
-	if e := security.PrivateDir(filepath.Join(root, "session-deletions")); e != nil {
-		return proof, domain.SessionDeletionPending()
-	}
-	lock, e := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	proof, path, lock, e := loadSessionDeletionProof(root, w)
 	if e != nil {
-		return proof, domain.SessionDeletionPending()
+		if config.Logger != nil {
+			config.Logger.DebugContext(ctx, "session_deletion_obligation_pending", "deletion_id", w.DeletionID, "device_id", w.DeviceID, "stage", "proof-admission", "code", domain.SafeError(e).Code)
+		}
+		return proof, e
 	}
 	defer lock.Close()
-	path := sessionDeletionPath(root, w.SessionID)
-	raw, e := security.ReadPrivate(path, 4096)
-	if e == nil {
-		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
-			return proof, domain.SessionDeletionPending()
-		}
-		if proof.Digest != w.Digest() {
-			// An untouched legacy proof can admit only the same immutable work
-			// plus server-proved child owners. Removed evidence cannot be rebuilt.
-			legacy := w
-			legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
-			for i := range legacy.Copies {
-				legacy.Copies[i].UnpublishedChildProcessID = ""
-			}
-			if proof.RemovalStarted || proof.Complete || proof.Digest != legacy.Digest() {
-				return proof, domain.SessionDeletionPending()
-			}
-			proof.Digest = w.Digest()
-			if err := writeJSON(path, proof); err != nil {
-				return proof, err
-			}
-		}
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return proof, domain.SessionDeletionPending()
-	} else {
-		if e := writeJSON(path, proof); e != nil {
-			return proof, e
-		}
+	if config.Logger != nil {
+		config.Logger.DebugContext(ctx, "session_deletion_obligation_loaded", "deletion_id", w.DeletionID, "device_id", w.DeviceID, "removal_started", proof.RemovalStarted, "complete", proof.Complete, "workspace_retired", proof.WorkspaceRetired)
 	}
 	if proof.Complete {
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {
@@ -157,7 +133,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return proof, domain.SessionDeletionPending()
 			}
 		}
-		return proof, nil
+		return finishSessionDeletionProof(root, path, w, proof)
 	}
 	// The publisher lock precedes the session lock throughout the Worker. A live
 	// owner must finish cancellation and release its handles before removal.
@@ -362,7 +338,10 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	proof.Complete = true
-	return proof, writeJSON(path, proof)
+	if err := writeJSON(path, proof); err != nil {
+		return proof, err
+	}
+	return finishSessionDeletionProof(root, path, w, proof)
 }
 
 // Workspace cleanup already validated original storage namespace ownership.
