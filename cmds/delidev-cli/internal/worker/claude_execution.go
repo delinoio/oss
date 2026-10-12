@@ -279,6 +279,9 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 					if err := lease.Close(); err != nil {
 						return nil, err
 					}
+					if nativeProfile != nil && len(nativeProfile.token) > 0 && completion.Outcome == domain.ExecutionFailed {
+						nativeProfile.tokenFailed = true
+					}
 					return json.Marshal(completion)
 				}
 				continue
@@ -394,6 +397,9 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			completion, err = display.RetainCompletion(publicationContext, api, completion)
 			if err != nil {
 				return nil, err
+			}
+			if nativeProfile != nil && len(nativeProfile.token) > 0 && completion.Outcome == domain.ExecutionFailed {
+				nativeProfile.tokenFailed = true
 			}
 			return json.Marshal(completion)
 		}

@@ -168,3 +168,20 @@ func TestSetupTokenSupervisedPTYRequiresOriginalInputAndJoinedExit(t *testing.T)
 		})
 	}
 }
+
+func TestManagedClaudeTokenSystemInitializeCannotUseAPISource(t *testing.T) {
+	b, cfg := lifecycleFixture(t)
+	cfg.Authentication = TokenAuthentication
+	b, e := BindExecution(cfg, b.input, lifecycleFixtureText)
+	if e != nil {
+		t.Fatal(e)
+	}
+	original := lifecycleInit(t, b)
+	if b.validateSystemInit(original.Body) == nil {
+		t.Fatal("API source accepted for managed token")
+	}
+	token := lifecycleChange(t, original, "apiKeySource", "none")
+	if b.validateSystemInit(token.Body) != nil {
+		t.Fatal("pinned token source refused")
+	}
+}
