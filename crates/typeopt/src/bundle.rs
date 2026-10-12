@@ -535,7 +535,11 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
         // An explicit reference that cannot be resolved inside the output
         // (remote, missing or outside) cannot be composed.
         Some(reference) => {
-            let url = reference.split(['?', '#']).next().unwrap_or_default();
+            // URL path semantics: no query or fragment, `%` escapes decoded.
+            let url = crate::compiler::percent_decode(
+                reference.split(['?', '#']).next().unwrap_or_default(),
+            );
+            let url = url.as_str();
             let path = if url.contains("://") || url.starts_with("//") {
                 None
             } else if let Some(rooted) = url.strip_prefix('/') {

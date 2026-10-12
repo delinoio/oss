@@ -521,7 +521,7 @@ fn composes_inline_and_referenced_maps() {
         ("inline.js", &inline),
         (
             "external.js",
-            &format!("{code}\n//# sourceMappingURL=maps/external.map"),
+            &format!("{code}\n//# sourceMappingURL=maps/ext%65rnal.map?v=1"),
         ),
         ("maps/external.map", std::str::from_utf8(&external).unwrap()),
         // Root-relative, below a deployment base path.
