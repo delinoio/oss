@@ -810,8 +810,9 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
 }
 
 /// Canonical paths of bundle files that HTML pages load with
-/// `<script type="module">`. A relative `src` resolves against its page; a
-/// root-relative `src` resolves against the bundle directory, dropping
+/// `<script type="module">`. A relative `src` resolves against the page's
+/// `<base href>` or the page itself; a root-relative `src` resolves against
+/// the bundle directory, dropping
 /// leading segments of a deployment base path when needed. External URLs
 /// are ignored.
 fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeSet<String>> {
@@ -851,14 +852,39 @@ fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeS
                 walk(root, &path, out)?;
             } else if path.extension().is_some_and(|e| e == "html") {
                 let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
-                for tag in crate::bundle::html_tags(&html) {
-                    if tag.name == "script"
-                        && tag
+                let tags = crate::bundle::html_tags(&html);
+                // Relative URLs resolve against the first `<base href>`.
+                let base = tags
+                    .iter()
+                    .find(|t| t.name == "base" && t.attribute("href").is_some())
+                    .and_then(|t| t.attribute("href"))
+                    .map(|href| {
+                        let href = href.trim().split(['?', '#']).next().unwrap_or_default();
+                        href[..href.rfind('/').map_or(0, |at| at + 1)].to_owned()
+                    });
+                for tag in &tags {
+                    if tag.name != "script"
+                        || !tag
                             .attribute("type")
                             .is_some_and(|t| t.trim().eq_ignore_ascii_case("module"))
-                        && let Some(src) = tag.attribute("src")
-                        && let Some(path) = resolve(root, &path, src.trim())
                     {
+                        continue;
+                    }
+                    let Some(src) = tag.attribute("src").map(str::trim) else {
+                        continue;
+                    };
+                    let relative = !(src.starts_with('/') || src.contains(':'));
+                    let src = match &base {
+                        // An external base makes relative scripts external.
+                        Some(base)
+                            if relative && (base.contains("://") || base.starts_with("//")) =>
+                        {
+                            continue;
+                        }
+                        Some(base) if relative => format!("{base}{src}"),
+                        _ => src.to_owned(),
+                    };
+                    if let Some(path) = resolve(root, &path, &src) {
                         out.insert(path);
                     }
                 }

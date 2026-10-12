@@ -903,6 +903,26 @@ fn publishes_nothing_when_the_report_cannot_be_written() {
     assert_eq!(leftovers, ["dist"], "{leftovers:?}");
 }
 
+/// Relative module script URLs resolve against the page's `<base href>`.
+#[test]
+fn resolves_module_scripts_against_the_document_base() {
+    let classic = r#"function legacyGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var legacyState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<base href="/modern/"><script src="/index.js"></script><script type="module" src="index.js"></script>"#,
+        ),
+        ("index.js", classic),
+        (
+            "modern/index.js",
+            r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "index.js"), classic);
+    assert!(!out(temp.path(), "modern/index.js").contains("verticalSpacing"));
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [
