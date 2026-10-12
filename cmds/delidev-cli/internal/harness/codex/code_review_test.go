@@ -132,7 +132,8 @@ func (f *threadFixture) handleNativeCodeReview(id json.RawMessage, method string
 	}
 	_ = json.NewEncoder(out).Encode(map[string]any{"method": method, "params": params})
 	_ = out.Close()
-	if params["threadId"] != f.thread["id"] || params["delivery"] != "inline" {
+	threadID, ok := f.thread["id"].(domain.ID)
+	if !ok || params["threadId"] != string(threadID) || params["delivery"] != "inline" {
 		os.Exit(93)
 	}
 	f.turn = domain.NewID()
