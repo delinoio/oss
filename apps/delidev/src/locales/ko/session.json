@@ -171,5 +171,15 @@
   "session.budgetTitle": "세션 예산 한도에 도달했습니다",
   "session.recoveryTitle": "기존 작업 복구가 필요합니다",
   "session.recoveryRegion": "세션 복구",
-  "session.problemCause": "원인"
+  "session.problemCause": "원인",
+  "session.webSearch": "웹 검색",
+  "session.openPage": "페이지 열기",
+  "session.findText": "텍스트 찾기",
+  "session.webUnavailable": "원본 네이티브 검색 근거를 확인할 수 없습니다.",
+  "session.webProgress": "원본 네이티브 검색 관찰을 기다리는 중…",
+  "session.webOriginalQuery": "원본 검색어",
+  "session.webSource": "소스",
+  "session.webOriginalAction": "원본 작업",
+  "session.webNativeResult": "네이티브 결과",
+  "session.webResultUnavailable": "네이티브 도구가 결과를 제공하지 않았습니다. 원본 기록은 보존되며 여기에서 검색을 다시 전송할 수 없습니다."
 }

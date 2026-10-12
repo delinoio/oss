@@ -304,6 +304,7 @@ const harnessSettingFields = [
   "max_concurrency",
   "approval_review_model",
   "service_tier",
+  "web_search",
 ];
 function inheritedModel(value: unknown): boolean {
   return (
@@ -331,6 +332,11 @@ function harnessSettings(value: unknown): boolean {
       if (selection.mode === "inherit")
         return !Object.hasOwn(selection, "value");
       if (selection.mode !== "override") return false;
+      if (key === "web_search")
+        return (
+          typeof selection.value === "string" &&
+          ["disabled", "cached", "live"].includes(selection.value)
+        );
       return key === "max_concurrency"
         ? Number.isInteger(selection.value) &&
             Number(selection.value) >= 0 &&

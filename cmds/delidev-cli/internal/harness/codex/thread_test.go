@@ -31,6 +31,9 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleWebSearchProfile(id, method, raw, write) {
+		return true
+	}
 	if f.handleNativeShell(id, method, raw, write) {
 		return true
 	}
@@ -212,6 +215,9 @@ func threadSettings(t *testing.T) ThreadSettings {
 	return ThreadSettings{Model: "fixture-model", Provider: "fixture-provider", Effort: "high", Cwd: cwd, Instructions: "First template\n\nSecond template: 한글 🐦", Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite, ApprovalPolicy: "on-request", ServiceTier: "fast"}}
 }
 func openThreadFixture(t *testing.T, mode string) (*Client, string) {
+	return openThreadFixtureConfigured(t, mode, nil)
+}
+func openThreadFixtureConfigured(t *testing.T, mode string, configure func(*Config)) (*Client, string) {
 	t.Helper()
 	config := fixtureConfig(t, mode)
 	config.Mode = ThreadProtocol
@@ -230,6 +236,9 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
+	if configure != nil {
+		configure(&config)
+	}
 	client, err := Open(ctx, config)
 	if err != nil {
 		t.Fatal(err)

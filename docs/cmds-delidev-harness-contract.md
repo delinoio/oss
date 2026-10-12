@@ -2583,7 +2583,7 @@ The feature now compose the root native search/fetch decoder with ordered Worker
 
 ### Codex image-view observations
 
-The closed Codex `imageView` item retains the original native call ID and path in the private adapter. The [official 0.162.0 item schema](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/app-server-protocol/src/protocol/v2/item.rs) has only `id` and `path`: the [native handler](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/core/src/tools/handlers/view_image.rs) reads and validates the image before it emits started and completed observations. It supplies no digest, file identity, byte receipt or failed-image-view status. Required fields, unknown fields, foreign thread/turn, malformed lifecycle and unsupported states retain the existing rejection boundary. Native read/validation failure remains the original supported native failure outcome; do not fabricate a successful or failed image-view result from text.
+The closed Codex `imageView` item retains the original native call ID and path in the private adapter. The [official 0.162.0 item schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/item.rs) has only `id` and `path`: the [native handler](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/core/src/tools/handlers/view_image.rs) reads and validates the image before it emits started and completed observations. It supplies no digest, file identity, byte receipt or failed-image-view status. Required fields, unknown fields, foreign thread/turn, malformed lifecycle and unsupported states retain the existing rejection boundary. Native read/validation failure remains the original supported native failure outcome; do not fabricate a successful or failed image-view result from text.
 
 The Worker binds an opaque observation ID to the original tool record, authenticated machine, exact immutable preparation/manifest digest and canonical root-relative location. Both Worker and server validate the accepted prepared-root metadata; completion must preserve the original reference exactly. This proves ownership of the native observation, not ownership or unchanged contents of a live file. Lexical scope validation performs no filesystem read, link traversal, URL fetch or native call. A symlink's current target and later file changes cannot provide byte or deletion authority. The original private path is not published.
 
@@ -2685,3 +2685,55 @@ retain native request/process ownership through independent cleanup. Disabled,
 unresolved, unauthenticated or unsupported selections fail before execution;
 configuration-only management does not advertise native acceptance. Built-in
 session MCP must compose without name/identity collisions with selected entries.
+
+## Native Codex web search
+
+The independently negotiated Codex web-search adapter accepts explicit
+`disabled`, `cached` and `live` modes. Omission remains unknown historical
+selection; it does not become Cached. Current settings can inherit a selected
+mode through the existing source-aware Harness defaults owner. An explicit
+inherit selector with no verified ancestor remains unavailable. Accepted
+execution options and their field provenance remain immutable after a default
+changes. Native policy, approvals and prepared project restrictions still apply.
+
+Enabled modes require the original managed ChatGPT account and verified built-in
+OpenAI provider. The native API relay's provider profile does not prove account
+search support or implement the native standalone endpoint. API sources remain
+unavailable for Cached/Live; Disabled is supported. Do not enable search from a
+model advertisement, provider name, arbitrary endpoint or menu capability. There
+is no sidecar search or fallback. Sidechat retains its native disabled search
+policy, including a child copied from an enabled-search parent.
+
+Pin the accepted mode in the owned process configuration. Read the effective
+configuration for the original working directory and the native requirements
+before thread binding and each ordinary input/Steer. Require the exact mode,
+provider and allowed policy. Missing, malformed or changed evidence blocks input;
+policy denial stays separate from unsupported source and unknown defaults. These
+reads never create a search or retry a mutation. Historical omitted checkpoints
+remain readable and cannot acquire new web-search observation authority.
+
+The pinned [native item declaration](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/item.rs)
+and [web action union](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/ext/items/src/web_search.rs)
+provide original item ID, query, nullable action and nullable opaque results.
+Search has optional query/ordered queries; Open page has optional URL; Find text
+has optional URL/pattern; Other carries no additional fields. Preserve missing
+fields without inventing queries, URLs, results or citations. Keep opaque results
+as exact bounded JSON text so native integer precision survives browser reads.
+The original started/completed snapshots retain native order, actual mode and
+provider from verified immutable settings, under original execution, account,
+Worker, thread and turn ownership. Tool completion never establishes turn
+completion. Reject malformed actions, disabled-search observations, foreign
+turns, changed source and duplicate publication. Existing durable outbox request
+identity and read-only uncertain recovery prevent acknowledgment loss from
+creating another search or record. Settled native Fork/compaction history retains
+the original complete search JSON; history inspection cannot perform searches.
+
+The [native configuration and requirement declarations](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/config.rs)
+own effective `web_search` and the camelCase `allowedWebSearchModes` requirement. The optional typed
+settings/tool additions use their current document envelopes. No SQL migration,
+new RPC or API relay request shape is required for this supported account profile.
+
+Uncertain Revert observation restores the original frozen process search mode,
+including explicit Disabled. It restores no protected credential or live API
+grant, sends no input and never repeats the native Revert. Search-bearing settled
+Fork history must pass both the original item decoder and final eligibility proof.

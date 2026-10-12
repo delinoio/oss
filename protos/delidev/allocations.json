@@ -2945,7 +2945,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "EntityKind",
       "member": "ENTITY_KIND_COMPACTION",
@@ -2953,7 +2956,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -2961,7 +2967,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -2969,7 +2978,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "SessionChange",
       "member": "compaction_job",
@@ -4802,7 +4814,9 @@
     },
     {
       "issue": 1202,
-      "sharedIssues": [1203],
+      "sharedIssues": [
+        1203
+      ],
       "kind": "message",
       "declaration": "GetUsageSummaryResponse",
       "member": "accepted_compactions_without_response",
@@ -6845,7 +6859,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "CompactSessionRequest",
       "member": "expected_execution_id",
@@ -6853,7 +6870,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "CompactSessionResponse",
       "member": "session",
@@ -12061,7 +12081,9 @@
       "number": 2,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12070,7 +12092,9 @@
       "number": 3,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12079,7 +12103,9 @@
       "number": 4,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12088,7 +12114,9 @@
       "number": 6,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12097,7 +12125,9 @@
       "number": 4,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "issue": 2138,
@@ -13185,7 +13215,9 @@
     },
     {
       "issue": 964,
-      "sharedIssues": [2138],
+      "sharedIssues": [
+        2138
+      ],
       "kind": "message",
       "declaration": "ListTokenPricingResponse",
       "member": "models",
@@ -14228,6 +14260,265 @@
       "member": "png",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 2014,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1",
+      "number": 100
+    },
+    {
+      "issue": 2014,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1",
+      "number": 62
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_NATIVE_ACTION",
+      "number": 36
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "NativeShellAccess",
+      "member": "NATIVE_SHELL_ACCESS_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "NativeShellAccess",
+      "member": "NATIVE_SHELL_ACCESS_FULL_ACCESS",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "command",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "access",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "timeout_ms",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "GetNativeShellRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "GetNativeShellRequest",
+      "member": "action_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "GetNativeShellResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellRequest",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "ClaimNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "ClaimNativeShellRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "ClaimNativeShellRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "ClaimNativeShellResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "ClaimNativeShellResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "observation_json",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+      "number": 57
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+      "number": 95
     }
   ],
   "rpcReservations": [
@@ -14669,6 +14960,51 @@
       "method": "ReadPullRequestAvatar",
       "input": "ReadPullRequestAvatarRequest",
       "output": "ReadPullRequestAvatarResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "WorkerService",
+      "method": "ClaimNativeShell",
+      "input": "ClaimNativeShellRequest",
+      "output": "ClaimNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "WorkerService",
+      "method": "PublishNativeShell",
+      "input": "PublishNativeShellRequest",
+      "output": "PublishNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "SessionService",
+      "method": "RunNativeShell",
+      "input": "RunNativeShellRequest",
+      "output": "RunNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "SessionService",
+      "method": "GetNativeShell",
+      "input": "GetNativeShellRequest",
+      "output": "GetNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "SessionService",
+      "method": "CancelNativeShell",
+      "input": "CancelNativeShellRequest",
+      "output": "CancelNativeShellResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

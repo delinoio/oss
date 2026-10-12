@@ -270,7 +270,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		cancelAction = context.AfterFunc(ctx, cancel)
 	}
 	defer cancelAction()
-	nativeConfig := codex.Config{NativeShell: i.NativeShell != nil, RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
+	nativeConfig := codex.Config{WebSearch: settings.Options.WebSearch, NativeShell: i.NativeShell != nil, RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
 	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}

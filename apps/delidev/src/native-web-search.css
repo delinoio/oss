@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.native-web-search {
+  min-width: 0;
+  max-width: 100%;
+}
+.native-web-search dl {
+  margin: 16px 0;
+}
+.native-web-search dd {
+  margin: 8px 0 16px;
+  min-width: 0;
+}
+.native-web-search pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

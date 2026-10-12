@@ -44,7 +44,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			if event.Kind == codex.ToolCompletedEvent {
 				snapshot.Status = domain.ToolCompleted
 			}
-			if event.Tool.SleepDurationMS != nil || event.Tool.Command != nil || event.Tool.Changes != nil || event.Tool.ID != event.ItemID || event.Tool.Status != map[domain.ToolStatus]codex.ToolStatus{domain.ToolRunning: codex.ToolRunning, domain.ToolCompleted: codex.ToolCompleted}[snapshot.Status] {
+			if event.Tool.WebSearch != nil || event.Tool.SleepDurationMS != nil || event.Tool.Command != nil || event.Tool.Changes != nil || event.Tool.ID != event.ItemID || event.Tool.Status != map[domain.ToolStatus]codex.ToolStatus{domain.ToolRunning: codex.ToolRunning, domain.ToolCompleted: codex.ToolCompleted}[snapshot.Status] {
 				return publicationUncertain()
 			}
 		} else {
@@ -102,7 +102,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			}
 			kind, update.Input = domain.ExecutionToolInput, &domain.ToolInputObservation{ProcessID: event.ToolInput.ProcessID, Text: event.ToolInput.Text}
 		case codex.ToolPatchEvent:
-			if retained.Kind != domain.PatchTool || event.Tool == nil || event.Tool.ID != event.ItemID || event.Tool.Kind != codex.PatchTool || event.Tool.Status != "" || event.Tool.Command != nil || event.Tool.SleepDurationMS != nil {
+			if retained.Kind != domain.PatchTool || event.Tool == nil || event.Tool.ID != event.ItemID || event.Tool.Kind != codex.PatchTool || event.Tool.Status != "" || event.Tool.Command != nil || event.Tool.SleepDurationMS != nil || event.Tool.WebSearch != nil {
 				return publicationUncertain()
 			}
 			changes := codexFileChanges(event.Tool.Changes)
@@ -120,9 +120,13 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
 	result := domain.ToolSnapshot{
-		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool}[native.Kind],
+		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool, codex.WebSearchTool: domain.WebSearchTool}[native.Kind],
 		Status:  map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],
 		Changes: codexFileChanges(native.Changes),
+	}
+	if native.WebSearch != nil {
+		v := *native.WebSearch
+		result.WebSearch = &v
 	}
 	if native.SleepDurationMS != nil {
 		value := *native.SleepDurationMS

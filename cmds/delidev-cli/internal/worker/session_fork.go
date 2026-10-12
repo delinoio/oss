@@ -186,9 +186,10 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
+	sourceConfig := codex.Config{WebSearch: assignment.Configuration.Options.WebSearch, RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
+		sourceConfig.WebSearch = ""
 		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
 		if sourceConfig.ManagedAuthentication {
 			if err := validateManagedAuthenticationHome(sourceHome, manifest.WorkspaceRoots()); err != nil {
@@ -283,6 +284,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		settings.Options.ApprovalsReviewer = ""
 		settings.Options.Permission, settings.Options.ApprovalPolicy, settings.Options.ApprovalReviewModel = domain.PermissionReadOnly, "never", ""
 		settings.Options.SubagentModel, settings.Options.SubagentEffort, settings.Options.MaxConcurrency = "", "", 0
+		if settings.Options.WebSearch != "" {
+			settings.Options.WebSearch = domain.WebSearchDisabled
+		}
 	}
 	processConfig.Env, processConfig.Cwd = env, settings.Cwd
 	rawToken, err := security.RandomToken()
@@ -294,7 +298,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{WebSearch: settings.Options.WebSearch, RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}

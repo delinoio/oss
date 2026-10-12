@@ -69,5 +69,13 @@
   "harness-settings.claudePermission": "Native Claude permissions",
   "harness-settings.claudeSaving": "Saving Claude defaults…",
   "harness-settings.claudeSaveUnknown": "Claude defaults save outcome unknown. Keep this draft and inspect the original save before trying again.",
-  "harness-settings.claudeUnsaved": "Unsaved Claude defaults"
+  "harness-settings.claudeUnsaved": "Unsaved Claude defaults",
+  "harness-settings.webSearch": "Web search",
+  "harness-settings.useInherited": "Use inherited setting",
+  "harness-settings.searchDisabled": "Disabled",
+  "harness-settings.searchCached": "Cached",
+  "harness-settings.searchLive": "Live",
+  "harness-settings.searchSourceUnavailable": "Native search support is unavailable for this source. Choose a ChatGPT subscription scope to configure Cached or Live.",
+  "harness-settings.searchPolicy": "Native account support, project restrictions and permission policy are verified before input. Changes apply to future executions.",
+  "harness-settings.retryRead": "Retry settings read"
 }

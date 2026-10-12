@@ -264,6 +264,7 @@ const (
 )
 
 type AgentOptions struct {
+	WebSearch           WebSearchMode        `json:"web_search,omitempty"`
 	ApprovalsReviewer   ApprovalsReviewer    `json:"approvals_reviewer,omitempty"`
 	SubagentModel       string               `json:"subagent_model,omitempty"`
 	SubagentEffort      string               `json:"subagent_effort,omitempty"`

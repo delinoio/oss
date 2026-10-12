@@ -855,3 +855,17 @@ cleanup; saved metadata alone cannot provide those proofs.
 Saving a managed definition cannot write credentials or authenticate it. Protected
 environment/header values and manual tokens use the separate explicit
 authentication action. OAuth configuration can be saved without starting login.
+
+### Codex web-search selector
+
+`web_search` is an optional typed Harness selector with closed values `disabled`,
+`cached` and `live`. An inherit selector carries no value and resolves through
+original Agent, Project, server and verified native evidence layers. Do not fill
+missing evidence with Cached. Historical absence keeps its original semantics
+and grants no search authority. Explicit empty, null or unknown modes fail strict
+validation. Existing version-1 Harness settings and Agent/Project/Settings
+resource schemas remain unchanged. Writes and observations require the separately
+negotiated native web-search capability. Effective accepted options and original
+field/source provenance remain frozen for each execution; native policy and
+actual selected account support remain independent checks under the
+[harness contract](cmds-delidev-harness-contract.md#native-codex-web-search).

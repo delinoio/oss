@@ -8,6 +8,7 @@ import { responseEvidence, type ResponseEvidence } from "./session-progress";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
 import { claudeToolReference } from "./native-claude-tool";
+import { nativeWebLabel, nativeWebObservation } from "./native-web-search";
 import { validGrokTool } from "./native-grok-interactions";
 
 export interface ConversationProjection {
@@ -20,7 +21,7 @@ export interface ConversationProjection {
   role?: string;
   inherited?: boolean;
   response?: ResponseEvidence;
-  tool?: { owner: string; name: string; state: string };
+  tool?: { owner: string; name: string; state: string; webSearch?: boolean };
 }
 enum NativeToolName {
   Read = "read",
@@ -131,11 +132,13 @@ export function conversationProjection(
     const observations = Array.isArray(tool.states) ? tool.states : [];
     const latest = object(object(observations.at(-1)).snapshot);
     name =
-      started.kind === "image-view"
-        ? "view_image"
-        : started.kind === "opencode-builtin"
-          ? label(object(started.builtin).name) || label(started.kind)
-          : nativeNames[label(started.kind)] || label(started.kind);
+      started.kind === "web-search"
+        ? nativeWebLabel(tool)
+        : started.kind === "image-view"
+          ? "view_image"
+          : started.kind === "opencode-builtin"
+            ? label(object(started.builtin).name) || label(started.kind)
+            : nativeNames[label(started.kind)] || label(started.kind);
     state =
       label(completed.status) ||
       (latest.kind === started.kind ? label(latest.status) : "") ||
@@ -151,6 +154,7 @@ export function conversationProjection(
     ]),
     name,
     state,
+    ...(nativeWebObservation(d.tool) ? { webSearch: true } : {}),
   };
   return projection;
 }

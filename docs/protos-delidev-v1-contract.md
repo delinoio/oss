@@ -1561,3 +1561,12 @@ fields. Mutation state distinguishes pending, succeeded, canceled, recovery
 required and failed outcomes. Secret inputs are transient write-only data and
 never enter receipt payloads. Management support does not advertise native MCP
 execution support or change accepted session configuration.
+
+## Native Codex web search capability
+
+System capability `CODEX_WEB_SEARCH_V1 = 100` and Worker capability
+`CODEX_WEB_SEARCH_V1 = 62` separately negotiate native Codex web-search
+settings and typed search observations. Harness-defaults support alone does not
+prove this support. Runtime admission must also verify the original installed
+native profile and negotiated peer capabilities; these declarations alone grant
+no execution authority. Existing RPC and document ownership remains unchanged.

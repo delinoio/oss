@@ -60,6 +60,7 @@ func TestSidechatSnapshotPreservesSelectionAndFreezesNativeAuthority(t *testing.
 
 func TestManagedSidechatRetainsChatGPTSelectorAndReadOnlyOverlay(t *testing.T) {
 	config := managedSubscriptionExecutionConfiguration(t, PermissionWorkspaceWrite)
+	config.Options.WebSearch = WebSearchLive
 	config.ProviderID, config.SubscriptionService = "", SubscriptionChatGPT
 	config.ModelID = (ModelIdentity{SubscriptionService: config.SubscriptionService, NativeID: config.NativeModel}).Key()
 	digest, err := config.Digest()
@@ -69,7 +70,7 @@ func TestManagedSidechatRetainsChatGPTSelectorAndReadOnlyOverlay(t *testing.T) {
 	parent := InitialExecution{ID: NewID(), InputID: NewID(), Configuration: config, ConfigurationDigest: digest, InitialAccountID: NewID(), ConnectionID: NewID(), AcceptedAt: time.Now().UTC()}
 	before, _ := json.Marshal(parent)
 	child, err := SidechatSnapshot(parent)
-	if err != nil || !child.Configuration.Subscription || child.Configuration.SubscriptionService != SubscriptionChatGPT || child.InitialAccountID != parent.InitialAccountID || child.ConnectionID != parent.ConnectionID || child.Configuration.Options.Permission != PermissionReadOnly || child.Configuration.Options.ApprovalPolicy != "never" {
+	if err != nil || !child.Configuration.Subscription || child.Configuration.SubscriptionService != SubscriptionChatGPT || child.InitialAccountID != parent.InitialAccountID || child.ConnectionID != parent.ConnectionID || child.Configuration.Options.Permission != PermissionReadOnly || child.Configuration.Options.ApprovalPolicy != "never" || child.Configuration.Options.WebSearch != WebSearchDisabled {
 		t.Fatal("managed selection or overlay changed", err)
 	}
 	after, _ := json.Marshal(parent)

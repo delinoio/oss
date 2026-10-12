@@ -268,6 +268,9 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 	if c.sidechat != "" && !sidechatSettings(settings) {
 		return result, sidechatUnavailable()
 	}
+	if err := c.verifyWebSearch(ctx, settings); err != nil {
+		return result, err
+	}
 	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
 		return result, err
 	}
@@ -430,7 +433,7 @@ func forkRolloutDigest(ctx context.Context, home, path string) ([sha256.Size]byt
 // Only paths are remapped. Native defaults and permission flags are immutable;
 // their enum names alone cannot stand in for the original effective policy.
 func sameForkDefaults(a, b EffectiveSettings) bool {
-	return a.Model == b.Model && a.Provider == b.Provider && optionalForkString(a.Effort, b.Effort) && optionalForkString(a.ServiceTier, b.ServiceTier) && a.ApprovalPolicy == b.ApprovalPolicy && a.ApprovalsReviewer == b.ApprovalsReviewer && a.Sandbox.Type == b.Sandbox.Type && a.Sandbox.NetworkAccess == b.Sandbox.NetworkAccess && a.Sandbox.ExcludeSlashTmp == b.Sandbox.ExcludeSlashTmp && a.Sandbox.ExcludeTmpdirEnvVar == b.Sandbox.ExcludeTmpdirEnvVar
+	return a.WebSearch == b.WebSearch && a.Model == b.Model && a.Provider == b.Provider && optionalForkString(a.Effort, b.Effort) && optionalForkString(a.ServiceTier, b.ServiceTier) && a.ApprovalPolicy == b.ApprovalPolicy && a.ApprovalsReviewer == b.ApprovalsReviewer && a.Sandbox.Type == b.Sandbox.Type && a.Sandbox.NetworkAccess == b.Sandbox.NetworkAccess && a.Sandbox.ExcludeSlashTmp == b.Sandbox.ExcludeSlashTmp && a.Sandbox.ExcludeTmpdirEnvVar == b.Sandbox.ExcludeTmpdirEnvVar
 }
 
 func optionalForkString(a, b *string) bool {
@@ -439,6 +442,10 @@ func optionalForkString(a, b *string) bool {
 
 // Preserve complete native tool JSON; decoding establishes eligibility only and never executes history.
 func settledForkTool(raw json.RawMessage, kind string) bool {
+	if kind == "webSearch" {
+		_, err := decodeWebSearch(raw)
+		return err == nil
+	}
 	if kind != "commandExecution" && kind != "fileChange" {
 		return false
 	}
@@ -459,6 +466,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "webSearch" {
+		_, err := decodeWebSearch(raw)
+		return err == nil
+	}
 	if kind == "sleep" {
 		_, err := decodeSleep(raw)
 		return err == nil

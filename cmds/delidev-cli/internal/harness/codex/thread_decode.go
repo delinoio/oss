@@ -190,7 +190,7 @@ func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expe
 	if requested != "" && requested != sandbox.Type {
 		return &thread, nil, incompatible()
 	}
-	return &thread, &EffectiveSettings{Model: response.Model, Provider: response.ModelProvider, Effort: response.ReasoningEffort, ServiceTier: response.ServiceTier, Cwd: response.Cwd, ApprovalPolicy: response.ApprovalPolicy, ApprovalsReviewer: response.ApprovalsReviewer, Sandbox: sandbox, WorkspaceRoots: slices.Clone(settings.WorkspaceRoots)}, nil
+	return &thread, &EffectiveSettings{WebSearch: settings.Options.WebSearch, Model: response.Model, Provider: response.ModelProvider, Effort: response.ReasoningEffort, ServiceTier: response.ServiceTier, Cwd: response.Cwd, ApprovalPolicy: response.ApprovalPolicy, ApprovalsReviewer: response.ApprovalsReviewer, Sandbox: sandbox, WorkspaceRoots: slices.Clone(settings.WorkspaceRoots)}, nil
 }
 
 func validateThreadStatus(status ThreadStatus) error {

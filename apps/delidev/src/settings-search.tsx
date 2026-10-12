@@ -21,6 +21,7 @@ export enum SettingsSearchTarget {
   CodexApproval = "codex-approval_policy",
   CodexSubagents = "codex-subagent_model",
   CodexTier = "codex-service_tier",
+  CodexWebSearch = "codex-web_search",
   Approvals = "notification-approvals",
   Succeeded = "notification-succeeded",
   Failed = "notification-failed",
@@ -129,6 +130,7 @@ export const settingsSearchTargets: Partial<
       "harness-settings.subagentModel",
     ),
     target(SettingsSearchTarget.CodexTier, "harness-settings.tier"),
+    target(SettingsSearchTarget.CodexWebSearch, "harness-settings.webSearch"),
   ],
   [Category.AppInformation]: [
     target(

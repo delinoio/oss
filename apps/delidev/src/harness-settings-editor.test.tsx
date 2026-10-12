@@ -383,3 +383,95 @@ it("previews the exact Claude Agent route while retaining its independent overri
     value: "hidden",
   });
 });
+
+it("uses one native search control and preserves inherited unknowns and explicit modes", async () => {
+  const change = mount(
+    { harness_defaults: { version: 1, entries: [] } },
+    HarnessSettingsOwner.Server,
+    [
+      SystemCapability.HARNESS_DEFAULTS_V1,
+      SystemCapability.CODEX_WEB_SEARCH_V1,
+    ],
+  );
+  const control = screen.getByRole("combobox", { name: "Web search" });
+  await waitFor(() =>
+    expect(control.closest("fieldset")?.disabled).toBe(false),
+  );
+  expect((control as HTMLSelectElement).value).toBe("inherit");
+  expect(change).not.toHaveBeenCalled();
+  expect(
+    (
+      within(control).getByRole("option", {
+        name: "Cached",
+      }) as HTMLOptionElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByRole("combobox", { name: "Account source" }), {
+    target: { value: "subscription" },
+  });
+  expect(
+    (
+      within(control).getByRole("option", {
+        name: "Cached",
+      }) as HTMLOptionElement
+    ).disabled,
+  ).toBe(false);
+  for (const mode of ["disabled", "cached", "live"]) {
+    fireEvent.change(control, { target: { value: mode } });
+    expect(
+      change.mock.lastCall?.[0].harness_defaults.entries.at(-1).settings
+        .web_search,
+    ).toEqual({ mode: "override", value: mode });
+  }
+  fireEvent.change(control, { target: { value: "inherit" } });
+  expect(
+    change.mock.lastCall?.[0].harness_defaults.entries.at(-1).settings
+      .web_search,
+  ).toEqual({ mode: "inherit" });
+});
+
+it("blocks Save on an incomplete ancestor read and retries only the failed read", async () => {
+  const read = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Ancestor read unavailable"))
+    .mockResolvedValue({ resources: [] });
+  const saveBlocked = vi.fn();
+  const change = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [
+          SystemCapability.HARNESS_DEFAULTS_V1,
+          SystemCapability.CODEX_WEB_SEARCH_V1,
+        ],
+      }),
+    });
+    router.service(ResourceService, { listResources: read });
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <HarnessSettingsEditor
+          active
+          owner={HarnessSettingsOwner.Project}
+          data={{ harness_defaults: { version: 1, entries: [] } }}
+          change={change}
+          saveBlocked={saveBlocked}
+        />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  await screen.findByRole("alert");
+  expect(saveBlocked.mock.lastCall).toEqual([true]);
+  const control = screen.getByRole("combobox", { name: "Web search" });
+  expect(control.closest("fieldset")?.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Retry settings read" }));
+  await waitFor(() => expect(saveBlocked.mock.lastCall).toEqual([false]));
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(change).not.toHaveBeenCalled();
+  expect(control.closest("fieldset")?.disabled).toBe(false);
+});

@@ -305,3 +305,81 @@ it("retains project behavior when harness defaults add schema 4", () => {
     false,
   );
 });
+
+it("reads native web-search selectors in every supported harness settings owner", () => {
+  for (const kind of [
+    EntityKind.AGENT,
+    EntityKind.PROJECT,
+    EntityKind.SETTINGS,
+  ]) {
+    for (const selection of [
+      { mode: "inherit" },
+      ...["disabled", "cached", "live"].map((value) => ({
+        mode: "override",
+        value,
+      })),
+    ]) {
+      const settings = { version: 1, web_search: selection };
+      const body =
+        kind === EntityKind.AGENT
+          ? {
+              harness_settings: settings,
+              routes: [
+                {
+                  model_selection: { mode: "inherit" },
+                  model: {
+                    native_id: "",
+                    metadata_source: "unknown",
+                    subscription_service: "chatgpt",
+                  },
+                  accounts: [{ id: "account", weight: 1 }],
+                },
+              ],
+            }
+          : {
+              harness_defaults: {
+                version: 1,
+                entries: [
+                  {
+                    scope: {
+                      harness: "codex",
+                      source: "subscription",
+                      subscription_service: "chatgpt",
+                    },
+                    settings,
+                  },
+                ],
+              },
+            };
+      expect(
+        supportsResourceSchema(
+          resource(kind, body, kind === EntityKind.AGENT ? 5 : 4),
+        ),
+      ).toBe(true);
+    }
+  }
+  for (const value of ["", "unknown", null, 1, true, ["live"]]) {
+    expect(
+      supportsResourceSchema(
+        resource(
+          EntityKind.SETTINGS,
+          {
+            harness_defaults: {
+              version: 1,
+              entries: [
+                {
+                  scope: { harness: "codex", source: "any" },
+                  settings: {
+                    version: 1,
+                    web_search: { mode: "override", value },
+                  },
+                },
+              ],
+            },
+          },
+          4,
+        ),
+      ),
+    ).toBe(false);
+  }
+});

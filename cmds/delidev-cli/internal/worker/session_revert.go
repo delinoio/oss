@@ -143,7 +143,10 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil {
 		return nil, err
 	}
-	native, err := codex.Open(ctx, codex.Config{RevertHistory: true, ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
+	// Restore the frozen selector, including explicit Disabled. Managed source
+	// configuration pins OpenAI without restoring a credential or API grant;
+	// this owner only resumes and observes the original Revert, never sends input.
+	native, err := codex.Open(ctx, codex.Config{WebSearch: input.Assignment.Configuration.Options.WebSearch, ManagedAuthentication: input.Assignment.Configuration.Subscription, RevertHistory: true, ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
 	if err != nil {
 		return nil, err
 	}

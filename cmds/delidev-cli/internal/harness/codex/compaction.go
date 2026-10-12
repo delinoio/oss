@@ -439,7 +439,7 @@ func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, c
 				items[item.ID] = true
 				switch item.Type {
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
-				case "commandExecution", "fileChange", "imageView", "sleep":
+				case "commandExecution", "fileChange", "imageView", "sleep", "webSearch":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
 					}

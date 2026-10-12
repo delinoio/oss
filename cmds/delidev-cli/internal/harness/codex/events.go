@@ -623,7 +623,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
-	case "commandExecution", "fileChange", "imageView", "sleep":
+	case "commandExecution", "fileChange", "imageView", "sleep", "webSearch":
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {
 			return Event{}, err
@@ -631,6 +631,12 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		turn, known := c.execution.turns[params.TurnID]
 		if !known && c.problem == nil {
 			return Event{}, incompatible()
+		}
+		if tool.WebSearch != nil {
+			if !known || c.execution.settings.WebSearch == "" || c.execution.settings.WebSearch == domain.WebSearchDisabled {
+				return Event{}, incompatible()
+			}
+			tool.WebSearch.Mode, tool.WebSearch.Source = c.execution.settings.WebSearch, c.execution.settings.Provider
 		}
 		eventKind := ToolStartedEvent
 		if native.Method == "item/completed" {

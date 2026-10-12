@@ -183,8 +183,16 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 	return false
 }
 func revertFixture(t *testing.T, mode string) (*Client, string, ContinuationCheckpoint, []domain.ID, []HistoricalInput) {
-	c, capture := openThreadFixture(t, "thread-revert-"+mode)
-	bound, err := c.ResumeThread(context.Background(), domain.NewID(), domain.NewID(), threadSettings(t))
+	return revertFixtureConfigured(t, mode, nil)
+}
+func revertFixtureConfigured(t *testing.T, mode string, configure func(*Config)) (*Client, string, ContinuationCheckpoint, []domain.ID, []HistoricalInput) {
+	c, capture := openThreadFixtureConfigured(t, "thread-revert-"+mode, configure)
+	settings := threadSettings(t)
+	settings.Options.WebSearch = c.webSearch
+	if c.managedHome != "" {
+		settings.Provider = "openai"
+	}
+	bound, err := c.ResumeThread(context.Background(), domain.NewID(), domain.NewID(), settings)
 	if err != nil {
 		t.Fatal(err)
 	}

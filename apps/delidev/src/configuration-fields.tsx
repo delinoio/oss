@@ -1662,6 +1662,7 @@ export function ConfigurationFields({
   )
     return (
       <HarnessSettingsEditor
+        saveBlocked={props.saveBlocked}
         data={data}
         change={change}
         active={active}
@@ -2006,6 +2007,7 @@ export function ConfigurationFields({
         native={
           typedHarness ? (
             <HarnessSettingsEditor
+              saveBlocked={props.saveBlocked}
               data={newTypedHarnessDocument(data)}
               change={change}
               active={active}
@@ -2211,6 +2213,7 @@ function ProjectFields({
   movementActive = active,
   supportsProjectBehavior = false,
   supportsSessionDefaults = false,
+  saveBlocked,
 }: FieldsProps) {
   const [selected, setSelected] = useState("");
   useLocale();
@@ -2350,6 +2353,7 @@ function ProjectFields({
         [ProjectEditTab.Execution]: (
           <>
             <HarnessSettingsEditor
+              saveBlocked={saveBlocked}
               data={data}
               change={change}
               active={active}

@@ -56,7 +56,8 @@ function ToolEntry({
   if (!choices.entries.has(row.id))
     choices.entries.set(
       row.id,
-      preferences.tool_disclosure === DisclosureDefault.Expanded,
+      !row.tool?.webSearch &&
+        preferences.tool_disclosure === DisclosureDefault.Expanded,
     );
   const node = useRef<HTMLDivElement>(null),
     open = choices.entries.get(row.id) ?? false;

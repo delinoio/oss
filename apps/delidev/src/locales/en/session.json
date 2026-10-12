@@ -171,5 +171,15 @@
   "session.budgetTitle": "Session budget reached",
   "session.recoveryTitle": "Recovery required",
   "session.recoveryRegion": "Session recovery",
-  "session.problemCause": "Cause"
+  "session.problemCause": "Cause",
+  "session.webSearch": "Web search",
+  "session.openPage": "Open page",
+  "session.findText": "Find text",
+  "session.webUnavailable": "Original native search evidence is unavailable.",
+  "session.webProgress": "Waiting for the original native search observation…",
+  "session.webOriginalQuery": "Original query",
+  "session.webSource": "Source",
+  "session.webOriginalAction": "Original action",
+  "session.webNativeResult": "Native result",
+  "session.webResultUnavailable": "The native tool did not provide a result. Original history is retained; this search cannot be retransmitted here."
 }

@@ -25,7 +25,7 @@ func (c ExecutionConfiguration) ValidateSidechat() error {
 	if c.SidechatPolicy == "" {
 		return nil
 	}
-	if c.SidechatPolicy != CodexReadOnlySidechatV1 || c.Harness != Codex || (c.Subscription && c.SubscriptionService != SubscriptionChatGPT) || c.Options.Permission != PermissionReadOnly || c.Options.ApprovalPolicy != "never" || c.Options.ApprovalsReviewer.Effective() != CodexReviewerUser || c.Options.ApprovalReviewModel != "" || c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0 || c.SubagentModel != nil {
+	if c.SidechatPolicy != CodexReadOnlySidechatV1 || c.Harness != Codex || (c.Subscription && c.SubscriptionService != SubscriptionChatGPT) || c.Options.Permission != PermissionReadOnly || c.Options.ApprovalPolicy != "never" || c.Options.ApprovalsReviewer.Effective() != CodexReviewerUser || c.Options.ApprovalReviewModel != "" || c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0 || c.Options.WebSearch != "" && c.Options.WebSearch != WebSearchDisabled || c.SubagentModel != nil {
 		return SidechatUnavailable()
 	}
 	return nil
@@ -49,6 +49,9 @@ func SidechatSnapshot(parent InitialExecution) (InitialExecution, error) {
 	c.Options.ApprovalsReviewer = ""
 	c.Options.Permission, c.Options.ApprovalPolicy, c.Options.ApprovalReviewModel = PermissionReadOnly, "never", ""
 	c.Options.SubagentModel, c.Options.SubagentEffort, c.Options.MaxConcurrency = "", "", 0
+	if c.Options.WebSearch != "" {
+		c.Options.WebSearch = WebSearchDisabled
+	}
 	c.SubagentModel = nil
 	child.ConfigurationDigest, err = c.Digest()
 	if err != nil || c.Validate() != nil {

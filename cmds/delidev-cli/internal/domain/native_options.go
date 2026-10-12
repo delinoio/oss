@@ -11,6 +11,9 @@ func UnavailableNativeOption(harness Harness, option string) error {
 
 func (c ExecutionConfiguration) ValidateNativeOptions() error {
 	o := c.Options
+	if o.WebSearch != "" && !o.WebSearch.Valid() {
+		return UnavailableNativeOption(c.Harness, "web_search")
+	}
 	if (o.ApprovalsReviewer == CodexReviewerAuto && !c.Subscription) != (c.ReviewerNativeModel == CodexReviewerNativeModel) || c.ReviewerNativeModel != "" && c.ReviewerNativeModel != CodexReviewerNativeModel {
 		return invalidObservation()
 	}
@@ -30,6 +33,7 @@ func (c ExecutionConfiguration) ValidateNativeOptions() error {
 		{"max_concurrency", o.MaxConcurrency != 0, c.Harness == Codex},
 		{"approval_review_model", o.ApprovalReviewModel != "", false},
 		{"service_tier", o.ServiceTier != "", c.Harness == Codex},
+		{"web_search", o.WebSearch != "", c.Harness == Codex},
 		{"effort", c.Effort != "", c.Harness != GrokBuild},
 	}
 	for _, field := range fields {
@@ -55,7 +59,7 @@ func (c ExecutionConfiguration) SelectedNativeOptionNames() []string {
 		{"permission", o.Permission != PermissionDefault}, {"claude_permission", o.ClaudePermission != ""},
 		{"approvals_reviewer", o.ApprovalsReviewer != ""}, {"effort", c.Effort != ""}, {"approval_policy", o.ApprovalPolicy != ""},
 		{"subagent_model", o.SubagentModel != ""}, {"subagent_effort", o.SubagentEffort != ""},
-		{"max_concurrency", o.MaxConcurrency != 0}, {"approval_review_model", o.ApprovalReviewModel != ""}, {"service_tier", o.ServiceTier != ""},
+		{"max_concurrency", o.MaxConcurrency != 0}, {"approval_review_model", o.ApprovalReviewModel != ""}, {"service_tier", o.ServiceTier != ""}, {"web_search", o.WebSearch != ""},
 	} {
 		if field.selected {
 			names = append(names, field.name)

@@ -88,6 +88,7 @@ const (
 )
 
 type EffectiveSettings struct {
+	WebSearch         domain.WebSearchMode `json:"WebSearch,omitempty"`
 	Model             string
 	Provider          string
 	Effort            *string
@@ -336,6 +337,9 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		if err := c.verifyAPI(ctx, settings.Cwd); err != nil {
 			return result, err
 		}
+	}
+	if err := c.verifyWebSearch(ctx, settings); err != nil {
+		return result, err
 	}
 	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
 		return result, err

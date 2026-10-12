@@ -34,6 +34,7 @@ import {
 import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
+import { NativeWebSearch } from "./native-web-search";
 import { NativeImageView } from "./native-image-view";
 import { nativeSleepDuration } from "./native-sleep";
 import { SessionHarness } from "./session-harness";
@@ -595,7 +596,7 @@ export const TranscriptItem = memo(function TranscriptItem({
           : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })
       }
     >
-      {roleClass ? (
+      {toolStarted.kind === "web-search" ? null : roleClass ? (
         <ConversationStatus state={text(data.state)} />
       ) : (
         <header>
@@ -615,7 +616,9 @@ export const TranscriptItem = memo(function TranscriptItem({
         sessionId={resource.sessionId}
         active={active}
       />
-      {toolStarted.kind === "image-view" ? (
+      {toolStarted.kind === "web-search" ? (
+        <NativeWebSearch tool={tool} />
+      ) : toolStarted.kind === "image-view" ? (
         <NativeImageView tool={tool} state={text(data.state)} />
       ) : toolStarted.kind === "opencode-builtin" ? (
         <NativeBuiltin tool={tool} state={text(data.state)} />
