@@ -247,9 +247,7 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
-	StartupTiming        *SessionStartupTiming `json:"startup_timing,omitempty"`
-	NativeShell          *NativeShellRef       `json:"native_shell,omitempty"`
-	LastNativeShellJobID ID                    `json:"last_native_shell_job_id,omitempty"`
+	StartupTiming *SessionStartupTiming `json:"startup_timing,omitempty"`
 
 	NativeShell           *NativeShellRef         `json:"native_shell,omitempty"`
 	LastNativeShellJobID  ID                      `json:"last_native_shell_job_id,omitempty"`
