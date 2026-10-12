@@ -853,7 +853,10 @@ try {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
         for (const ordered of [false, true])
-          for (const [width, height] of [...wizardBaseViewports, ...wizardEffectiveViewports]) {
+          for (const [width, height] of [
+            ...wizardBaseViewports,
+            ...wizardEffectiveViewports,
+          ]) {
             await page.setViewportSize({ width, height });
             await page.goto(
               `${origin}/?theme=${theme}&sourceRoutes=${ordered}&language=${language}`,
@@ -1013,7 +1016,10 @@ try {
   } else if (accountsOnly) {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
-        for (const [width, height] of [...scopedBaseViewports, ...accountsEffectiveViewports]) {
+        for (const [width, height] of [
+          ...scopedBaseViewports,
+          ...accountsEffectiveViewports,
+        ]) {
           await page.setViewportSize({ width, height });
           await page.goto(
             `${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=${language}`,
@@ -1617,7 +1623,10 @@ try {
   } else if (githubOnly) {
     let onboardingChecks = 0;
     // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
-    for (const [width, height] of [...githubBaseViewports, ...githubEffectiveViewports]) {
+    for (const [width, height] of [
+      ...githubBaseViewports,
+      ...githubEffectiveViewports,
+    ]) {
       await page.setViewportSize({ width, height });
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto(`${origin}/?theme=light&github-onboarding=true`);
