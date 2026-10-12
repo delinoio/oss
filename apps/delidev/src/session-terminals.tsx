@@ -15,6 +15,7 @@ import { ReadStage } from "./scroll-pagination";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useSharedTabReveal } from "./shared-tabs";
 import {
   Code,
   ConnectError,
@@ -201,6 +202,7 @@ export function SessionTerminals({
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
+  useSharedTabReveal(listRoot, selected);
   const status = useQuery(
     SystemQuery.getStatus,
     {},
@@ -702,11 +704,12 @@ export function SessionTerminals({
             ref={listRoot}
             role={tabbed ? "group" : "tablist"}
             aria-label={copy("session-terminals.terminals_7482c4")}
-            className="terminal-tabs"
+            className="terminal-tabs shared-tab-strip"
           >
             {tabs.map((row, index) => (
               <button
                 key={row.id}
+                className="shared-tab-item shared-tab-control shared-tab-label"
                 id={`terminal-tab-${row.id}`}
                 role={tabbed ? undefined : "tab"}
                 aria-selected={tabbed ? undefined : selected === row.id}
@@ -742,7 +745,7 @@ export function SessionTerminals({
                               (event.key === "ArrowRight" ? 1 : -1) +
                               elements.length) %
                             elements.length;
-                  elements[next]?.focus();
+                  elements[next]?.focus({ preventScroll: true });
                   elements[next]?.click();
                 }}
                 onClick={() => {

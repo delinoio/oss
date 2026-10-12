@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
-import { useLayoutEffect, useRef } from "react";
+import { useRef } from "react";
+import { useSharedTabReveal } from "./shared-tabs";
 import { copy, useLocale } from "./localization";
 import { Comparison } from "./session-diff-model";
 import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
@@ -50,14 +51,10 @@ export function SessionTabBar({
   const productLabel = useProductLabels();
   useLocale();
   const root = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    root.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [selected, tabs.length]);
+  useSharedTabReveal(root, selected);
   return (
     <div
-      className="session-tabs"
+      className="session-tabs shared-tab-strip"
       ref={root}
       role="tablist"
       aria-label={copy("session-tabs.tabs")}
@@ -74,11 +71,12 @@ export function SessionTabBar({
               : tabName(tab);
         return (
           <div
-            className={`session-tab${selected === key ? " is-selected" : ""}`}
+            className={`session-tab shared-tab-item shared-tab-item--closable${selected === key ? " is-selected" : ""}`}
             key={key}
             role="presentation"
           >
             <button
+              className="shared-tab-control shared-tab-label shared-tab-label--truncate"
               type="button"
               id={`session-tab-${id}-${index}`}
               role="tab"
@@ -122,7 +120,7 @@ export function SessionTabBar({
                   select(sessionTabKey(tabs[next]!));
                   root.current
                     ?.querySelectorAll<HTMLButtonElement>("[role=tab]")
-                    [next]?.focus();
+                    [next]?.focus({ preventScroll: true });
                 }
               }}
             >
@@ -130,7 +128,7 @@ export function SessionTabBar({
             </button>
             {index > 0 ? (
               <button
-                className="session-tab-close"
+                className="session-tab-close shared-tab-control shared-tab-close"
                 type="button"
                 aria-label={copy("session-tabs.close", { name })}
                 aria-keyshortcuts={

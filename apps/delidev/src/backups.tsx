@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
+import { useSharedTabReveal } from "./shared-tabs";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -112,6 +113,8 @@ export function Backups({ active }: { active: boolean }) {
   const [historyTab, setHistoryTab] = useState(HistoryTab.Creation);
   const [focusedTab, setFocusedTab] = useState(HistoryTab.Creation);
   const tabButtons = useRef(new Map<HistoryTab, HTMLButtonElement>());
+  const tabStrip = useRef<HTMLDivElement>(null);
+  useSharedTabReveal(tabStrip, historyTab);
   const inspectButtons = useRef(new Map<string, HTMLButtonElement>());
   const inspectionOrigin = useRef("");
   const returnInspectionFocus = useRef(false);
@@ -140,7 +143,7 @@ export function Backups({ active }: { active: boolean }) {
     event.preventDefault();
     const target = historyTabs[next]!;
     setFocusedTab(target);
-    tabButtons.current.get(target)?.focus();
+    tabButtons.current.get(target)?.focus({ preventScroll: true });
   };
   const [trackedCreations, setTrackedCreations] = useState<BackupCreationJob[]>(
     [],
@@ -610,13 +613,15 @@ export function Backups({ active }: { active: boolean }) {
           </SettingsActionButton>
         </header>
         <div
-          className="backups-tabs"
+          className="backups-tabs shared-tab-strip"
+          ref={tabStrip}
           role="tablist"
           aria-label={copy("backups.backupOperationHistory_8f9f32")}
         >
           {historyTabs.map((tab) => (
             <button
               key={tab}
+              className="shared-tab-item shared-tab-control shared-tab-label"
               ref={(node) => {
                 if (node) tabButtons.current.set(tab, node);
                 else tabButtons.current.delete(tab);

@@ -62,17 +62,17 @@
   margin: 0 auto 0 0;
   font-size: 13px;
 }
-.terminal-dock button {
+.terminal-dock button:not(.shared-tab-control) {
   min-height: 32px;
   color: var(--terminal-foreground);
   border: 1px solid var(--terminal-border);
   background: transparent;
 }
-.terminal-dock button:hover,
-.terminal-dock button[aria-selected="true"] {
+.terminal-dock button:not(.shared-tab-control):hover,
+.terminal-dock button:not(.shared-tab-control)[aria-selected="true"] {
   background: var(--terminal-selection);
 }
-.terminal-dock button:focus-visible,
+.terminal-dock button:not(.shared-tab-control):focus-visible,
 .terminal-dock-separator:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -87,22 +87,6 @@
   border-top: 1px solid var(--terminal-border);
   cursor: ns-resize;
   touch-action: none;
-}
-.terminal-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  max-height: 80px;
-  overflow: auto;
-  padding: 0 8px;
-}
-.terminal-tabs ul,
-.terminal-tabs [data-payload-page] {
-  display: flex;
-  flex-wrap: wrap;
-  list-style: none;
-  padding: 0;
-  margin: 0;
 }
 .terminal-view {
   display: flex;

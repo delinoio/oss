@@ -9,6 +9,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { copy, useLocale } from "./localization";
+import { useSharedTabReveal } from "./shared-tabs";
 import "./project-edit-tabs.css";
 export enum ProjectEditTab {
   General = "general",
@@ -65,8 +66,10 @@ export function ProjectEditTabs({
   useLocale();
   const id = useId(),
     root = useRef<HTMLDivElement>(null),
+    strip = useRef<HTMLDivElement>(null),
     tabs = useRef(new Map<ProjectEditTab, HTMLButtonElement>());
   const [selected, setSelected] = useState(ProjectEditTab.General);
+  useSharedTabReveal(strip, selected);
   useLayoutEffect(() => {
     const node = root.current;
     const reveal = (event: Event) => {
@@ -82,7 +85,8 @@ export function ProjectEditTabs({
       <div
         role="tablist"
         aria-label={copy("configuration-fields.projectEdit.tabs")}
-        className="project-edit-tablist"
+        className="project-edit-tablist shared-tab-strip"
+        ref={strip}
       >
         {order.map((tab) => (
           <button
@@ -91,6 +95,7 @@ export function ProjectEditTabs({
               if (node) tabs.current.set(tab, node);
               else tabs.current.delete(tab);
             }}
+            className="shared-tab-item shared-tab-control shared-tab-label"
             type="button"
             role="tab"
             id={`${id}-${tab}-tab`}
@@ -112,7 +117,7 @@ export function ProjectEditTabs({
                           : undefined;
               if (next) {
                 event.preventDefault();
-                tabs.current.get(next)?.focus();
+                tabs.current.get(next)?.focus({ preventScroll: true });
               }
             }}
           >

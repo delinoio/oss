@@ -11,6 +11,7 @@ import {
   useLocale,
 } from "./localization";
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useSharedTabReveal } from "./shared-tabs";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -277,6 +278,8 @@ export function Usage({
   const tabId = useId();
   const pricesTab = useRef<HTMLButtonElement>(null);
   const pendingPriceFocus = useRef(false);
+  const tabStrip = useRef<HTMLDivElement>(null);
+  useSharedTabReveal(tabStrip, tab);
   useLayoutEffect(() => {
     if (!pendingPriceFocus.current) return;
     // Consume explicit navigation once, including when its surface has departed.
@@ -548,7 +551,8 @@ export function Usage({
         aria-busy={result.isFetching}
       >
         <div
-          className="usage-tabs"
+          className="usage-tabs shared-tab-strip"
+          ref={tabStrip}
           role="tablist"
           aria-label={copy("usage.analysisTabs")}
         >
@@ -556,6 +560,7 @@ export function Usage({
             <button
               key={value}
               ref={value === UsageTab.Prices ? pricesTab : undefined}
+              className="shared-tab-item shared-tab-control shared-tab-label"
               type="button"
               role="tab"
               id={`${tabId}-${value}-tab`}
@@ -577,7 +582,9 @@ export function Usage({
                 if (!next) return;
                 event.preventDefault();
                 setTab(next);
-                window.document.getElementById(`${tabId}-${next}-tab`)?.focus();
+                window.document
+                  .getElementById(`${tabId}-${next}-tab`)
+                  ?.focus({ preventScroll: true });
               }}
             >
               {copy(tabLabels[value])}
