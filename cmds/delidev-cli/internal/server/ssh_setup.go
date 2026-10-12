@@ -141,7 +141,8 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 		}
 		// A remote host cannot reach this server through its own loopback.
 		// Reject the incompatible product topology before protected staging.
-		if endpoint, problem := url.Parse(s.Endpoint.URL); problem == nil && endpoint.Host != "" && endpoint.Scheme == "http" {
+		reachableEndpoint := s.tailnetWorkerEndpoint()
+		if endpoint, problem := url.Parse(reachableEndpoint); problem == nil && endpoint.Host != "" && endpoint.Scheme == "http" {
 			host := net.ParseIP(operation.Target.Host)
 			local := operation.Target.Host == "localhost" || host != nil && host.IsLoopback()
 			if !local {
@@ -168,6 +169,7 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 			if domain.Decode(r.Data, &current) != nil || current.State != installationObserved || current.Identity != operation.Identity {
 				return nil, installationFailure(domain.Conflict)
 			}
+			current.ReachableEndpoint = reachableEndpoint
 			current.State = installationRequested
 			current.Name = input.Name
 			current.StartRequestID = domain.ID(m.RequestId)

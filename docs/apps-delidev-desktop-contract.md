@@ -457,7 +457,7 @@ This naming boundary preserves Agent Worker, generic technical Worker references
 
 The the feature flow is the mounted `Surface.NewSession` page, not a dialog. It retains the selected session and connection-memory creation draft while navigating to sessions, Settings and other surfaces. Back returns to the existing selected conversation or welcome view. Entry focuses First message; changing surfaces during an accepted create cannot steal navigation or focus when the response arrives.
 
-The page centers an 820px maximum content column around **What would you like to work on?** Project selection precedes the composer. An empty project means **General Chat**, an isolated projectless directory on the explicit Worker. The composer has a 210px base height, 18px radius, accessible First message textarea, the specified task placeholder, Agent Worker and Runs on selectors, Execute/Plan control, inline Options, and a 40px Create session button. Keep 24px minimum side padding and ensure 960×640 remains scrollable without horizontal clipping. The sidebar retains its rail/pane geometry and the shared Home accumulation/scroll scope described below; loaded global and expanded project ranges refresh every 15 seconds while active and visible.
+The page centers an 820px maximum content column around **What would you like to work on?** Project selection precedes the composer. An empty project means **General Chat**, an isolated projectless directory on the explicit Worker. The composer has a 210px minimum height in Regular layout, natural content height in Compact layout, 18px radius, accessible First message textarea, the specified task placeholder, Agent Worker and Runs on selectors, Execute/Plan control, inline Options, and a 40px Create session button. Keep 24px minimum side padding and ensure 960×640 remains scrollable without horizontal clipping. The sidebar retains its rail/pane geometry and the shared Home accumulation/scroll scope described below; loaded global and expanded project ranges refresh every 15 seconds while active and visible.
 
 Initial workspace/mode is General Chat/Execute. Restore the last accepted Agent Worker/Runner Device pair under the session creation preferences contract below; without eligible device history, select the authenticated permitted local device while leaving the Agent Worker unselected. The page reuses paginated selectors, project restrictions, optional budget validation/disclaimer, Worktree/Local selection, repository starting references, and fresh same-computer Local proof. Selectors distinguish loading, an empty current page, permission denial, connection failure, and stale cached choices; an off-page selection keeps its exact identity without silently choosing a replacement. General Chat removes Git options. Enter submits except during IME composition; Shift+Enter inserts a newline. UTF-8 input is capped at 256 KiB while retaining the previous valid draft on overflow. Drafts and Options survive same-identity navigation, Settings and reconnect in memory only; identity changes clear them.
 
@@ -503,7 +503,7 @@ and submission gates remain required.
 
 Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow.
 
-`NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, 210px composer, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Restore the independent last accepted General Chat Agent Worker/Runs on choices when permitted; without history, keep both unselected. Preserve Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
+`NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, the same Regular/Compact composer height rules, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Restore the independent last accepted General Chat Agent Worker/Runs on choices when permitted; without history, keep both unselected. Preserve Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
 
 General Chat keeps one Options action. Opening it exposes the static localized
 optional estimated-cost budget heading, BudgetFields and complete explanations;
@@ -887,7 +887,7 @@ The feature adds a separate Verified Grok closed inputs section to Usage. The ex
 
 The feature replaces the previous feature navigation with topmost Overview (default), Usage history and Model prices tabs. English/Korean labels are Overview / 개요, Usage history / 사용 기록 and Model prices / 모델 단가. Use an unboxed semantic tab strip with muted inactive text, accent selected text, a 2px underline, shared baseline, 40px controls and visible focus. Left/Right/Home/End select and focus without changing filters, summary reads or execution authority. Narrow tab strips scroll horizontally.
 
-Overview shows the applied period, concise incomplete/stale notices and separate Codex, Claude Code, OpenCode and Grok Build rows. Read their exact server values without adding tools, currencies, accounting units or overlapping reports. Absent Claude totals remain unavailable. Grok evidence is labelled input tokens, never an inferred total or price. No-record numeric cells use an em dash with status; reported zero stays zero. Separate estimated amounts by source and currency and state that they are not actual charges. A retained source choice exposes source-specific daily trends. How usage is counted links the original accounting definitions and exact records; Coverage details retains every original coverage counter and caveat.
+Overview shows the applied period, concise incomplete/stale notices and separate Codex, Claude Code, OpenCode and Grok Build rows. Read their exact server values without adding tools, currencies, accounting units or overlapping reports. Codex response totals and historical estimates remain available independently of native accounting profile negotiation; Claude Code and OpenCode rows require the negotiated profile and complete native source summaries. Absent Claude totals remain unavailable. Grok evidence is labelled input tokens, never an inferred total or price. No-record numeric cells use an em dash with status; reported zero stays zero. Separate estimated amounts by source and currency and state that they are not actual charges. A retained source choice exposes source-specific daily trends. How usage is counted links the original accounting definitions and exact records; Coverage details retains every original coverage counter and caveat.
 
 Usage history preserves the ordered response records, four original response cards and secondary breakdown, expanded keyboard-accessible daily/model charts and exact data tables, independent native source records, daily/model/session details and immutable historical pricing. Supported empty native sources remain initially collapsed with unavailable/no-record warnings; populated sources remain expanded. Keep user disclosure choices and unsupported/inconsistent evidence guidance. Model links select their exact original model/provider/service identity in Model prices without changing applied filters. Explicit response and native model activation moves focus once to the rendered selected Model prices tab, only while Usage remains active and the connected destination has no hidden ancestor. Departure consumes the pending handoff; passive query, refresh, locale and retained-state updates preserve current focus.
 
@@ -3181,7 +3181,14 @@ save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.
 Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
-immutable; duplication creates a separate editable identity.
+immutable; duplication creates a separate editable identity. Each palette row has
+its own localized Duplicate action beside its selector. The action resolves that
+row's selected bundled or custom family independently of theme mode and clones
+its original name and complete light/dark maps into the existing editor with a
+fresh UUID-v7 identity. Opening or cancelling performs no preference write.
+Explicit Save adds only the new custom identity and preserves both selected
+references. Retain custom-library row actions, the 32-theme limit, revision and
+recovery guards, modal focus restoration and narrow wrapping.
 
 Titanium, Nord, Dracula and Solarized each provide complete light/dark semantic
 maps in the shared bundled JSON. Their surfaces, text, borders, links, focus,
@@ -3221,7 +3228,15 @@ opaque black or white value and expose it through the render-only
 or reject an existing custom theme.
 
 Composer and Display retain Regular/Compact layouts and explicit 12/14/16/18px
-text choices. Default text size preserves the original per-component size;
+text choices. Project and General Chat creation retain the 210px Regular minimum.
+Compact removes only that container floor; its five-row textarea, 12px padding,
+64px textarea minimum and wrapping toolbar determine natural height. Supported
+12px/14px content may fit below 210px, while larger text or wrapped controls can
+grow beyond it. Preserve manual vertical resizing, creation placement, scrolling
+and reachable controls at narrow widths and effective 200% zoom. Switching layout
+retains the same mounted input, draft, selection, focus, attachments, skill bindings,
+resource/mode choices and original pending/uncertain request; it never submits.
+Default text size preserves the original per-component size;
 Original disclosure defaults preserve each component’s original expansion. Explicit
 Expanded/Collapsed overrides apply only to newly mounted supported content. Changes preserve mounted drafts, focus, attachments and business
 request identities. Session Default/Minimal presentation and accent controls
@@ -5142,7 +5157,7 @@ The original desktop-owned controllers stay mounted outside disposable Settings.
 
 Current connection shows This computer, Local server, the actual safe endpoint and authenticated readiness. Checking, retrying, stopped, blocked, accepted shutdown and uncertainty remain distinct. Original explicit Start and confirmed Stop keep their existing predicates and retries. Saved windows show only their pinned identity, Verify saved connection and Show local window; they cannot bootstrap Local or manage unrelated profiles. Non-native presentation gives localized unavailable information without invoking native actions.
 
-Saved servers reads the bounded local inventory and exposes Refresh, Add server, Open or the original pending pairing retry, and a keyboard-operable row disclosure for Rename/Remove. Saved denotes persisted pairing, never remote readiness. Failed reads retain confirmed rows with stale guidance. The existing private pairing form stays masked and opens in a contained dialog. Rename, removal and pairing keep their original request bytes and confirmations across page movement. Menu Escape restores its summary. Task-dialog Close/Escape hides only presentation and leaves an explicit Continue action; original drafts, confirmations and uncertain requests remain retained. Deliberate Discard/Keep controls retain their original semantics. Dialog focus and restoration use the shared Modal owner.
+Saved servers reads the bounded local inventory and exposes Refresh, Add server, Open or the original pending pairing retry, and a keyboard-operable row disclosure for Rename/Remove. Saved denotes persisted pairing, never remote readiness. Failed reads retain confirmed rows with stale guidance. The existing private pairing form stays masked and opens in a contained dialog. Rename, removal and pairing keep their original request bytes and confirmations across page movement. Menu Escape restores its summary. Task-dialog Close/Escape hides only presentation and leaves an explicit Continue action; original drafts, confirmations and uncertain requests remain retained. Dismissal survives page-slot release and reacquisition; only Continue or a genuinely new task presents the dialog again. The retained Add presenter receives a presentation-only generation from the explicit Add server action, independently of drafts, profile IDs and exact requests. Deliberate Discard/Keep controls retain their original semantics. Dialog focus and restoration use the shared Modal owner.
 
 Advanced contains registration inspection/recovery, app updates and retained installation inspection, removed-profile history and independent retained Worker cleanup. An external text indicator exposes pending, failed or uncertain controller conditions while Advanced is collapsed. Expanding Advanced itself neither retries work nor admits native operations. Existing child disclosures retain their original read and operation gates. No RPC, protocol allocation, migration, dependency or native authority changes. Component and browser evidence remain separate from installed-native and real-account acceptance.
 
@@ -5523,7 +5538,9 @@ Publication uses a synced same-directory temporary file and atomic create-new li
 
 Original Save returns a closed operation-bound non-admission result only after the native controller proves that no receipt exists. Busy, stopped and invalid input may receive this proof before dialog admission; a poisoned lock, changed original scope/identity or generic transport failure cannot. The renderer releases only the matching original Save fence and permits a fresh explicit Save. Check observes retained receipts only and never grants non-admission or opens another dialog. Retained receipt lookup precedes stopped/input classification so lost acknowledgments and admitted writes remain fenced across presentation remounts.
 
-Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
+Fresh admission and Quit share one closed atomic lifecycle: running, admission-reserved, stopped and stopped-with-reservation. While holding the receipts lock, admission validates the original bytes and checks pending/capacity limits before atomically reserving the running state. That reservation is the admission linearization point. Quit sets only the stop bit without waiting for receipts, decoding, a dialog or publication. Stop-first requests receive the existing stopped non-admission result with no receipt or dialog. Reservation-first requests complete only their original admitted receipt; reservation release preserves a concurrently published stop bit. Later fresh requests cannot reserve, and late admitted disk publication remains canceled. Retained original lookup stays before stopped/input classification; poisoned locks and changed ownership remain generic failures. Existing structured `generated_image_export` non-admission logs contain only safe phases and typed reasons, never image bytes, raw paths, credentials or request content.
+
+Fixtures cover deterministic stop during validation, both atomic reservation orderings, retained pending/uncertain originals across stop, input/pending/capacity limits, exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Dialog counts in controller fixtures are mocked invocations. Builds and fixtures do not establish actual platform-dialog or account acceptance.
 
 ### Automatic reset-credit consent
 
@@ -5897,3 +5914,38 @@ Hide the complete Agent requests disclosure only when a successful complete resi
 The selected ChatGPT usage popover places a compact Paid credits card above quota within its existing 320px width, 16px padding and viewport-clamped internal scroll. Reuse the subscription presentation contract’s validated saved projection, string-only two-decimal formatter, 24px tabular value, smaller unit and accessible unchanged exact decimal disclosure. Separate multiple buckets in source order with native labels and their original observation times; never sum them. Explicit zero, null/unknown, tiny positive, unlimited, loading, unsupported, stale/future and failed evidence remain distinct. System 76 controls credit display independently of capability-17 inventory admission; other services remain unchanged.
 
 Failed or incomplete saved-resource reads retain original account-bound values and timestamps as historical evidence until a complete accepted replacement. Connection identity replacement resets local disclosure state; authentication loss removes the selected details. Credits do not affect `remainingBadge`, quota windows, read pagination, the existing refresh owner or Recheck saved quota evidence and Manage subscriptions actions. Preserve semantic themes, EN/KO wrapping, narrow and effective 200% reflow, Escape/outside dismissal and opener focus. No new RPC, polling owner, native operation, purchase, consumption or migration is added. Follow [the subscription presentation contract](apps-delidev-subscription-settings-contract.md#paid-credit-observations).
+
+## Tailscale Connections presentation
+
+The main Local Connections screen orders Current connection, Tailscale devices,
+Saved servers and Advanced. Current connection presents explicit access state and
+Enable/Disable. Enable uses the existing focused, Escape-dismissable modal to
+explain tailnet visibility, HTTPS prerequisites and server lifetime. The
+[connections contract](cmds-delidev-connections-contract.md#tailscale-connections)
+owns original ingress, approval, cryptography and recovery authority.
+
+Device rows separate ownership, Tailscale online status and explicit checked
+DeliDev availability. Only an explicit Check probes a peer. Successful normal-TLS
+negotiation admits Connect; Register Worker also requires the selected server's
+reachable access origin and explicit displayed server identity. An online peer
+can prefill its canonical hostname into the existing SSH setup. This preserves
+exact fingerprint consent, write-only credentials and signed Worker-only
+installation. Manual Add server and Runner Device setup stay available.
+
+The connection-owned controller retains approvals and exact accepted mutations
+across Settings departure. Device inventory reads are disposed with their
+presentation; late results cannot change another opening. Target approval modals
+show requester, exact client/Worker intent, original origin and matching code;
+Worker approval also identifies the selected server. Denied, expired, pending,
+completed and uncertain requests remain distinct. Inspect uses the original
+request; uncertainty grants no replacement operation.
+
+English/Korean copy, semantic lists/status announcements, 40px controls, 18px
+headings, wrapping identities/actions and existing light/dark tokens retain the
+1040px Settings cap and narrow reflow. Native two-device/TLS/SSH and packaged
+platform acceptance require separate evidence.
+
+The `tailscale:` retained mutation namespace belongs to the connection registry,
+including submissions initiated from the disposable device list. Accepted
+operations remain recoverable through the original outgoing journal after the
+submitting Settings scope closes.

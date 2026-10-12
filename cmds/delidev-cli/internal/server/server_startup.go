@@ -20,6 +20,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/tailscale"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 )
 
@@ -160,6 +161,12 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service.tailnetStartWorker = config.TailnetStartWorker
+	service.tailscale, err = tailscale.Open(child, filepath.Join(state.Root(), "tailscale"), identity.ServerID, config.Logger, service.tailnetIngress)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, service.tailscale.Close()) }()
 	service.initializeBackupRestores(child)
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
@@ -337,6 +344,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		}
 	case <-child.Done():
 		service.stopping.Store(true)
+		result = errors.Join(result, service.tailscale.Close())
 		service.executionAuthority.cancel()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -380,7 +388,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		return domain.SafeError(err)
 	}
 	config.Logger.Info("server_stopped", "server_id", identity.ServerID)
-	return nil
+	return result
 }
 
 func ValidateConfig(config Config) error {

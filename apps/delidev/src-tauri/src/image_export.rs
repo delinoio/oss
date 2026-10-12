@@ -9,7 +9,7 @@ use std::{
     path::Path,
     sync::{
         Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicU8, Ordering},
     },
 };
 
@@ -82,11 +82,38 @@ struct Receipt {
     identity: String,
     outcome: Outcome,
 }
+const RESERVATION_BIT: u8 = 1;
+const STOP_BIT: u8 = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum Lifecycle {
+    Running = 0,
+    AdmissionReserved = RESERVATION_BIT,
+    Stopped = STOP_BIT,
+    StoppedWithReservation = STOP_BIT | RESERVATION_BIT,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AdmissionPhase {
+    Validating,
+    BeforeReservation,
+    Reserved,
+}
+
+#[cfg(test)]
+type AdmissionHook = Box<dyn FnMut(AdmissionPhase) + Send>;
+
 #[derive(Default)]
 pub struct Controller {
     receipts: Mutex<BTreeMap<String, Receipt>>,
     publication: Mutex<()>,
-    stopped: AtomicBool,
+    // AtomicU8 defaults to Running. Only the closed bit transitions below
+    // may change this state; receipt ownership stays under the receipts lock.
+    lifecycle: AtomicU8,
+    #[cfg(test)]
+    admission_hook: Mutex<Option<AdmissionHook>>,
 }
 fn digest(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
@@ -138,9 +165,11 @@ impl Controller {
             request.bytes()?;
             return Ok(Admission::Retained(receipt.outcome));
         }
-        if self.stopped.load(Ordering::Acquire) {
+        if self.is_stopped() {
             return Ok(Admission::Rejected(RejectionReason::Stopped));
         }
+        #[cfg(test)]
+        self.observe_admission(AdmissionPhase::Validating);
         let bytes = match request.bytes() {
             Ok(bytes) => bytes,
             Err(_) => return Ok(Admission::Rejected(RejectionReason::InvalidInput)),
@@ -150,6 +179,27 @@ impl Controller {
         if receipts.len() >= 128 || receipts.values().any(|v| v.outcome == Outcome::Pending) {
             return Ok(Admission::Rejected(RejectionReason::Busy));
         }
+        #[cfg(test)]
+        self.observe_admission(AdmissionPhase::BeforeReservation);
+        // This reservation is the admission linearization point. Stop can
+        // set its bit without waiting for validation or the receipts lock.
+        // If admission wins first, complete only this original receipt.
+        match self.lifecycle.compare_exchange(
+            Lifecycle::Running as u8,
+            Lifecycle::AdmissionReserved as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {}
+            Err(state) if state & STOP_BIT != 0 => {
+                return Ok(Admission::Rejected(RejectionReason::Stopped));
+            }
+            // A reservation cannot coexist with this exclusive receipts lock.
+            // An unexpected state does not grant proved non-admission.
+            Err(_) => return Err(NativeFailure::Busy),
+        }
+        #[cfg(test)]
+        self.observe_admission(AdmissionPhase::Reserved);
         receipts.insert(
             request.operation_id.clone(),
             Receipt {
@@ -158,6 +208,9 @@ impl Controller {
                 outcome: Outcome::Pending,
             },
         );
+        // Clear only our reservation; retain a stop published after the CAS.
+        self.lifecycle
+            .fetch_and(!RESERVATION_BIT, Ordering::Release);
         Ok(Admission::New(bytes))
     }
 
@@ -181,12 +234,28 @@ impl Controller {
         Ok(outcome)
     }
 
+    fn is_stopped(&self) -> bool {
+        matches!(
+            self.lifecycle.load(Ordering::Acquire),
+            state if state == Lifecycle::Stopped as u8
+                || state == Lifecycle::StoppedWithReservation as u8
+        )
+    }
+
+    #[cfg(test)]
+    fn observe_admission(&self, phase: AdmissionPhase) {
+        if let Some(hook) = self.admission_hook.lock().unwrap().as_mut() {
+            hook(phase);
+        }
+    }
+
     pub fn request_stop(&self) {
-        self.stopped.store(true, Ordering::Release);
+        self.lifecycle.fetch_or(STOP_BIT, Ordering::AcqRel);
     }
 
     /// Join only disk publication off the UI loop. A late dialog is fenced from
-    /// writing by stopped, and never holds the publication lock while choosing.
+    /// writing by the stop bit, and never holds the publication lock while
+    /// choosing.
     pub fn join(&self) {
         drop(
             self.publication
@@ -203,7 +272,7 @@ impl Controller {
         bytes: &[u8],
     ) -> Result<Outcome, NativeFailure> {
         let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
-        if self.stopped.load(Ordering::Acquire) {
+        if self.is_stopped() {
             return self.finish(scope, operation, Outcome::Canceled);
         }
         // Verify pending ownership before touching the user's chosen
@@ -275,7 +344,44 @@ pub fn save_new(path: &Path, bytes: &[u8]) -> Outcome {
 }
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::{
+            atomic::AtomicUsize,
+            mpsc::{Receiver, SyncSender, sync_channel},
+        },
+        thread,
+        time::Duration,
+    };
+
     use super::*;
+
+    const WAIT_LIMIT: Duration = Duration::from_secs(30);
+
+    fn pause_at(c: &Controller, phase: AdmissionPhase) -> (Receiver<()>, SyncSender<()>) {
+        let (ready_tx, ready_rx) = sync_channel(0);
+        let (resume_tx, resume_rx) = sync_channel(0);
+        *c.admission_hook.lock().unwrap() = Some(Box::new(move |observed| {
+            if observed == phase {
+                ready_tx.send(()).unwrap();
+                resume_rx.recv_timeout(WAIT_LIMIT).unwrap();
+            }
+        }));
+        (ready_rx, resume_tx)
+    }
+
+    // Model the host's New-only Save dialog invocation. This is a controller
+    // fixture, not an installed native dialog or platform acceptance check.
+    fn mocked_save(
+        c: &Controller,
+        r: &Request,
+        dialogs: &AtomicUsize,
+    ) -> Result<Admission, NativeFailure> {
+        let admission = c.begin("original", r)?;
+        if matches!(admission, Admission::New(_)) {
+            dialogs.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(admission)
+    }
     fn request() -> Request {
         let bytes = b"\x89PNG\r\n\x1a\nfixture";
         Request {
@@ -287,6 +393,162 @@ mod tests {
             png: STANDARD.encode(bytes),
         }
     }
+    #[test]
+    fn stop_first_during_validation_or_before_reservation_creates_no_dialog() {
+        for phase in [
+            AdmissionPhase::Validating,
+            AdmissionPhase::BeforeReservation,
+        ] {
+            let c = Controller::default();
+            let r = request();
+            let dialogs = AtomicUsize::new(0);
+            let (ready, resume) = pause_at(&c, phase);
+            thread::scope(|threads| {
+                let admission = threads.spawn(|| mocked_save(&c, &r, &dialogs));
+                ready.recv_timeout(WAIT_LIMIT).unwrap();
+                // Stop and publication join must not wait for the receipts
+                // lock or validation paused on the other thread.
+                c.request_stop();
+                c.join();
+                assert_eq!(
+                    c.lifecycle.load(Ordering::Acquire),
+                    Lifecycle::Stopped as u8
+                );
+                resume.send(()).unwrap();
+                assert_eq!(
+                    admission.join().unwrap().unwrap(),
+                    Admission::Rejected(RejectionReason::Stopped)
+                );
+            });
+            assert!(c.receipts.lock().unwrap().is_empty());
+            assert_eq!(dialogs.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                c.lifecycle.load(Ordering::Acquire),
+                Lifecycle::Stopped as u8
+            );
+            assert_eq!(
+                mocked_save(&c, &request(), &dialogs).unwrap(),
+                Admission::Rejected(RejectionReason::Stopped)
+            );
+            assert_eq!(dialogs.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[test]
+    fn reservation_first_retains_stop_and_only_the_original_admission() {
+        let c = Controller::default();
+        let r = request();
+        let bytes = r.bytes().unwrap();
+        let dialogs = AtomicUsize::new(0);
+        let (ready, resume) = pause_at(&c, AdmissionPhase::Reserved);
+        thread::scope(|threads| {
+            let admission = threads.spawn(|| mocked_save(&c, &r, &dialogs));
+            ready.recv_timeout(WAIT_LIMIT).unwrap();
+            assert_eq!(
+                c.lifecycle.load(Ordering::Acquire),
+                Lifecycle::AdmissionReserved as u8
+            );
+            c.request_stop();
+            c.request_stop();
+            c.join();
+            assert_eq!(
+                c.lifecycle.load(Ordering::Acquire),
+                Lifecycle::StoppedWithReservation as u8
+            );
+            resume.send(()).unwrap();
+            assert_eq!(
+                admission.join().unwrap().unwrap(),
+                Admission::New(bytes.clone())
+            );
+        });
+        assert_eq!(
+            c.lifecycle.load(Ordering::Acquire),
+            Lifecycle::Stopped as u8
+        );
+        assert_eq!(dialogs.load(Ordering::Relaxed), 1);
+        assert_eq!(c.receipts.lock().unwrap().len(), 1);
+        assert_eq!(
+            mocked_save(&c, &r, &dialogs).unwrap(),
+            Admission::Retained(Outcome::Pending)
+        );
+        assert_eq!(
+            mocked_save(&c, &request(), &dialogs).unwrap(),
+            Admission::Rejected(RejectionReason::Stopped)
+        );
+        assert_eq!(dialogs.load(Ordering::Relaxed), 1);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("late.png");
+        fs::write(&path, b"existing user image").unwrap();
+        assert_eq!(
+            c.publish("original", &r.operation_id, &path, &bytes)
+                .unwrap(),
+            Outcome::Canceled
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"existing user image");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(
+            mocked_save(&c, &r, &dialogs).unwrap(),
+            Admission::Retained(Outcome::Canceled)
+        );
+        assert_eq!(dialogs.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn running_reservation_creates_one_dialog_and_retains_the_receipt() {
+        let c = Controller::default();
+        let r = request();
+        let dialogs = AtomicUsize::new(0);
+        assert_eq!(
+            mocked_save(&c, &r, &dialogs).unwrap(),
+            Admission::New(r.bytes().unwrap())
+        );
+        assert_eq!(
+            c.lifecycle.load(Ordering::Acquire),
+            Lifecycle::Running as u8
+        );
+        assert_eq!(
+            mocked_save(&c, &r, &dialogs).unwrap(),
+            Admission::Retained(Outcome::Pending)
+        );
+        assert_eq!(dialogs.load(Ordering::Relaxed), 1);
+        assert_eq!(c.receipts.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn receipt_capacity_keeps_terminal_originals_without_a_new_reservation() {
+        let c = Controller::default();
+        let original = request();
+        c.begin("original", &original).unwrap();
+        c.finish("original", &original.operation_id, Outcome::Uncertain)
+            .unwrap();
+        for _ in 1..128 {
+            let r = request();
+            assert!(matches!(
+                c.begin("original", &r).unwrap(),
+                Admission::New(_)
+            ));
+            c.finish("original", &r.operation_id, Outcome::Canceled)
+                .unwrap();
+        }
+        let fresh = request();
+        assert_eq!(
+            c.begin("original", &fresh).unwrap(),
+            Admission::Rejected(RejectionReason::Busy)
+        );
+        assert_eq!(c.receipts.lock().unwrap().len(), 128);
+        assert!(c.read("original", &fresh.operation_id).is_err());
+        assert_eq!(
+            c.lifecycle.load(Ordering::Acquire),
+            Lifecycle::Running as u8
+        );
+        c.request_stop();
+        assert_eq!(
+            c.begin("original", &original).unwrap(),
+            Admission::Retained(Outcome::Uncertain)
+        );
+    }
+
     #[test]
     fn exact_original_bytes_and_no_overwrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -313,6 +575,8 @@ mod tests {
         assert!(c.begin("other", &r).is_err());
         c.finish("original", &r.operation_id, Outcome::Uncertain)
             .unwrap();
+        c.request_stop();
+        assert!(c.begin("other", &r).is_err());
         assert_eq!(
             c.begin("original", &r).unwrap(),
             Admission::Retained(Outcome::Uncertain)
@@ -420,7 +684,9 @@ mod tests {
             let _guard = c.receipts.lock().unwrap();
             panic!("fixture poison");
         });
+        c.request_stop();
         assert!(c.begin("original", &request()).is_err());
+        assert!(c.receipts.lock().is_err());
     }
     #[test]
     fn non_admission_wire_is_closed_and_bound_to_original_operation() {
