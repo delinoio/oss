@@ -159,6 +159,39 @@ export class SessionTabsStore {
     // Observations update existing metadata only; they cannot reopen or select.
     if (changed) this.publish(id, { ...previous, tabs });
   }
+  dismissPage(
+    id: string,
+    profile: string,
+    pageId: string,
+    nativeSelected: string,
+  ) {
+    const previous = this.snapshot(id);
+    const key = sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile,
+      id: pageId,
+      title: "",
+    });
+    if (!previous.tabs.some((tab) => sessionTabKey(tab) === key)) return;
+    const tabs = previous.tabs.filter((tab) => sessionTabKey(tab) !== key);
+    let selected = previous.selected;
+    if (selected === key) {
+      const survivor = tabs.find(
+        (tab) =>
+          tab.kind === SessionTabKind.Page &&
+          tab.profile === profile &&
+          tab.id === nativeSelected,
+      );
+      if (survivor) selected = sessionTabKey(survivor);
+      else {
+        if (!tabs.some((tab) => tab.kind === SessionTabKind.Browser))
+          tabs.push({ kind: SessionTabKind.Browser });
+        selected = SessionTabKind.Browser;
+      }
+    }
+    // Only the acknowledged descriptor is removed; background selection stays owned.
+    this.publish(id, { tabs, selected });
+  }
   select(id: string, key: string) {
     const previous = this.snapshot(id);
     if (

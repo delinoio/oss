@@ -215,3 +215,53 @@ it("allocates shared session numbers on original-ID opens and authenticated enco
   ).toBe(1);
   expect(Object.values(SessionTabKind)).not.toContain("terminals");
 });
+
+describe("acknowledged page dismissal", () => {
+  it.each([true, false])(
+    "removes only the exact page and preserves background selection: %s",
+    (selected) => {
+      const store = new SessionTabsStore();
+      const page = {
+        kind: SessionTabKind.Page as const,
+        profile: "profile",
+        id: "a",
+        title: "A",
+      };
+      const survivor = { ...page, id: "b", title: "B" };
+      const foreign = { ...page, profile: "foreign" };
+      store.open("s", page);
+      store.open("s", survivor);
+      store.open("s", foreign);
+      store.open("other", page);
+      if (selected) store.select("s", sessionTabKey(page));
+      const other = store.snapshot("other");
+      store.dismissPage("s", page.profile, page.id, survivor.id);
+      expect(store.snapshot("s").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(survivor),
+        sessionTabKey(foreign),
+      ]);
+      expect(store.snapshot("s").selected).toBe(
+        sessionTabKey(selected ? survivor : foreign),
+      );
+      expect(store.snapshot("other")).toBe(other);
+    },
+  );
+  it("uses Browser when the native-selected survivor has no same-profile descriptor", () => {
+    const store = new SessionTabsStore();
+    const page = {
+      kind: SessionTabKind.Page as const,
+      profile: "p",
+      id: "a",
+      title: "A",
+    };
+    store.open("s", { ...page, profile: "other", id: "b" });
+    store.open("s", page);
+    store.dismissPage("s", "p", "a", "b");
+    expect(store.snapshot("s").selected).toBe(SessionTabKind.Browser);
+    expect(store.snapshot("s").tabs.at(-1)?.kind).toBe(SessionTabKind.Browser);
+    const settled = store.snapshot("s");
+    store.dismissPage("s", "p", "a", "b");
+    expect(store.snapshot("s")).toBe(settled);
+  });
+});

@@ -3922,6 +3922,14 @@ without registration or page creation. The Browser entry lists retained pages an
 explicit New page; only a selected page presents native content. An explicit picker
 resource action restores its presentation after previous cleanup, sends that
 original action once and retains failures without automatic mutation retry.
+A validated original CloseTab reply dismisses only its exact shared descriptor
+when native state proves that page absent and profile removal is not pending.
+If the dismissed page remains selected, select an existing same-profile
+native-selected page, otherwise Browser. Preserve background selection and other
+resources. Failed, uncertain, malformed, foreign or still-present replies retain
+the page. Presentation inactivity preserves the original acknowledgment owner;
+retry, replacement and owner changes fence that owner. Inventory absence alone
+cannot dismiss a descriptor.
 Profile explanation, address/navigation, explicit resource Close, 16-page gate,
 original revision/account checks and uncertain registration retry remain unchanged.
 

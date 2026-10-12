@@ -101,6 +101,16 @@ per presentation and requested page; failed or uncertain selection does not repl
 on unchanged polling. Navigation and selection results refresh existing labels
 without selecting their older result. Explicit New page may select its created
 result only while the original requested shared selection remains current.
+Only a validated reply to the original CloseTab can dismiss its exact
+session/profile/page descriptor. The reply must report removal_pending false and
+prove the original page absent. When that descriptor is still selected, use an
+existing same-profile native-selected page, otherwise the Browser picker. Preserve
+an unrelated current selection and all other descriptors. Failed, uncertain,
+malformed, still-present or foreign replies retain the descriptor; unrelated
+inventory absence is not closure proof. Original close acknowledgment survives
+presentation inactivity, but replacement presentations, retries and owner changes
+cannot acquire its authority.
+
 The original 16-page gate and explicit resource Close remain separate from shared
 presentation Close. Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner

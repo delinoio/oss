@@ -1304,6 +1304,9 @@ it("preserves a newer shared page when closing the original native page complete
   );
   await waitFor(() => expect(selectionCalls()).toHaveLength(1));
   expect(selectionCalls()[0][1].tabId).toBe(b.id);
+  expect(f.store.snapshot(f.session.id).tabs.map(sessionTabKey)).not.toContain(
+    sessionTabKey(pageDescriptor(f)),
+  );
   expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(b));
   view.unmount();
 });
@@ -1343,3 +1346,148 @@ it.each(["removal-pending", "absent page"])(
     view.unmount();
   },
 );
+
+it.each(["survivor", "last", "inactive", "background", "picker"])(
+  "dismisses only the acknowledged original close with %s fallback",
+  async (scenario) => {
+    const f = fixture({ shared: true });
+    if (scenario !== "last") addPages(f);
+    let finish!: (value: typeof f.local) => void;
+    native.mockImplementation(async (_operation, args) => {
+      if (args.action === "close-tab")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return f.local;
+    });
+    const view = render(<f.View />);
+    const [b] = await openShared(f);
+    if (scenario === "picker") {
+      await act(async () =>
+        f.store.select(f.session.id, SessionTabKind.Browser),
+      );
+      await waitFor(() =>
+        expect(
+          native.mock.calls.some(([, args]) => args.action === "hide"),
+        ).toBe(true),
+      );
+    }
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Close tab https://fixture.test/page",
+      }),
+    );
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    if (scenario === "inactive") view.rerender(<f.View active={false} />);
+    if (scenario === "background")
+      await act(async () =>
+        f.store.select(f.session.id, SessionTabKind.Conversation),
+      );
+    const survivors = f.local.tabs.tabs.slice(1);
+    await act(async () =>
+      finish({ ...f.local, tabs: { tabs: survivors, selected: b?.id ?? "" } }),
+    );
+    const snapshot = f.store.snapshot(f.session.id);
+    expect(snapshot.tabs.map(sessionTabKey)).not.toContain(
+      sessionTabKey(pageDescriptor(f)),
+    );
+    expect(snapshot.selected).toBe(
+      scenario === "background"
+        ? SessionTabKind.Conversation
+        : scenario === "last" || scenario === "picker"
+          ? SessionTabKind.Browser
+          : sessionTabKey(b),
+    );
+    expect(
+      snapshot.tabs.some((tab) => sessionTabKey(tab) === snapshot.selected),
+    ).toBe(true);
+    expect(
+      native.mock.calls.filter(([, args]) => args.action === "close-tab"),
+    ).toHaveLength(1);
+    view.unmount();
+  },
+);
+
+it.each([
+  "failed",
+  "malformed",
+  "pending",
+  "present",
+  "foreign",
+  "replacement",
+  "disposed",
+  "inventory",
+])("retains the original page after %s close evidence", async (scenario) => {
+  const poll = scenario === "inventory" ? pollCallback() : undefined;
+  const f = fixture({ shared: true });
+  addPages(f);
+  let finish!: (value: typeof f.local) => void;
+  let reject!: (reason: Error) => void;
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "close-tab")
+      return new Promise((resolve, fail) => {
+        finish = resolve;
+        reject = fail;
+      });
+    return f.local;
+  });
+  const view = render(<f.View />);
+  const [b] = await openShared(f);
+  const original = sessionTabKey(pageDescriptor(f));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close tab https://fixture.test/page" }),
+  );
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  const absent = {
+    ...f.local,
+    tabs: { tabs: f.local.tabs.tabs.slice(1), selected: b.id },
+  };
+  const modal = document.createElement("dialog");
+  try {
+    if (scenario === "foreign")
+      view.rerender(<f.View originalAccount={newRequestId()} />);
+    if (scenario === "disposed") view.unmount();
+    if (scenario === "replacement") {
+      modal.setAttribute("open", "");
+      await act(async () => document.body.append(modal));
+      await waitFor(() =>
+        expect(
+          native.mock.calls.some(([, args]) => args.action === "hide"),
+        ).toBe(true),
+      );
+      await act(async () => modal.remove());
+      await waitFor(() =>
+        expect(
+          native.mock.calls.filter(([op]) => op === "open_browser"),
+        ).toHaveLength(2),
+      );
+    }
+    await act(async () => {
+      if (scenario === "failed" || scenario === "inventory")
+        reject(new Error("unconfirmed close"));
+      else
+        finish(
+          scenario === "present"
+            ? f.local
+            : scenario === "pending"
+              ? { ...absent, removal_pending: true }
+              : scenario === "malformed"
+                ? { ...absent, tabs: { ...absent.tabs, selected: "bad" } }
+                : absent,
+        );
+    });
+    if (scenario === "inventory") {
+      native.mockResolvedValue(absent);
+      await act(async () => poll!());
+      expect(
+        native.mock.calls.some(([operation]) => operation === "browser_state"),
+      ).toBe(true);
+    }
+    expect(f.store.snapshot(f.session.id).tabs.map(sessionTabKey)).toContain(
+      original,
+    );
+  } finally {
+    modal.remove();
+    view.unmount();
+  }
+});

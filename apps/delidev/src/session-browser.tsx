@@ -275,6 +275,7 @@ function NativeSessionBrowser({
   const addressInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const presentation = useRef("");
+  const presentationGeneration = useRef(0);
   const shortcutAdmission = useRef("");
   const presentationVisible = useRef<() => boolean>(() => false);
   const selectionAdmitted = useRef<() => boolean>(() => false);
@@ -327,6 +328,35 @@ function NativeSessionBrowser({
         })),
       );
     return true;
+  };
+  const acknowledgeClose = (
+    result: BrowserState,
+    action: BrowserAction,
+    tabId: string | undefined,
+    original: BrowserOwner,
+    version: number,
+    generation: number,
+  ) => {
+    if (
+      action !== BrowserAction.CloseTab ||
+      !tabId ||
+      !original.profileId ||
+      !alive.current ||
+      !currentOwner(original) ||
+      actionVersion.current !== version ||
+      presentationGeneration.current !== generation ||
+      result.removal_pending ||
+      result.tabs.tabs.some((tab) => tab.id === tabId)
+    )
+      return;
+    // Hide can finish before this reply. Its original close authority survives
+    // inactivity, but a new presentation, retry or owner cannot inherit it.
+    tabsStore.dismissPage(
+      original.sessionId,
+      original.profileId,
+      tabId,
+      result.tabs.selected,
+    );
   };
   const capabilities = useQuery(
     BrowserQuery.getBrowserCapabilities,
@@ -498,6 +528,7 @@ function NativeSessionBrowser({
         opening = true;
         const viewId = newRequestId();
         const version = actionVersion.current;
+        const generation = ++presentationGeneration.current;
         ownedViewId = viewId;
         presentation.current = viewId;
         try {
@@ -553,10 +584,18 @@ function NativeSessionBrowser({
                   tabId: pending.tabId,
                 }),
               );
-              if (
+              const observed =
                 !disposed &&
-                observe(changed, pending.owner, viewId, pending.version)
-              ) {
+                observe(changed, pending.owner, viewId, pending.version);
+              acknowledgeClose(
+                changed,
+                pending.action,
+                pending.tabId,
+                pending.owner,
+                pending.version,
+                generation,
+              );
+              if (observed) {
                 if (
                   openPage &&
                   pending.action === BrowserAction.NewTab &&
@@ -757,6 +796,7 @@ function NativeSessionBrowser({
     const original = owner.current;
     const viewId = presentation.current;
     const version = ++actionVersion.current;
+    const generation = presentationGeneration.current;
     const selection = tabsStore.snapshot(original.sessionId).selected;
     const currentAction = () =>
       alive.current &&
@@ -785,7 +825,9 @@ function NativeSessionBrowser({
           tabId,
         }),
       );
-      if (observe(result, original, viewId, version)) {
+      const observed = observe(result, original, viewId, version);
+      acknowledgeClose(result, action, tabId, original, version, generation);
+      if (observed) {
         if (
           openPage &&
           action === BrowserAction.NewTab &&
