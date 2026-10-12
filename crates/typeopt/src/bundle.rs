@@ -100,7 +100,7 @@ fn decode_references_in(value: &str, strict: bool) -> Option<String> {
                 .unwrap_or(digits.len());
             match u32::from_str_radix(&digits[..len], radix)
                 .ok()
-                .and_then(char::from_u32)
+                .map(numeric_reference)
             {
                 Some(decoded) => {
                     out.push(decoded);
@@ -154,6 +154,48 @@ fn decode_references_in(value: &str, strict: bool) -> Option<String> {
     }
     out.push_str(rest);
     Some(out)
+}
+
+/// The character an HTML numeric character reference produces: NUL,
+/// surrogates and values beyond Unicode become U+FFFD, and C1 controls map
+/// through the Windows-1252 table, as browsers parse them.
+fn numeric_reference(value: u32) -> char {
+    const C1: [(u32, char); 27] = [
+        (0x80, '\u{20AC}'),
+        (0x82, '\u{201A}'),
+        (0x83, '\u{0192}'),
+        (0x84, '\u{201E}'),
+        (0x85, '\u{2026}'),
+        (0x86, '\u{2020}'),
+        (0x87, '\u{2021}'),
+        (0x88, '\u{02C6}'),
+        (0x89, '\u{2030}'),
+        (0x8a, '\u{0160}'),
+        (0x8b, '\u{2039}'),
+        (0x8c, '\u{0152}'),
+        (0x8e, '\u{017D}'),
+        (0x91, '\u{2018}'),
+        (0x92, '\u{2019}'),
+        (0x93, '\u{201C}'),
+        (0x94, '\u{201D}'),
+        (0x95, '\u{2022}'),
+        (0x96, '\u{2013}'),
+        (0x97, '\u{2014}'),
+        (0x98, '\u{02DC}'),
+        (0x99, '\u{2122}'),
+        (0x9a, '\u{0161}'),
+        (0x9b, '\u{203A}'),
+        (0x9c, '\u{0153}'),
+        (0x9e, '\u{017E}'),
+        (0x9f, '\u{0178}'),
+    ];
+    if value == 0 {
+        return '\u{FFFD}';
+    }
+    if let Some((_, c)) = C1.iter().find(|(code, _)| *code == value) {
+        return *c;
+    }
+    char::from_u32(value).unwrap_or('\u{FFFD}')
 }
 
 impl HtmlTag {
@@ -1416,6 +1458,15 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
             Some("a&amp=b")
         );
         assert_eq!(super::decode_references("a&copy.js"), None);
+        // Numeric references follow the HTML replacement table.
+        assert_eq!(
+            super::decode_references("s&#x80;.js").as_deref(),
+            Some("s€.js")
+        );
+        assert_eq!(
+            super::decode_references("s&#0;&#xD800;").as_deref(),
+            Some("s\u{FFFD}\u{FFFD}")
+        );
         // Lossy decoding keeps unknown references and decodes the others.
         assert_eq!(
             super::decode_references_lossy("&copy; index&#45;DnKDBunT.js &unknown;"),
