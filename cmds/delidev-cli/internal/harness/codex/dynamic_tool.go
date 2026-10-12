@@ -164,10 +164,15 @@ func (c *Client) observeDynamicRequestLocked(native nativewire.Event) (Event, er
 		Namespace *string         `json:"namespace"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
-	if len(native.Params) > 512<<10 || domain.ValidateJSONUnicodeEscapes(native.Params) != nil || domain.DecodeBounded(native.Params, &fields, 512<<10) != nil || len(fields) != 6 || domain.DecodeBounded(native.Params, &p, 512<<10) != nil || p.ThreadID.Validate() != nil || p.TurnID.Validate() != nil || domain.Text(p.CallID, "native dynamic call", 1024, true) != nil || native.Token.Validate() != nil {
+	if len(native.Params) > 512<<10 || domain.ValidateJSONUnicodeEscapes(native.Params) != nil || domain.DecodeBounded(native.Params, &fields, 512<<10) != nil || len(fields) < 5 || len(fields) > 6 || domain.DecodeBounded(native.Params, &p, 512<<10) != nil || p.ThreadID.Validate() != nil || p.TurnID.Validate() != nil || domain.Text(p.CallID, "native dynamic call", 1024, true) != nil || native.Token.Validate() != nil {
 		return Event{}, incompatible()
 	}
-	for _, key := range []string{"threadId", "turnId", "callId", "tool", "namespace", "arguments"} {
+	for key := range fields {
+		if key != "threadId" && key != "turnId" && key != "callId" && key != "tool" && key != "namespace" && key != "arguments" {
+			return Event{}, incompatible()
+		}
+	}
+	for _, key := range []string{"threadId", "turnId", "callId", "tool", "arguments"} {
 		if fields[key] == nil {
 			return Event{}, incompatible()
 		}

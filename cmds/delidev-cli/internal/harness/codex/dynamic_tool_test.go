@@ -106,6 +106,38 @@ func TestDynamicRequestRequiresOriginalStartedIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestDynamicRequestAcceptsOmittedNamespace(t *testing.T) {
+	c, turn := observationClient()
+	c.dynamicToolsEnabled = true
+	c.mode = ThreadProtocol
+	c.execution.paused = false
+	fixture := dynamicRequestFixture(c, turn, []byte(`7`))
+	var params struct {
+		Tool      string          `json:"tool"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if err := json.Unmarshal(fixture.Params, &params); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := dynamicIdentity(params.Tool, nil, params.Arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.dynamicItems = map[string]dynamicItem{"dynamic-call": {Turn: turn, Identity: cloneDynamicIdentity(identity), Started: true}}
+	request := fixture
+	request.Params = bytes.Replace(request.Params, []byte(`"namespace":null,`), nil, 1)
+	observed, err := c.observeDynamicRequestLocked(request)
+	if err != nil || observed.DynamicTool == nil || observed.DynamicTool.Request == nil || observed.DynamicTool.Request.Identity.Namespace != nil {
+		t.Fatal("unnamespaced top-level call did not retain the nil namespace", err)
+	}
+	request = dynamicRequestFixture(c, turn, []byte(`8`))
+	request.Params = bytes.Replace(request.Params, []byte(`"namespace":null`), []byte(`"namespace":7`), 1)
+	if _, err := c.observeDynamicRequestLocked(request); err == nil {
+		t.Fatal("malformed present namespace was accepted")
+	}
+}
+
 func (f *threadFixture) dynamicReply(id, raw json.RawMessage) bool {
 	var reply dynamicUnavailableResponse
 	if domain.Decode(raw, &reply) != nil || reply.Success || len(reply.Content) != 1 || reply.Content[0].Type != domain.DynamicText || reply.Content[0].Text != domain.DynamicToolUnavailableText {
