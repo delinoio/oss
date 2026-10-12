@@ -68,10 +68,15 @@ func decodeDynamicTool(raw json.RawMessage, completed bool) (string, *domain.Dyn
 		Success    *bool                    `json:"success"`
 		DurationMS *int64                   `json:"durationMs"`
 	}
-	if len(raw) > 512<<10 || domain.ValidateJSONUnicodeEscapes(raw) != nil || domain.DecodeBounded(raw, &fields, 512<<10) != nil || len(fields) != 9 || domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "dynamicToolCall" || domain.Text(item.ID, "native dynamic call", 1024, true) != nil {
+	if len(raw) > 512<<10 || domain.ValidateJSONUnicodeEscapes(raw) != nil || domain.DecodeBounded(raw, &fields, 512<<10) != nil || len(fields) < 5 || len(fields) > 9 || domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "dynamicToolCall" || domain.Text(item.ID, "native dynamic call", 1024, true) != nil {
 		return "", nil, incompatible()
 	}
-	for _, key := range []string{"type", "id", "tool", "namespace", "arguments", "status", "contentItems", "success", "durationMs"} {
+	for key := range fields {
+		if key != "type" && key != "id" && key != "tool" && key != "namespace" && key != "arguments" && key != "status" && key != "contentItems" && key != "success" && key != "durationMs" {
+			return "", nil, incompatible()
+		}
+	}
+	for _, key := range []string{"type", "id", "tool", "arguments", "status"} {
 		if fields[key] == nil {
 			return "", nil, incompatible()
 		}

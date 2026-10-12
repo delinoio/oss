@@ -49,13 +49,16 @@ func TestDynamicToolClosedCamelCaseUnionAndProtectedProjection(t *testing.T) {
 		t.Fatal("ordered content changed")
 	}
 	for _, raw := range []string{
-		strings.Replace(dynamicStartedFixture, `"namespace":null,`, "", 1),
 		strings.Replace(dynamicStartedFixture, `"id":"dynamic-call"`, `"id":"dynamic-call","id":"duplicate"`, 1),
+		strings.Replace(dynamicStartedFixture, `"status":"inProgress",`, "", 1),
 		strings.Replace(dynamicStartedFixture, `"arguments":{`, `"Arguments":{`, 1),
 		strings.Replace(dynamicCompletedFixture, `"inputText"`, `"input_text"`, 1),
 		strings.Replace(dynamicCompletedFixture, `"imageUrl"`, `"image_url"`, 1),
 		strings.Replace(dynamicCompletedFixture, `"imageUrl":"private-image-sentinel"`, `"imageUrl":null`, 1),
 		strings.Replace(dynamicCompletedFixture, `"success":false`, `"success":"false"`, 1),
+		strings.Replace(dynamicStartedFixture, `"namespace":null`, `"namespace":7`, 1),
+		strings.Replace(dynamicStartedFixture, `"contentItems":null`, `"contentItems":{}`, 1),
+		strings.Replace(dynamicStartedFixture, `"durationMs":null`, `"durationMs":"0"`, 1),
 		strings.Replace(dynamicCompletedFixture, `"completed"`, `"unknown"`, 1),
 		strings.Replace(dynamicCompletedFixture, `"durationMs":9007199254740993`, `"durationMs":-1`, 1),
 		strings.Replace(dynamicCompletedFixture, `"text":"last"`, `"text":"\ud800"`, 1),
@@ -64,6 +67,14 @@ func TestDynamicToolClosedCamelCaseUnionAndProtectedProjection(t *testing.T) {
 		if _, _, err := decodeDynamicTool([]byte(raw), true); err == nil {
 			t.Fatal("ambiguous or excessive dynamic item accepted")
 		}
+	}
+}
+
+func TestDynamicToolStartedAcceptsOmittedOptionalFields(t *testing.T) {
+	raw := []byte(`{"type":"dynamicToolCall","id":"dynamic-call","tool":"fixture_tool","arguments":{"private":"private-argument-sentinel"},"status":"inProgress"}`)
+	id, snapshot, err := decodeDynamicTool(raw, false)
+	if err != nil || id != "dynamic-call" || snapshot.Status != domain.DynamicRunning || snapshot.Identity.Namespace != nil || snapshot.Content != nil || snapshot.Success != nil || snapshot.DurationMS != nil {
+		t.Fatalf("omitted optional lifecycle fields were not preserved as absent: id=%q snapshot=%+v err=%v", id, snapshot, err)
 	}
 }
 func TestDynamicRequestRequiresOriginalStartedIdentity(t *testing.T) {
