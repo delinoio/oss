@@ -96,7 +96,7 @@ func TestNativeBackgroundObserverFailureDoesNotCancelActiveTurn(t *testing.T) {
 	finish := startNativeBackgroundController(active, make(chan *pb.NativeBackgroundControl), b)
 	select {
 	case <-f.called:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("observer did not start")
 	}
 	if err := finish(); err == nil {

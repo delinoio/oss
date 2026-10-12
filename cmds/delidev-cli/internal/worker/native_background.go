@@ -158,12 +158,9 @@ func startNativeBackgroundController(ctx context.Context, controls <-chan *pb.Na
 			}
 			done <- problem
 		}()
-		// Optional discovery starts after input acceptance; it must not hold up the
-		// active turn, and failure retires only this observer.
-		if e := b.refresh(owned, nil); e != nil {
-			problem = e
-			return
-		}
+		// First discovery shares the periodic cadence, giving the native reader
+		// time to bind queued original command items after input acceptance.
+		// Reads never run synchronously in the native event reader.
 		for {
 			select {
 			case <-owned.Done():

@@ -167,7 +167,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	oauthRows.Close()
 	// Retain closed domain models and historical claims. Changing execution
 	// bookkeeping alone never proves native cleanup or allows Resume/recovery.
-	rows, err := tx.QueryContext(ctx, "SELECT id,kind,body FROM entities WHERE kind IN ('session','job','schedule','account','integration','forward') ORDER BY id")
+	rows, err := tx.QueryContext(ctx, "SELECT id,kind,body FROM entities WHERE kind IN ('session','job','schedule','account','integration','forward','native_action') ORDER BY id")
 	if err != nil {
 		return storageError(err)
 	}
