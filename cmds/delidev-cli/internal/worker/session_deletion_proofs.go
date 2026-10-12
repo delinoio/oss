@@ -291,7 +291,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 					}
 				}
 				proof = keyed
-				if w.PreviousDigest != "" && obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerInitialWorkspaceImport && obligation.Phase != sessionDeletionMarkerLegacyWorkspaceImport {
+				if migratingDigest && obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerInitialWorkspaceImport && obligation.Phase != sessionDeletionMarkerLegacyWorkspaceImport {
 					requireExisting := keyed.RemovalStarted && !keyed.WorkspaceRetired
 					if workspace.MigrateKeyedDeletionWorkspaceProof(root, w, requireExisting) != nil {
 						return pending()

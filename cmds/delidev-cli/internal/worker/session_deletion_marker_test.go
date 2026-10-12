@@ -316,6 +316,53 @@ func TestPublishedDigestMigrationFenceRejectsRestoredPreviousWorkerProof(t *test
 	}
 }
 
+func TestPublishedDigestMigrationFenceRejectsRestoredPreviousWorkspaceProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	legacy := works[0]
+	legacy.SharedCleanupOwnerDeviceID = ""
+	legacy.PreviousDigest = ""
+	previousDigest := legacy.Digest()
+	work := legacy
+	work.SharedCleanupOwnerDeviceID = work.DeviceID
+	work.PreviousDigest = previousDigest
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportID := domain.NewID()
+	if err := writeJSON(paths.Worker, sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": work.Identity(), "digest": previousDigest, "removed": true}); err != nil {
+		t.Fatal(err)
+	}
+	marker := deletionMarker(work)
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerPublished}}
+	markerPath := sessionDeletionPath(config.Root, work.SessionID)
+	if err := writeDeletionMarker(markerPath, marker); err != nil {
+		t.Fatal(err)
+	}
+	before := map[string][]byte{}
+	for _, path := range []string{paths.Worker, paths.Workspace, markerPath} {
+		before[path], err = security.ReadPrivate(path, domain.MaxSessionDeletionBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("completed digest migration accepted a restored previous workspace proof", err)
+	}
+	for path, original := range before {
+		after, err := security.ReadPrivate(path, domain.MaxSessionDeletionBytes)
+		if err != nil || string(after) != string(original) {
+			t.Fatal("rejected previous workspace proof changed retained evidence", path, err)
+		}
+	}
+}
+
 func TestSessionDeletionInitialFenceRecoversExactReportID(t *testing.T) {
 	config, works := failedDeletionObligations(t)
 	work := works[0]
