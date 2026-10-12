@@ -40,6 +40,9 @@ type ForkSnapshot struct {
 }
 
 func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, request PrepareRequest) (*ForkSnapshot, error) {
+	if err := m.requireNamedDirectories(request); err != nil {
+		return nil, err
+	}
 	if request.validateStructure() != nil || source.SessionID != request.ForkSourceID || source.State != Ready || m.initialize() != nil {
 		return nil, ResultUncertain()
 	}
@@ -201,6 +204,9 @@ func localForkUnsupported() error {
 // or fetches. Explicit Local shares the current paths and owns no source files.
 func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child domain.ID, kind domain.WorkspaceType) (PrepareRequest, error) {
 	request := PrepareRequest{SessionID: child, MachineID: source.MachineID, Type: kind, ForkSourceID: source.SessionID, Repositories: []RepositorySpec{}}
+	if err := m.requireNamedDirectories(PrepareRequest{Repositories: manifestRepositorySpecs(source)}); err != nil {
+		return request, err
+	}
 	if child.Validate() != nil || child == source.SessionID || source.State != Ready || m.initialize() != nil {
 		return request, ResultUncertain()
 	}
@@ -227,6 +233,9 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 			return request, forkUnsupported()
 		}
 		spec := RepositorySpec{ID: repo.ID, Checkout: repo.Path}
+		if kind == domain.Worktree {
+			spec.DirectoryName = repo.DirectoryName
+		}
 		if kind == domain.Local && repo.SourceKind == LocalCheckoutSource {
 			spec.SourceKind, spec.RemoteURL = LocalCheckoutSource, repo.RemoteURL
 		}

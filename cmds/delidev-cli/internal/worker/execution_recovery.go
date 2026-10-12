@@ -32,7 +32,7 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	digest, _ := hex.DecodeString(request.PromptDigest)
 	var promptDigest [32]byte
 	copy(promptDigest[:], digest)
-	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	evidence, err := InspectCompletedExecution(ctx, manager, CompletedExecutionRef{
 		Harness: request.Harness, OpenCode: request.OpenCode, Claude: request.Claude,
 		ServerID: request.ServerID, DeviceID: request.DeviceID, InstanceID: request.InstanceID, AssignmentRevision: request.AssignmentRevision, AssignmentDigest: request.AssignmentDigest,

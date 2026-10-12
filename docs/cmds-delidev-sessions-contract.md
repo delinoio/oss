@@ -1050,3 +1050,14 @@ admission remains fenced independently of per-obligation progress. Exact legacy
 work may retain its original receipt and stages through synchronized import;
 mismatched/restored scope stays pending. The storage contract owns proof
 retirement and completed absence inventories. No new RPC or migration is added.
+
+## Initial-agent startup timing
+
+Initial-agent timing starts at its first accepted Running startup report and
+finishes only at the validated original primary-input acceptance transaction.
+READY, settings, descriptive Input reports and first response do not substitute
+for acceptance. Terminal/failure/Stop/lost-owner settlement freezes unfinished
+matching records without success. Follow-up turns cannot reset completed original
+startup time; replacement jobs use separate current identity. The optional
+private Session record is projected only into typed Resource envelope metadata.
+Native progress, assignments, checkpoints and digest inputs retain their shapes.

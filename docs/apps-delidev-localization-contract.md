@@ -277,3 +277,12 @@ previews use bundled example text and contain no live conversation data.
 ## App information copy
 
 Bundled English/Korean Settings catalogs define the final System App information category, its native version/platform labels, all six local platform names, loading/unavailable/read failures, fixed related-link labels and source-notices explanation. Updates copy distinguishes unchecked, confirmed no matching candidate, checking, available, preparing, prepared, installing, installed, failed and unconfirmed observations. Recovery labels and exact-original inspection guidance remain localized. Static Settings/command search reuses these bundled labels; server metadata and native destination strings do not become search content.
+
+## Startup group elapsed presentation
+
+English/Korean catalogs own integer seconds, elapsed/running accessible labels
+and explicitly unconfirmed last observations beside each startup group title.
+Timing text remains outside the polite status node with aria-live off so ticks
+do not announce. Locale changes preserve independent native disclosure state,
+clock ownership, drafts and focus. Unavailable timing never becomes a localized
+zero or a successful outcome.

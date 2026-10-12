@@ -159,27 +159,8 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 			return privateNative(native), nil
 		}
 		return c.metadata(CodexAppsStartupObserved), nil
-	case "model/verification":
-		var params struct {
-			ThreadID      domain.ID `json:"threadId"`
-			TurnID        domain.ID `json:"turnId"`
-			Verifications []string  `json:"verifications"`
-		}
-		if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil || params.Verifications == nil {
-			return Event{}, incompatible()
-		}
-		if params.ThreadID != c.thread || len(params.Verifications) != 0 {
-			return privateNative(native), nil
-		}
-		turn, known := c.execution.turns[params.TurnID]
-		if !known {
-			return Event{}, incompatible()
-		}
-		// Empty hosted verification metadata grants neither model availability
-		// nor account readiness. Populated verification remains a private profile.
-		event := c.metadata(ModelVerificationAbsent)
-		event.TurnID, event.Late = params.TurnID, turn.Turn.Status.terminal()
-		return event, nil
+	case "model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted":
+		return c.observeSafetyLocked(native)
 	case "thread/goal/cleared":
 		var params struct {
 			ThreadID domain.ID `json:"threadId"`
@@ -220,18 +201,7 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	case "thread/settings/updated":
 		return c.observeSettingsLocked(native)
 	case "remoteControl/status/changed":
-		var params struct {
-			EnvironmentID  *string `json:"environmentId"`
-			InstallationID *string `json:"installationId"`
-			ServerName     *string `json:"serverName"`
-			Status         string  `json:"status"`
-		}
-		if domain.Decode(native.Params, &params) != nil || params.InstallationID == nil || params.ServerName == nil || params.Status != "disabled" || params.EnvironmentID != nil {
-			return Event{}, incompatible()
-		}
-		// Remote identity is neither a product account nor a log field. The
-		// only supported private runtime state is disabled remote control.
-		return c.metadata(RemoteControlDisabled), nil
+		return c.observeRemoteControlLocked(native)
 	case "account/rateLimits/updated":
 		var params struct {
 			Limits map[string]json.RawMessage `json:"rateLimits"`
@@ -278,23 +248,6 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		}
 		// Content, paths and internal instruction text never leave this decoder.
 		return Event{Kind: NoticeEvent, ThreadID: c.thread, Notice: domain.NativeConfigWarning, Correlated: true}, nil
-	case "model/rerouted":
-		var params struct {
-			ThreadID domain.ID `json:"threadId"`
-			TurnID   domain.ID `json:"turnId"`
-			From     string    `json:"fromModel"`
-			To       string    `json:"toModel"`
-			Reason   string    `json:"reason"`
-		}
-		if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil {
-			return Event{}, incompatible()
-		}
-		if params.ThreadID != c.thread {
-			return privateNative(native), nil
-		}
-		// A native safety reroute must remain enforced by Codex, but it cannot
-		// silently become evidence that DeliDev executed its selected model.
-		return Event{}, incompatible()
 	default:
 		return privateNative(native), nil
 	}

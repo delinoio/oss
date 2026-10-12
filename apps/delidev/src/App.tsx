@@ -24,7 +24,6 @@ import { RunnerPreferenceProvider } from "./runner-device-preferences";
 import { SessionControlProvider } from "./session-control";
 import { LocalizedText, copy, useLocale } from "./localization";
 import type { UsageEntry } from "./usage-entry";
-import type { ServerPresentation } from "./server-presentation";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
 import {
   useCallback,
@@ -99,7 +98,6 @@ import {
 
 function Shell({
   localServer,
-  serverPresentation,
   connectionReady,
   connectionSettings,
   appInformationSettings,
@@ -116,7 +114,6 @@ function Shell({
   controlLocalWorker?: ControlLocalWorker;
   chooseRepositoryFolder?: ChooseRepositoryFolder;
   localServer?: ReactNode;
-  serverPresentation?: ServerPresentation;
   connectionReady: boolean;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
@@ -570,7 +567,6 @@ function Shell({
                       }
                       openCommandMenu={toggleCommandMenu}
                       connectionReady={connectionReady}
-                      serverPresentation={serverPresentation}
                       surface={surface}
                       selectedSessionId={sidebarSession}
                       selectedSessionActivation={sessionNavigationActivation}
@@ -828,7 +824,6 @@ function Shell({
 export function App({
   transport,
   localServer,
-  serverPresentation,
   connectionSettings,
   appInformationSettings,
   connectionTarget,
@@ -848,7 +843,6 @@ export function App({
   readLocalWorker?: ReadLocalWorkerProof;
   transport: Transport;
   localServer?: ReactNode;
-  serverPresentation?: ServerPresentation;
   connectionSettings?: ReactNode;
   appInformationSettings?: ReactNode;
   connectionTarget?: HTMLElement;
@@ -899,7 +893,6 @@ export function App({
                               connectionTarget={connectionTarget}
                               onConnectionHelp={onConnectionHelp}
                               localServer={localServer}
-                              serverPresentation={serverPresentation}
                               readLocalWorker={readLocalWorker}
                             />
                           </SessionInboxReadBoundary>

@@ -1,5 +1,15 @@
 # DeliDev Worker workspace contract
 
+## Frozen repository checkout names
+
+New Worktree session and Schedule acceptance freezes each registered Repository name as optional `directory_name` in the version-1 RepositorySpec. PreparedRepository must preserve that exact field. The primary checkout and initial terminal/agent cwd use `workspaces/<session UUID>/<directory_name>`. Repository UUIDs retain identity and snapshot indexing. Omitted historical fields retain UUID paths, serialized omission and original digests. Accepted requests and independent Forks never consult later registration names; Fork inherits each original frozen field. Local, General Chat and Sidechat keep their original path and ownership rules.
+
+Go trims surrounding whitespace, normalizes NFC, replaces each control or `< > : " / \ | ? *` character with `_`, strips trailing dots/whitespace, and truncates at a UTF-8 boundary to 255 bytes. It strips trailing dots/whitespace again after truncation, uses `repository` for an empty result, and prefixes `_` for a reserved device stem while retaining the byte bound. The final component must pass the portable repository folder validator. Ordinary valid names retain casing. No UUID suffix is added.
+
+Acceptance and Worker validation reject NFC/default Unicode case-fold collisions, including `manifest.json`, before Git or repository directory creation. Fresh preparation checks all occupied destinations before Git. Exclusive native creation, original inode commitments and no-replace publication remain required; a foreign destination cannot be adopted or overwritten. Result publication, partial recovery, execution, joined cleanup, permanent deletion and restoration derive the live path from the immutable name with UUID fallback for omission. Name/path tampering never grants authority.
+
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` separately negotiates this layout. New named acceptance, assignment, native execution, recovery, storage/restoration and independent Fork require current original Worker support. Worker 19 retains remote clone ownership. Unsupported peers receive an Unsupported outcome without named native side effects or UUID fallback. The terminal owner refreshes its copied configuration after attachment so the original negotiated name support reaches terminal creation. Structured outcome logs contain only safe codes, counts and original IDs.
+
 ## Direct startup retry claims
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) adds an explicit no-send retry claim under the original session lock. A retry with an existing predecessor requires its exact closed execution claim, original process reconciliation and unchanged canonical workspace/Git identities. If startup failed before a claim existed, absence is usable only after server-confirmed no-send/cleanup proof and a complete no-execution-history check. It grants no foreign-claim adoption, filesystem deletion, automatic replay or new Local authority.
@@ -289,7 +299,7 @@ Follow the root and parent instructions and cmds-delidev-workspace-contract.md.
 
 ## Storage
 
-The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
+The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session IDs derive managed parents. Repository UUIDs derive historical omitted-name paths; new Worktrees use their immutable accepted directory names. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
 
 Canonicalize the private Worker root before creating ownership paths. Git's registration namespace can resolve parent aliases (including macOS `/var` to `/private/var`); comparing it to an unresolved path can leave an orphaned Git registration after rollback. Parent-alias regression tests must verify both filesystem removal and Git registration removal.
 
@@ -658,3 +668,12 @@ pre-removal receipt cannot authorize retrying cleanup against restored content.
 Obligations containing only images or skill snapshots do not invoke workspace
 cleanup and therefore require no workspace receipt, while unexpected legacy or
 keyed workspace evidence still keeps admission pending.
+
+## Workspace preparation group timing
+
+The server starts workspace group time only on the first accepted Running
+observation for its exact original preparation job. Its original successful
+preparation settlement freezes elapsed time; failed, canceled, uncertain and Stop
+settlements freeze unfinished time without implying preparation success. The
+Worker's operation report shape and original workspace/native cleanup authority
+remain unchanged. Missing historical timing cannot be derived from Job timestamps.

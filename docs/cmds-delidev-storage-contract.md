@@ -1,5 +1,11 @@
 # DeliDev storage operations
 
+## Frozen live checkout layout
+
+Workspace request/result history retains optional immutable `directory_name` under the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names). Omission preserves version-1 UUID layout and bytes. Capture maps each original live repository root into its UUID-indexed snapshot root; Git administration remains independently stored under that repository UUID. Restore maps the exact snapshot UUID root back to the frozen live name. Complete inventory comparisons translate only these original top-level roots and retain deterministic directory traversal order. Native inode claims, bounded anchored copying, symlink preservation, synchronized no-replace publication, joined cleanup and root confinement remain unchanged.
+
+Named storage acceptance and assignment, snapshot/restoration execution, recovery, Fork and deletion require original Worker capability 53. Deletion recomputes live paths from validated frozen fields and original UUID identities. It never follows a mutable registration name or silently converts retained UUID history. A name/path mismatch, occupied destination, missing capability or changed ownership preserves files and recovery evidence.
+
 ## API format generation storage
 
 Capability 9 keeps bounded server-owned generations in account JSON, with no
@@ -1499,3 +1505,14 @@ stage across interruption. Completed replay checks the original managed copies
 and both keyed and historical workspace-proof names for absence. Restored native
 content or a proof after committed retirement cannot grant new removal authority.
 This private metadata transition adds no protocol allocation or database migration.
+
+## Private startup group timing retention
+
+Optional private Session.startup_timing retains at most the current original
+workspace and initial-agent timing. Starts and ends share their owning transaction
+clock and receipt; exact replay cannot restart or finish a second interval.
+Backups retain observations under original Session ownership, while public
+Resource document_json always excludes this key. Native assignments, closed
+progress attempts, checkpoints and digests do not include display timing.
+Legacy omission receives no backfill; replacement jobs retain independent current
+identity and original deletion ownership. No schema or migration is added.

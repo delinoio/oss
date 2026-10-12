@@ -154,3 +154,9 @@ func stopLocalWorker(ctx context.Context, root string, generation domain.ID) (an
 		}
 	}
 }
+
+// Tailnet registration starts an independent outbound controller. Server/desktop
+// Quit never attaches its lifetime to the app-owned Local Worker.
+func tailnetWorkerStarter(o options) func(context.Context, string) error {
+	return func(ctx context.Context, root string) error { _, err := startDetachedWorker(ctx, o, root); return err }
+}
