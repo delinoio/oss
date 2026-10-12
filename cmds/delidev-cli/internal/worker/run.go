@@ -1420,3 +1420,21 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		return nil, domain.Fail(domain.Unsupported, "This Worker cannot execute the requested operation.", "Use a compatible supported Worker operation.")
 	}
 }
+
+// Receipt replay requires the complete original attach payload, including every
+// negotiated capability. A server upgrade must rotate identity before sending
+// changed bytes; profile labels alone cannot establish payload equality.
+func negotiatedAttachIdentity(prior domain.ID, retained, profile string, request *pb.AttachWorkerRequest) (domain.ID, string, error) {
+	payload := proto.Clone(request).(*pb.AttachWorkerRequest)
+	payload.RequestId = ""
+	raw, err := (proto.MarshalOptions{Deterministic: true}).Marshal(payload)
+	if err != nil {
+		return "", "", publicationUncertain()
+	}
+	digest := sha256.Sum256(raw)
+	next := profile + "\x00attach-payload-" + hex.EncodeToString(digest[:])
+	if prior == "" || retained != next {
+		return domain.NewID(), next, nil
+	}
+	return prior, retained, nil
+}
