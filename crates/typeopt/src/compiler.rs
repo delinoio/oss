@@ -285,7 +285,7 @@ impl Project {
             computed: computed_import,
             bare,
             worker_scripts,
-        } = project.bundle_imported();
+        } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
@@ -300,7 +300,7 @@ impl Project {
         // outside the bundle: the program is not closed.
         if let Some(specifier) = bare.filter(|_| !import_map) {
             bail!(
-                "a bundle chunk imports a module outside the bundle directory (package specifier \
+                "a bundle chunk imports a module outside the bundle directory (specifier \
                  {specifier:?}); bundle mode needs a self-contained bundle"
             );
         }
@@ -393,7 +393,7 @@ impl Project {
     /// imported through a specifier with a query, fragment or `%` escape.
     /// The compiler cannot link such a specifier to the chunk, so those
     /// chunks are public: what the importer reads stays unseen.
-    fn bundle_imported(&self) -> BundleImports {
+    fn bundle_imported(&self, dir: &std::path::Path) -> BundleImports {
         let _scope = enter_program(Some(self.version));
         let (mut imported, mut public) = (Paths::new(), Paths::new());
         let mut edges = BTreeMap::<String, Paths>::new();
@@ -469,9 +469,33 @@ impl Project {
                     continue;
                 }
                 let text = specifier.text();
+                // Root-relative: resolve under the bundle root, dropping
+                // leading segments of a deployment base path when needed. The
+                // compiler cannot link it, so the target is public.
+                if text.starts_with('/') && !text.starts_with("//") {
+                    let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
+                    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+                    let resolved = (0..segments.len())
+                        .filter_map(|skip| dir.join(segments[skip..].join("/")).canonicalize().ok())
+                        .find(|c| c.starts_with(dir) && c.is_file());
+                    match resolved {
+                        Some(resolved) => {
+                            let resolved = resolved.to_string_lossy().into_owned();
+                            public.insert(resolved.clone());
+                            edges
+                                .entry(name.clone())
+                                .or_default()
+                                .insert(resolved.clone());
+                            imported.insert(resolved);
+                        }
+                        None if bare.is_none() => bare = Some(text.to_owned()),
+                        None => {}
+                    }
+                    continue;
+                }
                 if !(text.starts_with("./") || text.starts_with("../")) {
                     // A package specifier names a module outside the bundle.
-                    if !text.starts_with('/') && !text.contains(':') && bare.is_none() {
+                    if !text.contains(':') && bare.is_none() {
                         bare = Some(text.to_owned());
                     }
                     continue;
@@ -1018,7 +1042,8 @@ struct BundleImports {
     edges: BTreeMap<String, Paths>,
     /// Some chunk has a computed `import(…)`.
     computed: bool,
-    /// A package specifier some chunk imports.
+    /// A package specifier, or a root-relative one that names no bundle
+    /// file, that some chunk imports.
     bare: Option<String>,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,

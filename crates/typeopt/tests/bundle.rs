@@ -1349,6 +1349,24 @@ fn keeps_exports_reachable_by_computed_chunk_imports() {
     assert!(out(temp.path(), "lib.js").contains("htmlOnly"));
 }
 
+/// A root-relative import loads the chunk too; the compiler cannot link it,
+/// so the chunk's exports stay public.
+#[test]
+fn keeps_exports_imported_through_root_relative_specifiers() {
+    let temp = bundle(&[
+        (
+            "assets/index.js",
+            r#"import{used as u}from"./lib.js";import{rootOnly as r}from"/app/assets/lib.js";console.log(u(),r());"#,
+        ),
+        (
+            "assets/lib.js",
+            r#"function used(){return 1}function rootOnly(){return 2}export{used,rootOnly};"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert!(out(temp.path(), "assets/lib.js").contains("rootOnly"));
+}
+
 /// Chunks in an import cycle that no entry reaches are loaded from outside
 /// the program: their exports stay public.
 #[test]
