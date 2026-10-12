@@ -328,7 +328,9 @@ it("read-only explicit refresh fences an already-open logout confirmation and pe
   expect((cancel as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(cancel);
   expect(screen.queryByRole("button", { name: "Confirm logout" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Back to subscriptions" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Back to subscriptions" }),
+  );
   expect(f.close).toHaveBeenCalledOnce();
   await held.ready;
   await act(async () => held.resolve());
@@ -725,9 +727,7 @@ it("uses one original server batch for unloaded account pages and one row quota 
   const row = await screen.findByRole("button", {
     name: /^Refresh Original account/,
   });
-  await waitFor(() =>
-    expect((row as HTMLButtonElement).disabled).toBe(false),
-  );
+  await waitFor(() => expect((row as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(row);
   await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
   expect(f.quota.mock.calls[0][0]).toMatchObject({
