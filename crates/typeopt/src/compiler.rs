@@ -76,6 +76,8 @@ pub struct Project {
     entries: Vec<String>,
     config_files: Vec<String>,
     size_options: CompilerOptions,
+    /// Owns the synthetic configuration of a bundle-mode program.
+    _bundle_config: Option<tempfile::TempDir>,
 }
 
 fn deny_write() -> ts_goport::frontend::vfs::FsError {
@@ -216,7 +218,66 @@ impl Project {
             entries,
             config_files,
             size_options,
+            _bundle_config: None,
         })
+    }
+
+    /// Loads the JavaScript chunks of a bundler output directory as one closed
+    /// ES module program. Chunks that no other chunk imports (HTML entries,
+    /// workers) are public entries; every other chunk is internal.
+    pub fn load_bundle(dir: &std::path::Path) -> Result<Self> {
+        let chunks = bundle_chunks(dir)?;
+        ensure!(
+            !chunks.is_empty(),
+            "bundle directory contains no JavaScript chunk"
+        );
+        let mut imported = std::collections::BTreeSet::new();
+        for chunk in &chunks {
+            let text = std::fs::read_to_string(chunk).context("cannot read a bundle chunk")?;
+            let base = std::path::Path::new(chunk).parent().unwrap_or(dir);
+            for specifier in chunk_specifiers(&text) {
+                if specifier.starts_with("./") || specifier.starts_with("../") {
+                    if let Ok(path) = base.join(&specifier).canonicalize() {
+                        imported.insert(path.to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+        let entries: Vec<String> = chunks
+            .iter()
+            .filter(|c| !imported.contains(*c))
+            .cloned()
+            .collect();
+        tracing::info!(
+            chunks = chunks.len(),
+            entries = entries.len(),
+            "loading bundle program"
+        );
+        let config_dir = tempfile::Builder::new()
+            .prefix("typeopt-bundle-")
+            .tempdir()
+            .context("cannot create bundle configuration")?;
+        let config = serde_json::json!({
+            "compilerOptions": {
+                "allowJs": true,
+                "checkJs": false,
+                "module": "esnext",
+                "moduleResolution": "bundler",
+                "moduleDetection": "force",
+                "target": "esnext",
+                "lib": ["esnext", "dom", "dom.iterable"],
+                "types": [],
+                "skipLibCheck": true,
+                "rootDir": dir.to_string_lossy(),
+            },
+            "files": chunks,
+        });
+        let path = config_dir.path().join("tsconfig.json");
+        std::fs::write(&path, serde_json::to_vec_pretty(&config)?)
+            .context("cannot write bundle configuration")?;
+        let mut project = Self::load(&path.canonicalize()?.to_string_lossy(), entries)?;
+        project._bundle_config = Some(config_dir);
+        Ok(project)
     }
 
     /// Checks the original program and records the analysis snapshot.
@@ -539,6 +600,37 @@ impl crate::pipeline::Backend for Backend<'_> {
         if let Some(emitted) = self.sizes.get(&key) {
             return Ok(emitted.clone());
         }
+        if crate::app::bundle_mode() {
+            // Bundle chunks are published as edited text: the text itself is
+            // the measured output. Parse it to reject syntax errors.
+            let output = ts_goport::transpile::transpile_module(
+                &ts_goport::gostd::context::background(),
+                text,
+                ts_goport::transpile::Options {
+                    compiler_options: Some(self.project.size_options.clone()),
+                    file_name: file.to_owned(),
+                    report_diagnostics: true,
+                },
+            )
+            .context("size evaluation was cancelled")?;
+            if let Some(d) = output
+                .diagnostics
+                .iter()
+                .find(|d| d.category == ts_goport::diagnostics::Category::Error)
+            {
+                // TS8002-TS8017: TypeScript-only syntax in a JavaScript file.
+                if (8000..8100).contains(&d.code) {
+                    return Err(crate::pipeline::TypeScriptOnlySyntax(d.code as u32).into());
+                }
+                bail!("transformed chunk has syntax errors (TS{})", d.code);
+            }
+            let emitted = crate::pipeline::Emitted {
+                size: text.len(),
+                imports: crate::pipeline::static_imports(text),
+            };
+            self.sizes.insert(key, emitted.clone());
+            return Ok(emitted);
+        }
         if is_js_name(file) {
             // JavaScript passes through unchanged and has no emitted form.
             return Ok(crate::pipeline::Emitted {
@@ -643,6 +735,65 @@ fn redacted_message(d: &Diagnostic) -> String {
     template.message_args = vec![REDACTED_ARGUMENT.to_owned(); d.message_args.len()];
     template.localize(&ts_goport::locale::DEFAULT)
 }
+/// JavaScript chunks of a bundler output directory, sorted, as canonical
+/// paths. Classic worker scripts (`importScripts`) are not ES modules and stay
+/// outside the program.
+fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<String>) -> Result<()> {
+        for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                walk(&path, out)?;
+            } else if path.extension().is_some_and(|e| e == "js" || e == "mjs") {
+                let text = std::fs::read_to_string(&path).context("cannot read a bundle chunk")?;
+                if text.contains("importScripts(") {
+                    tracing::info!("skipping classic worker script chunk");
+                    continue;
+                }
+                out.push(path.canonicalize()?.to_string_lossy().into_owned());
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+/// Static and literal dynamic import specifiers of a chunk.
+fn chunk_specifiers(text: &str) -> Vec<String> {
+    let mut specifiers = crate::pipeline::static_imports(text);
+    for quote in ['"', '\'', '`'] {
+        let pattern = format!("import({quote}");
+        let mut rest = text;
+        while let Some(at) = rest.find(&pattern) {
+            rest = &rest[at + pattern.len()..];
+            if let Some(end) = rest.find(quote) {
+                specifiers.push(rest[..end].to_owned());
+            }
+        }
+    }
+    // Vite preload helpers list dependency chunks as string literals.
+    let mut rest = text;
+    while let Some(at) = rest.find(".js\"") {
+        let head = &rest[..at + 3];
+        if let Some(start) = head.rfind('"') {
+            let name = &head[start + 1..];
+            if !name.contains(['"', ' ', '(', ')']) {
+                specifiers.push(if name.starts_with('.') {
+                    name.to_owned()
+                } else {
+                    format!("./{}", name.rsplit('/').next().unwrap_or(name))
+                });
+            }
+        }
+        rest = &rest[at + 4..];
+    }
+    specifiers
+}
+
 fn is_js_name(n: &str) -> bool {
     n.ends_with(".js") || n.ends_with(".jsx") || n.ends_with(".mjs") || n.ends_with(".cjs")
 }

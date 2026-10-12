@@ -44,6 +44,11 @@ mod app {
 
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
+    /// Stage 2: the program is a closed set of bundler output chunks.
+    static BUNDLE: AtomicBool = AtomicBool::new(false);
+    pub(crate) fn bundle_mode() -> bool {
+        BUNDLE.load(Ordering::Relaxed)
+    }
     pub(crate) fn check_cancelled() -> Result<()> {
         ensure!(!CANCELLED.load(Ordering::Relaxed), "operation cancelled");
         Ok(())
@@ -55,10 +60,14 @@ mod app {
         about = "Conservative type-aware TypeScript size optimization (experimental)"
     )]
     struct Args {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long, required = true, num_args = 1..)]
+        #[arg(long, required_unless_present = "bundle", conflicts_with = "bundle")]
+        project: Option<PathBuf>,
+        #[arg(long, required_unless_present = "bundle", conflicts_with = "bundle", num_args = 1..)]
         entry: Vec<PathBuf>,
+        /// Stage 2: optimize the JavaScript chunks of a bundler output
+        /// directory as one closed program.
+        #[arg(long, value_name = "DIR")]
+        bundle: Option<PathBuf>,
         #[arg(long, required_unless_present = "check", conflicts_with = "check")]
         out_dir: Option<PathBuf>,
         #[arg(long)]
@@ -113,10 +122,14 @@ mod app {
                 "output destination already exists or cannot be inspected"
             );
         }
-        let project = if args.project.is_dir() {
-            args.project.join("tsconfig.json")
+        if let Some(dir) = args.bundle.clone() {
+            return run_bundle(args, &dir, started);
+        }
+        let project = args.project.clone().context("--project is required")?;
+        let project = if project.is_dir() {
+            project.join("tsconfig.json")
         } else {
-            args.project
+            project
         };
         let project = project
             .canonicalize()
@@ -185,6 +198,45 @@ mod app {
             report.measure(started);
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        Ok(())
+    }
+
+    fn run_bundle(args: Args, dir: &std::path::Path, started: Instant) -> Result<()> {
+        BUNDLE.store(true, Ordering::Relaxed);
+        let dir = dir.canonicalize().context("cannot find bundle directory")?;
+        ensure!(dir.is_dir(), "--bundle must be a directory");
+        let passes = PassSet::bundle_without(&args.disable_pass);
+        tracing::info!(
+            enabled = ?passes.enabled().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+            "bundle mode passes"
+        );
+        let compiler = compiler::Project::load_bundle(&dir)?;
+        let snapshot = compiler.snapshot()?;
+        check_cancelled()?;
+        let outcome = {
+            let mut backend = compiler::Backend::new(&compiler, &snapshot);
+            pipeline::Pipeline {
+                backend: &mut backend,
+                enabled: &passes,
+            }
+            .run(&snapshot.sources)?
+        };
+        let mut report = report::build(&snapshot, &outcome, &passes);
+        tracing::info!(
+            files = snapshot.sources.len(),
+            bundles = outcome.bundles.len(),
+            rounds = outcome.rounds,
+            bytes_before = outcome.size_before,
+            bytes_after = outcome.size_after,
+            renamed = report.renamed_properties,
+            "bundle analysis complete"
+        );
+        if let Some(destination) = args.out_dir {
+            output::publish_bundle(&dir, &destination, &snapshot, &outcome)?;
+            tracing::info!(bundles = outcome.bundles.len(), "bundle output published");
+        }
+        report.measure(started);
+        println!("{}", serde_json::to_string_pretty(&report)?);
         Ok(())
     }
 

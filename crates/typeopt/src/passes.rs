@@ -51,6 +51,22 @@ impl PassId {
         PassId::IntrinsicSpecialization,
         PassId::ResidualDependencyRemoval,
     ];
+    /// Passes available in bundle mode (stage 2). Bundled JavaScript is not
+    /// type-checked, so inferred types can be wrong, not only imprecise.
+    /// Only passes whose proofs rest on syntax, references, points-to flows
+    /// and runtime facts are available. Passes that rely on static types to
+    /// track where class instances or values flow (method and field removal,
+    /// devirtualization, discriminant compaction, ...) are not.
+    pub const BUNDLE: [PassId; 8] = [
+        PassId::PropertyShortening,
+        PassId::PropertyDisambiguation,
+        PassId::PropertyAmbiguation,
+        PassId::CallInlining,
+        PassId::SignatureReduction,
+        PassId::TypeDirectedControlFlow,
+        PassId::PrimitiveOperationSimplification,
+        PassId::ResidualDependencyRemoval,
+    ];
     pub const PROPERTY: [PassId; 3] = [
         PassId::PropertyShortening,
         PassId::PropertyDisambiguation,
@@ -134,6 +150,17 @@ impl PassSet {
 
     pub fn without(disabled: &[PassId]) -> Self {
         let mut set = Self::all();
+        for pass in disabled {
+            set.enabled.remove(pass);
+        }
+        set
+    }
+
+    /// Bundle-mode passes without `disabled`.
+    pub fn bundle_without(disabled: &[PassId]) -> Self {
+        let mut set = Self {
+            enabled: PassId::BUNDLE.into_iter().collect(),
+        };
         for pass in disabled {
             set.enabled.remove(pass);
         }

@@ -350,7 +350,10 @@ impl Planner<'_> {
         // The runtime proof is stated with a non-null assertion, which emits
         // nothing. It stays valid even when the receiver's checker type is
         // non-nullable only through narrowing that another edit may remove.
-        let assertion = if type_assertable(ctx, receiver) {
+        let assertion = if crate::app::bundle_mode() {
+            // JavaScript chunks have no recheck to satisfy.
+            ""
+        } else if type_assertable(ctx, receiver) {
             "!"
         } else if typed {
             ""

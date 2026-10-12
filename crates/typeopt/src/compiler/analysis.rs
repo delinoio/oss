@@ -101,7 +101,7 @@ impl<'c> Ctx<'c> {
                     // `@ts-nocheck` suppresses the semantic recheck that
                     // backs every transformation, so such a module is an
                     // unchecked boundary exactly like JavaScript.
-                    js: is_js(node) || is_unchecked(node),
+                    js: !crate::app::bundle_mode() && (is_js(node) || is_unchecked(node)),
                     text: source_file_text(node).to_string(),
                     name,
                     nodes,
@@ -170,6 +170,27 @@ impl<'c> Ctx<'c> {
                 }
                 if !js && let Some(name) = mentioned_name(node) {
                     *self.mentioned_names.entry(name.to_owned()).or_default() += 1;
+                }
+                // Bundled code can parse strings into member lookups at
+                // runtime (template engines, `new Function`, path helpers),
+                // so every identifier-like token of a string counts.
+                if crate::app::bundle_mode()
+                    && matches!(
+                        node.kind(),
+                        SyntaxKind::StringLiteral
+                            | SyntaxKind::NoSubstitutionTemplateLiteral
+                            | SyntaxKind::TemplateHead
+                            | SyntaxKind::TemplateMiddle
+                            | SyntaxKind::TemplateTail
+                    )
+                {
+                    for token in node
+                        .text()
+                        .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+                        .filter(|t| !t.is_empty())
+                    {
+                        *self.mentioned_names.entry(token.to_owned()).or_default() += 1;
+                    }
                 }
             }
             self.files[index].nodes = nodes;
