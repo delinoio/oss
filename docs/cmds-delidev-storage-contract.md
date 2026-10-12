@@ -1469,7 +1469,17 @@ the Worker progress, report and operation-lock metadata; retire only the bounded
 workspace-removal evidence after completion. Two historical devices on one machine cannot consume or overwrite each other's proof.
 
 The session-only Worker file remains an admission fence for preparation,
-execution, reads and Sidechat. Its current metadata grants no cleanup authority.
+execution, reads and Sidechat. Version 3 records a bounded per-device publication
+entry in that shared fence before writing keyed Worker progress. The entry binds
+the original identity, work digest and report UUID, and moves from initial to
+published only after the keyed proof is synchronized. An interrupted initial
+publication may recover that exact UUID; a missing keyed proof behind a published
+entry remains pending. This lets multiple original devices share the admission
+fence without allowing a lost proof to create a new receipt. A version-2 fence
+with its keyed proof upgrades to version 3; a version-2 fence with no keyed proof
+fails closed because its device publication state cannot be established.
+
+The session fence's current metadata grants no cleanup authority.
 Import a historical progress proof only for the exact accepted work digest and
 original report/stages. Synchronize keyed evidence before replacing the historical
 file with its fence. Import a historical workspace proof only for that same exact

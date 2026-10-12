@@ -16,15 +16,72 @@ import (
 // The session-wide marker only closes admission. Progress and report identity
 // belong to the original device obligation, never this shared fence.
 type sessionDeletionMarker struct {
-	Version    uint32    `json:"version"`
-	ServerID   domain.ID `json:"server_id"`
-	SessionID  domain.ID `json:"session_id"`
-	DeletionID domain.ID `json:"deletion_id"`
-	MachineID  domain.ID `json:"machine_id"`
+	Version     uint32                            `json:"version"`
+	ServerID    domain.ID                         `json:"server_id"`
+	SessionID   domain.ID                         `json:"session_id"`
+	DeletionID  domain.ID                         `json:"deletion_id"`
+	MachineID   domain.ID                         `json:"machine_id"`
+	Obligations []sessionDeletionMarkerObligation `json:"obligations,omitempty"`
 }
 
+type sessionDeletionMarkerObligation struct {
+	Identity domain.SessionDeletionIdentity `json:"identity"`
+	Digest   string                         `json:"digest"`
+	ReportID domain.ID                      `json:"report_id"`
+	Phase    sessionDeletionMarkerPhase     `json:"phase"`
+}
+
+type sessionDeletionMarkerPhase uint8
+
+const (
+	sessionDeletionMarkerInitial sessionDeletionMarkerPhase = iota + 1
+	sessionDeletionMarkerPublished
+)
+
 func deletionMarker(w domain.SessionDeletionWork) sessionDeletionMarker {
-	return sessionDeletionMarker{2, w.ServerID, w.SessionID, w.DeletionID, w.MachineID}
+	return sessionDeletionMarker{Version: 3, ServerID: w.ServerID, SessionID: w.SessionID, DeletionID: w.DeletionID, MachineID: w.MachineID}
+}
+
+func validDeletionMarker(marker sessionDeletionMarker, w domain.SessionDeletionWork) bool {
+	if marker.Version != 3 || marker.ServerID != w.ServerID || marker.SessionID != w.SessionID || marker.DeletionID != w.DeletionID || marker.MachineID != w.MachineID || len(marker.Obligations) > domain.MaxSessionDeletionJobs {
+		return false
+	}
+	seen := make(map[domain.ID]bool, len(marker.Obligations))
+	for _, obligation := range marker.Obligations {
+		identity := obligation.Identity
+		if identity.Validate() != nil || identity.ServerID != marker.ServerID || identity.SessionID != marker.SessionID || identity.DeletionID != marker.DeletionID || identity.MachineID != marker.MachineID || seen[identity.DeviceID] || len(obligation.Digest) != 64 || obligation.ReportID.Validate() != nil || obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerPublished {
+			return false
+		}
+		seen[identity.DeviceID] = true
+	}
+	return true
+}
+
+func markerObligation(marker *sessionDeletionMarker, w domain.SessionDeletionWork) (*sessionDeletionMarkerObligation, bool) {
+	for i := range marker.Obligations {
+		if marker.Obligations[i].Identity.DeviceID == w.DeviceID {
+			if marker.Obligations[i].Identity != w.Identity() || marker.Obligations[i].Digest != w.Digest() {
+				return nil, false
+			}
+			return &marker.Obligations[i], true
+		}
+	}
+	if len(marker.Obligations) >= domain.MaxSessionDeletionJobs {
+		return nil, false
+	}
+	marker.Obligations = append(marker.Obligations, sessionDeletionMarkerObligation{Identity: w.Identity(), Digest: w.Digest(), ReportID: domain.NewID(), Phase: sessionDeletionMarkerInitial})
+	return &marker.Obligations[len(marker.Obligations)-1], true
+}
+
+func writeDeletionMarker(path string, marker sessionDeletionMarker) error {
+	raw, err := json.Marshal(marker)
+	if err != nil || len(raw) > domain.MaxSessionDeletionBytes {
+		return domain.SessionDeletionPending()
+	}
+	if err := security.WriteAtomic(path, raw); err != nil {
+		return err
+	}
+	return security.SyncParent(path)
 }
 func validDeletionProof(proof sessionDeletionProof, w domain.SessionDeletionWork) bool {
 	return proof.Version == 2 && proof.Identity == w.Identity() && proof.Digest == w.Digest() && proof.ReportID.Validate() == nil && (!proof.Complete || proof.RemovalStarted) && (!proof.WorkspaceRetired || proof.Complete)
@@ -63,7 +120,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		}
 	}()
 	markerPath := sessionDeletionPath(root, w.SessionID)
-	legacyRaw, markerErr := security.ReadPrivate(markerPath, 4096)
+	legacyRaw, markerErr := security.ReadPrivate(markerPath, domain.MaxSessionDeletionBytes)
 	keyedRaw, keyErr := security.ReadPrivate(paths.Worker, 4096)
 	var keyed sessionDeletionProof
 	if keyErr == nil {
@@ -103,18 +160,64 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			if err != nil || !bytes.Equal(again, legacyRaw) {
 				return pending()
 			}
-			if writeJSON(markerPath, deletionMarker(w)) != nil {
+			marker := deletionMarker(w)
+			marker.Obligations = []sessionDeletionMarkerObligation{{Identity: w.Identity(), Digest: w.Digest(), ReportID: legacy.ReportID, Phase: sessionDeletionMarkerPublished}}
+			if writeDeletionMarker(markerPath, marker) != nil {
 				return pending()
 			}
 		case 2:
 			var marker sessionDeletionMarker
-			if domain.Decode(legacyRaw, &marker) != nil || marker != deletionMarker(w) {
+			var oldMarker struct {
+				Version    uint32    `json:"version"`
+				ServerID   domain.ID `json:"server_id"`
+				SessionID  domain.ID `json:"session_id"`
+				DeletionID domain.ID `json:"deletion_id"`
+				MachineID  domain.ID `json:"machine_id"`
+			}
+			if domain.Decode(legacyRaw, &oldMarker) != nil || oldMarker.Version != 2 || oldMarker.ServerID != w.ServerID || oldMarker.SessionID != w.SessionID || oldMarker.DeletionID != w.DeletionID || oldMarker.MachineID != w.MachineID || keyErr != nil {
+				return pending()
+			}
+			proof = keyed
+			marker = deletionMarker(w)
+			marker.Obligations = []sessionDeletionMarkerObligation{{Identity: w.Identity(), Digest: w.Digest(), ReportID: keyed.ReportID, Phase: sessionDeletionMarkerPublished}}
+			if writeDeletionMarker(markerPath, marker) != nil {
+				return pending()
+			}
+			if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil {
+				return pending()
+			}
+		case 3:
+			var marker sessionDeletionMarker
+			if domain.Decode(legacyRaw, &marker) != nil || !validDeletionMarker(marker, w) {
+				return pending()
+			}
+			obligation, exists := markerObligation(&marker, w)
+			if !exists {
 				return pending()
 			}
 			if keyErr == nil {
+				if keyed.ReportID != obligation.ReportID {
+					return pending()
+				}
 				proof = keyed
-			} else if writeJSON(paths.Worker, proof) != nil {
-				return pending()
+				if obligation.Phase == sessionDeletionMarkerInitial {
+					obligation.Phase = sessionDeletionMarkerPublished
+					if writeDeletionMarker(markerPath, marker) != nil {
+						return pending()
+					}
+				}
+			} else {
+				if obligation.Phase == sessionDeletionMarkerPublished {
+					return pending()
+				}
+				proof.ReportID = obligation.ReportID
+				if writeJSON(paths.Worker, proof) != nil || security.SyncParent(paths.Worker) != nil {
+					return pending()
+				}
+				obligation.Phase = sessionDeletionMarkerPublished
+				if writeDeletionMarker(markerPath, marker) != nil {
+					return pending()
+				}
 			}
 			if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil {
 				return pending()
@@ -130,8 +233,20 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		if workspace.ImportLegacyDeletionWorkspaceProof(root, w) != nil {
 			return pending()
 		}
-		// Fence first: even a failed initial progress publication rejects new work.
-		if writeJSON(markerPath, deletionMarker(w)) != nil || writeJSON(paths.Worker, proof) != nil {
+		// Publish the exact initial receipt in the shared fence before keyed
+		// progress. A missing key is recoverable only while this entry remains
+		// initial; published entries fail closed if their key disappears.
+		marker := deletionMarker(w)
+		obligation, ok := markerObligation(&marker, w)
+		if !ok {
+			return pending()
+		}
+		proof.ReportID = obligation.ReportID
+		if writeDeletionMarker(markerPath, marker) != nil || writeJSON(paths.Worker, proof) != nil || security.SyncParent(paths.Worker) != nil {
+			return pending()
+		}
+		obligation.Phase = sessionDeletionMarkerPublished
+		if writeDeletionMarker(markerPath, marker) != nil {
 			return pending()
 		}
 	}
