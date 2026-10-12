@@ -4,6 +4,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -15,6 +16,9 @@ func captureUnixNativeIdentity(path string) (NativeIdentity, error) {
 	var stat unix.Statx_t
 	mask := unix.STATX_BASIC_STATS | unix.STATX_BTIME
 	if err := unix.Statx(unix.AT_FDCWD, path, unix.AT_SYMLINK_NOFOLLOW, mask, &stat); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return NativeIdentity{}, err
+		}
 		return NativeIdentity{}, domain.SessionDeletionPending()
 	}
 	required := uint32(unix.STATX_TYPE | unix.STATX_INO | unix.STATX_BTIME)

@@ -1535,6 +1535,7 @@ Resource document_json always excludes this key. Native assignments, closed
 progress attempts, checkpoints and digests do not include display timing.
 Legacy omission receives no backfill; replacement jobs retain independent current
 identity and original deletion ownership. No schema or migration is added.
+
 ## Native admission for permanent cleanup
 
 Before original ownership reads, pin the original data root, existing ancestors,

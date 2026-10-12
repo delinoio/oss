@@ -688,6 +688,7 @@ preparation settlement freezes elapsed time; failed, canceled, uncertain and Sto
 settlements freeze unfinished time without implying preparation success. The
 Worker's operation report shape and original workspace/native cleanup authority
 remain unchanged. Missing historical timing cannot be derived from Job timestamps.
+
 ## Retained native workspace removal admission
 
 Permanent cleanup captures the original managed workspace tree before manifest
