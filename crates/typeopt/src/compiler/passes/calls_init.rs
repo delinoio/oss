@@ -317,7 +317,9 @@ impl<'a, 'c> InitCheck<'a, 'c> {
                 self.inert(node.when_true()) && self.inert(node.when_false())
             }
             SyntaxKind::Identifier => {
-                if node.text() == "undefined" {
+                // Only the global `undefined`; a shadowing binding is an
+                // ordinary application value.
+                if self.ctx.is_global_undefined(node) {
                     return true;
                 }
                 let symbol = self.ctx.resolve(node);

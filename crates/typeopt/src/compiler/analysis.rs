@@ -356,7 +356,7 @@ impl<'c> Ctx<'c> {
             | SyntaxKind::ArrowFunction
             | SyntaxKind::FunctionExpression => true,
             SyntaxKind::Identifier => {
-                if node.text() == "undefined" {
+                if self.is_global_undefined(node) {
                     return true;
                 }
                 // Reads of initialized locals are pure. Bindings that may be
@@ -611,6 +611,16 @@ impl<'c> Ctx<'c> {
             }
         }
         sites
+    }
+
+    /// Whether an identifier reads the global `undefined`, never an
+    /// application binding that shadows the name.
+    pub fn is_global_undefined(&mut self, node: Node) -> bool {
+        if node.kind() != SyntaxKind::Identifier || node.text() != "undefined" {
+            return false;
+        }
+        let symbol = self.checker.get_symbol_at_location(node, true);
+        symbol.is_some() && self.checker.is_undefined_symbol(symbol)
     }
 
     /// Symbols of every name in a deterministic order.

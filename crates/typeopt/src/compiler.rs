@@ -68,6 +68,8 @@ pub struct Snapshot {
 
 pub struct Project {
     config: Rc<ParsedCommandLine>,
+    /// SHA-256 of every file the compiler read, by path.
+    reads: Rc<std::cell::RefCell<BTreeMap<String, String>>>,
     fs: Rc<dyn Fs>,
     cwd: String,
     version: &'static GoProgram,
@@ -90,9 +92,25 @@ fn deny_write() -> ts_goport::frontend::vfs::FsError {
 impl Project {
     pub fn load(path: &str, entries: Vec<String>) -> Result<Self> {
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
+        // Every file the compiler reads, including module-resolution
+        // metadata such as package manifests, is part of the analysis
+        // snapshot that consumers validate.
+        let base = bundled::wrap_fs(osvfs_fs());
+        let reads = Rc::new(std::cell::RefCell::new(BTreeMap::<String, String>::new()));
+        let (reader, recorded) = (base.clone(), reads.clone());
         let fs = wrapvfs_wrap(
-            bundled::wrap_fs(osvfs_fs()),
+            base,
             Replacements {
+                read_file: Some(Box::new(move |path| {
+                    let (text, ok) = reader.read_file(path);
+                    if ok && !path.starts_with("bundled:") {
+                        recorded
+                            .borrow_mut()
+                            .entry(path.to_owned())
+                            .or_insert_with(|| sha256_hex(text.as_bytes()));
+                    }
+                    (text, ok)
+                })),
                 write_file: Some(Box::new(|_, _| Err(deny_write()))),
                 append_file: Some(Box::new(|_, _| Err(deny_write()))),
                 remove: Some(Box::new(|_| Err(deny_write()))),
@@ -191,6 +209,7 @@ impl Project {
         let version = build(config.clone(), fs.clone(), &cwd);
         Ok(Self {
             config,
+            reads,
             fs,
             cwd,
             version,
@@ -278,6 +297,22 @@ impl Project {
             !sources.is_empty(),
             "program contains no supported runtime source; select a TypeScript or JavaScript entry"
         );
+        // Resolution reads (package manifests and other metadata) that are
+        // neither sources nor already recorded program files.
+        let known: std::collections::BTreeSet<String> = sources
+            .keys()
+            .chain(inputs.iter().map(|i| &i.path))
+            .cloned()
+            .collect();
+        for (path, sha256) in self.reads.borrow().iter() {
+            if !known.contains(path) {
+                inputs.push(Input {
+                    path: path.clone(),
+                    sha256: sha256.clone(),
+                    kind: InputKind::Dependency,
+                });
+            }
+        }
         inputs.sort();
         inputs.dedup();
         Ok(Snapshot { sources, inputs })

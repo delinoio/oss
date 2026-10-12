@@ -129,12 +129,25 @@ for (let i = 1; i < builds.length; i++)
 if (builds[0].optimized !== false) mismatches.push("original.optimized");
 for (let i = 1; i < builds.length; i++)
   if (builds[i].optimized !== true) mismatches.push(`${names[i]}.optimized`);
+for (let i = 1; i < builds.length; i++) {
+  // The optimizer binary must come from a recorded, clean source revision.
+  const optimizer = builds[i].optimizer;
+  if (!/^[0-9a-f]{40}$/.test(optimizer?.source_revision ?? ""))
+    mismatches.push(`${names[i]}.optimizer.source_revision`);
+  if (optimizer?.source_dirty !== false)
+    mismatches.push(`${names[i]}.optimizer.source_dirty`);
+}
 if (builds.length === 3) {
-  // The existing optimizer writes report v0; the extended one writes v1.
+  // The existing optimizer is the pinned revision and writes report v0; the
+  // extended one writes v1.
   if (builds[1].optimizer?.report_schema_version !== 0)
     mismatches.push("existing.optimizer");
+  if (builds[1].optimizer?.source_revision !== pin.existing_typeopt_revision)
+    mismatches.push("existing.optimizer.revision");
   if (!(builds[2].optimizer?.report_schema_version >= 1))
     mismatches.push("extended.optimizer");
+  if (builds[2].optimizer?.source_revision === pin.existing_typeopt_revision)
+    mismatches.push("extended.optimizer.revision");
 }
 const measured = await Promise.all(roots.map(measure));
 const knownLogical = new Set(

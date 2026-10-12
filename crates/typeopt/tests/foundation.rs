@@ -85,3 +85,33 @@ fn reports_are_deterministic() {
     let second = without_measurements(check(temp.path(), &[]));
     assert_eq!(first, second);
 }
+
+#[test]
+fn snapshot_records_module_resolution_metadata() {
+    let temp = project(&[
+        (
+            "main.ts",
+            "import type { Value } from 'dep-pkg';\nconst value: Value = 1;\nconsole.log(value);\n",
+        ),
+        (
+            "node_modules/dep-pkg/package.json",
+            r#"{"name":"dep-pkg","types":"./types.d.ts"}"#,
+        ),
+        (
+            "node_modules/dep-pkg/types.d.ts",
+            "export type Value = number;\n",
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    let manifest = modules(temp.path());
+    let inputs = manifest["inputs"].as_array().unwrap();
+    for suffix in ["dep-pkg/package.json", "dep-pkg/types.d.ts"] {
+        assert!(
+            inputs
+                .iter()
+                .any(|i| i["path"].as_str().unwrap().ends_with(suffix)
+                    && i["sha256"].as_str().unwrap().len() == 64),
+            "{suffix} missing from {inputs:#?}"
+        );
+    }
+}

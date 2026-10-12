@@ -15,10 +15,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { typeopt } from "../examples/vite/adapter.mjs";
 
-const [checkoutArg, destinationArg, optimizedArg] = process.argv.slice(2);
-if (!checkoutArg || !destinationArg)
+const [checkoutArg, destinationArg, optimizedArg, optimizerSourceArg] =
+  process.argv.slice(2);
+if (!checkoutArg || !destinationArg || (optimizedArg && !optimizerSourceArg))
   throw new Error(
-    "Usage: node build.mjs <checkout> <new-build-dir> [typeopt-output]",
+    "Usage: node build.mjs <checkout> <new-build-dir> [<typeopt-output> <typeopt-source-checkout>]",
   );
 const pin = JSON.parse(
   await readFile(new URL("./pin.json", import.meta.url), "utf8"),
@@ -161,11 +162,28 @@ if (optimized) {
   const report = JSON.parse(
     await readFile(path.join(optimized, "report.json"), "utf8"),
   );
+  // Reports do not identify the optimizer's source revision, so record the
+  // checkout the typeopt binary was built from. measure.mjs compares it with
+  // the pins; a dirty checkout cannot reproduce the binary.
+  const optimizerSource = await realpath(optimizerSourceArg);
+  const sourceGit = (...args) =>
+    execFileSync("git", ["-C", optimizerSource, ...args], {
+      encoding: "utf8",
+    }).trim();
   optimizer = {
     report_schema_version: report.schema_version,
     tool_version: report.tool_version,
     compiler_revision: report.compiler_revision,
     disabled_passes: report.passes?.disabled ?? null,
+    source_revision: sourceGit("rev-parse", "HEAD"),
+    source_dirty:
+      sourceGit(
+        "status",
+        "--porcelain",
+        "--",
+        "crates/typeopt",
+        "Cargo.lock",
+      ) !== "",
   };
 }
 await writeFile(

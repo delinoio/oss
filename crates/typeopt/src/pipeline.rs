@@ -61,7 +61,7 @@ pub fn static_imports(code: &str) -> Vec<String> {
             continue;
         };
         let tail = &code[start..];
-        let statement = &tail[..tail.find(';').map_or(tail.len(), |i| i + 1)];
+        let statement = &tail[..statement_end(tail)];
         let after_keyword = statement[keyword.len()..].trim_start();
         let literal = if keyword == "import" && after_keyword.starts_with(['"', '\'']) {
             Some(after_keyword)
@@ -79,6 +79,30 @@ pub fn static_imports(code: &str) -> Vec<String> {
         }
     }
     imports
+}
+
+/// End of the statement that starts `code`: one past the first `;` outside a
+/// string literal, so a `;` inside a module specifier does not cut it short.
+fn statement_end(code: &str) -> usize {
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in code.char_indices() {
+        match quote {
+            Some(open) => {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == open {
+                    quote = None;
+                }
+            }
+            None if ch == '"' || ch == '\'' || ch == '`' => quote = Some(ch),
+            None if ch == ';' => return index + 1,
+            None => {}
+        }
+    }
+    code.len()
 }
 
 /// Elements of `before` missing from `after`, if `after` is `before` with
@@ -364,25 +388,40 @@ impl<B: Backend> Pipeline<'_, B> {
                 crate::app::check_cancelled()?;
                 let current = self.round(&outcome.texts, phase, &blacklist)?;
                 outcome.rounds += 1;
-                final_skips = current.skips;
-                if phase == Phase::Property {
-                    outcome
-                        .mappings
-                        .extend(current.plan.mappings.iter().cloned());
-                    outcome.mappings.extend(current.rejected.iter().cloned());
-                    outcome.property_stats = current.plan.property_stats.clone();
+                let converged = current.accepted.is_empty();
+                let Round {
+                    plan,
+                    accepted,
+                    skips,
+                    rejected,
+                } = current;
+                let applied = if converged {
+                    Some(0)
+                } else {
+                    self.commit(
+                        &mut outcome,
+                        accepted,
+                        phase,
+                        round,
+                        &mut blacklist,
+                        &mut permanent,
+                    )?
+                };
+                let Some(applied) = applied else {
+                    // A bundle was rolled back; plan this round again.
+                    continue;
+                };
+                if converged || phase == Phase::Property {
+                    final_skips = skips;
+                    if phase == Phase::Property {
+                        outcome.mappings.extend(plan.mappings);
+                        outcome.mappings.extend(rejected);
+                        outcome.property_stats = plan.property_stats;
+                    }
                 }
-                if current.accepted.is_empty() {
+                if converged {
                     break;
                 }
-                let applied = self.commit(
-                    &mut outcome,
-                    current.accepted,
-                    phase,
-                    round,
-                    &mut blacklist,
-                    &mut permanent,
-                )?;
                 tracing::info!(
                     ?phase,
                     round,
@@ -396,21 +435,21 @@ impl<B: Backend> Pipeline<'_, B> {
                     break;
                 }
             }
-            for skip in final_skips {
+            // Each skip maps to source coordinates exactly once, through the
+            // chain of the text it was planned on: final-round skips here,
+            // rollbacks when they happen.
+            for mut skip in final_skips {
+                skip.location.offset = source_offset(
+                    skip.location.offset,
+                    outcome
+                        .chains
+                        .get(&skip.location.file)
+                        .map_or(&[], Vec::as_slice),
+                );
                 outcome.skips.push(skip);
             }
         }
         outcome.skips.extend(permanent);
-        // Report source coordinates of the original text.
-        for skip in &mut outcome.skips {
-            skip.location.offset = source_offset(
-                skip.location.offset,
-                outcome
-                    .chains
-                    .get(&skip.location.file)
-                    .map_or(&[], Vec::as_slice),
-            );
-        }
         outcome.skips.sort_by(|a, b| {
             (a.pass.rank(), &a.location, &a.key, a.reason).cmp(&(
                 b.pass.rank(),
@@ -530,22 +569,19 @@ impl<B: Backend> Pipeline<'_, B> {
         round: usize,
         blacklist: &mut BTreeSet<String>,
         permanent: &mut Vec<Skip>,
-    ) -> Result<usize> {
+    ) -> Result<Option<usize>> {
         // Recheck the transformed program. On failure, find the first bundle
-        // whose prefix fails, roll it back and retry with the remainder.
-        loop {
-            let texts = Self::applied(&outcome.texts, &accepted)?;
-            let started = std::time::Instant::now();
-            let failing = self.backend.check(&texts)?;
-            tracing::debug!(
-                bundles = accepted.len(),
-                failing = failing.len(),
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "transformed program rechecked"
-            );
-            if failing.is_empty() {
-                break;
-            }
+        // whose prefix fails and blacklist it; the caller plans again.
+        let texts = Self::applied(&outcome.texts, &accepted)?;
+        let started = std::time::Instant::now();
+        let failing = self.backend.check(&texts)?;
+        tracing::debug!(
+            bundles = accepted.len(),
+            failing = failing.len(),
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "transformed program rechecked"
+        );
+        if !failing.is_empty() {
             let culprit = self.first_failing(&outcome.texts, &accepted)?;
             let (candidate, _, _) = accepted.remove(culprit);
             tracing::warn!(
@@ -554,9 +590,8 @@ impl<B: Backend> Pipeline<'_, B> {
                 "transformed program failed type checking; rolling back one bundle"
             );
             blacklist.insert(candidate.key.clone());
-            outcome
-                .mappings
-                .extend(preserved(&candidate, Preservation::RecheckFailed));
+            // The skip refers to this round's text, so it maps through the
+            // chain as it is now, exactly once.
             permanent.push(Skip {
                 pass: candidate.pass,
                 key: candidate.key.clone(),
@@ -572,9 +607,11 @@ impl<B: Backend> Pipeline<'_, B> {
                 },
                 reason: Reason::RecheckFailed,
             });
-            if accepted.is_empty() {
-                return Ok(0);
-            }
+            // Size and import-initialization decisions of the remaining
+            // bundles were measured with the culprit applied. Discard them
+            // and re-plan from the unchanged text with the culprit
+            // blacklisted.
+            return Ok(None);
         }
         let mut per_file = BTreeMap::<String, Vec<Edit>>::new();
         for (candidate, before, after) in &accepted {
@@ -614,7 +651,7 @@ impl<B: Backend> Pipeline<'_, B> {
             let chain = outcome.chains.entry(file).or_default();
             chain.push(edits);
         }
-        Ok(accepted.len())
+        Ok(Some(accepted.len()))
     }
 
     fn applied(
@@ -836,6 +873,67 @@ mod tests {
     }
 
     #[test]
+    fn rollback_replans_and_maps_its_location_once() {
+        // Round 0 shifts the text; in round 1 the culprit is planned at a
+        // shifted offset. Its skip must point at the original source, and
+        // the surviving bundle must be re-gated in a fresh round.
+        let plans = std::rc::Rc::new(std::cell::Cell::new(0));
+        let counter = plans.clone();
+        let mut fake = Fake {
+            script: Box::new(move |texts, phase| {
+                counter.set(counter.get() + 1);
+                let text = &texts["a.ts"];
+                if phase != Phase::Structural {
+                    return Vec::new();
+                }
+                let mut out = Vec::new();
+                if let Some(at) = text.find("prefix ") {
+                    out.push(candidate(
+                        PassId::EnumRuntimeReduction,
+                        "prefix",
+                        vec![FileEdit::delete("a.ts", at, at + 7)],
+                    ));
+                    return out;
+                }
+                if let Some(at) = text.find("badbad") {
+                    out.push(candidate(
+                        PassId::CallInlining,
+                        "bad",
+                        vec![FileEdit::replace("a.ts", at, at + 6, "BAD")],
+                    ));
+                }
+                if let Some(at) = text.find("good ") {
+                    out.push(candidate(
+                        PassId::UnusedMethodRemoval,
+                        "good",
+                        vec![FileEdit::delete("a.ts", at, at + 5)],
+                    ));
+                }
+                out
+            }),
+            checks: 0,
+        };
+        let enabled = PassSet::all();
+        let outcome = Pipeline {
+            backend: &mut fake,
+            enabled: &enabled,
+        }
+        .run(&sources("prefix badbad good end"))
+        .unwrap();
+        assert_eq!(outcome.texts["a.ts"], "badbad end");
+        let rollback = outcome
+            .skips
+            .iter()
+            .find(|s| s.reason == Reason::RecheckFailed)
+            .unwrap();
+        // "badbad" starts at byte 7 of the original text.
+        assert_eq!(rollback.location.offset, 7);
+        // Structural: prefix round, failed round, re-planned round and
+        // converged round; then the property phase.
+        assert_eq!(plans.get(), 5);
+    }
+
+    #[test]
     fn failing_recheck_rolls_back_only_the_culprit() {
         let mut fake = Fake {
             script: Box::new(|texts, phase| {
@@ -929,6 +1027,11 @@ mod tests {
                     './bc';\nexport * from \"./star\";\nexport { d };\nconst s = \"import x from \
                     'no'\";\n";
         assert_eq!(static_imports(code), ["./a", "./side", "./bc", "./star"]);
+        // A `;` inside a specifier does not end the statement.
+        assert_eq!(
+            static_imports("import { x } from \"./side;effect\";\nimport \"./a;b\";\n"),
+            ["./side;effect", "./a;b"]
+        );
         assert_eq!(
             removed_imports(
                 &["a".into(), "b".into(), "c".into()],

@@ -860,3 +860,18 @@ fn export_specifiers_are_aliases_not_declarations() {
     );
     same_behavior(temp.path());
 }
+
+/// A binding named `undefined` is an ordinary application value. Calling it
+/// through a library callback runs application code, so the later constant
+/// must keep its temporal-dead-zone `ReferenceError`.
+#[test]
+fn shadowed_undefined_is_not_treated_as_inert() {
+    let temp = project(&[(
+        "main.ts",
+        "const undefined = () => late();\ntry {\n  [0].forEach(undefined);\n  console.log('no \
+         error');\n} catch (error) {\n  console.log((error as Error).name);\n}\nconst late = () \
+         => 1;\nexport {};\n",
+    )]);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+}
