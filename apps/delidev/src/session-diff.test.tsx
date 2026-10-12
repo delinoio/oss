@@ -553,7 +553,11 @@ it("reads fresh branch options before the diff on Refresh and exposes new refere
   const { f, state, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);
   await screen.findByText("+<script>doNotRun()</script>");
-  expect(operations()).toEqual(["roots", "git-diff-options", "git-diff:branch:main"]);
+  expect(operations()).toEqual([
+    "roots",
+    "git-diff-options",
+    "git-diff:branch:main",
+  ]);
   state.choices = [{ name: "main" }, { name: "new-base" }];
   refreshDiff();
   await waitFor(() => expect(operations()).toHaveLength(5));
@@ -613,7 +617,9 @@ it("follows a fresh implicit default after Refresh", async () => {
   await waitFor(() =>
     expect(operations().at(-1)).toBe("git-diff:branch:trunk"),
   );
-  expect(operations().filter((op) => op === "git-diff:branch:main")).toHaveLength(1);
+  expect(
+    operations().filter((op) => op === "git-diff:branch:main"),
+  ).toHaveLength(1);
 });
 
 it("labels the diff stale and skips the branch diff when the options refresh fails, then recovers", async () => {
@@ -665,9 +671,7 @@ it("fences a late options response after the comparison changes", async () => {
   fireEvent.change(screen.getByLabelText("Comparison"), {
     target: { value: "staged" },
   });
-  await waitFor(() =>
-    expect(operations().at(-1)).toBe("git-diff:staged:"),
-  );
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:staged:"));
   release();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
