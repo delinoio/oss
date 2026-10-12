@@ -1471,3 +1471,17 @@ count, server UTC observation time and replay state. This operation acknowledges
 inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
+
+## Pull request workspace read allocation
+
+System `PULL_REQUEST_WORKSPACE_V1 = 90` independently negotiates the implemented
+IntegrationService `GetPullRequestWorkspace`, `ListPullRequestCommits` and
+`ReadPullRequestAvatar` reads. Complete message-field and RPC declarations are
+retained in the allocation ledger and canonical integration schema. Each request
+binds the selected local repository revision; commits additionally bind original
+PR/numeric repository/base/head and a signed scoped continuation, while avatar
+reads accept only a server-issued scoped opaque reference. Closed schema-version-1
+workspace/commits documents retain bounded source observations; avatars return
+sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
+Worker allocation, feature flag or database migration. Reconcile the capability
+and all declarations against current allocations before merge.

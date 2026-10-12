@@ -477,3 +477,16 @@ connection ownership. They localize normalized values without parsing cron or
 computing calendar instants. Unimplemented supports older servers without a new
 capability gate. Preview failure cannot authorize execution or modify retained
 save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
+
+## Pull request workspace client
+
+The generated IntegrationQuery client exposes independently negotiated workspace,
+commit-page and avatar-byte reads under System `PULL_REQUEST_WORKSPACE_V1`.
+Preserve original repository revision, numeric PR/repository and immutable
+base/head scope, actor/profile generation fences and signed continuation. The
+schema-version-1 decoders reject mixed or foreign observations and invalid counts.
+Avatar references are opaque scope, never URLs. Legacy QueryRepositoryIntegration
+List/Search and shared inspection exports remain unchanged. Connection disposal
+cancels and removes private tab/list/graph/avatar caches; unsupported peers retain
+safe flat-list and supported-tab fallbacks. Fixture validation is separate from
+real GitHub-account and packaged CEF/platform acceptance.

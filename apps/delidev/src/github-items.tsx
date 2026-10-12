@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { PullRequestWorkspace, PRWorkspaceRows, type PRSelection } from "./pr-workspace";
 import { Timestamp } from "./timestamp-display";
 import { PRListHeader, PRListCards } from "./pr-list-cards";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -16,7 +17,7 @@ import {
   visiblePageIds,
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   FailureCode,
@@ -579,244 +580,52 @@ function QueryResultPage({
   );
 }
 
-type QueryProps = {
-  selected: Resource;
-  query: GitHubQuery;
-  change: (query: GitHubQuery) => void;
-  back?: () => void;
-  active?: boolean;
-  standaloneCards?: boolean;
-  pending?: ReactNode;
-};
-function QueryResult(props: QueryProps) {
-  return props.query.page ? (
-    <PaginatedQueryResult {...props} />
-  ) : (
-    <SingleQueryResult {...props} />
-  );
-}
+type QueryProps = { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean; standaloneCards?: boolean; pending?: ReactNode; workspace?: { supported: boolean; reset: () => void; selection?: string; choose: (selection: PRSelection, button: HTMLButtonElement) => void; enrich: (scope: Document) => void } };
+function QueryResult(props: QueryProps) { return props.query.page ? <PaginatedQueryResult {...props} /> : <SingleQueryResult {...props} />; }
 function SingleQueryResult({ active = true, ...props }: QueryProps) {
-  const result = useQuery(
-    IntegrationQuery.queryRepositoryIntegration,
-    {
-      repositoryId: props.selected.id,
-      schemaVersion: 1,
-      queryJson: encode(props.query),
-    },
-    {
-      enabled: active,
-      retry: false,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      gcTime: 0,
-      staleTime: 0,
-    },
-  );
-  const data =
-    result.data?.schemaVersion === 1
-      ? githubResult(result.data.documentJson, props.selected, props.query)
-      : undefined;
+  const result = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: props.selected.id, schemaVersion: 1, queryJson: encode(props.query) }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0, staleTime: 0 });
+  const data = result.data?.schemaVersion === 1 ? githubResult(result.data.documentJson, props.selected, props.query) : undefined;
   return <QueryResultPage {...props} result={result} validated={data} />;
 }
 function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
   const { root, bindRoot } = useGitHubScrollRoot();
-  const scope = JSON.stringify([
-    props.selected.id,
-    String(props.selected.revision),
-    props.query,
-  ]);
+  const [workspaceObservations, setWorkspaceObservations] = useState<Map<string, Document>>(new Map());
+  const enrich = props.workspace?.enrich;
+  const observeWorkspace = useCallback((key: string, value?: Document) => { setWorkspaceObservations(old => { if (old.get(key) === value || !value && !old.has(key)) return old; const next = new Map(old); if (value) next.set(key, value); else next.delete(key); return next; }); if (value) enrich?.(value); }, [enrich]);
+  const scope = JSON.stringify([props.selected.id, String(props.selected.revision), props.query]);
   const binding = useMemo(() => ({ head: "" }), [scope]);
   const validateBoundary = useStablePageRevisions(scope);
-  const request = useCallback(
-    (token: string) => ({
-      repositoryId: props.selected.id,
-      schemaVersion: 1,
-      queryJson: encode({
-        ...props.query,
-        page: token ? Number(token) : props.query.page,
-      }),
-    }),
-    [props.selected, props.query],
-  );
-  const project = useCallback(
-    (
-      reply: { schemaVersion: number; documentJson: Uint8Array },
-      token: string,
-    ) => {
-      const query = {
-        ...props.query,
-        page: token ? Number(token) : props.query.page,
-      };
-      const data =
-        reply.schemaVersion === 1
-          ? githubResult(reply.documentJson, props.selected, query)
-          : undefined;
-      if (!data) invalidGitHubPage();
-      if (
-        props.standaloneCards &&
-        (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(
-          text(data.observed_at),
-        ) ||
-          items(data.items).some(
-            (raw) =>
-              !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(
-                text(object(raw).updated_at),
-              ),
-          ))
-      )
-        invalidGitHubPage();
-      // Checks and statuses page their observations, while the PR envelope is
-      // repeated. Retain the original head and deduplicate the observed rows.
-      const item = object(items(data.items)[0]);
-      const observation =
-        query.operation === QueryOperation.Checks
-          ? "checks"
-          : query.operation === QueryOperation.Statuses
-            ? "statuses"
-            : undefined;
-      if (observation) {
-        const head =
-          text(item.id) + ":" + text(item.head_sha) + ":" + text(item.base_sha);
-        if (!token) binding.head = head;
-        else if (binding.head !== head) invalidGitHubPage();
-      }
-      const source = observation
-        ? items(
-            object(data[observation])[
-              observation === "checks" ? "runs" : "contexts"
-            ],
-          )
-        : items(data.items);
-      const rows = source.map((raw) => {
-        const row = object(raw);
-        return {
-          id: observation
-            ? observation + ":" + text(row.id)
-            : text(row.identity_source) + ":" + text(row.id),
-          revision: BigInt(
-            Date.parse(text(row.updated_at) || text(item.updated_at)),
-          ),
-        };
-      });
-      validateBoundary(token, rows);
-      return {
-        rows,
-        nextPageToken: data.next_page ? String(data.next_page) : "",
-        payload: [{ data, query }],
-      };
-    },
-    [
-      props.selected,
-      props.query,
-      props.standaloneCards,
-      validateBoundary,
-      binding,
-    ],
-  );
-  const reader = useConnectPaginationReader(
-    IntegrationQuery.queryRepositoryIntegration,
-    request,
-    project,
-  );
+  const request = useCallback((token: string) => ({ repositoryId: props.selected.id, schemaVersion: 1, queryJson: encode({ ...props.query, page: token ? Number(token) : props.query.page }) }), [props.selected, props.query]);
+  const project = useCallback((reply: { schemaVersion: number; documentJson: Uint8Array }, token: string) => {
+    const query = { ...props.query, page: token ? Number(token) : props.query.page };
+    const data = reply.schemaVersion === 1 ? githubResult(reply.documentJson, props.selected, query) : undefined;
+    if (!data) invalidGitHubPage();
+    if (props.standaloneCards && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(text(data.observed_at)) || items(data.items).some(raw => !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(text(object(raw).updated_at))))) invalidGitHubPage();
+    // Checks and statuses page their observations, while the PR envelope is
+    // repeated. Retain the original head and deduplicate the observed rows.
+    const item = object(items(data.items)[0]);
+    const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined;
+    if (observation) {
+      const head = text(item.id) + ":" + text(item.head_sha) + ":" + text(item.base_sha);
+      if (!token) binding.head = head;
+      else if (binding.head !== head) invalidGitHubPage();
+    }
+    const source = observation ? items(object(data[observation])[observation === "checks" ? "runs" : "contexts"]) : items(data.items);
+    const rows = source.map(raw => { const row = object(raw); return { id: observation ? observation + ":" + text(row.id) : text(row.identity_source) + ":" + text(row.id), number: text(row.number), revision: BigInt(Date.parse(text(row.updated_at) || text(item.updated_at))) }; });
+    validateBoundary(token, rows);
+    return { rows, nextPageToken: data.next_page ? String(data.next_page) : "", payload: [{ data, query }] };
+  }, [props.selected, props.query, props.standaloneCards, validateBoundary, binding]);
+  const reader = useConnectPaginationReader(IntegrationQuery.queryRepositoryIntegration, request, project);
   const chain = usePaginationChain(scope, active, reader);
-  usePaginationRefresh(
-    IntegrationQuery.queryRepositoryIntegration,
-    request(""),
-    active,
-    chain.refresh,
-  );
-  return (
-    <div
-      ref={bindRoot}
-      role={props.standaloneCards ? "region" : undefined}
-      aria-label={
-        props.standaloneCards
-          ? copy("github-items.githubQueryResults_66fac2")
-          : undefined
-      }
-    >
-      {props.standaloneCards ? (
-        <PRListHeader
-          selected={props.selected}
-          pending={props.pending}
-          reading={Boolean(chain.loading)}
-          reloadRequired={Boolean(
-            chain.error?.stalled ||
-            chain.error?.failure.code === FailureCode.CursorExpired,
-          )}
-          refresh={chain.refreshExplicit}
-        />
-      ) : null}
-      {props.standaloneCards && chain.loading ? (
-        <p role="status">{copy("github-items.readingGithub_ebcef8")}</p>
-      ) : null}
-      <Problem error={paginationError(chain.error?.failure)} />
-      <ScrollPayloadWindow query={chain} root={root} active={active}>
-        {(payload, projections) =>
-          payload.map(({ data, query }) => {
-            const ids = visiblePageIds(chain.pages, projections);
-            const observation =
-              query.operation === QueryOperation.Checks
-                ? "checks"
-                : query.operation === QueryOperation.Statuses
-                  ? "statuses"
-                  : undefined;
-            const field = observation === "checks" ? "runs" : "contexts";
-            const visible = observation
-              ? {
-                  ...data,
-                  [observation]: {
-                    ...object(data[observation]),
-                    [field]: items(object(data[observation])[field]).filter(
-                      (raw) =>
-                        ids.has(observation + ":" + text(object(raw).id)),
-                    ),
-                  },
-                }
-              : {
-                  ...data,
-                  items: items(data.items).filter((raw) => {
-                    const item = object(raw);
-                    return ids.has(
-                      text(item.identity_source) + ":" + text(item.id),
-                    );
-                  }),
-                };
-            return props.standaloneCards ? (
-              <PRListCards
-                key={query.page}
-                data={visible}
-                query={query}
-                reading={Boolean(chain.loading)}
-                previous={Boolean(chain.error)}
-                emptyPage={!items(visible.items).length}
-                change={props.change}
-              />
-            ) : (
-              <QueryResultPage
-                key={query.page}
-                {...props}
-                query={query}
-                validated={visible}
-                result={{
-                  data,
-                  error: paginationError(chain.error?.failure),
-                  isFetching: Boolean(chain.loading),
-                  refetch: chain.refresh,
-                }}
-              />
-            );
-          })
-        }
-      </ScrollPayloadWindow>
-      <ScrollContinuation
-        query={chain}
-        root={root}
-        active={active}
-        label={copy("github-items.githubQueryResults_66fac2")}
-      />
-    </div>
-  );
+  usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
+  return <div ref={bindRoot} role={props.standaloneCards ? "region" : undefined} aria-label={props.standaloneCards ? copy("github-items.githubQueryResults_66fac2") : undefined}>
+    {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} reloadRequired={Boolean(chain.error?.stalled || chain.error?.failure.code === FailureCode.CursorExpired)} refresh={() => { props.workspace?.reset(); chain.refreshExplicit(); }} /> : null}
+    {props.standaloneCards && chain.loading ? <p role="status">{copy("github-items.readingGithub_ebcef8")}</p> : null}
+    <Problem error={paginationError(chain.error?.failure)} />
+    <ScrollPayloadWindow query={chain} root={root} active={active}>{(payload, projections) => props.workspace ? <PRWorkspaceRows pages={payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); return { query, data: { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) } }; })} previous={Boolean(chain.loading || chain.error)} allSeeds={chain.pages.flatMap(page => page.rows.map(row => row.number)).filter(Boolean)} observations={workspaceObservations} observe={observeWorkspace} selected={props.selected} enabled={props.workspace.supported && active} chosen={props.workspace.selection} choose={props.workspace.choose} /> : payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined; const field = observation === "checks" ? "runs" : "contexts";
+      const visible = observation ? { ...data, [observation]: { ...object(data[observation]), [field]: items(object(data[observation])[field]).filter(raw => ids.has(observation + ":" + text(object(raw).id))) } } : { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) }; return props.standaloneCards ? <PRListCards key={query.page} data={visible} query={query} reading={Boolean(chain.loading)} previous={Boolean(chain.error)} emptyPage={!items(visible.items).length} change={props.change} /> : <QueryResultPage key={query.page} {...props} query={query} validated={visible} result={{ data, error: paginationError(chain.error?.failure), isFetching: Boolean(chain.loading), refetch: chain.refresh }} />; })}</ScrollPayloadWindow>
+    <ScrollContinuation query={chain} root={root} active={active} label={copy("github-items.githubQueryResults_66fac2")} />
+  </div>;
 }
 
 export interface PullRequestNavigation {
@@ -825,49 +634,10 @@ export interface PullRequestNavigation {
   previous: GitHubQuery[];
 }
 
-export function StandalonePullRequestResults({
-  selected,
-  navigation,
-  active,
-  changeNavigation,
-  pending,
-}: {
-  selected: Resource;
-  navigation: PullRequestNavigation;
-  active: boolean;
-  pending?: ReactNode;
-  changeNavigation: (navigation: PullRequestNavigation) => void;
-}) {
+export function StandalonePullRequestResults({ selected, navigation, active, changeNavigation, pending }: { selected: Resource; navigation: PullRequestNavigation; active: boolean; pending?: ReactNode; changeNavigation: (navigation: PullRequestNavigation) => void }) {
   useLocale();
-  function change(next: GitHubQuery) {
-    const previous =
-      next.operation !== navigation.query.operation
-        ? [...navigation.previous.slice(-7), navigation.query]
-        : navigation.previous;
-    changeNavigation({ ...navigation, query: next, previous });
-  }
-  return (
-    <QueryResult
-      key={JSON.stringify(navigation.query)}
-      selected={selected}
-      query={navigation.query}
-      active={active}
-      standaloneCards={
-        navigation.query.operation === QueryOperation.List ||
-        navigation.query.operation === QueryOperation.Search
-      }
-      pending={pending}
-      change={change}
-      back={
-        navigation.previous.length
-          ? () =>
-              changeNavigation({
-                ...navigation,
-                query: navigation.previous[navigation.previous.length - 1]!,
-                previous: navigation.previous.slice(0, -1),
-              })
-          : undefined
-      }
-    />
-  );
+  // The retained list owner never becomes the selected PR query owner. Layout,
+  // tab activation and selection do not change its pages, cursor or scroll.
+  const query = navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search ? navigation.query : navigation.previous.find(q => q.operation === QueryOperation.List || q.operation === QueryOperation.Search) ?? { kind: ItemKind.PullRequest, operation: QueryOperation.List, state: "open" as const, page: 1, page_size: 20 };
+  return <>{pending}<PullRequestWorkspace key={JSON.stringify([selected.id, selected.revision.toString(), query])} selected={selected} active={active} validate={githubResult} list={workspace => <PaginatedQueryResult selected={selected} query={query} active={active} standaloneCards workspace={workspace} change={query => changeNavigation({ ...navigation, query, previous: [] })} />} /></>;
 }

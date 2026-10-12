@@ -159,7 +159,7 @@ export function validPRFeedback(raw: unknown, item: Document): boolean {
   );
 }
 
-export function PRFeedback({ value }: { value: Document }) {
+export function PRFeedback({ value, compact = false }: { value: Document; compact?: boolean }) {
   useLocale();
   const threads = new Map(
     (value.threads as Document[]).map((thread) => [
@@ -219,7 +219,7 @@ export function PRFeedback({ value }: { value: Document }) {
                 {text(author.login) ||
                   copy("github-feedback.extra.a326f4758492")}
               </h5>
-              {entry.author != null ? (
+              {entry.author != null && !compact ? (
                 <p>
                   {text(author.native_type)} ·{" "}
                   {text(author.id) ||
@@ -324,6 +324,7 @@ export function PRFeedback({ value }: { value: Document }) {
                     "github-feedback.feedbackIdentityAndContentVersion_56157d",
                   )}
                 </DisclosureSummary>
+                {compact && entry.author != null ? <p>{text(author.native_type)} · {text(author.id)} · <code>{text(author.node_id)}</code></p> : null}
                 <p>
                   <LocalizedText
                     id="github-feedback.githubAddress_e2d25b"
