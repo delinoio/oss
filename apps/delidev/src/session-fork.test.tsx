@@ -25,6 +25,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
+import { ProductIdentityProvider } from "./product-identity-labels";
 import { MutationIntents } from "./mutation";
 import {
   SessionCreationAction,
@@ -40,9 +41,13 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function openCodePreflightFixture() {
+async function openCodePreflightFixture(duplicateNames = false) {
   const machineId = newRequestId();
-  const sources = ["Source A", "Source B"].map((name) =>
+  const sources = (
+    duplicateNames
+      ? ["Repeated source", "Repeated source"]
+      : ["Source A", "Source B"]
+  ).map((name) =>
     create(ResourceSchema, {
       kind: EntityKind.SESSION,
       id: newRequestId(),
@@ -125,17 +130,27 @@ async function openCodePreflightFixture() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const view = (source = sources[0]!) => (
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          <SessionForkProvider openSession={vi.fn()}>
-            <SessionForkAction source={source} />
-          </SessionForkProvider>
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>
-  );
+  if (duplicateNames) client.setQueryData(["source-identities"], sources);
+  const view = (source = sources[0]!) => {
+    const content = (
+      <MutationIntents>
+        <SessionForkProvider openSession={vi.fn()}>
+          <SessionForkAction source={source} />
+        </SessionForkProvider>
+      </MutationIntents>
+    );
+    return (
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          {duplicateNames ? (
+            <ProductIdentityProvider>{content}</ProductIdentityProvider>
+          ) : (
+            content
+          )}
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  };
   const rendered = render(view());
   fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
   await waitFor(() =>
@@ -149,6 +164,23 @@ async function openCodePreflightFixture() {
   await waitFor(() => expect(waiting).toHaveBeenCalledTimes(1));
   return { sources, fork, client, gate, view, rendered, waiting };
 }
+
+it("keeps display-only duplicate numbering out of fork mutation names", async () => {
+  const fixture = await openCodePreflightFixture(true);
+  expect(screen.getByRole("textbox", { name: "Fork name" })).toHaveProperty(
+    "value",
+    "Repeated source fork",
+  );
+  await act(async () => fixture.gate.resolve());
+  await screen.findByText(
+    "Accepted by the server. Waiting for the selected Worker to finish.",
+  );
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[0]!.id },
+    name: "Repeated source fork",
+  });
+});
 
 it("does not admit a discarded Fork after its deferred profile check completes", async () => {
   const fixture = await openCodePreflightFixture();
@@ -192,9 +224,7 @@ it("keeps a replacement draft and its accepted job independent of the old profil
     name: "Source B fork",
   });
   expect(
-    screen.getByText(
-      `Source: ${fixture.sources[1]!.id} · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN`,
-    ),
+    screen.getByText("Source: Source B · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN"),
   ).not.toBeNull();
 });
 

@@ -1,6 +1,8 @@
 import {
   useProductLabels,
   PresentationKind,
+  identityFallback,
+  presentationKind,
   productResourceName,
 } from "./product-identity-labels";
 import { useSessionActive } from "./session-activity";
@@ -48,6 +50,14 @@ const sourceHarness = (resource: Resource) =>
   text(
     object(object(document(resource).initial_execution).configuration).harness,
   );
+const sourceMutationName = (resource: Resource) => {
+  const data = document(resource);
+  return typeof data.name === "string"
+    ? data.name
+    : typeof data.alias === "string"
+      ? data.alias
+      : identityFallback(presentationKind(resource.kind));
+};
 const settled = (resource: Resource) => {
   const data = document(resource),
     execution = object(data.execution),
@@ -413,7 +423,7 @@ export function SessionForkProvider({
       setSource(resource);
       setPurpose(requestedPurpose);
       setName(
-        `${productResourceName(productLabel, resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(
+        `${sourceMutationName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(
           0,
           256,
         ),
@@ -427,10 +437,7 @@ export function SessionForkProvider({
       const value: DirectSidechat = {
         requestId: newRequestId(),
         parent: resource.id,
-        name: `${productResourceName(productLabel, resource)} Sidechat`.slice(
-          0,
-          256,
-        ),
+        name: `${sourceMutationName(resource)} Sidechat`.slice(0, 256),
         text: "",
         start: 0,
         end: 0,
