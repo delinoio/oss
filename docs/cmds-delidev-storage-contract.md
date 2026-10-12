@@ -282,6 +282,15 @@ and 4 MiB total ownership JSON; the native Connect response allowance includes
 its bounded JSON/base64 overhead. Ordinary command JSON retains its 1 MiB bound. Unknown
 ownership fails closed.
 
+When a legacy plan has exactly one original device that can own shared cleanup,
+the server may derive that device as owner while retaining the exact prior work
+digest as a one-time migration proof. The Worker binds that prior digest to the
+new owner-bearing work, then synchronizes the session-fence marker and any
+existing keyed Worker/workspace receipts to the new digest while preserving the
+original report identity and progress stages. Missing, mismatched or ambiguous
+proof remains pending; this migration never reconstructs a missing receipt or
+grants multi-device shared-path ownership.
+
 A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
 immutable assignment instance/revision/hash; reports additionally require a live

@@ -263,6 +263,39 @@ func TestDeletionWorkspaceProofStartedLegacyRequiresHistoricalOrKeyedEvidence(t 
 	}
 }
 
+func TestDeletionWorkspaceProofMigratesCanonicalPreviousDigest(t *testing.T) {
+	root := t.TempDir()
+	legacyWork := deletionProofWork()
+	work := legacyWork
+	work.SharedCleanupOwnerDeviceID = work.DeviceID
+	work.PreviousDigest = legacyWork.Digest()
+	if err := work.Validate(); err != nil {
+		t.Fatal("derived-owner work was invalid", err)
+	}
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := SessionDeletionProofPaths(root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := deletionWorkspaceProof{Version: 2, Identity: work.Identity(), Digest: work.PreviousDigest, Removed: true}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, proof); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateKeyedDeletionWorkspaceProof(root, work, true); err != nil {
+		t.Fatal("exact historical workspace receipt was not migrated", err)
+	}
+	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	var migrated deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &migrated) != nil || migrated.Identity != work.Identity() || migrated.Digest != work.Digest() || !migrated.Removed {
+		t.Fatal("workspace receipt identity or stage changed", err)
+	}
+	if err := MigrateKeyedDeletionWorkspaceProof(root, work, true); err != nil {
+		t.Fatal("workspace receipt migration was not replayable", err)
+	}
+}
+
 func TestDeletionWorkspaceProofStartedRequiresRemovedStage(t *testing.T) {
 	root := t.TempDir()
 	work := deletionProofWork()

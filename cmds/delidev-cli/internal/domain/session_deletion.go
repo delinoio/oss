@@ -56,7 +56,11 @@ type SessionDeletionWork struct {
 	PreparationDigests         []string              `json:"preparation_digests"`
 	SnapshotPreparationDigests []string              `json:"snapshot_preparation_digests,omitempty"`
 	SharedCleanupOwnerDeviceID ID                    `json:"shared_cleanup_owner_device_id,omitempty"`
-	PreservedGeneratedImages   []ImageAttachment     `json:"preserved_generated_images,omitempty"`
+	// PreviousDigest authorizes a one-time receipt migration when the server
+	// derives a missing legacy shared-cleanup owner. It is itself bound by the
+	// current digest and must equal the digest of this work without the owner.
+	PreviousDigest           string            `json:"previous_digest,omitempty"`
+	PreservedGeneratedImages []ImageAttachment `json:"preserved_generated_images,omitempty"`
 }
 
 func (w SessionDeletionWork) Validate() error {
@@ -83,6 +87,14 @@ func (w SessionDeletionWork) Validate() error {
 	}
 	if w.SharedCleanupOwnerDeviceID != "" && w.SharedCleanupOwnerDeviceID.Validate() != nil {
 		return SessionDeletionPending()
+	}
+	if w.PreviousDigest != "" {
+		legacy := w
+		legacy.SharedCleanupOwnerDeviceID = ""
+		legacy.PreviousDigest = ""
+		if w.SharedCleanupOwnerDeviceID == "" || !deletionHash(w.PreviousDigest) || legacy.Digest() != w.PreviousDigest {
+			return SessionDeletionPending()
+		}
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {
 		if id.Validate() != nil {
@@ -165,6 +177,13 @@ func (w SessionDeletionWork) Digest() string {
 	b, _ := json.Marshal(w)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
+}
+
+// AcceptsPreviousDigest is intentionally limited to the one canonical
+// pre-enrichment digest proved by Validate. Callers must still migrate and
+// synchronize any durable receipt that uses it before resuming cleanup.
+func (w SessionDeletionWork) AcceptsPreviousDigest(digest string) bool {
+	return w.PreviousDigest != "" && digest == w.PreviousDigest
 }
 func deletionHash(s string) bool {
 	b, e := hex.DecodeString(s)

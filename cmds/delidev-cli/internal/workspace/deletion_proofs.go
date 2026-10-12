@@ -49,11 +49,12 @@ func ValidateFreshDeletionWorkspaceProof(root string, w domain.SessionDeletionWo
 		return false, RequireNoKeyedDeletionWorkspaceProof(root, w)
 	}
 	var legacy deletionWorkspaceProof
-	if err != nil || domain.Decode(legacyRaw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() {
+	if err != nil || domain.Decode(legacyRaw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() && !w.AcceptsPreviousDigest(legacy.Digest) {
 		return false, domain.SessionDeletionPending()
 	}
 	legacy.Version = 2
 	legacy.Identity = w.Identity()
+	legacy.Digest = w.Digest()
 	if !validDeletionWorkspaceProof(legacy, w) {
 		return false, domain.SessionDeletionPending()
 	}
@@ -91,7 +92,16 @@ func RecoverInitialDeletionWorkspaceProof(root string, w domain.SessionDeletionW
 	}
 	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
 	var proof deletionWorkspaceProof
-	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) || requireExisting && !proof.Removed {
+	if err != nil || domain.Decode(raw, &proof) != nil {
+		return domain.SessionDeletionPending()
+	}
+	if w.AcceptsPreviousDigest(proof.Digest) {
+		if err := MigrateKeyedDeletionWorkspaceProof(root, w, requireExisting); err != nil {
+			return domain.SessionDeletionPending()
+		}
+		proof.Digest = w.Digest()
+	}
+	if !validDeletionWorkspaceProof(proof, w) || requireExisting && !proof.Removed {
 		return domain.SessionDeletionPending()
 	}
 	return nil
@@ -125,7 +135,7 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 		return nil
 	}
 	var legacy deletionWorkspaceProof
-	if err != nil || domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() {
+	if err != nil || domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() && !w.AcceptsPreviousDigest(legacy.Digest) {
 		return domain.SessionDeletionPending()
 	}
 	if requireExisting && !legacy.Removed {
@@ -133,6 +143,7 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 	}
 	legacy.Version = 2
 	legacy.Identity = w.Identity()
+	legacy.Digest = w.Digest()
 	if !validDeletionWorkspaceProof(legacy, w) {
 		return domain.SessionDeletionPending()
 	}
@@ -158,6 +169,45 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 		return domain.SessionDeletionPending()
 	}
 	if security.SyncParent(legacyPath) != nil {
+		return domain.SessionDeletionPending()
+	}
+	return nil
+}
+
+// MigrateKeyedDeletionWorkspaceProof preserves an exact legacy receipt while
+// the Worker migrates the matching session marker and Worker receipt. It never
+// creates a missing proof, and a started removal requires the removed stage.
+func MigrateKeyedDeletionWorkspaceProof(root string, w domain.SessionDeletionWork, requireExisting bool) error {
+	if w.Validate() != nil {
+		return domain.SessionDeletionPending()
+	}
+	paths, err := SessionDeletionProofPaths(root, w)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if errors.Is(err, os.ErrNotExist) {
+		if requireExisting {
+			return domain.SessionDeletionPending()
+		}
+		return nil
+	}
+	var proof deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &proof) != nil || proof.Version != 2 || proof.Identity != w.Identity() || proof.Digest != w.Digest() && !w.AcceptsPreviousDigest(proof.Digest) {
+		return domain.SessionDeletionPending()
+	}
+	proof.Digest = w.Digest()
+	if !validDeletionWorkspaceProof(proof, w) || requireExisting && !proof.Removed {
+		return domain.SessionDeletionPending()
+	}
+	encoded, err := json.Marshal(proof)
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	if bytes.Equal(raw, encoded) {
+		return nil
+	}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, proof); err != nil || security.SyncParent(paths.Workspace) != nil {
 		return domain.SessionDeletionPending()
 	}
 	return nil

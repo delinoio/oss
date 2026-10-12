@@ -25,10 +25,11 @@ type sessionDeletionMarker struct {
 }
 
 type sessionDeletionMarkerObligation struct {
-	Identity domain.SessionDeletionIdentity `json:"identity"`
-	Digest   string                         `json:"digest"`
-	ReportID domain.ID                      `json:"report_id"`
-	Phase    sessionDeletionMarkerPhase     `json:"phase"`
+	Identity       domain.SessionDeletionIdentity `json:"identity"`
+	Digest         string                         `json:"digest"`
+	PreviousDigest string                         `json:"previous_digest,omitempty"`
+	ReportID       domain.ID                      `json:"report_id"`
+	Phase          sessionDeletionMarkerPhase     `json:"phase"`
 }
 
 type sessionDeletionMarkerPhase uint8
@@ -41,17 +42,17 @@ const (
 )
 
 func deletionMarker(w domain.SessionDeletionWork) sessionDeletionMarker {
-	return sessionDeletionMarker{Version: 3, ServerID: w.ServerID, SessionID: w.SessionID, DeletionID: w.DeletionID, MachineID: w.MachineID}
+	return sessionDeletionMarker{Version: 4, ServerID: w.ServerID, SessionID: w.SessionID, DeletionID: w.DeletionID, MachineID: w.MachineID}
 }
 
 func validDeletionMarker(marker sessionDeletionMarker, w domain.SessionDeletionWork) bool {
-	if marker.Version != 3 || marker.ServerID != w.ServerID || marker.SessionID != w.SessionID || marker.DeletionID != w.DeletionID || marker.MachineID != w.MachineID || len(marker.Obligations) > domain.MaxSessionDeletionJobs {
+	if (marker.Version != 3 && marker.Version != 4) || marker.ServerID != w.ServerID || marker.SessionID != w.SessionID || marker.DeletionID != w.DeletionID || marker.MachineID != w.MachineID || len(marker.Obligations) > domain.MaxSessionDeletionJobs {
 		return false
 	}
 	seen := make(map[domain.ID]bool, len(marker.Obligations))
 	for _, obligation := range marker.Obligations {
 		identity := obligation.Identity
-		if identity.Validate() != nil || identity.ServerID != marker.ServerID || identity.SessionID != marker.SessionID || identity.DeletionID != marker.DeletionID || identity.MachineID != marker.MachineID || seen[identity.DeviceID] || len(obligation.Digest) != 64 || obligation.ReportID.Validate() != nil || obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerPublished && obligation.Phase != sessionDeletionMarkerInitialWorkspaceImport && obligation.Phase != sessionDeletionMarkerLegacyWorkspaceImport {
+		if identity.Validate() != nil || identity.ServerID != marker.ServerID || identity.SessionID != marker.SessionID || identity.DeletionID != marker.DeletionID || identity.MachineID != marker.MachineID || seen[identity.DeviceID] || len(obligation.Digest) != 64 || obligation.ReportID.Validate() != nil || obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerPublished && obligation.Phase != sessionDeletionMarkerInitialWorkspaceImport && obligation.Phase != sessionDeletionMarkerLegacyWorkspaceImport || obligation.PreviousDigest != "" && (marker.Version != 4 || len(obligation.PreviousDigest) != 64) {
 			return false
 		}
 		seen[identity.DeviceID] = true
@@ -62,10 +63,23 @@ func validDeletionMarker(marker sessionDeletionMarker, w domain.SessionDeletionW
 func markerObligation(marker *sessionDeletionMarker, w domain.SessionDeletionWork) (*sessionDeletionMarkerObligation, bool) {
 	for i := range marker.Obligations {
 		if marker.Obligations[i].Identity.DeviceID == w.DeviceID {
-			if marker.Obligations[i].Identity != w.Identity() || marker.Obligations[i].Digest != w.Digest() {
+			obligation := &marker.Obligations[i]
+			if obligation.Identity != w.Identity() {
 				return nil, false
 			}
-			return &marker.Obligations[i], true
+			if obligation.Digest == w.Digest() {
+				if obligation.PreviousDigest != "" && !w.AcceptsPreviousDigest(obligation.PreviousDigest) {
+					return nil, false
+				}
+				return obligation, true
+			}
+			if w.AcceptsPreviousDigest(obligation.Digest) && (obligation.PreviousDigest == "" || obligation.PreviousDigest == obligation.Digest) {
+				obligation.PreviousDigest = obligation.Digest
+				obligation.Digest = w.Digest()
+				marker.Version = 4
+				return obligation, true
+			}
+			return nil, false
 		}
 	}
 	if len(marker.Obligations) >= domain.MaxSessionDeletionJobs {
@@ -87,6 +101,10 @@ func writeDeletionMarker(path string, marker sessionDeletionMarker) error {
 }
 func validDeletionProof(proof sessionDeletionProof, w domain.SessionDeletionWork) bool {
 	return proof.Version == 2 && proof.Identity == w.Identity() && proof.Digest == w.Digest() && proof.ReportID.Validate() == nil && (!proof.Complete || proof.RemovalStarted) && (!proof.WorkspaceRetired || proof.Complete)
+}
+
+func validPreviousDeletionProof(proof sessionDeletionProof, w domain.SessionDeletionWork) bool {
+	return proof.Version == 2 && proof.Identity == w.Identity() && w.AcceptsPreviousDigest(proof.Digest) && proof.ReportID.Validate() == nil && (!proof.Complete || proof.RemovalStarted) && (!proof.WorkspaceRetired || proof.Complete)
 }
 
 func sessionDeletionUsesWorkspace(w domain.SessionDeletionWork) bool {
@@ -130,7 +148,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 	keyedRaw, keyErr := security.ReadPrivate(paths.Worker, 4096)
 	var keyed sessionDeletionProof
 	if keyErr == nil {
-		if domain.Decode(keyedRaw, &keyed) != nil || !validDeletionProof(keyed, w) {
+		if domain.Decode(keyedRaw, &keyed) != nil || !validDeletionProof(keyed, w) && !validPreviousDeletionProof(keyed, w) {
 			return pending()
 		}
 	} else if !errors.Is(keyErr, os.ErrNotExist) {
@@ -146,14 +164,21 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		switch header.Version {
 		case 1:
 			var legacy sessionDeletionProof
-			if domain.Decode(legacyRaw, &legacy) != nil || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.WorkspaceRetired || legacy.Digest != w.Digest() || legacy.ReportID.Validate() != nil || legacy.Complete && !legacy.RemovalStarted {
+			if domain.Decode(legacyRaw, &legacy) != nil || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.WorkspaceRetired || legacy.Digest != w.Digest() && !w.AcceptsPreviousDigest(legacy.Digest) || legacy.ReportID.Validate() != nil || legacy.Complete && !legacy.RemovalStarted {
 				return pending()
 			}
 			legacy.Version = 2
 			legacy.Identity = w.Identity()
+			legacy.Digest = w.Digest()
 			expected, _ := json.Marshal(legacy)
-			if keyErr == nil && !bytes.Equal(keyedRaw, expected) {
-				return pending()
+			if keyErr == nil {
+				if validPreviousDeletionProof(keyed, w) {
+					keyed.Digest = w.Digest()
+				}
+				keyedExpected, err := json.Marshal(keyed)
+				if err != nil || !bytes.Equal(keyedExpected, expected) {
+					return pending()
+				}
 			}
 			hasLegacyWorkspaceProof := false
 			if sessionDeletionUsesWorkspace(w) {
@@ -209,22 +234,41 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			if domain.Decode(legacyRaw, &oldMarker) != nil || oldMarker.Version != 2 || oldMarker.ServerID != w.ServerID || oldMarker.SessionID != w.SessionID || oldMarker.DeletionID != w.DeletionID || oldMarker.MachineID != w.MachineID || keyErr != nil {
 				return pending()
 			}
+			if !validDeletionProof(keyed, w) {
+				if !validPreviousDeletionProof(keyed, w) {
+					return pending()
+				}
+				keyed.Digest = w.Digest()
+				if writeJSON(paths.Worker, keyed) != nil || security.SyncParent(paths.Worker) != nil {
+					return pending()
+				}
+			}
 			proof = keyed
 			marker = deletionMarker(w)
 			marker.Obligations = []sessionDeletionMarkerObligation{{Identity: w.Identity(), Digest: w.Digest(), ReportID: keyed.ReportID, Phase: sessionDeletionMarkerPublished}}
 			if writeDeletionMarker(markerPath, marker) != nil {
 				return pending()
 			}
+			if w.PreviousDigest != "" && workspace.MigrateKeyedDeletionWorkspaceProof(root, w, keyed.RemovalStarted && !keyed.WorkspaceRetired) != nil {
+				return pending()
+			}
 			if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil {
 				return pending()
 			}
-		case 3:
+		case 3, 4:
 			var marker sessionDeletionMarker
 			if domain.Decode(legacyRaw, &marker) != nil || !validDeletionMarker(marker, w) {
 				return pending()
 			}
 			obligation, exists := markerObligation(&marker, w)
 			if !exists {
+				return pending()
+			}
+			if keyErr == nil && keyed.ReportID != obligation.ReportID {
+				return pending()
+			}
+			migratingDigest := obligation.PreviousDigest != ""
+			if migratingDigest && writeDeletionMarker(markerPath, marker) != nil {
 				return pending()
 			}
 			if obligation.Phase == sessionDeletionMarkerInitialWorkspaceImport && !sessionDeletionUsesWorkspace(w) {
@@ -234,10 +278,22 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 				return pending()
 			}
 			if keyErr == nil {
-				if keyed.ReportID != obligation.ReportID {
-					return pending()
+				if !validDeletionProof(keyed, w) {
+					if !validPreviousDeletionProof(keyed, w) {
+						return pending()
+					}
+					keyed.Digest = w.Digest()
+					if writeJSON(paths.Worker, keyed) != nil || security.SyncParent(paths.Worker) != nil {
+						return pending()
+					}
 				}
 				proof = keyed
+				if w.PreviousDigest != "" && obligation.Phase != sessionDeletionMarkerInitial && obligation.Phase != sessionDeletionMarkerInitialWorkspaceImport && obligation.Phase != sessionDeletionMarkerLegacyWorkspaceImport {
+					requireExisting := keyed.RemovalStarted && !keyed.WorkspaceRetired
+					if workspace.MigrateKeyedDeletionWorkspaceProof(root, w, requireExisting) != nil {
+						return pending()
+					}
+				}
 				if obligation.Phase == sessionDeletionMarkerInitial {
 					if workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
 						return pending()
@@ -280,6 +336,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 					return pending()
 				}
 				obligation.Phase = sessionDeletionMarkerPublished
+			}
+			if migratingDigest {
+				obligation.PreviousDigest = ""
 				if writeDeletionMarker(markerPath, marker) != nil {
 					return pending()
 				}

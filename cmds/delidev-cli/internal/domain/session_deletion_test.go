@@ -37,3 +37,26 @@ func TestSessionDeletionWorkHonorsFullCopyCapacity(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionDeletionWorkPreviousDigestIsCanonicalAndOwnerBound(t *testing.T) {
+	legacy := deletionWorkWithCopies(1)
+	current := legacy
+	current.SharedCleanupOwnerDeviceID = current.DeviceID
+	current.PreviousDigest = legacy.Digest()
+	if err := current.Validate(); err != nil || current.Digest() == legacy.Digest() || !current.AcceptsPreviousDigest(legacy.Digest()) {
+		t.Fatal("canonical owner migration was not accepted", err)
+	}
+
+	tampered := current
+	tampered.Copies = append([]SessionDeletionCopy(nil), current.Copies...)
+	tampered.Copies[0].Digest = strings.Repeat("b", 64)
+	if err := tampered.Validate(); err == nil {
+		t.Fatal("previous digest authorized changed deletion work", err)
+	}
+
+	ownerless := current
+	ownerless.SharedCleanupOwnerDeviceID = ""
+	if err := ownerless.Validate(); err == nil {
+		t.Fatal("previous digest accepted without the derived owner")
+	}
+}

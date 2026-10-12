@@ -169,6 +169,106 @@ func TestSessionDeletionPublishedFenceDoesNotRecreateMissingWorkerProof(t *testi
 	}
 }
 
+func TestLegacySharedOwnerDigestMigrationPreservesFencedProgress(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	legacy := works[0]
+	legacy.SharedCleanupOwnerDeviceID = ""
+	legacy.PreviousDigest = ""
+	previousDigest := legacy.Digest()
+	work := legacy
+	work.SharedCleanupOwnerDeviceID = work.DeviceID
+	work.PreviousDigest = previousDigest
+	if err := work.Validate(); err != nil {
+		t.Fatal("derived-owner work was invalid", err)
+	}
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportID := domain.NewID()
+	workerProof := sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: previousDigest, ReportID: reportID, RemovalStarted: true}
+	workspaceProof := map[string]any{"version": 2, "identity": work.Identity(), "digest": previousDigest, "removed": true}
+	if err := writeJSON(paths.Worker, workerProof); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Workspace, workspaceProof); err != nil {
+		t.Fatal(err)
+	}
+	marker := sessionDeletionMarker{Version: 3, ServerID: work.ServerID, SessionID: work.SessionID, DeletionID: work.DeletionID, MachineID: work.MachineID, Obligations: []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: previousDigest, ReportID: reportID, Phase: sessionDeletionMarkerPublished}}}
+	markerPath := sessionDeletionPath(config.Root, work.SessionID)
+	if err := writeDeletionMarker(markerPath, marker); err != nil {
+		t.Fatal(err)
+	}
+
+	proof, _, lock, err := loadSessionDeletionProof(config.Root, work)
+	if err != nil {
+		t.Fatal("fenced digest migration failed", err)
+	}
+	lock.Close()
+	if proof.ReportID != reportID || proof.Digest != work.Digest() || !proof.RemovalStarted {
+		t.Fatal("Worker progress changed during digest migration", proof)
+	}
+	var migratedWorker sessionDeletionProof
+	workerRaw, err := security.ReadPrivate(paths.Worker, 4096)
+	if err != nil || domain.Decode(workerRaw, &migratedWorker) != nil || migratedWorker.Digest != work.Digest() || migratedWorker.ReportID != reportID || !migratedWorker.RemovalStarted {
+		t.Fatal("keyed Worker proof did not preserve the original stage", err)
+	}
+	var migratedWorkspace map[string]any
+	workspaceRaw, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil || json.Unmarshal(workspaceRaw, &migratedWorkspace) != nil || migratedWorkspace["digest"] != work.Digest() || migratedWorkspace["removed"] != true {
+		t.Fatal("keyed workspace proof did not preserve its removed stage", err)
+	}
+	var migratedMarker sessionDeletionMarker
+	markerRaw, err := security.ReadPrivate(markerPath, domain.MaxSessionDeletionBytes)
+	if err != nil || domain.Decode(markerRaw, &migratedMarker) != nil || migratedMarker.Version != 4 || len(migratedMarker.Obligations) != 1 || migratedMarker.Obligations[0].Digest != work.Digest() || migratedMarker.Obligations[0].PreviousDigest != "" || migratedMarker.Obligations[0].ReportID != reportID || migratedMarker.Obligations[0].Phase != sessionDeletionMarkerPublished {
+		t.Fatal("admission marker did not finish the digest migration", err)
+	}
+
+	proof, _, lock, err = loadSessionDeletionProof(config.Root, work)
+	if err != nil {
+		t.Fatal("migrated proof did not replay", err)
+	}
+	lock.Close()
+	if proof.ReportID != reportID || !proof.RemovalStarted {
+		t.Fatal("replay changed the migrated receipt", proof)
+	}
+}
+
+func TestLegacySharedOwnerDigestMigrationDoesNotRecreatePublishedProgress(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	legacy := works[0]
+	legacy.SharedCleanupOwnerDeviceID = ""
+	legacy.PreviousDigest = ""
+	previousDigest := legacy.Digest()
+	work := legacy
+	work.SharedCleanupOwnerDeviceID = work.DeviceID
+	work.PreviousDigest = previousDigest
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := sessionDeletionMarker{Version: 3, ServerID: work.ServerID, SessionID: work.SessionID, DeletionID: work.DeletionID, MachineID: work.MachineID, Obligations: []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: previousDigest, ReportID: domain.NewID(), Phase: sessionDeletionMarkerPublished}}}
+	markerPath := sessionDeletionPath(config.Root, work.SessionID)
+	if err := writeDeletionMarker(markerPath, marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": work.Identity(), "digest": previousDigest, "removed": true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("published fence recreated its lost Worker proof", err)
+	}
+	if _, err := os.Lstat(paths.Worker); !os.IsNotExist(err) {
+		t.Fatal("lost Worker proof was recreated", err)
+	}
+}
+
 func TestSessionDeletionInitialFenceRecoversExactReportID(t *testing.T) {
 	config, works := failedDeletionObligations(t)
 	work := works[0]

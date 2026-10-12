@@ -179,7 +179,7 @@ func TestSessionDeletionRestoresSingleLegacySharedCleanupOwner(t *testing.T) {
 		t.Fatal("legacy deletion plan was not reconciled", err)
 	}
 	work := plans[0].Workers[0].Work
-	if work.SharedCleanupOwnerDeviceID != work.DeviceID || work.Digest() == legacyDigest {
+	if work.SharedCleanupOwnerDeviceID != work.DeviceID || work.Digest() == legacyDigest || work.PreviousDigest != legacyDigest || work.Validate() != nil {
 		t.Fatal("single original path owner was not restored", work)
 	}
 	if plans[0].Revision != deletion.Revision+1 {
@@ -190,7 +190,7 @@ func TestSessionDeletionRestoresSingleLegacySharedCleanupOwner(t *testing.T) {
 	if err != nil || len(replayed) != 1 {
 		t.Fatal("reconciled plan replay failed", err)
 	}
-	if replayed[0].Revision != plans[0].Revision || replayed[0].Workers[0].Work.Digest() != work.Digest() {
+	if replayed[0].Revision != plans[0].Revision || replayed[0].Workers[0].Work.Digest() != work.Digest() || replayed[0].Workers[0].Work.PreviousDigest != legacyDigest {
 		t.Fatal("legacy owner migration was not stable on replay")
 	}
 }

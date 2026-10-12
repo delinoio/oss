@@ -545,6 +545,7 @@ func reconcileUnambiguousLegacySharedCleanupOwners(v *SessionDeletion) bool {
 		if _, exists := owners[work.MachineID][work.DeviceID]; !exists {
 			continue
 		}
+		work.PreviousDigest = work.Digest()
 		work.SharedCleanupOwnerDeviceID = work.DeviceID
 		changed = true
 	}
