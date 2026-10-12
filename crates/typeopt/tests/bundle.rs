@@ -999,6 +999,27 @@ fn rejects_bundles_with_symbolic_links() {
     assert!(!temp.path().join("out").exists());
 }
 
+/// A chunk that a page loads as a classic script stays a boundary even when
+/// a module also imports it.
+#[test]
+fn keeps_chunks_that_pages_load_as_classic_scripts() {
+    let shared = r#"function sharedGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var sharedState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="./shared.js"></script><script type="module" src="./index.js"></script>"#,
+        ),
+        ("shared.js", shared),
+        (
+            "index.js",
+            r#"import"./shared.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "shared.js"), shared);
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [

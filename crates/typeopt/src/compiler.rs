@@ -270,7 +270,7 @@ impl Project {
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
-        let scripts = html_module_scripts(dir)?;
+        let (scripts, classic) = html_scripts(dir)?;
         let loaded_by_html = |chunk: &String| scripts.contains(chunk);
         let mut modules = imported.clone();
         modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
@@ -282,7 +282,7 @@ impl Project {
             .filter(|c| !imported.contains(*c) || loaded_by_html(c))
             .cloned()
             .collect();
-        crate::app::set_bundle_modules(modules);
+        crate::app::set_bundle_modules(modules, classic);
         tracing::info!(
             chunks = chunks.len(),
             entries = project.entries.len(),
@@ -810,12 +810,14 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
 }
 
 /// Canonical paths of bundle files that HTML pages load with
-/// `<script type="module">`. A relative `src` resolves against the page's
-/// `<base href>` or the page itself; a root-relative `src` resolves against
-/// the bundle directory, dropping
+/// `<script type="module">`, and of those they load as classic scripts. A
+/// relative `src` resolves against the page's `<base href>` or the page itself;
+/// a root-relative `src` resolves against the bundle directory, dropping
 /// leading segments of a deployment base path when needed. External URLs
 /// are ignored.
-fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeSet<String>> {
+type Paths = std::collections::BTreeSet<String>;
+
+fn html_scripts(dir: &std::path::Path) -> Result<(Paths, Paths)> {
     fn resolve(dir: &std::path::Path, page: &std::path::Path, src: &str) -> Option<String> {
         let src = src.split(['?', '#']).next()?;
         if src.is_empty()
@@ -843,13 +845,14 @@ fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeS
     fn walk(
         root: &std::path::Path,
         dir: &std::path::Path,
-        out: &mut std::collections::BTreeSet<String>,
+        modules: &mut Paths,
+        classic: &mut Paths,
     ) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
             let entry = entry?;
             let path = entry.path();
             if entry.file_type()?.is_dir() {
-                walk(root, &path, out)?;
+                walk(root, &path, modules, classic)?;
             } else if path.extension().is_some_and(|e| e == "html") {
                 let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
                 let tags = crate::bundle::html_tags(&html);
@@ -863,11 +866,17 @@ fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeS
                         href[..href.rfind('/').map_or(0, |at| at + 1)].to_owned()
                     });
                 for tag in &tags {
-                    if tag.name != "script"
-                        || !tag
-                            .attribute("type")
-                            .is_some_and(|t| t.trim().eq_ignore_ascii_case("module"))
-                    {
+                    if tag.name != "script" {
+                        continue;
+                    }
+                    let kind = tag.attribute("type").map(|t| t.trim().to_ascii_lowercase());
+                    let module = kind.as_deref() == Some("module");
+                    // Classic scripts: no type or a JavaScript MIME type.
+                    let script = module
+                        || kind.as_deref().is_none_or(|t| {
+                            t.is_empty() || t.contains("javascript") || t.contains("ecmascript")
+                        });
+                    if !script {
                         continue;
                     }
                     let Some(src) = tag.attribute("src").map(str::trim) else {
@@ -885,16 +894,20 @@ fn html_module_scripts(dir: &std::path::Path) -> Result<std::collections::BTreeS
                         _ => src.to_owned(),
                     };
                     if let Some(path) = resolve(root, &path, &src) {
-                        out.insert(path);
+                        if module {
+                            modules.insert(path);
+                        } else {
+                            classic.insert(path);
+                        }
                     }
                 }
             }
         }
         Ok(())
     }
-    let mut out = std::collections::BTreeSet::new();
-    walk(dir, dir, &mut out)?;
-    Ok(out)
+    let (mut modules, mut classic) = (Paths::new(), Paths::new());
+    walk(dir, dir, &mut modules, &mut classic)?;
+    Ok((modules, classic))
 }
 
 /// Whether a file uses `eval` (direct or aliased) or `with`, which can look

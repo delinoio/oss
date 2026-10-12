@@ -61,8 +61,15 @@ mod app {
     /// loaded by an HTML module script).
     static BUNDLE_MODULES: std::sync::OnceLock<std::collections::BTreeSet<String>> =
         std::sync::OnceLock::new();
-    pub(crate) fn set_bundle_modules(modules: std::collections::BTreeSet<String>) {
+    /// Bundle chunks that an HTML page loads as a classic script.
+    static BUNDLE_CLASSIC: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_modules(
+        modules: std::collections::BTreeSet<String>,
+        classic: std::collections::BTreeSet<String>,
+    ) {
         let _ = BUNDLE_MODULES.set(modules);
+        let _ = BUNDLE_CLASSIC.set(classic);
     }
     /// Whether a bundle chunk is an unchecked boundary: excluded by the
     /// operator, or not known to be an ES module (a classic script shares
@@ -73,6 +80,10 @@ mod app {
         BUNDLE_EXCLUDE
             .get()
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
+            // A chunk that any page loads as a classic script shares its
+            // top-level bindings as globals there, even if it is also
+            // imported as a module.
+            || BUNDLE_CLASSIC.get().is_some_and(|c| c.contains(path))
             || !(esm_statements
                 || path.ends_with(".mjs")
                 || BUNDLE_MODULES.get().is_some_and(|m| m.contains(path)))
