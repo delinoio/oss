@@ -99,6 +99,11 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		if err := validateRecoveryPreparation(tx, r.ID, session, preparation); err != nil {
 			return nil, err
 		}
+		if _, machine, err := activeMachine(tx, session.MachineID); err != nil {
+			return nil, err
+		} else if err := requireNamedPreparation(machine, claim.Input); err != nil {
+			return nil, err
+		}
 		digest := sha256.Sum256(assigned.Data)
 		input := workspace.RecoveryRequest{JobID: original.ID, InstanceID: claim.InstanceID, Revision: assigned.Revision, AssignmentDigest: hex.EncodeToString(digest[:]), Preparation: preparation, Action: action}
 		raw, err := json.Marshal(input)

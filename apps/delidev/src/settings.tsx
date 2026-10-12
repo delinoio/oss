@@ -60,7 +60,11 @@ import {
   useState,
   useId,
 } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AccountQuery,
@@ -213,6 +217,8 @@ function RepositorySaveCompletion({
   const opening = useSettingsOpening();
   const visible = useSettingsTaskVisible();
   const notifications = useNotifications();
+  const queryClient = useQueryClient();
+  const transport = useTransport();
   const identity = confirmedRepository(observation.output);
   const confirmed = Boolean(
     observation.state === JobState.Succeeded &&
@@ -223,31 +229,142 @@ function RepositorySaveCompletion({
     identity?.id === submission.repositoryId &&
     identity.revision > submission.expectedRevision,
   );
+  const repository = useQuery(
+    ResourceQuery.getResource,
+    { kind: EntityKind.REPOSITORY, id: submission?.repositoryId ?? "" },
+    { enabled: false, retry: false },
+  );
+  const [readAttempt, setReadAttempt] = useState(0);
+  const [readState, setReadState] = useState<{
+    owner: string;
+    pending: boolean;
+    error?: unknown;
+    unverified?: boolean;
+  }>();
+  const readSequence = useRef(0);
+  const completion = useRef({ saved, notifications });
+  const owner =
+    confirmed && opening && identity
+      ? `${opening.id}:${job.id}:${observation.current?.revision}:${identity.id}:${identity.revision}:${submission?.expectedRevision}`
+      : undefined;
+  const eligible = Boolean(
+    owner && active && visible && opening && !opening.disposed,
+  );
+  useLayoutEffect(() => {
+    completion.current = { saved, notifications };
+  });
+  useLayoutEffect(() => {
+    // Invalidate pending evidence before passive cleanup. A hidden/replaced
+    // task or changed job output must never adopt an earlier read result.
+    readSequence.current += 1;
+    return () => {
+      readSequence.current += 1;
+    };
+  }, [owner, eligible, readAttempt]);
   useEffect(() => {
-    if (!confirmed || !active || !visible || !opening || opening.disposed)
-      return;
+    if (!eligible || !owner || !identity || !opening) return;
     const key = `${opening.id}:${job.id}`;
     if (completed.has(key)) return;
-    // Commit the presentation guard before notifying or closing. Strict Mode
-    // and repeated observations cannot finish this original opening twice.
-    completed.add(key);
-    notifications.notify({
-      kind: ToastKind.Success,
-      message: ownedMessage("settings.savedKind.REPOSITORY"),
-      id: job.id,
-    });
-    saved();
+    const sequence = readSequence.current;
+    let current = true;
+    const ownsRead = () =>
+      current && sequence === readSequence.current && !opening.disposed;
+    setReadState({ owner, pending: true });
+    const read = async () => {
+      // Refetch can join an earlier first read when the cache has no data.
+      // Cancel that exact read first so changed output owns a new request.
+      await queryClient.cancelQueries({
+        queryKey: createConnectQueryKey({
+          schema: ResourceQuery.getResource,
+          transport,
+          input: { kind: EntityKind.REPOSITORY, id: identity.id },
+          cardinality: "finite",
+        }),
+        exact: true,
+      });
+      if (!ownsRead()) return;
+      return repository.refetch({ cancelRefetch: true });
+    };
+    void read().then(
+      (result) => {
+        if (!result || !ownsRead()) return;
+        const value = result.data?.resource;
+        const verified = Boolean(
+          !result.error &&
+          value?.id === identity.id &&
+          value.kind === EntityKind.REPOSITORY &&
+          supportsResourceSchema(value) &&
+          value.revision > 0n &&
+          value.revision >= identity.revision,
+        );
+        // Only this explicit read's returned result can release the job.
+        // Invalidation and cached query data are not fresh completion proof.
+        if (!verified) {
+          setReadState({
+            owner,
+            pending: false,
+            error: result.error,
+            unverified: !result.error,
+          });
+          console.warn("delidev.settings.repository_completion_read_failed", {
+            phase: result.error ? "read" : "verification",
+          });
+          return;
+        }
+        if (completed.has(key)) return;
+        // Record the guard before notifying or closing. Strict Mode and
+        // repeated observations cannot finish this original opening twice.
+        completed.add(key);
+        completion.current.notifications.notify({
+          kind: ToastKind.Success,
+          message: ownedMessage("settings.savedKind.REPOSITORY"),
+          id: job.id,
+        });
+        completion.current.saved();
+      },
+      (error: unknown) => {
+        if (!ownsRead()) return;
+        setReadState({ owner, pending: false, error });
+        console.warn("delidev.settings.repository_completion_read_failed", {
+          phase: "read",
+        });
+      },
+    );
+    return () => {
+      current = false;
+    };
   }, [
-    confirmed,
-    active,
-    visible,
+    owner,
+    eligible,
+    readAttempt,
     opening,
     job.id,
-    notifications,
-    saved,
+    identity?.id,
+    identity?.revision,
+    repository.refetch,
+    queryClient,
+    transport,
     completed,
   ]);
-  if (observation.state !== JobState.Succeeded || confirmed) return null;
+  if (confirmed) {
+    const read = readState?.owner === owner ? readState : undefined;
+    return (
+      <>
+        <Problem error={read?.error} />
+        {read?.unverified ? (
+          <p role="alert">{copy("pull-requests.profileSaveUnverified")}</p>
+        ) : null}
+        <SettingsActionButton
+          icon={SettingsActionIcon.Retry}
+          disabled={!eligible || !read || read.pending}
+          onClick={() => setReadAttempt((attempt) => attempt + 1)}
+        >
+          {copy("ui.retryCurrentRead")}
+        </SettingsActionButton>
+      </>
+    );
+  }
+  if (observation.state !== JobState.Succeeded) return null;
   return (
     <>
       <p role="status">{copy("settings.repositorySaveUnverified")}</p>

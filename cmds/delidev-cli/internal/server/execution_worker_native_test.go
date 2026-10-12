@@ -230,7 +230,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		}
 	}))
 	defer upstream.Close()
-	manager := &workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
+	manager := &workspace.Manager{NamedDirectories: true, Root: filepath.Join(t.TempDir(), "worker")}
 	f := publicationFixtureFromAuthority(t, newConfiguredAuthorityFixture(t, upstream.URL, func(input *domain.ExecutionJobInput) {
 		if questionScenario {
 			input.Input.Mode = domain.PlanMode
@@ -745,7 +745,7 @@ func assertNativeWorkerCheckpoint(t *testing.T, f *publicationFixture, root stri
 	assignmentDigest := sha256.Sum256(original.Data)
 	ref.Completion.Version, ref.Completion.NativeCheckpointDigest = 1, ""
 	inspection := worker.CompletedExecutionRef{ServerID: f.service.Identity.ServerID, DeviceID: f.device, InstanceID: claimed.InstanceID, AssignmentRevision: original.Revision, AssignmentDigest: hex.EncodeToString(assignmentDigest[:]), Checkpoint: ref, Preparation: preparation, Manifest: manifest}
-	evidence, err := worker.InspectCompletedExecution(context.Background(), &workspace.Manager{Root: root}, inspection)
+	evidence, err := worker.InspectCompletedExecution(context.Background(), &workspace.Manager{NamedDirectories: true, Root: root}, inspection)
 	if err != nil || evidence.Completion != completion || evidence.JobID != f.job || evidence.ReportID.Validate() != nil {
 		t.Fatal("native Worker completion could not be independently inspected", err)
 	}

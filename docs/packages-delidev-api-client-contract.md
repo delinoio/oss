@@ -489,3 +489,18 @@ Null/future selectors and mismatched schema versions stay unsupported. Current
 portable exports and reviewed plans use version 7. Source-native version-4 files
 remain importable through reviewed conversion; retired versions 1–3 remain unavailable.
 Expose the named `harness_default_unverified` error without manufacturing a default.
+
+## Startup group timing
+
+Generated Resource.startupTiming exposes optional SessionStartupTiming workspace
+and agent records with exact original job/execution IDs and UTC start/end strings.
+Session documentJson retains its prior closed shape. Consumers validate original
+attempt ownership and nonnegative intervals before display, use paired server
+clock/presence evidence for live time and retain unconfirmed observations without
+animation. Timing grants no execution, retry or recovery authority. Missing older
+peer metadata remains unavailable.
+
+TailscaleService and TailscaleQuery export the generated connection surface under
+the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
+Closed bounded JSON projections retain public observation metadata only; private
+keys, decrypted grants and protected Worker inputs stay Go-owned.

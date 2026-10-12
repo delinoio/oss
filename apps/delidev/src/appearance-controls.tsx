@@ -290,6 +290,15 @@ export function AppearanceControls({
       },
       revision: snapshot.revision,
     });
+  const duplicateReference = (reference: string) => {
+    const custom = p.custom_themes.find((theme) => theme.id === reference);
+    if (custom) duplicate(custom);
+    else {
+      const bundled = palettes[reference as Palette];
+      if (bundled)
+        duplicate({ version: 1, name: label(reference), ...bundled });
+    }
+  };
   const exportTheme = (theme: CustomTheme) => {
     const { id: _, ...file } = theme;
     const blob = new Blob([JSON.stringify(file, null, 2)], {
@@ -319,47 +328,46 @@ export function AppearanceControls({
         {modeControls}
         <div data-settings-search-target="palettes">
           {(["light_palette", "dark_palette"] as const).map((key) => (
-            <label className="appearance-row" key={key}>
-              {text(key)}
-              <select
-                aria-labelledby={`${rowId}-${key}-label`}
-                aria-describedby={`${rowId}-${key}-help`}
-                value={p[key]}
-                onChange={(e) => change(key, e.target.value)}
-              >
-                {Object.values(Palette).map((id) => (
-                  <option key={id} value={id}>
-                    {label(id)}
-                  </option>
-                ))}
-                {p.custom_themes.map((theme) => (
-                  <option key={theme.id} value={theme.id}>
-                    {theme.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="appearance-row appearance-palette-row" key={key}>
+              <label htmlFor={`${rowId}-${key}`}>{text(key)}</label>
+              <div className="appearance-palette-controls">
+                <select
+                  id={`${rowId}-${key}`}
+                  aria-labelledby={`${rowId}-${key}-label`}
+                  aria-describedby={`${rowId}-${key}-help`}
+                  value={p[key]}
+                  onChange={(e) => change(key, e.target.value)}
+                >
+                  {Object.values(Palette).map((id) => (
+                    <option key={id} value={id}>
+                      {label(id)}
+                    </option>
+                  ))}
+                  {p.custom_themes.map((theme) => (
+                    <option key={theme.id} value={theme.id}>
+                      {theme.name}
+                    </option>
+                  ))}
+                </select>
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Copy}
+                  type="button"
+                  aria-label={label(
+                    key === "light_palette"
+                      ? "duplicateLightPalette"
+                      : "duplicateDarkPalette",
+                  )}
+                  aria-describedby={`${rowId}-${key}-help`}
+                  disabled={p.custom_themes.length >= 32}
+                  onClick={() => duplicateReference(p[key])}
+                >
+                  {label("duplicatePalette")}
+                </SettingsActionButton>
+              </div>
+            </div>
           ))}
           {checkbox("color_assistance")}
           <div className="appearance-actions">
-            <SettingsActionButton
-              icon={SettingsActionIcon.Add}
-              type="button"
-              disabled={p.custom_themes.length >= 32}
-              onClick={() => {
-                const id = p.light_palette;
-                const t = p.custom_themes.find((t) => t.id === id);
-                duplicate(
-                  t ?? {
-                    version: 1,
-                    name: label(id),
-                    ...palettes[id as Palette],
-                  },
-                );
-              }}
-            >
-              {label("duplicate")}
-            </SettingsActionButton>
             <SettingsActionButton
               icon={SettingsActionIcon.Upload}
               type="button"

@@ -122,6 +122,9 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 	}
 	ctx, cancel := context.WithDeadline(ctx, request.Deadline)
 	defer cancel()
+	if err := m.requireNamedDirectories(request.Preparation); err != nil {
+		return err
+	}
 	if security.CheckPrivateDir(m.Root) != nil || m.initialize() != nil {
 		return ResultUncertain()
 	}
@@ -171,7 +174,7 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 	}
 	// Continuation identity allows commits and dirty files without requiring a
 	// closed native claim. This observation grants no execution/recovery rights.
-	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger}
+	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger, NamedDirectories: m.NamedDirectories}
 	inspection.Git.readOnly = true
 	inspection.Git.ProcessRoot = m.readProcessRoot(request.Preparation.SessionID)
 	if len(retained.Repositories) > 0 {

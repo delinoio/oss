@@ -87,11 +87,10 @@ export function UsageOverview({
                   : grok
                     ? unit?.units
                     : totals?.units;
-                const valid =
-                  supported &&
-                  (codex
-                    ? Boolean(data.totals)
-                    : grok
+                const valid = codex
+                  ? Boolean(data.totals)
+                  : supported &&
+                    (grok
                       ? Boolean(data.totals)
                       : Boolean(totals) && nativeSupported);
                 const tokens =

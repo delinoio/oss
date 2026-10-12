@@ -342,3 +342,22 @@ apply. A missing applicable native default rejects before input with the named
 resolution does not run a separate probe or add a native version admission gate.
 Historical omission bytes and digests remain unchanged. Native startup still
 validates the actual original process and applied settings before sending input.
+
+## Startup group elapsed observations
+
+The first accepted Running report starts the original workspace or initial-agent
+group using the transaction UTC observation clock. Duplicate sequences and exact
+receipt replay retain the original start. A replacement original job has a
+separate current record; follow-up execution cannot replace initial startup time.
+Descriptive Completed/Input/READY reports never finish Agent timing or fabricate
+acceptance. Workspace freezes in its original preparation settlement; Agent
+freezes at the validated original initial native input acceptance. Matching
+failure, Stop, terminal or lost-owner settlement freezes unfinished records
+without granting success, cleanup, recovery or execution authority.
+
+The private optional Session timing contains only current workspace/agent job,
+optional execution, UTC start and optional end. No history or legacy backfill is
+created. The common Resource projection removes the private key from every public
+Session document and exposes the additive typed envelope instead. Worker reports,
+closed progress attempts, assignments, checkpoints and digests retain their
+original shapes. No Worker field, RPC, capability or migration is introduced.

@@ -302,3 +302,34 @@ func TestTurnTimingOpenCodePrimaryPartsShareOriginalAtomicTerminal(t *testing.T)
 		}
 	}
 }
+
+func TestInitialAgentTimingEndsAtVerifiedAcceptance(t *testing.T) {
+	f := newPublicationFixture(t)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	accepted := time.Date(2026, 10, 12, 0, 0, 20, 0, time.UTC)
+	start := accepted.Add(-8 * time.Second)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.original-startup-timing", nil, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session.StartupTiming = &domain.SessionStartupTiming{Agent: &domain.StartupGroupTiming{JobID: f.job, ExecutionID: f.input.ExecutionID, StartedAt: start}}
+		return tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := domain.NewID()
+	event := f.event(domain.ExecutionInputAccepted, 2)
+	timingPublication(t, f, event, accepted, receipt)
+	original := timingSession(t, f).StartupTiming.Agent
+	if original.FinishedAt == nil || original.FinishedAt.Sub(original.StartedAt) != 8*time.Second {
+		t.Fatal("acceptance did not freeze startup time")
+	}
+	timingPublication(t, f, event, accepted.Add(time.Hour), receipt)
+	replay := timingSession(t, f).StartupTiming.Agent
+	if !replay.StartedAt.Equal(original.StartedAt) || !replay.FinishedAt.Equal(*original.FinishedAt) {
+		t.Fatal("replay changed original startup duration")
+	}
+}

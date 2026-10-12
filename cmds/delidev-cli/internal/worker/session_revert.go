@@ -105,7 +105,7 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if domain.Decode(input.Assignment.Preparation, &prep) != nil || domain.Decode(input.Assignment.Manifest, &manifest) != nil {
 		return nil, fail()
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	inspection, err := manager.InspectClosedExecution(ctx, workspace.ExecutionPredecessor{JobID: request.JobID, ExecutionID: input.ActionID}, prep, manifest)
 	if err != nil {
 		return nil, err
