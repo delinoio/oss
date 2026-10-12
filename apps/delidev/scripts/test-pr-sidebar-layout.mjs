@@ -379,6 +379,8 @@ try {
           exact: true,
         });
         for (const activation of ["mouse", "Enter", "Space"]) {
+          await refresh.focus();
+          const beforeOutside = await stableLayout(pane);
           const beforeRefresh = await page.evaluate(
             () => window.__prSidebarCatalogReads,
           );
@@ -402,7 +404,7 @@ try {
           assert(await closed.isChecked(), "Refresh retains filter state");
           assert.equal(await details.getAttribute("aria-expanded"), "false", "Outside Refresh activation dismisses visible details");
           assert(await refresh.evaluate((node) => document.activeElement === node), "Outside activation retains clicked focus");
-          unchanged(selectedBefore, await stableLayout(pane), "outside activation preserves sidebar geometry");
+          unchanged(beforeOutside, await stableLayout(pane), "outside activation preserves sidebar geometry");
           await details.click();
           await popupLayout(detailsRegion, "same original details reopens");
         }
