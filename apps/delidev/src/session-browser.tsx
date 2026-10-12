@@ -39,6 +39,12 @@ interface BrowserState {
   tabs: { tabs: { id: string; url: string }[]; selected: string };
   removal_pending: boolean;
 }
+interface BrowserOwner {
+  profileId: string | undefined;
+  retry: number;
+  sessionId: string;
+  accountId: string;
+}
 const idPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function browserProfile(
@@ -233,11 +239,22 @@ function NativeSessionBrowser({
   const [profileId, setProfileId] = useState<string>();
   const [state, setState] = useState<BrowserState>();
   const [failure, setFailure] = useProductMessage();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  const actionBusy = useRef(false);
+  const actionVersion = useRef(0);
+  const setBusy = (value: boolean) => {
+    actionBusy.current = value;
+    setBusyState(value);
+  };
   const [retry, setRetry] = useState(0);
   const [presenting, setPresenting] = useState(false);
   const pendingAction = useRef<
-    { action: BrowserAction; tabId?: string } | undefined
+    {
+      action: BrowserAction;
+      tabId?: string;
+      version: number;
+      owner: BrowserOwner;
+    } | undefined
   >(undefined);
   const needsPresentation = useRef(true);
   needsPresentation.current =
@@ -253,9 +270,50 @@ function NativeSessionBrowser({
   const alive = useRef(true);
   const presentation = useRef("");
   const shortcutAdmission = useRef("");
+  const presentationVisible = useRef(() => false);
   const tabsStore = useSessionTabsStore();
   const activeRef = useRef(active);
   activeRef.current = active;
+  const owner = useRef<BrowserOwner>({
+    profileId,
+    retry,
+    sessionId: session.id,
+    accountId,
+  });
+  owner.current = { profileId, retry, sessionId: session.id, accountId };
+  const observe = (
+    result: BrowserState,
+    original: BrowserOwner,
+    viewId: string,
+    version: number,
+  ) => {
+    if (
+      !alive.current ||
+      !activeRef.current ||
+      !needsPresentation.current ||
+      owner.current.profileId !== original.profileId ||
+      owner.current.retry !== original.retry ||
+      owner.current.sessionId !== original.sessionId ||
+      owner.current.accountId !== original.accountId ||
+      !viewId ||
+      presentation.current !== viewId ||
+      actionVersion.current !== version ||
+      !presentationVisible.current()
+    )
+      return false;
+    setState(result);
+    if (!result.removal_pending && original.profileId)
+      tabsStore.refreshPages(
+        original.sessionId,
+        original.profileId,
+        result.tabs.tabs.map((tab) => ({
+          id: tab.id,
+          title: browserTabTitle(tab.url),
+          label: tab.url,
+        })),
+      );
+    return true;
+  };
   const capabilities = useQuery(
     BrowserQuery.getBrowserCapabilities,
     {},
@@ -298,6 +356,8 @@ function NativeSessionBrowser({
       hideRequired = false,
       hideRetry: number | undefined;
     const node = viewport.current;
+    const original = owner.current;
+    let reading = false;
     const visible = () =>
       activeRef.current &&
       needsPresentation.current &&
@@ -322,6 +382,8 @@ function NativeSessionBrowser({
       }) &&
       node.getBoundingClientRect().width >= 1 &&
       node.getBoundingClientRect().height >= 1;
+    presentationVisible.current = () =>
+      !disposed && !hiding && !hideRequired && visible();
     const bounds = () => {
       const r = node.getBoundingClientRect();
       let left = Math.max(0, r.left),
@@ -410,6 +472,7 @@ function NativeSessionBrowser({
       if (!opened) {
         opening = true;
         const viewId = newRequestId();
+        const version = actionVersion.current;
         ownedViewId = viewId;
         presentation.current = viewId;
         try {
@@ -434,6 +497,17 @@ function NativeSessionBrowser({
           const pending = pendingAction.current;
           pendingAction.current = undefined;
           if (pending) {
+            if (
+              pending.version !== version ||
+              pending.owner.profileId !== original.profileId ||
+              pending.owner.retry !== original.retry ||
+              pending.owner.sessionId !== original.sessionId ||
+              pending.owner.accountId !== original.accountId
+            ) {
+              setBusy(false);
+              setPresenting(false);
+              return;
+            }
             // A picker action restores the original presentation only after its
             // previous Hide settled. Send the explicit resource action once;
             // failure retains the original state and never creates a retry page.
@@ -447,8 +521,10 @@ function NativeSessionBrowser({
                   tabId: pending.tabId,
                 }),
               );
-              if (!disposed && presentation.current === viewId) {
-                setState(changed);
+              if (
+                !disposed &&
+                observe(changed, pending.owner, viewId, pending.version)
+              ) {
                 if (
                   openPage &&
                   [BrowserAction.NewTab, BrowserAction.SelectTab].includes(
@@ -476,7 +552,7 @@ function NativeSessionBrowser({
                 setPresenting(false);
               }
             }
-          } else setState(result);
+          } else if (!observe(result, original, viewId, version)) return;
           if (
             !pending &&
             openPage &&
@@ -512,9 +588,14 @@ function NativeSessionBrowser({
           }
         }
       } else {
-        if (geometry === lastBounds) return;
+        if (reading) {
+          queued = true;
+          return;
+        }
+        if (geometry === lastBounds || actionBusy.current) return;
         resizing = true;
         const viewId = presentation.current;
+        const version = ++actionVersion.current;
         try {
           const result = browserState(
             await invoke<BrowserState>("control_browser", {
@@ -524,9 +605,12 @@ function NativeSessionBrowser({
               bounds: area,
             }),
           );
-          if (!disposed && opened && presentation.current === viewId) {
+          if (
+            !disposed &&
+            opened &&
+            observe(result, original, viewId, version)
+          ) {
             lastBounds = geometry;
-            setState(result);
           }
         } catch {
           lastBounds = "";
@@ -555,17 +639,41 @@ function NativeSessionBrowser({
       childList: true,
     });
     const timer = window.setInterval(() => {
-      if (!opened || disposed || !visible()) return;
-      void invoke<BrowserState>("browser_state", {
-        profileId,
-        viewId: presentation.current,
-      })
+      if (
+        !opened ||
+        disposed ||
+        reading ||
+        opening ||
+        resizing ||
+        hiding ||
+        actionBusy.current ||
+        !visible()
+      )
+        return;
+      // Serialize reads and fence a pre-action read before accepting new labels.
+      reading = true;
+      const viewId = presentation.current;
+      const version = actionVersion.current;
+      void invoke<BrowserState>("browser_state", { profileId, viewId })
         .then((value) => {
-          if (!disposed) setState(browserState(value));
+          if (!disposed)
+            observe(browserState(value), original, viewId, version);
         })
         .catch(() => {
-          if (!disposed)
+          if (
+            !disposed &&
+            visible() &&
+            presentation.current === viewId &&
+            actionVersion.current === version
+          )
             setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4"));
+        })
+        .finally(() => {
+          reading = false;
+          if (queued) {
+            queued = false;
+            void update();
+          }
         });
     }, 1000);
     return () => {
@@ -581,11 +689,19 @@ function NativeSessionBrowser({
     // Reopening after a modal restores native local tabs without another registration.
   }, [profileId, retry]);
   const control = async (action: BrowserAction, tabId?: string) => {
-    if (!profileId || busy || state?.removal_pending) return;
+    if (!profileId || actionBusy.current || state?.removal_pending) return;
+    const original = owner.current;
+    const viewId = presentation.current;
+    const version = ++actionVersion.current;
     setBusy(true);
     setFailure(undefined);
     if (openPage && !presentation.current) {
-      pendingAction.current = { action, tabId };
+      pendingAction.current = {
+        action,
+        tabId,
+        version,
+        owner: { ...original, profileId },
+      };
       setPresenting(true);
       return;
     }
@@ -593,14 +709,13 @@ function NativeSessionBrowser({
       const result = browserState(
         await invoke<BrowserState>("control_browser", {
           profileId,
-          viewId: presentation.current,
+          viewId,
           action,
           url: address,
           tabId,
         }),
       );
-      if (alive.current) {
-        setState(result);
+      if (observe(result, original, viewId, version)) {
         if (
           openPage &&
           [

@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   SessionTabsStore,
   SessionTabKind,
@@ -133,4 +133,49 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
   store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
   expect(store.snapshot("session").tabs).toHaveLength(1);
   expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
+});
+
+it("refreshes only existing exact session/profile/page metadata without selection or order changes", () => {
+  const store = new SessionTabsStore();
+  const page = {
+    kind: SessionTabKind.Page as const,
+    profile: "profile",
+    id: "page",
+    title: "original",
+    label: "https://fixture.test/original",
+  };
+  const foreign = { ...page, profile: "foreign" };
+  store.open("session", page);
+  store.open("session", foreign);
+  store.open("other", page);
+  store.open("session", { kind: SessionTabKind.Files });
+  const previous = store.snapshot("session");
+  const other = store.snapshot("other");
+  const publish = vi.fn();
+  store.subscribe(publish);
+  const pages = [
+    { id: "page", title: "updated", label: "https://fixture.test/updated" },
+    { id: "absent", title: "absent", label: "https://fixture.test/absent" },
+  ];
+  store.refreshPages("session", "profile", pages);
+  expect(publish).toHaveBeenCalledTimes(1);
+  const changed = store.snapshot("session");
+  expect(changed.selected).toBe(previous.selected);
+  expect(changed.tabs.map(sessionTabKey)).toEqual(
+    previous.tabs.map(sessionTabKey),
+  );
+  expect(changed.tabs[1]).toEqual({ ...page, ...pages[0] });
+  expect(changed.tabs[2]).toBe(foreign);
+  expect(store.snapshot("other")).toBe(other);
+  store.refreshPages("session", "profile", pages);
+  store.refreshPages("session", "absent-profile", pages);
+  store.refreshPages("absent-session", "profile", pages);
+  expect(store.snapshot("session")).toBe(changed);
+  expect(publish).toHaveBeenCalledTimes(1);
+  store.close("session", sessionTabKey(page));
+  const closed = store.snapshot("session");
+  publish.mockClear();
+  store.refreshPages("session", "profile", pages);
+  expect(store.snapshot("session")).toBe(closed);
+  expect(publish).not.toHaveBeenCalled();
 });

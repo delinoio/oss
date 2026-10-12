@@ -22,6 +22,13 @@ import {
 } from "@delinoio/delidev-api-client";
 import { MutationIntents } from "./mutation";
 import { SessionBrowser, browserProfile } from "./session-browser";
+import {
+  SessionTabsProvider,
+  SessionTabsStore,
+  SessionTabKind,
+  sessionTabKey,
+  useSessionTabsStore,
+} from "./session-tabs";
 import { BrowserHostProvider } from "./host-capabilities";
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
@@ -68,7 +75,7 @@ it("an unavailable browser host does not register a profile or call native code"
   ).toBeTruthy();
   expect(native).not.toHaveBeenCalled();
 });
-function fixture() {
+function fixture({ tabbed = false } = {}) {
   const accountId = newRequestId(),
     profileId = newRequestId(),
     tabId = newRequestId();
@@ -105,16 +112,28 @@ function fixture() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  function View() {
+  const openPage = vi.fn();
+  let store!: SessionTabsStore;
+  function Browser({ active = true }: { active?: boolean }) {
+    store = useSessionTabsStore();
+    return (
+      <SessionBrowser
+        session={session}
+        accountId={accountId}
+        close={() => {}}
+        active={active}
+        openPage={tabbed ? openPage : undefined}
+      />
+    );
+  }
+  function View({ active = true }: { active?: boolean }) {
     return (
       <TransportProvider transport={transport}>
         <QueryClientProvider client={client}>
           <MutationIntents>
-            <SessionBrowser
-              session={session}
-              accountId={accountId}
-              close={() => {}}
-            />
+            <SessionTabsProvider>
+              <Browser active={active} />
+            </SessionTabsProvider>
           </MutationIntents>
         </QueryClientProvider>
       </TransportProvider>
@@ -129,6 +148,10 @@ function fixture() {
     register,
     local,
     View,
+    openPage,
+    get store() {
+      return store;
+    },
   };
 }
 async function open() {
@@ -740,4 +763,247 @@ it("fences a retained Browser under the maximized upper inert region through exa
   } finally {
     view.unmount();
   }
+});
+
+
+function pageDescriptor(f: ReturnType<typeof fixture>) {
+  return {
+    kind: SessionTabKind.Page as const,
+    profile: f.profileId,
+    id: f.tabId,
+    title: "fixture.test/page",
+    label: f.local.tabs.tabs[0].url,
+  };
+}
+function pollCallback() {
+  const interval = window.setInterval.bind(window);
+  let poll!: () => void;
+  vi.spyOn(window, "setInterval").mockImplementation(
+    (callback, delay, ...args) => {
+      if (delay === 1000 && typeof callback === "function")
+        poll = () => callback(...args);
+      return interval(callback, delay, ...args);
+    },
+  );
+  return () => poll();
+}
+it("refreshes shared labels after owned links and redirects without selection, focus or native actions", async () => {
+  const poll = pollCallback();
+  const f = fixture();
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  const page = pageDescriptor(f);
+  const foreign = { ...page, profile: newRequestId() };
+  f.store.open(f.session.id, page);
+  f.store.open(f.session.id, foreign);
+  f.store.open("another-session", page);
+  f.store.open(f.session.id, { kind: SessionTabKind.Files });
+  const previous = f.store.snapshot(f.session.id);
+  const other = f.store.snapshot("another-session");
+  const address = screen.getByRole("textbox", { name: "Address" });
+  address.focus();
+  const calls = native.mock.calls.length;
+  const publish = vi.fn();
+  f.store.subscribe(publish);
+  native.mockResolvedValue({
+    ...f.local,
+    tabs: {
+      tabs: [
+        { id: f.tabId, url: "https://fixture.test/redirected?q=1" },
+        { id: newRequestId(), url: "https://fixture.test/unopened" },
+      ],
+      selected: f.tabId,
+    },
+  });
+  await act(async () => poll());
+  const changed = f.store.snapshot(f.session.id);
+  expect(changed.tabs[1]).toEqual({
+    ...page,
+    title: "fixture.test/redirected",
+    label: "https://fixture.test/redirected?q=1",
+  });
+  expect(changed.tabs.map(sessionTabKey)).toEqual(
+    previous.tabs.map(sessionTabKey),
+  );
+  expect(changed.selected).toBe(previous.selected);
+  expect(changed.tabs[2]).toBe(foreign);
+  expect(f.store.snapshot("another-session")).toBe(other);
+  expect(document.activeElement).toBe(address);
+  expect(publish).toHaveBeenCalledTimes(1);
+  await act(async () => poll());
+  expect(f.store.snapshot(f.session.id)).toBe(changed);
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(
+    native.mock.calls
+      .slice(calls)
+      .every(([operation]) => operation === "browser_state"),
+  ).toBe(true);
+  view.unmount();
+});
+it.each(["Back", "Forward"])("refreshes shared labels from the original %s result", async (action) => {
+  const f = fixture();
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  const page = pageDescriptor(f);
+  f.store.open(f.session.id, page);
+  const previous = f.store.snapshot(f.session.id);
+  native.mockResolvedValue({
+    ...f.local,
+    tabs: {
+      tabs: [{ id: f.tabId, url: "https://fixture.test/history" }],
+      selected: f.tabId,
+    },
+  });
+  const button = screen.getByRole("button", { name: action });
+  button.focus();
+  await act(async () => fireEvent.click(button));
+  const changed = f.store.snapshot(f.session.id);
+  expect(changed.tabs[1]).toEqual({
+    ...page,
+    title: "fixture.test/history",
+    label: "https://fixture.test/history",
+  });
+  expect(changed.selected).toBe(previous.selected);
+  expect(changed.tabs.map(sessionTabKey)).toEqual(
+    previous.tabs.map(sessionTabKey),
+  );
+  expect(document.activeElement).toBe(button);
+  view.unmount();
+});
+it("rejects a pre-action poll after Back has published a newer URL", async () => {
+  const poll = pollCallback();
+  const f = fixture();
+  let finish!: (value: typeof f.local) => void;
+  native.mockImplementation(async (operation, args) => {
+    if (operation === "browser_state")
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    if (args.action === "back")
+      return {
+        ...f.local,
+        tabs: {
+          tabs: [{ id: f.tabId, url: "https://fixture.test/current" }],
+          selected: f.tabId,
+        },
+      };
+    return f.local;
+  });
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  f.store.open(f.session.id, pageDescriptor(f));
+  await act(async () => {
+    poll();
+    poll();
+  });
+  expect(
+    native.mock.calls.filter(([operation]) => operation === "browser_state"),
+  ).toHaveLength(1);
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Back" })),
+  );
+  const current = f.store.snapshot(f.session.id);
+  expect(current.tabs[1]).toMatchObject({
+    label: "https://fixture.test/current",
+  });
+  await act(async () => finish(f.local));
+  expect(f.store.snapshot(f.session.id)).toBe(current);
+  view.unmount();
+});
+it.each(["inactive", "retry", "modal", "disposed"])("rejects a late poll from an %s presentation", async (replacement) => {
+  const poll = pollCallback();
+  const f = fixture();
+  let finish!: (value: typeof f.local) => void;
+  native.mockImplementation(async (operation) => {
+    if (operation === "browser_state")
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return f.local;
+  });
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  f.store.open(f.session.id, pageDescriptor(f));
+  await act(async () => poll());
+  const previous = f.store.snapshot(f.session.id);
+  const modal = document.createElement("dialog");
+  if (replacement === "inactive") view.rerender(<f.View active={false} />);
+  if (replacement === "retry") {
+    retryView();
+    await waitFor(() =>
+      expect(
+        native.mock.calls.filter(([operation]) => operation === "open_browser"),
+      ).toHaveLength(2),
+    );
+  }
+  if (replacement === "modal") {
+    modal.setAttribute("open", "");
+    await act(async () => document.body.append(modal));
+  }
+  if (replacement === "disposed") view.unmount();
+  try {
+    await act(async () =>
+      finish({
+        ...f.local,
+        tabs: {
+          tabs: [{ id: f.tabId, url: "https://fixture.test/stale" }],
+          selected: f.tabId,
+        },
+      }),
+    );
+    expect(f.store.snapshot(f.session.id)).toBe(previous);
+  } finally {
+    modal.remove();
+    view.unmount();
+  }
+});
+
+it("refreshes existing page metadata from a pending picker action after original Hide settles", async () => {
+  const f = fixture({ tabbed: true });
+  const created = newRequestId();
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "new-tab")
+      return {
+        ...f.local,
+        tabs: {
+          tabs: [
+            { id: f.tabId, url: "https://fixture.test/pending" },
+            { id: created, url: "https://fixture.test/new" },
+          ],
+          selected: created,
+        },
+      };
+    return f.local;
+  });
+  const view = render(<f.View />);
+  await open();
+  await screen.findByRole("button", { name: "https://fixture.test/page" });
+  await waitFor(() =>
+    expect(
+      native.mock.calls.some(([, args]) => args.action === "hide"),
+    ).toBe(true),
+  );
+  f.store.open(f.session.id, pageDescriptor(f));
+  f.store.open(f.session.id, { kind: SessionTabKind.Files });
+  const previous = f.store.snapshot(f.session.id);
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "New tab" })),
+  );
+  await waitFor(() =>
+    expect(f.store.snapshot(f.session.id).tabs[1]).toMatchObject({
+      label: "https://fixture.test/pending",
+    }),
+  );
+  expect(f.store.snapshot(f.session.id).selected).toBe(previous.selected);
+  expect(f.store.snapshot(f.session.id).tabs.map(sessionTabKey)).toEqual(
+    previous.tabs.map(sessionTabKey),
+  );
+  expect(
+    native.mock.calls.filter(([, args]) => args.action === "new-tab"),
+  ).toHaveLength(1);
+  view.unmount();
 });

@@ -88,6 +88,12 @@ automatic retries. Profile explanation uses the original accessible Modal and
 native visibility boundary. Initial explicit registration retains the local-summary/
 address card and no empty viewport. Page labels derive only from retained URLs;
 no title/favicon discovery, URL logging, page scripts or generalized key bridge.
+Accepted native observations refresh only existing exact profile/page descriptors
+in the original session. URL-derived title and accessible URL changes preserve
+identity, order, selection and focus. Unchanged or foreign page metadata does not
+publish or create descriptors. Serial reads retain the original presentation and
+action generation; inactive, covered, disposed or replaced presentations and
+pre-action reads cannot overwrite current labels.
 The original 16-page gate and explicit resource Close remain separate from shared
 presentation Close. Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner

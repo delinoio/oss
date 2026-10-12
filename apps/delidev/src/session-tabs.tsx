@@ -140,6 +140,25 @@ export class SessionTabsStore {
     else tabs[found] = tab;
     this.publish(id, { tabs, selected: key });
   }
+  refreshPages(
+    id: string,
+    profile: string,
+    pages: readonly { id: string; title: string; label: string }[],
+  ) {
+    const previous = this.snapshot(id);
+    let changed = false;
+    const tabs = previous.tabs.map((tab) => {
+      if (tab.kind !== SessionTabKind.Page || tab.profile !== profile)
+        return tab;
+      const page = pages.find((value) => value.id === tab.id);
+      if (!page || (tab.title === page.title && tab.label === page.label))
+        return tab;
+      changed = true;
+      return { ...tab, title: page.title, label: page.label };
+    });
+    // Observations update existing metadata only; they cannot reopen or select.
+    if (changed) this.publish(id, { ...previous, tabs });
+  }
   select(id: string, key: string) {
     const previous = this.snapshot(id);
     if (
