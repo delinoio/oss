@@ -95,9 +95,10 @@ pub fn bundle_static_imports(code: &str) -> Vec<String> {
     let mut imports = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
-        let keyword = if code[at..].starts_with("from") {
+        // Compare bytes: `at` can be inside a multi-byte character.
+        let keyword = if bytes[at..].starts_with(b"from") {
             4
-        } else if code[at..].starts_with("import") {
+        } else if bytes[at..].starts_with(b"import") {
             6
         } else {
             at += 1;
@@ -1072,6 +1073,11 @@ mod tests {
         assert_eq!(
             bundle_static_imports(code),
             ["./a.js", "./side.js", "./c.js", "./d.js", "./e.js"]
+        );
+        // Multi-byte characters before and between imports.
+        assert_eq!(
+            bundle_static_imports(r#"/*ü*/import"./ä.js";const s="한글→";import{x}from"./b.js";"#),
+            ["./ä.js", "./b.js"]
         );
     }
 
