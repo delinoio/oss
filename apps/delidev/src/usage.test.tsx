@@ -849,7 +849,8 @@ it("keeps historical currency subtotals, partial coverage and source basis separ
   const overview = screen.getByRole("tabpanel", { name: "Overview" });
   await within(overview).findByText("USD 9,223.372036854775807");
   fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
-  expect(screen.getByText("EUR 0")).toBeTruthy();
+  const history = screen.getByRole("tabpanel", { name: "Usage history" });
+  expect(within(history).getByText("EUR 0")).toBeTruthy();
   expect(
     screen.getByText(/1 responses have no matching historical price/),
   ).toBeTruthy();
