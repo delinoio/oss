@@ -334,7 +334,6 @@ it("refreshes only existing exact session/profile/page metadata without selectio
   expect(publish).not.toHaveBeenCalled();
 });
 
-
 it("allocates shared session numbers on original-ID opens and authenticated encounters", () => {
   const store = new SessionTabsStore();
   const one = { kind: SessionTabKind.Terminal as const, id: "one" };
