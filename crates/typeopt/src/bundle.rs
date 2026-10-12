@@ -233,18 +233,35 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<ChunkMap> {
     (path.starts_with(root.canonicalize().ok()?) && path.is_file()).then_some(ChunkMap::File(path))
 }
 
+/// Span of the `//# sourceMappingURL=<url>` or `/*# sourceMappingURL=<url> */`
+/// comment (with `#` or the legacy `@`) that carries `url`.
+fn map_comment_span(text: &str, url: &str) -> Option<(usize, usize)> {
+    let at = text.rfind(url)?;
+    let marker = text[..at].strip_suffix("sourceMappingURL=")?;
+    let pragma = marker.trim_end_matches([' ', '\t']);
+    let opener = pragma.strip_suffix(['#', '@'])?;
+    let start = opener.len().checked_sub(2)?;
+    let end = at + url.len();
+    match &text[start..opener.len()] {
+        "//" => Some((start, end)),
+        "/*" => text[end..].find("*/").map(|close| (start, end + close + 2)),
+        _ => None,
+    }
+}
+
 /// Composes the source map of one edited chunk in place. Returns whether a
 /// map was composed (`Some(true)`), dropped because it could not be read
-/// (`Some(false)`) or absent (`None`).
+/// (`Some(false)`) or absent (`None`), and how many bytes the chunk text
+/// grew because an inline map changed.
 fn update_chunk_map(
     root: &Path,
     target: &Path,
     original: &str,
     text: &str,
     chain: &[Vec<Edit>],
-) -> Result<Option<bool>> {
+) -> Result<(Option<bool>, isize)> {
     let Some(location) = chunk_map(root, target, text) else {
-        return Ok(None);
+        return Ok((None, 0));
     };
     let decoded = match &location {
         ChunkMap::Inline(url) => sourcemap::decode_data_url(url).map_err(anyhow::Error::from),
@@ -264,7 +281,7 @@ fn update_chunk_map(
             let mut bytes = Vec::new();
             map.to_writer(&mut bytes)?;
             std::fs::write(path, bytes).context("cannot write a chunk source map")?;
-            Ok(Some(true))
+            Ok((Some(true), 0))
         }
         (ChunkMap::Inline(url), Ok(map)) => {
             let at = text.rfind(&url).context("inline source map disappeared")?;
@@ -274,22 +291,22 @@ fn update_chunk_map(
                 map.to_data_url()?,
                 &text[at + url.len()..]
             );
-            std::fs::write(target, updated).context("cannot write an edited chunk")?;
-            Ok(Some(true))
+            std::fs::write(target, &updated).context("cannot write an edited chunk")?;
+            Ok((Some(true), updated.len() as isize - text.len() as isize))
         }
         // A map that no longer describes the chunk is worse than none.
         (ChunkMap::File(path), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable chunk source map");
             std::fs::remove_file(path)?;
-            Ok(Some(false))
+            Ok((Some(false), 0))
         }
         (ChunkMap::Inline(url), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable inline chunk source map");
-            let at = text.rfind(&url).context("inline source map disappeared")?;
-            let line = text[..at].rfind("//").unwrap_or(at);
-            let updated = format!("{}{}", &text[..line], &text[at + url.len()..]);
-            std::fs::write(target, updated).context("cannot write an edited chunk")?;
-            Ok(Some(false))
+            let (start, end) = map_comment_span(text, &url)
+                .context("cannot locate the unreadable inline source map comment")?;
+            let updated = format!("{}{}", &text[..start], &text[end..]);
+            std::fs::write(target, &updated).context("cannot write an edited chunk")?;
+            Ok((Some(false), updated.len() as isize - text.len() as isize))
         }
     }
 }
@@ -531,6 +548,8 @@ pub struct Staged {
     _staging: tempfile::TempDir,
     root: PathBuf,
     destination: PathBuf,
+    /// Bytes that recomposed inline source maps added to edited chunks.
+    pub inline_map_growth: isize,
 }
 
 impl Staged {
@@ -595,6 +614,7 @@ pub fn stage(
         }
     }
     let mut edited = BTreeSet::new();
+    let mut inline_map_growth: isize = 0;
     let (mut maps, mut dropped) = (0usize, 0usize);
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
@@ -609,7 +629,9 @@ pub fn stage(
         std::fs::write(&target, text).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-        match update_chunk_map(&root, &target, original, text, chain)? {
+        let (map, growth) = update_chunk_map(&root, &target, original, text, chain)?;
+        inline_map_growth += growth;
+        match map {
             Some(true) => maps += 1,
             Some(false) => dropped += 1,
             None => {}
@@ -631,6 +653,7 @@ pub fn stage(
         _staging: staging,
         root,
         destination: destination.to_path_buf(),
+        inline_map_growth,
     })
 }
 
@@ -639,6 +662,22 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{hashed_name, html_tags, references, rewrite};
+
+    #[test]
+    fn locates_source_map_comments_exactly() {
+        let url = "data:application/json;base64,e30=";
+        let line = format!("const u=\"http://x\";f();\n//# sourceMappingURL={url}");
+        let (start, end) = super::map_comment_span(&line, url).unwrap();
+        assert_eq!(&line[..start], "const u=\"http://x\";f();\n");
+        assert_eq!(end, line.len());
+        let block = format!("const u=\"http://x\";f();/*# sourceMappingURL={url} */g();");
+        let (start, end) = super::map_comment_span(&block, url).unwrap();
+        assert_eq!(
+            format!("{}{}", &block[..start], &block[end..]),
+            "const u=\"http://x\";f();g();"
+        );
+        assert!(super::map_comment_span(&format!("x={url}"), url).is_none());
+    }
 
     #[test]
     fn rewrites_only_reference_positions() {

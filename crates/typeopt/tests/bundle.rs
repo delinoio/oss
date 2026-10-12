@@ -465,8 +465,15 @@ fn composes_inline_and_referenced_maps() {
         ),
         ("maps/rooted.map", std::str::from_utf8(&rooted).unwrap()),
     ]);
-    optimize(temp.path(), &[]);
+    let report = optimize(temp.path(), &[]);
     same_behavior(temp.path());
+    // size.after counts the published chunk text, recomposed inline map
+    // included.
+    let published: u64 = ["index.js", "inline.js", "external.js", "rooted.js"]
+        .iter()
+        .map(|c| fs::metadata(temp.path().join("out").join(c)).unwrap().len())
+        .sum();
+    assert_eq!(report["size"]["after"].as_u64(), Some(published));
     let console_maps_to_console = |js: &str, map: &sourcemap::SourceMap| {
         let token = map.tokens().next().expect("one token");
         let at = token.get_dst_col() as usize;

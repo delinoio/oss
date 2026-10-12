@@ -285,6 +285,12 @@ mod app {
             .out_dir
             .map(|destination| bundle::stage(&dir, &destination, &snapshot, &outcome))
             .transpose()?;
+        if let Some(staged) = &staged {
+            // Recomposed inline source maps are part of the published chunk
+            // text that size.after counts.
+            report.size.after = (report.size.after as isize + staged.inline_map_growth) as usize;
+            report.size.saved = report.size.before as isize - report.size.after as isize;
+        }
         report.measure(started);
         // The report is part of the result: publish only after it was
         // delivered, so a closed or full standard output leaves no output.
