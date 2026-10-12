@@ -67,6 +67,40 @@ func TestCheckpointRestoresOnlyOriginalClosedEvidence(t *testing.T) {
 	}
 }
 
+func TestCheckpointRestoresNativeTokenAuthenticationMode(t *testing.T) {
+	_, cfg, raw, ref := retainedCheckpointFixture(t)
+	cfg.Authentication = TokenAuthentication
+	cfg.ManagedToken = []byte("synthetic-managed-token")
+	cfg.API.ManagedToken = slices.Clone(cfg.ManagedToken)
+	var checkpoint sessionCheckpoint
+	if err := json.Unmarshal(raw, &checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.Configuration = checkpointConfiguration(cfg, cfg.API.ServerOrigin)
+	raw, err := json.Marshal(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref.SHA256 = checkpointDigest(raw)
+	restored, err := RestoreCheckpoint(context.Background(), cfg, raw, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := restored.previous.current
+	if !b.tokenAuthentication {
+		t.Fatal("restored managed-token binding lost its native subscription authentication mode")
+	}
+	tokenInit := lifecycleInit(t, b).Body
+	tokenInit = bytes.Replace(tokenInit, []byte(`"apiKeySource":"ANTHROPIC_API_KEY"`), []byte(`"apiKeySource":"none"`), 1)
+	if err := b.validateSystemInit(tokenInit); err != nil {
+		t.Fatal("native token initialization with apiKeySource none was rejected", err)
+	}
+	apiKeyInit := lifecycleInit(t, b).Body
+	if err := b.validateSystemInit(apiKeyInit); err == nil {
+		t.Fatal("restored managed-token binding accepted API-key authentication")
+	}
+}
+
 func TestCheckpointRejectsMissingOriginalReferenceOrChangedConfiguration(t *testing.T) {
 	for _, name := range []string{"digest", "session", "owner", "input", "input-digest", "turn", "failure", "model", "effort", "permission", "workspace", "home", "instructions", "executable", "directory", "runtime", "origin", "missing-history", "changed-history", "canceled"} {
 		t.Run(name, func(t *testing.T) {

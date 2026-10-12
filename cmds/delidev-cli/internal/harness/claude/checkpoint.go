@@ -216,7 +216,7 @@ func restoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 	for _, resume := range cp.Resumes {
 		h.resumes = append(h.resumes, historyResumeProof{resume.Transcript, resume.Messages, resume.Action})
 	}
-	b := &ExecutionBinding{session: cp.Session, input: cp.Input, model: config.Model, workspace: config.Workspace, home: historyHome(config), permission: config.Permission, command: cp.Command, initialized: true, accepted: true, finished: true, terminal: &NativeResult{Kind: cp.Kind, Reason: cp.Reason, Error: cp.Error}, owner: cp.Owner, logger: config.Process.Logger, seen: map[string]bool{}, runState: RunIdle, turnID: cp.Turn, continuationFailed: cp.ContinuationFailed}
+	b := &ExecutionBinding{tokenAuthentication: config.Authentication == TokenAuthentication || len(config.ManagedToken) > 0, session: cp.Session, input: cp.Input, model: config.Model, workspace: config.Workspace, home: historyHome(config), permission: config.Permission, command: cp.Command, initialized: true, accepted: true, finished: true, terminal: &NativeResult{Kind: cp.Kind, Reason: cp.Reason, Error: cp.Error}, owner: cp.Owner, logger: config.Process.Logger, seen: map[string]bool{}, runState: RunIdle, turnID: cp.Turn, continuationFailed: cp.ContinuationFailed}
 	digest, _ := hex.DecodeString(cp.InputDigest)
 	copy(b.digest[:], digest)
 	b.content.seen = map[string]bool{}
