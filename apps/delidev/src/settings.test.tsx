@@ -802,6 +802,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
   });
   const labels = [
     "Codex CLI",
+    "Claude Code CLI",
     "AI Subscription",
     "AI API Keys",
     "API Providers",
@@ -826,6 +827,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
   ];
   const values = [
     "codex-cli",
+    "claude-cli",
     "subscription-accounts",
     "api-accounts",
     "providers",
