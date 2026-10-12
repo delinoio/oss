@@ -154,7 +154,9 @@ it intercepts CEF's default parent-window close and queues destruction of only t
 original child on the CEF UI thread. A failed dispatch or exhausted destruction
 retry keeps the close intercepted and preserves the live child receipt for a later
 close attempt; CEF's default windowed close path must not close the product window
-or sibling presentations. The client shares one lifecycle receipt across
+or sibling presentations. Raw child browser creation explicitly selects CEF's
+Alloy runtime style so the lifecycle callback used by this child-only close path
+is available on every supported desktop platform. The client shares one lifecycle receipt across
 all handler interfaces, retaining the original browser ID, child handle, parent
 handle and generation. Destruction rechecks that identity and the native parent;
 it never looks up the currently selected replacement or invokes product-window

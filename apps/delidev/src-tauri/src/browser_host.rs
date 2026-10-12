@@ -2302,6 +2302,9 @@ fn window_info(r: &ViewRequest) -> WindowInfo {
         },
         ..Default::default()
     };
+    // Raw child browsers need the Alloy lifecycle callback used for child-only
+    // teardown; the default runtime can select Chrome's incompatible behavior.
+    info.runtime_style = cef::RuntimeStyle::ALLOY;
     #[cfg(target_os = "macos")]
     {
         info.parent_view = r.parent as *mut std::ffi::c_void;
