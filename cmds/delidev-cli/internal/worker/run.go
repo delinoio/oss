@@ -30,24 +30,25 @@ import (
 )
 
 type Config struct {
-	startupProgress          bool
-	progress                 *sessionStartupReporter
-	paidCredits              bool
-	imageClient              delidevv1connect.AttachmentServiceClient
-	branchReportClient       delidevv1connect.WorkerServiceClient
-	startup                  *executionStartupAttempt
-	nativeClaudeInstallation *domain.Installation
-	network                  *workerNetworkRuntime
-	observations             *managedObservationRegistry
-	quotaBlockSupported      bool
-	functionOutputsSupported bool
-	inspectionMetadata       bool
-	remoteWorkspaceClone     bool
-	repositoryClone          bool
-	updatesEnabled           bool
-	terminals                *terminalManager
-	Root                     string
-	StartupID                domain.ID
+	startupProgress           bool
+	progress                  *sessionStartupReporter
+	paidCredits               bool
+	imageClient               delidevv1connect.AttachmentServiceClient
+	branchReportClient        delidevv1connect.WorkerServiceClient
+	startup                   *executionStartupAttempt
+	nativeClaudeInstallation  *domain.Installation
+	network                   *workerNetworkRuntime
+	observations              *managedObservationRegistry
+	quotaBlockSupported       bool
+	functionOutputsSupported  bool
+	inspectionMetadata        bool
+	namedWorkspaceDirectories bool
+	remoteWorkspaceClone      bool
+	repositoryClone           bool
+	updatesEnabled            bool
+	terminals                 *terminalManager
+	Root                      string
+	StartupID                 domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -288,6 +289,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		config.functionOutputsSupported = false
 		claudeCapabilityExpected := false
 		metadataExpected := false
+		namedDirectoriesExpected := false
 		remoteCloneExpected := false
 		cloneExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
@@ -305,6 +307,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if config.network != nil && (!networkExpected || !proxyExpected) {
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
+			namedDirectoriesExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1)
 			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
@@ -390,6 +393,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00verified"
 			} else {
 				profile += "\x00unsupported"
+			}
+			if namedDirectoriesExpected {
+				profile += "\x00named-workspace-directories-v1"
 			}
 			if remoteCloneExpected {
 				profile += "\x00remote-workspace-clone-v1"
@@ -508,6 +514,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if metadataExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
+			if namedDirectoriesExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1)
+			}
 			if remoteCloneExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			}
@@ -566,6 +575,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
+			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
+			// The terminal owner was created before attachment and holds a Config copy.
+			// Refresh its negotiated field before starting the joined terminal reader.
+			config.terminals.config.namedWorkspaceDirectories = config.namedWorkspaceDirectories
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
@@ -1142,8 +1155,29 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 }
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
+	if job.Type == domain.ExecuteSessionJob {
+		var input domain.ExecutionJobInput
+		var preparation workspace.PrepareRequest
+		if domain.Decode(job.Input, &input) != nil || domain.Decode(input.Preparation, &preparation) != nil {
+			return nil, workspace.ResultUncertain()
+		}
+		if preparation.RequiresNamedDirectories() && !config.namedWorkspaceDirectories {
+			return nil, workspace.NamedDirectoriesUnsupported()
+		}
+	}
 	switch job.Type {
 	case domain.CompactSessionJob:
+		var input domain.SessionCompactionInput
+		if domain.Decode(job.Input, &input) != nil {
+			return nil, workspace.ResultUncertain()
+		}
+		var preparation workspace.PrepareRequest
+		if domain.Decode(input.Assignment.Preparation, &preparation) != nil {
+			return nil, workspace.ResultUncertain()
+		}
+		if preparation.RequiresNamedDirectories() && !config.namedWorkspaceDirectories {
+			return nil, workspace.NamedDirectoriesUnsupported()
+		}
 		return executeSessionCompaction(ctx, config, owner, job)
 	case domain.NativeModelsJob:
 		var scope domain.NativeModelScope
@@ -1162,6 +1196,13 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		var input domain.ForkJobInput
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
+		}
+		named, err := workspace.ForkRequiresNamedDirectories(input)
+		if err != nil {
+			return nil, err
+		}
+		if named && !config.namedWorkspaceDirectories {
+			return nil, workspace.NamedDirectoriesUnsupported()
 		}
 		clones, err := workspace.ForkRequiresManagedClone(input)
 		if err != nil {
@@ -1197,7 +1238,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 				}
 			}
 		}
-		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: root, Logger: config.Logger}
 		result, err := manager.Storage(ctx, input)
 		if err != nil {
 			return nil, err
@@ -1244,7 +1285,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		} else if len(prior.Output) == 0 {
 			return nil, workspace.ResultUncertain()
 		}
-		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: root, Logger: config.Logger}
 		result, err := manager.Recover(ctx, input, completedClean)
 		if err != nil {
 			return nil, err
@@ -1263,7 +1304,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 				return nil, domain.Fail(domain.Unsupported, "Remote workspace cloning was not negotiated.", "Update and reconnect the original Worker.")
 			}
 		}
-		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: root, Logger: config.Logger}
 		manifest, err := manager.Prepare(workspace.WithStartupObserver(ctx, config.progress.observe), input)
 		if err != nil {
 			return nil, err

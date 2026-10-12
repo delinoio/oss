@@ -117,6 +117,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.SessionStartupProgressV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1:
 			capabilities = append(capabilities, domain.ExecutionStartupV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1:
+			capabilities = append(capabilities, domain.NamedWorkspaceDirectoriesV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1:
 			capabilities = append(capabilities, domain.RemoteWorkspaceCloneV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1:
@@ -279,7 +281,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1}})
 	var networkStatus domain.WorkerNetworkStatus
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -536,6 +538,20 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							now := time.Now().UTC()
 							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(err), &now
 							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+						}
+					}
+					if mr, err := tx.Get(domain.MachineKind, machine); err != nil {
+						return nil, err
+					} else {
+						current, err := store.Decode[domain.Machine](mr)
+						if err != nil {
+							return nil, err
+						}
+						if err := requireNamedWorkspaceJob(current, j); err != nil {
+							if j.Type != domain.PrepareWorkspaceJob && j.Type != domain.WorkspaceStorageJob && j.Type != domain.RecoverWorkspaceJob && j.Type != domain.RecoverExecutionJob && j.Type != domain.ExecuteSessionJob && j.Type != domain.CompactSessionJob {
+								return nil, err
+							}
+							return rejectDowngradedNamedWorkspaceJob(tx, r, j, err)
 						}
 					}
 					if j.Type == domain.PrepareWorkspaceJob {
@@ -1080,4 +1096,27 @@ func revokeMachineJobs(tx *store.Tx, machine domain.ID) error {
 		}
 	}
 	return nil
+}
+
+// Retire a queued assignment that the reconnected Worker can no longer honor.
+// The failure and its session reconciliation commit before WatchWork continues.
+func rejectDowngradedNamedWorkspaceJob(tx *store.Tx, record store.Record, job domain.Job, problem error) (store.Record, error) {
+	now := time.Now().UTC()
+	job.State, job.Problem, job.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+	saved, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job)
+	if err != nil {
+		return store.Record{}, err
+	}
+	switch job.Type {
+	case domain.ExecuteSessionJob:
+		err = finishLostNativeExecution(tx, saved, job)
+	case domain.CompactSessionJob:
+		err = finishUnclaimedNamedCompaction(tx, saved, job)
+	default:
+		err = finishSessionWorkspace(tx, record.ID)
+	}
+	if err != nil {
+		return store.Record{}, err
+	}
+	return tx.Get(domain.JobKind, record.ID)
 }

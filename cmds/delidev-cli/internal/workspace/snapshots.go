@@ -201,6 +201,9 @@ func (m *Manager) restoreBindingPath(id domain.ID) string {
 }
 
 func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result StorageResult, returned error) {
+	if err := m.requireNamedDirectories(r.Preparation); err != nil {
+		return result, err
+	}
 	if r.Preparation.SidechatSource != nil || r.Manifest.Reference != nil {
 		return result, domain.Fail(domain.PermissionDenied, "Sidechat cannot mutate or snapshot the referenced workspace.", "Use the original parent session's workspace controls.")
 	}
@@ -429,11 +432,11 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 					return result, err
 				}
 			}
-			if _, err := walkSnapshot(ctx, filepath.Join(m.snapshotPath(r.SnapshotID), "workspace"), staging, nil, true); err != nil {
+			if _, err := walkSnapshotBudgetMapped(ctx, filepath.Join(m.snapshotPath(r.SnapshotID), "workspace"), staging, nil, MaxSnapshotEntries, nil, snapshotRootMap(snap.Workspace, true), true); err != nil {
 				return result, err
 			}
 			inventory, err := walkSnapshot(ctx, staging, "", nil)
-			if err != nil || inventoryDigest(inventory) != inventoryDigest(snap.Inventory) {
+			if err != nil || inventoryDigest(snapshotLayoutInventory(inventory, snap.Workspace)) != inventoryDigest(snap.Inventory) {
 				return result, ResultUncertain()
 			}
 			binding := restoreBinding{Version: 2, OperationID: r.OperationID, SessionID: r.Preparation.SessionID, SnapshotID: r.SnapshotID, SnapshotDigest: metadata.SHA256, ManifestDigest: manifestDigest(snap.Workspace), OriginalIdentity: snap.OriginalIdentity}
@@ -461,7 +464,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			// is publication, so preserve changed bytes behind the pending proof
 			// and compare the entire live tree before granting restored ownership.
 			published, err := walkSnapshot(ctx, root, "", nil)
-			if err != nil || inventoryDigest(published) != inventoryDigest(snap.Inventory) {
+			if err != nil || inventoryDigest(snapshotLayoutInventory(published, snap.Workspace)) != inventoryDigest(snap.Inventory) {
 				m.Logger.Warn("restore_published_inventory_changed", "operation_id", r.OperationID, "code", domain.RecoveryRequired)
 				return result, ResultUncertain()
 			}
@@ -534,10 +537,10 @@ func validateStorageRoot(root string, manifest Manifest) error {
 		allowed["chat"] = true
 	}
 	for _, repo := range manifest.Repositories {
-		if !repo.Owned || repo.Path != filepath.Join(root, string(repo.ID)) {
+		if validateFrozenDirectory(repo.DirectoryName) != nil || !repo.Owned || repo.Path != ownedRepositoryPath(root, repo.ID, repo.DirectoryName) {
 			return ResultUncertain()
 		}
-		allowed[string(repo.ID)] = true
+		allowed[RepositoryDirectory(repo.ID, repo.DirectoryName)] = true
 	}
 	for _, entry := range entries {
 		if !allowed[entry.Name()] {

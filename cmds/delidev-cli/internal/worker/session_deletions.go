@@ -249,7 +249,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 	}
-	manager := workspace.Manager{Root: root, Logger: config.Logger}
+	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: root, Logger: config.Logger}
 	for _, copy := range w.Copies {
 		if copy.UnpublishedChildProcessID != "" {
 			if proof.RemovalStarted {

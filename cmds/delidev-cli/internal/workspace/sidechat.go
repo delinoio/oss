@@ -102,6 +102,9 @@ func (m *Manager) PrepareSidechatReference(ctx context.Context, fork, child doma
 	if domain.UniqueIDs([]domain.ID{fork, child, source.SessionID}) != nil || validateSidechatPreparation(input) != nil || ValidateResult(sourceInput, source, runtime.GOOS) != nil {
 		return input, result, ResultUncertain()
 	}
+	if err := m.requireNamedDirectories(sourceInput); err != nil {
+		return input, result, err
+	}
 	if err := m.initialize(); err != nil {
 		return input, result, err
 	}
@@ -132,7 +135,7 @@ func (m *Manager) PrepareSidechatReference(ctx context.Context, fork, child doma
 	if err := security.PrivateDir(filepath.Join(m.Git.ProcessRoot, string(child))); err != nil {
 		return input, result, ResultUncertain()
 	}
-	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger}
+	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger, NamedDirectories: m.NamedDirectories}
 	inspection.Git.readOnly = true
 	if _, err := inspection.verifyWorkspaceIdentityForOwner(ctx, sourceInput, source, continuationIdentity, child); err != nil {
 		return input, result, err
@@ -230,7 +233,7 @@ func (m *Manager) verifySidechatReference(ctx context.Context, input PrepareRequ
 	if err != nil || identity != result.Reference.DirectoryIdentity {
 		return "", ResultUncertain()
 	}
-	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger}
+	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger, NamedDirectories: m.NamedDirectories}
 	inspection.Git.readOnly = true
 	original, err := inspection.verifyWorkspaceIdentityForOwner(ctx, source.Preparation, retained, continuationIdentity, owner)
 	if err != nil {
