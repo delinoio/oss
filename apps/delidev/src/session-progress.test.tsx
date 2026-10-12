@@ -46,6 +46,7 @@ const body = {
   dispatch: "claimed",
   outcome: "running",
   pending_inputs: 0,
+  last_input_sequence: 1,
   preparation: { job_id: newRequestId(), state: "ready" },
   active_execution_id: executionId,
   initial_execution: { id: executionId, input_id: inputId },
@@ -179,6 +180,88 @@ it("requires complete first-queue ownership before hiding pre-claim Info", () =>
   });
   expect(hidesInfo(observation({}, { queue: [later] }))).toBe(false);
 });
+const originalRow = (extra: object = {}, id = inputId) =>
+  resource(
+    EntityKind.QUEUE,
+    {
+      delivery: "claimed",
+      sequence: 1,
+      content_revision: 1,
+      mode: "execute",
+      prompt: "Original input",
+      execution_id: executionId,
+      ...extra,
+    },
+    id,
+  );
+it("requires the durable first-input counter for every startup hiding path", () => {
+  const starting = { execution: undefined };
+  const response = { execution: { ...progress } };
+  for (const extra of [starting, response]) {
+    expect(hidesInfo(observation({ ...extra }))).toBe(true);
+    expect(
+      hidesInfo(observation({ ...extra, last_input_sequence: undefined })),
+    ).toBe(false);
+    expect(hidesInfo(observation({ ...extra, last_input_sequence: 2 }))).toBe(
+      false,
+    );
+    expect(hidesInfo(observation({ ...extra, last_input_sequence: 0 }))).toBe(
+      false,
+    );
+  }
+  expect(
+    sessionProgress(observation({ last_input_sequence: undefined })),
+  ).toBe(SessionProgressPhase.Response);
+});
+it("keeps Info visible when Starting lacks a current owned original queue row", () => {
+  const starting = { execution: undefined };
+  expect(sessionProgress(observation(starting))).toBe(
+    SessionProgressPhase.Starting,
+  );
+  for (const delivery of ["queued", "claimed", "accepted"]) {
+    expect(
+      hidesInfo(observation(starting, { queue: [originalRow({ delivery })] })),
+    ).toBe(true);
+  }
+  expect(
+    hidesInfo(
+      observation(starting, {
+        queue: [originalRow({ delivery: "queued", execution_id: undefined })],
+      }),
+    ),
+  ).toBe(true);
+  for (const delivery of ["rejected-before-start", "removed", "uncertain"]) {
+    expect(
+      hidesInfo(observation(starting, { queue: [originalRow({ delivery })] })),
+    ).toBe(false);
+  }
+  const rejected = observation(starting, {
+    queue: [originalRow({ delivery: "rejected-before-start" })],
+  });
+  expect(sessionProgress(rejected)).toBe(SessionProgressPhase.Starting);
+  // Foreign execution, foreign input and later sequence stay conservative.
+  for (const queue of [
+    [originalRow({ execution_id: newRequestId() })],
+    [originalRow({}, newRequestId())],
+    [originalRow({ sequence: 2 })],
+    [originalRow(), originalRow({ sequence: 2 }, newRequestId())],
+    [originalRow({ mode: "unknown" })],
+  ]) {
+    expect(hidesInfo(observation(starting, { queue }))).toBe(false);
+  }
+  // A stale queue read cannot prove the original row is still deliverable.
+  expect(
+    hidesInfo(
+      observation(starting, {
+        queue: [originalRow()],
+        queueCurrent: false,
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    hidesInfo(observation(starting, { queue: [], queueCurrent: false })),
+  ).toBe(false);
+});
 it("keeps Info visible for unsupported workspace, changed execution and unknown legacy ownership", () => {
   expect(hidesInfo(observation({ workspace: "unknown" }))).toBe(false);
   const successor = newRequestId(),
@@ -210,7 +293,10 @@ it("keeps Info visible for unsupported workspace, changed execution and unknown 
     inputId,
   );
   const legacy = observation(
-    { execution: { ...progress, accepted_inputs: undefined } },
+    {
+      execution: { ...progress, accepted_inputs: undefined },
+      last_input_sequence: undefined,
+    },
     { queue: [accepted] },
   );
   expect(sessionProgress(legacy)).toBe(SessionProgressPhase.Response);

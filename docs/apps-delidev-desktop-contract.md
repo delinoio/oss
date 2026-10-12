@@ -5748,8 +5748,14 @@ ordinary Session or General Chat Conversation, hide Info with `hidden` and `iner
 Require original first-input ownership in addition to the accepted progress,
 revision, transcript and Worker-presence predicates. Preparing workspace, Waiting
 to start, Starting agent and Waiting for response all hide Info, including the
-compact row after initial input publication. A later follow-up, replacement
-execution, unsupported workspace or unknown first-input evidence retains Info.
+compact row after initial input publication. Every hiding path requires the
+durable first-input counter to equal exactly one; an omitted or later counter
+retains Info. Starting agent additionally requires a current queue read whose only
+row is the original input (sequence one, delivery queued, claimed or accepted,
+execution absent or the original execution); a rejected-before-start, removed,
+uncertain, foreign or later row, or a stale queue read, retains Info. A later
+follow-up, replacement execution, unsupported workspace or unknown first-input
+evidence retains Info.
 Before hiding focused Info, move focus to its original connected, enabled and
 visible composer, or to the Session heading when the composer is unavailable.
 Restoration does not move focus. Retain Info controller and query activity while
