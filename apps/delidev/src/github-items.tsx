@@ -41,6 +41,7 @@ import { Problem } from "./ui";
 import { OpenGitHub } from "./github-opening";
 import {
   ItemKind,
+  ItemState,
   QueryOperation,
   type GitHubQuery,
   positive,
@@ -915,7 +916,7 @@ export function StandalonePullRequestResults({
         ) ?? {
           kind: ItemKind.PullRequest,
           operation: QueryOperation.List,
-          state: "open" as const,
+          state: ItemState.Open,
           page: 1,
           page_size: 20,
         });
