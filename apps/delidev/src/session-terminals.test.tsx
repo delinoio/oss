@@ -2033,3 +2033,62 @@ it("recovers a hidden terminal control with its exact original bytes and retains
     client.clear();
   }
 });
+
+it("keeps capability recovery outside an already selected terminal pane", async () => {
+  const { session, terminal } = terminalFixture();
+  const list = vi.fn(),
+    createTerminal = vi.fn(),
+    watch = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(ResourceService, { listResources: list });
+    router.service(TerminalService, {
+      createTerminal,
+      watchTerminalOutput: watch,
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  function Selected() {
+    const [target, setTarget] = useState<HTMLDivElement | null>(null);
+    return (
+      <>
+        <div ref={setTarget} data-testid="selected-recovery" />
+        <SessionTerminals
+          session={session}
+          selectedId={terminal.id}
+          tabbed
+          recoveryTarget={target}
+          close={() => {}}
+        />
+      </>
+    );
+  }
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <MutationIntents>
+          <Selected />
+        </MutationIntents>
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  try {
+    const retry = await screen.findByRole("button", {
+      name: "Retry terminal capability read",
+    });
+    expect(retry.closest('[data-testid="selected-recovery"]')).not.toBeNull();
+    expect(
+      screen.getAllByText(
+        "Waiting for a server that supports session terminals.",
+      ),
+    ).toHaveLength(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(createTerminal).not.toHaveBeenCalled();
+    expect(watch).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    client.clear();
+  }
+});

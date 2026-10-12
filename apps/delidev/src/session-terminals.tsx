@@ -566,7 +566,11 @@ export function SessionTerminals({
           </button>
         }
       />
-      {(openUnavailable || openIntent || openError || create.error) &&
+      {((active && Boolean(status.data)) ||
+        openUnavailable ||
+        openIntent ||
+        openError ||
+        create.error) &&
       !supported &&
       !status.error ? (
         <>
@@ -787,11 +791,6 @@ export function SessionTerminals({
         ) : null}
         {supported && list.loaded && !tabs.length && !list.error ? (
           <p role="status">{copy("session-terminals.emptyInventory")}</p>
-        ) : null}
-        {!recoveryTarget && !supported && !status.error ? (
-          <p role="status">
-            {copy("session-terminals.waitingForAServerThatSupports_e0becc")}
-          </p>
         ) : null}
         <Problem error={selectedRead.error} />
         <Failure failure={supported ? list.error?.failure : undefined} />
