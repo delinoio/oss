@@ -27,8 +27,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { useQuery } from "@connectrpc/connect-query";
-import { FailureCode, SystemQuery } from "@delinoio/delidev-api-client";
+import { FailureCode } from "@delinoio/delidev-api-client";
 import { Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
 import { useShortcutHelp, useGlobalShortcutAria } from "./shortcut-provider";
@@ -44,10 +43,6 @@ import {
   type NavigationRow,
 } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
-import {
-  ServerPresentationKind,
-  type ServerPresentation,
-} from "./server-presentation";
 import {
   SessionHoverCard,
   SessionHoverProvider,
@@ -1043,7 +1038,6 @@ export function Sidebar({
   surface,
   selectedSessionId,
   selectedSessionActivation = 0,
-  serverPresentation,
   connectionReady = true,
   homeActive = true,
   navigate,
@@ -1068,7 +1062,6 @@ export function Sidebar({
   surface: Surface;
   selectedSessionId: string;
   selectedSessionActivation?: number;
-  serverPresentation?: ServerPresentation;
   connectionReady?: boolean;
   homeActive?: boolean;
   navigate: (surface: Surface) => void;
@@ -1190,15 +1183,6 @@ export function Sidebar({
     window.document.addEventListener("pointerdown", outside);
     return () => window.document.removeEventListener("pointerdown", outside);
   }, [optionsOpen]);
-  const status = useQuery(
-    SystemQuery.getStatus,
-    {},
-    { refetchInterval: 30000 },
-  );
-  const serverName =
-    serverPresentation?.kind === ServerPresentationKind.Saved
-      ? serverPresentation.name
-      : copy("sidebar.extra.26f9f95a152f");
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(max-width: 759px)");
@@ -1975,18 +1959,6 @@ export function Sidebar({
                   ref={setContextTarget}
                 />
               </div>
-              <footer className="sidebar-footer">
-                <p role="status">
-                  {serverName} ·{" "}
-                  {status.error || !connectionReady || status.data?.stopping
-                    ? copy("sidebar.disconnectedPreviousDataMayBeStale_359e28")
-                    : status.data
-                      ? copy("sidebar.connected_229655")
-                      : status.isPending
-                        ? copy("sidebar.connecting_72021e")
-                        : copy("sidebar.disconnected_04dfac")}
-                </p>
-              </footer>
             </div>
           </dialog>
         </aside>

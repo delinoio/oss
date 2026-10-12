@@ -32,5 +32,6 @@
     "VITE_APP_ENABLE_ESLINT": "false",
     "VITE_APP_DISABLE_SENTRY": "true"
   },
-  "compatibility_patch": "patches/remove-redundant-base-url.patch"
+  "compatibility_patch": "patches/remove-redundant-base-url.patch",
+  "existing_typeopt_revision": "5d3987910bc335f5cefc0e867efa91225ae73b78"
 }

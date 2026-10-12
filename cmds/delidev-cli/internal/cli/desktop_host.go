@@ -430,6 +430,7 @@ func (h *desktopHostState) start(ctx context.Context, op desktopOperation) (any,
 			h.mu.Unlock()
 			abort := context.AfterFunc(admission, stop)
 			defer abort()
+			c.TailnetStartWorker = tailnetWorkerStarter(h.options)
 			err := server.Serve(run, c, func(endpoint server.Endpoint) {
 				abort()
 				if err := release(); err != nil {

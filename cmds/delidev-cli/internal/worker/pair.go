@@ -129,6 +129,13 @@ func PairWithCommitment(ctx context.Context, root string, grant PairingCode, kin
 	return pair(ctx, root, grant, kind, name, false, commit, false)
 }
 
+// PreparePair retains the original request, token and device identity without
+// network effects. An owning approval can persist acceptance after this journal
+// exists, then use RetryPair across every interruption boundary.
+func PreparePair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
+	return pair(ctx, root, grant, kind, name, false, nil, true)
+}
+
 // RetryPair requires the original private pairing journal or completed device.
 // It cannot recreate lost request/token ownership from a saved grant alone.
 func RetryPair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
