@@ -267,6 +267,10 @@ func configureLargeCompactionSubscription(t *testing.T, c *continuationFixture) 
 	f.service.accountSecrets = &accountTestSecrets{values: map[credentials.Ref][]byte{{Owner: c.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}: bundle}, removed: map[credentials.Ref]bool{}}
 	t.Cleanup(func() { clear(bundle) })
 	c.input.Configuration.ProviderID, c.input.Configuration.SubscriptionService, c.input.Configuration.Subscription = "", domain.SubscriptionChatGPT, true
+	if provenance := c.input.Configuration.HarnessProvenance; provenance != nil {
+		provenance.Source = domain.HarnessDefaultScope{Harness: c.input.Configuration.Harness, Source: domain.HarnessSubscriptionSource, SubscriptionService: domain.SubscriptionChatGPT}
+		provenance.ProfileDigest = ""
+	}
 	c.input.ConfigurationDigest, err = c.input.Configuration.Digest()
 	if err != nil {
 		t.Fatal(err)
