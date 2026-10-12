@@ -117,7 +117,15 @@ func routeAccount(agentID ID, agent Agent, model Model, project *Project, accoun
 		}
 	}
 	if len(eligible) == 0 {
-		return route, state, Fail(MissingInput, "No eligible account is available for execution.", "Inspect routing preview, project restrictions, model compatibility, and account health.")
+		problem := Fail(MissingInput, "No eligible account is available for execution.", "Inspect routing preview, project restrictions, model compatibility, and account health.")
+		exhausted := len(route.Candidates) > 0
+		for _, candidate := range route.Candidates {
+			exhausted = exhausted && candidate.Eligibility == ExhaustedAccount
+		}
+		if exhausted {
+			problem.Cause = QuotaExhaustedCause
+		}
+		return route, state, problem
 	}
 	choose := eligible[0].ID
 	switch policy {

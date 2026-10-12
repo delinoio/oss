@@ -224,19 +224,17 @@
 .session-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, auto) minmax(32px, 1fr) minmax(0, auto) minmax(
-      0,
-      auto
-    );
+  grid-template-rows: minmax(32px, 1fr) minmax(0, auto) minmax(0, auto) minmax(0, auto);
   height: 100%;
   min-width: 0;
   min-height: 0;
 }
 .session-notices {
-  grid-area: 1 / 1;
+  grid-area: 3 / 1;
   display: grid;
   gap: 6px;
-  max-height: 20vh;
+  max-height: min(35cqh, 280px);
+  overscroll-behavior: contain;
   overflow: auto;
   padding: 0 20px;
 }
@@ -246,11 +244,11 @@
 }
 .session-notice {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 12px;
   border: 1px solid var(--warning-border);
-  border-radius: 8px;
+  border-radius: 12px;
   color: var(--warning-text);
   background: var(--warning-background);
 }
@@ -270,7 +268,7 @@
   flex-shrink: 0;
 }
 .session-workspace .transcript {
-  grid-area: 2 / 1;
+  grid-area: 1 / 1;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -418,7 +416,7 @@
   font-size: 12px;
 }
 .session-input-tray {
-  grid-area: 3 / 1;
+  grid-area: 2 / 1;
   min-height: 0;
   max-height: 30vh;
   overflow: auto;
@@ -670,7 +668,7 @@
     display: none;
   }
   .session-notices {
-    max-height: 48px;
+    max-height: min(35cqh, 160px);
   }
   .session-input-tray {
     display: flex;
@@ -1624,4 +1622,21 @@
 .session-lifetime-tokens > span:last-child {
   margin-left: auto;
   text-align: right;
+}
+
+.session-notice[data-severity="error"] {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+  background: var(--danger-background);
+}
+.session-notice .session-icon { flex-shrink: 0; margin-top: 2px; }
+.session-notice p { margin: 6px 0; }
+.session-notice .session-notice-title { font-size: 14px; }
+.session-notices button, .session-notices summary { min-height: 40px; white-space: normal; overflow-wrap: anywhere; }
+.session-notice dl { margin: 8px 0; }
+.session-notice dd { margin-left: 0; overflow-wrap: anywhere; }
+@container conversation (max-width: 520px) {
+  .session-notice { flex-wrap: wrap; }
+  .session-notice > div { flex-basis: calc(100% - 32px); }
+  .session-notice > button { width: 100%; }
 }

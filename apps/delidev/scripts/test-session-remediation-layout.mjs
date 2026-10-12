@@ -92,16 +92,18 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
+      for (const state of ["quota", "authentication", "connection", "startup", "budget", "recovery"])
       for (const [width, height] of [
         [1440, 900],
         [960, 640],
-        [480, 320],
+        [640, 480],
+        [320, 240],
       ]) {
         await page.setViewportSize({ width, height });
-        await page.goto(`${origin}/?language=${language}&theme=${theme}`);
+        await page.goto(`${origin}/?language=${language}&theme=${theme}&state=${state}`);
         assert.deepEqual(
           await page
-            .locator(".session-toolbar-actions button")
+            .locator(".session-tool-menu [role=menuitem]")
             .allTextContents(),
           language === "en"
             ? ["Diff", "Files", "Terminals", "Browser", "Diagnostics"]
@@ -113,7 +115,14 @@ try {
           "Persistent inspector remains mounted without an Info action",
         );
         // The localization is sourced from the current catalog, not fixed English.
-        await page.locator(".session-notices .actions button").last().waitFor();
+        await page.locator(".session-notices .session-notice").first().waitFor();
+        assert(await page.locator(".session-notices").evaluate((node) =>
+          node.previousElementSibling?.classList.contains("session-input-tray") &&
+          node.nextElementSibling?.classList.contains("composer") &&
+          !node.closest(".transcript")), "Recovery region stays immediately above the composer");
+        for (const button of await page.locator(".session-notices button:visible").all()) {
+          assert(await button.evaluate((node) => node.getBoundingClientRect().height >= 40), "Recovery actions retain 40px targets");
+        }
         assert.equal(
           await page.getByRole("textbox").first().inputValue(),
           "Retained draft",
@@ -148,6 +157,7 @@ try {
           }),
           "Original composer remains reachable through its scroll owner",
         );
+        if (state !== "recovery") { checks++; continue; }
         const controls = page.locator(".session-notices .actions button");
         await controls.last().focus();
         await page.keyboard.press("Enter");
@@ -175,21 +185,10 @@ try {
               `session-remediation-${language}-${theme}-${width}.png`,
             ),
           });
-        // Cancel retains its original details-summary focus owner, independently of toolbar actions.
-        const recoverySummary = page.locator(".session-tools > summary");
+        // Recovery remains owned by the retained Info section, not a second disclosure.
         await page.locator(".session-tools .notice button").last().click();
-        assert.equal(
-          await page.getByRole("textbox").first().inputValue(),
-          "Retained draft",
-        );
-        await page.keyboard.press("Escape");
-        assert.equal(
-          await recoverySummary.evaluate(
-            (node) => document.activeElement === node,
-          ),
-          true,
-          "Cancellation retains the original recovery summary focus owner",
-        );
+        assert.equal(await page.getByRole("textbox").first().inputValue(), "Retained draft");
+        assert.equal(await page.locator(".session-tools").count(), 1);
         checks++;
       }
   assert.deepEqual(failures, []);

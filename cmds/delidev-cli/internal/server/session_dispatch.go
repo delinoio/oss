@@ -463,7 +463,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	if problem.Code == domain.ProviderDisabled {
 		s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "new_execution", "session_id", record.ID, "reason", problem.Code, "enabled", false)
 	}
-	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || problem.Cause != "" {
+	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || (problem.Cause != "" && !problem.IsQuotaExhausted()) {
 		return err
 	}
 	// A failed native/configuration check rolls back the complete claim first.
@@ -487,7 +487,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 		return sessionReceipt{SessionID: sr.ID}, nil
 	})
 	if updateErr == nil {
-		s.logger.InfoContext(ctx, "session_execution_blocked", "session_id", record.ID, "code", problem.Code)
+		s.logger.InfoContext(ctx, "session_execution_blocked", "session_id", record.ID, "code", problem.Code, "cause", problem.Cause)
 	} else if domain.SafeError(updateErr).Code != domain.Conflict {
 		return updateErr
 	}
@@ -581,7 +581,7 @@ func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 			err = s.dispatchExecution(bounded, record)
 			cancel()
-			if err != nil && (domain.SafeError(err).Cause != "" || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {
+			if err != nil && ((domain.SafeError(err).Cause != "" && !domain.SafeError(err).IsQuotaExhausted()) || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {
 				s.logger.WarnContext(ctx, "session_execution_storage_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
 			}
 		}

@@ -7,6 +7,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { FailureCode, FailureCause, failureCause } from "@delinoio/delidev-api-client";
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 
 export enum SessionIconKind {
@@ -78,18 +80,73 @@ export function SessionIcon({ kind }: { kind: SessionIconKind }) {
   );
 }
 
+export enum SessionNoticeSeverity {
+  Warning = "warning",
+  Error = "error",
+}
+
+/** Presentation only: callers retain actions, confirmations and request identity. */
+export function SessionProblemNotice({
+  code, cause, message, guidance, correlationId, details, fallbackTitle, children,
+}: {
+  code: unknown;
+  fallbackTitle?: string;
+  children?: ReactNode;
+  cause?: unknown;
+  message: string;
+  guidance?: string;
+  correlationId?: string;
+  details?: (opener: HTMLButtonElement) => void;
+}) {
+  useLocale();
+  const quota = failureCause(code, cause) === FailureCause.QuotaExhausted;
+  const title = quota
+    ? copy("session.quotaTitle")
+    : code === FailureCode.Unauthenticated
+      ? copy("session.authenticationTitle")
+      : code === FailureCode.RecoveryRequired
+        ? copy("session.recoveryTitle")
+        : code === FailureCode.BudgetReached
+          ? copy("session.budgetTitle")
+          : code === FailureCode.ServerUnavailable || code === FailureCode.Unavailable
+            ? copy("session.connectionTitle")
+            : fallbackTitle ?? copy("session.attentionRequired");
+  return (
+    <SessionNotice title={title} details={details}>
+      <p>{quota ? copy("session.quotaExplanation") : message}</p>
+      {quota || guidance ? <p>{quota ? copy("session.quotaGuidance") : guidance}</p> : null}
+      {children}
+      <Disclosure>
+        <DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>
+        <dl>
+          {typeof code === "string" ? <><dt>{copy("session.startupCode")}</dt><dd>{code}</dd></> : null}
+          {typeof cause === "string" && cause ? <><dt>{copy("session.problemCause")}</dt><dd>{cause}</dd></> : null}
+          {correlationId ? <><dt>{copy("session.startupReference")}</dt><dd>{correlationId}</dd></> : null}
+        </dl>
+      </Disclosure>
+    </SessionNotice>
+  );
+}
+
 export function SessionNotice({
   children,
   details,
+  title,
+  severity = SessionNoticeSeverity.Warning,
 }: {
   children: ReactNode;
+  title?: string;
+  severity?: SessionNoticeSeverity;
   details?: (opener: HTMLButtonElement) => void;
 }) {
   useLocale();
   return (
-    <div className="session-notice" role="alert">
+    <div className="session-notice" data-severity={severity} role="alert">
       <SessionIcon kind={SessionIconKind.Warning} />
-      <div>{children}</div>
+      <div>
+        {title ? <strong className="session-notice-title">{title}</strong> : null}
+        {children}
+      </div>
       {details ? (
         <button type="button" onClick={(event) => details(event.currentTarget)}>
           {copy("session.showDetails")}

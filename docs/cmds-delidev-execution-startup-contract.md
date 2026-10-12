@@ -347,3 +347,12 @@ created. The common Resource projection removes the private key from every publi
 Session document and exposes the additive typed envelope instead. Worker reports,
 closed progress attempts, assignments, checkpoints and digests retain their
 original shapes. No Worker field, RPC, capability or migration is introduced.
+## Composer-adjacent startup presentation
+
+The retained session recovery region shows a definitive startup failure with
+error styling and uncertain delivery/cleanup with warning styling. Show the
+validated correction and independent original delivery/cleanup guidance before
+Technical details. Original Runner remediation and Info controllers remain
+single owners; moving their presentation grants no read, retry or native action.
+All original positive no-send/cleanup, Resume revision and recovery gates remain
+unchanged. See [session recovery cards](apps-delidev-desktop-contract.md#contextual-session-recovery-cards).

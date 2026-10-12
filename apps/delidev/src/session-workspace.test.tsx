@@ -460,11 +460,11 @@ it("keeps original technical evidence in persistent Info and reveals it from the
     screen.getByRole("complementary", { name: "Session information" }),
   ).toHaveProperty("hidden", false);
   expect(
-    screen.getByText(/Original installation evidence/).closest("aside"),
+    within(screen.getByRole("complementary", { name: "Session information" })).getByText(/Original installation evidence/).closest("aside"),
   ).toHaveProperty("hidden", false);
   const opener = screen.getByRole("button", { name: "Show details" });
   fireEvent.click(opener);
-  const evidence = screen.getByText(/Original installation evidence/);
+  const evidence = within(screen.getByRole("complementary", { name: "Session information" })).getByText(/Original installation evidence/);
   expect(evidence.closest("section")).toHaveProperty("hidden", false);
   expect(evidence.closest("aside")).toHaveProperty("hidden", false);
   fireEvent.keyDown(evidence, { key: "Escape" });
@@ -1174,11 +1174,11 @@ it("projects accepted live preparation, claim and response transitions without r
       },
     }),
   );
-  await screen.findByText("Execution is blocked");
+  await screen.findByText("Connection unavailable");
   expect(container.querySelector(".session-progress")).toBeNull();
   expectVisibleInfo();
   expect(
-    screen.getByText(/The selected Worker is not currently connected/)
+    within(screen.getByRole("complementary", {name:"Session information"})).getByText(/The selected Worker is not currently connected/)
       .textContent,
   ).toContain(
     "Reconnect the original execution machine; the accepted input remains queued.",
@@ -1935,4 +1935,20 @@ it("returns selected shared File close to retained Files and preserves inactive 
   fireEvent.click(screen.getByRole("button", { name: "Close note.txt tab" }));
   expect(diagnostics.getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(diagnostics);
+});
+
+it("keeps quota and independent recovery above the composer without replacing draft or transcript", async () => {
+ const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {recovery:"required", problem:{code:"missing_input", cause:"quota_exhausted", message:"All original sources exhausted.", guidance:"Wait for observed recovery."}});
+ const mounted = render(f.view("Retained quota draft"));
+ const composer = await screen.findByRole("textbox", {name:"Message"}); await screen.findByText("Usage limit reached");
+ const transcript = mounted.container.querySelector(".transcript"); const region = screen.getByRole("region", {name:"Session recovery"});
+ expect(region.previousElementSibling?.className).toBe("session-input-tray"); expect(region.nextElementSibling).toBe(composer.closest("form"));
+ expect(within(region).getByText("Recovery required")).toBeTruthy(); expect(transcript?.contains(region)).toBe(false);
+ expect(composer).toHaveProperty("value", "Retained quota draft");
+ await act(async () => { await i18n.changeLanguage("ko"); }); expect(screen.getByRole("textbox", {name:"메시지"})).toBe(composer); expect(mounted.container.querySelector(".transcript")).toBe(transcript);
+ await act(async () => { f.publish(create(ResourceSchema, {...f.session, revision:8n, documentJson:encode({...readDocument(f.session), recovery:"none", problem:undefined})})); });
+ await waitFor(() => expect(screen.queryByText("사용량 한도에 도달했습니다")).toBeNull());
+ expect(screen.getByRole("textbox", {name:"메시지"})).toBe(composer); expect(mounted.container.querySelector(".transcript")).toBe(transcript);
+ expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
+ mounted.unmount(); await act(async () => { await i18n.changeLanguage("en"); });
 });

@@ -23,7 +23,17 @@ export enum FailureCode {
 }
 
 export enum FailureCause {
+  QuotaExhausted = "quota_exhausted",
   ConfigurationNameConflict = "configuration_name_conflict",
+}
+
+/** Closed code/cause projection shared by RPC and retained Session problems. */
+export function failureCause(code: unknown, cause: unknown): FailureCause | undefined {
+  if (code === FailureCode.MissingInput && cause === FailureCause.QuotaExhausted)
+    return FailureCause.QuotaExhausted;
+  if (code === FailureCode.Conflict && cause === FailureCause.ConfigurationNameConflict)
+    return FailureCause.ConfigurationNameConflict;
+  return undefined;
 }
 
 export interface ClientFailure {
@@ -43,11 +53,7 @@ export function clientFailure(reason: unknown): ClientFailure {
   ) {
     return {
       code: detail.code as FailureCode,
-      cause:
-        detail.code === FailureCode.Conflict &&
-        detail.cause === FailureCause.ConfigurationNameConflict
-          ? FailureCause.ConfigurationNameConflict
-          : undefined,
+      cause: failureCause(detail.code, detail.cause),
       message: error.rawMessage,
       guidance: detail.guidance,
       correlationId: isEntityId(detail.correlationId)

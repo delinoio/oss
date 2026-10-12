@@ -60,9 +60,10 @@ exclusive end boundaries, exact BigInt counts, independent currencies and every
 decimal digit. Missing, uncertain, incomplete and stale observations stay distinct
 from measured zero, success, actual cost and execution readiness.
 
-Error codes select localized guidance. Original server message/guidance and
-technical metadata remain inert text inside an explicit Technical details
-disclosure. Existing native diagnostic redaction remains authoritative: protected
+Error codes select localized guidance. Original server message/guidance remains inert evidence. Session recovery
+cards show safe cause and guidance inline; other error surfaces retain their
+explicit Technical details disclosure. Secondary technical metadata stays in
+that disclosure. Existing native diagnostic redaction remains authoritative: protected
 native content is not made available by localization. A disclosure contains only
 original details already admitted by the owning diagnostic contract. A translation
 never replaces original evidence or creates retry permission.
@@ -286,3 +287,12 @@ Timing text remains outside the polite status node with aria-live off so ticks
 do not announce. Locale changes preserve independent native disclosure state,
 clock ownership, drafts and focus. Unavailable timing never becomes a localized
 zero or a successful outcome.
+## Session recovery card copy
+
+The EN/KO session source catalogs own six fixed recovery headings and the
+quota-specific complete-exhaustion explanation and supported waiting/configuration
+guidance. Safe arbitrary server/provider evidence stays exact and visible in
+these cards. Only secondary codes, versions and opaque references are disclosed.
+The closed quota pair selects localized copy; translated or raw message text
+cannot establish the cause. Locale changes retain the original Session,
+composer, Info and operation identities without replay or focus movement.

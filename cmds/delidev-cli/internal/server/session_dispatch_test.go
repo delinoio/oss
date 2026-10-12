@@ -582,3 +582,47 @@ func TestInitialDispatchCandidatePagesExcludeOtherLifecycleStates(t *testing.T) 
 		t.Fatal("unsafe lifecycle candidate or wrong continuation")
 	}
 }
+
+func TestInitialDispatchQuotaCausePublishesOnlyBlockedProblem(t *testing.T) {
+	f := newFirstDispatchFixture(t)
+	ctx := context.Background()
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.exhaust", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, domain.ID(f.account.Id), 0)
+		if err != nil {
+			return nil, err
+		}
+		a.ConfirmedExhausted = true
+		return tx.Put(r.Kind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := f.refresh(t)
+	err = f.service.dispatchExecution(ctx, before)
+	if err == nil || !domain.SafeError(err).IsQuotaExhausted() {
+		t.Fatal("missing exact quota cause", err)
+	}
+	blocked := f.refresh(t)
+	state, _ := store.Decode[domain.Session](blocked)
+	input := inputBody(t, currentCatalogResource(t, f.accountFixture, f.change.Input))
+	if state.Problem == nil || !state.Problem.IsQuotaExhausted() || state.Dispatch != domain.DispatchBlocked || state.InitialExecution != nil || state.ActiveExecutionID != "" || state.PendingInputs != 1 || input.Delivery != domain.InputQueued || input.ExecutionID != "" {
+		t.Fatal("quota publication consumed execution ownership", state, input)
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		r, _, err := tx.Routing(f.selection.AgentID)
+		if r.ID != "" {
+			t.Error("quota failure advanced routing")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.service.dispatchExecution(ctx, blocked)
+	if f.refresh(t).Revision != blocked.Revision {
+		t.Fatal("unchanged quota problem republished")
+	}
+	_ = f.service.dispatchExecution(ctx, before)
+	if f.refresh(t).Revision != blocked.Revision {
+		t.Fatal("old revision replaced quota problem")
+	}
+}
