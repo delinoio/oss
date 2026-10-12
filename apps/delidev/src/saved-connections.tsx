@@ -126,11 +126,13 @@ function SavedConnectionTask({
   title,
   inline,
   visible,
+  presentationGeneration = 0,
   children,
 }: {
   title: string;
   inline: boolean;
   visible: boolean;
+  presentationGeneration?: number;
   children: ReactNode;
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
@@ -147,9 +149,11 @@ function SavedConnectionTask({
     )
       resume.current?.focus();
   }, [inline, visible, presented]);
+  // Only a genuine new task resets dismissal. Page-slot movement cannot
+  // change this presentation signal or the retained child/request identity.
   useEffect(() => {
-    if (inline && visible) setPresented(true);
-  }, [inline, visible]);
+    setPresented(true);
+  }, [presentationGeneration]);
   // Escape/Close releases presentation only. Explicit Discard/Keep controls
   // remain the original owner's decision, including after an uncertain write.
   return (
@@ -188,16 +192,19 @@ export function SavedConnections({
   actions,
   target,
   advancedTarget,
+  refreshKey,
 }: {
   visible: boolean;
   close: () => void;
   actions: SavedConnectionActions;
   target?: HTMLElement;
   advancedTarget?: HTMLElement;
+  refreshKey?: number;
 }) {
   useLocale();
   const readGeneration = useRef(0);
   const [adding, setAdding] = useState(false);
+  const [addPresentationGeneration, setAddPresentationGeneration] = useState(0);
   const [historyTarget, setHistoryTarget] = useState<HTMLDivElement | null>(
     null,
   );
@@ -262,7 +269,7 @@ export function SavedConnections({
     return () => {
       canceled = true;
     };
-  }, [visible, actions]);
+  }, [visible, actions, refreshKey]);
   let preview: Record<string, unknown> = {};
   if (grant.length <= 32768) {
     try {
@@ -461,7 +468,10 @@ export function SavedConnections({
               icon={SettingsActionIcon.Add}
               className="primary"
               disabled={busy || Boolean(adding || attempt || edit || removal)}
-              onClick={() => setAdding(true)}
+              onClick={() => {
+                setAddPresentationGeneration((generation) => generation + 1);
+                setAdding(true);
+              }}
             >
               {copy("settings.connections.add")}
             </SettingsActionButton>
@@ -754,6 +764,7 @@ export function SavedConnections({
         title={copy("saved-connections.addAServerConnection_191cce")}
         inline={Boolean(target)}
         visible={visible && adding}
+        presentationGeneration={addPresentationGeneration}
       >
         <section>
           <h3>{copy("saved-connections.addAServerConnection_191cce")}</h3>

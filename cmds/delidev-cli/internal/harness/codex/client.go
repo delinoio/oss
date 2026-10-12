@@ -69,6 +69,7 @@ type Client struct {
 	pendingEvent       *nativewire.Event
 	api                *apiBinding
 	managedHome        string
+	executionHelpers   *executionHelpers
 	revertHistory      bool
 	imageGeneration    bool
 	imageObservations  bool
@@ -182,6 +183,18 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
+	var helpers *executionHelpers
+	if config.ManagedAuthentication && config.Mode == ThreadProtocol {
+		helpers, err = prepareExecutionHelpers(home, config.Process)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if returned != nil {
+				helpers.release()
+			}
+		}()
+	}
 	phase = launchPhase
 	imageObservations := config.imageObservationProfile()
 	var wire *nativewire.Connection
@@ -262,12 +275,20 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := domain.Decode(response.Result, &loaded); err != nil || loaded.Data == nil || len(loaded.Data) != 0 || loaded.NextCursor != nil {
 		return nil, incompatible()
 	}
+	// Bind the original native helper entries after initialized startup and
+	// before any product thread/input can be admitted. No historical runtime
+	// or cleanup-time basename discovery can supply this proof.
+	if helpers != nil {
+		if err := helpers.capture(wire.Identity()); err != nil {
+			return nil, err
+		}
+	}
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
 	process.ObserveStartup(config.Process, domain.StartupSettings, domain.StartupProgressRunning)
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations)
 	}
-	client = &Client{imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err
@@ -311,7 +332,31 @@ func handshakeError(wire *nativewire.Connection, err error) error {
 	return failure
 }
 func (c *Client) Close() error {
-	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.CloseGracefully(3*time.Second))
+	nativeErr, helperErr := c.CloseWithExecutionHelpers()
+	return errors.Join(nativeErr, helperErr)
+}
+
+// CloseWithExecutionHelpers returns independent native-join and helper-retirement
+// results. Authentication comparison and scanning must still run after a joined
+// original tree even when helper retirement fails.
+func (c *Client) CloseWithExecutionHelpers() (nativeErr, helperErr error) {
+	nativeErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.CloseGracefully(3*time.Second))
+	if nativeErr != nil {
+		if c.executionHelpers != nil {
+			c.executionHelpers.mu.Lock()
+			if !c.executionHelpers.closed {
+				c.executionHelpers.release()
+				c.executionHelpers.closed = true
+				c.executionHelpers.result = helperFailure()
+			}
+			c.executionHelpers.mu.Unlock()
+		}
+		return nativeErr, nil
+	}
+	if c.managedHome != "" && c.mode == ThreadProtocol {
+		helperErr = domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.executionHelpers.retire(c.managedHome, c.ownerID, c.wire.Identity()))
+	}
+	return nativeErr, helperErr
 }
 func (c *Client) Version() string { return c.version }
 

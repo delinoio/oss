@@ -36,6 +36,11 @@ const (
 	managedFixtureCapture              managedExecutionFixtureFault = "capture"
 	managedFixtureScan                 managedExecutionFixtureFault = "scan"
 	managedFixtureStartupCleanup       managedExecutionFixtureFault = "startup-cleanup"
+	managedFixtureHelpers              managedExecutionFixtureFault = "original-helpers"
+	managedFixtureHelperExtension      managedExecutionFixtureFault = "helper-extension-abort"
+	managedFixtureHelperTarget         managedExecutionFixtureFault = "helper-target-changed"
+	managedFixtureHelperUnknown        managedExecutionFixtureFault = "helper-unknown-link"
+	managedFixtureHelperLate           managedExecutionFixtureFault = "helper-no-startup-proof"
 )
 
 func init() {
@@ -52,6 +57,28 @@ func init() {
 	}
 	faultBytes, _ := os.ReadFile(filepath.Join(home, "fixture-fault"))
 	fault := managedExecutionFixtureFault(faultBytes)
+	helperDirectory := filepath.Join(home, "tmp", "arg0", "fixture-original-helper")
+	createHelpers := func() {
+		if runtime.GOOS == "windows" {
+			return
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			os.Exit(88)
+		}
+		executable, err = filepath.EvalSymlinks(executable)
+		if err != nil || os.MkdirAll(helperDirectory, 0700) != nil {
+			os.Exit(88)
+		}
+		for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+			if os.Symlink(executable, filepath.Join(helperDirectory, name)) != nil {
+				os.Exit(88)
+			}
+		}
+	}
+	if fault == managedFixtureHelpers || fault == managedFixtureHelperExtension || fault == managedFixtureHelperTarget || fault == managedFixtureHelperUnknown {
+		createHelpers()
+	}
 	var thread map[string]any
 	reads := 0
 	encoder := json.NewEncoder(os.Stdout)
@@ -137,6 +164,27 @@ func init() {
 			if security.WriteAtomic(filepath.Join(home, "auth.json"), workerSubscriptionBundle("rotated")) != nil {
 				os.Exit(82)
 			}
+			if fault == managedFixtureHelperLate {
+				createHelpers()
+			}
+			if fault == managedFixtureHelperTarget {
+				alias := filepath.Join(helperDirectory, "apply_patch")
+				if os.Rename(alias, alias+".original") != nil || os.Symlink(filepath.Join(home, "foreign-target"), alias) != nil {
+					os.Exit(88)
+				}
+			}
+			if fault == managedFixtureHelperUnknown {
+				if os.Symlink(filepath.Join(home, "foreign-target"), filepath.Join(home, "unknown-link")) != nil {
+					os.Exit(88)
+				}
+			}
+			if fault == managedFixtureHelperExtension {
+				// The original input has been acknowledged and credentials rotated.
+				// An unsupported extension fails execution; the sleeping child must
+				// be stopped and joined independently of helper/file cleanup.
+				notify("mcp/fixtureUnsupported", map[string]any{})
+				continue
+			}
 			if fault == managedFixtureScan {
 				if os.WriteFile(filepath.Join(home, "history.jsonl"), []byte("synthetic-worker-refresh-rotated"), 0600) != nil {
 					os.Exit(86)
@@ -159,6 +207,13 @@ func init() {
 			write(request.ID, map[string]any{"account": account, "requiresOpenaiAuth": true})
 		default:
 			os.Exit(84)
+		}
+	}
+	if fault == managedFixtureHelperExtension {
+		// Keep answering final credential capture until stdin closes, then
+		// exercise the original bounded graceful-shutdown cancellation path.
+		for {
+			time.Sleep(time.Hour)
 		}
 	}
 	os.Exit(0)
@@ -238,7 +293,7 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 				t.Fatal(err)
 			}
 			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
-			client := &managedExecutionPublicationRPC{}
+			client := &managedExecutionPublicationRPC{nativeHome: filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex"), fault: managedFixtureHelpers}
 			publication := &PublicationConfig{Credential: credential, Instance: f.job.InstanceID, Assignment: resource, Client: client}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
@@ -297,8 +352,11 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 }
 
 func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) {
-	for _, fault := range []managedExecutionFixtureFault{managedFixtureCapture, managedFixtureScan, managedFixtureStartupCleanup, managedFixtureInspectionActivity, managedFixtureInspectionCompletion} {
+	for _, fault := range []managedExecutionFixtureFault{managedFixtureCapture, managedFixtureScan, managedFixtureStartupCleanup, managedFixtureInspectionActivity, managedFixtureInspectionCompletion, managedFixtureHelperExtension, managedFixtureHelperTarget, managedFixtureHelperUnknown, managedFixtureHelperLate} {
 		t.Run(string(fault), func(t *testing.T) {
+			if runtime.GOOS == "windows" && (fault == managedFixtureHelperExtension || fault == managedFixtureHelperTarget || fault == managedFixtureHelperUnknown || fault == managedFixtureHelperLate) {
+				t.Skip("Unix symlink retirement profile")
+			}
 			f := newCheckpointFixture(t)
 			f.input.ExecutionID = domain.NewID()
 			f.input.Configuration.Subscription = true
@@ -350,8 +408,10 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 			var logs bytes.Buffer
 			config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}
 			err = runAndReportJob(ctx, config, client, credential, f.job.InstanceID, assignment{context: ctx, cancel: func() {}}, resource, f.job)
-			if fault == managedFixtureInspectionActivity || fault == managedFixtureInspectionCompletion {
-				assertInspectionFailureLog(t, logs.Bytes(), f.jobID, f.input.ExecutionID, f.input.SessionID, f.input.Input.Prompt, f.input.Configuration.Instructions, f.root)
+			if fault == managedFixtureInspectionActivity || fault == managedFixtureInspectionCompletion || fault == managedFixtureHelperExtension {
+				if fault != managedFixtureHelperExtension {
+					assertInspectionFailureLog(t, logs.Bytes(), f.jobID, f.input.ExecutionID, f.input.SessionID, f.input.Input.Prompt, f.input.Configuration.Instructions, f.root)
+				}
 				// Inspection refusal with independently verified cleanup keeps its
 				// original failed report; it is not an uncertain authentication Finish.
 				if err != nil || !client.reported {
@@ -370,6 +430,23 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 					}
 				default:
 					t.Fatal("inspection refusal omitted original authentication cleanup")
+				}
+				if fault == managedFixtureHelperExtension {
+					for _, name := range []string{"apply_patch", "applypatch", "codex-execve-wrapper"} {
+						if _, err := os.Lstat(filepath.Join(client.nativeHome, "tmp", "arg0", "fixture-original-helper", name)); !os.IsNotExist(err) {
+							t.Fatal("aborted input retained an original helper", err)
+						}
+					}
+					if !slices.ContainsFunc(client.events, func(event domain.ExecutionEvent) bool { return event.Kind == domain.ExecutionInputAccepted }) {
+						t.Fatal("fixture failure lost original accepted input")
+					}
+					if !bytes.Contains(logs.Bytes(), []byte(`"msg":"native_graceful_shutdown_timeout"`)) || !bytes.Contains(logs.Bytes(), []byte(`"removed_count":3`)) {
+						t.Fatal("fixture did not cover joined forced shutdown and original helper retirement")
+					}
+					reads, readErr := security.ReadPrivate(filepath.Join(client.nativeHome, "bundle-read-count"), 16)
+					if readErr != nil || string(reads) != "1" {
+						t.Fatal("aborted input replayed final bundle capture", readErr)
+					}
 				}
 				return
 			}
@@ -391,11 +468,16 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 				if fault == managedFixtureCapture && finish.Succeeded {
 					t.Fatal("capture fixture did not exercise final bundle capture failure")
 				}
-				if fault == managedFixtureScan && (!finish.Succeeded || finish.CleanupConfirmed) {
+				if (fault == managedFixtureScan || fault == managedFixtureHelperTarget || fault == managedFixtureHelperUnknown || fault == managedFixtureHelperLate) && (!finish.Succeeded || finish.CleanupConfirmed) {
 					t.Fatal("scan fixture did not isolate retained-file cleanup failure")
 				}
 			default:
 				t.Fatal("uncertain execution omitted its protected fenced Finish")
+			}
+			if fault == managedFixtureHelperTarget || fault == managedFixtureHelperUnknown || fault == managedFixtureHelperLate {
+				if _, err := os.Lstat(filepath.Join(client.nativeHome, "auth.json")); !os.IsNotExist(err) {
+					t.Fatal("helper uncertainty skipped independent auth cleanup", err)
+				}
 			}
 		})
 	}

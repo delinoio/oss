@@ -103,6 +103,22 @@ func (s *Service) ReportSessionStartupProgress(ctx context.Context, req *connect
 		if step.Sequence <= previousSequence {
 			return step, nil
 		}
+		if step.State == domain.StartupProgressRunning {
+			// Follow-up executions cannot replace the original initial-agent clock.
+			initial := identity.Execution == "" || session.InitialExecution != nil && (session.InitialExecution.ID == identity.Execution || session.NativeExecutionRootID == identity.Execution)
+			if initial && (identity.Execution == "" || session.Execution == nil || session.Execution.NativeTurnID == "") {
+				if session.StartupTiming == nil {
+					session.StartupTiming = &domain.SessionStartupTiming{}
+				}
+				timing := &session.StartupTiming.Workspace
+				if identity.Execution != "" {
+					timing = &session.StartupTiming.Agent
+				}
+				if *timing == nil || (*timing).JobID != identity.Job {
+					*timing = &domain.StartupGroupTiming{JobID: identity.Job, ExecutionID: identity.Execution, StartedAt: tx.ObservationTime()}
+				}
+			}
+		}
 		_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
 		return step, err
 	})

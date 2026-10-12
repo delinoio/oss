@@ -21,6 +21,7 @@ import {
   progressResponseOwner,
   responseSuppressesProgress,
 } from "./session-progress";
+import { useStartupTimes } from "./session-startup-timing";
 import { useStartupPresence } from "./session-startup-presence";
 import {
   startupOperations,
@@ -29,6 +30,7 @@ import {
 import {
   SessionProgressStatus,
   StartupObservedOperation,
+  RetainedStartupTimes,
 } from "./session-progress-status";
 import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
@@ -1927,6 +1929,15 @@ export function SessionView({
     startupOwner,
     observeStartupOwner,
   );
+  const startupTimes = useStartupTimes(
+    session,
+    startupMachine.data,
+    observeStartupOwner &&
+      !startupMachine.error &&
+      !startupMachine.isPending &&
+      !startupMachine.isFetching,
+    startupOwner,
+  );
   const startupOwnerCurrent =
     !hasStartupOperations ||
     startupWorkerCurrent(
@@ -2413,10 +2424,22 @@ export function SessionView({
                         {copy("session.connectionRequiresAttention_160d4a")}
                       </p>
                     ) : null}
+                    {!progress &&
+                    hasStartupOperations &&
+                    data.archive === "active" &&
+                    ["not-started", "running"].includes(text(data.outcome)) &&
+                    !projectedSubmissions.length &&
+                    !rows.length &&
+                    !messages.rows.length &&
+                    (startupTimes.workspace?.seconds !== undefined ||
+                      startupTimes.agent?.seconds !== undefined) ? (
+                      <RetainedStartupTimes timing={startupTimes} />
+                    ) : null}
                     {progress ? (
                       <SessionProgressStatus
                         phase={progress}
                         operations={startupOperations(session, progress)}
+                        timing={startupTimes}
                         compact={Boolean(
                           rows.length ||
                           messages.rows.length ||

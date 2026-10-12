@@ -28,6 +28,7 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	if err != nil {
 		return store.Record{}, err
 	}
+	session.FinishStartupTiming(record.ID, input.ExecutionID, tx.ObservationTime())
 	job.Startup = session.Startup
 	if input.Version == 4 && session.Startup != nil && session.Startup.Ready != nil {
 		input.Installation.Version = session.Startup.Ready.NativeVersion
@@ -118,7 +119,7 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 		// sufficient. Keep the execution/input claim reachable for recovery;
 		// neither an error nor an empty journal can authorize another send.
 		job.State, job.Problem, job.Output = domain.JobUncertain, nativeCompletionUncertain(), nil
-		if err := retainNativeUncertainty(tx, input, sr, &session); err != nil {
+		if err := retainNativeUncertainty(tx, record.ID, input, sr, &session); err != nil {
 			return store.Record{}, err
 		}
 	}
@@ -140,9 +141,13 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 			}
 		}
 	}
-	if verified && completion.Outcome == domain.ExecutionSucceeded {
-		if err := queueAutomaticSessionTitle(tx, sr, &session, record, input, false); err != nil {
-			return store.Record{}, err
+	if verified {
+		if completion.Outcome == domain.ExecutionSucceeded {
+			if err := queueAutomaticSessionTitle(tx, sr, &session, record, input, false); err != nil {
+				return store.Record{}, err
+			}
+		} else {
+			settleUnsuccessfulInitialTitle(&session, input, completion.Outcome)
 		}
 	}
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
@@ -161,7 +166,8 @@ func nativeCompletionUncertain() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "Native execution completion or owned cleanup requires reconciliation.", "Preserve the Worker runtime, event outbox and process journals; never replay the initial input.")
 }
 
-func retainNativeUncertainty(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, session *domain.Session) error {
+func retainNativeUncertainty(tx *store.Tx, jobID domain.ID, input domain.ExecutionJobInput, sr store.Record, session *domain.Session) error {
+	session.FinishStartupTiming(jobID, input.ExecutionID, tx.ObservationTime())
 	if err := retireSteer(tx, sr, session, true); err != nil {
 		return err
 	}
@@ -207,7 +213,7 @@ func finishLostNativeExecution(tx *store.Tx, record store.Record, job domain.Job
 	if err != nil {
 		return err
 	}
-	if err := retainNativeUncertainty(tx, input, sr, &session); err != nil {
+	if err := retainNativeUncertainty(tx, record.ID, input, sr, &session); err != nil {
 		return err
 	}
 	_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)

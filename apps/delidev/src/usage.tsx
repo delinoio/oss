@@ -8,7 +8,7 @@ import {
   displayLocale,
   useLocale,
 } from "./localization";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -261,6 +261,22 @@ export function Usage({
 
   const [tab, setTab] = useState(UsageTab.Overview);
   const tabId = useId();
+  const pricesTab = useRef<HTMLButtonElement>(null);
+  const pendingPriceFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!pendingPriceFocus.current) return;
+    // Consume explicit navigation once, including when its surface has departed.
+    // Passive renders and ordinary tab selection must preserve current focus.
+    pendingPriceFocus.current = false;
+    const target = pricesTab.current;
+    if (
+      active &&
+      tab === UsageTab.Prices &&
+      target?.isConnected &&
+      !target.closest("[hidden]")
+    )
+      target.focus();
+  });
   const [expanded, setExpanded] = useState<AccountingDisclosures["expanded"]>(
     {},
   );
@@ -311,6 +327,7 @@ export function Usage({
   };
   const data = result.data;
   const selectPrice = (identity: PriceSelection) => {
+    pendingPriceFocus.current = true;
     setDetail({ ...identity, history: retainedPrices(data, identity) });
     setTab(UsageTab.Prices);
   };
@@ -524,6 +541,7 @@ export function Usage({
           {tabs.map((value, index) => (
             <button
               key={value}
+              ref={value === UsageTab.Prices ? pricesTab : undefined}
               type="button"
               role="tab"
               id={`${tabId}-${value}-tab`}
