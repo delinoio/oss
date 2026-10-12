@@ -29,6 +29,7 @@ const (
 	ThreadMetadataDiscarded          MetadataKind = "thread-metadata-discarded"
 	ThreadContextSupplementDiscarded MetadataKind = "thread-context-supplement-discarded"
 	GatewayOAuthStatusDiscarded      MetadataKind = "gateway-oauth-status-discarded"
+	CurrentTimeReplySent             MetadataKind = "current-time-reply-sent"
 )
 
 type nativeMCPStartupState string
