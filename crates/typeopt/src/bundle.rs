@@ -30,8 +30,9 @@ pub(crate) struct HtmlTag {
 }
 
 /// Decodes the character references of an attribute value: numeric
-/// (`&#46;`, `&#x2e;`, with or without `;`) and common named ones. Returns
-/// `None` for a named reference outside that set.
+/// (`&#46;`, `&#x2e;`, with or without `;`), common named ones and the
+/// legacy names browsers decode without `;`. Returns `None` for a named
+/// reference outside the decoded set.
 fn decode_references(value: &str) -> Option<String> {
     const NAMED: [(&str, char); 22] = [
         ("amp", '&'),
@@ -56,6 +57,20 @@ fn decode_references(value: &str) -> Option<String> {
         ("dollar", '$'),
         ("ast", '*'),
         ("nbsp", '\u{a0}'),
+    ];
+    // Named references that browsers also decode without a semicolon.
+    const LEGACY: [&str; 106] = [
+        "AElig", "AMP", "Aacute", "Acirc", "Agrave", "Aring", "Atilde", "Auml", "COPY", "Ccedil",
+        "ETH", "Eacute", "Ecirc", "Egrave", "Euml", "GT", "Iacute", "Icirc", "Igrave", "Iuml",
+        "LT", "Ntilde", "Oacute", "Ocirc", "Ograve", "Oslash", "Otilde", "Ouml", "QUOT", "REG",
+        "THORN", "Uacute", "Ucirc", "Ugrave", "Uuml", "Yacute", "aacute", "acirc", "acute",
+        "aelig", "agrave", "amp", "aring", "atilde", "auml", "brvbar", "ccedil", "cedil", "cent",
+        "copy", "curren", "deg", "divide", "eacute", "ecirc", "egrave", "eth", "euml", "frac12",
+        "frac14", "frac34", "gt", "iacute", "icirc", "iexcl", "igrave", "iquest", "iuml", "laquo",
+        "lt", "macr", "micro", "middot", "nbsp", "not", "ntilde", "oacute", "ocirc", "ograve",
+        "ordf", "ordm", "oslash", "otilde", "ouml", "para", "plusmn", "pound", "quot", "raquo",
+        "reg", "sect", "shy", "sup1", "sup2", "sup3", "szlig", "thorn", "times", "uacute", "ucirc",
+        "ugrave", "uml", "uuml", "yacute", "yen", "yuml",
     ];
     if !value.contains('&') {
         return Some(value.to_owned());
@@ -84,14 +99,31 @@ fn decode_references(value: &str) -> Option<String> {
         let len = rest
             .find(|c: char| !c.is_ascii_alphanumeric())
             .unwrap_or(rest.len());
-        if len == 0 || !rest[len..].starts_with(';') {
-            // Not a reference (or a legacy form without `;`): literal `&`.
-            out.push('&');
+        if len > 0 && rest[len..].starts_with(';') {
+            let (_, decoded) = NAMED.iter().find(|(name, _)| *name == &rest[..len])?;
+            out.push(*decoded);
+            rest = &rest[len + 1..];
             continue;
         }
-        let (_, decoded) = NAMED.iter().find(|(name, _)| *name == &rest[..len])?;
-        out.push(*decoded);
-        rest = &rest[len + 1..];
+        // Without `;`, a legacy name decodes unless an alphanumeric or `=`
+        // follows it (attribute-value rules).
+        let legacy = LEGACY
+            .iter()
+            .filter(|name| rest.starts_with(**name))
+            .max_by_key(|name| name.len());
+        match legacy {
+            Some(name)
+                if !rest[name.len()..]
+                    .starts_with(|c: char| c.is_ascii_alphanumeric() || c == '=') =>
+            {
+                let (_, decoded) = NAMED
+                    .iter()
+                    .find(|(known, _)| known.eq_ignore_ascii_case(name))?;
+                out.push(*decoded);
+                rest = &rest[name.len()..];
+            }
+            _ => out.push('&'),
+        }
     }
     out.push_str(rest);
     Some(out)
@@ -219,6 +251,64 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
         });
     }
     tags
+}
+
+/// The value of JavaScript string literal source (without its quotes):
+/// escape sequences decoded. `None` for a malformed escape.
+pub(crate) fn decode_js_string(raw: &str) -> Option<String> {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let escaped = chars.next()?;
+        let hex = |chars: &mut std::iter::Peekable<std::str::Chars>, n: usize| -> Option<u32> {
+            let digits: String = (0..n).map(|_| chars.next()).collect::<Option<_>>()?;
+            u32::from_str_radix(&digits, 16).ok()
+        };
+        match escaped {
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            'b' => out.push('\u{8}'),
+            'f' => out.push('\u{c}'),
+            'v' => out.push('\u{b}'),
+            '0' if !chars.peek().is_some_and(char::is_ascii_digit) => out.push('\0'),
+            'x' => out.push(char::from_u32(hex(&mut chars, 2)?)?),
+            'u' if chars.peek() == Some(&'{') => {
+                chars.next();
+                let digits: String = chars.by_ref().take_while(|c| *c != '}').collect();
+                out.push(char::from_u32(u32::from_str_radix(&digits, 16).ok()?)?);
+            }
+            'u' => {
+                let unit = hex(&mut chars, 4)?;
+                // A surrogate pair spans two escapes.
+                if (0xd800..0xdc00).contains(&unit) {
+                    if chars.next()? != '\\' || chars.next()? != 'u' {
+                        return None;
+                    }
+                    let low = hex(&mut chars, 4)?;
+                    out.push(char::from_u32(
+                        0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00),
+                    )?);
+                } else {
+                    out.push(char::from_u32(unit)?);
+                }
+            }
+            // Line continuations produce nothing.
+            '\n' | '\u{2028}' | '\u{2029}' => {}
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+            }
+            '1'..='9' => return None,
+            other => out.push(other),
+        }
+    }
+    Some(out)
 }
 
 /// Specifiers of literal dynamic `import("…")` calls in script text.
@@ -1102,6 +1192,24 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
     }
 
     #[test]
+    fn decodes_javascript_string_escapes() {
+        assert_eq!(
+            super::decode_js_string(r"./lib\u002ejs").as_deref(),
+            Some("./lib.js")
+        );
+        assert_eq!(
+            super::decode_js_string(r"./\x6cib\u{2E}js").as_deref(),
+            Some("./lib.js")
+        );
+        assert_eq!(super::decode_js_string(r"./a\'b").as_deref(), Some("./a'b"));
+        assert_eq!(
+            super::decode_js_string(r"\uD83D\uDE00").as_deref(),
+            Some("😀")
+        );
+        assert_eq!(super::decode_js_string(r"bad\u12"), None);
+    }
+
+    #[test]
     fn finds_literal_dynamic_imports_across_comments() {
         assert_eq!(
             super::literal_dynamic_imports(
@@ -1147,6 +1255,20 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert_eq!(tags[0].attribute("type"), Some("module"));
         assert_eq!(tags[0].attribute("data-x"), Some("a&b&c"));
         assert_eq!(tags[1].undecodable, ["href"]);
+        // Legacy references without `;` decode unless alphanumerics follow.
+        assert_eq!(
+            super::decode_references("shared&amp.js").as_deref(),
+            Some("shared&.js")
+        );
+        assert_eq!(
+            super::decode_references("a&ampx").as_deref(),
+            Some("a&ampx")
+        );
+        assert_eq!(
+            super::decode_references("a&amp=b").as_deref(),
+            Some("a&amp=b")
+        );
+        assert_eq!(super::decode_references("a&copy.js"), None);
         // Unterminated markup at the end of a page.
         for html in ["<script src=a.js", "<p a=", "<p =", "<script>x", "<a b='c"] {
             let _ = html_tags(html);

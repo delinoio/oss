@@ -1182,6 +1182,49 @@ fn keeps_exports_imported_through_query_specifiers() {
     assert!(out(temp.path(), "lib.js").contains("viaQuery"));
 }
 
+/// Inline import specifiers are JavaScript strings: escapes are decoded.
+/// An import map can send any specifier anywhere: every chunk stays public.
+#[test]
+fn inline_imports_follow_escapes_and_import_maps() {
+    let lib = r#"function used(){return 1}function htmlOnly(){return 2}export{used,htmlOnly};"#;
+    for page in [
+        r#"<script type="module">import{htmlOnly}from"./lib.js";htmlOnly();</script><script type="module" src="./index.js"></script>"#,
+        r#"<script type="importmap">{"imports":{"lib":"/lib.js"}}</script><script type="module">import{htmlOnly}from"lib";htmlOnly();</script><script type="module" src="./index.js"></script>"#,
+    ] {
+        let temp = bundle(&[
+            ("index.html", page),
+            ("lib.js", lib),
+            (
+                "index.js",
+                r#"import{used as u}from"./lib.js";console.log(u());"#,
+            ),
+        ]);
+        optimize(temp.path(), &[]);
+        assert!(out(temp.path(), "lib.js").contains("htmlOnly"), "{page}");
+    }
+}
+
+/// A script resolves against the base parsed before it, not a later one.
+#[test]
+fn applies_base_urls_only_to_later_scripts() {
+    let shared = r#"function sharedGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var sharedState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="shared.js"></script><base href="/other/"><script type="module" src="/index.js"></script>"#,
+        ),
+        ("shared.js", shared),
+        // Where a later base would point: it must not be chosen.
+        ("other/shared.js", "console.log(0);"),
+        (
+            "index.js",
+            r#"import"./shared.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "shared.js"), shared);
+}
+
 /// A chunk that imports a module outside the bundle cannot be published.
 #[test]
 fn rejects_imports_outside_the_bundle() {

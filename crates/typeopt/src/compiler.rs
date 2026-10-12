@@ -285,11 +285,18 @@ impl Project {
             modules: scripts,
             classic,
             imported: from_html,
+            all_public,
         } = html_scripts(dir)?;
+        if all_public {
+            tracing::info!("an HTML page can reach any chunk; every chunk is a public entry");
+        }
         // Chunks that inline HTML scripts import are entries: their exports
         // are observed outside the program.
         let loaded_by_html = |chunk: &String| {
-            scripts.contains(chunk) || from_html.contains(chunk) || unlinked.contains(chunk)
+            all_public
+                || scripts.contains(chunk)
+                || from_html.contains(chunk)
+                || unlinked.contains(chunk)
         };
         let mut modules = imported.clone();
         modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
@@ -873,6 +880,9 @@ struct HtmlScripts {
     /// Imported by inline scripts (static imports of inline modules and
     /// literal dynamic imports): public entries of the bundle.
     imported: Paths,
+    /// A page has an import map or an inline import this scan cannot
+    /// resolve: every chunk is a public entry.
+    all_public: bool,
 }
 
 /// JavaScript MIME type essences, which make a `<script>` a classic script
@@ -942,18 +952,24 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
             let page = origin
                 .join(&relative)
                 .context("cannot form a URL for an HTML page")?;
-            // Relative URLs resolve against the first `<base href>`.
-            let base = match tags
-                .iter()
-                .find(|t| t.name == "base" && t.attribute("href").is_some())
-                .and_then(|t| t.attribute("href"))
-            {
-                Some(href) => page
-                    .join(href.trim())
-                    .context("an HTML page has an invalid base URL")?,
-                None => page,
-            };
-            for tag in tags.iter().filter(|t| t.name == "script") {
+            // A script resolves against the first `<base href>` parsed before
+            // it, or against the page.
+            let mut base: Option<url::Url> = None;
+            for tag in &tags {
+                if tag.name == "base"
+                    && base.is_none()
+                    && let Some(href) = tag.attribute("href")
+                {
+                    base = Some(
+                        page.join(href.trim())
+                            .context("an HTML page has an invalid base URL")?,
+                    );
+                    continue;
+                }
+                if tag.name != "script" {
+                    continue;
+                }
+                let base = base.as_ref().unwrap_or(&page);
                 // The MIME type essence: parameters and case do not matter.
                 let kind = tag.attribute("type").map(|t| {
                     t.split(';')
@@ -962,6 +978,11 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                         .trim()
                         .to_ascii_lowercase()
                 });
+                // An import map can map any specifier to any chunk.
+                if kind.as_deref() == Some("importmap") {
+                    found.all_public = true;
+                    continue;
+                }
                 let module = kind.as_deref() == Some("module");
                 let classic = kind
                     .as_deref()
@@ -971,7 +992,7 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                 }
                 match tag.attribute("src") {
                     Some(src) => {
-                        if let Some(file) = resolve(root, &base, src) {
+                        if let Some(file) = resolve(root, base, src) {
                             if module {
                                 found.modules.insert(file);
                             } else {
@@ -986,9 +1007,19 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                         if module {
                             specifiers.extend(crate::pipeline::bundle_static_imports(code));
                         }
-                        for specifier in specifiers {
-                            if let Some(file) = resolve(root, &base, &specifier) {
-                                found.imported.insert(file);
+                        for raw in specifiers {
+                            // The specifier is JavaScript string source: decode
+                            // its escapes; a template with substitutions or a
+                            // malformed escape could name any chunk.
+                            match crate::bundle::decode_js_string(&raw)
+                                .filter(|_| !raw.contains("${"))
+                            {
+                                Some(specifier) => {
+                                    if let Some(file) = resolve(root, base, &specifier) {
+                                        found.imported.insert(file);
+                                    }
+                                }
+                                None => found.all_public = true,
                             }
                         }
                     }
