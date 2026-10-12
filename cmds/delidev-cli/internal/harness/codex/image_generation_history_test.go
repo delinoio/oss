@@ -10,6 +10,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -80,7 +81,7 @@ func TestImageGenerationPagedContextAndRevertPreserveOriginalHistory(t *testing.
 	c, capture, source, ids, inputs := revertFixture(t, "ready")
 	success := historyGenerationItem(t, 1)
 	// A valid absolute descriptor is retained privately, never opened by history.
-	success["savedPath"] = "/nonexistent/private-generated-image.png"
+	success["savedPath"] = filepath.Join(t.TempDir(), "private-generated-image.png")
 	success["transparentBackground"] = true
 	turns := generatedHistoryTurns(t, ids, inputs, success)
 	failure := generationItem("failed", "")

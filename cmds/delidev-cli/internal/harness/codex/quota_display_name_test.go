@@ -52,13 +52,28 @@ func quotaDisplayNameBundle(t *testing.T, name string, profile bool) []byte {
 	return raw
 }
 
+func quotaDisplayNameHome(t *testing.T, name string, profile bool) string {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "home")
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "auth.json")
+	if err := security.WriteAtomic(path, quotaDisplayNameBundle(t, name, profile)); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := security.ReadPrivate(path, subscription.MaxBundle)
+	if err != nil {
+		t.Fatal("named quota fixture is not privately readable", err)
+	}
+	clear(raw)
+	return home
+}
+
 func TestQuotaDisplayNameRejectsProtectedIdentifiers(t *testing.T) {
 	for _, profile := range []bool{false, true} {
 		for _, name := range []string{"Q", "Example", "+/名", "available", "unlimited", "codexRateLimits"} {
-			home := t.TempDir()
-			if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, name, profile)); err != nil {
-				t.Fatal(err)
-			}
+			home := quotaDisplayNameHome(t, name, profile)
 			client := &Client{managedHome: home}
 			forms := []string{name}
 			for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
@@ -89,10 +104,7 @@ func TestQuotaDisplayNameRejectsProtectedIdentifiers(t *testing.T) {
 
 func TestQuotaDisplayNameAllowsFixedQuotaMetadata(t *testing.T) {
 	for _, name := range []string{"available", "unlimited", "codexRateLimits"} {
-		home := t.TempDir()
-		if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, name, false)); err != nil {
-			t.Fatal(err)
-		}
+		home := quotaDisplayNameHome(t, name, false)
 		client := &Client{managedHome: home}
 		unlimited := true
 		credits := []domain.SubscriptionResetCreditDetail{{ID: "credit_1", ResetType: domain.CodexRateLimitsReset, Status: domain.SubscriptionCreditAvailable}}
@@ -108,10 +120,7 @@ func TestQuotaDisplayNameAllowsFixedQuotaMetadata(t *testing.T) {
 
 func TestQuotaDisplayNameChecksOriginalIdentifiersOnly(t *testing.T) {
 	t.Run("projected window suffix", func(t *testing.T) {
-		home := t.TempDir()
-		if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "codex:primary", false)); err != nil {
-			t.Fatal(err)
-		}
+		home := quotaDisplayNameHome(t, "codex:primary", false)
 		client := &Client{managedHome: home}
 		value := domain.SubscriptionQuotaObservation{Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary"}}}
 		if err := client.validateQuotaReflection(value); err != nil {
@@ -120,10 +129,7 @@ func TestQuotaDisplayNameChecksOriginalIdentifiersOnly(t *testing.T) {
 	})
 
 	t.Run("paid balance", func(t *testing.T) {
-		home := t.TempDir()
-		if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "0", false)); err != nil {
-			t.Fatal(err)
-		}
+		home := quotaDisplayNameHome(t, "0", false)
 		client := &Client{managedHome: home}
 		balance := "0"
 		value := domain.SubscriptionQuotaObservation{PaidCredits: []domain.SubscriptionPaidCreditBucket{{ID: "paid", Balance: &balance}}}
@@ -142,10 +148,7 @@ func TestQuotaDisplayNameChecksOriginalIdentifiersOnly(t *testing.T) {
 }
 
 func TestQuotaDisplayNameAbsentKeepsUnrelatedIdentifiers(t *testing.T) {
-	home := t.TempDir()
-	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "", false)); err != nil {
-		t.Fatal(err)
-	}
+	home := quotaDisplayNameHome(t, "", false)
 	client := &Client{managedHome: home}
 	if err := client.validateQuotaReflection(domain.SubscriptionQuotaObservation{Windows: []domain.SubscriptionQuotaWindow{{ID: "Example:primary"}}}); err != nil {
 		t.Fatal("missing display name rejected unrelated quota", err)
