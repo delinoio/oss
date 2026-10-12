@@ -6,6 +6,7 @@ export enum SettingsCategory {
   ApiAccounts = "api-accounts",
   Providers = "providers",
   CodexCli = "codex-cli",
+  ClaudeCli = "claude-cli",
   AgentWorkers = "agent-workers",
   Instructions = "instructions",
   MCP = "mcp",

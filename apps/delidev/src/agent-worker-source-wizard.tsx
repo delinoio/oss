@@ -1454,7 +1454,8 @@ export function AgentWorkerSourceWizard({
         const next: Document = captureHarnessEditorChanges(
           initial ? document(initial) : {},
           !initial &&
-            data.harness === Harness.Codex &&
+            (data.harness === Harness.Codex ||
+              data.harness === Harness.Claude) &&
             harnessStatus.data?.capabilities.includes(
               SystemCapability.HARNESS_DEFAULTS_V1,
             )
@@ -1704,12 +1705,18 @@ export function AgentWorkerSourceWizard({
                       scope:
                         route.source.kind === SourceKind.Api
                           ? {
-                              harness: "codex" as const,
+                              harness:
+                                data.harness === Harness.Claude
+                                  ? ("claude-code" as const)
+                                  : ("codex" as const),
                               source: HarnessScopeSource.Api,
                               provider_id: route.source.id,
                             }
                           : {
-                              harness: "codex" as const,
+                              harness:
+                                data.harness === Harness.Claude
+                                  ? ("claude-code" as const)
+                                  : ("codex" as const),
                               source: HarnessScopeSource.Subscription,
                               subscription_service: route.source.id,
                             },

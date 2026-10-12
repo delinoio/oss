@@ -359,3 +359,20 @@ it("finds Codex source defaults and native settings in English and Korean", asyn
     matchSettings("하위 에이전트 모델", harness).map((row) => row.target),
   ).toContain(SettingsSearchTarget.CodexSubagents);
 });
+
+it("finds Claude model, effort and native permissions in English and Korean without Codex controls", async () => {
+  const categories = [
+    { category: SettingsCategory.ClaudeCli, label: "Harnesses", help: "" },
+  ];
+  expect(
+    matchSettings("Claude", categories).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.Claude);
+  expect(
+    matchSettings("reasoning effort", categories).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.ClaudeEffort);
+  expect(matchSettings("service tier", categories)).toEqual([]);
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("네이티브 Claude 권한", categories).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.ClaudePermissions);
+});

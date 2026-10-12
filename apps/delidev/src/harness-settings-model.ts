@@ -16,7 +16,7 @@ export enum HarnessSettingsOwner {
   Agent = "agent",
 }
 export interface HarnessScope {
-  harness: "codex";
+  harness: "codex" | "claude-code";
   source: HarnessScopeSource;
   provider_id?: string;
   subscription_service?: string;
@@ -24,6 +24,10 @@ export interface HarnessScope {
 }
 export const codexScope: HarnessScope = {
   harness: "codex",
+  source: HarnessScopeSource.Any,
+};
+export const claudeScope: HarnessScope = {
+  harness: "claude-code",
   source: HarnessScopeSource.Any,
 };
 export function harnessScopeKey(scope: HarnessScope): string {
@@ -150,7 +154,10 @@ export interface HarnessRoutePreview {
 // Routing identity is independent of model inheritance. Never substitute a
 // different source to make the preview available. Native admission remains owned
 // by the server after it selects the exact account and API profile.
-export function harnessRoutePreviews(routes: unknown): HarnessRoutePreview[] {
+export function harnessRoutePreviews(
+  routes: unknown,
+  harness: HarnessScope["harness"] = "codex",
+): HarnessRoutePreview[] {
   return items(routes)
     .map(object)
     .flatMap((route) => {
@@ -158,13 +165,13 @@ export function harnessRoutePreviews(routes: unknown): HarnessRoutePreview[] {
       const scope: HarnessScope | undefined =
         typeof model.provider_id === "string"
           ? {
-              harness: "codex",
+              harness,
               source: HarnessScopeSource.Api,
               provider_id: model.provider_id,
             }
           : typeof model.subscription_service === "string"
             ? {
-                harness: "codex",
+                harness,
                 source: HarnessScopeSource.Subscription,
                 subscription_service: model.subscription_service,
               }

@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   APIFormatId,
+  apiFormatMatchesHarness,
   apiFormatLabels,
   EntityKind,
   ResourceQuery,
@@ -20,6 +21,7 @@ import { copy, useLocale, type MessageKey } from "./localization";
 import { Problem } from "./ui";
 import {
   codexScope,
+  claudeScope,
   configuredHarnessValue,
   HarnessScopeSource,
   HarnessSettingMode,
@@ -43,7 +45,7 @@ interface SettingField {
   unsupported?: boolean;
   numeric?: boolean;
 }
-const fields: readonly SettingField[] = [
+const codexFields: readonly SettingField[] = [
   { key: "model", label: "harness-settings.model" },
   { key: "effort", label: "harness-settings.effort" },
   {
@@ -88,6 +90,22 @@ const fields: readonly SettingField[] = [
     unsupported: true,
   },
 ];
+const claudeFields: readonly SettingField[] = [
+  { key: "model", label: "harness-settings.model" },
+  { key: "effort", label: "harness-settings.effort" },
+  {
+    key: "claude_permission",
+    label: "harness-settings.claudePermission",
+    choices: [
+      "default",
+      "plan",
+      "acceptEdits",
+      "dontAsk",
+      "bypassPermissions",
+      "auto",
+    ],
+  },
+];
 const ownerLabels: Record<HarnessSettingsOwner, MessageKey> = {
   [HarnessSettingsOwner.Server]: "harness-settings.server",
   [HarnessSettingsOwner.Project]: "harness-settings.project",
@@ -106,6 +124,7 @@ export function HarnessSettingsEditor({
   active,
   revision,
   routes = [],
+  harness = "codex",
 }: {
   data: Document;
   change: (data: Document) => void;
@@ -113,10 +132,25 @@ export function HarnessSettingsEditor({
   active: boolean;
   revision?: string;
   routes?: HarnessRoutePreview[];
+  harness?: HarnessScope["harness"];
 }) {
   useLocale();
   const id = useId();
-  const [scope, setScope] = useState<HarnessScope>(codexScope);
+  const initialScope = harness === "claude-code" ? claudeScope : codexScope;
+  const fields = harness === "claude-code" ? claudeFields : codexFields;
+  const service =
+    harness === "claude-code"
+      ? SubscriptionServiceId.Claude
+      : SubscriptionServiceId.ChatGPT;
+  const serviceLabel = harness === "claude-code" ? "Claude" : "ChatGPT";
+  // Scope selection is presentation state; preserve each harness preview without
+  // allowing a category switch to write into the previously selected harness.
+  const [scopes, setScopes] = useState<
+    Partial<Record<HarnessScope["harness"], HarnessScope>>
+  >({});
+  const scope = scopes[harness] ?? initialScope;
+  const setScope = (next: HarnessScope) =>
+    setScopes((current) => ({ ...current, [harness]: next }));
   const [routeIndex, setRouteIndex] = useState(0);
   const route =
     owner === HarnessSettingsOwner.Agent
@@ -195,9 +229,11 @@ export function HarnessSettingsEditor({
     providerRow.id === selectedScope.provider_id &&
     providerRow.kind === EntityKind.PROVIDER &&
     supportsResourceSchema(providerRow)
-      ? providerAPIFormats(document(providerRow)).map(
-          (profile) => profile.protocol,
-        )
+      ? providerAPIFormats(document(providerRow))
+          .filter((profile) =>
+            apiFormatMatchesHarness(profile.protocol, harness),
+          )
+          .map((profile) => profile.protocol)
       : [];
   const defaults = object(data.harness_defaults);
   const settings =
@@ -248,7 +284,7 @@ export function HarnessSettingsEditor({
     (settings.version !== undefined && settings.version !== 1);
   const entries = items(defaults.entries)
     .map(object)
-    .filter((entry) => object(entry.scope).harness === "codex");
+    .filter((entry) => object(entry.scope).harness === harness);
   const update = (next: Document) =>
     change(
       owner === HarnessSettingsOwner.Agent
@@ -265,14 +301,26 @@ export function HarnessSettingsEditor({
   return (
     <section
       className="harness-settings-editor"
-      data-settings-search-target="codex-harness"
+      data-settings-search-target={`${harness}-harness`}
       aria-labelledby={`${id}-title`}
       data-settings-search-pending={
         !status.data && !status.error ? "true" : undefined
       }
     >
-      <h3 id={`${id}-title`}>{copy("harness-settings.codex")}</h3>
-      <p>{copy("harness-settings.help")}</p>
+      <h3 id={`${id}-title`}>
+        {copy(
+          harness === "claude-code"
+            ? "harness-settings.claude"
+            : "harness-settings.codex",
+        )}
+      </h3>
+      <p>
+        {copy(
+          harness === "claude-code"
+            ? "harness-settings.claudeHelp"
+            : "harness-settings.help",
+        )}
+      </p>
       <p>{copy("harness-settings.changesApply")}</p>
       <Problem
         error={status.error || server.error || provider.error || project.error}
@@ -324,7 +372,13 @@ export function HarnessSettingsEditor({
                     key={harnessScopeKey(saved)}
                     value={harnessScopeKey(saved)}
                   >
-                    {copy(sourceLabels[saved.source])} · {index + 1}
+                    {copy(
+                      saved.source === HarnessScopeSource.Any &&
+                        harness === "claude-code"
+                        ? "harness-settings.claudeAllSources"
+                        : sourceLabels[saved.source],
+                    )}{" "}
+                    · {index + 1}
                     {saved.api_protocol
                       ? ` · ${apiFormatLabels[saved.api_protocol as APIFormatId]}`
                       : ""}
@@ -341,7 +395,7 @@ export function HarnessSettingsEditor({
               value={routeIndex}
               onChange={(event) => {
                 setRouteIndex(Number(event.target.value));
-                setScope(codexScope);
+                setScope(initialScope);
               }}
             >
               {routes.map((entry, index) => (
@@ -353,7 +407,7 @@ export function HarnessSettingsEditor({
                   {entry.label ??
                     (entry.scope.source === HarnessScopeSource.Api
                       ? copy("harness-settings.api")
-                      : "ChatGPT")}
+                      : serviceLabel)}
                 </option>
               ))}
             </select>
@@ -365,14 +419,19 @@ export function HarnessSettingsEditor({
               value={scope.source}
               onChange={(event) =>
                 setScope({
-                  harness: "codex",
+                  harness,
                   source: event.target.value as HarnessScopeSource,
                 })
               }
             >
               {Object.values(HarnessScopeSource).map((source) => (
                 <option key={source} value={source}>
-                  {copy(sourceLabels[source])}
+                  {copy(
+                    source === HarnessScopeSource.Any &&
+                      harness === "claude-code"
+                      ? "harness-settings.claudeAllSources"
+                      : sourceLabels[source],
+                  )}
                 </option>
               ))}
             </select>
@@ -390,7 +449,7 @@ export function HarnessSettingsEditor({
                 active={active}
                 change={(provider_id) =>
                   setScope({
-                    harness: "codex",
+                    harness,
                     source: HarnessScopeSource.Api,
                     ...(provider_id ? { provider_id } : {}),
                   })
@@ -439,7 +498,7 @@ export function HarnessSettingsEditor({
               value={scope.subscription_service ?? ""}
               onChange={(event) =>
                 setScope({
-                  harness: "codex",
+                  harness,
                   source: HarnessScopeSource.Subscription,
                   ...(event.target.value
                     ? { subscription_service: event.target.value }
@@ -447,8 +506,21 @@ export function HarnessSettingsEditor({
                 })
               }
             >
-              <option value="">{copy("harness-settings.allServices")}</option>
-              <option value={SubscriptionServiceId.ChatGPT}>ChatGPT</option>
+              <option value="">
+                {copy(
+                  harness === "claude-code"
+                    ? "harness-settings.claudeAllServices"
+                    : "harness-settings.allServices",
+                )}
+              </option>
+              {scope.subscription_service &&
+              scope.subscription_service !== service ? (
+                <option value={scope.subscription_service}>
+                  {scope.subscription_service} ·{" "}
+                  {copy("harness-settings.unsupported")}
+                </option>
+              ) : null}
+              <option value={service}>{serviceLabel}</option>
             </select>
           </label>
         ) : null}
@@ -524,7 +596,9 @@ export function HarnessSettingsEditor({
             mode: HarnessSettingMode,
             nextValue: string | number = field.numeric && controlValue === ""
               ? 0
-              : field.key === "permission" && controlValue === ""
+              : (field.key === "permission" ||
+                    field.key === "claude_permission") &&
+                  controlValue === ""
                 ? "default"
                 : controlValue,
           ) => {
@@ -541,18 +615,20 @@ export function HarnessSettingsEditor({
           const heading: MessageKey | undefined =
             field.key === "model"
               ? "harness-settings.modelSection"
-              : field.key === "permission"
-                ? "harness-settings.permissionSection"
-                : field.key === "subagent_model"
-                  ? "harness-settings.subagentSection"
-                  : field.key === "service_tier"
-                    ? "harness-settings.tier"
-                    : undefined;
+              : field.key === "claude_permission"
+                ? "harness-settings.claudePermission"
+                : field.key === "permission"
+                  ? "harness-settings.permissionSection"
+                  : field.key === "subagent_model"
+                    ? "harness-settings.subagentSection"
+                    : field.key === "service_tier"
+                      ? "harness-settings.tier"
+                      : undefined;
           return (
             <section
               key={field.key}
               className="harness-setting"
-              data-settings-search-target={`codex-${field.key}`}
+              data-settings-search-target={`${harness}-${field.key}`}
             >
               {heading ? <h4>{copy(heading)}</h4> : null}
               <h5>{copy(field.label)}</h5>

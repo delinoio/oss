@@ -2,6 +2,7 @@
 import { expect, it } from "vitest";
 import {
   codexScope,
+  claudeScope,
   configuredHarnessValue,
   HarnessScopeSource,
   HarnessSettingMode,
@@ -220,6 +221,74 @@ it("binds model previews to the exact original source independently of inheritan
         subscription_service: "chatgpt",
       },
       modelSelection: override("chosen"),
+    },
+  ]);
+});
+
+it("keeps Claude exact source precedence separate from Codex and resolves Agent, Project then server", () => {
+  const scope: HarnessScope = {
+    harness: "claude-code",
+    source: HarnessScopeSource.Api,
+    provider_id: "chosen-provider",
+    api_protocol: "anthropic-messages",
+  };
+  const defaults = {
+    version: 1,
+    entries: [
+      { scope: codexScope, settings: { effort: override("codex") } },
+      { scope: claudeScope, settings: { effort: override("all-claude") } },
+      {
+        scope: { ...scope, api_protocol: "foreign-profile" },
+        settings: { effort: override("foreign") },
+      },
+      { scope, settings: { effort: override("exact-server") } },
+    ],
+  };
+  const server = {
+    owner: HarnessSettingsOwner.Server,
+    revision: "1",
+    settings: matchingHarnessSettings(defaults, scope),
+  };
+  const project: import("./harness-settings-model").HarnessSettingsLayer = {
+    owner: HarnessSettingsOwner.Project,
+    revision: "2",
+    settings: [{ effort: override("project") }],
+  };
+  const agent: import("./harness-settings-model").HarnessSettingsLayer = {
+    owner: HarnessSettingsOwner.Agent,
+    revision: "3",
+    settings: [{ effort: override("agent") }],
+  };
+  expect(configuredHarnessValue("effort", [agent, project, server])).toEqual({
+    value: "agent",
+    owner: HarnessSettingsOwner.Agent,
+    revision: "3",
+  });
+  agent.settings = [{ effort: { mode: "inherit" } }];
+  expect(
+    configuredHarnessValue("effort", [agent, project, server])?.value,
+  ).toBe("project");
+  project.settings = [{ effort: { mode: "inherit" } }];
+  expect(
+    configuredHarnessValue("effort", [agent, project, server])?.value,
+  ).toBe("exact-server");
+  const route = harnessRoutePreviews(
+    [
+      {
+        model: { provider_id: "chosen-provider", native_id: "" },
+        model_selection: { mode: "inherit" },
+      },
+    ],
+    "claude-code",
+  );
+  expect(route).toEqual([
+    {
+      scope: {
+        harness: "claude-code",
+        source: "api",
+        provider_id: "chosen-provider",
+      },
+      modelSelection: { mode: "inherit" },
     },
   ]);
 });

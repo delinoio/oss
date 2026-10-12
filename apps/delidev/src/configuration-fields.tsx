@@ -1631,6 +1631,7 @@ interface FieldsProps {
   pendingOperation?: (pending: boolean) => void;
   subscriptionOnly?: boolean;
   serverPreferenceSection?: ServerPreferenceSection;
+  settingsHarness?: "codex" | "claude-code";
   workerWizard?: boolean;
   harnessRoutes?: HarnessRoutePreview[];
 }
@@ -1665,6 +1666,7 @@ export function ConfigurationFields({
         change={change}
         active={active}
         owner={HarnessSettingsOwner.Server}
+        harness={props.settingsHarness}
         revision={props.initial ? String(props.initial.revision) : undefined}
       />
     );
@@ -1884,8 +1886,8 @@ export function ConfigurationFields({
   }
   if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
   if (kind === EntityKind.AGENT) {
-    const typedCodex =
-      data.harness === Harness.Codex &&
+    const typedHarness =
+      (data.harness === Harness.Codex || data.harness === Harness.Claude) &&
       (data.harness_settings !== undefined ||
         (!reviewerStatus.error &&
           reviewerStatus.data?.capabilities.includes(
@@ -1925,7 +1927,7 @@ export function ConfigurationFields({
           </>
         }
         permissions={
-          typedCodex ? undefined : (
+          typedHarness ? undefined : (
             <AgentPermissions
               reviewSupported={
                 reviewerStatus.data?.capabilities.includes(
@@ -1941,7 +1943,7 @@ export function ConfigurationFields({
           )
         }
         reasoning={
-          typedCodex ? undefined : (
+          typedHarness ? undefined : (
             <>
               <ReasoningEffortField
                 label={copy("configuration-fields.reasoningEffort_3236ae")}
@@ -2002,13 +2004,22 @@ export function ConfigurationFields({
           />
         }
         native={
-          typedCodex ? (
+          typedHarness ? (
             <HarnessSettingsEditor
               data={newTypedHarnessDocument(data)}
               change={change}
               active={active}
               owner={HarnessSettingsOwner.Agent}
-              routes={props.harnessRoutes ?? harnessRoutePreviews(data.routes)}
+              harness={
+                data.harness === Harness.Claude ? "claude-code" : "codex"
+              }
+              routes={
+                props.harnessRoutes ??
+                harnessRoutePreviews(
+                  data.routes,
+                  data.harness === Harness.Claude ? "claude-code" : "codex",
+                )
+              }
               revision={
                 props.initial ? String(props.initial.revision) : undefined
               }
@@ -2343,6 +2354,14 @@ function ProjectFields({
               change={change}
               active={active}
               owner={HarnessSettingsOwner.Project}
+              revision={initial ? String(initial.revision) : undefined}
+            />
+            <HarnessSettingsEditor
+              data={data}
+              change={change}
+              active={active}
+              owner={HarnessSettingsOwner.Project}
+              harness="claude-code"
               revision={initial ? String(initial.revision) : undefined}
             />
             {supportsProjectBehavior ? (

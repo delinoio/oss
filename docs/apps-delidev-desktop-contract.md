@@ -6136,3 +6136,21 @@ clear-all and imported-reference rebinding. Internal IDs remain hidden. Dialogs
 preserve Esc/focus return; narrow layouts stack rows/actions, and all product text
 has English and Korean catalog entries with existing theme tokens. Synthetic
 fixtures do not establish actual native/account/platform or layout acceptance.
+
+## Claude Code CLI shared Settings editor
+
+Settings > Harnesses > Claude Code CLI, Project Execution and the Claude Agent
+source wizard use the same source-aware editor and revision-checked configuration
+owner as Codex. Claude scopes use the canonical `claude-code` harness identity,
+exact Anthropic Messages API profiles and Claude subscription service. Model,
+effort and `claude_permission` selectors retain the same inheritance, configured
+source/revision, reset, draft and frozen-execution boundaries. Native permission
+choices are `default`, `plan`, `acceptEdits`, `dontAsk`, `bypassPermissions` and
+`auto`; saving a choice proves no native availability.
+
+Codex approval, sandbox, subagent and service-tier controls are omitted from the
+Claude form. Unsupported retained selectors and other harness/source entries
+remain exact through edits and saves. Hooks remain unavailable without their
+separately trusted owner. Reading or editing settings neither changes credentials
+nor installs Claude or edits host files. English/Korean page and field search
+anchors, native controls and locale focus retention follow the shared editor.

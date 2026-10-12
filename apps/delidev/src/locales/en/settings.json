@@ -209,5 +209,6 @@
   "settings.appInformation.sourceNotices": "These links show current repository source notices. They are not a complete inventory of the installed package.",
   "settings.appInformation.opening": "Opening in your default browser…",
   "settings.appInformation.openError": "The link could not be opened. Try again explicitly.",
-  "settings.appInformation.navigate": "Open App information"
+  "settings.appInformation.navigate": "Open App information",
+  "settings.resourceRevision": "{{name}} · revision {{revision}}"
 }

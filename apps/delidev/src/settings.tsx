@@ -443,7 +443,10 @@ function RepositorySaveReview({
       ) : null}
       {fresh ? (
         <p>
-          {resourceName(fresh)} · revision {fresh.revision.toString()}
+          {copy("settings.resourceRevision", {
+            name: resourceName(fresh),
+            revision: fresh.revision.toString(),
+          })}
         </p>
       ) : null}
       {fresh ? (
@@ -474,6 +477,7 @@ export function ConfigurationEditor({
   initialData,
   subscriptionOnly = false,
   serverPreferenceSection = ServerPreferenceSection.All,
+  settingsHarness = "codex",
   active,
   saved,
   cancel,
@@ -486,6 +490,7 @@ export function ConfigurationEditor({
   initialData?: Document;
   subscriptionOnly?: boolean;
   serverPreferenceSection?: ServerPreferenceSection;
+  settingsHarness?: "codex" | "claude-code";
   active: boolean;
   saved: () => void;
   cancel: () => void;
@@ -1217,6 +1222,7 @@ export function ConfigurationEditor({
             pendingOperation={setChildPending}
             subscriptionOnly={subscriptionOnly}
             serverPreferenceSection={serverPreferenceSection}
+            settingsHarness={settingsHarness}
           />
         ) : (
           <fieldset
@@ -1245,6 +1251,7 @@ export function ConfigurationEditor({
               pendingOperation={setChildPending}
               subscriptionOnly={subscriptionOnly}
               serverPreferenceSection={serverPreferenceSection}
+              settingsHarness={settingsHarness}
             />
           </fieldset>
         )}
@@ -1324,21 +1331,27 @@ export function ConfigurationEditor({
                 ? copy(
                     serverPreferenceSection ===
                       ServerPreferenceSection.Harnesses
-                      ? "harness-settings.saving"
+                      ? settingsHarness === "claude-code"
+                        ? "harness-settings.claudeSaving"
+                        : "harness-settings.saving"
                       : "settings.savingProjectDefaults",
                   )
                 : mutation.uncertain
                   ? copy(
                       serverPreferenceSection ===
                         ServerPreferenceSection.Harnesses
-                        ? "harness-settings.saveUnknown"
+                        ? settingsHarness === "claude-code"
+                          ? "harness-settings.claudeSaveUnknown"
+                          : "harness-settings.saveUnknown"
                         : "settings.projectDefaultsSaveOutcomeUnknown",
                     )
                   : dirty
                     ? copy(
                         serverPreferenceSection ===
                           ServerPreferenceSection.Harnesses
-                          ? "harness-settings.unsaved"
+                          ? settingsHarness === "claude-code"
+                            ? "harness-settings.claudeUnsaved"
+                            : "harness-settings.unsaved"
                           : "settings.unsavedProjectDefaults",
                       )
                     : ""}
@@ -1499,7 +1512,9 @@ function ServerPreferencesWorkspace({
   saved,
   authority,
   onNetworkPresentationChange,
+  settingsHarness = "codex",
 }: {
+  settingsHarness?: "codex" | "claude-code";
   resources?: Resource[];
   nextPageToken?: string;
   page: string;
@@ -1554,6 +1569,7 @@ function ServerPreferencesWorkspace({
           kind={EntityKind.SETTINGS}
           initial={initial ?? undefined}
           serverPreferenceSection={section}
+          settingsHarness={settingsHarness}
           active={active}
           saved={saved}
           cancel={() => {}}
@@ -1677,6 +1693,16 @@ export const settingsCategories: Record<
       return copy("settings.providerAvailabilityIsSavedOnThe_11e7c8");
     },
     kind: EntityKind.PROVIDER,
+    area: SettingsArea.Configuration,
+  },
+  [SettingsCategory.ClaudeCli]: {
+    get label() {
+      return copy("harness-settings.claude");
+    },
+    get description() {
+      return copy("harness-settings.claudeHelp");
+    },
+    kind: EntityKind.SETTINGS,
     area: SettingsArea.Configuration,
   },
   [SettingsCategory.CodexCli]: {
@@ -1829,7 +1855,10 @@ export const settingsGroups: {
   label: SettingsGroup;
   categories: SettingsCategory[];
 }[] = [
-  { label: SettingsGroup.Harnesses, categories: [SettingsCategory.CodexCli] },
+  {
+    label: SettingsGroup.Harnesses,
+    categories: [SettingsCategory.CodexCli, SettingsCategory.ClaudeCli],
+  },
   {
     label: SettingsGroup.Ai,
     categories: [
@@ -1873,6 +1902,7 @@ export const settingsGroups: {
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+  [SettingsCategory.ClaudeCli]: "m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18",
   [SettingsCategory.CodexCli]: "m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18",
   [SettingsCategory.AppInformation]:
     "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 5h.01M12 11v6",
@@ -2349,7 +2379,11 @@ function SettingsWorkspace({
   const isGitWorkflow = selectedCategory === SettingsCategory.GitWorkflow;
   const isProjectDefaults =
     selectedCategory === SettingsCategory.ProjectDefaults;
-  const isHarnesses = selectedCategory === SettingsCategory.CodexCli;
+  const settingsHarness =
+    selectedCategory === SettingsCategory.ClaudeCli ? "claude-code" : "codex";
+  const isHarnesses =
+    selectedCategory === SettingsCategory.CodexCli ||
+    selectedCategory === SettingsCategory.ClaudeCli;
   const isPreferenceCategory = isProjectDefaults || isHarnesses;
   const preferenceSection = isHarnesses
     ? ServerPreferenceSection.Harnesses
@@ -2769,7 +2803,9 @@ function SettingsWorkspace({
                         <p>
                           {copy(
                             isHarnesses
-                              ? "harness-settings.help"
+                              ? settingsHarness === "claude-code"
+                                ? "harness-settings.claudeHelp"
+                                : "harness-settings.help"
                               : "settings.projectDefaultsDescription",
                           )}
                         </p>
@@ -3034,6 +3070,7 @@ function SettingsWorkspace({
                     {isPreferenceCategory ? (
                       <>
                         <ServerPreferencesWorkspace
+                          settingsHarness={settingsHarness}
                           resources={result.data?.resources}
                           nextPageToken={result.data?.nextPageToken}
                           page={page}
@@ -3652,6 +3689,7 @@ function SettingsWorkspace({
               initial={editing.initial}
               initialData={editing.initialData}
               subscriptionOnly={editing.subscriptionOnly}
+              settingsHarness={settingsHarness}
               serverPreferenceSection={
                 isPreferenceCategory
                   ? preferenceSection

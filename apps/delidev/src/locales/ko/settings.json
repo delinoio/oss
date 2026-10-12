@@ -209,5 +209,6 @@
   "settings.appInformation.sourceNotices": "이 링크는 현재 저장소의 소스 고지를 보여줍니다. 설치된 패키지의 전체 목록은 아닙니다.",
   "settings.appInformation.opening": "기본 브라우저에서 여는 중입니다…",
   "settings.appInformation.openError": "링크를 열지 못했습니다. 직접 다시 시도하세요.",
-  "settings.appInformation.navigate": "앱 정보 열기"
+  "settings.appInformation.navigate": "앱 정보 열기",
+  "settings.resourceRevision": "{{name}} · 리비전 {{revision}}"
 }

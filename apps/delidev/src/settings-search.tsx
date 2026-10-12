@@ -10,6 +10,10 @@ import { copy, useLocale, type MessageKey } from "./localization";
 import { SettingsCategory as Category } from "./settings-category";
 import "./settings-search.css";
 export enum SettingsSearchTarget {
+  Claude = "claude-code-harness",
+  ClaudeModel = "claude-code-model",
+  ClaudeEffort = "claude-code-effort",
+  ClaudePermissions = "claude-code-claude_permission",
   Codex = "codex-harness",
   CodexModel = "codex-model",
   CodexEffort = "codex-effort",
@@ -94,6 +98,19 @@ const target = (
 export const settingsSearchTargets: Partial<
   Record<Category, readonly StaticTarget[]>
 > = {
+  [Category.ClaudeCli]: [
+    target(
+      SettingsSearchTarget.Claude,
+      "harness-settings.claude",
+      "harness-settings.claudeHelp",
+    ),
+    target(SettingsSearchTarget.ClaudeModel, "harness-settings.model"),
+    target(SettingsSearchTarget.ClaudeEffort, "harness-settings.effort"),
+    target(
+      SettingsSearchTarget.ClaudePermissions,
+      "harness-settings.claudePermission",
+    ),
+  ],
   [Category.CodexCli]: [
     target(
       SettingsSearchTarget.Codex,

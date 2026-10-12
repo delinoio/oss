@@ -61,5 +61,13 @@
   "harness-settings.hooks": "Hooks",
   "harness-settings.hooksUnavailable": "Requires trusted hook configuration. Hook settings are unavailable in this editor.",
   "harness-settings.connectedServer": "Connected server: {{name}}",
-  "harness-settings.localServer": "Local server"
+  "harness-settings.localServer": "Local server",
+  "harness-settings.claude": "Claude Code CLI",
+  "harness-settings.claudeHelp": "Edit Claude defaults on the connected server. Project and Agent Worker overrides use the same settings.",
+  "harness-settings.claudeAllSources": "All Claude sources",
+  "harness-settings.claudeAllServices": "All Claude subscription services",
+  "harness-settings.claudePermission": "Native Claude permissions",
+  "harness-settings.claudeSaving": "Saving Claude defaults…",
+  "harness-settings.claudeSaveUnknown": "Claude defaults save outcome unknown. Keep this draft and inspect the original save before trying again.",
+  "harness-settings.claudeUnsaved": "Unsaved Claude defaults"
 }

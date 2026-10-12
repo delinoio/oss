@@ -36,7 +36,7 @@ import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
 import { chooseScrollOption } from "./test-scroll-picker";
-function fixture(supported = true, inherited = true) {
+function fixture(supported = true, inherited = true, claude = false) {
   const row = (
     kind: EntityKind,
     data: Record<string, unknown>,
@@ -51,7 +51,7 @@ function fixture(supported = true, inherited = true) {
     });
   const provider = row(EntityKind.PROVIDER, {
     name: "Original API",
-    protocol: "openai-responses",
+    protocol: claude ? "anthropic-messages" : "openai-responses",
     endpoint: "https://fixture.test/v1",
     enabled: true,
     authentication: "keyless",
@@ -188,6 +188,7 @@ function fixture(supported = true, inherited = true) {
     </StrictMode>
   );
   return {
+    harnessName: claude ? "Claude Code" : "Codex",
     row,
     provider,
     accounts,
@@ -210,7 +211,7 @@ async function accounts(
   subscription = false,
   multi = false,
 ) {
-  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  fireEvent.click(await screen.findByRole("radio", { name: f.harnessName }));
   const picker = screen.getByRole("combobox", { name: "Account source 1" });
   await chooseScrollOption(
     picker,
@@ -604,43 +605,51 @@ it.each([
   expect(f.save).not.toHaveBeenCalled();
 });
 
-it("saves an inherited model as schema 5 without an invented native ID", async () => {
-  const f = fixture();
-  render(f.view());
-  const input = await accounts(f);
-  fireEvent.click(
-    await screen.findByRole("checkbox", {
-      name: "Inherit model",
-    }),
-  );
-  expect(input).toHaveProperty("disabled", true);
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByRole("heading", { name: "Configure", level: 3 });
-  fireEvent.change(screen.getByLabelText("Name"), {
-    target: { value: "Inherited Worker" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
-  const request = f.save.mock.calls[0][0];
-  expect(request.schemaVersion).toBe(5);
-  const value = JSON.parse(new TextDecoder().decode(request.documentJson));
-  expect(value.harness_settings.version).toBe(1);
-  expect(value.routes[0].model_selection).toEqual({ mode: "inherit" });
-  expect(value.routes[0].model).toEqual({
-    native_id: "",
-    metadata_source: "unknown",
-    provider_id: f.provider.id,
-  });
-  expect(request.routeModels[0].selection).toEqual({
-    case: "nativeId",
-    value: "",
-  });
-});
+it.each([false, true])(
+  "saves an inherited model as schema 5 without an invented native ID (Claude %s)",
+  async (claude) => {
+    const f = fixture(true, true, claude);
+    render(f.view());
+    const input = await accounts(f);
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: "Inherit model",
+      }),
+    );
+    expect(input).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Configure", level: 3 });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Inherited Worker" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+    await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+    const request = f.save.mock.calls[0][0];
+    expect(request.schemaVersion).toBe(5);
+    const value = JSON.parse(new TextDecoder().decode(request.documentJson));
+    expect(value.harness_settings.version).toBe(1);
+    expect(value.routes[0].model_selection).toEqual({ mode: "inherit" });
+    expect(value.routes[0].model).toEqual({
+      native_id: "",
+      metadata_source: "unknown",
+      provider_id: f.provider.id,
+    });
+    expect(request.routeModels[0].selection).toEqual({
+      case: "nativeId",
+      value: "",
+    });
+  },
+);
 
-it.each([true, false])(
-  "normalizes a fresh explicit-model Agent only for the negotiated typed capability (%s)",
-  async (inherited) => {
-    const f = fixture(true, inherited);
+it.each([
+  [true, false],
+  [false, false],
+  [true, true],
+  [false, true],
+])(
+  "normalizes a fresh explicit-model Agent only for the negotiated typed capability (%s, Claude %s)",
+  async (inherited, claude) => {
+    const f = fixture(true, inherited, claude);
     render(f.view());
     const input = await accounts(f);
     await configure(input, "explicit-source-model");
