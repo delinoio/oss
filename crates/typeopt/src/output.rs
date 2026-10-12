@@ -11,7 +11,7 @@ use crate::{
     report::Report,
 };
 
-fn line_starts(text: &str) -> Vec<usize> {
+pub(crate) fn line_starts(text: &str) -> Vec<usize> {
     let mut starts = vec![0];
     let mut chars = text.char_indices().peekable();
     while let Some((offset, ch)) = chars.next() {
@@ -26,7 +26,7 @@ fn line_starts(text: &str) -> Vec<usize> {
     }
     starts
 }
-fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize {
+pub(crate) fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize {
     let start = starts.get(line as usize).copied().unwrap_or(text.len());
     let mut units = 0;
     for (offset, ch) in text[start..].char_indices() {
@@ -37,7 +37,7 @@ fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize 
     }
     text.len()
 }
-fn coordinate(text: &str, starts: &[usize], offset: usize) -> (u32, u32) {
+pub(crate) fn coordinate(text: &str, starts: &[usize], offset: usize) -> (u32, u32) {
     let line = starts.partition_point(|&start| start <= offset) - 1;
     (
         line as u32,
@@ -338,60 +338,4 @@ mod tests {
         assert!(a.is_dir());
         assert!(b.is_dir());
     }
-}
-
-/// Stage 2 publication: copies the bundler output directory and replaces the
-/// edited chunks. Source maps of edited chunks are removed, because they no
-/// longer describe the published code.
-pub fn publish_bundle(
-    source: &Path,
-    destination: &Path,
-    snapshot: &Snapshot,
-    outcome: &Outcome,
-) -> Result<()> {
-    ensure!(
-        std::fs::symlink_metadata(destination)
-            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
-        "output destination already exists or cannot be inspected"
-    );
-    let parent = destination
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let staging = tempfile::Builder::new()
-        .prefix(".typeopt-bundle-")
-        .tempdir_in(parent)
-        .context("cannot create staging directory")?;
-    fn copy(from: &Path, to: &Path) -> Result<()> {
-        std::fs::create_dir_all(to)?;
-        for entry in std::fs::read_dir(from)? {
-            let entry = entry?;
-            let target = to.join(entry.file_name());
-            if entry.file_type()?.is_dir() {
-                copy(&entry.path(), &target)?;
-            } else {
-                std::fs::copy(entry.path(), &target)?;
-            }
-        }
-        Ok(())
-    }
-    let root = staging.path().join("out");
-    copy(source, &root).context("cannot copy bundle directory")?;
-    for (name, text) in &outcome.texts {
-        crate::app::check_cancelled()?;
-        if snapshot.sources.get(name) == Some(text) {
-            continue;
-        }
-        let relative = Path::new(name)
-            .strip_prefix(source)
-            .context("edited chunk is outside the bundle directory")?;
-        let target = root.join(relative);
-        std::fs::write(&target, text).context("cannot write an edited chunk")?;
-        let map = target.with_extension("js.map");
-        if map.exists() {
-            std::fs::remove_file(&map)?;
-        }
-    }
-    std::fs::rename(&root, destination).context("cannot publish bundle output")?;
-    Ok(())
 }

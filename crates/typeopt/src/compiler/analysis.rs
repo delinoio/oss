@@ -101,7 +101,11 @@ impl<'c> Ctx<'c> {
                     // `@ts-nocheck` suppresses the semantic recheck that
                     // backs every transformation, so such a module is an
                     // unchecked boundary exactly like JavaScript.
-                    js: !crate::app::bundle_mode() && (is_js(node) || is_unchecked(node)),
+                    js: if crate::app::bundle_mode() {
+                        crate::app::bundle_boundary(&name)
+                    } else {
+                        is_js(node) || is_unchecked(node)
+                    },
                     text: source_file_text(node).to_string(),
                     name,
                     nodes,

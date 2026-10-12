@@ -236,10 +236,10 @@ impl Project {
             let text = std::fs::read_to_string(chunk).context("cannot read a bundle chunk")?;
             let base = std::path::Path::new(chunk).parent().unwrap_or(dir);
             for specifier in chunk_specifiers(&text) {
-                if specifier.starts_with("./") || specifier.starts_with("../") {
-                    if let Ok(path) = base.join(&specifier).canonicalize() {
-                        imported.insert(path.to_string_lossy().into_owned());
-                    }
+                if (specifier.starts_with("./") || specifier.starts_with("../"))
+                    && let Ok(path) = base.join(&specifier).canonicalize()
+                {
+                    imported.insert(path.to_string_lossy().into_owned());
                 }
             }
         }

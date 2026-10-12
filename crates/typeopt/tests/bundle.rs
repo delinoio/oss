@@ -251,16 +251,33 @@ fn never_publishes_typescript_only_syntax() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn copies_other_files_and_drops_stale_maps_of_edited_chunks() {
+fn copies_other_files_and_composes_maps_of_edited_chunks() {
+    let code = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#;
+    // An identity-like map: every token maps to the same column of src/main.ts.
+    let mut builder = sourcemap::SourceMapBuilder::new(Some("index.js"));
+    let id = builder.add_source("src/main.ts");
+    builder.set_source_contents(id, Some(code));
+    let mut boundary = true;
+    for (offset, ch) in code.char_indices() {
+        let word = ch.is_alphanumeric();
+        if word && boundary {
+            builder.add(
+                0,
+                offset as u32,
+                0,
+                offset as u32,
+                Some("src/main.ts"),
+                None,
+                false,
+            );
+        }
+        boundary = !word;
+    }
+    let mut map = Vec::new();
+    builder.into_sourcemap().to_writer(&mut map).unwrap();
     let temp = bundle(&[
-        (
-            "index.js",
-            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
-        ),
-        (
-            "index.js.map",
-            r#"{"version":3,"sources":[],"mappings":""}"#,
-        ),
+        ("index.js", code),
+        ("index.js.map", std::str::from_utf8(&map).unwrap()),
         ("index.html", "<script type=module src=./index.js></script>"),
         ("style.css", "body{}"),
     ]);
@@ -269,9 +286,127 @@ fn copies_other_files_and_drops_stale_maps_of_edited_chunks() {
     let out_dir = temp.path().join("out");
     assert!(out_dir.join("index.html").exists());
     assert!(out_dir.join("style.css").exists());
-    assert!(!out_dir.join("index.js.map").exists());
+    let edited = out(temp.path(), "index.js");
+    assert_ne!(edited, code, "the fixture must be optimized");
+    let composed =
+        sourcemap::SourceMap::from_slice(&fs::read(out_dir.join("index.js.map")).unwrap()).unwrap();
+    assert_eq!(composed.get_source(0), Some("src/main.ts"));
+    // Every mapped token of unchanged code still starts the same word.
+    let mut checked = 0;
+    for token in composed.tokens() {
+        let at = token.get_dst_col() as usize;
+        let src = token.get_src_col() as usize;
+        let word = |text: &str, at: usize| -> String {
+            text[at..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric())
+                .collect()
+        };
+        if word(&edited, at) == "console" || word(&edited, at) == "log" {
+            assert_eq!(word(&edited, at), word(code, src));
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 2, "{edited}");
     // The input directory is unchanged.
-    assert!(temp.path().join("dist/index.js.map").exists());
+    assert_eq!(
+        fs::read(temp.path().join("dist/index.js.map")).unwrap(),
+        map
+    );
+}
+
+fn listing(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+const HASHED: [(&str, &str); 4] = [
+    (
+        "index.html",
+        r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    ),
+    (
+        "assets/index-AAAAAAAA.js",
+        r#"import{m as e}from"./settings-BBBBBBBB.js";import{p as t}from"./plain-CCCCCCCC.js";console.log(e(2).verticalSpacing,t());"#,
+    ),
+    (
+        "assets/settings-BBBBBBBB.js",
+        r#"function m(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function unusedHelperThatIsNeverCalled(n){return n.toString(36).repeat(3)}export{m,unusedHelperThatIsNeverCalled as u};"#,
+    ),
+    (
+        "assets/plain-CCCCCCCC.js",
+        r#"function p(){return"plain"}export{p};"#,
+    ),
+];
+
+#[test]
+fn rehashes_edited_chunks_and_their_importers() {
+    let temp = bundle(&HASHED);
+    optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    // The untouched leaf keeps its name; the edited chunk and its importer
+    // get new hashes, and every reference follows.
+    assert!(
+        assets.contains(&"plain-CCCCCCCC.js".to_owned()),
+        "{assets:?}"
+    );
+    assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
+    assert!(!assets.iter().any(|a| a.contains("AAAAAAAA")), "{assets:?}");
+    let entry = assets.iter().find(|a| a.starts_with("index-")).unwrap();
+    let html = fs::read_to_string(temp.path().join("out/index.html")).unwrap();
+    assert!(html.contains(&format!("/assets/{entry}")), "{html}");
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = node(&temp.path().join("out/assets").join(entry));
+    assert!(
+        after.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout);
+    // Deterministic names.
+    let again = bundle(&HASHED);
+    optimize(again.path(), &[]);
+    assert_eq!(assets, listing(&again.path().join("out/assets")));
+}
+
+#[test]
+fn keeps_chunk_names_on_request() {
+    let temp = bundle(&HASHED);
+    optimize(temp.path(), &["--keep-chunk-names"]);
+    let assets = listing(&temp.path().join("out/assets"));
+    assert_eq!(
+        assets,
+        [
+            "index-AAAAAAAA.js",
+            "plain-CCCCCCCC.js",
+            "settings-BBBBBBBB.js"
+        ]
+    );
+}
+
+#[test]
+fn excluded_chunks_stay_unchanged_boundaries() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{make as m,read as r}from"./vendor.js";const o=m(3);console.log(r(o));function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+        (
+            "vendor.js",
+            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}function read(o){return o.verticalSpacing+o.horizontalSpacing}function unusedVendorHelper(){return 1}export{make,read,unusedVendorHelper};"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &["--bundle-exclude", "vendor"]);
+    same_behavior(temp.path());
+    assert_eq!(
+        out(temp.path(), "vendor.js"),
+        fs::read_to_string(temp.path().join("dist/vendor.js")).unwrap()
+    );
+    assert!(saved(&report) > 0, "{report:#}");
 }
 
 #[test]

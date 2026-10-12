@@ -1,4 +1,6 @@
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod bundle;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod compiler;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod optimizer;
@@ -33,7 +35,7 @@ mod app {
     use clap::Parser;
 
     use super::{
-        compiler, output,
+        bundle, compiler, output,
         passes::{PassId, PassSet},
         pipeline, report,
     };
@@ -48,6 +50,17 @@ mod app {
     static BUNDLE: AtomicBool = AtomicBool::new(false);
     pub(crate) fn bundle_mode() -> bool {
         BUNDLE.load(Ordering::Relaxed)
+    }
+    static KEEP_CHUNK_NAMES: AtomicBool = AtomicBool::new(false);
+    pub(crate) fn keep_chunk_names() -> bool {
+        KEEP_CHUNK_NAMES.load(Ordering::Relaxed)
+    }
+    /// Bundle chunks (path substrings) kept as unchecked boundaries.
+    static BUNDLE_EXCLUDE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    pub(crate) fn bundle_boundary(path: &str) -> bool {
+        BUNDLE_EXCLUDE
+            .get()
+            .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
     }
     pub(crate) fn check_cancelled() -> Result<()> {
         ensure!(!CANCELLED.load(Ordering::Relaxed), "operation cancelled");
@@ -68,6 +81,14 @@ mod app {
         /// directory as one closed program.
         #[arg(long, value_name = "DIR")]
         bundle: Option<PathBuf>,
+        /// Bundle mode: keep chunks whose path contains this text unchanged
+        /// as unchecked boundaries (for example very large vendor chunks);
+        /// repeat to exclude several.
+        #[arg(long = "bundle-exclude", value_name = "TEXT", requires = "bundle", action = clap::ArgAction::Append)]
+        bundle_exclude: Vec<String>,
+        /// Bundle mode: keep the names of edited content-hashed chunks.
+        #[arg(long, requires = "bundle")]
+        keep_chunk_names: bool,
         #[arg(long, required_unless_present = "check", conflicts_with = "check")]
         out_dir: Option<PathBuf>,
         #[arg(long)]
@@ -203,6 +224,8 @@ mod app {
 
     fn run_bundle(args: Args, dir: &std::path::Path, started: Instant) -> Result<()> {
         BUNDLE.store(true, Ordering::Relaxed);
+        KEEP_CHUNK_NAMES.store(args.keep_chunk_names, Ordering::Relaxed);
+        let _ = BUNDLE_EXCLUDE.set(args.bundle_exclude.clone());
         let dir = dir.canonicalize().context("cannot find bundle directory")?;
         ensure!(dir.is_dir(), "--bundle must be a directory");
         let passes = PassSet::bundle_without(&args.disable_pass);
@@ -232,7 +255,7 @@ mod app {
             "bundle analysis complete"
         );
         if let Some(destination) = args.out_dir {
-            output::publish_bundle(&dir, &destination, &snapshot, &outcome)?;
+            bundle::publish(&dir, &destination, &snapshot, &outcome)?;
             tracing::info!(bundles = outcome.bundles.len(), "bundle output published");
         }
         report.measure(started);
