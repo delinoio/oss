@@ -14,6 +14,9 @@ import {
   displayedInteraction,
   completeEmptyInteractionTray,
   missingQuestionReceipts,
+  orderedPageEntries,
+  PageEntryKind,
+  unpagedQuestionReceipts,
 } from "./interaction-presentation";
 const original = {
   type: "user-question",
@@ -257,4 +260,48 @@ it("ignores non-question projections", () => {
   const store = new InteractionPresentationStore();
   store.observe(row({ type: "native-approval", closure: "open" }));
   expect(receiptIds(store)).toEqual([]);
+});
+
+const entryIds = (
+  rows: string[],
+  resident: string[],
+  receipts: string[],
+): string[] =>
+  orderedPageEntries(
+    rows,
+    resident.map((value) => ({ id: value })),
+    new Map(receipts.map((value) => [value, value])),
+  ).map((entry) => `${entry.kind}:${entry.id}`);
+it("orders page entries by authoritative row order regardless of receipt observation order", () => {
+  expect(entryIds(["a", "b", "c"], [], ["c", "a"])).toEqual([
+    `${PageEntryKind.Receipt}:a`,
+    `${PageEntryKind.Receipt}:c`,
+  ]);
+  expect(entryIds(["a", "b", "c"], ["b"], ["c", "a"])).toEqual([
+    `${PageEntryKind.Receipt}:a`,
+    `${PageEntryKind.Resident}:b`,
+    `${PageEntryKind.Receipt}:c`,
+  ]);
+});
+it("renders one entry per original identity and prefers the resident row", () => {
+  expect(entryIds(["a", "a", "b"], ["a"], ["a", "b"])).toEqual([
+    `${PageEntryKind.Resident}:a`,
+    `${PageEntryKind.Receipt}:b`,
+  ]);
+  // Removed or retired identities have neither a resident row nor a receipt.
+  expect(entryIds(["a", "b"], ["b"], [])).toEqual([
+    `${PageEntryKind.Resident}:b`,
+  ]);
+});
+it("leaves only receipts that no reached page owns for the trailing position", () => {
+  expect(
+    unpagedQuestionReceipts(
+      [
+        ["live", 1],
+        ["old", 2],
+        ["newer", 3],
+      ] as [string, number][],
+      new Set(["old", "newer"]),
+    ),
+  ).toEqual([["live", 1]]);
 });
