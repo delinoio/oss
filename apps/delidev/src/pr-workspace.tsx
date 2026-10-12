@@ -38,6 +38,7 @@ import { Timestamp, TimestampMode } from "./timestamp-display";
 import { OpenGitHub } from "./github-opening";
 import { PRFeedback } from "./github-feedback";
 import { Problem } from "./ui";
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import {
   changeCounts,
   commitResult,
@@ -579,8 +580,8 @@ export function PRDiff({ value, item }: { value: Document; item: Document }) {
           );
         })}
       </div>
-      <details>
-        <summary>{copy("pr-workspace.snapshot")}</summary>
+      <Disclosure>
+        <DisclosureSummary>{copy("pr-workspace.snapshot")}</DisclosureSummary>
         <p>
           {text(item.base_sha)} → {text(item.head_sha)}
         </p>
@@ -588,7 +589,7 @@ export function PRDiff({ value, item }: { value: Document; item: Document }) {
           {copy("pr-workspace.patchDigest")}: {text(value.digest)}
         </p>
         <pre>{patch}</pre>
-      </details>
+      </Disclosure>
     </>
   );
 }
@@ -721,8 +722,10 @@ function Commits({
                   {copied === c.sha ? (
                     <span role="status">{copy("pr-workspace.copied")}</span>
                   ) : null}
-                  <details>
-                    <summary>{copy("pr-workspace.details")}</summary>
+                  <Disclosure>
+                    <DisclosureSummary>
+                      {copy("pr-workspace.details")}
+                    </DisclosureSummary>
                     <pre>{message}</pre>
                     <p>{text(c.sha)}</p>
                     <p className="pr-row-author">
@@ -740,7 +743,7 @@ function Commits({
                     {items(c.parents).map((p) => (
                       <p key={String(p)}>{String(p)}</p>
                     ))}
-                  </details>
+                  </Disclosure>
                 </article>
               );
             }),
@@ -977,10 +980,12 @@ function Detail({
             aria-labelledby={`${id}-description-tab`}
           >
             <InertMarkdown source={text(item.body)} />
-            <details>
-              <summary>{copy("pr-workspace.originalBody")}</summary>
+            <Disclosure>
+              <DisclosureSummary>
+                {copy("pr-workspace.originalBody")}
+              </DisclosureSummary>
               <pre>{text(item.body)}</pre>
-            </details>
+            </Disclosure>
           </div>
           <div
             role="tabpanel"
