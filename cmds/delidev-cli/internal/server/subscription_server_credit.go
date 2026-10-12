@@ -221,7 +221,9 @@ func (s *Service) runServerCredit(parent context.Context, id domain.ID) {
 			// The initial claim reserves ownership, but cannot send. Recheck the
 			// configured route and original authority after actual process readiness.
 			var currentRoute domain.NetworkRoute
-			_, currentRoute, consumeErr = s.readNetworkRoute(ctx, "")
+			if consumeErr == nil {
+				_, currentRoute, consumeErr = s.readNetworkRoute(ctx, "")
+			}
 			if consumeErr == nil && !reflect.DeepEqual(currentRoute, route) {
 				consumeErr = subscriptionDenied()
 			}

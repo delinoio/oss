@@ -559,3 +559,16 @@ func TestServerCreditV2UnknownOutcomeRetainsOriginalReferenceAfterRotation(t *te
 		t.Fatal("unknown rotated outcome replayed")
 	}
 }
+
+func TestServerCreditV2OpenerErrorCannotSend(t *testing.T) {
+	f, n := newServerCreditFixture(t, true)
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{n}, domain.Fail(domain.Unsupported, "Synthetic unavailable native profile.", "")
+	}
+	acceptCredit(t, f, requestServerCredit(f))
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	_, a := f.record()
+	if n.count() != 0 || a.Subscription.ServerCredit.EverSent || a.Subscription.ServerCredit.Phase != domain.SubscriptionObservationFailed || !a.Subscription.ServerCredit.CleanupConfirmed {
+		t.Fatal("native opener error authorized spending")
+	}
+}
