@@ -2077,7 +2077,7 @@ cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppH
  }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
  fn do_close(&self,browser:Option<&mut Browser>)->i32{
-   #[cfg(any(target_os="macos",windows))]
+   #[cfg(any(target_os="macos", windows, target_os="linux"))]
    {
      if let Some(browser)=browser{
        // Keep CEF's default windowed close path intercepted even when child
@@ -2090,7 +2090,7 @@ cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppH
        1
      }
    }
-   #[cfg(not(any(target_os="macos",windows)))]
+   #[cfg(not(any(target_os="macos", windows, target_os="linux")))]
    {let _=browser;0}
  }
  fn on_before_close(&self,browser:Option<&mut Browser>){
@@ -2110,7 +2110,19 @@ fn native_handle(handle: cef::sys::cef_window_handle_t) -> usize {
     }
 }
 
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(target_os = "linux")]
+fn validate_x11_child_parent(
+    actual_parent: std::ffi::c_ulong,
+    expected_parent: usize,
+) -> Result<()> {
+    if actual_parent as usize == expected_parent {
+        Ok(())
+    } else {
+        Err(NativeFailure::InvalidEvidence)
+    }
+}
+
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn schedule_child_destroy(
     browser: &Browser,
     request: &ViewRequest,
@@ -2162,10 +2174,10 @@ fn schedule_child_destroy(
     schedule_child_destroy_retry(browser.clone(), identity, Arc::clone(lifetime), 0);
 }
 
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 const CHILD_DESTROY_RETRY_DELAY_MS: u64 = 250;
 
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn schedule_child_destroy_retry(
     browser: Browser,
     identity: ChildIdentity,
@@ -2249,7 +2261,7 @@ fn schedule_child_destroy_retry(
     }
 }
 
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdentity,lifetime:Arc<Mutex<ChildLifetime>>,attempt:u32,}impl Task{
  fn execute(&self){
    if !self.lifetime.lock().is_ok_and(|mut receipt|receipt.begin_destroy(self.identity)){return;}
@@ -2274,7 +2286,7 @@ cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdent
  }
 }}
 
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn destroy_native_child(browser: &Browser, identity: ChildIdentity) -> Result<()> {
     if cef::currently_on(ThreadId::UI) != 1
         || browser.identifier() != identity.browser_id
@@ -2327,6 +2339,64 @@ fn destroy_native_child(browser: &Browser, identity: ChildIdentity) -> Result<()
             DestroyWindow(child).map_err(|_| NativeFailure::SidecarFailed)?;
         }
         Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void};
+
+        #[link(name = "X11")]
+        unsafe extern "C" {
+            fn XOpenDisplay(name: *const c_char) -> *mut c_void;
+            fn XQueryTree(
+                display: *mut c_void,
+                window: c_ulong,
+                root_return: *mut c_ulong,
+                parent_return: *mut c_ulong,
+                children_return: *mut *mut c_ulong,
+                child_count_return: *mut c_uint,
+            ) -> c_int;
+            fn XFree(data: *mut c_void) -> c_int;
+            fn XDestroyWindow(display: *mut c_void, window: c_ulong) -> c_int;
+            fn XSync(display: *mut c_void, discard: c_int) -> c_int;
+            fn XCloseDisplay(display: *mut c_void) -> c_int;
+        }
+
+        let display = unsafe { XOpenDisplay(std::ptr::null()) };
+        if display.is_null() {
+            return Err(NativeFailure::SidecarFailed);
+        }
+
+        let child = identity.child as c_ulong;
+        let mut root = 0;
+        let mut parent = 0;
+        let mut children = std::ptr::null_mut();
+        let mut child_count = 0;
+        let queried = unsafe {
+            XQueryTree(
+                display,
+                child,
+                &mut root,
+                &mut parent,
+                &mut children,
+                &mut child_count,
+            )
+        };
+        if !children.is_null() {
+            unsafe { XFree(children.cast()) };
+        }
+
+        let result = if queried == 0 {
+            Err(NativeFailure::InvalidEvidence)
+        } else if let Err(error) = validate_x11_child_parent(parent, identity.parent) {
+            Err(error)
+        } else if unsafe { XDestroyWindow(display, child) } == 0 {
+            Err(NativeFailure::SidecarFailed)
+        } else {
+            unsafe { XSync(display, 0) };
+            Ok(())
+        };
+        unsafe { XCloseDisplay(display) };
+        result
     }
 }
 cef::wrap_request_handler! {struct ExternalRequests{policy:Arc<Mutex<Policy>>,}impl RequestHandler{
@@ -2645,6 +2715,16 @@ mod tests {
         let state = host.state.lock().unwrap();
         assert_eq!(state.live, 0);
         assert!(state.views.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn x11_child_close_rejects_the_product_parent_and_other_windows() {
+        assert!(validate_x11_child_parent(100, 100).is_ok());
+        assert!(matches!(
+            validate_x11_child_parent(101, 100),
+            Err(NativeFailure::InvalidEvidence)
+        ));
     }
 
     struct CloseProbe {

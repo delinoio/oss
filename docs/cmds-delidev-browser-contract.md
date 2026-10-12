@@ -149,8 +149,8 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
-The raw client's lifecycle handler owns child-only closure. On macOS and Windows,
-it intercepts CEF's default parent-window close and queues destruction of only the
+The raw client's lifecycle handler owns child-only closure. On macOS, Windows and
+Linux, it intercepts CEF's default parent-window close and queues destruction of only the
 original child on the CEF UI thread. Failed dispatch and failed destruction retain
 an automatic retry owner for the exact browser and child receipt, using bounded
 retry delays until native hierarchy destruction or the original close acknowledgment
@@ -164,7 +164,10 @@ all handler interfaces, retaining the original browser ID, child handle, parent
 handle and generation. Destruction rechecks that identity and the native parent;
 it never looks up the currently selected replacement or invokes product-window
 close, hide or minimize. macOS removes only the original child NSView; Windows
-destroys only its original child HWND. Linux preserves CEF's default X11 child close.
+destroys only its original child HWND. Linux queries the X11 hierarchy and destroys
+only the original child XID after verifying its parent. Linux dispatch and
+destruction failures retain the same automatic retry owner until the child is
+destroyed or its original close callback acknowledges closure.
 Duplicate or late callbacks cannot destroy a replacement or sibling. Failed dispatch,
 invalid native evidence or failed destruction preserves pending child accounting
 and emits content-free structured diagnostics. Destruction alone does not release
