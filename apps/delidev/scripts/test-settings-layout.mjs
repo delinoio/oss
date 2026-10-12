@@ -1427,6 +1427,47 @@ try {
             fixtureLanguage === "en" ? "English - English" : "Korean - 한국어";
           const system =
             fixtureLanguage === "en" ? "Follow system" : "시스템 설정 따르기";
+          // The label stays top-anchored and vertically centered on the 40px
+          // combobox while the in-flow option list opens, filters and closes.
+          const labelGeometry = () =>
+            input.evaluate((node) => {
+              const label = node
+                  .closest(".language-settings")
+                  .querySelector(":scope > label"),
+                labelBox = label.getBoundingClientRect(),
+                inputBox = node.getBoundingClientRect(),
+                body = node
+                  .closest(".settings-content-column")
+                  .getBoundingClientRect().width;
+              return {
+                stacked: body < 640,
+                labelTop: labelBox.top,
+                labelBottom: labelBox.bottom,
+                labelCenter: labelBox.top + labelBox.height / 2,
+                inputTop: inputBox.top,
+                inputCenter: inputBox.top + inputBox.height / 2,
+                labelOverflow: label.scrollWidth > label.clientWidth,
+              };
+            });
+          const closedLabel = await labelGeometry();
+          assert(!closedLabel.labelOverflow, JSON.stringify(closedLabel));
+          if (!closedLabel.stacked)
+            assert(
+              Math.abs(closedLabel.labelCenter - closedLabel.inputCenter) <= 1,
+              JSON.stringify(closedLabel),
+            );
+          else
+            assert(
+              closedLabel.labelBottom <= closedLabel.inputTop,
+              JSON.stringify(closedLabel),
+            );
+          const assertLabelStable = async (state) => {
+            const now = await labelGeometry();
+            assert.equal(now.labelTop, closedLabel.labelTop, state);
+            assert.equal(now.labelCenter, closedLabel.labelCenter, state);
+            assert.equal(now.inputTop, closedLabel.inputTop, state);
+            assert.equal(now.inputCenter, closedLabel.inputCenter, state);
+          };
           await input.click();
           assert.equal(await input.inputValue(), "");
           assert.deepEqual(
@@ -1435,6 +1476,7 @@ try {
               .allTextContents(),
             [system, "English - English", "Korean - 한국어"],
           );
+          await assertLabelStable(`${fixtureLanguage}/${theme}/${width} open`);
           const geometry = await input.evaluate((node) => {
             const input = node.getBoundingClientRect(),
               picker = node.closest(".language-picker"),
@@ -1495,6 +1537,9 @@ try {
               .allTextContents(),
             ["Korean - 한국어"],
           );
+          await assertLabelStable(
+            `${fixtureLanguage}/${theme}/${width} filtered`,
+          );
           await input.fill("한");
           assert.deepEqual(
             await page
@@ -1513,6 +1558,9 @@ try {
             });
           await input.press("Escape");
           assert.equal(await input.inputValue(), committed);
+          await assertLabelStable(
+            `${fixtureLanguage}/${theme}/${width} closed`,
+          );
           await input.click();
           await input.fill("unsupported language");
           await page
@@ -1523,6 +1571,7 @@ try {
               { exact: true },
             )
             .waitFor();
+          await assertLabelStable(`${fixtureLanguage}/${theme}/${width} empty`);
           await input.press("Enter");
           assert.equal(
             await page.locator("html").getAttribute("lang"),
