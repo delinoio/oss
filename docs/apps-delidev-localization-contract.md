@@ -287,6 +287,7 @@ Timing text remains outside the polite status node with aria-live off so ticks
 do not announce. Locale changes preserve independent native disclosure state,
 clock ownership, drafts and focus. Unavailable timing never becomes a localized
 zero or a successful outcome.
+
 ## Session recovery card copy
 
 The EN/KO session source catalogs own six fixed recovery headings and the

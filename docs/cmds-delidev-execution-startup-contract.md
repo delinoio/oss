@@ -347,6 +347,7 @@ created. The common Resource projection removes the private key from every publi
 Session document and exposes the additive typed envelope instead. Worker reports,
 closed progress attempts, assignments, checkpoints and digests retain their
 original shapes. No Worker field, RPC, capability or migration is introduced.
+
 ## Composer-adjacent startup presentation
 
 The retained session recovery region shows a definitive startup failure with

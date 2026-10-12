@@ -500,6 +500,7 @@ List/Search and shared inspection exports remain unchanged. Connection disposal
 cancels and removes private tab/list/graph/avatar caches; unsupported peers retain
 safe flat-list and supported-tab fallbacks. Fixture validation is separate from
 real GitHub-account and packaged CEF/platform acceptance.
+
 ## Closed quota failure cause
 
 `FailureCause.QuotaExhausted` is exactly `quota_exhausted`. `failureCause`

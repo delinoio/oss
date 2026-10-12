@@ -5990,6 +5990,7 @@ The ordinary workspace contains no CI/rules/reviewer verification grid, Overview
 problem history or separate stack-dependencies section. Pending PR actions remains
 above the workspace. Existing server/CLI inspection and recovery surfaces survive.
 Unknown counts and failed decorative images remain accessible fallbacks.
+
 ### Contextual session recovery cards
 
 Session and General Chat Conversation retain one recovery region immediately

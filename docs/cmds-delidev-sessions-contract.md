@@ -1051,6 +1051,7 @@ matching records without success. Follow-up turns cannot reset completed origina
 startup time; replacement jobs use separate current identity. The optional
 private Session record is projected only into typed Resource envelope metadata.
 Native progress, assignments, checkpoints and digest inputs retain their shapes.
+
 ## Blocked quota problem publication
 
 Dispatch permits blocked-problem publication with a nonempty cause only for the
