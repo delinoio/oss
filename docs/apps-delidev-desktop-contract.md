@@ -296,6 +296,37 @@ Browser, capture, modal, handled-event, repeat, IME, modifier and hidden/inert
 fences remain. Guidance wraps within original menu geometry and semantic themes.
 Opening Files adds no execution, recovery, RPC, migration or native authority.
 
+The fixed Session Open tool / 도구 열기 action uses primary+T for the active,
+selected nonembedded Session, including ordinary text fields. The icon button
+and effective shortcut open one native `DialogSurface` without a tool action or
+resource read. Keep the five original rows in order: Diff, Files, Terminals,
+Browser and Diagnostics. The eligible existing Open Sidechat action follows as
+the sixth row. Keep all original eligibility, including disabled Terminals for
+a Sidechat parent snapshot and the original Sidechat source/capability guards.
+Keep child controllers mounted across presentation visits. Each selection closes
+the dialog synchronously before invoking its original callback once, retaining
+destination focus, singleton tabs, drafts and resource/request ownership.
+
+Use width `min(360px, viewport minus 32px)`, 20px padding, 12px corners, 44px row
+and close targets, semantic themes and visible focus. Bound height to the viewport
+minus 32px and permit vertical scrolling and narrow/200% reflow. Add no search or
+footer. Focus the first enabled row, contain Tab, and navigate enabled rows with
+arrows and Home/End. Keep native Enter/Space activation. Escape, named Close and
+backdrop dismissal restore an available opener or the tool trigger. Session,
+surface and connection departure dispose presentation without stale restoration.
+
+Any committed editable unshifted primary+T override suppresses only OpenTool in
+memory across all scopes. Disabled and Shift+T overrides do not suppress it.
+Removal or change restores the default immediately. Use the shared read-only
+binding policy for dispatch, conflict validation, Help, the committed Settings
+catalog and trigger ARIA; show English/Korean custom-binding priority guidance
+in Help and Settings when suppressed. Preserve the seven editable IDs, native
+validation/storage and preference bytes. Terminal target bindings retain their
+independent admission; this policy never suppresses terminal creation. Preserve
+handled-event, IME/229, repeat, modifier, hidden/inert, capture, other-modal,
+terminal-passthrough and focused native Browser fences. Opening adds no RPC,
+protocol allocation, migration, dependency or logging of keys/content.
+
 The fixed Session Open terminals / 터미널 열기 action uses primary+logical grave (`). Register it only for the active selected nonembedded Session, with ordinary editable input allowed and the original Sidechat parent-snapshot guard. Invoke the existing Terminals open action once, retaining the composer draft, original inventory, revision-bound reuse/create intent, pending/uncertain recovery and Worker ownership. Repeated opening selects the destination without closing it or replacing its controller. Help, the read-only Session Settings catalog and the original tool entry ARIA share the same platform binding. Accepted invocation from Help closes Help before the original callback and preserves destination focus. Grave matching has no physical Backquote fallback. Terminal input, focused native Browser pages, shortcut capture, unrelated modals and the existing handled/IME/repeat/extra-modifier/hidden/inert fences remain excluded. The seven editable actions and native preference format stay unchanged.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
@@ -324,7 +355,7 @@ Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
 primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. The former New Window primary+T chord is editable; no T alias remains. No palette, window action or tab action is added.
+chords cannot be assigned. The former New Window primary+T chord is editable; no native T alias remains. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an
@@ -4676,7 +4707,7 @@ There is no Activity page or PR source disclosure. PR problems, local dismissals
 
 ## Direct Sidechat preparation
 
-Open Sidechat is an explicit creation gesture in the flat Open tool menu after
+Open Sidechat is an explicit creation gesture in the compact Open tool dialog after
 Diagnostics. Opening, dismissing or retrying capability/Runner reads does not
 create a job. The existing source, storage, cleanup, account, subagent and busy
 checks remain authoritative; managed Sidechat support is independent of Fork.
@@ -5151,7 +5182,7 @@ revision, commands, results and unresolved limits in PRs and CI artifacts.
 
 Managed ChatGPT/Codex Sidechat composes System 47, Worker 26,
 existing Sidechat 27/16 and managed authentication Worker 3. The session detail
-Open tool menu exposes Open Sidechat after Diagnostics only for the original eligible completed
+Open tool dialog exposes Open Sidechat after Diagnostics only for the original eligible completed
 source and negotiated Runner. Activation starts direct preparation and focuses the editable pending composer; no name/Create modal is shown. Independent subscription Fork remains unsupported.
 See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat)
 for protected lease/Finish publication, read-only continuation and dependent

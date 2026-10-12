@@ -5,6 +5,7 @@
   "shortcuts.global": "Common",
   "shortcuts.help": "Open shortcut help",
   "shortcuts.openSettings": "Open Settings",
+  "shortcuts.toolSuppressed": "The default tool shortcut is disabled because a saved custom shortcut uses Command or Control + T.",
   "shortcuts.openFiles": "Open Files",
   "shortcuts.filesSuppressed": "The default Files shortcut is disabled because a saved custom shortcut uses Command or Control + E.",
   "shortcuts.openTerminals": "Open terminals",

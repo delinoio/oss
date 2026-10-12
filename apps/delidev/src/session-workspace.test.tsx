@@ -2097,3 +2097,42 @@ it.each([
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.control).not.toHaveBeenCalled();
 });
+
+it.each(["MacIntel", "Win32"])(
+  "opens the shared tool dialog from composer T without resource reads or draft changes on %s",
+  async (platform) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const f = fixture();
+    render(<ShortcutProvider>{f.view("Original draft")}</ShortcutProvider>);
+    await screen.findByRole("heading", { name: "Original session" });
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    const reads = f.workspaceReads.mock.calls.length;
+    fireEvent.keyDown(composer, {
+      key: "t",
+      code: "KeyT",
+      metaKey: platform === "MacIntel",
+      ctrlKey: platform !== "MacIntel",
+    });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "Open tool" })).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole("menuitem", { name: "Diff" }),
+    );
+    await act(async () => {});
+    expect(f.workspaceReads).toHaveBeenCalledTimes(reads);
+    expect(composer).toHaveProperty("value", "Original draft");
+    expect(f.draft).not.toHaveBeenCalled();
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(document.activeElement).toBe(composer);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  },
+);

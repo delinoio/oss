@@ -666,3 +666,41 @@ it.each([SupportedLanguage.English, SupportedLanguage.Korean])(
     await act(() => i18n.changeLanguage(SupportedLanguage.English));
   },
 );
+
+it.each([SupportedLanguage.English, SupportedLanguage.Korean])(
+  "uses committed tool suppression in the static catalog and restores it live in %s",
+  async (language) => {
+    await act(() => i18n.changeLanguage(language));
+    const f = fixture();
+    render(<Owner bridge={f.bridge} />);
+    await act(async () => {});
+    const label =
+      language === SupportedLanguage.English ? "Open tool" : "도구 열기";
+    const reason =
+      language === SupportedLanguage.English
+        ? "The default tool shortcut is disabled because a saved custom shortcut uses Command or Control + T."
+        : "저장된 사용자 지정 단축키가 Command 또는 Control + T를 사용하므로 기본 도구 단축키가 비활성화되었습니다.";
+    const row = screen.getByText(label).closest("dl > div")!;
+    expect(row.querySelector("kbd")?.textContent).toBeTruthy();
+    await act(async () =>
+      f.publish({
+        revision: 2,
+        problem: null,
+        overrides: {
+          [ShortcutId.SearchFocus]: {
+            state: ShortcutOverrideState.Binding,
+            chord: { key: "t", shift: false },
+          },
+        },
+      }),
+    );
+    expect(within(row as HTMLElement).getByText(reason)).toBeTruthy();
+    expect(row.querySelector("kbd")).toBeNull();
+    await act(async () =>
+      f.publish({ revision: 3, problem: null, overrides: {} }),
+    );
+    expect(screen.queryByText(reason)).toBeNull();
+    expect(row.querySelector("kbd")?.textContent).toBeTruthy();
+    await act(() => i18n.changeLanguage(SupportedLanguage.English));
+  },
+);

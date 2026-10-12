@@ -2131,7 +2131,7 @@ export function SessionView({
               close={closeTab}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
-            <SessionToolMenu active={active}>
+            <SessionToolMenu key={id} active={active}>
               {tools.map((tool) => (
                 <button
                   role="menuitem"

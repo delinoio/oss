@@ -402,3 +402,66 @@ it("preserves each editable E override and suppresses only the Files default acr
     parseShortcutOverrides({ [ShortcutId.OpenFiles]: { state: "disabled" } }),
   ).toThrow();
 });
+
+it("preserves each editable T override and suppresses only the tool default across scopes", () => {
+  const definitions = [
+    {
+      id: ShortcutId.OpenTool,
+      scope: Surface.Sessions,
+      label: "session.openTool" as const,
+      bindings: sessionShortcutBindings[ShortcutId.OpenTool],
+      enabled: true,
+    },
+  ];
+  for (const action of editableShortcutCatalog) {
+    const overrides = {
+      [action.id]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "t", shift: false },
+      },
+    } as const;
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    expect(customizationBindings(ShortcutId.OpenTool, overrides)).toEqual([]);
+    expect(
+      effectiveShortcutDefinitions(definitions, overrides)[0],
+    ).toMatchObject({
+      bindings: [],
+      enabled: false,
+      unavailableReason: "shortcuts.toolSuppressed",
+    });
+    expect(customizationBindings(action.id, overrides)).toEqual([
+      { key: "t", shift: false, primary: true },
+    ]);
+    expect(customizationBindings(ShortcutId.OpenTerminals, overrides)).toEqual(
+      sessionShortcutBindings[ShortcutId.OpenTerminals],
+    );
+    for (const restored of [
+      {},
+      { [action.id]: { state: ShortcutOverrideState.Disabled } },
+      {
+        [action.id]: {
+          state: ShortcutOverrideState.Binding,
+          chord: { key: "t", shift: true },
+        },
+      },
+      {
+        [action.id]: {
+          state: ShortcutOverrideState.Binding,
+          chord: { key: "j", shift: false },
+        },
+      },
+    ] as const) {
+      expect(
+        readOnlyShortcutSuppression(ShortcutId.OpenTool, restored),
+      ).toBeUndefined();
+      expect(effectiveShortcutDefinitions(definitions, restored)[0]).toEqual(
+        definitions[0],
+      );
+    }
+  }
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(() =>
+    parseShortcutOverrides({ [ShortcutId.OpenTool]: { state: "disabled" } }),
+  ).toThrow();
+});

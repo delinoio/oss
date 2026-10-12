@@ -147,6 +147,15 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
     defaults: globalShortcutBindings[ShortcutId.CommandMenu],
   },
   {
+    id: ShortcutId.OpenTool,
+    label: "session.openTool",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: sessionShortcutBindings[ShortcutId.OpenTool],
+  },
+  {
     id: ShortcutId.OpenFiles,
     label: "shortcuts.openFiles",
     group: ShortcutGroup.Session,
@@ -295,6 +304,7 @@ const readOnlyShortcutPolicies: Partial<
   Record<ShortcutId, { key: string; reason: MessageKey }>
 > = {
   [ShortcutId.OpenFiles]: { key: "e", reason: "shortcuts.filesSuppressed" },
+  [ShortcutId.OpenTool]: { key: "t", reason: "shortcuts.toolSuppressed" },
 };
 export function readOnlyShortcutSuppression(
   id: ShortcutId,
