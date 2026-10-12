@@ -343,6 +343,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return c.observeLateTurnLocked(native)
 	}
 	if native.Kind == nativewire.ServerRequest && c.execution != nil {
+		if native.Method == "item/tool/call" {
+			return c.observeDynamicRequestLocked(native)
+		}
 		return c.observeInteractionLocked(native)
 	}
 	if native.Kind != nativewire.Notification || c.execution == nil {
