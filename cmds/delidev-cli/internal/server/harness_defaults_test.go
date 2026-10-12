@@ -107,6 +107,21 @@ func TestHarnessDefaultsOldClientCannotEraseSelectors(t *testing.T) {
 	if after.Revision != current.Revision || string(after.Data) != string(current.DocumentJson) {
 		t.Fatal("failed downgrade changed document")
 	}
+	// A stale legacy save must retain Conflict precedence over downgrade
+	// rejection, so clients recover the original revision before changing shape.
+	_, err = SaveConfiguration(context.Background(), f.service.Store, ConfigurationMutation{RequestID: domain.NewID(), ID: domain.ID(current.Id), ExpectedRevision: current.Revision, Kind: domain.AgentKind, Document: current.DocumentJson})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Mutation = acctMutation(current, domain.NewID())
+	_, err = f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, legacy))
+	if domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+		t.Fatal("dedicated stale legacy save lost Conflict precedence", err)
+	}
+	_, err = SaveConfiguration(context.Background(), f.service.Store, ConfigurationMutation{RequestID: domain.NewID(), ID: domain.ID(current.Id), ExpectedRevision: current.Revision, Kind: domain.AgentKind, Document: legacy.DocumentJson})
+	if domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("generic stale legacy save lost Conflict precedence", err)
+	}
 }
 
 func TestHarnessDefaultsPortableRemapsProviderScopeAndPreservesModes(t *testing.T) {

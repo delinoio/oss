@@ -335,7 +335,7 @@ Follow [harness defaults](cmds-delidev-catalog-contract.md#harness-defaults-and-
 for applicable fields and exact source precedence. First dispatch selects the real
 account/profile, resolves trusted defaults and freezes values plus per-field source
 provenance in the same atomic configuration/input/job boundary. Worker capability
-53 gates only provenance-bearing assignments. Continuation and Fork retain the
+55 gates only provenance-bearing assignments. Continuation and Fork retain the
 original accepted values and provenance; current account/Worker restrictions still
 apply. A missing applicable native default rejects before input with the named
 `HARNESS_DEFAULT_UNVERIFIED` error. Existing accepted model evidence is read only;
