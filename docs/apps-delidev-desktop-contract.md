@@ -3218,7 +3218,10 @@ failure states. Ordinary rows have a 56px minimum, 8px vertical padding, 24px ga
 and 200px control column, with associated descriptions and native controls.
 Checkboxes remain native checkboxes: an 18px indicator is centered in a
 transparent target of at least 40px aligned at the control-column start, and label
-click, target click and Space keep native behavior. Three independent
+click, target click and Space keep native behavior. The Language label is top-anchored in its row and vertically centered on the
+40px combobox at Appearance body widths of 640px or more; opening, filtering,
+showing the empty result and closing the in-flow option list never move the label
+or the combobox, and below 640px the stacked label sits above the picker. Three independent
 Tool/Reasoning/Compaction selectors share one wider grouped row without merging
 values or accessible names. At body widths below 640px, the Appearance-scoped
 container stacks row labels/controls, radio tiles and grouped selectors; actions
