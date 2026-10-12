@@ -13,7 +13,11 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionDiff } from "./session-diff";
-import { SessionTabKind, SessionTabsStore, sessionTabKey } from "./session-tabs";
+import {
+  SessionTabKind,
+  SessionTabsStore,
+  sessionTabKey,
+} from "./session-tabs";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 
 function fixture(worktree = true) {
@@ -708,10 +712,15 @@ it("keeps working-tree Refresh as a direct diff read without options", async () 
   expect(operations().at(-1)).toBe("git-diff:working-tree:");
 });
 
-function tabsFixture(options: {
-  third?: boolean;
-  options?: (repository: string, original: () => Promise<{ documentJson: Uint8Array }>) => Promise<{ documentJson: Uint8Array }>;
-} = {}) {
+function tabsFixture(
+  options: {
+    third?: boolean;
+    options?: (
+      repository: string,
+      original: () => Promise<{ documentJson: Uint8Array }>,
+    ) => Promise<{ documentJson: Uint8Array }>;
+  } = {},
+) {
   const f = fixture(),
     store = new SessionTabsStore(),
     third = newRequestId(),
@@ -737,7 +746,9 @@ function tabsFixture(options: {
       store.snapshot(f.sessionId),
     );
     const [open, setOpen] = useState(true);
-    const tab = snapshot.tabs.find((t) => sessionTabKey(t) === snapshot.selected);
+    const tab = snapshot.tabs.find(
+      (t) => sessionTabKey(t) === snapshot.selected,
+    );
     return (
       <TransportProvider transport={f.transport}>
         <QueryClientProvider client={f.client}>
@@ -772,7 +783,9 @@ const branchReads = (read: { mock: { calls: unknown[][] } }) =>
     .map(
       ([request]) =>
         JSON.parse(
-          new TextDecoder().decode((request as { queryJson: Uint8Array }).queryJson),
+          new TextDecoder().decode(
+            (request as { queryJson: Uint8Array }).queryJson,
+          ),
         ) as Record<string, unknown>,
     )
     .filter((q) => q.operation === "git-diff" && q.comparison === "branch");
@@ -824,7 +837,11 @@ it("preserves the retained path and takes the base from the new repository, not 
       if (repository === f0.other) {
         value.diff_options.choices = [
           {
-            reference: { type: "remote-branch", name: "trunk", remote: "origin" },
+            reference: {
+              type: "remote-branch",
+              name: "trunk",
+              remote: "origin",
+            },
             available: true,
             configured: false,
           },
@@ -891,9 +908,7 @@ it("ignores a late negotiation result for a replaced repository", async () => {
   release();
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(f.comparisons()).toHaveLength(1);
-  expect(
-    f.comparisons().some((tab) => tab.repository === f.other),
-  ).toBe(false);
+  expect(f.comparisons().some((tab) => tab.repository === f.other)).toBe(false);
 });
 
 it("opens no tab when the Diff presentation is left before negotiation completes", async () => {
@@ -929,8 +944,7 @@ it.each(["unsupported", "failed", "missing-default"])(
         if (repository !== f0.other) return original();
         if (mode === "unsupported")
           throw new ConnectError("old", Code.InvalidArgument);
-        if (mode === "failed")
-          throw new ConnectError("down", Code.Unavailable);
+        if (mode === "failed") throw new ConnectError("down", Code.Unavailable);
         return f0.reply({
           diff_options: {
             version: 1,
@@ -998,9 +1012,9 @@ it("keeps working-tree, staged and creation descriptors base-free", async () => 
       target: { value: comparison },
     });
     await waitFor(() =>
-      expect(
-        f.comparisons().some((tab) => tab.comparison === comparison),
-      ).toBe(true),
+      expect(f.comparisons().some((tab) => tab.comparison === comparison)).toBe(
+        true,
+      ),
     );
   }
   expect(f.comparisons()).toHaveLength(3);
