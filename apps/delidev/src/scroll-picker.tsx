@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   ScrollContinuation,
@@ -42,6 +43,7 @@ export function ScrollPicker({
   selectedLabel,
   selectedDecoration,
   markRequired = false,
+  triggerRef,
 }: {
   options: ScrollPickerOption[];
   label: string;
@@ -56,6 +58,8 @@ export function ScrollPicker({
   selectedLabel?: string;
   selectedDecoration?: ReactNode;
   markRequired?: boolean;
+  /** Lets an owner transfer focus to this picker's trigger after a swap. */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const display = (label: string, decoration?: ReactNode) =>
     decoration === undefined ? (
@@ -72,6 +76,13 @@ export function ScrollPicker({
     trigger = useRef<HTMLButtonElement>(null),
     root = useRef<HTMLDivElement>(null),
     container = useRef<HTMLDivElement>(null);
+  const attachTrigger = useCallback(
+    (node: HTMLButtonElement | null) => {
+      trigger.current = node;
+      if (triggerRef) triggerRef.current = node;
+    },
+    [triggerRef],
+  );
   const focusedInitially = useRef(false),
     showing = useRef(false),
     usable = useRef(false);
@@ -275,7 +286,7 @@ export function ScrollPicker({
         ) : null}
       </span>
       <button
-        ref={trigger}
+        ref={attachTrigger}
         type="button"
         role="combobox"
         aria-labelledby={`${id}-label`}

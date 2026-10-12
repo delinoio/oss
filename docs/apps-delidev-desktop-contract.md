@@ -538,6 +538,14 @@ an inert plus icon, 8px corners, existing selector width, semantic theme colors,
 localized accessible name and visible keyboard focus. Preserve scrollable
 960×640 and 200% reflow layouts. Enter/Space uses ordinary button activation.
 
+When the selector and the creation button replace each other because inventory
+resolves empty or a refresh begins, keyboard focus follows the swap only if the
+departing control owned it: a focused loading Agent Worker combobox hands focus
+to **Create agent worker**, and a focused creation button hands focus to the
+replacement selector. Focus elsewhere (for example First message) is never
+moved, an open selector popup is dismissed with its selector, and inactive or
+disabled replacements receive no focus.
+
 The typed `SettingsEntryDestination.NewAgentWorker` enters Settings > Agent
 Workers with the existing creation wizard already open at Harness. Reuse the
 Settings visit/navigation boundary, destination focus and wizard focus behavior.

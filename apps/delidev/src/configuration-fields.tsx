@@ -1301,12 +1301,50 @@ export function ResourceChoice({
     emptyInventoryProven && !emptyInventoryActionPending;
   const awaitingRestoration =
     emptyInventoryProven && emptyInventoryActionPending;
+  // The selector and the creation button are unrelated controls, so a swap
+  // would otherwise drop keyboard focus to the document body. Remember whether
+  // the departing control owned focus and hand it to its replacement only then.
+  const createButton = useRef<HTMLButtonElement>(null),
+    pickerTrigger = useRef<HTMLButtonElement | null>(null),
+    swapOwnsFocus = useRef(false),
+    previousCreate = useRef(createFromEmptyInventory);
+  useLayoutEffect(() => {
+    if (previousCreate.current === createFromEmptyInventory) return;
+    previousCreate.current = createFromEmptyInventory;
+    const owned = swapOwnsFocus.current;
+    swapOwnsFocus.current = false;
+    if (!owned || !active || disabled) return;
+    const page = globalThis.document,
+      focused = page.activeElement;
+    // Focus that already moved to another control stays there.
+    if (focused && focused !== page.body && focused !== page.documentElement)
+      return;
+    (createFromEmptyInventory ? createButton : pickerTrigger).current?.focus({
+      preventScroll: true,
+    });
+  }, [createFromEmptyInventory, active, disabled]);
   return (
-    <div className="resource-choice">
+    <div
+      className="resource-choice"
+      onFocus={(event) => {
+        const target: EventTarget = event.target;
+        swapOwnsFocus.current =
+          target === createButton.current || target === pickerTrigger.current;
+      }}
+      onBlur={(event) => {
+        // A control removed while focused must keep its ownership claim.
+        if ((event.target as Element).isConnected)
+          swapOwnsFocus.current = false;
+      }}
+    >
       {createFromEmptyInventory ? (
         <div className="resource-empty-create">
           <span>{label}</span>
-          <button type="button" onClick={emptyInventoryAction!.invoke}>
+          <button
+            ref={createButton}
+            type="button"
+            onClick={emptyInventoryAction!.invoke}
+          >
             <svg aria-hidden="true" focusable="false" viewBox="0 0 16 16">
               <path d="M8 3v10M3 8h10" />
             </svg>
@@ -1336,6 +1374,7 @@ export function ResourceChoice({
           required={required}
           autoFocus={autoFocus}
           markRequired={markRequired}
+          triggerRef={pickerTrigger}
         />
       )}
       {needsProviderCapability && active && !ready ? (
