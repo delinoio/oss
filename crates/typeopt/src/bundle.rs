@@ -104,11 +104,28 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
         // Raw-text elements contain no markup: skip to their end tag so
         // script or style text that looks like a tag is not reported.
         if matches!(name.as_str(), "script" | "style" | "textarea" | "title") {
+            // The end tag name must match exactly: `</scripture>` does not
+            // end a script.
             let close = format!("</{name}");
-            i = html
+            let rest = html
                 .get(i.min(html.len())..)
-                .and_then(|rest| rest.to_ascii_lowercase().find(&close))
-                .map_or(html.len(), |end| i + end);
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let mut from = 0;
+            let mut end = None;
+            while let Some(at) = rest[from..].find(&close) {
+                let after = from + at + close.len();
+                if rest[after..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| c.is_ascii_whitespace() || c == '/' || c == '>')
+                {
+                    end = Some(from + at);
+                    break;
+                }
+                from = after;
+            }
+            i = end.map_or(html.len(), |end| i + end);
         }
         tags.push(HtmlTag { name, attributes });
     }
@@ -784,6 +801,12 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["script", "p"]);
         assert_eq!(tags[0].attribute("src"), None);
+        // Only an exact end tag name ends the raw text.
+        let tags = html_tags(
+            r#"<script>s='</scripture><script type="module" src="./legacy.js">';</script ><p>"#,
+        );
+        let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["script", "p"]);
         // Unterminated markup at the end of a page.
         for html in ["<script src=a.js", "<p a=", "<p =", "<script>x", "<a b='c"] {
             let _ = html_tags(html);
