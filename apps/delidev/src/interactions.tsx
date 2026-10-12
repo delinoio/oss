@@ -234,6 +234,19 @@ export function PendingInteractionReceipt({
         <h3>{copy("interactions.agentQuestion_1a6b3f")}</h3>
         <small>{projection.closure}</small>
       </header>
+      <p>
+        <LocalizedText
+          id="interactions.response_83879c"
+          components={{
+            s0: (
+              <>
+                {statusLabel(projection.responseState) ||
+                  copy("interactions.extra.d3289e625281")}
+              </>
+            ),
+          }}
+        />
+      </p>
       <PendingQuestion
         projection={projection}
         accepted={accepted}

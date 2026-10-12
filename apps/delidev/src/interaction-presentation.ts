@@ -148,6 +148,26 @@ export function displayedInteraction(
     pending.has(projection.mutationKey)
   );
 }
+/**
+ * Compact receipts for questions that are known by metadata but absent from the
+ * resident payload rows. Retention follows the projection's unresolved state,
+ * not RPC completion: only retired projections without a retained response
+ * intent, and rows tombstoned by the authority, are dropped.
+ */
+export function missingQuestionReceipts(
+  entries: Iterable<[string, InteractionProjection]>,
+  presentIds: ReadonlySet<string>,
+  removed: ReadonlySet<string>,
+  pending: ReadonlySet<string>,
+): [string, InteractionProjection][] {
+  return [...entries].filter(
+    ([requestId, projection]) =>
+      projection.question &&
+      !presentIds.has(requestId) &&
+      !removed.has(requestId) &&
+      displayedInteraction(projection, pending),
+  );
+}
 export function completeEmptyInteractionTray({
   loaded,
   loading,

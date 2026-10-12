@@ -13,6 +13,7 @@ import {
   InteractionPresentationStore,
   displayedInteraction,
   completeEmptyInteractionTray,
+  missingQuestionReceipts,
 } from "./interaction-presentation";
 const original = {
   type: "user-question",
@@ -197,4 +198,61 @@ it("does not make non-question interactions sticky", () => {
   expect(next.question).toBe(true);
   expect(next.mutationKey).toBe(`answer:${id}`);
   expect(next.unavailable).toBe(false);
+});
+
+const receiptIds = (
+  store: InteractionPresentationStore,
+  present: string[] = [],
+  removed: string[] = [],
+  pending: string[] = [],
+) =>
+  missingQuestionReceipts(
+    store.entries(),
+    new Set(present),
+    new Set(removed),
+    new Set(pending),
+  ).map(([requestId]) => requestId);
+it("keeps non-retired evicted questions as compact receipts without a retained mutation", () => {
+  for (const state of [
+    "queued",
+    "claimed",
+    "transmitted",
+    "uncertain",
+    "failed",
+    "unknown",
+  ])
+    for (const closure of ["open", "native-closed", "turn-ended"]) {
+      const store = new InteractionPresentationStore();
+      store.observe(row({ ...original, closure, response: { state } }));
+      // The response RPC completed, so no mutation intent is retained.
+      expect(receiptIds(store)).toEqual([id]);
+      expect(receiptIds(store, [id])).toEqual([]);
+    }
+  const open = new InteractionPresentationStore();
+  open.observe(row(original));
+  expect(receiptIds(open)).toEqual([id]);
+});
+it("keeps contradictory revisions compact and drops authoritative removals", () => {
+  const store = new InteractionPresentationStore();
+  store.observe(row(original));
+  store.observe(row({ type: "native-approval", closure: "native-closed" }, 10n));
+  expect(receiptIds(store)).toEqual([id]);
+  expect(receiptIds(store, [], [id])).toEqual([]);
+});
+it("retires accepted receipts unless a mutation is retained and never revives them from older payloads", () => {
+  const store = new InteractionPresentationStore();
+  store.observe(row({ ...original, response: { state: "queued" } }, 10n));
+  expect(receiptIds(store)).toEqual([id]);
+  store.observe(row(accepted, 11n));
+  expect(receiptIds(store)).toEqual([]);
+  expect(receiptIds(store, [], [], [`answer:${id}`])).toEqual([id]);
+  // Restoring older payloads cannot downgrade the retired projection.
+  store.observe(row(original, 9n));
+  store.observe(row({ ...original, response: { state: "queued" } }, 10n));
+  expect(receiptIds(store)).toEqual([]);
+});
+it("ignores non-question projections", () => {
+  const store = new InteractionPresentationStore();
+  store.observe(row({ type: "native-approval", closure: "open" }));
+  expect(receiptIds(store)).toEqual([]);
 });
