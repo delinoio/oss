@@ -99,372 +99,173 @@ try {
   const labels = (language) =>
     language === "en"
       ? {
-          browser: "Browser",
+          newPage: "New browser page",
           address: "Address",
-          open: "Open account browser",
-          expand: "Expand",
-          restore: "Restore",
+          open: "Open page",
+          cancel: "Cancel",
+          tool: "Open tool",
+          browser: "Browser",
+          conversation: "Conversation",
           information: "Browser information",
           closeInfo: "Close Browser information",
-          close: "Close browser",
-          splitter: "Browser width",
-          files: "Files",
         }
       : {
-          browser: "브라우저",
+          newPage: "새 브라우저 페이지",
           address: "주소",
-          open: "계정 브라우저 열기",
-          expand: "확장",
-          restore: "복원",
+          open: "페이지 열기",
+          cancel: "취소",
+          tool: "도구 열기",
+          browser: "브라우저",
+          conversation: "대화",
           information: "브라우저 정보",
           closeInfo: "브라우저 정보 닫기",
-          close: "브라우저 닫기",
-          splitter: "브라우저 너비",
-          files: "파일",
         };
   const evidence = () =>
     page.evaluate(() => ({
       registrations: browserFixture.registrations.length,
+      creates: browserFixture.native.filter(
+        (call) =>
+          call.operation === "browser_pages" && call.action === "create",
+      ).length,
       opens: browserFixture.native.filter(
         (call) => call.operation === "open_browser",
       ).length,
       hides: browserFixture.native.filter((call) => call.action === "hide")
         .length,
-      actions: browserFixture.native.filter(
-        (call) => call.action && !["resize", "hide"].includes(call.action),
+      closes: browserFixture.native.filter(
+        (call) => call.operation === "browser_pages" && call.action === "close",
       ).length,
     }));
-  const geometry = () =>
-    page.evaluate(() => {
-      const box = (selector) => {
-        const r = document.querySelector(selector).getBoundingClientRect();
-        return {
-          left: r.left,
-          top: r.top,
-          right: r.right,
-          bottom: r.bottom,
-          width: r.width,
-          height: r.height,
-        };
-      };
-      const scale = parseFloat(getComputedStyle(document.body).zoom) || 1;
-      const splitter = document.querySelector(".browser-splitter");
-      return {
-        scale,
-        region: box(".session-conversation-region"),
-        panel: box(".session-app-panel"),
-        info: box(".session-information"),
-        composer: box(".composer"),
-        tray: box(".session-input-tray"),
-        workspace: box(".session-workspace"),
-        transcript: box(".transcript"),
-        splitter: splitter
-          ? {
-              value: Number(splitter.getAttribute("aria-valuenow")),
-              minimum: Number(splitter.getAttribute("aria-valuemin")),
-              maximum: Number(splitter.getAttribute("aria-valuemax")),
-            }
-          : null,
-        viewport: document.querySelector(".browser-viewport")
-          ? box(".browser-viewport")
-          : null,
-      };
-    });
-  const assertGeometry = async () => {
-    await page.evaluate(
-      () =>
-        new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        ),
-    );
-    const m = await geometry();
-    const intersects = (a, b) =>
-      a.left < b.right - 1 &&
-      a.right > b.left + 1 &&
-      a.top < b.bottom - 1 &&
-      a.bottom > b.top + 1;
-    for (const owner of [m.info, m.composer, m.tray])
-      assert.equal(
-        intersects(m.panel, owner),
-        false,
-        `Browser excludes Info/composer/tray ${JSON.stringify(m)}`,
-      );
-    if (m.region.width / m.scale >= 960) {
-      assert(m.splitter, "Wide splitter is present");
-      assert(m.panel.width / m.scale >= 480 - 1);
-      assert(m.transcript.width / m.scale >= 360 - 1);
-      assert(
-        Math.abs(m.panel.width / m.scale - m.splitter.value) <= 1,
-        "Accessible width matches real pane",
-      );
-    } else {
-      assert.equal(m.splitter, null);
-      assert(m.panel.width / m.scale <= 400 + 1);
-    }
-    assert(
-      m.composer.bottom <= m.workspace.bottom + 1,
-      "Composer remains bounded",
-    );
-    assert(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth + 1,
-      ),
-      "No horizontal page overflow",
-    );
-    if (m.viewport) {
-      assert(m.viewport.height > 0, "Remaining viewport height is positive");
-      await page.waitForFunction(() => {
-        const r = document
-            .querySelector(".browser-viewport")
-            .getBoundingClientRect(),
-          b = browserFixture.lastBounds;
-        return (
-          b &&
-          Math.abs(b.x - r.left) < 2 &&
-          Math.abs(b.y - r.top) < 2 &&
-          Math.abs(b.width - r.width) < 2 &&
-          Math.abs(b.height - r.height) < 2
-        );
-      });
-      assert.equal(
-        await page
-          .locator(
-            ".browser-viewport iframe,.browser-viewport webview,.browser-viewport > *",
-          )
-          .count(),
-        0,
-        "Native content stays outside DOM",
-      );
-    }
-    return m;
-  };
   for (const language of ["en", "ko"])
-    for (const theme of ["light", "dark", "system"])
+    for (const theme of ["light", "dark", "custom"])
       for (const size of sizes) {
         const l = labels(language);
-        await page.emulateMedia({ colorScheme: "dark" });
         await page.setViewportSize(size);
-        process.stdout.write(
-          JSON.stringify({
-            operation: "browser-split-case",
-            language,
-            theme,
-            ...size,
-          }) + "\n",
-        );
         await page.goto(
           `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}`,
         );
-        await page
-          .getByRole("heading", { name: "Synthetic Browser session" })
-          .waitFor();
-        const composer = page.locator(".composer textarea");
-        await composer.evaluate((node) => {
-          globalThis.originalComposer = node;
-        });
-        await page
-          .getByRole("button", { name: l.browser, exact: true })
-          .click();
-        const opening = page.getByRole("button", { name: l.open, exact: true });
-        await opening.waitFor();
+        await page.getByRole("tab").nth(2).waitFor();
+        assert.equal(await page.getByRole("tablist").count(), 1);
         assert.equal(
-          await page.locator(".browser-viewport").count(),
+          await page.getByRole("tab", { name: l.browser, exact: true }).count(),
           0,
-          "Initial card has no empty viewport",
         );
-        for (const invalid of [
-          "file:///synthetic",
-          "https://user:password@example.com/",
-        ]) {
-          await page.getByRole("textbox", { name: l.address }).fill(invalid);
-          assert(
-            await opening.isDisabled(),
-            "Invalid initial URL cannot register",
-          );
-        }
-        await page
-          .getByRole("textbox", { name: l.address })
-          .fill("https://example.com/");
-        await page.waitForFunction(
-          () => !document.querySelector(".browser-opening button").disabled,
+        assert.equal(
+          await page
+            .locator(".browser-tab-bar,.browser-pages,.browser-tabs")
+            .count(),
+          0,
         );
-        let m = await assertGeometry();
-        assert(
-          Math.abs(m.region.width / m.scale - size.conversation) <= 1,
-          "Threshold uses conversation width excluding Info",
-        );
-        if (m.splitter)
-          assert(
-            Math.abs(
-              m.panel.width / m.scale - (size.conversation - 8) * 0.55,
-            ) <= 1,
-            "Default is 55 percent after splitter",
-          );
+        assert.equal((await evidence()).creates, 0);
         assert.equal((await evidence()).registrations, 0);
-        await opening.click();
-        await page.locator(".browser-tabs li").first().waitFor();
-        await assertGeometry();
-        assert.equal((await evidence()).registrations, 1);
-        assert.equal(await page.locator(".browser-tabs li").count(), 2);
-        if (
-          screenshots &&
-          language === "en" &&
-          theme === "light" &&
-          size.width === 1904 &&
-          size.height === 1000
-        ) {
-          await mkdir(screenshots, { recursive: true });
-          await page.screenshot({
-            path: join(screenshots, "browser-open-wide.png"),
-          });
-        }
-        const full = await page
-          .locator(".browser-tabs li")
-          .last()
-          .locator("button")
-          .first()
-          .getAttribute("title");
-        assert(full.length > 300);
+        const composer = page.getByRole("textbox", {
+          name: language === "en" ? "Message" : "메시지",
+        });
+        await composer.fill("Synthetic retained draft");
+        await composer.evaluate((node) => {
+          window.originalComposer = node;
+        });
+        const plus = page.getByRole("button", { name: l.newPage, exact: true });
+        assert.equal(await plus.getAttribute("role"), null);
+        assert.equal(await plus.getAttribute("aria-keyshortcuts"), null);
+        await plus.click();
+        let dialog = page.getByRole("dialog", { name: l.newPage, exact: true });
+        await dialog.waitFor();
         assert(
-          (
-            await page
-              .locator(".browser-tabs li")
-              .last()
-              .locator("button")
-              .first()
-              .getAttribute("aria-label")
-          ).includes(full),
-          "Complete local URL stays accessible",
+          await dialog
+            .getByRole("textbox", { name: l.address })
+            .evaluate((node) => node === document.activeElement),
         );
-        if (m.splitter) {
-          const splitter = page.getByRole("separator", { name: l.splitter });
-          await splitter.focus();
-          await page.keyboard.press("Home");
-          assert.equal((await geometry()).splitter.value, 480);
-          await page.keyboard.press("ArrowLeft");
-          assert.equal((await geometry()).splitter.value, 496);
-          await page.keyboard.press("ArrowRight");
-          assert.equal((await geometry()).splitter.value, 480);
-          await page.keyboard.press("End");
-          assert.equal(
-            (await geometry()).splitter.value,
-            size.conversation - 368,
-          );
-          const r = await splitter.boundingBox();
-          await page.mouse.move(
-            r.x + r.width / 2,
-            r.y + Math.min(100, r.height / 2),
-          );
-          await page.mouse.down();
-          await page.mouse.move(
-            (await geometry()).region.right + 100,
-            r.y + 50,
-          );
-          await page.mouse.up();
-          assert.equal((await geometry()).splitter.value, 480);
-          const r2 = await splitter.boundingBox();
-          await page.mouse.move(r2.x + 4, r2.y + 50);
-          await page.mouse.down();
-          await page.mouse.move(
-            (await geometry()).region.left - 100,
-            r2.y + 50,
-          );
-          await page.mouse.up();
-          assert.equal(
-            (await geometry()).splitter.value,
-            size.conversation - 368,
-          );
-          await splitter.focus();
-          await page.keyboard.press("Home");
-          await page.keyboard.press("ArrowLeft");
-          await page
-            .getByRole("button", { name: l.expand, exact: true })
-            .click();
-          assert.equal(
-            (await geometry()).splitter.value,
-            size.conversation - 368,
-          );
-          await page.setViewportSize({ width: 1424, height: size.height });
-          await assertGeometry();
-          await page
-            .getByRole("button", { name: l.restore, exact: true })
-            .click();
-          assert.equal((await geometry()).splitter.value, 496);
-          await page.setViewportSize({ width: 1423, height: size.height });
-          await assertGeometry();
-          assert(
-            await page
-              .getByRole("button", { name: l.expand, exact: true })
-              .isDisabled(),
-          );
-          await page.setViewportSize(size);
-          await assertGeometry();
-          assert.equal((await geometry()).splitter.value, 496);
-        } else
-          assert(
-            await page
-              .getByRole("button", { name: l.expand, exact: true })
-              .isDisabled(),
-          );
-        assert.equal(
-          (await evidence()).actions,
-          0,
-          "Layout sends no native navigation",
+        assert(
+          await dialog
+            .getByRole("button", { name: l.open, exact: true })
+            .isDisabled(),
         );
+        const box = await dialog.boundingBox();
+        assert(box.width <= 480 * (size.zoom ?? 1) + 1);
+        assert(box.x >= 0 && box.x + box.width <= size.width + 1);
+        const controls = await dialog
+          .locator("button,input")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => node.getBoundingClientRect().height),
+          );
+        assert(controls.every((height) => height >= 40 * (size.zoom ?? 1) - 1));
+        await page.keyboard.press("Shift+Tab");
+        assert(
+          await dialog.evaluate((node) =>
+            node.contains(document.activeElement),
+          ),
+        );
+        await page.keyboard.press("Escape");
+        await dialog.waitFor({ state: "detached" });
+        assert(await plus.evaluate((node) => node === document.activeElement));
+        assert.equal((await evidence()).creates, 0);
+        await page.getByRole("button", { name: l.tool, exact: true }).click();
+        await page
+          .getByRole("menuitem", { name: l.browser, exact: true })
+          .click();
+        dialog = page.getByRole("dialog", { name: l.newPage, exact: true });
+        await dialog.waitFor();
+        await dialog
+          .getByRole("textbox", { name: l.address })
+          .fill("https://explicit.example/new");
+        await dialog.getByRole("button", { name: l.open, exact: true }).click();
+        await dialog.waitFor({ state: "detached" });
+        const newTab = page.getByRole("tab", {
+          name: "https://explicit.example/new",
+          selected: true,
+        });
+        await newTab.waitFor();
+        assert.equal((await evidence()).creates, 1);
         assert.equal((await evidence()).registrations, 1);
-        const before = await evidence();
         await page
           .getByRole("button", { name: l.information, exact: true })
           .click();
-        await page.getByRole("dialog", { name: l.information }).waitFor();
-        await page.waitForFunction(
-          (n) =>
-            browserFixture.native.filter((call) => call.action === "hide")
-              .length > n,
-          before.hides,
+        await page.waitForFunction(() =>
+          browserFixture.native.some((call) => call.action === "hide"),
         );
         await page
           .getByRole("button", { name: l.closeInfo, exact: true })
           .click();
-        await page.waitForFunction(
-          (n) =>
-            browserFixture.native.filter(
-              (call) => call.operation === "open_browser",
-            ).length > n,
-          before.opens,
-        );
-        await assertGeometry();
-        assert.equal((await evidence()).registrations, 1);
-        assert.equal((await evidence()).actions, 0);
-        await page.getByRole("button", { name: l.close, exact: true }).click();
-        assert(
-          await page
-            .getByRole("button", { name: l.browser, exact: true })
-            .evaluate((node) => node === document.activeElement),
-        );
-        assert(await composer.evaluate((node) => node === originalComposer));
-        assert.equal(
-          await composer.inputValue(),
-          "Retained synthetic Browser draft",
-        );
+        const geometry = await page.evaluate(() => {
+          const panel = document
+            .querySelector(".session-browser:not([hidden])")
+            .getBoundingClientRect();
+          const info = document
+            .querySelector(".session-information")
+            .getBoundingClientRect();
+          const intersect =
+            panel.left < info.right - 1 &&
+            panel.right > info.left + 1 &&
+            panel.top < info.bottom - 1 &&
+            panel.bottom > info.top + 1;
+          const bar = document.querySelector(".session-tabs");
+          return {
+            intersect,
+            scroll: bar.scrollWidth >= bar.clientWidth,
+            viewport: document
+              .querySelector(".session-browser:not([hidden]) .browser-viewport")
+              .getBoundingClientRect().height,
+          };
+        });
+        assert.equal(geometry.intersect, false);
+        assert(geometry.scroll && geometry.viewport > 0);
         await page
-          .getByRole("button", { name: l.browser, exact: true })
+          .getByRole("button", {
+            name:
+              language === "en"
+                ? "Close explicit.example/new tab"
+                : "explicit.example/new 탭 닫기",
+            exact: true,
+          })
           .click();
-        await opening.waitFor();
-        if (m.splitter)
-          assert.equal(
-            (await geometry()).splitter.value,
-            496,
-            "Split survives Browser unmount/tool reopening",
-          );
-        await page.getByRole("button", { name: l.files, exact: true }).click();
-        await page.keyboard.press("Escape");
-        assert(
-          await page
-            .getByRole("button", { name: l.files, exact: true })
-            .evaluate((node) => node === document.activeElement),
-        );
+        await newTab.waitFor({ state: "detached" });
+        assert.equal((await evidence()).closes, 1);
+        await page
+          .getByRole("tab", { name: l.conversation, exact: true })
+          .click();
         assert(await composer.evaluate((node) => node === originalComposer));
+        assert.equal(await composer.inputValue(), "Synthetic retained draft");
         cases++;
       }
   for (const language of ["en", "ko"])
@@ -481,49 +282,41 @@ try {
       ]) {
         const l = labels(language);
         await page.setViewportSize({ width: 1424, height: 640 });
-        process.stdout.write(
-          JSON.stringify({
-            operation: "browser-state-case",
-            language,
-            theme,
-            state,
-          }) + "\n",
-        );
         await page.goto(
           `${origin}/?language=${language}&theme=${theme}&${state}`,
         );
         await page
-          .getByRole("heading", { name: "Synthetic Browser session" })
-          .waitFor();
-        await page
-          .getByRole("button", { name: l.browser, exact: true })
+          .getByRole("button", { name: l.newPage, exact: true })
           .click();
+        const dialog = page.getByRole("dialog", {
+          name: l.newPage,
+          exact: true,
+        });
+        await dialog.waitFor();
         if (state === "host=unsupported") {
-          assert.equal(await page.locator(".browser-opening").count(), 0);
           assert.equal((await evidence()).registrations, 0);
-          assert.equal((await evidence()).opens, 0);
           cases++;
           continue;
         }
-        const opening = page.getByRole("button", { name: l.open, exact: true });
-        await opening.waitFor();
-        await page
+        await dialog
           .getByRole("textbox", { name: l.address })
-          .fill("https://example.com/");
-        if (state.startsWith("capabilities=")) {
-          assert(await opening.isDisabled());
+          .fill("https://explicit.example/new");
+        const open = dialog.getByRole("button", { name: l.open, exact: true });
+        if (
+          state.startsWith("capabilities=") ||
+          state === "removal=pending" ||
+          state === "tabs=16"
+        ) {
+          await page.waitForTimeout(100);
+          assert(await open.isDisabled());
           assert.equal((await evidence()).registrations, 0);
-          assert.equal((await evidence()).opens, 0);
-          await assertGeometry();
+          assert.equal((await evidence()).creates, 0);
           cases++;
           continue;
         }
-        await page.waitForFunction(
-          () => !document.querySelector(".browser-opening button").disabled,
-        );
-        await opening.click();
+        await open.click();
         if (state === "registration=uncertain") {
-          const retry = page.getByRole("button", {
+          const retry = dialog.getByRole("button", {
             name:
               language === "en"
                 ? "Retry the same registration"
@@ -531,56 +324,33 @@ try {
             exact: true,
           });
           await retry.waitFor();
-          assert.equal((await evidence()).registrations, 1);
-          assert.equal((await evidence()).opens, 0);
+          assert.equal((await evidence()).creates, 0);
           await retry.click();
-          await page.locator(".browser-tabs li").first().waitFor();
+          await dialog.waitFor({ state: "detached" });
           assert(
             await page.evaluate(
               () =>
                 JSON.stringify(browserFixture.registrations[0]) ===
                 JSON.stringify(browserFixture.registrations[1]),
             ),
-            "Explicit retry retains original request",
           );
-        } else if (state === "native=failure") {
-          await page.locator(".browser-chrome [role=alert]").waitFor();
-          assert.equal((await evidence()).opens, 1);
-          assert.equal((await evidence()).actions, 0);
+          assert.equal((await evidence()).creates, 1);
         } else {
-          await page.locator(".browser-tabs li").first().waitFor();
-          if (state === "tabs=16")
-            assert(
-              await page
-                .getByRole("button", {
-                  name: language === "en" ? "New tab" : "새 탭",
-                  exact: true,
-                })
-                .isDisabled(),
-            );
-          else
-            assert(
-              await page
-                .getByRole("button", {
-                  name: language === "en" ? "Back" : "뒤로",
-                  exact: true,
-                })
-                .isDisabled(),
-            );
-          await assertGeometry();
+          await dialog.waitFor({ state: "detached" });
+          await page
+            .locator('.session-browser:not([hidden]) [role="alert"]')
+            .waitFor();
+          assert.equal((await evidence()).creates, 1);
         }
-        assert.equal((await evidence()).actions, 0);
         cases++;
       }
   assert.deepEqual(errors, []);
   process.stdout.write(
     JSON.stringify({
-      operation: "browser-split-layout",
-      ...source,
+      operation: "browser-workspace-layout",
+      source,
       cases,
-      screenshots,
-      effectiveZoom: "CSS zoom 2 plus narrow viewport reflow",
-      nativeAcceptance: "not-performed",
+      nativeAcceptance: false,
     }) + "\n",
   );
 } finally {

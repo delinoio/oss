@@ -34,5 +34,18 @@
   "session-browser.splitter": "브라우저 너비",
   "session-browser.moreActions": "브라우저 추가 동작",
   "session-browser.tabLabel": "탭 {{number}} · {{url}}",
-  "session-browser.localSummary": "탭과 브라우저 데이터는 이 컴퓨터에 유지됩니다."
+  "session-browser.localSummary": "탭과 브라우저 데이터는 이 컴퓨터에 유지됩니다.",
+  "session-browser.newPage": "새 브라우저 페이지",
+  "session-browser.sharingSummary": "브라우저 데이터는 이 계정의 세션과 공유됩니다.",
+  "session-browser.cancel": "취소",
+  "session-browser.openPage": "페이지 열기",
+  "session-browser.loading": "브라우저 페이지를 불러오는 중…",
+  "session-browser.pageLimit": "이 계정 프로필에 이미 페이지가 16개 있습니다. 새 페이지를 열기 전에 페이지 하나를 닫으세요.",
+  "session-browser.createPending": "기존 페이지 생성이 진행 중입니다. 새 페이지를 열기 전에 결과를 확인하세요.",
+  "session-browser.closePending": "기존 페이지 닫기가 진행 중입니다. 닫기가 확인될 때까지 이 탭을 유지하세요.",
+  "session-browser.cleanupPending": "페이지 메타데이터가 삭제되었습니다. 기존 네이티브 창 정리는 아직 진행 중입니다.",
+  "session-browser.observeOperation": "기존 작업 결과 확인",
+  "session-browser.operationUnknown": "기존 브라우저 작업을 확인할 수 없습니다. 다시 요청하지 말고 기존 작업 결과를 확인하세요.",
+  "session-browser.retryInventory": "브라우저 페이지 다시 불러오기",
+  "session-browser.clearFailedOperation": "실패한 작업 확인"
 }

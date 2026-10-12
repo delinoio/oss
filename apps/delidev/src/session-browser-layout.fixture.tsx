@@ -120,6 +120,18 @@ let local = {
   tabs: { tabs, selected: tabs[0].id },
   removal_pending: args.get("removal") === "pending",
 };
+const receipts = new Map<
+  string,
+  {
+    operation_id: string;
+    page_id: string;
+    phase: string;
+    metadata_committed: boolean;
+    native_cleanup_complete: boolean;
+    failure: null;
+  }
+>();
+const closedPages: string[] = [];
 const evidence = {
   registrations: [] as { requestId: string; accountId: string }[],
   native: [] as {
@@ -139,6 +151,13 @@ Object.assign(window, {
       operation: string,
       input: {
         action?: string;
+        request?: {
+          action: string;
+          operation_id?: string;
+          url?: string;
+          page_id?: string;
+        };
+        pageId?: string;
         viewId?: string;
         profileId?: string;
         tabId?: string;
@@ -148,35 +167,61 @@ Object.assign(window, {
     ) => {
       evidence.native.push({
         operation,
-        action: input.action,
+        action: input.request?.action ?? input.action,
         profileId: input.profileId,
         viewId: input.viewId,
         bounds: input.bounds,
       });
+      if (operation === "browser_pages") {
+        const request = input.request!;
+        if (request.action === "create") {
+          const page = { id: newRequestId(), url: request.url! };
+          local = {
+            ...local,
+            tabs: { tabs: [...local.tabs.tabs, page], selected: page.id },
+          };
+          receipts.set(request.operation_id!, {
+            operation_id: request.operation_id!,
+            page_id: page.id,
+            phase: "completed",
+            metadata_committed: true,
+            native_cleanup_complete: true,
+            failure: null,
+          });
+        } else if (request.action === "close") {
+          const tabs = local.tabs.tabs.filter(
+            (page) => page.id !== request.page_id,
+          );
+          local = {
+            ...local,
+            tabs: {
+              tabs,
+              selected: tabs.some((page) => page.id === local.tabs.selected)
+                ? local.tabs.selected
+                : (tabs[0]?.id ?? ""),
+            },
+          };
+          closedPages.push(request.page_id!);
+          receipts.set(request.operation_id!, {
+            operation_id: request.operation_id!,
+            page_id: request.page_id!,
+            phase: "completed",
+            metadata_committed: true,
+            native_cleanup_complete: true,
+            failure: null,
+          });
+        }
+        return {
+          state: local,
+          receipt: receipts.get(request.operation_id!) ?? null,
+          closed_pages: [...closedPages],
+        };
+      }
       if (input.bounds) evidence.lastBounds = input.bounds;
       if (args.get("native") === "failure" && operation === "open_browser")
         throw new Error("Synthetic original native failure");
       if (input.action === "select-tab")
         local = { ...local, tabs: { ...local.tabs, selected: input.tabId! } };
-      if (input.action === "close-tab") {
-        const tabs = local.tabs.tabs.filter((tab) => tab.id !== input.tabId);
-        local = {
-          ...local,
-          tabs: {
-            tabs,
-            selected: tabs.some((tab) => tab.id === local.tabs.selected)
-              ? local.tabs.selected
-              : (tabs[0]?.id ?? ""),
-          },
-        };
-      }
-      if (input.action === "new-tab") {
-        const tab = { id: newRequestId(), url: input.url! };
-        local = {
-          ...local,
-          tabs: { tabs: [...local.tabs.tabs, tab], selected: tab.id },
-        };
-      }
       if (input.action === "navigate")
         local = {
           ...local,
@@ -217,6 +262,9 @@ const transport = createRouterTransport((router) => {
             : [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1],
       };
     },
+    listBrowserProfiles: () => ({
+      profiles: args.get("registration") === "uncertain" ? [] : [profile],
+    }),
     registerBrowserProfile: (request) => {
       evidence.registrations.push({
         requestId: request.session!.requestId,

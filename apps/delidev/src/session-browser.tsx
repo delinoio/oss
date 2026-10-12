@@ -12,7 +12,7 @@ import {
   ownedMessage,
   useProductMessage,
 } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -33,21 +33,13 @@ enum BrowserAction {
   Back = "back",
   Forward = "forward",
   Reload = "reload",
-  NewTab = "new-tab",
   SelectTab = "select-tab",
-  CloseTab = "close-tab",
   Resize = "resize",
   Hide = "hide",
 }
 interface BrowserState {
   tabs: { tabs: { id: string; url: string }[]; selected: string };
   removal_pending: boolean;
-}
-interface BrowserOwner {
-  profileId: string | undefined;
-  retry: number;
-  sessionId: string;
-  accountId: string;
 }
 const idPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -100,8 +92,15 @@ function browserState(value: BrowserState): BrowserState {
     throw new Error("Local browser state is unavailable.");
   return value;
 }
+export interface BrowserController {
+  closePage: (pageId: string) => void;
+}
 interface TabbedBrowser {
   active?: boolean;
+  presentationActive?: boolean;
+  dialogOpen?: boolean;
+  dismissDialog?: () => void;
+  controller?: RefObject<Map<string, BrowserController>>;
   selectedPage?: { profile: string; id: string; title: string; label?: string };
   openPage?: (page: {
     profile: string;
@@ -110,6 +109,84 @@ interface TabbedBrowser {
     label?: string;
   }) => void;
 }
+enum PageAction {
+  Inventory = "inventory",
+  Create = "create",
+  Close = "close",
+  Observe = "observe",
+}
+enum PagePhase {
+  Accepted = "accepted",
+  CleanupPending = "cleanup-pending",
+  Completed = "completed",
+  Failed = "failed",
+}
+interface PageReceipt {
+  operation_id: string;
+  page_id: string;
+  phase: PagePhase;
+  metadata_committed: boolean;
+  native_cleanup_complete: boolean;
+  failure: string | null;
+}
+interface PageInventory {
+  state: BrowserState;
+  receipt: PageReceipt | null;
+  closed_pages: string[];
+}
+interface PageOperation {
+  action: PageAction.Create | PageAction.Close;
+  operation_id: string;
+  url?: string;
+  page_id?: string;
+  sent: boolean;
+  receipt?: PageReceipt;
+  uncertain: boolean;
+  selection?: string;
+}
+function pageInventory(
+  value: PageInventory,
+  operation?: PageOperation,
+): PageInventory {
+  browserState(value?.state);
+  if (
+    !Array.isArray(value.closed_pages) ||
+    value.closed_pages.length > 4096 ||
+    (value.state.removal_pending && value.closed_pages.length > 0) ||
+    !value.closed_pages.every(
+      (id) =>
+        typeof id === "string" &&
+        idPattern.test(id) &&
+        !value.state.tabs.tabs.some((page) => page.id === id),
+    )
+  )
+    throw new Error("Browser operation proof is unavailable.");
+  if (operation) {
+    const receipt = value.receipt;
+    if (
+      !receipt ||
+      receipt.operation_id !== operation.operation_id ||
+      !idPattern.test(receipt.page_id) ||
+      !Object.values(PagePhase).includes(receipt.phase) ||
+      typeof receipt.metadata_committed !== "boolean" ||
+      typeof receipt.native_cleanup_complete !== "boolean" ||
+      (receipt.failure !== null && typeof receipt.failure !== "string") ||
+      (operation.action === PageAction.Close &&
+        receipt.page_id !== operation.page_id) ||
+      (receipt.phase === PagePhase.Completed &&
+        (receipt.failure !== null ||
+          !receipt.metadata_committed ||
+          !receipt.native_cleanup_complete ||
+          value.state.removal_pending ||
+          (operation.action === PageAction.Close &&
+            value.state.tabs.tabs.some((page) => page.id === receipt.page_id))))
+    )
+      throw new Error("Browser operation proof is unavailable.");
+  } else if (value.receipt !== null)
+    throw new Error("Browser inventory proof is unavailable.");
+  return value;
+}
+
 export interface BrowserLayoutControls {
   wide: boolean;
   expanded: boolean;
@@ -149,13 +226,6 @@ function BrowserHeader({
               )}
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={close}
-            aria-label={copy("session-browser.closeBrowser_dd3303")}
-          >
-            ×
-          </button>
         </div>
       </header>
       {information ? (
@@ -180,12 +250,50 @@ export function browserTabTitle(address: string): string {
     return address;
   }
 }
+function UnavailableBrowserDialog({ close }: { close: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <Modal
+      title={copy("session-browser.newPage")}
+      close={close}
+      className="browser-new-page"
+      initialFocus={input}
+      trapFocus
+    >
+      <form onSubmit={(event) => event.preventDefault()}>
+        <p>{copy("session-browser.sharingSummary")}</p>
+        <label>
+          {copy("session-browser.address_56ef8f")}
+          <input
+            ref={input}
+            maxLength={8192}
+            placeholder="https://example.com/"
+          />
+        </label>
+        <p>
+          {copy("session-browser.cefBrowserProfilesRequireTheSupported_c9b9e8")}
+        </p>
+        <footer>
+          <button type="button" onClick={close}>
+            {copy("session-browser.cancel")}
+          </button>
+          <button disabled>{copy("session-browser.openPage")}</button>
+        </footer>
+      </form>
+    </Modal>
+  );
+}
+
 export function SessionBrowser({
   session,
   accountId,
   close,
   layout,
   active = true,
+  presentationActive = active,
+  dialogOpen = false,
+  dismissDialog = () => {},
+  controller,
   selectedPage,
   openPage,
 }: {
@@ -197,7 +305,9 @@ export function SessionBrowser({
   useLocale();
   const available = useBrowserHost();
   if (!available)
-    return (
+    return dialogOpen ? (
+      <UnavailableBrowserDialog close={dismissDialog} />
+    ) : presentationActive ? (
       <section
         className="session-browser"
         aria-label={copy("session-browser.sessionBrowser_47d746")}
@@ -211,7 +321,7 @@ export function SessionBrowser({
           </p>
         </div>
       </section>
-    );
+    ) : null;
   return (
     <NativeSessionBrowser
       session={session}
@@ -219,6 +329,10 @@ export function SessionBrowser({
       close={close}
       layout={layout}
       active={active}
+      presentationActive={presentationActive}
+      dialogOpen={dialogOpen}
+      dismissDialog={dismissDialog}
+      controller={controller}
       selectedPage={selectedPage}
       openPage={openPage}
     />
@@ -230,6 +344,10 @@ function NativeSessionBrowser({
   close,
   layout,
   active = true,
+  presentationActive = active,
+  dialogOpen = false,
+  dismissDialog = () => {},
+  controller,
   selectedPage,
   openPage,
 }: {
@@ -251,112 +369,50 @@ function NativeSessionBrowser({
     setBusyState(value);
   };
   const [retry, setRetry] = useState(0);
-  const [presenting, setPresenting] = useState(false);
-  const pendingAction = useRef<
-    | {
-        action: BrowserAction;
-        tabId?: string;
-        version: number;
-        owner: BrowserOwner;
-        selection: string;
-      }
-    | undefined
-  >(undefined);
-  const needsPresentation = useRef(true);
-  needsPresentation.current =
-    !openPage ||
-    Boolean(
-      selectedPage &&
-      (!state || state.tabs.tabs.some((tab) => tab.id === selectedPage.id)),
-    ) ||
-    !state ||
-    presenting;
+  const [pageDraft, setPageDraft] = useState("");
+  const pageInput = useRef<HTMLInputElement>(null);
+  const [operation, setOperation] = useState<PageOperation>();
+  const operationRef = useRef<PageOperation | undefined>(undefined);
+  const nativeBusy = useRef(false);
+  const [nativePending, setNativePending] = useState(false);
+  const [submitted, setSubmitted] = useState<{
+    url: string;
+    revision: bigint;
+    registered: boolean;
+    selection: string;
+  }>();
+  const needsPresentation = useRef(false);
+  needsPresentation.current = Boolean(
+    selectedPage &&
+    selectedPage.profile === profileId &&
+    state?.tabs.tabs.some((tab) => tab.id === selectedPage.id),
+  );
   const viewport = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const presentation = useRef("");
-  const presentationGeneration = useRef(0);
   const shortcutAdmission = useRef("");
-  const presentationVisible = useRef<() => boolean>(() => false);
-  const selectionAdmitted = useRef<() => boolean>(() => false);
-  const reconcileSelection = useRef(() => {});
-  const nativeState = useRef(state);
-  const selectionTarget = useRef("");
-  const selectionAttempt = useRef("");
   const tabsStore = useSessionTabsStore();
   const activeRef = useRef(active);
-  activeRef.current = active;
-  const owner = useRef<BrowserOwner>({
-    profileId,
-    retry,
-    sessionId: session.id,
-    accountId,
-  });
-  owner.current = { profileId, retry, sessionId: session.id, accountId };
-  const currentOwner = (original: BrowserOwner) =>
-    owner.current.profileId === original.profileId &&
-    owner.current.retry === original.retry &&
-    owner.current.sessionId === original.sessionId &&
-    owner.current.accountId === original.accountId;
-  const observe = (
-    result: BrowserState,
-    original: BrowserOwner,
-    viewId: string,
-    version: number,
-  ) => {
-    if (
-      !alive.current ||
-      !activeRef.current ||
-      !needsPresentation.current ||
-      !currentOwner(original) ||
-      !viewId ||
-      presentation.current !== viewId ||
-      actionVersion.current !== version ||
-      !presentationVisible.current()
-    )
-      return false;
-    nativeState.current = result;
+  activeRef.current = presentationActive;
+  const owner = useRef({ profileId, retry });
+  owner.current = { profileId, retry };
+  const selectionAttempt = useRef("");
+  const selectionTarget = useRef("");
+  const selectedPageRef = useRef(selectedPage);
+  selectedPageRef.current = selectedPage;
+  const observe = (result: BrowserState, profile: string) => {
     setState(result);
-    if (!result.removal_pending && original.profileId)
+    if (resolutionActive.current)
       tabsStore.refreshPages(
-        original.sessionId,
-        original.profileId,
+        session.id,
+        profile,
         result.tabs.tabs.map((tab) => ({
           id: tab.id,
           title: browserTabTitle(tab.url),
           label: tab.url,
         })),
       );
-    return true;
-  };
-  const acknowledgeClose = (
-    result: BrowserState,
-    action: BrowserAction,
-    tabId: string | undefined,
-    original: BrowserOwner,
-    version: number,
-    generation: number,
-  ) => {
-    if (
-      action !== BrowserAction.CloseTab ||
-      !tabId ||
-      !original.profileId ||
-      !alive.current ||
-      !currentOwner(original) ||
-      actionVersion.current !== version ||
-      presentationGeneration.current !== generation ||
-      result.removal_pending ||
-      result.tabs.tabs.some((tab) => tab.id === tabId)
-    )
-      return;
-    // Hide can finish before this reply. Its original close authority survives
-    // inactivity, but a new presentation, retry or owner cannot inherit it.
-    tabsStore.dismissPage(
-      original.sessionId,
-      original.profileId,
-      tabId,
-      result.tabs.selected,
-    );
   };
   const capabilities = useQuery(
     BrowserQuery.getBrowserCapabilities,
@@ -373,26 +429,343 @@ function NativeSessionBrowser({
     (response) => {
       try {
         setProfileId(browserProfile(response.profile, accountId));
+        setSubmitted((original) =>
+          original ? { ...original, registered: true } : original,
+        );
         setFailure(undefined);
       } catch {
         setFailure(ownedMessage("session-browser.extra.5092c54369dd"));
       }
     },
+    (response, request) =>
+      Boolean(browserProfile(response.profile, request.accountId)),
   );
+  const [profilePage, setProfilePage] = useState("");
+  const [inventoryReady, setInventoryReady] = useState(false);
+  const [inventoryEpoch, setInventoryEpoch] = useState(0);
+  const profileTokens = useRef(new Set<string>());
+  const profiles = useQuery(
+    BrowserQuery.listBrowserProfiles,
+    { pageSize: 100, pageToken: profilePage },
+    {
+      retry: false,
+      enabled: active && supported && !profileId && idPattern.test(accountId),
+    },
+  );
+  const dialogVisible = useRef(dialogOpen);
+  dialogVisible.current = dialogOpen;
+  const resolutionActive = useRef(active);
+  resolutionActive.current = active;
+  const operationRunner = useRef<
+    (operation: PageOperation, observe: boolean) => Promise<void>
+  >(async () => {});
+  const pageResult = (value: PageInventory) => {
+    observe(value.state, profileId!);
+    if (resolutionActive.current && !value.state.removal_pending)
+      tabsStore.reconcilePages(
+        session.id,
+        profileId!,
+        value.state.tabs.tabs.map((page) => ({
+          id: page.id,
+          title: browserTabTitle(page.url),
+          label: page.url,
+        })),
+      );
+    for (const pageId of value.closed_pages)
+      tabsStore.dismissPage(session.id, profileId!, pageId);
+    setInventoryReady(true);
+  };
+  const focusSelected = () => {
+    requestAnimationFrame(() => {
+      const current = tabsStore.snapshot(session.id);
+      const index = current.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === current.selected,
+      );
+      document
+        .getElementById(`session-tab-${session.id}-${index}`)
+        ?.focus({ preventScroll: true });
+    });
+  };
+  const runOperation = async (original: PageOperation, read: boolean) => {
+    if (
+      !profileId ||
+      nativeBusy.current ||
+      !alive.current ||
+      operationRef.current?.operation_id !== original.operation_id ||
+      (!read && original.sent)
+    )
+      return;
+    nativeBusy.current = true;
+    setNativePending(true);
+    actionVersion.current += 1;
+    if (!read) original.sent = true;
+    try {
+      const value = pageInventory(
+        await invoke<PageInventory>("browser_pages", {
+          profileId,
+          request: read
+            ? {
+                action: PageAction.Observe,
+                operation_id: original.operation_id,
+              }
+            : {
+                action: original.action,
+                operation_id: original.operation_id,
+                ...(original.url ? { url: original.url } : {}),
+                ...(original.page_id ? { page_id: original.page_id } : {}),
+              },
+        }),
+        original,
+      );
+      if (
+        !alive.current ||
+        operationRef.current?.operation_id !== original.operation_id
+      )
+        return;
+      original.receipt = value.receipt!;
+      original.uncertain = false;
+      const before = tabsStore.snapshot(session.id);
+      const closeKey =
+        original.action === PageAction.Close
+          ? sessionTabKey({
+              kind: SessionTabKind.Page,
+              profile: profileId,
+              id: original.page_id!,
+              title: "",
+            })
+          : "";
+      const closeIndex = before.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === closeKey,
+      );
+      const closeControlFocused =
+        closeIndex >= 0 &&
+        document
+          .getElementById(`session-tab-${session.id}-${closeIndex}`)
+          ?.parentElement?.contains(document.activeElement);
+      const focusClosure = before.selected === closeKey || closeControlFocused;
+      pageResult(value);
+      setFailure(undefined);
+      if (original.receipt.phase === PagePhase.Completed) {
+        if (original.action === PageAction.Close) {
+          tabsStore.dismissPage(session.id, profileId, original.page_id!);
+          if (resolutionActive.current && focusClosure) focusSelected();
+        } else {
+          const page = value.state.tabs.tabs.find(
+            (page) => page.id === original.receipt?.page_id,
+          );
+          if (
+            page &&
+            resolutionActive.current &&
+            (dialogVisible.current || before.selected === original.selection)
+          ) {
+            openPage?.({
+              profile: profileId,
+              id: page.id,
+              title: browserTabTitle(page.url),
+              label: page.url,
+            });
+            dismissDialog();
+            setPageDraft("");
+            focusSelected();
+          }
+        }
+        operationRef.current = undefined;
+        setOperation(undefined);
+        setSubmitted(undefined);
+      } else {
+        setOperation({ ...original });
+        if (
+          original.receipt.failure ||
+          original.receipt.phase === PagePhase.Failed
+        )
+          setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
+      }
+    } catch {
+      if (
+        alive.current &&
+        operationRef.current?.operation_id === original.operation_id
+      ) {
+        original.uncertain = true;
+        setOperation({ ...original });
+        setFailure(ownedMessage("session-browser.operationUnknown"));
+        console.warn("delidev.browser_page", {
+          phase: "observation_unavailable",
+          action: original.action,
+        });
+      }
+    } finally {
+      nativeBusy.current = false;
+      if (alive.current) setNativePending(false);
+    }
+  };
+  operationRunner.current = runOperation;
+  const submitPage = () => {
+    if (
+      !validAddress(pageDraft) ||
+      operationRef.current ||
+      submitted ||
+      !active ||
+      !supported ||
+      !inventoryReady ||
+      nativeBusy.current ||
+      registration.busy ||
+      registration.uncertain
+    )
+      return;
+    setFailure(undefined);
+    setSubmitted({
+      url: pageDraft,
+      revision: session.revision,
+      registered: false,
+      selection: tabsStore.snapshot(session.id).selected,
+    });
+    void registration.send({
+      session: {
+        id: session.id,
+        expectedRevision: session.revision,
+        requestId: newRequestId(),
+      },
+      accountId,
+    });
+  };
+  useEffect(() => {
+    if (
+      submitted &&
+      !submitted.registered &&
+      registration.error &&
+      !registration.busy &&
+      !registration.uncertain
+    )
+      setSubmitted(undefined);
+  }, [
+    submitted,
+    registration.error,
+    registration.busy,
+    registration.uncertain,
+  ]);
+  useEffect(() => {
+    if (!profiles.data || profileId) return;
+    try {
+      const matching = profiles.data.profiles.filter(
+        (profile) => profile.accountId === accountId,
+      );
+      if (matching.length > 1)
+        throw new Error("Browser profile proof is unavailable.");
+      if (matching.length) {
+        setProfileId(browserProfile(matching[0], accountId));
+      } else if (profiles.data.nextPageToken) {
+        if (
+          profileTokens.current.has(profiles.data.nextPageToken) ||
+          profileTokens.current.size >= 64
+        )
+          throw new Error("Browser profile proof is unavailable.");
+        profileTokens.current.add(profiles.data.nextPageToken);
+        setProfilePage(profiles.data.nextPageToken);
+      } else setInventoryReady(true);
+    } catch {
+      setFailure(ownedMessage("session-browser.extra.5092c54369dd"));
+    }
+  }, [profiles.data, profileId, accountId]);
+  useEffect(() => {
+    if (!profileId || !submitted?.registered || operationRef.current) return;
+    const original: PageOperation = {
+      action: PageAction.Create,
+      operation_id: newRequestId(),
+      url: submitted.url,
+      selection: submitted.selection,
+      sent: false,
+      uncertain: false,
+    };
+    operationRef.current = original;
+    setOperation(original);
+    void operationRunner.current(original, false);
+  }, [profileId, submitted]);
+  useEffect(() => {
+    if (!profileId) return;
+    controller?.current.set(profileId, {
+      closePage: (pageId) => {
+        if (
+          !resolutionActive.current ||
+          !inventoryReady ||
+          state?.removal_pending
+        )
+          return;
+        if (operationRef.current || nativeBusy.current) {
+          setFailure(ownedMessage("session-browser.operationUnknown"));
+          return;
+        }
+        const original: PageOperation = {
+          action: PageAction.Close,
+          operation_id: newRequestId(),
+          page_id: pageId,
+          sent: false,
+          uncertain: false,
+        };
+        operationRef.current = original;
+        setOperation(original);
+        void operationRunner.current(original, false);
+      },
+    });
+    return () => {
+      controller?.current.delete(profileId);
+    };
+  }, [profileId, controller, inventoryReady, state?.removal_pending]);
+  useEffect(() => {
+    if (!profileId || (!active && !operationRef.current)) return;
+    let disposed = false,
+      reading = false;
+    const read = async () => {
+      if (disposed || reading || nativeBusy.current) return;
+      const pending = operationRef.current;
+      if (pending && pending.receipt?.phase !== PagePhase.Failed) {
+        await operationRunner.current(pending, true);
+        return;
+      }
+      reading = true;
+      const version = actionVersion.current;
+      try {
+        const value = pageInventory(
+          await invoke<PageInventory>("browser_pages", {
+            profileId,
+            request: { action: PageAction.Inventory },
+          }),
+        );
+        if (
+          !disposed &&
+          alive.current &&
+          version === actionVersion.current &&
+          !nativeBusy.current
+        )
+          pageResult(value);
+      } catch {
+        if (!disposed)
+          setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4"));
+      } finally {
+        reading = false;
+      }
+    };
+    void read();
+    const timer = window.setInterval(() => void read(), 1000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [profileId, active, Boolean(operation), inventoryEpoch]);
+  useEffect(() => {
+    const url = state?.tabs.tabs.find(
+      (page) =>
+        page.id === selectedPage?.id && selectedPage.profile === profileId,
+    )?.url;
+    if (url) setAddress(url);
+  }, [selectedPage?.id, selectedPage?.profile, profileId, state?.tabs.tabs]);
   useEffect(() => {
     alive.current = true;
-    addressInput.current?.focus();
     return () => {
       alive.current = false;
     };
   }, []);
   useEffect(() => {
     if (!profileId || !viewport.current) return;
-    // A replacement presentation fences all earlier commands and their settlement.
-    ++actionVersion.current;
-    pendingAction.current = undefined;
-    setBusy(false);
-    setPresenting(false);
     let disposed = false,
       opened = false,
       opening = false,
@@ -405,10 +778,7 @@ function NativeSessionBrowser({
       hideRequired = false,
       hideRetry: number | undefined;
     const node = viewport.current;
-    const original = owner.current;
-    let reading = false;
     const visible = () =>
-      currentOwner(original) &&
       activeRef.current &&
       needsPresentation.current &&
       node.isConnected &&
@@ -432,13 +802,6 @@ function NativeSessionBrowser({
       }) &&
       node.getBoundingClientRect().width >= 1 &&
       node.getBoundingClientRect().height >= 1;
-    presentationVisible.current = () =>
-      !disposed && !hiding && !hideRequired && visible();
-    selectionAdmitted.current = () =>
-      opened && !opening && !resizing && presentationVisible.current();
-    const stopSelection = tabsStore.subscribe(() =>
-      reconcileSelection.current(),
-    );
     const bounds = () => {
       const r = node.getBoundingClientRect();
       let left = Math.max(0, r.left),
@@ -527,8 +890,6 @@ function NativeSessionBrowser({
       if (!opened) {
         opening = true;
         const viewId = newRequestId();
-        const version = actionVersion.current;
-        const generation = ++presentationGeneration.current;
         ownedViewId = viewId;
         presentation.current = viewId;
         try {
@@ -536,7 +897,11 @@ function NativeSessionBrowser({
             await invoke<BrowserState>("open_browser", {
               profileId,
               viewId,
-              url: address,
+              url: "",
+              pageId:
+                selectedPageRef.current?.profile === profileId
+                  ? selectedPageRef.current.id
+                  : undefined,
               bounds: area,
             }),
           );
@@ -550,139 +915,25 @@ function NativeSessionBrowser({
             await hide();
             return;
           }
-          const pending = pendingAction.current;
-          pendingAction.current = undefined;
-          if (pending) {
-            if (
-              pending.version !== version ||
-              actionVersion.current !== version ||
-              !currentOwner(pending.owner) ||
-              pending.owner.profileId !== original.profileId ||
-              pending.owner.retry !== original.retry ||
-              pending.owner.sessionId !== original.sessionId ||
-              pending.owner.accountId !== original.accountId
-            ) {
-              if (
-                currentOwner(pending.owner) &&
-                actionVersion.current === pending.version
-              ) {
-                setBusy(false);
-                setPresenting(false);
-              }
-              return;
-            }
-            // A picker action restores the original presentation only after its
-            // previous Hide settled. Send the explicit resource action once;
-            // failure retains the original state and never creates a retry page.
-            try {
-              const changed = browserState(
-                await invoke<BrowserState>("control_browser", {
-                  profileId,
-                  viewId,
-                  action: pending.action,
-                  url: address,
-                  tabId: pending.tabId,
-                }),
-              );
-              const observed =
-                !disposed &&
-                observe(changed, pending.owner, viewId, pending.version);
-              acknowledgeClose(
-                changed,
-                pending.action,
-                pending.tabId,
-                pending.owner,
-                pending.version,
-                generation,
-              );
-              if (observed) {
-                if (
-                  openPage &&
-                  pending.action === BrowserAction.NewTab &&
-                  tabsStore.snapshot(original.sessionId).selected ===
-                    pending.selection
-                ) {
-                  const tab = changed.tabs.tabs.find(
-                    (value) => value.id === changed.tabs.selected,
-                  );
-                  if (tab)
-                    openPage({
-                      profile: profileId,
-                      id: tab.id,
-                      title: browserTabTitle(tab.url),
-                      label: tab.url,
-                    });
-                }
-              }
-            } catch {
-              if (
-                !disposed &&
-                currentOwner(pending.owner) &&
-                presentation.current === viewId &&
-                actionVersion.current === pending.version &&
-                presentationVisible.current()
-              )
-                setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
-            } finally {
-              if (
-                !disposed &&
-                currentOwner(pending.owner) &&
-                actionVersion.current === pending.version
-              ) {
-                setBusy(false);
-                setPresenting(false);
-              }
-            }
-          } else if (!observe(result, original, viewId, version)) return;
-          if (
-            !pending &&
-            openPage &&
-            activeRef.current &&
-            tabsStore.snapshot(session.id).selected ===
-              SessionTabKind.Browser &&
-            result.tabs.selected
-          ) {
-            const tab = result.tabs.tabs.find(
-              (value) => value.id === result.tabs.selected,
-            );
-            if (tab)
-              openPage({
-                profile: profileId,
-                id: tab.id,
-                title: browserTabTitle(tab.url),
-                label: tab.url,
-              });
-          }
+          observe(result, profileId);
         } catch {
           failed = true;
-          if (
-            !disposed &&
-            currentOwner(original) &&
-            presentation.current === viewId &&
-            actionVersion.current === version
-          ) {
-            pendingAction.current = undefined;
+          if (!disposed) {
             setBusy(false);
-            setPresenting(false);
             setFailure(ownedMessage("session-browser.extra.08759b664829"));
           }
         } finally {
           opening = false;
-          reconcileSelection.current();
           if (queued) {
             queued = false;
             void update();
           }
         }
       } else {
-        if (reading) {
-          queued = true;
-          return;
-        }
-        if (geometry === lastBounds || actionBusy.current) return;
+        if (geometry === lastBounds) return;
         resizing = true;
         const viewId = presentation.current;
-        const version = ++actionVersion.current;
+        const version = actionVersion.current;
         try {
           const result = browserState(
             await invoke<BrowserState>("control_browser", {
@@ -695,9 +946,12 @@ function NativeSessionBrowser({
           if (
             !disposed &&
             opened &&
-            observe(result, original, viewId, version)
+            visible() &&
+            presentation.current === viewId
           ) {
             lastBounds = geometry;
+            if (!actionBusy.current && actionVersion.current === version)
+              observe(result, profileId);
           }
         } catch {
           lastBounds = "";
@@ -705,7 +959,6 @@ function NativeSessionBrowser({
             setFailure(ownedMessage("session-browser.extra.1b8cff3d45fb"));
         } finally {
           resizing = false;
-          reconcileSelection.current();
           if (queued) {
             queued = false;
             void update();
@@ -727,42 +980,27 @@ function NativeSessionBrowser({
       childList: true,
     });
     const timer = window.setInterval(() => {
-      if (
-        !opened ||
-        disposed ||
-        reading ||
-        opening ||
-        resizing ||
-        hiding ||
-        actionBusy.current ||
-        !visible()
-      )
-        return;
-      // Serialize reads and fence a pre-action read before accepting new labels.
-      reading = true;
+      if (!opened || disposed || !visible() || actionBusy.current) return;
       const viewId = presentation.current;
       const version = actionVersion.current;
-      void invoke<BrowserState>("browser_state", { profileId, viewId })
+      void invoke<BrowserState>("browser_state", {
+        profileId,
+        viewId,
+      })
         .then((value) => {
-          if (!disposed)
-            observe(browserState(value), original, viewId, version);
-        })
-        .catch(() => {
           if (
             !disposed &&
+            opened &&
             visible() &&
             presentation.current === viewId &&
+            !actionBusy.current &&
             actionVersion.current === version
           )
-            setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4"));
+            observe(browserState(value), profileId);
         })
-        .finally(() => {
-          reading = false;
-          reconcileSelection.current();
-          if (queued) {
-            queued = false;
-            void update();
-          }
+        .catch(() => {
+          if (!disposed)
+            setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4"));
         });
     }, 1000);
     return () => {
@@ -771,7 +1009,6 @@ function NativeSessionBrowser({
       window.removeEventListener("resize", move);
       observer.disconnect();
       visibility.disconnect();
-      stopSelection();
       window.clearInterval(timer);
       void hide();
     };
@@ -781,40 +1018,36 @@ function NativeSessionBrowser({
   const control = async (action: BrowserAction, tabId?: string) => {
     if (
       !profileId ||
-      !alive.current ||
-      !activeRef.current ||
       actionBusy.current ||
-      nativeState.current?.removal_pending ||
-      (presentation.current && !selectionAdmitted.current()) ||
-      (!presentation.current &&
-        (!openPage ||
-          !viewport.current?.isConnected ||
-          viewport.current.parentElement?.closest("[hidden], [inert]") ||
-          shortcutModalVisible()))
+      nativeBusy.current ||
+      operationRef.current ||
+      !activeRef.current ||
+      !needsPresentation.current ||
+      !presentation.current ||
+      shortcutModalVisible() ||
+      !viewport.current?.isConnected ||
+      viewport.current.closest("[hidden], [inert]") ||
+      state?.removal_pending
     )
       return;
-    const original = owner.current;
     const viewId = presentation.current;
+    const originalOwner = owner.current;
+    const selected = tabsStore.snapshot(session.id).selected;
     const version = ++actionVersion.current;
-    const generation = presentationGeneration.current;
-    const selection = tabsStore.snapshot(original.sessionId).selected;
-    const currentAction = () =>
+    const owned = () =>
       alive.current &&
-      currentOwner(original) &&
+      owner.current.profileId === profileId &&
+      owner.current.retry === originalOwner.retry &&
       actionVersion.current === version;
+    const current = () =>
+      owned() &&
+      activeRef.current &&
+      presentation.current === viewId &&
+      !shortcutModalVisible() &&
+      !viewport.current?.closest("[hidden], [inert]");
+    // A read started before this action cannot roll its result back afterward.
     setBusy(true);
     setFailure(undefined);
-    if (openPage && !presentation.current) {
-      pendingAction.current = {
-        action,
-        tabId,
-        version,
-        owner: { ...original, profileId },
-        selection,
-      };
-      setPresenting(true);
-      return;
-    }
     try {
       const result = browserState(
         await invoke<BrowserState>("control_browser", {
@@ -825,13 +1058,12 @@ function NativeSessionBrowser({
           tabId,
         }),
       );
-      const observed = observe(result, original, viewId, version);
-      acknowledgeClose(result, action, tabId, original, version, generation);
-      if (observed) {
+      if (current()) {
+        observe(result, profileId);
         if (
           openPage &&
-          action === BrowserAction.NewTab &&
-          tabsStore.snapshot(original.sessionId).selected === selection
+          tabsStore.snapshot(session.id).selected === selected &&
+          [BrowserAction.SelectTab, BrowserAction.Navigate].includes(action)
         ) {
           const tab = result.tabs.tabs.find(
             (value) => value.id === result.tabs.selected,
@@ -846,66 +1078,62 @@ function NativeSessionBrowser({
         }
       }
     } catch {
-      if (
-        currentAction() &&
-        presentation.current === viewId &&
-        presentationVisible.current()
-      )
+      if (current())
         setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
     } finally {
-      if (currentAction()) {
+      if (
+        alive.current &&
+        owner.current.profileId === profileId &&
+        owner.current.retry === originalOwner.retry
+      )
         setBusy(false);
-        reconcileSelection.current();
-      }
     }
   };
-  reconcileSelection.current = () => {
-    const snapshot = tabsStore.snapshot(owner.current.sessionId);
-    const page = snapshot.tabs.find(
-      (tab) =>
-        tab.kind === SessionTabKind.Page &&
-        sessionTabKey(tab) === snapshot.selected,
-    );
-    const target =
-      page?.kind === SessionTabKind.Page
-        ? JSON.stringify([
-            owner.current.profileId,
-            owner.current.retry,
-            presentation.current,
-            snapshot.selected,
-          ])
-        : "";
+  useEffect(() => {
+    const target = selectedPage
+      ? JSON.stringify([
+          profileId,
+          retry,
+          presentation.current,
+          selectedPage.profile,
+          selectedPage.id,
+        ])
+      : "";
     if (selectionTarget.current !== target) {
       selectionTarget.current = target;
       selectionAttempt.current = "";
     }
-    const current = nativeState.current;
     if (
-      !openPage ||
-      page?.kind !== SessionTabKind.Page ||
-      !alive.current ||
-      !activeRef.current ||
-      !selectionAdmitted.current() ||
+      busy ||
+      nativePending ||
+      Boolean(operation) ||
       !presentation.current ||
-      actionBusy.current ||
-      page.profile !== owner.current.profileId ||
-      !current ||
-      current.removal_pending ||
-      current.tabs.selected === page.id ||
-      !current.tabs.tabs.some((tab) => tab.id === page.id) ||
-      selectionAttempt.current === target
+      !presentationActive ||
+      shortcutModalVisible() ||
+      viewport.current?.closest("[hidden], [inert]") ||
+      !selectedPage ||
+      selectedPage.profile !== profileId ||
+      !state ||
+      state.removal_pending ||
+      state.tabs.selected === selectedPage.id ||
+      !state.tabs.tabs.some((tab) => tab.id === selectedPage.id)
     )
       return;
-    // Retain only the latest exact attempt. A rejected or uncertain selection
-    // cannot become an automatic retry when another native poll arrives.
-    selectionAttempt.current = target;
-    void control(BrowserAction.SelectTab, page.id);
-  };
-  useEffect(() => {
-    reconcileSelection.current();
+    const attempt = JSON.stringify([
+      profileId,
+      presentation.current,
+      selectedPage.id,
+    ]);
+    // Busy completion reconciles the latest selection once. A rejected or lost
+    // SelectTab reply cannot become an automatic retry on every observation.
+    if (selectionAttempt.current === attempt) return;
+    selectionAttempt.current = attempt;
+    void control(BrowserAction.SelectTab, selectedPage.id);
   }, [
-    active,
+    presentationActive,
     busy,
+    nativePending,
+    operation,
     selectedPage?.id,
     selectedPage?.profile,
     profileId,
@@ -967,7 +1195,7 @@ function NativeSessionBrowser({
         viewId,
         token,
         count:
-          active && !shortcutModalVisible()
+          presentationActive && !shortcutModalVisible()
             ? Math.min(9, tabsStore.snapshot(session.id).tabs.length)
             : 0,
       }).catch(() => {
@@ -1003,266 +1231,323 @@ function NativeSessionBrowser({
           count: 0,
         }).catch(() => {});
     };
-  }, [active, profileId, state?.tabs.selected, tabsStore, session.id]);
+  }, [
+    presentationActive,
+    profileId,
+    state?.tabs.selected,
+    tabsStore,
+    session.id,
+  ]);
   const blocked =
+    !presentationActive || busy || nativePending || state?.removal_pending;
+  const creationBlocked =
     !active ||
-    busy ||
+    !supported ||
+    !inventoryReady ||
+    capabilities.isFetching ||
+    profiles.isFetching ||
     registration.busy ||
     registration.uncertain ||
-    state?.removal_pending;
-  const addressField = (
-    <label>
-      {copy("session-browser.address_56ef8f")}
-      <input
-        ref={addressInput}
-        value={address}
-        maxLength={8192}
-        onChange={(event) => setAddress(event.target.value)}
-        placeholder="https://example.com/"
-      />
-    </label>
-  );
+    nativePending ||
+    Boolean(operation) ||
+    Boolean(submitted) ||
+    state?.removal_pending ||
+    (state?.tabs.tabs.length ?? 0) >= 16 ||
+    !validAddress(pageDraft) ||
+    !idPattern.test(accountId);
   return (
-    <section
-      className={`session-browser${profileId ? " browser-registered" : ""}`}
-      aria-label={copy("session-browser.sessionBrowser_47d746")}
-    >
-      <div className="browser-chrome">
-        <BrowserHeader close={close} layout={layout} />
-        {!supported && !capabilities.error ? (
-          <p role="status">
-            {copy(
-              "session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80",
-            )}
-          </p>
-        ) : null}
-        <Problem
-          error={capabilities.error}
-          actions={
+    <>
+      <section
+        hidden={!presentationActive || !needsPresentation.current}
+        inert={!presentationActive || !needsPresentation.current}
+        className={`session-app-panel session-browser${profileId ? " browser-registered" : ""}`}
+        aria-label={copy("session-browser.sessionBrowser_47d746")}
+      >
+        <div className="browser-chrome">
+          <BrowserHeader close={close} layout={layout} />
+          {failure ? <p role="alert">{failure}</p> : null}
+          {state?.removal_pending ? (
+            <p role="alert">
+              {copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}
+            </p>
+          ) : null}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void control(BrowserAction.Navigate);
+            }}
+            className="browser-address"
+          >
             <button
-              disabled={capabilities.isFetching}
-              onClick={() => void capabilities.refetch()}
+              type="button"
+              disabled={blocked}
+              onClick={() => void control(BrowserAction.Back)}
+              aria-label={copy("session-browser.back_76900f")}
             >
-              {copy("session-browser.retryCapability")}
+              ←
             </button>
-          }
-        />
-        {failure ? <p role="alert">{failure}</p> : null}
-        {state?.removal_pending ? (
-          <p role="alert">
-            {copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}
-          </p>
-        ) : null}
-        {profileId ? (
-          <>
-            {openPage ? (
-              <div className="browser-tab-bar">
-                <div
-                  className="browser-pages"
-                  role="group"
-                  aria-label={copy("session-browser.browserTabs_3e94f1")}
-                >
-                  {state?.tabs.tabs.map((tab) => (
-                    <div key={tab.id}>
-                      <button
-                        disabled={blocked}
-                        title={tab.url}
-                        aria-label={tab.url}
-                        onClick={() => {
-                          if (openPage)
-                            openPage({
-                              profile: profileId,
-                              id: tab.id,
-                              title: browserTabTitle(tab.url),
-                              label: tab.url,
-                            });
-                          else void control(BrowserAction.SelectTab, tab.id);
-                        }}
-                      >
-                        {browserTabTitle(tab.url)}
-                      </button>
-                      <button
-                        disabled={blocked}
-                        aria-label={copy("session-browser.closeTab_bc9560", {
-                          v0: tab.url,
-                        })}
-                        onClick={() =>
-                          void control(BrowserAction.CloseTab, tab.id)
-                        }
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16}
-                  onClick={() => void control(BrowserAction.NewTab)}
-                  aria-label={copy("session-browser.newTab_1e08fd")}
-                >
-                  +
-                </button>
-              </div>
-            ) : (
-              <div className="browser-tab-bar">
-                <ul
-                  aria-label={copy("session-browser.browserTabs_3e94f1")}
-                  className="browser-tabs"
-                >
-                  {state?.tabs.tabs.map((tab, index) => (
-                    <li key={tab.id}>
-                      <button
-                        disabled={blocked}
-                        aria-label={copy("session-browser.tabLabel", {
-                          number: index + 1,
-                          url: tab.url,
-                        })}
-                        title={tab.url}
-                        aria-current={
-                          state.tabs.selected === tab.id ? "page" : undefined
-                        }
-                        onClick={() =>
-                          void control(BrowserAction.SelectTab, tab.id)
-                        }
-                      >
-                        {browserTabTitle(tab.url)}
-                      </button>
-                      <button
-                        disabled={blocked}
-                        aria-label={copy("session-browser.closeTab_bc9560", {
-                          v0: index + 1,
-                        })}
-                        onClick={() =>
-                          void control(BrowserAction.CloseTab, tab.id)
-                        }
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16}
-                  onClick={() => void control(BrowserAction.NewTab)}
-                  aria-label={copy("session-browser.newTab_1e08fd")}
-                >
-                  +
-                </button>
-              </div>
-            )}
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void control(BrowserAction.Navigate);
-              }}
-              className="browser-address"
-            >
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => void control(BrowserAction.Back)}
-                aria-label={copy("session-browser.back_76900f")}
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => void control(BrowserAction.Forward)}
-                aria-label={copy("session-browser.forward_f1c65e")}
-              >
-                →
-              </button>
-              <button
-                type="button"
-                disabled={blocked}
-                onClick={() => void control(BrowserAction.Reload)}
-                aria-label={copy("session-browser.reload_bdc090")}
-              >
-                ↻
-              </button>
-              {addressField}
-              <button disabled={blocked}>
-                {copy("session-browser.go_6cc851")}
-              </button>
-              <details className="browser-overflow">
-                <summary aria-label={copy("session-browser.moreActions")}>
-                  ⋯
-                </summary>
-                <button
-                  type="button"
-                  disabled={blocked}
-                  onClick={() => {
-                    setFailure(undefined);
-                    setRetry((n) => n + 1);
-                  }}
-                >
-                  {copy("session-browser.retryNativeView_0d84d0")}
-                </button>
-              </details>
-            </form>
-          </>
-        ) : null}
-      </div>
-      {!profileId ? (
-        <div className="browser-opening">
-          <div>
-            <h4>{copy("session-browser.openAccountBrowser_6ee5d1")}</h4>
-            <p>{copy("session-browser.localSummary")}</p>
-            <p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p>
-            {addressField}
             <button
-              disabled={
-                blocked ||
-                !supported ||
-                !idPattern.test(accountId) ||
-                !validAddress(address)
-              }
-              onClick={() =>
-                void registration.send({
-                  session: {
-                    id: session.id,
-                    expectedRevision: session.revision,
-                    requestId: newRequestId(),
-                  },
-                  accountId,
-                })
-              }
+              type="button"
+              disabled={blocked}
+              onClick={() => void control(BrowserAction.Forward)}
+              aria-label={copy("session-browser.forward_f1c65e")}
             >
-              {copy("session-browser.openAccountBrowser_6ee5d1")}
+              →
             </button>
-            {registration.uncertain ? (
-              <button disabled={registration.busy} onClick={registration.retry}>
-                {copy("session-browser.retryTheSameRegistration_c86ef9")}
+            <button
+              type="button"
+              disabled={blocked}
+              onClick={() => void control(BrowserAction.Reload)}
+              aria-label={copy("session-browser.reload_bdc090")}
+            >
+              ↻
+            </button>
+            <label>
+              {copy("session-browser.address_56ef8f")}
+              <input
+                ref={addressInput}
+                value={address}
+                maxLength={8192}
+                onChange={(event) => setAddress(event.target.value)}
+                placeholder="https://example.com/"
+              />
+            </label>
+            <button disabled={blocked || !validAddress(address)}>
+              {copy("session-browser.go_6cc851")}
+            </button>
+            <details className="browser-overflow">
+              <summary aria-label={copy("session-browser.moreActions")}>
+                ⋯
+              </summary>
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={() => {
+                  setFailure(undefined);
+                  setRetry((value) => value + 1);
+                }}
+              >
+                {copy("session-browser.retryNativeView_0d84d0")}
               </button>
-            ) : null}
-            <Problem error={registration.error} />
-          </div>
+            </details>
+          </form>
         </div>
-      ) : (
         <div
           ref={viewport}
           className="browser-viewport"
-          hidden={!needsPresentation.current}
           aria-label={copy("session-browser.untrustedBrowserContent_9c54bc")}
         />
-      )}
-    </section>
+      </section>
+      {operation ? (
+        <div
+          className="browser-operation-recovery"
+          hidden={!active}
+          role="status"
+        >
+          <p>
+            {copy(
+              operation.action === PageAction.Create
+                ? "session-browser.createPending"
+                : operation.receipt?.metadata_committed
+                  ? "session-browser.cleanupPending"
+                  : "session-browser.closePending",
+            )}
+          </p>
+          <button
+            type="button"
+            disabled={nativePending}
+            onClick={() => void runOperation(operation, true)}
+          >
+            {copy("session-browser.observeOperation")}
+          </button>
+          {failure ? <p role="alert">{failure}</p> : null}
+        </div>
+      ) : null}
+      {dialogOpen ? (
+        <Modal
+          title={copy("session-browser.newPage")}
+          close={dismissDialog}
+          className="browser-new-page"
+          initialFocus={pageInput}
+          trapFocus
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!creationBlocked) submitPage();
+            }}
+          >
+            <p>{copy("session-browser.sharingSummary")}</p>
+            <label>
+              {copy("session-browser.address_56ef8f")}
+              <input
+                ref={pageInput}
+                value={pageDraft}
+                maxLength={8192}
+                onChange={(event) => setPageDraft(event.target.value)}
+                placeholder="https://example.com/"
+              />
+            </label>
+            {!inventoryReady ||
+            capabilities.isFetching ||
+            profiles.isFetching ? (
+              <p role="status">{copy("session-browser.loading")}</p>
+            ) : null}
+            {!supported && !capabilities.isFetching ? (
+              <p role="status">
+                {copy(
+                  "session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80",
+                )}
+              </p>
+            ) : null}
+            {(state?.tabs.tabs.length ?? 0) >= 16 ? (
+              <p role="status">{copy("session-browser.pageLimit")}</p>
+            ) : null}
+            {state?.removal_pending ? (
+              <p role="alert">
+                {copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}
+              </p>
+            ) : null}
+            {failure ? <p role="alert">{failure}</p> : null}
+            <Problem
+              error={capabilities.error || profiles.error || registration.error}
+            />
+            {failure || capabilities.error || profiles.error ? (
+              <button
+                type="button"
+                disabled={nativePending || Boolean(operation)}
+                onClick={() => {
+                  setFailure(undefined);
+                  if (supported && !profileId) void profiles.refetch();
+                  void capabilities.refetch();
+                  setInventoryEpoch((value) => value + 1);
+                }}
+              >
+                {copy("session-browser.retryInventory")}
+              </button>
+            ) : null}
+            {registration.uncertain ? (
+              <button
+                type="button"
+                disabled={registration.busy}
+                onClick={registration.retry}
+              >
+                {copy("session-browser.retryTheSameRegistration_c86ef9")}
+              </button>
+            ) : null}
+            {operation ? (
+              <div role="status">
+                <p>
+                  {copy(
+                    operation.action === PageAction.Create
+                      ? "session-browser.createPending"
+                      : "session-browser.closePending",
+                  )}
+                </p>
+                <button
+                  type="button"
+                  disabled={nativePending}
+                  onClick={() => void runOperation(operation, true)}
+                >
+                  {copy("session-browser.observeOperation")}
+                </button>
+              </div>
+            ) : null}
+            {operation?.receipt?.phase === PagePhase.Failed &&
+            !operation.receipt.metadata_committed ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    nativeBusy.current ||
+                    operationRef.current?.receipt?.phase !== PagePhase.Failed ||
+                    operationRef.current.receipt.metadata_committed
+                  )
+                    return;
+                  operationRef.current = undefined;
+                  setOperation(undefined);
+                  setSubmitted(undefined);
+                }}
+              >
+                {copy("session-browser.clearFailedOperation")}
+              </button>
+            ) : null}
+            <footer>
+              <button type="button" onClick={dismissDialog}>
+                {copy("session-browser.cancel")}
+              </button>
+              <button disabled={creationBlocked}>
+                {copy("session-browser.openPage")}
+              </button>
+            </footer>
+          </form>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 // Keep DOM access distinct from the versioned resource-document decoder.
 const documentGlobal = () => globalThis.document;
 
-function validAddress(raw: string): boolean {
+export function validAddress(raw: string): boolean {
   try {
     const url = new URL(raw);
     return (
       ["http:", "https:"].includes(url.protocol) &&
       !url.username &&
       !url.password &&
-      raw.length <= 8192
+      raw.length <= 8192 &&
+      !/[\0\r\n]/.test(raw)
     );
   } catch {
     return false;
   }
+}
+
+export function SessionBrowsers({
+  session,
+  accountId,
+  active,
+  presentationActive,
+  selectedPage,
+  openPage,
+  dialogOpen,
+  dismissDialog,
+  controller,
+}: {
+  session: Resource;
+  accountId: string;
+  active: boolean;
+  presentationActive: boolean;
+  selectedPage?: TabbedBrowser["selectedPage"];
+  openPage: NonNullable<TabbedBrowser["openPage"]>;
+  dialogOpen: boolean;
+  dismissDialog: () => void;
+  controller: NonNullable<TabbedBrowser["controller"]>;
+}) {
+  const [accounts, setAccounts] = useState([accountId]);
+  useEffect(() => {
+    setAccounts((current) =>
+      current.includes(accountId) ? current : [...current, accountId],
+    );
+  }, [accountId]);
+  return (
+    <>
+      {accounts.map((ownedAccount) => (
+        <SessionBrowser
+          key={ownedAccount}
+          session={session}
+          accountId={ownedAccount}
+          close={() => {}}
+          active={active && ownedAccount === accountId}
+          presentationActive={presentationActive && ownedAccount === accountId}
+          selectedPage={selectedPage}
+          openPage={openPage}
+          dialogOpen={dialogOpen && ownedAccount === accountId}
+          dismissDialog={dismissDialog}
+          controller={controller}
+        />
+      ))}
+    </>
+  );
 }

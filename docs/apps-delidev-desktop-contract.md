@@ -3918,21 +3918,26 @@ Keep the existing 360px rail, compact upper band/drawer, bounded scrolling and s
 Browser keeps its mounted original account/profile controller and releases its
 native child through exact Hide cleanup when a page becomes inactive. Failed or
 uncertain Hide prevents replacement; reactivation restores existing native pages
-without registration or page creation. The Browser entry lists retained pages and
-explicit New page; only a selected page presents native content. An explicit picker
-resource action restores its presentation after previous cleanup, sends that
-original action once and retains failures without automatic mutation retry.
-A validated original CloseTab reply dismisses only its exact shared descriptor
-when native state proves that page absent and profile removal is not pending.
-If the dismissed page remains selected, select an existing same-profile
-native-selected page, otherwise Browser. Preserve background selection and other
-resources. Failed, uncertain, malformed, foreign or still-present replies retain
-the page. Presentation inactivity preserves the original acknowledgment owner;
-retry, replacement and owner changes fence that owner. Inventory absence alone
-cannot dismiss a descriptor.
-Profile explanation, address/navigation, explicit resource Close, 16-page gate,
-original revision/account checks and uncertain registration retry remain unchanged.
+without registration or page creation. The shared + and Open tool → Browser open one explicit address-entry Modal;
+there is no Browser singleton or inner page row. The Modal follows the
+[original browser-operation contract](cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations),
+including focus containment/restoration, bounded address validation, original
+registration recovery and exactly one explicit Create. Inventory/restoration and
+dismissal create no pages. Every retained native page appends once by original
+profile/page ID while existing order, selection and labels retain their identity.
+The + is an ordinary button after tab items, outside numeric tab positions.
+The pane header keeps profile information and navigation, without a second Close.
+Page × closes the original resource through retained native operations. Descriptor
+removal waits for confirmed absence and exact native cleanup; inactive closure
+preserves selection, active closure selects/focuses its existing left neighbor and
+final-page closure selects Conversation with zero pages retained. Pending or
+uncertain closure has accessible inline original-operation observation, never a
+blind resend. Only the current account presents inventory, while prior managers
+retain original pending owners without transferring authority. Native geometry,
+modal Hide, failed-Hide fencing, shared-profile observations, original account/
+revision checks and other tools' independent lifetimes remain unchanged.
 
+Only the exact original Close receipt may dismiss its profile/page descriptor. Inventory absence alone is not closure proof, and pending, failed, malformed, foreign or still-present results retain the descriptor. A retry, replacement presentation or account/profile change cannot inherit the original close owner.
 Each Sidechat is a child conversation tab inside its original parent. Its own
 Info, actions, findings, enqueue and original read-only restrictions bind that
 child ID. Closed presentations retain child authoring/controller state; retained

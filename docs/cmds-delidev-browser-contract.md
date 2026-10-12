@@ -71,48 +71,75 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 for clients which actually completed native cleanup, not an automatic CLI action.
 `browser-storage prepare` only prepares the native client's private cache root.
 
-The session Browser button opens its singleton entry in the shared session-tab
-workspace. Each retained page opens/selects a tab keyed by original profile/page
-ID; observation state never changes identity. The selected page occupies the
-complete active content region beside persistent Info. Conversation/drafts remain
-mounted and inert while inactive. The Browser entry itself is a retained-page
-picker with explicit New page, not an unselected native page. The former Browser
-split, compact overlay and Expand/Restore presentation are superseded.
+### Direct workspace pages and original native operations
 
-The original account/profile manager remains mounted after presentation Close.
-Inactivity uses exact original Hide cleanup and retains failed/uncertain cleanup
-before any replacement. Reopen restores existing native pages without another
-registration or creation. Explicit picker actions restore the original presentation
-after cleanup and send the selected resource action once; failures do not create
-automatic retries. Profile explanation uses the original accessible Modal and
-native visibility boundary. Initial explicit registration retains the local-summary/
-address card and no empty viewport. Page labels derive only from retained URLs;
-no title/favicon discovery, URL logging, page scripts or generalized key bridge.
-Accepted native observations refresh only existing exact profile/page descriptors
-in the original session. URL-derived title and accessible URL changes preserve
-identity, order, selection and focus. Unchanged or foreign page metadata does not
-publish or create descriptors. Serial reads retain the original presentation and
-action generation; inactive, covered, disposed or replaced presentations and
-pre-action reads cannot overwrite current labels. After a busy action settles,
-shared-to-native selection uses the latest live original profile/page descriptor
-and admitted presentation. Inactive, covered, inert, replaced, removed or absent
-pages cannot submit a stale selection. Retain one latest exact selection attempt
-per presentation and requested page; failed or uncertain selection does not replay
-on unchanged polling. Navigation and selection results refresh existing labels
-without selecting their older result. Explicit New page may select its created
-result only while the original requested shared selection remains current.
-Only a validated reply to the original CloseTab can dismiss its exact
-session/profile/page descriptor. The reply must report removal_pending false and
-prove the original page absent. When that descriptor is still selected, use an
-existing same-profile native-selected page, otherwise the Browser picker. Preserve
-an unrelated current selection and all other descriptors. Failed, uncertain,
-malformed, still-present or foreign replies retain the descriptor; unrelated
-inventory absence is not closure proof. Original close acknowledgment survives
-presentation inactivity, but replacement presentations, retries and owner changes
-cannot acquire its authority.
+Every retained page in the current admitted account profile is a direct Page tab,
+keyed by its original profile/page IDs. Conversation stays pinned first. There is
+no Browser singleton or inner page-selection row. Inventory restores existing
+pages without creation, preserves descriptor order and selection, and appends new
+observations in native inventory order. URL-derived labels change in place; no
+scripts, title/favicon discovery, credentials or page content enter product RPCs.
+The selected page uses the complete active content region beside persistent Info.
+Presentation and action observations update only existing exact profile/page labels.
+Capture their original presentation and action generation so a late pre-action read
+cannot replace current metadata. Reconcile the latest shared selection after busy
+work settles; a rejected or uncertain exact selection cannot replay on unchanged
+polls. Inventory is a separate additive reconciliation and never uses selecting
+store opens or initializes protected profile directories.
 
-The original 16-page gate and explicit resource Close remain separate from shared
-presentation Close. Numeric selection has only typed, original-owner fenced
+The shared strip's ordinary + button and Open tool → Browser open the same
+New browser page Modal. The dialog has one Address field, the account-sharing
+explanation, Cancel and Open page. Its maximum width is 480px with responsive
+bounds, 40px controls and 8px corners. Address receives focus; the dialog traps
+focus and restores its opener. Opening, Cancel, Escape and X create nothing.
+Explicit submission checks bounded HTTP(S), no credentials, 8192 characters and
+16 pages, and uses the original capability, account, Session revision and exact
+registration receipt before one native Create. Unsupported, loading, removal and
+failure guidance never creates a fallback page. Accepted registration and native
+operations survive dialog dismissal; reopening observes the original operation.
+
+The native-local `browser_pages` command accepts a closed Inventory/Create/Close/
+Observe request. It has no paths or generalized browser authority. The native host
+binds operation receipts to the trusted product-window instance and original
+Local revision or Saved connection, plus server/device/account/profile/revision.
+Fresh authenticated profile evidence and original-window fences precede worker
+storage preparation, atomic publication under original admission locks, UI cleanup and response publication.
+Inventory and presentation restoration preserve zero-page profiles. Only Create
+adds a page. Receipts serialize profile mutations, retain the original request,
+page identity and result, reject foreign identity reuse and distinguish metadata
+publication from native cleanup. Failed directory durability after replacement
+retains the committed original receipt and allows observation to finish its original
+durability check without publishing again. The bounded process-local receipt store does not
+evict original operations to admit new writes; capacity exhaustion rejects them.
+Existing private tab documents remain compatible; there is no migration or RPC.
+
+Page × is the browser-specific resource-close exception. Other shared tab kinds
+keep their original presentation dismissal semantics. Close can target an inactive
+page without showing it or creating a child. It saves absence off the UI thread,
+then hides and closes only the original matching children. Outstanding child
+creation and superseded/hidden child callbacks retain their original identities.
+Metadata removal alone does not remove the descriptor: cleanup must settle before
+the original receipt confirms completion. Pending, failed, lost or malformed
+responses retain an accessible inline Observe original operation action. Observe
+can finish original native cleanup; it never replays Create or Close. Only the
+exact original operation receipt may dismiss its page descriptor; stale, foreign or
+inventory-only evidence cannot close it. Shared profile inventories reconcile
+completed absence without acquiring another owner's operation. Active closure selects/focuses the existing left neighbor; inactive
+closure preserves selection. The final browser page selects Conversation and
+leaves the account profile and its zero-page inventory intact.
+
+Original account/profile controllers remain mounted independently of the page
+pane and retain original pending work across account changes. Only the currently
+admitted account presents or adopts inventory; stale operation results cannot
+select a replacement account. Conversation/Sidechat drafts, persistent Info,
+terminal lifetimes and immutable execution attribution remain independently owned.
+Exact Hide, failed-Hide replacement fencing, modal visibility, protected storage,
+removal/shutdown accounting and external raw CEF isolation remain required.
+Structured operation/phase/failure logs contain no URLs, titles, credentials,
+native content or private paths. Fixtures and build results do not establish
+installed CEF, real-account or macOS/Windows/Linux acceptance.
+
+Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
 approved deferring only Windows/Linux numeric forwarding while external browser
 content has focus; use the tab bar there. macOS forwarding requires original

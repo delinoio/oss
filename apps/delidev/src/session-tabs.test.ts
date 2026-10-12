@@ -135,6 +135,160 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
   expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
 
+it("allocates shared session numbers on original-ID opens and authenticated encounters", () => {
+  const store = new SessionTabsStore();
+  const one = { kind: SessionTabKind.Terminal as const, id: "one" };
+  store.open("session", { kind: SessionTabKind.Files });
+  store.open("session", one);
+  const presentation = store.terminalPresentation("session");
+  expect(presentation.number("one")).toBe(1);
+  presentation.observe(
+    "session",
+    create(ResourceSchema, {
+      id: "inventory",
+      sessionId: "session",
+      kind: EntityKind.TERMINAL,
+      schemaVersion: 1,
+      revision: 2n,
+      documentJson: encode({ state: "running" }),
+    }),
+  );
+  store.close("session", sessionTabKey(one));
+  store.open("session", { kind: SessionTabKind.Terminal, id: "inventory" });
+  store.open("session", one);
+  expect(presentation.number("one")).toBe(1);
+  expect(presentation.number("inventory")).toBe(2);
+  store.open("session", { kind: SessionTabKind.Terminal, id: "third" });
+  expect(presentation.number("third")).toBe(3);
+  expect(store.snapshot("session").selected).toBe(
+    JSON.stringify(["terminal", "third"]),
+  );
+  store.open("other", one);
+  expect(store.terminalPresentation("other").number("one")).toBe(1);
+  expect(
+    new SessionTabsStore().terminalPresentation("session").number("third"),
+  ).toBe(1);
+  expect(Object.values(SessionTabKind)).not.toContain("terminals");
+});
+
+it("refreshes existing pages and appends inventory without changing selection", () => {
+  const store = new SessionTabsStore();
+  const page = {
+    kind: SessionTabKind.Page as const,
+    profile: "profile",
+    id: "page",
+    title: "original",
+    label: "https://fixture.test/original",
+  };
+  store.open("s", page);
+  store.open("s", { ...page, id: "b" });
+  store.open("s", { ...page, profile: "foreign" });
+  store.select("s", SessionTabKind.Conversation);
+  const previous = store.snapshot("s");
+  store.reconcilePages("s", "profile", [
+    { id: "page", title: "new", label: "https://fixture.test/new" },
+    { id: "absent", title: "unused", label: "https://unused.test/" },
+  ]);
+  const updated = store.snapshot("s");
+  expect(updated.selected).toBe(previous.selected);
+  expect(updated.tabs.map(sessionTabKey)).toEqual([
+    ...previous.tabs.map(sessionTabKey),
+    sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile: "profile",
+      id: "absent",
+      title: "unused",
+    }),
+  ]);
+  expect(updated.tabs[1]).toMatchObject({
+    ...page,
+    title: "new",
+    label: "https://fixture.test/new",
+  });
+  expect(updated.tabs[2]).toEqual(previous.tabs[2]);
+  expect(updated.tabs[3]).toEqual(previous.tabs[3]);
+  store.refreshPages("s", "profile", [
+    { id: "page", title: "new", label: "https://fixture.test/new" },
+  ]);
+  expect(store.snapshot("s")).toBe(updated);
+  expect(store.snapshot("other").tabs).toHaveLength(1);
+});
+it("dismisses an acknowledged page to its existing left neighbor without removing other profiles", () => {
+  const store = new SessionTabsStore();
+  const page = {
+    kind: SessionTabKind.Page as const,
+    profile: "original",
+    id: "a",
+    title: "page",
+  };
+  store.open("s", page);
+  store.open("s", { ...page, id: "b" });
+  const foreign = { ...page, profile: "foreign" };
+  store.open("s", foreign);
+  store.select("s", sessionTabKey(page));
+  store.dismissPage("s", "original", "a", "b");
+  expect(store.snapshot("s").selected).toBe(SessionTabKind.Conversation);
+  expect(store.snapshot("s").tabs).toContainEqual(foreign);
+  store.dismissPage("s", "original", "b", "");
+  expect(store.snapshot("s").selected).toBe(SessionTabKind.Conversation);
+  expect(store.snapshot("s").tabs).toContainEqual(foreign);
+  const snapshot = store.snapshot("s");
+  store.dismissPage("s", "original", "absent", "");
+  expect(store.snapshot("s")).toBe(snapshot);
+});
+
+describe("acknowledged page dismissal", () => {
+  it.each([true, false])(
+    "removes only the exact page and preserves background selection: %s",
+    (selected) => {
+      const store = new SessionTabsStore();
+      const page = {
+        kind: SessionTabKind.Page as const,
+        profile: "profile",
+        id: "a",
+        title: "A",
+      };
+      const survivor = { ...page, id: "b", title: "B" };
+      const foreign = { ...page, profile: "foreign" };
+      store.open("s", page);
+      store.open("s", survivor);
+      store.open("s", foreign);
+      store.open("other", page);
+      if (selected) store.select("s", sessionTabKey(page));
+      const other = store.snapshot("other");
+      store.dismissPage("s", page.profile, page.id, survivor.id);
+      expect(store.snapshot("s").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(survivor),
+        sessionTabKey(foreign),
+      ]);
+      expect(store.snapshot("s").selected).toBe(
+        selected ? SessionTabKind.Conversation : sessionTabKey(foreign),
+      );
+      expect(store.snapshot("other")).toBe(other);
+    },
+  );
+  it("selects the existing left neighbor independently of native-selected survivor", () => {
+    const store = new SessionTabsStore();
+    const page = {
+      kind: SessionTabKind.Page as const,
+      profile: "p",
+      id: "a",
+      title: "A",
+    };
+    store.open("s", { ...page, profile: "other", id: "b" });
+    store.open("s", page);
+    store.dismissPage("s", "p", "a", "b");
+    expect(store.snapshot("s").selected).toBe(
+      sessionTabKey({ ...page, profile: "other", id: "b" }),
+    );
+    expect(store.snapshot("s").tabs).toHaveLength(2);
+    const settled = store.snapshot("s");
+    store.dismissPage("s", "p", "a", "b");
+    expect(store.snapshot("s")).toBe(settled);
+  });
+});
+
 it("refreshes only existing exact session/profile/page metadata without selection or order changes", () => {
   const store = new SessionTabsStore();
   const page = {
@@ -179,6 +333,7 @@ it("refreshes only existing exact session/profile/page metadata without selectio
   expect(store.snapshot("session")).toBe(closed);
   expect(publish).not.toHaveBeenCalled();
 });
+
 
 it("allocates shared session numbers on original-ID opens and authenticated encounters", () => {
   const store = new SessionTabsStore();

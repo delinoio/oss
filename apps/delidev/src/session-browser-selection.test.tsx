@@ -133,17 +133,60 @@ it.each([false, true])(
       router.service(SessionService, { listQueue: () => ({ inputs: [] }) });
       router.service(BrowserService, {
         registerBrowserProfile: register,
+        listBrowserProfiles: () => ({ profiles: [] }),
         getBrowserCapabilities: () => ({
           capabilities: [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1],
         }),
       });
     });
-    native.mockReset().mockResolvedValue({
-      tabs: {
-        tabs: [{ id: tab, url: "https://fixture.test/" }],
-        selected: tab,
-      },
-      removal_pending: false,
+    const pages = new Map<
+      string,
+      {
+        tabs: { tabs: { id: string; url: string }[]; selected: string };
+        removal_pending: boolean;
+      }
+    >();
+    const receipts = new Map<
+      string,
+      {
+        operation_id: string;
+        page_id: string;
+        phase: string;
+        metadata_committed: boolean;
+        native_cleanup_complete: boolean;
+        failure: null;
+      }
+    >();
+    native.mockReset().mockImplementation(async (command, input) => {
+      let local = pages.get(input.profileId) ?? {
+        tabs: { tabs: [], selected: "" },
+        removal_pending: false,
+      };
+      if (command === "browser_pages") {
+        const request = input.request;
+        if (request.action === "create") {
+          const page = { id: newRequestId(), url: request.url };
+          local = {
+            ...local,
+            tabs: { tabs: [...local.tabs.tabs, page], selected: page.id },
+          };
+          pages.set(input.profileId, local);
+          receipts.set(request.operation_id, {
+            operation_id: request.operation_id,
+            page_id: page.id,
+            phase: "completed",
+            metadata_committed: true,
+            native_cleanup_complete: true,
+            failure: null,
+          });
+        }
+        return {
+          state: local,
+          receipt: receipts.get(request.operation_id) ?? null,
+          closed_pages: [],
+        };
+      }
+      return local;
     });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -165,7 +208,10 @@ it.each([false, true])(
     );
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const open = async () => {
-      fireEvent.click(screen.getByRole("tab", { name: "Browser" }));
+      if (!screen.queryByRole("dialog", { name: "New browser page" }))
+        fireEvent.click(
+          screen.getByRole("button", { name: "New browser page" }),
+        );
       fireEvent.change(
         await screen.findByRole("textbox", { name: "Address" }),
         { target: { value: "https://fixture.test/" } },
@@ -174,14 +220,12 @@ it.each([false, true])(
         expect(
           (
             screen.getByRole("button", {
-              name: "Open account browser",
+              name: "Open page",
             }) as HTMLButtonElement
           ).disabled,
         ).toBe(false),
       );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Open account browser" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Open page" }));
       await screen.findByRole("tab", {
         name: "https://fixture.test/",
         selected: true,

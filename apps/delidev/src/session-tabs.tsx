@@ -19,7 +19,6 @@ export enum SessionTabKind {
   Diff = "diff",
   Comparison = "comparison",
   Terminal = "terminal",
-  Browser = "browser",
   Page = "page",
   Diagnostics = "diagnostics",
   Sidechat = "sidechat",
@@ -31,7 +30,6 @@ export type SessionTab =
         | SessionTabKind.Conversation
         | SessionTabKind.Files
         | SessionTabKind.Diff
-        | SessionTabKind.Browser
         | SessionTabKind.Diagnostics;
     }
   | { kind: SessionTabKind.File; repository: string; path: string }
@@ -159,38 +157,50 @@ export class SessionTabsStore {
     // Observations update existing metadata only; they cannot reopen or select.
     if (changed) this.publish(id, { ...previous, tabs });
   }
+  reconcilePages(
+    id: string,
+    profile: string,
+    pages: readonly { id: string; title: string; label: string }[],
+  ) {
+    this.refreshPages(id, profile, pages);
+    const previous = this.snapshot(id);
+    const retained = new Set(
+      previous.tabs.flatMap((tab) =>
+        tab.kind === SessionTabKind.Page && tab.profile === profile
+          ? [tab.id]
+          : [],
+      ),
+    );
+    const added = pages
+      .filter((page) => !retained.has(page.id))
+      .map((page) => ({
+        kind: SessionTabKind.Page as const,
+        profile,
+        ...page,
+      }));
+    // Inventory may append admitted pages, but never changes current selection.
+    if (added.length)
+      this.publish(id, { ...previous, tabs: [...previous.tabs, ...added] });
+  }
   dismissPage(
     id: string,
     profile: string,
     pageId: string,
-    nativeSelected: string,
+    _nativeSelected = "",
   ) {
-    const previous = this.snapshot(id);
     const key = sessionTabKey({
       kind: SessionTabKind.Page,
       profile,
       id: pageId,
       title: "",
     });
-    if (!previous.tabs.some((tab) => sessionTabKey(tab) === key)) return;
-    const tabs = previous.tabs.filter((tab) => sessionTabKey(tab) !== key);
-    let selected = previous.selected;
-    if (selected === key) {
-      const survivor = tabs.find(
-        (tab) =>
-          tab.kind === SessionTabKind.Page &&
-          tab.profile === profile &&
-          tab.id === nativeSelected,
-      );
-      if (survivor) selected = sessionTabKey(survivor);
-      else {
-        if (!tabs.some((tab) => tab.kind === SessionTabKind.Browser))
-          tabs.push({ kind: SessionTabKind.Browser });
-        selected = SessionTabKind.Browser;
-      }
-    }
-    // Only the acknowledged descriptor is removed; background selection stays owned.
-    this.publish(id, { tabs, selected });
+    const previous = this.snapshot(id);
+    const lastPage =
+      previous.tabs.filter((tab) => tab.kind === SessionTabKind.Page).length ===
+      1;
+    this.close(id, key);
+    if (lastPage && previous.selected === key)
+      this.select(id, SessionTabKind.Conversation);
   }
   select(id: string, key: string) {
     const previous = this.snapshot(id);

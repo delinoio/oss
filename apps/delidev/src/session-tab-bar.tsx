@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useLayoutEffect, useRef } from "react";
-import { copy } from "./localization";
+import { copy, useLocale } from "./localization";
 import { Comparison } from "./session-diff-model";
 import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
@@ -24,8 +24,6 @@ export function tabName(tab: SessionTab, terminalNumber?: number): string {
       return copy("session.files_abc7e9");
     case SessionTabKind.Diff:
       return copy("session.diff_7ecf46");
-    case SessionTabKind.Browser:
-      return copy("session.browser_d31de1");
     case SessionTabKind.Diagnostics:
       return copy("session.diagnostics_268f14");
   }
@@ -38,8 +36,10 @@ export function SessionTabBar({
   id,
   closeAria,
   terminalNumber,
+  newPage,
 }: {
   terminalNumber: (terminalId: string) => number;
+  newPage?: () => void;
   closeAria?: string;
   tabs: readonly SessionTab[];
   selected: string;
@@ -48,6 +48,7 @@ export function SessionTabBar({
   id: string;
 }) {
   const productLabel = useProductLabels();
+  useLocale();
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     root.current
@@ -143,6 +144,17 @@ export function SessionTabBar({
           </div>
         );
       })}
+      {newPage ? (
+        <button
+          type="button"
+          className="session-new-page"
+          aria-label={copy("session-browser.newPage")}
+          title={copy("session-browser.newPage")}
+          onClick={newPage}
+        >
+          +
+        </button>
+      ) : null}
     </div>
   );
 }
