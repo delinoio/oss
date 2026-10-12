@@ -187,6 +187,7 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 	op := newServerCredit(*a, input, s.subscriptionServerEpoch())
 	proof := *episode.ServerProof
 	op.Automatic = &proof
+	op.ExecuteLease = nil
 	st.ServerCredit = &op
 	return nil
 }

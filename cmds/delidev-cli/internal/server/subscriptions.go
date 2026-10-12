@@ -921,6 +921,16 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
 					state.AutomaticCreditConsent = nil
+					if lease.Action == domain.SubscriptionExecute {
+						credit := state.ServerCredit
+						if credit != nil && credit.Active() && credit.Automatic == nil && credit.ExecuteLease != nil && credit.ExecuteLease.FinishGeneration == "" &&
+							credit.ExecuteLease.ID == lease.ID && credit.ExecuteLease.OperationID == lease.OperationID && credit.ExecuteLease.MachineID == lease.MachineID &&
+							credit.ExecuteLease.InstanceID == lease.InstanceID && credit.ExecuteLease.DeviceID == lease.DeviceID && credit.ExecuteLease.Epoch == lease.Epoch && credit.ExecuteLease.Generation == lease.Generation {
+							// Carry only the manual claim accepted beside this exact Execute
+							// lease through its successful credential-generation rotation.
+							credit.ExecuteLease.FinishGeneration = domain.ID(m.RequestId)
+						}
+					}
 					state.Generation = domain.ID(m.RequestId)
 					state.PaidCredits = nil
 					state.IdentityCommitment = identityCommitment

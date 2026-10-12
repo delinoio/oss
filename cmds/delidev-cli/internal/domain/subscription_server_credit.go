@@ -8,6 +8,7 @@ import "time"
 type ServerCreditOperation struct {
 	AccessOnly           bool                         `json:"access_only,omitempty"`
 	Automatic            *ServerAutomaticCreditProof  `json:"automatic,omitempty"`
+	ExecuteLease         *ServerCreditExecuteLease    `json:"execute_lease,omitempty"`
 	ID                   ID                           `json:"id"`
 	Epoch                ID                           `json:"epoch"`
 	AttemptID            ID                           `json:"attempt_id"`
@@ -29,6 +30,33 @@ type ServerCreditOperation struct {
 	QuotaErrorCode       Code                         `json:"quota_error_code,omitempty"`
 }
 
+// ServerCreditExecuteLease binds a manual access-only credit accepted beside
+// Execute to that exact lease. FinishGeneration is written only by its
+// successful Finish transaction, so later credential rotations cannot inherit
+// the claim.
+type ServerCreditExecuteLease struct {
+	ID               ID `json:"id"`
+	OperationID      ID `json:"operation_id"`
+	MachineID        ID `json:"machine_id"`
+	InstanceID       ID `json:"instance_id"`
+	DeviceID         ID `json:"device_id"`
+	Epoch            ID `json:"epoch"`
+	Generation       ID `json:"generation"`
+	FinishGeneration ID `json:"finish_generation,omitempty"`
+}
+
+func (p ServerCreditExecuteLease) Validate(generation ID) error {
+	for _, id := range []ID{p.ID, p.OperationID, p.MachineID, p.InstanceID, p.DeviceID, p.Epoch, p.Generation} {
+		if id.Validate() != nil {
+			return InvalidSubscriptionObservation()
+		}
+	}
+	if p.Generation != generation || p.FinishGeneration != "" && p.FinishGeneration.Validate() != nil {
+		return InvalidSubscriptionObservation()
+	}
+	return nil
+}
+
 func (o ServerCreditOperation) Active() bool {
 	return o.Phase == SubscriptionObservationQueued || o.Phase == SubscriptionObservationSending || o.Phase == SubscriptionObservationUncertain
 }
@@ -40,6 +68,9 @@ func (s SubscriptionState) ServerObservationActive() bool {
 }
 func (o ServerCreditOperation) Validate() error {
 	if o.Automatic != nil && (!o.AccessOnly || o.Automatic.Validate() != nil || o.Automatic.Consent.Actor != o.Actor || o.Automatic.Consent.ConnectionID != o.ConnectionID || o.Automatic.Consent.Generation != o.Generation || o.Automatic.Epoch != o.Epoch) {
+		return InvalidSubscriptionObservation()
+	}
+	if o.ExecuteLease != nil && (!o.AccessOnly || o.Automatic != nil || o.ExecuteLease.Validate(o.Generation) != nil) {
 		return InvalidSubscriptionObservation()
 	}
 	for _, id := range []ID{o.ID, o.Epoch, o.AttemptID, o.AttemptEpoch, o.FinishID, o.ConnectionID, o.Generation, o.CreditsObservationID} {

@@ -441,6 +441,81 @@ func TestServerCreditPendingServerOwnersRejectConsumption(t *testing.T) {
 	}
 }
 
+func TestManualServerCreditClaimSurvivesExactExecuteFinish(t *testing.T) {
+	for _, uncertain := range []bool{false, true} {
+		t.Run(map[bool]string{false: "send", true: "same-key-reconcile"}[uncertain], func(t *testing.T) {
+			f := newQuotaFixture(t)
+			mutateCreditAccount(t, f, func(a *domain.Account) {
+				a.Subscription.ServerQuotaGeneration = a.Subscription.Generation
+				a.Subscription.ResetCredits = &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: time.Now().UTC(), AvailableCount: 2}
+			})
+			native := &serverCreditFixture{serverQuotaFixture: &serverQuotaFixture{}, outcome: domain.SubscriptionReset}
+			f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+				return creditAccessFixture{native}, nil
+			}
+			lease := takeSubscriptionExecutionFixture(t, f)
+			acceptCredit(t, f, requestServerCredit(f))
+			accountRecord, before := f.record()
+			original := *before.Subscription.ServerCredit
+			if original.ExecuteLease == nil || original.ExecuteLease.ID != domain.ID(lease.LeaseId) || original.ExecuteLease.Generation != domain.ID(lease.GenerationId) {
+				t.Fatal("manual claim did not capture its active Execute lease", original.ExecuteLease)
+			}
+			bundle, err := f.secrets.Get(creditContext(), credentials.Ref{Owner: accountRecord.ID, ID: domain.ID(lease.GenerationId), Purpose: credentials.AccountLogin})
+			if err != nil {
+				t.Fatal("read original Execute credential", err)
+			}
+			defer clear(bundle)
+			if _, err := f.finish(lease, bundle, true, false, true); err != nil {
+				t.Fatal("finish original Execute lease", err)
+			}
+			_, afterFinish := f.record()
+			if afterFinish.Subscription.Generation == original.Generation || afterFinish.Subscription.ServerCredit.ExecuteLease.FinishGeneration != afterFinish.Subscription.Generation {
+				t.Fatal("successful Execute Finish did not bind the exact credit claim", afterFinish.Subscription.ServerCredit.ExecuteLease)
+			}
+			if err := f.service.Store.Read(creditContext(), func(tx *store.Tx) error {
+				_, current, err := subscriptionAccount(tx, accountRecord.ID, 0)
+				if err != nil {
+					return err
+				}
+				if !serverCreditAuthority(tx, current, original) {
+					return subscriptionDenied()
+				}
+				return nil
+			}); err != nil {
+				t.Fatal("exact manual claim lost authority across Execute Finish", err)
+			}
+
+			if uncertain {
+				native.outcome = ""
+				native.consumeError = errors.New("synthetic lost provider response")
+				f.service.runServerCredit(creditContext(), accountRecord.ID)
+				_, afterUncertain := f.record()
+				if afterUncertain.Subscription.ServerCredit.Phase != domain.SubscriptionObservationUncertain || !afterUncertain.Subscription.ServerCredit.CleanupConfirmed || native.count() != 1 {
+					t.Fatal("uncertain manual credit lost its same-key recovery fence", afterUncertain.Subscription.ServerCredit)
+				}
+				accountRecord, _ = f.record()
+				native.consumeError = nil
+				native.outcome = domain.SubscriptionAlreadyRedeemed
+				reconcile := &pb.ReconcileSubscriptionCreditRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(accountRecord.ID), ExpectedRevision: accountRecord.Revision}, OperationId: string(original.ID), ConnectionId: string(original.ConnectionID), GenerationId: string(original.Generation)}
+				if _, err := f.client.ReconcileSubscriptionCredit(context.Background(), subscriptionRequest(f.service.Identity.Token, reconcile)); err != nil {
+					t.Fatal("reconcile exact original manual claim", err)
+				}
+			}
+			f.service.runServerCredit(creditContext(), accountRecord.ID)
+			_, settled := f.record()
+			wantSends := 1
+			wantOutcome := domain.SubscriptionReset
+			if uncertain {
+				wantSends = 2
+				wantOutcome = domain.SubscriptionAlreadyRedeemed
+			}
+			if native.count() != wantSends || settled.Subscription.ServerCredit.ID != original.ID || settled.Subscription.ServerCredit.Outcome != wantOutcome || settled.Subscription.ServerCredit.Phase != domain.SubscriptionObservationSucceeded {
+				t.Fatal("manual credit did not settle under its original key after Execute Finish", settled.Subscription.ServerCredit)
+			}
+		})
+	}
+}
+
 type creditAccessFixture struct{ n *serverCreditFixture }
 
 func TestAutomaticCreditClaimSurvivesOriginalWorkerFinish(t *testing.T) {

@@ -15,7 +15,12 @@ import (
 )
 
 func newServerCredit(a domain.Account, input domain.SubscriptionObservationOperation, epoch domain.ID) domain.ServerCreditOperation {
-	return domain.ServerCreditOperation{AccessOnly: true, ID: input.ID, Epoch: epoch, AttemptID: domain.NewID(), AttemptEpoch: epoch, FinishID: domain.NewID(), ConnectionID: input.ConnectionID, Generation: input.Generation, Actor: input.Actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: input.RequestedAt, CreditID: input.CreditID, NextCredit: input.NextCredit, CreditsObservationID: input.CreditsObservationID}
+	op := domain.ServerCreditOperation{AccessOnly: true, ID: input.ID, Epoch: epoch, AttemptID: domain.NewID(), AttemptEpoch: epoch, FinishID: domain.NewID(), ConnectionID: input.ConnectionID, Generation: input.Generation, Actor: input.Actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: input.RequestedAt, CreditID: input.CreditID, NextCredit: input.NextCredit, CreditsObservationID: input.CreditsObservationID}
+	if input.AutomaticEpisodeID == "" && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute {
+		lease := a.Subscription.Lease
+		op.ExecuteLease = &domain.ServerCreditExecuteLease{ID: lease.ID, OperationID: lease.OperationID, MachineID: lease.MachineID, InstanceID: lease.InstanceID, DeviceID: lease.DeviceID, Epoch: lease.Epoch, Generation: lease.Generation}
+	}
+	return op
 }
 func acceptServerCredit(tx *store.Tx, r store.Record, a domain.Account, op domain.ServerCreditOperation) error {
 	if !serverQuotaReady(a) || op.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || subscriptionActorValid(tx, op.Actor) != nil {
@@ -36,7 +41,10 @@ func serverCreditAuthority(tx *store.Tx, a domain.Account, original domain.Serve
 			return false
 		}
 		if original.Automatic == nil {
-			return st.Generation == original.Generation
+			if st.Generation == original.Generation {
+				return true
+			}
+			return serverCreditFinishedExecuteValid(st, original)
 		}
 		return frozenAutomaticCreditValid(st, *original.Automatic) && st.AutomaticCreditEpisode.OperationID == original.ID
 	}
@@ -393,7 +401,21 @@ func (s *Service) finishServerCredit(ctx context.Context, id domain.ID, original
 }
 
 func sameServerCreditProof(o *domain.ServerCreditOperation, original domain.ServerCreditOperation) bool {
-	return o != nil && o.ID == original.ID && o.AttemptID == original.AttemptID && o.AttemptEpoch == original.AttemptEpoch && o.FinishID == original.FinishID && o.RequestedAt.Equal(original.RequestedAt) && o.Epoch == original.Epoch && o.Actor == original.Actor && o.Generation == original.Generation && o.ConnectionID == original.ConnectionID && o.CreditID == original.CreditID && o.NextCredit == original.NextCredit && o.CreditsObservationID == original.CreditsObservationID && o.AccessOnly == original.AccessOnly && reflect.DeepEqual(o.Automatic, original.Automatic)
+	return o != nil && o.ID == original.ID && o.AttemptID == original.AttemptID && o.AttemptEpoch == original.AttemptEpoch && o.FinishID == original.FinishID && o.RequestedAt.Equal(original.RequestedAt) && o.Epoch == original.Epoch && o.Actor == original.Actor && o.Generation == original.Generation && o.ConnectionID == original.ConnectionID && o.CreditID == original.CreditID && o.NextCredit == original.NextCredit && o.CreditsObservationID == original.CreditsObservationID && o.AccessOnly == original.AccessOnly && reflect.DeepEqual(o.Automatic, original.Automatic) && sameServerCreditExecuteLease(o.ExecuteLease, original.ExecuteLease)
+}
+func sameServerCreditExecuteLease(a, b *domain.ServerCreditExecuteLease) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ID == b.ID && a.OperationID == b.OperationID && a.MachineID == b.MachineID && a.InstanceID == b.InstanceID && a.DeviceID == b.DeviceID && a.Epoch == b.Epoch && a.Generation == b.Generation
+}
+func serverCreditFinishedExecuteValid(st *domain.SubscriptionState, original domain.ServerCreditOperation) bool {
+	proof := original.ExecuteLease
+	current := st.ServerCredit
+	return original.AccessOnly && original.Automatic == nil && proof != nil && proof.Validate(original.Generation) == nil &&
+		current != nil && current.ExecuteLease != nil && sameServerCreditExecuteLease(current.ExecuteLease, proof) && current.ExecuteLease.FinishGeneration != "" && current.ExecuteLease.FinishGeneration.Validate() == nil &&
+		st.Generation == current.ExecuteLease.FinishGeneration && st.Generation != original.Generation &&
+		st.OwnerMachineID == proof.MachineID && st.Lease == nil && st.Pending == nil
 }
 func frozenAutomaticCreditValid(st *domain.SubscriptionState, proof domain.ServerAutomaticCreditProof) bool {
 	c := st.AutomaticCreditConsent
