@@ -13436,6 +13436,692 @@
       "member": "constraints",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewTargetKind",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewTargetKind",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_UNCOMMITTED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewTargetKind",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_BASE_BRANCH",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewTargetKind",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_COMMIT",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewTargetKind",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_CUSTOM",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_QUEUED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_READY",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_ENTERED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_EXITED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_COMPLETED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_INTERRUPTED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_UNCERTAIN",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_STALE",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "NativeCodeReviewState",
+      "member": "NATIVE_CODE_REVIEW_STATE_REJECTED",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewTarget",
+      "member": "kind",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewTarget",
+      "member": "repository_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewTarget",
+      "member": "diff_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewTarget",
+      "member": "reference",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewTarget",
+      "member": "instructions",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewSelection",
+      "member": "target",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewSelection",
+      "member": "head_commit",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewSelection",
+      "member": "base_commit",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewSelection",
+      "member": "content_digest",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "title",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "body",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "confidence",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "priority",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "path",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "start_line",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewFinding",
+      "member": "end_line",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "selection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "thread_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "turn_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "entered_item_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "exited_item_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "findings",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "correctness",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "explanation",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "confidence",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "rollout_digest",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResult",
+      "member": "cleanup_verified",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "action_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "target",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "state",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "revision",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "thread_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "turn_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "entered_item_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "exited_item_id",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "result",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "usage",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "estimates",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReview",
+      "member": "usage_complete",
+      "number": 13,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "CreateNativeCodeReviewRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "CreateNativeCodeReviewRequest",
+      "member": "target",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "CreateNativeCodeReviewResponse",
+      "member": "review",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "CreateNativeCodeReviewResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "CreateNativeCodeReviewResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "GetNativeCodeReviewRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "GetNativeCodeReviewRequest",
+      "member": "job_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "GetNativeCodeReviewResponse",
+      "member": "review",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "state",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "selection",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "thread_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "turn_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "item_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewRequest",
+      "member": "usage",
+      "number": 14,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "PublishNativeCodeReviewResponse",
+      "member": "revision",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "response_digest",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "input",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "cached_input",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "cache_write_input",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "output",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "reasoning_output",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "total",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "counts_available",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "unspecified_native_cost",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "sequence",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "message",
+      "declaration": "NativeCodeReviewResponseUsage",
+      "member": "native_version",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
+      "number": 96
+    },
+    {
+      "issue": 2019,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
+      "number": 58
     }
   ],
   "rpcReservations": [
@@ -13688,6 +14374,33 @@
       "method": "PreviewScheduleCalendar",
       "input": "PreviewScheduleCalendarRequest",
       "output": "PreviewScheduleCalendarResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2019,
+      "service": "SessionService",
+      "method": "CreateNativeCodeReview",
+      "input": "CreateNativeCodeReviewRequest",
+      "output": "CreateNativeCodeReviewResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2019,
+      "service": "SessionService",
+      "method": "GetNativeCodeReview",
+      "input": "GetNativeCodeReviewRequest",
+      "output": "GetNativeCodeReviewResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2019,
+      "service": "WorkerService",
+      "method": "PublishNativeCodeReview",
+      "input": "PublishNativeCodeReviewRequest",
+      "output": "PublishNativeCodeReviewResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

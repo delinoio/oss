@@ -651,7 +651,15 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 	return t.retireForkImageSnapshots(v.SessionID)
 }
 func (t *Tx) deleteSessionRecord(r Record) error {
+	if r.Kind == domain.SessionKind {
+		if err := t.DeleteNativeCodeReviewSessionUsage(r.ID); err != nil {
+			return err
+		}
+	}
 	if r.Kind == domain.JobKind {
+		if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=?", nativeReviewProgressPrefix+string(r.ID)); err != nil {
+			return storageError(err)
+		}
 		if err := t.deleteWorkerNativeRoute(r.ID); err != nil {
 			return err
 		}
@@ -1005,6 +1013,13 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 				return v, domain.SessionDeletionPending()
 			}
 			copy.SnapshotID = input.SnapshotID
+		}
+		if j.Type == domain.NativeCodeReviewJob {
+			var input domain.NativeCodeReviewInput
+			if domain.DecodeNativeCodeReviewInput(original.Input, &input) != nil || input.Validate() != nil || input.Source.SessionID != v.SessionID {
+				return v, domain.SessionDeletionPending()
+			}
+			copy.ActionID = input.ActionID
 		}
 		if j.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput

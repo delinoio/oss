@@ -66,6 +66,7 @@ func Resource(record store.Record) *pb.Resource {
 	}
 	if record.Kind == domain.JobKind {
 		document = nativeModelJobDocument(document)
+		document = nativeReviewJobDocument(document)
 	}
 	return &pb.Resource{Id: string(record.ID), Kind: WireKind(record.Kind), Revision: record.Revision, SessionId: string(record.SessionID), ProjectId: string(record.ProjectID), SchemaVersion: ResourceSchemaVersion(record.Kind, document), DocumentJson: document, CreatedAt: record.CreatedAt.Format(time.RFC3339Nano), UpdatedAt: record.UpdatedAt.Format(time.RFC3339Nano)}
 }

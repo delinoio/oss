@@ -443,3 +443,5 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+- Dedicated Codex review uses System 96 / Worker 58, independent original-scope jobs and `session native-review create|get`. The harness, workspace, storage, CLI, protocol and usage contracts preserve four exact targets, structured findings, read-only authority, immutable auxiliary accounting, joined cleanup and explicit uncertainty. Ordinary feedback and AI approval review remain separate. No migration or numeric native admission gate is added.

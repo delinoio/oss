@@ -28,6 +28,9 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 	return contextActionSource(tx, sr, session, action, false)
 }
 func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert bool) (domain.SessionCompactionInput, error) {
+	return contextActionSourceForReview(tx, sr, session, action, revert, false)
+}
+func contextActionSourceForReview(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert, codeReview bool) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
 	p := session.Execution
 	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
@@ -72,7 +75,10 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 	if err != nil {
 		return empty, err
 	}
-	if revert && !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
+	if codeReview && (h != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.NativeCodexReviewV1)) {
+		return empty, domain.NativeCodeReviewUnavailable()
+	}
+	if revert && !codeReview && !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
 		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support conversation revert.", "Update the original Worker.")
 	}
 	if !revert && h == domain.Codex && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {

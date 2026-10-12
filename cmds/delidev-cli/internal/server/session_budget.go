@@ -40,6 +40,13 @@ func sessionBudgetView(tx *store.Tx, id domain.ID) (*pb.SessionBudgetView, error
 	if err != nil {
 		return nil, err
 	}
+	reviewUnpriced, err := tx.NativeCodeReviewEstimate(id, "")
+	if err != nil {
+		return nil, err
+	}
+	if err = unpriced.MergeResponses(reviewUnpriced); err != nil {
+		return nil, err
+	}
 	view.UnpricedResponses = unpriced.UnavailableResponses
 	nativeUnpriced, err := tx.NativeSessionEstimate(id, "")
 	if err != nil {

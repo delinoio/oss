@@ -477,3 +477,7 @@ connection ownership. They localize normalized values without parsing cron or
 computing calendar instants. Unimplemented supports older servers without a new
 capability gate. Preview failure cannot authorize execution or modify retained
 save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
+
+## Dedicated native code review bindings
+
+Generated SessionService create/get and WorkerService publication bindings retain the independent original review job, target, lifecycle, findings and usage. System 96 and Worker 58 negotiate the dedicated review feature. Clients never substitute ordinary feedback, automatically retry native work or infer review support from another capability. Exact receipt observation retains its original request; declarations and generated output follow the [protocol contract](protos-delidev-v1-contract.md#dedicated-codex-code-review).

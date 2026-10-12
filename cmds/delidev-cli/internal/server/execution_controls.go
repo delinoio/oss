@@ -8,6 +8,33 @@ import (
 )
 
 func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session, action domain.SessionAction) error {
+	if row, job, found, err := tx.ActiveNativeCodeReview(sr.ID); err != nil {
+		return err
+	} else if found {
+		if action != domain.StopSession && action != domain.ArchiveSession {
+			return domain.NativeCodeReviewUnavailable()
+		}
+		if err := tx.RequestJobCancellation(row.ID); err != nil {
+			return err
+		}
+		if job.State == domain.JobQueued {
+			now := time.Now().UTC()
+			job.State, job.FinishedAt = domain.JobCanceled, &now
+			job.Problem = domain.Fail(domain.Canceled, "The native review was canceled before Worker dispatch.", "No native review was sent.")
+			if _, err := tx.PutJob(row.ID, row.Revision, row.SessionID, row.ProjectID, job); err != nil {
+				return err
+			}
+		}
+		session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+		if action == domain.ArchiveSession {
+			session.Archive = domain.ArchivePending
+			if job.State == domain.JobCanceled {
+				session.Archive = domain.Archived
+			}
+		}
+		return nil
+	}
+
 	if session.CompactionJobID != "" {
 		if action != domain.StopSession && action != domain.ArchiveSession {
 			return domain.CompactionUncertain()
@@ -121,6 +148,25 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			job, err := store.Decode[domain.Job](r)
 			if err != nil {
 				return err
+			}
+			if job.Type == domain.NativeCodeReviewJob {
+				var input domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil || input.Source.AccountID != account {
+					return domain.NativeCodeReviewUnavailable()
+				}
+				if err := tx.RequestJobCancellation(r.ID); err != nil {
+					return err
+				}
+				if job.State == domain.JobQueued {
+					now := time.Now().UTC()
+					job.State, job.FinishedAt = domain.JobCanceled, &now
+					job.Problem = domain.Fail(domain.Canceled, "The selected review account was disconnected before dispatch.", "No native review was sent.")
+					if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job); err != nil {
+						return err
+					}
+				}
+				after = r.ID
+				continue
 			}
 			if job.Type == domain.CompactSessionJob {
 				var input domain.SessionCompactionInput

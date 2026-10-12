@@ -297,6 +297,11 @@ func (c *Client) acquireControl(ctx context.Context) error {
 func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, settings ThreadSettings, method threadMethod) (result ThreadResult, returned error) {
 	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result.RequestID = requestID
+	if c.codeReviewModel != "" && (method != startThread || len(settings.WorkspaceRoots) != 1 || settings.WorkspaceRoots[0] != settings.Cwd) {
+		// The review freezes only one proven repository. Unselected session
+		// roots and inherited native roots have no review-input authority.
+		return result, domain.NativeCodeReviewUnavailable()
+	}
 	if c.sidechat != "" && !sidechatSettings(settings) {
 		return result, sidechatUnavailable()
 	}

@@ -160,7 +160,9 @@ export function validateDiagnosticPage(
       value.operation < Operation.INPUT ||
       value.operation > Operation.COUNT ||
       !errors.has(value.errorCode) ||
-      !["conversation", "session-title"].includes(value.purpose) ||
+      !["conversation", "session-title", "native-code-review"].includes(
+        value.purpose,
+      ) ||
       !harnesses.has(value.harness) ||
       (value.state === State.IN_PROGRESS) !==
         (value.finishedAt === undefined) ||
