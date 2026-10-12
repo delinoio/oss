@@ -287,6 +287,7 @@ type AgentSourceRoute struct {
 }
 
 type Agent struct {
+	MCP                     *MCPSelectionList       `json:"mcp,omitempty"`
 	SelectedModelSetting    *HarnessSetting[string] `json:"-"`
 	HarnessSettings         *HarnessSettings        `json:"harness_settings,omitempty"`
 	ReconfigurationRequired bool                    `json:"reconfiguration_required,omitempty"`
@@ -303,6 +304,9 @@ type Agent struct {
 }
 
 func (a Agent) Validate() error {
+	if err := ValidateMCPSelections(a.MCP); err != nil {
+		return err
+	}
 	if a.HarnessSettings != nil {
 		if err := a.HarnessSettings.Validate(); err != nil {
 			return err
