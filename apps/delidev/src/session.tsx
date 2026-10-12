@@ -474,9 +474,19 @@ export const TranscriptItem = memo(function TranscriptItem({
           data.role === "tool" &&
           data.text === "" &&
           ![
-            "tool", "function_output", "claude_tool", "grok_tool",
-            "artifact", "progress", "input_id", "phase", "claude", "claude_progress",
-            "claude_interruption", "grok_text", "grok_user",
+            "tool",
+            "function_output",
+            "claude_tool",
+            "grok_tool",
+            "artifact",
+            "progress",
+            "input_id",
+            "phase",
+            "claude",
+            "claude_progress",
+            "claude_interruption",
+            "grok_text",
+            "grok_user",
           ].some((key) => Object.hasOwn(data, key))
             ? data.dynamic_tool
             : undefined

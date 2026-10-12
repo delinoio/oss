@@ -85,9 +85,13 @@ export function conversationProjection(
     d.role !== "tool"
   )
     return projection;
-  const families = ["tool", "claude_tool", "grok_tool", "dynamic_tool", "function_output"].filter((key) =>
-    Object.hasOwn(d, key),
-  );
+  const families = [
+    "tool",
+    "claude_tool",
+    "grok_tool",
+    "dynamic_tool",
+    "function_output",
+  ].filter((key) => Object.hasOwn(d, key));
   if (
     families.length !== 1 ||
     [
@@ -106,9 +110,23 @@ export function conversationProjection(
   if (families[0] === "dynamic_tool") {
     const dynamic = dynamicTool(d.dynamic_tool);
     const original = dynamic?.snapshot?.identity ?? dynamic?.request?.identity;
-    if (!dynamic || !original || d.text !== "" || !identity(d.native_id) || !["streaming", "complete"].includes(state) || ["input_id", "phase"].some((key) => Object.hasOwn(d, key))) return projection;
-    name = original.namespace === null ? original.tool : `${original.namespace}.${original.tool}`;
-    state = dynamic.snapshot?.status === "inProgress" ? "running" : (dynamic.snapshot?.status ?? "running");
+    if (
+      !dynamic ||
+      !original ||
+      d.text !== "" ||
+      !identity(d.native_id) ||
+      !["streaming", "complete"].includes(state) ||
+      ["input_id", "phase"].some((key) => Object.hasOwn(d, key))
+    )
+      return projection;
+    name =
+      original.namespace === null
+        ? original.tool
+        : `${original.namespace}.${original.tool}`;
+    state =
+      dynamic.snapshot?.status === "inProgress"
+        ? "running"
+        : (dynamic.snapshot?.status ?? "running");
   } else if (families[0] === "function_output") {
     return projection;
   } else if (families[0] === "claude_tool") {
