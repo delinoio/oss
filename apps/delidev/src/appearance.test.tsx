@@ -568,6 +568,240 @@ test("v2 ordinary choices autosave full snapshots without replacing a draft", as
   ).toBe(true);
 });
 
+test.each(
+  [Theme.Light, Theme.Dark, Theme.System].flatMap((mode) =>
+    [
+      ["default", "dracula"],
+      ["dracula", "default"],
+      ["nord", "nord"],
+    ].map(([light, dark]) => ({ mode, light, dark })),
+  ),
+)(
+  "palette row duplication preserves complete families in $mode mode ($light/$dark)",
+  async ({ mode, light, dark }) => {
+    const { defaultPreferences, palettes, colorTokens } = await import(
+      "./appearance-preferences"
+    );
+    scheme(true);
+    const value = fixture(mode);
+    const preferences = {
+      ...defaultPreferences(),
+      light_palette: light,
+      dark_palette: dark,
+    };
+    const original = structuredClone(preferences);
+    vi.mocked(value.bridge.read).mockResolvedValue({
+      revision: 1,
+      theme: mode,
+      problem: null,
+      preferences,
+    });
+    vi.mocked(value.bridge.update).mockImplementation(
+      async (theme, revision, next) => ({
+        theme,
+        revision: revision + 1,
+        problem: null,
+        preferences: next,
+      }),
+    );
+    render(
+      <AppearanceProvider bridge={value.bridge}>
+        <AppearanceSettings />
+      </AppearanceProvider>,
+    );
+    for (const [name, reference] of [
+      ["Duplicate light palette", light],
+      ["Duplicate dark palette", dark],
+    ]) {
+      const button = await screen.findByRole("button", { name });
+      await waitFor(() => expect(button.matches(":disabled")).toBe(false));
+      button.focus();
+      fireEvent.click(button);
+      const expected = palettes[reference as keyof typeof palettes];
+      const select = screen.getByRole("combobox", {
+        name: name === "Duplicate light palette" ? "Light palette" : "Dark palette",
+      }) as HTMLSelectElement;
+      expect(
+        (screen.getByRole("textbox", { name: "Theme name" }) as HTMLInputElement)
+          .value,
+      ).toBe(select.selectedOptions[0].textContent);
+      for (const token of colorTokens) {
+        expect(
+          (
+            screen.getByRole("textbox", {
+              name: `Light ${token}`,
+            }) as HTMLInputElement
+          ).value,
+        ).toBe(expected.light[token]);
+        expect(
+          (
+            screen.getByRole("textbox", {
+              name: `Dark ${token}`,
+            }) as HTMLInputElement
+          ).value,
+        ).toBe(expected.dark[token]);
+      }
+      expect(value.bridge.update).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(document.activeElement).toBe(button);
+      expect(preferences).toEqual(original);
+    }
+    fireEvent.click(
+      screen.getByRole("button", { name: "Duplicate dark palette" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save theme" }));
+    expect(value.bridge.update).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(value.bridge.update).mock.calls[0][2]!;
+    expect(saved.light_palette).toBe(light);
+    expect(saved.dark_palette).toBe(dark);
+    expect(saved.custom_themes).toHaveLength(1);
+    expect(saved.custom_themes[0]).toMatchObject({
+      version: 1,
+      light: palettes[dark as keyof typeof palettes].light,
+      dark: palettes[dark as keyof typeof palettes].dark,
+    });
+    expect(saved.custom_themes[0].id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(preferences).toEqual(original);
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull(),
+    );
+  },
+);
+
+test("selected custom palette and library row duplication preserve the original theme", async () => {
+  const { defaultPreferences, palettes } = await import(
+    "./appearance-preferences"
+  );
+  scheme(false);
+  const value = fixture();
+  const custom = {
+    version: 1 as const,
+    id: "019abcde-1234-7123-8123-123456789abc",
+    name: "Original custom theme",
+    ...structuredClone(palettes.dracula),
+  };
+  const preferences = {
+    ...defaultPreferences(),
+    dark_palette: custom.id,
+    custom_themes: [custom],
+  };
+  const original = structuredClone(preferences);
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    revision: 1,
+    theme: Theme.System,
+    problem: null,
+    preferences,
+  });
+  vi.mocked(value.bridge.update).mockImplementation(
+    async (theme, revision, next) => ({
+      theme,
+      revision: revision + 1,
+      problem: null,
+      preferences: next,
+    }),
+  );
+  render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  const dark = await screen.findByRole("button", {
+    name: "Duplicate dark palette",
+  });
+  await waitFor(() => expect(dark.matches(":disabled")).toBe(false));
+  fireEvent.click(dark);
+  expect(
+    (screen.getByRole("textbox", { name: "Theme name" }) as HTMLInputElement)
+      .value,
+  ).toBe(custom.name);
+  fireEvent.change(screen.getByRole("textbox", { name: "Light background" }), {
+    target: { value: "#FFFFFF" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(preferences).toEqual(original);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Duplicate theme" }));
+  expect(
+    (screen.getByRole("textbox", { name: "Light background" }) as HTMLInputElement)
+      .value,
+  ).toBe(custom.light.background);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(value.bridge.update).not.toHaveBeenCalled();
+  fireEvent.click(dark);
+  fireEvent.click(screen.getByRole("button", { name: "Save theme" }));
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+  const saved = vi.mocked(value.bridge.update).mock.calls[0][2]!;
+  expect(saved.custom_themes).toHaveLength(2);
+  expect(saved.custom_themes[0]).toEqual(custom);
+  expect(saved.custom_themes[1]).toEqual({
+    ...custom,
+    id: expect.any(String),
+  });
+  expect(saved.custom_themes[1].id).not.toBe(custom.id);
+  expect(saved.light_palette).toBe(preferences.light_palette);
+  expect(saved.dark_palette).toBe(custom.id);
+  expect(preferences).toEqual(original);
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull(),
+  );
+});
+
+test("palette duplication exposes distinct English and Korean action names", async () => {
+  const { i18n } = await import("./localization");
+  scheme(false);
+  const value = fixture();
+  render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  await screen.findByRole("button", { name: "Duplicate dark palette" });
+  try {
+    await act(() => i18n.changeLanguage("ko"));
+    for (const name of ["라이트 팔레트 복제", "다크 팔레트 복제"])
+      expect(screen.getByRole("button", { name }).textContent).toBe("복제");
+    expect(value.bridge.update).not.toHaveBeenCalled();
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
+
+test("both palette duplication actions retain the 32-theme library limit", async () => {
+  const { defaultPreferences, palettes } = await import(
+    "./appearance-preferences"
+  );
+  scheme(false);
+  const value = fixture();
+  const preferences = {
+    ...defaultPreferences(),
+    custom_themes: Array.from({ length: 32 }, (_, index) => ({
+      version: 1 as const,
+      id: `019abcde-1234-7123-8123-${String(index).padStart(12, "0")}`,
+      name: `Custom theme ${index}`,
+      ...structuredClone(palettes.default),
+    })),
+  };
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    revision: 1,
+    theme: Theme.System,
+    problem: null,
+    preferences,
+  });
+  render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  await screen.findByText("Custom theme 31", {
+    selector: ".appearance-custom > span",
+  });
+  for (const name of ["Duplicate light palette", "Duplicate dark palette"])
+    expect(screen.getByRole("button", { name }).matches(":disabled")).toBe(true);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});
+
 test("custom theme confirmation retains a draft on concurrent appearance commits", async () => {
   const { defaultPreferences } = await import("./appearance-preferences");
   scheme(false);
@@ -585,7 +819,7 @@ test("custom theme confirmation retains a draft on concurrent appearance commits
     </AppearanceProvider>,
   );
   const duplicate = await screen.findByRole("button", {
-    name: "Duplicate theme",
+    name: "Duplicate light palette",
   });
   await waitFor(() =>
     expect((duplicate as HTMLButtonElement).disabled).toBe(false),
@@ -630,7 +864,7 @@ test("custom theme save waits for the positively committed native map identity",
     </AppearanceProvider>,
   );
   const duplicate = await screen.findByRole("button", {
-    name: "Duplicate theme",
+    name: "Duplicate light palette",
   });
   await waitFor(() =>
     expect((duplicate as HTMLButtonElement).disabled).toBe(false),

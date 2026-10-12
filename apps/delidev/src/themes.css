@@ -511,6 +511,21 @@
   min-width: 0;
   border-radius: 8px;
 }
+.appearance-palette-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.appearance-palette-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.appearance-content .appearance-palette-controls select {
+  flex: 1 1 220px;
+  width: 220px;
+}
 .appearance-disclosure-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
 }
@@ -561,6 +576,7 @@
 @container appearance-body (width < 640px) {
   .appearance-content .appearance-choices,
   .appearance-content .language-settings,
+  .appearance-palette-row,
   .appearance-disclosure-row,
   .appearance-disclosure-controls {
     grid-template-columns: minmax(0, 1fr);
