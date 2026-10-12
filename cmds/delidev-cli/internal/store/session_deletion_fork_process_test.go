@@ -33,7 +33,7 @@ func failedForkDeletionInput(t *testing.T, session, machine domain.ID) domain.Fo
 }
 
 func TestLegacyFailedForkDeletionDerivesOnlyOriginalChildOwner(t *testing.T) {
-	for _, scenario := range []string{"original", "digest", "instance", "missing", "succeeded"} {
+	for _, scenario := range []string{"original", "combined", "digest", "instance", "missing", "succeeded"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, ctx, _, _, v := sessionDeletionWorkerFixture(t)
 			sr, _, _ := deletionSession(t, s, "fork-source")
@@ -78,12 +78,16 @@ func TestLegacyFailedForkDeletionDerivesOnlyOriginalChildOwner(t *testing.T) {
 				copy.JobID = domain.NewID()
 			}
 			work.Copies = append(work.Copies, copy)
+			if scenario == "combined" {
+				work.SharedCleanupOwnerDeviceID = ""
+			}
 			before := work.Digest()
 			if err := s.writeSessionDeletion(v); err != nil {
 				t.Fatal(err)
 			}
-			items, err := s.SessionDeletions(context.Background())
-			if scenario != "original" {
+			var items []SessionDeletion
+			items, err = s.SessionDeletions(context.Background())
+			if scenario != "original" && scenario != "combined" {
 				if err != nil {
 					t.Fatal("unresolved legacy plan blocked independent inventory", err)
 				}
@@ -100,6 +104,15 @@ func TestLegacyFailedForkDeletionDerivesOnlyOriginalChildOwner(t *testing.T) {
 			current, e := s.readSessionDeletion(v.SessionID)
 			if err != nil || e != nil || len(items) != 2 || current.Workers[0].Work.Copies[1].UnpublishedChildProcessID != input.ChildSessionID {
 				t.Fatal("original child omitted", err)
+			}
+			if scenario == "combined" {
+				work := current.Workers[0].Work
+				if err := work.Validate(); err != nil {
+					t.Fatalf("combined legacy work is invalid: %v (previous=%s expected=%s)", err, work.PreviousDigest, before)
+				}
+				if work.SharedCleanupOwnerDeviceID != work.DeviceID || work.PreviousDigest != before || len(work.PreviousForkChildProcesses) != 1 || work.PreviousForkChildProcesses[0] != (domain.SessionDeletionPreviousForkChild{JobID: jobID, ChildSessionID: input.ChildSessionID}) {
+					t.Fatal("combined legacy enrichment did not preserve its original digest", work)
+				}
 			}
 			_, err = s.SessionDeletions(context.Background())
 			again, e := s.readSessionDeletion(v.SessionID)

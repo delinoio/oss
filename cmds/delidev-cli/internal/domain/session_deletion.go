@@ -42,25 +42,33 @@ type SessionDeletionWork struct {
 	RetryForks []SessionDeletionFork `json:"retry_forks,omitempty"`
 	// Frozen original execution admission requires all generation intents, even
 	// when publication failed before the server acquired output references.
-	GeneratedImageCleanup      bool                  `json:"generated_image_cleanup,omitempty"`
-	SkillSnapshots             []SkillBinding        `json:"skill_snapshots,omitempty"`
-	Fork                       *SessionDeletionFork  `json:"fork,omitempty"`
-	Version                    uint32                `json:"version"`
-	DeletionID                 ID                    `json:"deletion_id"`
-	ServerID                   ID                    `json:"server_id"`
-	SessionID                  ID                    `json:"session_id"`
-	MachineID                  ID                    `json:"machine_id"`
-	DeviceID                   ID                    `json:"device_id"`
-	Copies                     []SessionDeletionCopy `json:"copies"`
-	Images                     []ImageAttachment     `json:"images,omitempty"`
-	PreparationDigests         []string              `json:"preparation_digests"`
-	SnapshotPreparationDigests []string              `json:"snapshot_preparation_digests,omitempty"`
-	SharedCleanupOwnerDeviceID ID                    `json:"shared_cleanup_owner_device_id,omitempty"`
+	GeneratedImageCleanup      bool                               `json:"generated_image_cleanup,omitempty"`
+	SkillSnapshots             []SkillBinding                     `json:"skill_snapshots,omitempty"`
+	Fork                       *SessionDeletionFork               `json:"fork,omitempty"`
+	Version                    uint32                             `json:"version"`
+	DeletionID                 ID                                 `json:"deletion_id"`
+	ServerID                   ID                                 `json:"server_id"`
+	SessionID                  ID                                 `json:"session_id"`
+	MachineID                  ID                                 `json:"machine_id"`
+	DeviceID                   ID                                 `json:"device_id"`
+	Copies                     []SessionDeletionCopy              `json:"copies"`
+	Images                     []ImageAttachment                  `json:"images,omitempty"`
+	PreparationDigests         []string                           `json:"preparation_digests"`
+	SnapshotPreparationDigests []string                           `json:"snapshot_preparation_digests,omitempty"`
+	SharedCleanupOwnerDeviceID ID                                 `json:"shared_cleanup_owner_device_id,omitempty"`
+	PreviousForkChildProcesses []SessionDeletionPreviousForkChild `json:"previous_fork_child_processes,omitempty"`
 	// PreviousDigest authorizes a one-time receipt migration when the server
-	// derives a missing legacy shared-cleanup owner. It is itself bound by the
-	// current digest and must equal the digest of this work without the owner.
+	// derives legacy ownership and fork-child inventory. It is itself bound by
+	// the current digest and must equal the canonical pre-enrichment work.
 	PreviousDigest           string            `json:"previous_digest,omitempty"`
 	PreservedGeneratedImages []ImageAttachment `json:"preserved_generated_images,omitempty"`
+}
+
+// SessionDeletionPreviousForkChild binds a server-derived child process ID
+// that was absent from a legacy work copy when PreviousDigest was recorded.
+type SessionDeletionPreviousForkChild struct {
+	JobID          ID `json:"job_id"`
+	ChildSessionID ID `json:"child_session_id"`
 }
 
 func (w SessionDeletionWork) Validate() error {
@@ -88,10 +96,35 @@ func (w SessionDeletionWork) Validate() error {
 	if w.SharedCleanupOwnerDeviceID != "" && w.SharedCleanupOwnerDeviceID.Validate() != nil {
 		return SessionDeletionPending()
 	}
+	if len(w.PreviousForkChildProcesses) > MaxSessionDeletionJobs || len(w.PreviousForkChildProcesses) > 0 && w.PreviousDigest == "" {
+		return SessionDeletionPending()
+	}
 	if w.PreviousDigest != "" {
 		legacy := w
+		legacy.Copies = append([]SessionDeletionCopy(nil), w.Copies...)
 		legacy.SharedCleanupOwnerDeviceID = ""
 		legacy.PreviousDigest = ""
+		legacy.PreviousForkChildProcesses = nil
+		copyIndices := make(map[ID]int, len(legacy.Copies))
+		for i, copy := range legacy.Copies {
+			copyIndices[copy.JobID] = i
+		}
+		seenForkJobs, seenChildren := map[ID]bool{}, map[ID]bool{}
+		for _, previous := range w.PreviousForkChildProcesses {
+			if previous.JobID.Validate() != nil || previous.ChildSessionID.Validate() != nil || seenForkJobs[previous.JobID] || seenChildren[previous.ChildSessionID] {
+				return SessionDeletionPending()
+			}
+			seenForkJobs[previous.JobID], seenChildren[previous.ChildSessionID] = true, true
+			i, found := copyIndices[previous.JobID]
+			if !found {
+				return SessionDeletionPending()
+			}
+			copy := &legacy.Copies[i]
+			if copy.Type != ForkSessionJob || copy.ExecutionID == "" || copy.UnpublishedSidechatID != "" || copy.UnpublishedChildProcessID != previous.ChildSessionID {
+				return SessionDeletionPending()
+			}
+			copy.UnpublishedChildProcessID = ""
+		}
 		if w.SharedCleanupOwnerDeviceID == "" || !deletionHash(w.PreviousDigest) || legacy.Digest() != w.PreviousDigest {
 			return SessionDeletionPending()
 		}

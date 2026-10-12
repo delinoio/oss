@@ -291,6 +291,12 @@ original report identity and progress stages. Missing, mismatched or ambiguous
 proof remains pending; this migration never reconstructs a missing receipt or
 grants multi-device shared-path ownership.
 
+If that same legacy work also lacks the child process identity for a failed
+independent Fork, reconcile both derived fields against the original assignment
+and retain the original work digest as the migration proof. Bind the derived
+child identity to its original Fork job so the digest migration cannot authorize
+a changed child. Missing or mismatched assignment evidence remains pending.
+
 A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
 immutable assignment instance/revision/hash; reports additionally require a live

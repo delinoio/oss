@@ -468,8 +468,15 @@ func (s *Store) reconcileSessionDeletionForkOwners(ctx context.Context, v *Sessi
 // Acknowledged plans and removed databases cannot recreate missing authority.
 func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
 	changed := false
-	if reconcileUnambiguousLegacySharedCleanupOwners(v) {
-		changed = true
+	legacyOwnerDigests := make([]string, len(v.Workers))
+	needsLegacyOwner := make([]bool, len(v.Workers))
+	derivedForkChildren := make([][]domain.SessionDeletionPreviousForkChild, len(v.Workers))
+	for i := range v.Workers {
+		work := &v.Workers[i].Work
+		if !v.Workers[i].Acknowledged && work.SharedCleanupOwnerDeviceID == "" && (len(work.Copies) > 0 || work.Fork != nil) {
+			needsLegacyOwner[i] = true
+			legacyOwnerDigests[i] = work.Digest()
+		}
 	}
 	for wi := range v.Workers {
 		worker := &v.Workers[wi]
@@ -500,7 +507,20 @@ func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
 				return false, domain.SessionDeletionPending()
 			}
 			copy.UnpublishedChildProcessID = input.ChildSessionID
+			if needsLegacyOwner[wi] {
+				derivedForkChildren[wi] = append(derivedForkChildren[wi], domain.SessionDeletionPreviousForkChild{JobID: copy.JobID, ChildSessionID: input.ChildSessionID})
+			}
 			changed = true
+		}
+	}
+	if reconcileUnambiguousLegacySharedCleanupOwners(v) {
+		changed = true
+		for i := range v.Workers {
+			if !needsLegacyOwner[i] || v.Workers[i].Work.SharedCleanupOwnerDeviceID == "" {
+				continue
+			}
+			v.Workers[i].Work.PreviousDigest = legacyOwnerDigests[i]
+			v.Workers[i].Work.PreviousForkChildProcesses = derivedForkChildren[i]
 		}
 	}
 	for i := range v.Dependents {
