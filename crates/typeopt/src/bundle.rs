@@ -60,7 +60,7 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
                 i += 1;
             }
             if i >= bytes.len() || bytes[i] == b'>' {
-                i += 1;
+                i = (i + 1).min(bytes.len());
                 break;
             }
             let name_start = i;
@@ -96,7 +96,7 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
                 i = j;
             }
             if attribute.is_empty() {
-                i += 1;
+                i = (i + 1).min(bytes.len());
                 continue;
             }
             attributes.push((attribute, value));
@@ -663,6 +663,10 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["script", "p"]);
         assert_eq!(tags[0].attribute("src"), None);
+        // Unterminated markup at the end of a page.
+        for html in ["<script src=a.js", "<p a=", "<p =", "<script>x", "<a b='c"] {
+            let _ = html_tags(html);
+        }
     }
 
     #[test]
