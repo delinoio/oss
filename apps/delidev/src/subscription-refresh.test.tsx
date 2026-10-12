@@ -324,9 +324,9 @@ it("read-only explicit refresh fences an already-open logout confirmation and pe
   act(() => action("Confirm logout")());
   expect(f.lifecycle).not.toHaveBeenCalled();
   expect(f.quota).not.toHaveBeenCalled();
-  const cancel = screen.getByRole("button", { name: "Keep account connected" });
-  expect((cancel as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(cancel);
+  const dismiss = screen.getByRole("button", { name: "Close Log out" });
+  expect((dismiss as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(dismiss);
   expect(screen.queryByRole("button", { name: "Confirm logout" })).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Back to subscriptions" }),
