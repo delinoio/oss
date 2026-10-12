@@ -538,7 +538,7 @@ func managedForkItem(raw json.RawMessage, kind string) bool {
 // ForkDirectoryThread maps an authenticated selected location to the child's
 // original roots and requires the same cold-start reload evidence as Resume.
 func (c *Client) ForkDirectoryThread(ctx context.Context, request domain.ID, source *ForkSource, settings ThreadSettings) (ThreadResult, error) {
-	if !directoryInsideOriginalRoots(settings.Cwd, settings.WorkspaceRoots) {
+	if c.version != NativeShellVersion || !directoryInsideOriginalRoots(settings.Cwd, settings.WorkspaceRoots) {
 		return ThreadResult{}, directoryUncertain()
 	}
 	settings.directoryFork = true
