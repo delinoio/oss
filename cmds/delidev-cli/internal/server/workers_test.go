@@ -76,7 +76,7 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("foreign machine attached: %v", err)
 	}
-	attach := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}
+	attach := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1}}
 	// Verify duplicate rejection across the entire negotiated set, including
 	// non-adjacent entries and duplicates after both older capabilities.
 	for _, capabilities := range [][]pb.WorkerCapability{
@@ -89,8 +89,20 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 			t.Fatalf("duplicate Worker capability accepted: %v", err)
 		}
 	}
-	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); err != nil {
+	attached, err := client.AttachWorker(ctx, ownerRequest(one, attach))
+	if err != nil {
 		t.Fatal(err)
+	}
+	var negotiated domain.Machine
+	if err := domain.Decode(attached.Msg.Machine.DocumentJson, &negotiated); err != nil {
+		t.Fatal(err)
+	}
+	managedClaude := false
+	for _, capability := range negotiated.WorkerCapabilities {
+		managedClaude = managedClaude || capability == domain.ManagedClaudeTokensV1
+	}
+	if !managedClaude {
+		t.Fatal("managed Claude token capability was not retained after Worker attachment")
 	}
 	second := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version}
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, second)); connect.CodeOf(err) != connect.CodeAborted {

@@ -176,6 +176,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.NativeClaudeSubscriptionsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1:
 			capabilities = append(capabilities, domain.ManagedCodexSubscriptionsV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CLAUDE_TOKENS_V1:
+			capabilities = append(capabilities, domain.ManagedClaudeTokensV1)
 		default:
 			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "The Worker reported an unknown native capability.", "Upgrade the Worker and report only verified capability identifiers."), correlation)
 		}
