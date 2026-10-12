@@ -33,7 +33,7 @@ function Rows({ selected = vi.fn() }: { selected?: () => void }) {
 function harness(
   active = true,
   overrides: Record<string, unknown> = {},
-  selected = vi.fn(),
+  selected: () => void = vi.fn(),
 ) {
   let changed: (value: unknown) => void = () => {};
   const bridge: ShortcutPreferenceBridge = {
