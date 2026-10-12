@@ -17,7 +17,7 @@ func codexTerminalStatusFixture(t *testing.T) (*CodexEventPublisher, *openCodeBi
 	p := &ExecutionPublisher{config: PublicationConfig{Root: f.root, Instance: instance, Credential: Credential{MachineID: f.input.MachineID}}, execution: f.input.ExecutionID, job: f.jobID, input: f.input, path: filepath.Join(f.root, "publication.json"), state: publicationJournal{Version: 1, JobID: f.jobID, InstanceID: instance}}
 	rpc := &openCodeBindingRPC{t: t, publisher: p}
 	p.config.Client = rpc
-	c := NewCodexEventPublisher(p)
+	c := NewCodexEventPublisher(p, true)
 	if err := c.BindThread(context.Background(), f.bound); err != nil {
 		t.Fatal(err)
 	}

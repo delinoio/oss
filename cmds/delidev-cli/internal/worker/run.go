@@ -40,6 +40,7 @@ type Config struct {
 	network                  *workerNetworkRuntime
 	observations             *managedObservationRegistry
 	quotaBlockSupported      bool
+	functionOutputsSupported bool
 	inspectionMetadata       bool
 	remoteWorkspaceClone     bool
 	repositoryClone          bool
@@ -284,6 +285,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
 		config.quotaBlockSupported = false
+		config.functionOutputsSupported = false
 		claudeCapabilityExpected := false
 		metadataExpected := false
 		remoteCloneExpected := false
@@ -313,9 +315,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			verifiedTitleProfile := true
 			managedCapabilityExpected = true
 			config.quotaBlockSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
+			config.functionOutputsSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1)
 			titleCapabilityExpected = true
 			profile := "implemented-adapters-v1"
-			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
+			if config.functionOutputsSupported {
 				profile += "\x00codex-function-outputs-v1"
 			}
 			if config.quotaBlockSupported {

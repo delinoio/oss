@@ -75,3 +75,18 @@ func TestCodexFunctionOutputRejectsForeignChangedAndDuplicateEvidence(t *testing
 		})
 	}
 }
+
+func TestCodexFunctionOutputRemainsPrivateWithoutNegotiation(t *testing.T) {
+	c, rpc := codexTerminalStatusFixture(t)
+	c.functionOutputsSupported = false
+	text := "private legacy-peer result"
+	event := codex.Event{Kind: codex.FunctionOutputEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: "original-output", Correlated: true, FunctionOutput: &domain.FunctionOutput{Name: "tool", Text: &text}, FunctionOutputStage: domain.FunctionOutputCompleted}
+	before := len(rpc.events)
+	if handled, err := c.PublishCore(context.Background(), event); !handled || err != nil || c.blocked || len(rpc.events) != before {
+		t.Fatal("unsupported peer received the private function output", err)
+	}
+	terminal := codex.Event{Kind: codex.TurnCompletedEvent, ThreadID: c.thread, TurnID: c.turn, Correlated: true, Turn: &codex.Turn{ID: c.turn, Status: codex.TurnCompleted}}
+	if handled, err := c.PublishCore(context.Background(), terminal); !handled || err != nil || !c.finished {
+		t.Fatal("private output prevented independent turn completion", err)
+	}
+}
