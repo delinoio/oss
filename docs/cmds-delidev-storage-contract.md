@@ -1547,11 +1547,15 @@ After full immutable work and workspace validation, synchronize a private native
 removal admission before committing `RemovalStarted` or invoking workspace Git
 removal. The record binds the original server/session/deletion/machine/device,
 complete work digest and report receipt. It contains only relative names and
-stable native identities, bounded to 100,000 entries and 32 MiB. Unix captures
-no-follow metadata without opening or reading managed content, so unreadable
-files and socket nodes remain eligible for cleanup. Windows captures
-volume/file-index values from an open no-follow handle. Path-based lazy file
-identity cannot grant removal.
+stable native identities, bounded to 100,000 entries and 32 MiB. Version-2
+admissions also retain the native creation identity with each device/file/type
+tuple: Linux uses no-follow `statx` birth time, macOS uses no-follow birth-time
+metadata, and Windows uses creation time from an open no-follow handle. Unix
+captures metadata without opening or reading managed content, so unreadable
+files and socket nodes remain eligible for cleanup. If the platform or file
+system cannot supply creation identity, admission remains pending. A tuple-only
+admission cannot authorize removal after this format change. Path-based lazy
+file identity cannot grant removal.
 
 Traversal admission rejects changed identities, unknown names, ancestor changes
 and creations at originally absent operands. Every generic unlink rechecks its
@@ -1564,7 +1568,9 @@ complete absence rule can finish it. Untouched historical work still requires fu
 original ownership validation. Reappearance keeps cleanup unacknowledged.
 
 Independent workspace storage, skills, images and unpublished-child cleanup keep
-their original ownership controls. This metadata adds no protocol or migration.
+their original ownership controls. This metadata adds no protocol or database
+migration; the private native admission format requires version 2 with creation
+identity.
 The final native check-to-unlink syscall race remains a separate limitation;
 these checks do not provide atomic protection against hostile same-user changes.
 

@@ -16,12 +16,14 @@ import (
 const MaxRemovalAdmissionEntries = 100000
 const MaxRemovalAdmissionBytes = 32 << 20
 
-// NativeIdentity is metadata only: stable native volume/device, file number and
-// object type. It deliberately excludes content, timestamps and private paths.
+// NativeIdentity is metadata only: stable native volume/device, file number,
+// object type and platform creation identity. It excludes content, mutable file
+// timestamps and private paths.
 type NativeIdentity struct {
-	Device uint64 `json:"device"`
-	File   uint64 `json:"file"`
-	Kind   uint32 `json:"kind"`
+	Device     uint64 `json:"device"`
+	File       uint64 `json:"file"`
+	Kind       uint32 `json:"kind"`
+	Generation string `json:"generation"`
 }
 type RemovalEntry struct {
 	Path     string          `json:"path"`
@@ -48,7 +50,7 @@ func removalRelative(root, path string) (string, error) {
 // CaptureRemovalAdmission precedes the caller's ownership reads. It never
 // follows a symlink and pins existing ancestors before entering an operand.
 func CaptureRemovalAdmission(ctx context.Context, root string, paths []string) (*RemovalAdmission, error) {
-	a := &RemovalAdmission{Version: 1}
+	a := &RemovalAdmission{Version: 2}
 	canonical, err := filepath.EvalSymlinks(root)
 	if err != nil || canonical != root || !filepath.IsAbs(root) {
 		return nil, domain.SessionDeletionPending()
@@ -209,11 +211,11 @@ func (a *RemovalAdmission) Extend(ctx context.Context, root string, paths []stri
 }
 
 func (a *RemovalAdmission) Validate() error {
-	if a == nil || a.Version != 1 || len(a.Ancestors) == 0 || len(a.Ancestors) > 1024 || len(a.Entries) == 0 || len(a.Entries) > MaxRemovalAdmissionEntries || len(a.Operands) > MaxRemovalAdmissionEntries {
+	if a == nil || a.Version != 2 || len(a.Ancestors) == 0 || len(a.Ancestors) > 1024 || len(a.Entries) == 0 || len(a.Entries) > MaxRemovalAdmissionEntries || len(a.Operands) > MaxRemovalAdmissionEntries {
 		return domain.SessionDeletionPending()
 	}
 	for _, id := range a.Ancestors {
-		if id.Kind != uint32(os.ModeDir) || id.File == 0 {
+		if id.Kind != uint32(os.ModeDir) || id.File == 0 || id.Generation == "" {
 			return domain.SessionDeletionPending()
 		}
 	}
@@ -225,7 +227,7 @@ func (a *RemovalAdmission) Validate() error {
 		if filepath.IsAbs(entry.Path) || filepath.Clean(entry.Path) != entry.Path || entry.Path == ".." || strings.HasPrefix(entry.Path, ".."+string(filepath.Separator)) || entries[entry.Path] {
 			return domain.SessionDeletionPending()
 		}
-		if entry.Identity != nil && entry.Identity.File == 0 {
+		if entry.Identity != nil && (entry.Identity.File == 0 || entry.Identity.Generation == "") {
 			return domain.SessionDeletionPending()
 		}
 		entries[entry.Path] = true

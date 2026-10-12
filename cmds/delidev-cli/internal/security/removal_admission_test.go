@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func admissionRoot(t *testing.T) string {
@@ -43,6 +44,48 @@ func admissionFile(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRemovalAdmissionRequiresNativeGeneration(t *testing.T) {
+	root := admissionRoot(t)
+	path := filepath.Join(root, "file")
+	admissionFile(t, path)
+	a := captureAdmission(t, root, path)
+	var original NativeIdentity
+	for i := range a.Entries {
+		if a.Entries[i].Path == "file" {
+			original = *a.Entries[i].Identity
+			a.Entries[i].Identity.Generation = "different:" + original.Generation
+		}
+	}
+	if original.File == 0 || original.Generation == "" || a.Validate() != nil {
+		t.Fatal("captured admission lacks a valid generation")
+	}
+	for i := range a.Entries {
+		if a.Entries[i].Path == "file" {
+			id := a.Entries[i].Identity
+			if id.Device != original.Device || id.File != original.File || id.Kind != original.Kind {
+				t.Fatal("test did not retain the original native tuple")
+			}
+		}
+	}
+	if err := a.Check(context.Background(), root, false); err == nil {
+		t.Fatal("matching device, file and kind bypassed a different generation")
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	admissionFile(t, path)
+	recreated, err := CaptureNativeIdentity(path)
+	if err != nil {
+		t.Fatal("capture recreated file", err)
+	}
+	if recreated.Generation == original.Generation {
+		t.Fatal("recreated object reused its creation identity")
+	}
+}
+
 func TestOwnedTreeAdmissionRejectsReplacementAndRetainsOriginal(t *testing.T) {
 	for _, kind := range []string{"file", "tree", "ancestor"} {
 		t.Run(kind, func(t *testing.T) {

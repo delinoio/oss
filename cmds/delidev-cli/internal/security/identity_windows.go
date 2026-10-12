@@ -5,8 +5,10 @@ package security
 
 import (
 	"errors"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
+	"strconv"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
 	"golang.org/x/sys/windows"
 )
@@ -31,11 +33,15 @@ func CaptureNativeIdentity(path string) (NativeIdentity, error) {
 	if info.FileIndexHigh == 0 && info.FileIndexLow == 0 {
 		return NativeIdentity{}, domain.SessionDeletionPending()
 	}
+	generation := uint64(info.CreationTime.HighDateTime)<<32 | uint64(info.CreationTime.LowDateTime)
+	if generation == 0 {
+		return NativeIdentity{}, domain.SessionDeletionPending()
+	}
 	kind := os.FileMode(0)
 	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 		kind = os.ModeSymlink
 	} else if info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
 		kind = os.ModeDir
 	}
-	return NativeIdentity{Device: uint64(info.VolumeSerialNumber), File: uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow), Kind: uint32(kind)}, nil
+	return NativeIdentity{Device: uint64(info.VolumeSerialNumber), File: uint64(info.FileIndexHigh)<<32 | uint64(info.FileIndexLow), Kind: uint32(kind), Generation: strconv.FormatUint(generation, 10)}, nil
 }
