@@ -2169,6 +2169,7 @@ function ProjectFields({
   supportsProjectBehavior = false,
   supportsSessionDefaults = false,
 }: FieldsProps) {
+  const productLabel = useProductLabels();
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
