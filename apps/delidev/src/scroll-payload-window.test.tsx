@@ -6,10 +6,7 @@ import {
   ScrollPayloadWindow,
   type PayloadWindowQuery,
 } from "./scroll-payload-window";
-import {
-  orderedPageEntries,
-  PageEntryKind,
-} from "./interaction-presentation";
+import { orderedPageEntries, PageEntryKind } from "./interaction-presentation";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 
 type Row = { id: string; revision: bigint; text: string };
@@ -149,13 +146,7 @@ const fourPages = (resident: number[]): Query => ({
 });
 // Mirrors the session request tray: receipts replace evicted question rows at
 // their retained row position and resident rows render as normal forms.
-function Tray({
-  query,
-  receipts,
-}: {
-  query: Query;
-  receipts: string[];
-}) {
+function Tray({ query, receipts }: { query: Query; receipts: string[] }) {
   const root = useRef<HTMLDivElement>(null);
   const known = new Map(receipts.map((id) => [id, id]));
   return (
@@ -228,14 +219,12 @@ it("renders one receipt per original question across restore and eviction cycles
   for (let cycle = 0; cycle < 3; cycle++) {
     // Restored page one has a resident form and no receipt; page four is evicted.
     view.rerender(<Tray query={fourPages([0, 1, 2])} receipts={[]} />);
-    expect(labels(view.container)).toEqual([
-      ...expected(true),
-      restore,
-    ]);
+    expect(labels(view.container)).toEqual([...expected(true), restore]);
     // Evicting page one again restores the same single receipt at its position.
     view.rerender(<Tray query={fourPages([1, 2, 3])} receipts={["q1"]} />);
-    expect(labels(view.container).filter((value) => value === "Receipt q1"))
-      .toHaveLength(1);
+    expect(
+      labels(view.container).filter((value) => value === "Receipt q1"),
+    ).toHaveLength(1);
     expect(labels(view.container).slice(0, 6)).toEqual(expected(false));
   }
 });
