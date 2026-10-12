@@ -332,7 +332,16 @@ func (m *Manager) DeleteOwnedWorkspaceAdmitted(ctx context.Context, w domain.Ses
 			stage = "git-removal"
 			if present {
 				gitRemovals = append(gitRemovals, func() error {
-					if err := admission.CheckTree(ctx, m.Root, repo.Path); err != nil {
+					if _, err := os.Lstat(repo.Path); errors.Is(err, os.ErrNotExist) {
+						// Storage cleanup may already have removed the original tree while
+						// leaving its Git registration for permanent deletion to retire.
+						// Revalidate the captured absence before unregistering that stale path.
+						if err := admission.Check(ctx, m.Root, true); err != nil {
+							return err
+						}
+					} else if err != nil {
+						return domain.SessionDeletionPending()
+					} else if err := admission.CheckTree(ctx, m.Root, repo.Path); err != nil {
 						return err
 					}
 					_, err := git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", repo.Path)
