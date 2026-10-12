@@ -2645,7 +2645,7 @@ Closure returns original process-join and helper-retirement results independentl
 ## Codex native shell profile
 
 The closed native shell adapter uses the independently detected Codex `0.162.0`
-profile and experimental ThreadProtocol initialization. It sends exactly one
+profile and experimental ThreadProtocol initialization. Worker capability admission requires the detected installation profile; server acceptance verifies the original retained startup version. The replacement process must report that same exact version during initialization before its original action can be claimed or sent. A configured version cannot substitute for initialized-process evidence. It sends exactly one
 `thread/shellCommand` request with the original thread, exact accepted command
 and optional timeout after the durable Worker claim and private send fence.
 Native Codex trims the command and runs it outside the thread sandbox with full

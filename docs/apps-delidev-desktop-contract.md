@@ -6085,3 +6085,32 @@ English/Korean Settings search includes the Codex page and field targets. Native
 selects, labels and reset buttons retain keyboard access; locale changes preserve
 control identity and draft focus. Existing semantic themes, 1040px content/720px
 forms, 40px controls, 8px corners and narrow wrapping remain authoritative.
+
+## Explicit native command pane
+
+The session Tools menu opens Native commands in a connection-owned resource tab.
+The pane follows the [native shell action contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands).
+It displays a persistent full-access notice stating that execution takes place on
+the original Runner outside the thread sandbox. Commands require a supported,
+settled original Codex session, complete original cleanup and a separate explicit
+confirmation of the exact command. Agent text, conversation submission and
+terminal input cannot populate or send an authorized native action.
+
+The command field receives focus when the pane opens. Optional timeout seconds
+preserve omitted one-hour defaults and explicit zero for immediate timeout. The
+confirmation freezes exact command, timeout and session revision; a changed
+session cannot send the old confirmation. Cancel and Escape dismiss the
+confirmation without execution. Controls use existing theme tokens, wrapping
+layout, minimum 40-pixel hit targets and complete English/Korean copy.
+
+Accepted and uncertain commands retain their original request/action identity in
+the connection mutation registry. Reopening the pane reads the same action; after
+a fresh connection the original retained job selects its action. Status reads
+never send a command. The pane validates exact action/session identity and bounded
+typed output, distinguishes native completion from pending child cleanup, and
+permits Stop command only for that original action revision. An uncertain run or
+cancel has status-only recovery; it does not offer resend. A subsequent command
+requires independent terminal cleanup evidence and a fresh explicit confirmation.
+Closing the pane detaches observation without stopping its original process.
+Product terminals, background-process controls and conversation drafts preserve
+their independent ownership.

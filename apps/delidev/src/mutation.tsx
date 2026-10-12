@@ -201,7 +201,10 @@ function connectionOwned(key: string) {
   if (key.startsWith("tailscale:")) return true;
   return (
     existingRepositoryConfiguration(key) ||
-    key.startsWith(sessionInboxReadPrefix)
+    key.startsWith(sessionInboxReadPrefix) ||
+    key.startsWith("native-command:") ||
+    key.startsWith("native-command-run:") ||
+    key.startsWith("native-command-cancel:")
   );
 }
 function useIntentRegistry(key: string) {

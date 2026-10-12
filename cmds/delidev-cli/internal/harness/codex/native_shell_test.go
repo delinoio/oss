@@ -12,6 +12,18 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+func TestNativeShellRejectsActualInitializedVersionBeforeClaim(t *testing.T) {
+	config := fixtureConfig(t, "thread-ready")
+	config.Mode = ThreadProtocol
+	config.Version = NativeShellVersion
+	config.NativeShell = true
+	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.163.0")
+	client, err := Open(context.Background(), config)
+	if client != nil || err == nil || domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("configured version substituted for the initialized native shell profile", err)
+	}
+}
+
 // This fixture records the native request before losing or corrupting its
 // acknowledgment. It does not execute a real shell or prove platform cleanup.
 func (f *threadFixture) handleNativeShell(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {

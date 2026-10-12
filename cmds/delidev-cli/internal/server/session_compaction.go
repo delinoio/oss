@@ -65,14 +65,10 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 	if shell {
 		// Only original initialized startup evidence can admit this closed native
 		// profile. Machine capability and configured version are insufficient.
-		version := original.Installation.Version
-		if original.Version == 4 {
-			if j.Startup == nil || j.Startup.JobID != r.ID || j.Startup.ExecutionID != original.ExecutionID || j.Startup.Ready == nil || j.Startup.Ready.Validate() != nil || j.Startup.Failure != nil {
-				return empty, domain.Fail(domain.Unsupported, "The original native shell profile is unavailable.", "Refresh the original Worker; no command was accepted or sent.")
-			}
-			version = j.Startup.Ready.NativeVersion
+		if original.Version != 4 || j.Startup == nil || j.Startup.JobID != r.ID || j.Startup.ExecutionID != original.ExecutionID || j.Startup.Ready == nil || j.Startup.Ready.Validate() != nil || j.Startup.Failure != nil {
+			return empty, domain.Fail(domain.Unsupported, "The original native shell profile is unavailable.", "Refresh the original Worker; no command was accepted or sent.")
 		}
-		if version != "0.162.0" {
+		if j.Startup.Ready.NativeVersion != "0.162.0" {
 			return empty, domain.Fail(domain.Unsupported, "The original Codex version has no supported native shell profile.", "Use the validated original Codex runtime before requesting a command.")
 		}
 	}

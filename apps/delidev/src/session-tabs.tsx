@@ -23,6 +23,7 @@ export enum SessionTabKind {
   Browser = "browser",
   Page = "page",
   Diagnostics = "diagnostics",
+  NativeCommands = "native-commands",
   Sidechat = "sidechat",
   PendingSidechat = "pending-sidechat",
 }
@@ -34,7 +35,8 @@ export type SessionTab =
         | SessionTabKind.Diff
         | SessionTabKind.Terminals
         | SessionTabKind.Browser
-        | SessionTabKind.Diagnostics;
+        | SessionTabKind.Diagnostics
+        | SessionTabKind.NativeCommands;
     }
   | { kind: SessionTabKind.File; repository: string; path: string }
   | {

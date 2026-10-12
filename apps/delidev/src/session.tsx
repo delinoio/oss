@@ -90,6 +90,7 @@ import { NativeGrokTool } from "./native-grok-interactions";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
 import { SessionBrowser } from "./session-browser";
 import { SessionFiles, SessionFilePreview } from "./session-files";
+import { NativeCommands } from "./native-commands";
 import { RequestDiagnostics } from "./request-diagnostics";
 import { SessionDiff } from "./session-diff";
 import { NativeBuiltin, NativeWorkspaceEvent } from "./native-builtin";
@@ -832,6 +833,7 @@ enum SessionPanel {
   Terminals = "terminals",
   Browser = "browser",
   Diagnostics = "diagnostics",
+  NativeCommands = "native-commands",
 }
 enum InfoTarget {
   Status = "status",
@@ -934,18 +936,20 @@ export function SessionView({
     return () => controller.abort();
   }, [id, conversationActive, submissionTransport, submissions.store]);
   const panel =
-    tabs.tab.kind === SessionTabKind.Conversation
-      ? SessionPanel.Closed
-      : tabs.tab.kind === SessionTabKind.Files
-        ? SessionPanel.Files
-        : tabs.tab.kind === SessionTabKind.Diff
-          ? SessionPanel.Diff
-          : tabs.tab.kind === SessionTabKind.Diagnostics
-            ? SessionPanel.Diagnostics
-            : tabs.tab.kind === SessionTabKind.Page ||
-                tabs.tab.kind === SessionTabKind.Browser
-              ? SessionPanel.Browser
-              : SessionPanel.Closed;
+    tabs.tab.kind === SessionTabKind.NativeCommands
+      ? SessionPanel.NativeCommands
+      : tabs.tab.kind === SessionTabKind.Conversation
+        ? SessionPanel.Closed
+        : tabs.tab.kind === SessionTabKind.Files
+          ? SessionPanel.Files
+          : tabs.tab.kind === SessionTabKind.Diff
+            ? SessionPanel.Diff
+            : tabs.tab.kind === SessionTabKind.Diagnostics
+              ? SessionPanel.Diagnostics
+              : tabs.tab.kind === SessionTabKind.Page ||
+                  tabs.tab.kind === SessionTabKind.Browser
+                ? SessionPanel.Browser
+                : SessionPanel.Closed;
   const conversationRegion = useRef<HTMLDivElement>(null);
   const upperContent = useRef<HTMLDivElement>(null);
   const [filesOpened, setFilesOpened] = useState(false);
@@ -961,6 +965,7 @@ export function SessionView({
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(
     null,
   );
+  const nativeCommandsButton = useRef<HTMLButtonElement>(null);
   const terminalsButton = useRef<HTMLButtonElement>(null);
   const filesButton = useRef<HTMLButtonElement>(null);
   const diffButton = useRef<HTMLButtonElement>(null);
@@ -1665,6 +1670,7 @@ export function SessionView({
     [SessionPanel.Terminals]: terminalsButton,
     [SessionPanel.Browser]: browserButton,
     [SessionPanel.Diagnostics]: diagnosticsButton,
+    [SessionPanel.NativeCommands]: nativeCommandsButton,
   };
   const closeTab = (key: string) => {
     const index = tabs.tabs.findIndex((tab) => sessionTabKey(tab) === key);
@@ -1724,6 +1730,7 @@ export function SessionView({
       [SessionPanel.Terminals]: SessionTabKind.Terminals,
       [SessionPanel.Browser]: SessionTabKind.Browser,
       [SessionPanel.Diagnostics]: SessionTabKind.Diagnostics,
+      [SessionPanel.NativeCommands]: SessionTabKind.NativeCommands,
     } as const;
     const target = { kind: kinds[next] };
     const targetKey = sessionTabKey(target);
@@ -1789,6 +1796,11 @@ export function SessionView({
       panel: SessionPanel.Diagnostics,
       icon: SessionIconKind.Diagnostics,
       label: copy("session.diagnostics_268f14"),
+    },
+    {
+      panel: SessionPanel.NativeCommands,
+      icon: SessionIconKind.Terminals,
+      label: copy("native-commands.title"),
     },
   ] as const;
   const progressRevision = useRef({ id, revision: 0n });
@@ -2950,6 +2962,16 @@ export function SessionView({
                         path,
                       })
                     }
+                  />
+                </div>
+              ) : null}
+              {session && active && panel === SessionPanel.NativeCommands ? (
+                <div className="session-app-panel">
+                  <NativeCommands
+                    key={id}
+                    session={session}
+                    active={active}
+                    close={closePanel}
                   />
                 </div>
               ) : null}

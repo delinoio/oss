@@ -1076,7 +1076,11 @@ explicit `NATIVE_SHELL_ACCESS_FULL_ACCESS` selection. Agent execution credential
 transcript text, native tool results and product terminal input cannot authorize
 this action. The original authenticated actor, request, command bytes, session
 revision, account, machine and predecessor remain immutable. The optional timeout
-is at most one hour; zero requests the native immediate timeout.
+is at most one hour; zero requests the native immediate timeout. Original
+initialized startup evidence must report Codex 0.162.0 before server acceptance.
+Worker capability alone and configured versions cannot substitute for that
+evidence. The new initialized action runtime rechecks this exact native profile
+before the durable send claim.
 
 Acceptance reserves the shared original-session action gate. FIFO input remains
 queued until the action and its independent cleanup settle. The action is a
@@ -1113,5 +1117,7 @@ A canceled action keeps explicit Resume separate from cancellation. The
 [harness](cmds-delidev-harness-contract.md#codex-native-shell-profile),
 [process](cmds-delidev-process-contract.md#native-shell-action-ownership) and
 [storage](cmds-delidev-storage-contract.md#native-shell-action-retention) contracts
-own their independent proof boundaries. CLI and Connect expose this profile;
-this contract does not add a desktop screen.
+own their independent proof boundaries. The desktop Native commands tab, CLI
+and Connect expose the same explicit action. The desktop requires a separate
+full-access confirmation before the original mutation and preserves pending
+action identity across navigation.

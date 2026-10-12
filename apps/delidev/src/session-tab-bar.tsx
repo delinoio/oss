@@ -27,6 +27,8 @@ export function tabName(tab: SessionTab): string {
       return copy("session.terminals_7482c4");
     case SessionTabKind.Browser:
       return copy("session.browser_d31de1");
+    case SessionTabKind.NativeCommands:
+      return copy("native-commands.title");
     case SessionTabKind.Diagnostics:
       return copy("session.diagnostics_268f14");
   }

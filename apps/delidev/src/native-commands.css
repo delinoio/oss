@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.native-commands {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  padding: 20px;
+}
+.native-commands header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.native-commands form {
+  display: grid;
+  gap: 8px;
+}
+.native-commands textarea {
+  width: 100%;
+  resize: vertical;
+}
+.native-commands input {
+  max-width: 200px;
+  min-height: 40px;
+}
+.native-commands button {
+  min-height: 40px;
+  border-radius: 8px;
+}
+.native-command-disclosure {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.native-command-operation {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.native-commands pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.native-command-output {
+  max-height: 360px;
+  overflow: auto;
+}
