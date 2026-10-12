@@ -8,11 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import {
-  Code,
-  ConnectError,
-  createRouterTransport,
-} from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -534,7 +530,9 @@ async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
   };
   const respond = vi
     .fn()
-    .mockRejectedValueOnce(new ConnectError("Lost acknowledgement", Code.Unavailable))
+    .mockRejectedValueOnce(
+      new ConnectError("Lost acknowledgement", Code.Unavailable),
+    )
     .mockImplementation(async () => ({ interaction: returnedResource() }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
@@ -634,9 +632,7 @@ async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
       name: "Restore previously loaded items",
     }),
   );
-  await waitFor(() =>
-    expect(requests.textContent).toContain("First question"),
-  );
+  await waitFor(() => expect(requests.textContent).toContain("First question"));
   const values = () =>
     within(requests)
       .queryAllByRole("textbox", { name: "Your answer" })
@@ -658,7 +654,11 @@ it.each([
   RecoveredResult.Equal,
   RecoveredResult.OtherSession,
   RecoveredResult.OtherInteraction,
-])("keeps the recovered draft when the retry returns a %s result", async (returned) => {
-  const { values } = await recoverThroughEvictedReceipt(returned);
-  expect(values()).toContain("Original response bytes");
-}, 30_000);
+])(
+  "keeps the recovered draft when the retry returns a %s result",
+  async (returned) => {
+    const { values } = await recoverThroughEvictedReceipt(returned);
+    expect(values()).toContain("Original response bytes");
+  },
+  30_000,
+);
