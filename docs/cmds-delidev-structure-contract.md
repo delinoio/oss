@@ -571,3 +571,14 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - pnport cache conformance separates network preparation from offline runs. Pin Yarn/Vitest/Vite; use default Vitest cache settings and verify readiness plus native dependency reads/cache writes in inline/split forms twice. Fresh temporary fixture installs must create their lockfiles under `CI=true`; confine the immutable-install override to those preparation calls. Run the prepared Vitest bin through the supplied packaged CLI's `run --` path so its workers share the matching native view. Each native host validates its packaged CLI with its matching companion. Source-only cache support must not be attributed to immutable published versions.
 
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
+
+## Tailscale source ownership
+
+`internal/tailscale` owns the installed-client adapter and original foreground
+Serve process. `internal/server/tailscale.go` owns the separate ingress, bounded
+private approval/outgoing journals and existing pairing integration.
+`apps/delidev/src/tailscale-connections.tsx` owns Local Connections presentation;
+`protos/delidev/v1/tailscale.proto` owns the additive Connect surface and System 93.
+Follow the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
+The existing SSH installer and detached outbound Worker controller retain their
+independent ownership. No empty migration or new native binding is required.

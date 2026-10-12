@@ -5914,3 +5914,38 @@ Hide the complete Agent requests disclosure only when a successful complete resi
 The selected ChatGPT usage popover places a compact Paid credits card above quota within its existing 320px width, 16px padding and viewport-clamped internal scroll. Reuse the subscription presentation contract’s validated saved projection, string-only two-decimal formatter, 24px tabular value, smaller unit and accessible unchanged exact decimal disclosure. Separate multiple buckets in source order with native labels and their original observation times; never sum them. Explicit zero, null/unknown, tiny positive, unlimited, loading, unsupported, stale/future and failed evidence remain distinct. System 76 controls credit display independently of capability-17 inventory admission; other services remain unchanged.
 
 Failed or incomplete saved-resource reads retain original account-bound values and timestamps as historical evidence until a complete accepted replacement. Connection identity replacement resets local disclosure state; authentication loss removes the selected details. Credits do not affect `remainingBadge`, quota windows, read pagination, the existing refresh owner or Recheck saved quota evidence and Manage subscriptions actions. Preserve semantic themes, EN/KO wrapping, narrow and effective 200% reflow, Escape/outside dismissal and opener focus. No new RPC, polling owner, native operation, purchase, consumption or migration is added. Follow [the subscription presentation contract](apps-delidev-subscription-settings-contract.md#paid-credit-observations).
+
+## Tailscale Connections presentation
+
+The main Local Connections screen orders Current connection, Tailscale devices,
+Saved servers and Advanced. Current connection presents explicit access state and
+Enable/Disable. Enable uses the existing focused, Escape-dismissable modal to
+explain tailnet visibility, HTTPS prerequisites and server lifetime. The
+[connections contract](cmds-delidev-connections-contract.md#tailscale-connections)
+owns original ingress, approval, cryptography and recovery authority.
+
+Device rows separate ownership, Tailscale online status and explicit checked
+DeliDev availability. Only an explicit Check probes a peer. Successful normal-TLS
+negotiation admits Connect; Register Worker also requires the selected server's
+reachable access origin and explicit displayed server identity. An online peer
+can prefill its canonical hostname into the existing SSH setup. This preserves
+exact fingerprint consent, write-only credentials and signed Worker-only
+installation. Manual Add server and Runner Device setup stay available.
+
+The connection-owned controller retains approvals and exact accepted mutations
+across Settings departure. Device inventory reads are disposed with their
+presentation; late results cannot change another opening. Target approval modals
+show requester, exact client/Worker intent, original origin and matching code;
+Worker approval also identifies the selected server. Denied, expired, pending,
+completed and uncertain requests remain distinct. Inspect uses the original
+request; uncertainty grants no replacement operation.
+
+English/Korean copy, semantic lists/status announcements, 40px controls, 18px
+headings, wrapping identities/actions and existing light/dark tokens retain the
+1040px Settings cap and narrow reflow. Native two-device/TLS/SSH and packaged
+platform acceptance require separate evidence.
+
+The `tailscale:` retained mutation namespace belongs to the connection registry,
+including submissions initiated from the disposable device list. Accepted
+operations remain recoverable through the original outgoing journal after the
+submitting Settings scope closes.

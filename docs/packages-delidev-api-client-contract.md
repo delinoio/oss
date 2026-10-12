@@ -477,3 +477,8 @@ connection ownership. They localize normalized values without parsing cron or
 computing calendar instants. Unimplemented supports older servers without a new
 capability gate. Preview failure cannot authorize execution or modify retained
 save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
+
+TailscaleService and TailscaleQuery export the generated connection surface under
+the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
+Closed bounded JSON projections retain public observation metadata only; private
+keys, decrypted grants and protected Worker inputs stay Go-owned.

@@ -32,7 +32,7 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	configuration := server.Config{DataDir: o.dataDir, Listen: *listen, TLSCertificate: *cert, TLSKey: *key, Logger: slog.New(slog.NewJSONHandler(streams.Err, nil))}
+	configuration := server.Config{TailnetStartWorker: tailnetWorkerStarter(o), DataDir: o.dataDir, Listen: *listen, TLSCertificate: *cert, TLSKey: *key, Logger: slog.New(slog.NewJSONHandler(streams.Err, nil))}
 	if *startupID != "" {
 		if args[0] != "run" || domain.ID(*startupID).Validate() != nil {
 			return nil, usage()

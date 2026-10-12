@@ -188,12 +188,14 @@ export function SavedConnections({
   actions,
   target,
   advancedTarget,
+  refreshKey,
 }: {
   visible: boolean;
   close: () => void;
   actions: SavedConnectionActions;
   target?: HTMLElement;
   advancedTarget?: HTMLElement;
+  refreshKey?: number;
 }) {
   useLocale();
   const readGeneration = useRef(0);
@@ -262,7 +264,7 @@ export function SavedConnections({
     return () => {
       canceled = true;
     };
-  }, [visible, actions]);
+  }, [visible, actions, refreshKey]);
   let preview: Record<string, unknown> = {};
   if (grant.length <= 32768) {
     try {
