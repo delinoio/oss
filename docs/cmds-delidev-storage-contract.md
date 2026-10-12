@@ -729,6 +729,8 @@ Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 
 - Snapshot staging removal requires the workspace owner's original operation-bound native-directory claim. Join job owners before validated cleanup, include staging claims in permanent-deletion absence inventories, and verify staging remains absent before generic copy cleanup; preserve unknown or reappearing staging. Storage removal namespaces additionally require the workspace owner's original intent, version-2 claim and pinned journal/inventory reconciliation under the existing gates. Generic Worker copy cleanup checks only absence of staging/removal namespaces and never traverses a replacement; retain needed removal proof until that check succeeds.
 
+- Snapshot staging cleanup validates the original operation claim with the storage owner's snapshot preparation digest. Keep that authority separate from workspace preparation digests; only older plans without snapshot-specific digests may use their original preparation-digest list as a scoped fallback.
+
 - Acknowledged failed/canceled storage recovery discards only its pending report receipt after exact result/journal validation, including original report replay after response loss. Preserve predecessor removal intent and keep reported recovery failures from blocking reconnect.
 
 - Lost storage-report replies that replay an acknowledged uncertain job retire only the pending report receipt and mark the original journal reported. Validate exact assignment/input/report identities and recovery-required empty output; retain original removal intents/claims for explicit recovery, as for immediate acknowledgement.

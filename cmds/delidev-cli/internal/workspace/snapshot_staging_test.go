@@ -41,6 +41,70 @@ func TestStorageRecoveryPreservesUnownedStaging(t *testing.T) {
 	}
 }
 
+func TestDeletionStorageStagingUsesSnapshotPreparationDigest(t *testing.T) {
+	for _, scenario := range []string{"snapshot-owner", "legacy-plan", "foreign-digest"} {
+		t.Run(scenario, func(t *testing.T) {
+			m, prepare, manifest := chatExecutionFixture(t)
+			for _, name := range []string{"snapshot-staging", "storage-staging-claims"} {
+				if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
+			staging, err := m.createStorageStaging(input)
+			if err != nil {
+				t.Fatal("could not create the original staging claim", err)
+			}
+			if err := os.WriteFile(filepath.Join(staging, "partial"), []byte("owned staging"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			work := domain.SessionDeletionWork{
+				Version:    1,
+				DeletionID: domain.NewID(),
+				ServerID:   domain.NewID(),
+				SessionID:  prepare.SessionID,
+				MachineID:  prepare.MachineID,
+				DeviceID:   domain.NewID(),
+				Copies: []domain.SessionDeletionCopy{{
+					JobID:      input.OperationID,
+					Type:       domain.WorkspaceStorageJob,
+					Revision:   1,
+					Digest:     strings.Repeat("a", 64),
+					InstanceID: domain.NewID(),
+					SnapshotID: input.SnapshotID,
+				}},
+			}
+			switch scenario {
+			case "snapshot-owner":
+				work.SnapshotPreparationDigests = []string{manifest.InputDigest}
+			case "legacy-plan":
+				work.PreparationDigests = []string{manifest.InputDigest}
+			case "foreign-digest":
+				work.SnapshotPreparationDigests = []string{strings.Repeat("b", 64)}
+			}
+			if err := work.Validate(); err != nil {
+				t.Fatal("fixture has invalid deletion ownership", err)
+			}
+			err = m.cleanupDeletionStaging(context.Background(), work)
+			if scenario == "foreign-digest" {
+				if domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("foreign snapshot digest authorized staging cleanup", err)
+				}
+				if contents, readErr := os.ReadFile(filepath.Join(staging, "partial")); readErr != nil || string(contents) != "owned staging" {
+					t.Fatal("unproved staging was changed", readErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("original snapshot staging could not be cleaned", err)
+			}
+			if _, err := os.Lstat(staging); !os.IsNotExist(err) {
+				t.Fatal("owned staging remained after cleanup", err)
+			}
+		})
+	}
+}
+
 func TestRestoreScratchReplacementRemainsUncertain(t *testing.T) {
 	m, input := storedGeneralChat(t)
 	var replaced string

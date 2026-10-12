@@ -94,6 +94,12 @@ func (m *Manager) cleanupStorageStaging(ctx context.Context, r StorageRequest) e
 // Permanent deletion joins original job owners before this call. Retain proof
 // until the Worker verifies scratch absence and removes its metadata copies.
 func (m *Manager) cleanupDeletionStaging(ctx context.Context, w domain.SessionDeletionWork) error {
+	snapshotDigests := w.SnapshotPreparationDigests
+	if len(snapshotDigests) == 0 {
+		// Older persisted plans used the preparation list for both workspace and
+		// snapshot ownership. Keep that fallback scoped to snapshot staging only.
+		snapshotDigests = w.PreparationDigests
+	}
 	for _, copy := range w.Copies {
 		if copy.Type != domain.WorkspaceStorageJob {
 			continue
@@ -107,7 +113,7 @@ func (m *Manager) cleanupDeletionStaging(ctx context.Context, w domain.SessionDe
 			continue
 		}
 		claim, err := m.readStagingClaim(copy.JobID)
-		if err != nil || claim.Reference.SessionID != w.SessionID || claim.Reference.SnapshotID != copy.SnapshotID || claim.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, claim.PreparationDigest) {
+		if err != nil || claim.Reference.SessionID != w.SessionID || claim.Reference.SnapshotID != copy.SnapshotID || claim.MachineID != w.MachineID || !slices.Contains(snapshotDigests, claim.PreparationDigest) {
 			return domain.SessionDeletionPending()
 		}
 		if err := removeSnapshotTree(ctx, path, claim.RootIdentity); err != nil {
