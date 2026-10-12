@@ -73,8 +73,9 @@ func (o ServerCreditOperation) Validate() error {
 	return nil
 }
 
-// Frozen proof is accepted only while the original failed Execute still owns its
-// Worker lease. Later cleanup cannot turn that immutable proof into a live check.
+// Frozen proof binds automatic spending to the original failed Execute and
+// consent. A completed Worker finish may clear live consent and rotate its
+// generation without revoking the already-admitted server operation.
 type ServerAutomaticCreditProof struct {
 	EpisodeID     ID                          `json:"episode_id"`
 	Epoch         ID                          `json:"epoch"`

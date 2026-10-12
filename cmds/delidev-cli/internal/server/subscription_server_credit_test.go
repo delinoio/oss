@@ -443,6 +443,50 @@ func TestServerCreditPendingServerOwnersRejectConsumption(t *testing.T) {
 
 type creditAccessFixture struct{ n *serverCreditFixture }
 
+func TestAutomaticCreditClaimSurvivesOriginalWorkerFinish(t *testing.T) {
+	f, block := automaticCreditFixture(t, true, false)
+	admitFixture(t, f, &block, "")
+	r, a := f.record()
+	op := *a.Subscription.ServerCredit
+	lease := a.Subscription.Lease
+	bundle, err := f.secrets.Get(creditContext(), credentials.Ref{Owner: r.ID, ID: lease.Generation, Purpose: credentials.AccountLogin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(bundle)
+	workerLease := &pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)}
+	if _, err := f.finish(workerLease, bundle, true, false, true); err != nil {
+		t.Fatal("finish original Worker execution", err)
+	}
+	_, a = f.record()
+	if a.Subscription.AutomaticCreditConsent != nil || a.Subscription.Generation == op.Generation || a.Subscription.Lease != nil || a.Subscription.AutomaticCreditEpisode.OperationID != op.ID {
+		t.Fatal("fixture did not finish and rotate the original Worker generation")
+	}
+	if err := f.service.Store.Read(creditContext(), func(tx *store.Tx) error {
+		_, current, err := subscriptionAccount(tx, r.ID, 0)
+		if err != nil {
+			return err
+		}
+		if !serverCreditAuthority(tx, current, op) {
+			return subscriptionDenied()
+		}
+		return nil
+	}); err != nil {
+		t.Fatal("original frozen operation lost authority after Worker finish", err)
+	}
+
+	_, quota := newServerQuotaFixture(t)
+	native := &serverCreditFixture{serverQuotaFixture: quota, outcome: domain.SubscriptionReset}
+	f.service.creditOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverCreditAccessNative, error) {
+		return creditAccessFixture{native}, nil
+	}
+	f.service.runServerCredit(creditContext(), r.ID)
+	_, a = f.record()
+	if native.count() != 1 || a.Subscription.ServerCredit.Outcome != domain.SubscriptionReset {
+		t.Fatal("automatic credit was not claimed once after original Worker finish")
+	}
+}
+
 func (c creditAccessFixture) ConsumeExternalResetCredit(ctx context.Context, o domain.ServerCreditOperation, _ codex.QuotaAuthentication, checkpoint func(domain.SubscriptionResetOutcome) error) (domain.SubscriptionResetOutcome, domain.SubscriptionQuotaObservation, error, error) {
 	outcome, err := c.n.ConsumeServerResetCredit(ctx, o)
 	if outcome.Valid() && checkpoint != nil {

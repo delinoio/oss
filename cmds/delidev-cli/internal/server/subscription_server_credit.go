@@ -32,10 +32,13 @@ func serverCreditAuthority(tx *store.Tx, a domain.Account, original domain.Serve
 	st := a.Subscription
 	o := st.ServerCredit
 	if original.AccessOnly {
-		if !sameServerCreditProof(o, original) || st.Pending != nil || st.ServerQuotaActive() || st.Observation != nil && st.Observation.Active() || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || a.Connection.ID != original.ConnectionID || st.Generation != original.Generation || subscriptionActorValid(tx, original.Actor) != nil {
+		if !sameServerCreditProof(o, original) || st.Pending != nil || st.ServerQuotaActive() || st.Observation != nil && st.Observation.Active() || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || a.Connection.ID != original.ConnectionID || subscriptionActorValid(tx, original.Actor) != nil {
 			return false
 		}
-		return original.Automatic == nil || frozenAutomaticCreditValid(st, *original.Automatic)
+		if original.Automatic == nil {
+			return st.Generation == original.Generation
+		}
+		return frozenAutomaticCreditValid(st, *original.Automatic) && st.AutomaticCreditEpisode.OperationID == original.ID
 	}
 	return o != nil && o.ID == original.ID && o.AttemptID == original.AttemptID && o.AttemptEpoch == original.AttemptEpoch && o.FinishID == original.FinishID && o.RequestedAt.Equal(original.RequestedAt) && o.Epoch == original.Epoch && o.Actor == original.Actor && o.CreditID == original.CreditID && o.NextCredit == original.NextCredit && o.CreditsObservationID == original.CreditsObservationID && o.ConnectionID == original.ConnectionID && o.Generation == original.Generation && a.Connection.ID == original.ConnectionID && st.Generation == original.Generation && st.ServerQuotaGeneration == original.Generation && st.OwnerMachineID == "" && st.Lease == nil && st.Pending == nil && !st.ServerQuotaActive() && (st.Observation == nil || !st.Observation.Active()) && (st.ServerOperation == nil || !st.ServerOperation.Active() && !st.ServerOperation.NativeStarted) && subscriptionActorValid(tx, original.Actor) == nil
 }
@@ -395,7 +398,16 @@ func sameServerCreditProof(o *domain.ServerCreditOperation, original domain.Serv
 func frozenAutomaticCreditValid(st *domain.SubscriptionState, proof domain.ServerAutomaticCreditProof) bool {
 	c := st.AutomaticCreditConsent
 	e := st.AutomaticCreditEpisode
-	return proof.Validate() == nil && c != nil && *c == proof.Consent && e != nil && e.ID == proof.EpisodeID && reflect.DeepEqual(e.ServerProof, &proof)
+	if proof.Validate() != nil || e == nil || e.ID != proof.EpisodeID || !reflect.DeepEqual(e.ServerProof, &proof) {
+		return false
+	}
+	if c != nil {
+		return *c == proof.Consent && st.Generation == proof.Consent.Generation
+	}
+	// The original Worker may finish after automatic admission. Its durable
+	// finish clears standing consent and rotates the generation, while the
+	// matching episode and operation retain the one already-frozen claim.
+	return e.OperationID != "" && st.Generation.Validate() == nil && st.Generation != proof.Consent.Generation && st.Lease == nil && st.Pending == nil && st.OwnerMachineID == proof.MachineID
 }
 
 // Capture the reference under the same short serialization used by Execute Finish.
