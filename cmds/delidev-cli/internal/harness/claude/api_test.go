@@ -25,14 +25,13 @@ func init() {
 	mode := strings.TrimPrefix(filepath.Base(root), "fixture-api-")
 	managedToken := strings.HasPrefix(mode, "managed-token-")
 	for _, key := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "ANTHROPIC_MODEL", "NODE_OPTIONS", "HTTPS_PROXY", "BASH_ENV"} {
-		value := os.Getenv(key)
-		if value != "" && !(managedToken && (key == "CLAUDE_CODE_OAUTH_TOKEN" || key == "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" && value == "1")) {
+		if os.Getenv(key) != "" && !(managedToken && key == "CLAUDE_CODE_OAUTH_TOKEN") {
 			os.Exit(70)
 		}
 	}
 	nativeSubscription := strings.HasPrefix(mode, "native-subscription-")
 	if managedToken {
-		if os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "synthetic-managed-token" || os.Getenv("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB") != "1" || os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" || os.Getenv("ANTHROPIC_BASE_URL") != "" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "" || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") {
+		if os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "synthetic-managed-token" || os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" || os.Getenv("ANTHROPIC_BASE_URL") != "" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "" || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") {
 			os.Exit(71)
 		}
 	} else if nativeSubscription {
