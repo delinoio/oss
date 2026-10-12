@@ -588,3 +588,7 @@ Native session compaction for the feature follows the planned shared boundary in
 Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
+
+## Codex assistant metadata in retained history
+
+The shared strict assistant decoder validates delivery and embedded questions in live and retained original items. Preserve native omission, null, empty arrays and ordered values without rebuilding the raw history. These fields do not change original compaction/continuation checkpoints, user-input digests, terminal status or original account/process/workspace ownership. Malformed metadata remains a history failure; populated memory citations keep their separate adapter boundary. No embedded question resolves a synchronous interaction or authorizes input.

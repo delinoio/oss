@@ -171,5 +171,9 @@
   "session.budgetTitle": "Session budget reached",
   "session.recoveryTitle": "Recovery required",
   "session.recoveryRegion": "Session recovery",
-  "session.problemCause": "Cause"
+  "session.problemCause": "Cause",
+  "session.asyncMessage": "Asynchronous message",
+  "session.embeddedUnavailable": "The original assistant metadata is unavailable.",
+  "session.embeddedDraftHelp": "Selecting an option adds it to your draft.",
+  "session.embeddedDraftOccupied": "Clear your draft to use a suggestion."
 }

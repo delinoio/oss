@@ -511,3 +511,7 @@ mismatched causes are not typed causes; untyped transport messages never prove
 exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlation
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
+
+## Original Codex assistant metadata
+
+Generated System and Worker `CODEX_ASYNC_MESSAGES_V1` capabilities negotiate the optional typed message metadata under the protocol and harness contracts. Renderer projections preserve separate original started/completed delivery and ordered nullable questions, fail closed on malformed metadata and display escaped text. Explicit option selection can only fill a guarded empty unsent draft through the existing composer owner; it grants no enqueue, control or native response authority. Keep current authenticated transport, session revision, connection and draft generations, attachments, skills and composition guards. No new RPC or persistent client state is introduced.

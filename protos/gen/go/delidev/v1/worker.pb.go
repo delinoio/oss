@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1        WorkerCapability = 60
 	WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1 WorkerCapability = 53
 	WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1           WorkerCapability = 52
 	WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1      WorkerCapability = 22
@@ -69,6 +70,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		60: "WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1",
 		53: "WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1",
 		52: "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
 		22: "WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1",
@@ -109,6 +111,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1":           60,
 		"WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1":    53,
 		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
 		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
@@ -4376,9 +4379,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xda\x0e\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\x89\x0f\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x124\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12-\n" +
+	")WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1\x10<\x124\n" +
 	"0WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1\x105\x12*\n" +
 	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +
 	"+WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1\x10\x16\x121\n" +

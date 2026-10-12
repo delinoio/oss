@@ -527,3 +527,7 @@ account/native assignment retain their existing invariants. Copied history
 remains inspectable when the original common/admin directories are unavailable.
 Sidechat remains metadata-only, and original Local folder lifetimes remain
 unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-contract.md#complete-independent-fork-inventory).
+
+## Original Codex assistant metadata at Fork
+
+The existing bounded retained-history profiles admit strictly validated assistant delivery and embedded questions through the shared native decoder. Keep original raw item bytes and original ordered nullable metadata throughout source comparison and independent Fork verification. This addition changes neither inherited user-input digests nor source/child identity, effective settings, checkpoint, account, cleanup and workspace requirements. Populated memory citations and other unsupported auxiliary families keep their separate boundaries. Embedded questions never become native response owners or inherited control authority.
