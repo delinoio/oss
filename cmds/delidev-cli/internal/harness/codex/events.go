@@ -270,6 +270,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 		if c.problem == nil {
 			c.problem = turnUncertain()
 		}
+		c.preserveSteerRecoveryAfterEventFailure()
 		if c.execution != nil {
 			c.execution.paused = true
 		}
