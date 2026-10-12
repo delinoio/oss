@@ -260,6 +260,7 @@ mod app {
             enabled = ?passes.enabled().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
             "bundle mode passes"
         );
+        bundle::check_integrity(&dir)?;
         let compiler = compiler::Project::load_bundle(&dir)?;
         let snapshot = compiler.snapshot()?;
         check_cancelled()?;

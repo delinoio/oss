@@ -823,6 +823,13 @@ fn rejects_any_spelling_of_subresource_integrity() {
         ]);
         let output = run_typeopt(temp.path(), &[]);
         assert!(!output.status.success(), "{html}");
+        // Check mode is a preflight for the same blocker.
+        let check = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+            .current_dir(temp.path())
+            .args(["--bundle", "dist", "--check"])
+            .output()
+            .unwrap();
+        assert!(!check.status.success(), "{html}");
     }
 }
 

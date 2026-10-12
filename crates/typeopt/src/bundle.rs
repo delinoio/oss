@@ -606,6 +606,29 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
     Ok(renamed.len())
 }
 
+/// Rejects bundles whose HTML pages use Subresource Integrity: the digests
+/// would no longer match edited chunks. Check and output modes both run it
+/// before analysis.
+pub fn check_integrity(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_under(dir, &mut files)?;
+    for file in &files {
+        if file.extension().is_some_and(|e| e == "html")
+            && std::fs::read_to_string(file).is_ok_and(|html| {
+                html_tags(&html)
+                    .iter()
+                    .any(|tag| tag.attribute("integrity").is_some())
+            })
+        {
+            anyhow::bail!(
+                "HTML pages use Subresource Integrity, which bundle mode cannot update; compute \
+                 integrity attributes after typeopt"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// A complete bundle output in an operation-owned staging directory. It is
 /// published only by [`Staged::commit`]; dropping it removes the staging
 /// directory, so a failure after staging never leaves a published result.
@@ -661,23 +684,6 @@ pub fn stage(
     }
     let root = staging.path().join("out");
     copy(source, &root).context("cannot copy bundle directory")?;
-    // Subresource Integrity digests would no longer match edited chunks.
-    let mut files = Vec::new();
-    files_under(&root, &mut files)?;
-    for file in &files {
-        if file.extension().is_some_and(|e| e == "html")
-            && std::fs::read_to_string(file).is_ok_and(|html| {
-                html_tags(&html)
-                    .iter()
-                    .any(|tag| tag.attribute("integrity").is_some())
-            })
-        {
-            anyhow::bail!(
-                "HTML pages use Subresource Integrity, which bundle mode cannot update; compute \
-                 integrity attributes after typeopt"
-            );
-        }
-    }
     let mut edited = BTreeSet::new();
     let mut inline_map_growth: isize = 0;
     let (mut maps, mut dropped) = (0usize, 0usize);
