@@ -284,12 +284,16 @@ pub(crate) fn decode_js_string(raw: &str) -> Option<String> {
             }
             'u' => {
                 let unit = hex(&mut chars, 4)?;
-                // A surrogate pair spans two escapes.
+                // A surrogate pair spans two escapes; an unpaired surrogate
+                // has no Unicode scalar value and counts as unknown.
                 if (0xd800..0xdc00).contains(&unit) {
                     if chars.next()? != '\\' || chars.next()? != 'u' {
                         return None;
                     }
                     let low = hex(&mut chars, 4)?;
+                    if !(0xdc00..0xe000).contains(&low) {
+                        return None;
+                    }
                     out.push(char::from_u32(
                         0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00),
                     )?);
@@ -1207,6 +1211,9 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
             Some("😀")
         );
         assert_eq!(super::decode_js_string(r"bad\u12"), None);
+        // A high surrogate must be followed by a low surrogate.
+        assert_eq!(super::decode_js_string(r"\uD83D\u0041"), None);
+        assert_eq!(super::decode_js_string(r"\uD83D\uE000"), None);
     }
 
     #[test]
