@@ -136,6 +136,33 @@ const viewports = [
   [960, 640],
   [640, 480],
 ];
+// Scoped layout runs derive their summary counts from these matrices so a
+// matrix change cannot leave a stale viewport count in the JSON output.
+const scopedBaseViewports = [
+  [1440, 900],
+  [1100, 768],
+  [760, 768],
+  [600, 768],
+  [1280, 820],
+  [960, 640],
+  [640, 480],
+];
+const wizardBaseViewports = [
+  [1440, 900],
+  [1100, 768],
+  [760, 768],
+  [600, 768],
+  [960, 640],
+  [640, 480],
+];
+// Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
+const wizardEffectiveViewports = [[480, 320]];
+const accountsEffectiveViewports = [
+  [720, 450],
+  [480, 320],
+];
+const githubBaseViewports = wizardBaseViewports;
+const githubEffectiveViewports = accountsEffectiveViewports;
 let checked = 0,
   formsChecked = 0,
   harnessChecks = 0,
@@ -657,15 +684,7 @@ try {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
         for (const zoom of [1, 2])
-          for (const [width, height] of [
-            [1440, 900],
-            [1100, 768],
-            [760, 768],
-            [600, 768],
-            [1280, 820],
-            [960, 640],
-            [640, 480],
-          ]) {
+          for (const [width, height] of scopedBaseViewports) {
             await page.setViewportSize({
               width: width / zoom,
               height: height / zoom,
@@ -824,7 +843,7 @@ try {
         projectRowChecks,
         languages: 2,
         themes: 2,
-        viewports: 4,
+        viewports: scopedBaseViewports.length,
         effectiveZoom: [1, 2],
         nativeAcceptance: "not-performed",
       }),
@@ -834,15 +853,7 @@ try {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
         for (const ordered of [false, true])
-          for (const [width, height] of [
-            [1440, 900],
-            [1100, 768],
-            [760, 768],
-            [600, 768],
-            [960, 640],
-            [640, 480],
-            [480, 320],
-          ]) {
+          for (const [width, height] of [...wizardBaseViewports, ...wizardEffectiveViewports]) {
             await page.setViewportSize({ width, height });
             await page.goto(
               `${origin}/?theme=${theme}&sourceRoutes=${ordered}&language=${language}`,
@@ -994,25 +1005,15 @@ try {
         languages: 2,
         themes: 2,
         generations: 2,
-        viewports: 3,
-        effectiveZoomViewports: 1,
+        viewports: wizardBaseViewports.length,
+        effectiveZoomViewports: wizardEffectiveViewports.length,
         nativeAcceptance: "not-performed",
       }),
     );
   } else if (accountsOnly) {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
-        for (const [width, height] of [
-          [1440, 900],
-          [1100, 768],
-          [760, 768],
-          [600, 768],
-          [1280, 820],
-          [960, 640],
-          [640, 480],
-          [720, 450],
-          [480, 320],
-        ]) {
+        for (const [width, height] of [...scopedBaseViewports, ...accountsEffectiveViewports]) {
           await page.setViewportSize({ width, height });
           await page.goto(
             `${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=${language}`,
@@ -1029,8 +1030,8 @@ try {
         accountsChecks: hiddenChoicesChecked,
         languages: 2,
         themes: 2,
-        viewports: 4,
-        effectiveZoomViewports: 2,
+        viewports: scopedBaseViewports.length,
+        effectiveZoomViewports: accountsEffectiveViewports.length,
         nativeAcceptance: "not-performed",
       }),
     );
@@ -1039,15 +1040,7 @@ try {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
         for (const zoom of [1, 2])
-          for (const [width, height] of [
-            [1440, 900],
-            [1100, 768],
-            [760, 768],
-            [600, 768],
-            [1280, 820],
-            [960, 640],
-            [640, 480],
-          ]) {
+          for (const [width, height] of scopedBaseViewports) {
             await page.setViewportSize({
               width: width / zoom,
               height: height / zoom,
@@ -1131,7 +1124,7 @@ try {
         dismissalChecks,
         languages: 2,
         themes: 2,
-        viewports: 4,
+        viewports: scopedBaseViewports.length,
         effectiveZoom: [1, 2],
         nativeAcceptance: "not-performed",
       }),
@@ -1141,15 +1134,7 @@ try {
     for (language of ["en", "ko"])
       for (const theme of ["light", "dark"])
         for (const zoom of [1, 2])
-          for (const [width, height] of [
-            [1440, 900],
-            [1100, 768],
-            [760, 768],
-            [600, 768],
-            [1280, 820],
-            [960, 640],
-            [640, 480],
-          ]) {
+          for (const [width, height] of scopedBaseViewports) {
             await page.setViewportSize({
               width: width / zoom,
               height: height / zoom,
@@ -1395,7 +1380,7 @@ try {
         projectStepChecks,
         languages: 2,
         themes: 2,
-        viewports: 4,
+        viewports: scopedBaseViewports.length,
         effectiveZoom: [1, 2],
         keyboardChecks,
         nativeAcceptance: "not-performed",
@@ -1632,16 +1617,7 @@ try {
   } else if (githubOnly) {
     let onboardingChecks = 0;
     // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
-    for (const [width, height] of [
-      [1440, 900],
-      [1100, 768],
-      [760, 768],
-      [600, 768],
-      [960, 640],
-      [640, 480],
-      [720, 450],
-      [480, 320],
-    ]) {
+    for (const [width, height] of [...githubBaseViewports, ...githubEffectiveViewports]) {
       await page.setViewportSize({ width, height });
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto(`${origin}/?theme=light&github-onboarding=true`);
@@ -1786,8 +1762,8 @@ try {
         languages: 1,
         themes: 1,
         inventories: 1,
-        viewports: 5,
-        effectiveZoomChecks: 2,
+        viewports: githubBaseViewports.length,
+        effectiveZoomChecks: githubEffectiveViewports.length,
         primarySurfaceChecks: 0,
         keyboardChecks,
         onboardingChecks,
