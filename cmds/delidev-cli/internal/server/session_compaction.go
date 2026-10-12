@@ -331,3 +331,19 @@ func loseSessionCompaction(tx *store.Tx, r store.Record, j domain.Job) error {
 	_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
 	return err
 }
+
+// A rejected queued compaction has not reached a Worker and therefore owns no
+// native effect. Retire its accepted action while keeping the session usable.
+func finishUnclaimedNamedCompaction(tx *store.Tx, r store.Record, job domain.Job) error {
+	sr, session, err := sessionRecord(tx, r.SessionID)
+	if err != nil {
+		return err
+	}
+	if job.Type != domain.CompactSessionJob || job.State != domain.JobFailed || session.CompactionJobID != r.ID {
+		return domain.CompactionUncertain()
+	}
+	session.CompactionJobID = ""
+	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+	_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+	return err
+}

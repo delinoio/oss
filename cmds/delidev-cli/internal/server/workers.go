@@ -546,18 +546,10 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							return nil, err
 						}
 						if err := requireNamedWorkspaceJob(current, j); err != nil {
-							if j.Type != domain.PrepareWorkspaceJob && j.Type != domain.WorkspaceStorageJob && j.Type != domain.RecoverWorkspaceJob && j.Type != domain.RecoverExecutionJob {
+							if j.Type != domain.PrepareWorkspaceJob && j.Type != domain.WorkspaceStorageJob && j.Type != domain.RecoverWorkspaceJob && j.Type != domain.RecoverExecutionJob && j.Type != domain.ExecuteSessionJob && j.Type != domain.CompactSessionJob {
 								return nil, err
 							}
-							now := time.Now().UTC()
-							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(err), &now
-							if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j); err != nil {
-								return nil, err
-							}
-							if err := finishSessionWorkspace(tx, r.ID); err != nil {
-								return nil, err
-							}
-							return tx.Get(domain.JobKind, r.ID)
+							return rejectDowngradedNamedWorkspaceJob(tx, r, j, err)
 						}
 					}
 					if j.Type == domain.PrepareWorkspaceJob {
@@ -1102,4 +1094,27 @@ func revokeMachineJobs(tx *store.Tx, machine domain.ID) error {
 		}
 	}
 	return nil
+}
+
+// Retire a queued assignment that the reconnected Worker can no longer honor.
+// The failure and its session reconciliation commit before WatchWork continues.
+func rejectDowngradedNamedWorkspaceJob(tx *store.Tx, record store.Record, job domain.Job, problem error) (store.Record, error) {
+	now := time.Now().UTC()
+	job.State, job.Problem, job.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+	saved, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job)
+	if err != nil {
+		return store.Record{}, err
+	}
+	switch job.Type {
+	case domain.ExecuteSessionJob:
+		err = finishLostNativeExecution(tx, saved, job)
+	case domain.CompactSessionJob:
+		err = finishUnclaimedNamedCompaction(tx, saved, job)
+	default:
+		err = finishSessionWorkspace(tx, record.ID)
+	}
+	if err != nil {
+		return store.Record{}, err
+	}
+	return tx.Get(domain.JobKind, record.ID)
 }

@@ -43,7 +43,7 @@ func requireNamedWorkspaceJob(machine domain.Machine, job domain.Job) error {
 		return requireNamedPreparation(machine, input.Preparation)
 	case domain.CompactSessionJob:
 		var input domain.SessionCompactionInput
-		if domain.Decode(job.Input, &input) != nil {
+		if domain.DecodeCompactionInput(job.Input, &input) != nil {
 			return workspace.ResultUncertain()
 		}
 		return requireNamedPreparation(machine, input.Assignment.Preparation)

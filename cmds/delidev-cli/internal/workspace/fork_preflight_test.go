@@ -53,6 +53,9 @@ func TestForkPreparationRejectsAllRepositoriesBeforeCreatingChildScope(t *testin
 					expected = domain.Unsupported
 				case "duplicate-repository":
 					source.Repositories[1].ID = source.Repositories[0].ID
+					if kind == domain.Worktree {
+						expected = domain.Conflict
+					}
 				case "missing-primary":
 					source.PrimaryPath = filepath.Join(m.Root, "missing-primary")
 				}
