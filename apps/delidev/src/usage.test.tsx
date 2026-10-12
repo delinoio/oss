@@ -1,3 +1,4 @@
+import { captureSharedTabLayout } from "./test-shared-tabs-layout";
 import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -1031,6 +1032,12 @@ it("defaults to Overview, keeps three topmost semantic tabs and retains state wi
   expect(document.querySelector(".usage-page")!.firstElementChild).toBe(
     tabs[0].parentElement,
   );
+  expect(
+    tabs.every((tab) => tab.classList.contains("shared-tab-control")),
+  ).toBe(true);
+  expect(tabs[0].parentElement!.classList.contains("shared-tab-strip")).toBe(
+    true,
+  );
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     "Overview",
     "Usage history",
@@ -1066,6 +1073,7 @@ it("defaults to Overview, keeps three topmost semantic tabs and retains state wi
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(f.read).toHaveBeenCalledTimes(1);
+  await captureSharedTabLayout("usage");
 });
 
 it("shows supported empty source rows collapsed and retains a user source choice across navigation and refresh", async () => {

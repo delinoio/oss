@@ -111,13 +111,13 @@ try {
             ? {
                 conversation: "Conversation",
                 browser: "Browser",
-                open: "Open account browser",
+                open: "Open page",
                 files: "Files",
               }
             : {
                 conversation: "대화",
                 browser: "브라우저",
-                open: "계정 브라우저 열기",
+                open: "페이지 열기",
                 files: "파일",
               };
         const composer = page.locator(".composer textarea");
@@ -221,17 +221,17 @@ try {
           .getByRole("menuitem", { name: label.browser, exact: true })
           .click();
         assert.equal(await page.getByRole("tabpanel").count(), 1);
-        assert.equal(await page.locator(".composer:visible").count(), 0);
+        assert.equal(await page.locator(".composer:visible").count(), 1);
         await page
           .getByRole("textbox", {
             name: language === "en" ? "Address" : "주소",
           })
-          .fill("https://example.com/");
+          .fill("https://tabs.example/new");
         await page
           .getByRole("button", { name: label.open, exact: true })
           .click();
         await page
-          .getByRole("tab", { name: "https://example.com/", exact: true })
+          .getByRole("tab", { name: "https://tabs.example/new", exact: true })
           .waitFor();
         await page.locator(".browser-viewport:visible").waitFor();
         const matrix = await page.evaluate(() => {
@@ -264,6 +264,19 @@ try {
             scale: parseFloat(getComputedStyle(document.body).zoom) || 1,
           };
         });
+        assert.equal(await page.getByRole("tablist").count(), 1);
+        assert.equal(
+          await page
+            .getByRole("tab", { name: label.browser, exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .locator(".browser-tab-bar,.browser-pages,.browser-tabs")
+            .count(),
+          0,
+        );
         assert.equal(matrix.selected, 1);
         assert.equal(matrix.splitters, 0);
         const closeGeometry = await page
@@ -332,7 +345,7 @@ try {
           () => browserFixture.registrations.length,
         );
         await page
-          .getByRole("tab", { name: "https://example.com/", exact: true })
+          .getByRole("tab", { name: "https://tabs.example/new", exact: true })
           .click();
         await page.locator(".browser-viewport:visible").waitFor();
         assert.equal(
@@ -345,14 +358,14 @@ try {
         await page.keyboard.press("ArrowRight");
         assert.equal(
           await page
-            .getByRole("tab", { name: label.browser, exact: true })
+            .getByRole("tab", { name: "https://example.com/", exact: true })
             .getAttribute("aria-selected"),
           "true",
         );
         assert.equal(
           await page.locator(".browser-viewport:visible").count(),
-          0,
-          "Browser picker does not show an unselected page",
+          1,
+          "Automatic workspace navigation selects the original direct page",
         );
         process.stdout.write(
           JSON.stringify({

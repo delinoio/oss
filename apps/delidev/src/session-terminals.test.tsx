@@ -1,3 +1,4 @@
+import { captureSharedTabLayout } from "./test-shared-tabs-layout";
 import { StrictMode, useState } from "react";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
@@ -392,6 +393,7 @@ it("attaches to the accepted creation beyond the first full history page", async
       action: TerminalAction.INPUT,
     });
     expect(screen.getByText("new original terminal")).toBeTruthy();
+    await captureSharedTabLayout("terminal");
     await act(async () => release());
     await waitFor(() =>
       expect(document.getElementById(`terminal-tab-${terminal.id}`)).toBeNull(),

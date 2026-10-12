@@ -1,9 +1,11 @@
+import { captureSharedTabLayout } from "./test-shared-tabs-layout";
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SessionTabBar } from "./session-tab-bar";
 import { i18n } from "./localization";
+import { Comparison } from "./session-diff-model";
 import { SessionTabsStore, SessionTabKind } from "./session-tabs";
 it("roves focus and selection without an absent-position alias and leaves pinned Conversation noncloseable", () => {
   const close = vi.fn();
@@ -107,4 +109,77 @@ it("keeps New browser page as an ordinary reachable button after the numeric tab
   expect(plus.getAttribute("aria-keyshortcuts")).toBeNull();
   fireEvent.click(plus);
   expect(open).toHaveBeenCalledTimes(1);
+});
+
+it("keeps complete names, sibling close targets and direct pages for every workspace kind", async () => {
+  const select = vi.fn(),
+    close = vi.fn();
+  const long = "A long dynamic label / " + "retained-name-".repeat(35);
+  render(
+    <section className="session-workspace">
+      <SessionTabBar
+        id="geometry"
+        terminalNumber={() => 17}
+        tabs={[
+          { kind: SessionTabKind.Conversation },
+          { kind: SessionTabKind.Files },
+          { kind: SessionTabKind.Diff },
+          { kind: SessionTabKind.Diagnostics },
+          {
+            kind: SessionTabKind.File,
+            repository: "original-repository",
+            path: long,
+          },
+          {
+            kind: SessionTabKind.Comparison,
+            repository: "original-repository",
+            path: long,
+            comparison: Comparison.Staged,
+          },
+          { kind: SessionTabKind.Terminal, id: "original-terminal" },
+          {
+            kind: SessionTabKind.Page,
+            profile: "original-profile",
+            id: "original-page",
+            title: long,
+            label: "https://fixture.test/" + long,
+          },
+          {
+            kind: SessionTabKind.PendingSidechat,
+            requestId: "pending-original",
+            name: long,
+          },
+          { kind: SessionTabKind.Sidechat, id: "original-child", name: long },
+        ]}
+        selected={JSON.stringify([
+          SessionTabKind.Page,
+          "original-profile",
+          "original-page",
+        ])}
+        select={select}
+        close={close}
+        newPage={() => {}}
+      />
+    </section>,
+  );
+  const tabs = screen.getAllByRole("tab");
+  expect(tabs).toHaveLength(10);
+  expect(tabs[0].parentElement!.querySelector(".shared-tab-close")).toBeNull();
+  for (const tab of tabs.slice(1)) {
+    const sibling = tab.nextElementSibling!;
+    expect(sibling.classList.contains("shared-tab-close")).toBe(true);
+    expect(sibling.parentElement).toBe(tab.parentElement);
+    expect(tab.classList.contains("shared-tab-label--truncate")).toBe(true);
+  }
+  expect(tabs[4].getAttribute("aria-label")).toContain(
+    long + " · original-repository",
+  );
+  expect(tabs[7].title).toBe("https://fixture.test/" + long);
+  expect(tabs[6].title).toBe("Terminal 17");
+  fireEvent.keyDown(tabs[7], { key: "ArrowRight", isComposing: true });
+  expect(select).not.toHaveBeenCalled();
+  fireEvent.click(tabs[4].nextElementSibling!);
+  expect(select).not.toHaveBeenCalled();
+  expect(close).toHaveBeenCalledTimes(1);
+  await captureSharedTabLayout("workspace");
 });

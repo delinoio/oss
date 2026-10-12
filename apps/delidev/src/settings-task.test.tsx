@@ -1,3 +1,4 @@
+import { captureSharedTabLayout } from "./test-shared-tabs-layout";
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState, type ReactNode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -514,7 +515,7 @@ it("retains page cancellation and distinct nested return, while omitting empty t
   ).toBeNull();
 });
 
-it("constrains the saved Project tab body through the mounted task wrapper", () => {
+it("constrains the saved Project tab body through the mounted task wrapper", async () => {
   renderTask(
     <SettingsTaskDialog
       title="Edit project"
@@ -567,8 +568,14 @@ it("constrains the saved Project tab body through the mounted task wrapper", () 
       .getByRole("button", { name: "Save Project" })
       .closest(".settings-task-body"),
   ).toBeNull();
+  expect(
+    screen
+      .getAllByRole("tab")
+      .every((control) => control.classList.contains("shared-tab-control")),
+  ).toBe(true);
   fireEvent.click(screen.getByRole("tab", { name: "Execution" }));
   expect(screen.getByRole("tabpanel")).toBe(panels[2]);
+  await captureSharedTabLayout("project");
   // Internal task steps hide this retained wrapper; the flex rule must not undo it.
   wrapper.hidden = true;
   expect(getComputedStyle(wrapper).display).toBe("none");

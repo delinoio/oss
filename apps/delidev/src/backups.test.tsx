@@ -1,4 +1,5 @@
 import { ProductIdentityProvider } from "./product-identity-labels";
+import { captureSharedTabLayout } from "./test-shared-tabs-layout";
 import { formatTimestampLabel, TimestampMode } from "./timestamp-format";
 import { toBinary } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
@@ -642,8 +643,45 @@ it("manually activates stable history tabs and excludes hidden controls from key
   await screen.findByText("Backup creation pending");
   const creation = screen.getByRole("tab", { name: "Creation jobs" });
   const deletion = screen.getByRole("tab", { name: "Deletion jobs" });
+  expect(creation.classList.contains("shared-tab-control")).toBe(true);
+  expect(deletion.classList.contains("shared-tab-control")).toBe(true);
+  const strip = creation.parentElement!;
+  expect(strip.classList.contains("shared-tab-strip")).toBe(true);
+  Object.defineProperty(strip, "clientWidth", {
+    configurable: true,
+    value: 100,
+  });
+  Object.defineProperty(creation, "offsetLeft", {
+    configurable: true,
+    value: 0,
+  });
+  Object.defineProperty(creation, "offsetWidth", {
+    configurable: true,
+    value: 100,
+  });
+  Object.defineProperty(deletion, "offsetLeft", {
+    configurable: true,
+    value: 100,
+  });
+  Object.defineProperty(deletion, "offsetWidth", {
+    configurable: true,
+    value: 100,
+  });
+  const reads = [
+    f.list.mock.calls.length,
+    f.creations.mock.calls.length,
+    f.deletions.mock.calls.length,
+  ];
   creation.focus();
   fireEvent.keyDown(creation, { key: "ArrowRight" });
+  expect(strip.scrollLeft).toBe(100);
+  expect([
+    f.list.mock.calls.length,
+    f.creations.mock.calls.length,
+    f.deletions.mock.calls.length,
+  ]).toEqual(reads);
+  expect(f.create).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
   expect(document.activeElement).toBe(deletion);
   expect(deletion.getAttribute("aria-selected")).toBe("false");
   expect(creation.getAttribute("aria-selected")).toBe("true");
@@ -665,6 +703,7 @@ it("manually activates stable history tabs and excludes hidden controls from key
   expect(document.activeElement).toBe(creation);
   expect(creation.tabIndex).toBe(0);
   expect(deletion.tabIndex).toBe(-1);
+  await captureSharedTabLayout("backups");
 });
 
 it("focuses inspection only at activation and restores the opener or list-heading fallback", async () => {
