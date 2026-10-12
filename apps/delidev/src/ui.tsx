@@ -254,7 +254,8 @@ const failureGuidance: Record<FailureCode, MessageKey> = {
   [FailureCode.ServerUnavailable]: "ui.failure.server_unavailable",
   [FailureCode.ConfirmationRequired]: "ui.failure.confirmation_required",
   [FailureCode.MissingInput]: "ui.failure.missing_input",
-  [FailureCode.HarnessDefaultUnverified]: "ui.failure.harness_default_unverified",
+  [FailureCode.HarnessDefaultUnverified]:
+    "ui.failure.harness_default_unverified",
   [FailureCode.Unsupported]: "ui.failure.unsupported",
   [FailureCode.RecoveryRequired]: "ui.failure.recovery_required",
   [FailureCode.BudgetReached]: "ui.failure.budget_reached",
