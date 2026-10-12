@@ -26,6 +26,14 @@ fn run(root: &Path, destination: &str) -> Output {
             destination,
             "--verbose",
         ])
+        // These fixtures exercise the property passes through tiny helper
+        // functions that the call passes would otherwise inline first.
+        .args([
+            "--disable-pass",
+            "call-inlining",
+            "--disable-pass",
+            "method-devirtualization",
+        ])
         .output()
         .unwrap()
 }
@@ -96,10 +104,12 @@ fn shortening_aliases_side_effects_and_determinism() {
 #[test]
 fn distinct_disambiguation_and_ambiguation_effects() {
     let temp = fixture(
-        "export {}; const first = {sharedProperty: 1, firstOther: 2}; const second = \
-         {sharedProperty: 3, secondOther: 4}; console.log(first.sharedProperty, \
-         first.sharedProperty, first.firstOther, second.sharedProperty, second.secondOther, \
-         second.secondOther);",
+        // Non-literal values keep constant-property-inlining out of this
+        // property-allocation fixture.
+        "export {}; const first = {sharedProperty: Number(1), firstOther: Number(2)}; const \
+         second = {sharedProperty: Number(3), secondOther: Number(4)}; \
+         console.log(first.sharedProperty, first.sharedProperty, first.firstOther, \
+         second.sharedProperty, second.secondOther, second.secondOther);",
     );
     success(run(temp.path(), "out"));
     compare(temp.path());
@@ -212,7 +222,7 @@ fn check_analyzes_without_publishing_or_executing_input() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema_version"], 0);
+    assert_eq!(report["schema_version"], 1);
     assert!(!temp.path().join("out").exists());
 }
 
@@ -618,8 +628,9 @@ fn verbose_diagnostics_redact_source_derived_arguments() {
 fn erased_type_spans_do_not_make_renames_profitable() {
     // Only the erased parameter annotation would shrink; the emitted shorthand
     // would grow to `a: longProperty`, so the property must keep its name.
+    // `v` stays a runtime use so that signature-reduction keeps the argument.
     let code = "export {}; const longProperty = 1; function size(v: {longProperty: number}) { \
-                return 0; } console.log(size({longProperty}));";
+                return v ? 0 : 1; } console.log(size({longProperty}));";
     let temp = fixture(code);
     success(run(temp.path(), "out"));
     compare(temp.path());
