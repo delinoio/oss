@@ -277,7 +277,7 @@ function NativeSessionBrowser({
   const presentation = useRef("");
   const shortcutAdmission = useRef("");
   const presentationVisible = useRef<() => boolean>(() => false);
-  const selectionAdmitted = useRef(() => false);
+  const selectionAdmitted = useRef<() => boolean>(() => false);
   const reconcileSelection = useRef(() => {});
   const nativeState = useRef(state);
   const selectionTarget = useRef("");
