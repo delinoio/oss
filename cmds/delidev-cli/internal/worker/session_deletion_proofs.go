@@ -329,13 +329,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		}
 	}
 	if sessionDeletionUsesWorkspace(w) && proof.RemovalStarted && !proof.Complete && workspace.RequireKeyedDeletionWorkspaceProof(root, w) != nil {
-		// Historical started progress without native admission can only resume
-		// through deleteSessionCopies' absence-only completion path. Let that path
-		// prove every original operand absent; a durable admission still requires
-		// the exact keyed workspace receipt before destructive replay.
-		if _, err := os.Lstat(sessionRemovalAdmissionPath(paths.Worker)); !errors.Is(err, os.ErrNotExist) {
-			return pending()
-		}
+		return pending()
 	}
 	if !sessionDeletionUsesWorkspace(w) && workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
 		return pending()
