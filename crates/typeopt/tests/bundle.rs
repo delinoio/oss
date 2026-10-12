@@ -539,7 +539,7 @@ fn composes_inline_and_referenced_maps() {
         .iter()
         .map(|c| {
             let text = fs::read_to_string(temp.path().join("out").join(c)).unwrap();
-            let code = match text.find("//# sourceMappingURL=data:") {
+            let code = match text.find("//# sourceMappingURL=") {
                 Some(at) => &text[..at],
                 None => &text[..],
             };

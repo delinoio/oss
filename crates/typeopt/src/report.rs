@@ -51,8 +51,8 @@ pub struct PassConfig {
 pub enum SizeMetric {
     /// Stage 1: ESM bytes the compiler emits for the analyzed modules.
     EmittedEsmBytes,
-    /// Stage 2: bytes of the edited bundler chunk text, without inline
-    /// source map comments.
+    /// Stage 2: bytes of the edited bundler chunk text, without its trailing
+    /// source map comment.
     ChunkTextBytes,
 }
 

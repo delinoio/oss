@@ -563,16 +563,14 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
     }
 }
 
-/// Bytes of a chunk's code: the text without an inline `data:` source map
-/// comment. Source maps are debugging metadata and never count as size,
-/// whether inline or in separate files.
+/// Bytes of a chunk's code: the text without its trailing source map
+/// comment (inline or referencing a file). Source maps are debugging
+/// metadata and never count as size, so composing, re-encoding or removing a
+/// map comment does not change the measured size.
 pub(crate) fn chunk_code_len(text: &str) -> usize {
-    match map_reference(text) {
-        Some(comment) if comment.url.starts_with("data:") => {
-            text.len() - (comment.end - comment.start)
-        }
-        _ => text.len(),
-    }
+    map_reference(text).map_or(text.len(), |comment| {
+        text.len() - (comment.end - comment.start)
+    })
 }
 
 /// The trailing `//# sourceMappingURL=<url>` or
