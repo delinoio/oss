@@ -15,7 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-func reviewFixture(t *testing.T) *Client {
+func codeReviewClientFixture(t *testing.T) *Client {
 	t.Helper()
 	root, turn, action := domain.NewID(), domain.NewID(), domain.NewID()
 	selection := domain.NativeCodeReviewSelection{Target: domain.NativeCodeReviewTarget{Kind: domain.ReviewUncommitted, RepositoryID: domain.NewID(), DiffRevision: strings.Repeat("a", 64)}, HeadCommit: strings.Repeat("b", 40), ContentDigest: strings.Repeat("c", 64)}
@@ -46,14 +46,14 @@ func reviewRollout(t *testing.T, c *Client, change func(map[string]any)) []byte 
 }
 
 func TestNativeReviewFindingsRequireOriginalStructuredRollout(t *testing.T) {
-	c := reviewFixture(t)
+	c := codeReviewClientFixture(t)
 	result, err := c.decodeCodeReviewRollout(reviewRollout(t, c, nil))
 	if err != nil || len(result.Findings) != 1 || result.Findings[0].Path != "file.go" || result.CleanupVerified || result.RolloutDigest != "" {
 		t.Fatal("original structured findings lost or private parse claimed cleanup", err)
 	}
 	for _, kind := range []string{"foreign-turn", "foreign-item", "absent-output", "escaped-path", "invalid-confidence", "protected-content"} {
 		t.Run(kind, func(t *testing.T) {
-			current := reviewFixture(t)
+			current := codeReviewClientFixture(t)
 			if kind == "protected-content" {
 				current.reviewProtected = security.NewProtectedJSON([]string{"original-protected-token"})
 			}
@@ -87,7 +87,7 @@ func TestNativeReviewFindingsRequireOriginalStructuredRollout(t *testing.T) {
 }
 
 func TestNativeReviewLifecycleRejectsForeignAndReorderedItems(t *testing.T) {
-	c := reviewFixture(t)
+	c := codeReviewClientFixture(t)
 	c.codeReview.terminal = false
 	c.codeReview.entered = ""
 	c.codeReview.exited = ""
@@ -153,7 +153,7 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 			if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
 				t.Fatal(err)
 			}
-			selected := reviewFixture(t).codeReview.selection
+			selected := codeReviewClientFixture(t).codeReview.selection
 			selected.Target.Kind = kind
 			if kind == domain.ReviewBaseBranch {
 				selected.Target.Reference = "original-branch"
@@ -202,7 +202,7 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-	_, err := c.StartCodeReview(ctx, domain.NewID(), reviewFixture(t).codeReview.selection)
+	_, err := c.StartCodeReview(ctx, domain.NewID(), codeReviewClientFixture(t).codeReview.selection)
 	cancel()
 	if err == nil {
 		t.Fatal("lost acknowledgment reported success")
@@ -211,7 +211,7 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 	if err != nil || !claimed {
 		t.Fatal("lost response cleared original send claim", err)
 	}
-	if _, err := c.StartCodeReview(context.Background(), domain.NewID(), reviewFixture(t).codeReview.selection); err == nil {
+	if _, err := c.StartCodeReview(context.Background(), domain.NewID(), codeReviewClientFixture(t).codeReview.selection); err == nil {
 		t.Fatal("unknown review retried")
 	}
 	count := 0
