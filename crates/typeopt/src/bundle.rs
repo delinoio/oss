@@ -10,7 +10,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 
 use crate::{
-    compiler::{Snapshot, sha256_hex},
+    compiler::Snapshot,
     output::{byte_at_utf16, coordinate, line_starts},
     pipeline::Outcome,
     plan::Edit,
@@ -170,16 +170,24 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
         }
         let old = base(&file);
         let (name, ext, separator) = hashed_name(&old).expect("filtered to hashed names");
-        let digest = sha256_hex(format!("{old}\0{}", texts[&file]).as_bytes());
-        let hash: String = digest
-            .bytes()
-            .take(8)
-            .map(|b| {
-                let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
-                alphabet[(b as usize * 7) % 64] as char
-            })
-            .collect();
-        renamed.insert(old.clone(), format!("{name}{separator}{hash}.{ext}"));
+        // Uniform base64url characters from the digest bytes, like a real
+        // content hash (a hex-derived name would compress unusually well),
+        // and recognizable as a hash by a later run.
+        let mut new_name = String::new();
+        for salt in 0u32.. {
+            use sha2::{Digest, Sha256};
+            let digest = Sha256::digest(format!("{old}\0{salt}\0{}", texts[&file]).as_bytes());
+            let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+            let hash: String = digest[..8]
+                .iter()
+                .map(|&b| alphabet[(b % 64) as usize] as char)
+                .collect();
+            new_name = format!("{name}{separator}{hash}.{ext}");
+            if hashed_name(&new_name).is_some() && new_name != old {
+                break;
+            }
+        }
+        renamed.insert(old.clone(), new_name);
         for (other, text) in &texts {
             if hashed_name(&base(other)).is_some() && text.contains(&old) {
                 pending.push(other.clone());

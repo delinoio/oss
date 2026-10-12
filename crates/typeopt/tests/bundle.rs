@@ -424,6 +424,13 @@ fn rehashes_edited_chunks_and_their_importers() {
     assert!(!assets.iter().any(|a| a.contains("BBBBBBBB")), "{assets:?}");
     assert!(!assets.iter().any(|a| a.contains("AAAAAAAA")), "{assets:?}");
     let entry = assets.iter().find(|a| a.starts_with("index-")).unwrap();
+    // New hashes use the full base64url alphabet like the bundler's own.
+    let hash = &entry["index-".len()..entry.len() - ".js".len()];
+    assert_eq!(hash.len(), 8);
+    assert!(
+        hash.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    );
     let html = fs::read_to_string(temp.path().join("out/index.html")).unwrap();
     assert!(html.contains(&format!("/assets/{entry}")), "{html}");
     let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
