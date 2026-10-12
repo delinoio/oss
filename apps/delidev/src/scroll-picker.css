@@ -77,7 +77,6 @@
    The compact sidebar dialog itself remains a sidebar owner. */
 :is(
     .sidebar-list,
-    .sidebar-footer,
     .sidebar-surface-content,
     .subscription-rail-popover
   )

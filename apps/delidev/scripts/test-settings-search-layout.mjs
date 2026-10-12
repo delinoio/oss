@@ -347,6 +347,22 @@ try {
         await page.locator(".sidebar-list").evaluate((node) => {
           node.scrollTop = node.scrollHeight;
         });
+        assert.equal(await page.locator(".sidebar-footer").count(), 0);
+        assert(
+          await page.locator(".sidebar-pane").evaluate((pane) => {
+            const list = pane.querySelector(".sidebar-list");
+            const paneBounds = pane.getBoundingClientRect();
+            const listBounds = list.getBoundingClientRect();
+            const bottomPadding = parseFloat(getComputedStyle(pane).paddingBottom);
+            return (
+              pane.lastElementChild === list &&
+              Math.abs(
+                listBounds.bottom - (paneBounds.bottom - bottomPadding),
+              ) <= 1
+            );
+          }),
+          "The existing list receives all space above normal bottom padding",
+        );
         await assertPinned();
         await assertFocusedRow(page.locator("[data-settings-category]").last());
         await assertFocusedRow(
@@ -394,33 +410,10 @@ try {
           await assertFocusedRow(
             page.locator("[data-settings-category]").first(),
           );
-          const footer = page.locator(".sidebar-footer"),
-            original = await footer.textContent();
-          // Synthetic long status proves the same footer scroller retains all text.
-          await footer.locator("p").evaluate((node) => {
-            node.textContent = "Retained connection status ".repeat(80);
-          });
-          assert(
-            await footer.evaluate(
-              (node) => node.scrollHeight > node.clientHeight,
-            ),
-          );
-          await footer.evaluate((node) => {
-            node.scrollTop = node.scrollHeight;
-          });
-          assert(
-            await footer.evaluate(
-              (node) =>
-                node.scrollTop + node.clientHeight >= node.scrollHeight - 1,
-            ),
-          );
           await assertFocusedRow(
             page.locator("[data-settings-category]").last(),
           );
           await assertPinned();
-          await footer.locator("p").evaluate((node, text) => {
-            node.textContent = text;
-          }, original);
           assert(
             await page
               .locator(".sidebar-drawer-close")

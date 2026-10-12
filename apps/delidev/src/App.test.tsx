@@ -2490,9 +2490,7 @@ it("refreshes reads after recovery without replacing the connection's session dr
   const view = render(
     <App transport={value.transport} connectionReady={false} />,
   );
-  await screen.findByText(
-    "This computer · Disconnected · previous data may be stale",
-  );
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
   fireEvent.click(
     await screen.findByRole("button", {
       name: /General Chat Retained session/,
@@ -2502,10 +2500,19 @@ it("refreshes reads after recovery without replacing the connection's session dr
   fireEvent.change(composer, {
     target: { value: "Retain this across server restart" },
   });
+  const statusReads = value.status.mock.calls.length;
   view.rerender(
     <App transport={value.transport} connectionReady connectionEpoch={1} />,
   );
-  await screen.findByText("This computer · Connected");
+  await waitFor(() =>
+    expect(value.status.mock.calls.length).toBeGreaterThan(statusReads),
+  );
+  await expect(value.status.mock.results.at(-1)!.value).resolves.toMatchObject({
+    version: "0.1.0",
+  });
+  expect(
+    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+  ).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe(
     "Retain this across server restart",
@@ -2666,10 +2673,10 @@ it("drops connection-scoped drafts and caches when the selected transport change
   ).toBe("");
 });
 
-it("does not present cached server status as current connectivity after a failed refresh", async () => {
+it("retains session drafts after a failed status refresh without restoring a sidebar footer", async () => {
   const value = fixture();
   const view = render(<App transport={value.transport} />);
-  await screen.findByText("This computer · Connected");
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
   fireEvent.click(
     await screen.findByRole("button", {
       name: /General Chat Retained session/,
@@ -2680,15 +2687,18 @@ it("does not present cached server status as current connectivity after a failed
   value.status.mockRejectedValue(
     new ConnectError("Server disconnected", Code.Unavailable),
   );
+  const statusReads = value.status.mock.calls.length;
   view.rerender(<App transport={value.transport} connectionEpoch={1} />);
-  await screen.findByText(
-    "This computer · Disconnected · previous data may be stale",
+  await waitFor(() =>
+    expect(value.status.mock.calls.length).toBeGreaterThan(statusReads),
   );
+  await expect(value.status.mock.results.at(-1)!.value).rejects.toMatchObject({
+    code: Code.Unavailable,
+  });
   expect(
-    within(screen.getByLabelText("Application sidebar")).queryByText(
-      "This computer · Connected",
-    ),
+    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
   ).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe(
     "Keep while disconnected",
   );

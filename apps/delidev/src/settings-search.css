@@ -79,7 +79,7 @@
   .sidebar-pane:has(.settings-navigation:not([hidden])) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 4px;
   }
   .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-header {
@@ -94,11 +94,6 @@
   .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-list {
     grid-column: 1 / -1;
     grid-row: 2;
-  }
-  .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-footer {
-    grid-column: 1 / -1;
-    grid-row: 3;
-    max-height: 32px;
   }
   .settings-navigation .settings-search-header {
     padding-block: 4px;

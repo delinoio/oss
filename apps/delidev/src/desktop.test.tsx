@@ -150,7 +150,10 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   const value = savedFixture();
   render(<Desktop />);
   await screen.findByText("Your sessions, in one place");
-  expect(await screen.findByText("Remote fixture · Connected")).toBeTruthy();
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
+  expect(
+    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+  ).toBeNull();
   expect(bridge.createTransport).toHaveBeenCalledWith(
     expect.objectContaining({ origin: value.profile.endpoint }),
   );
@@ -292,6 +295,8 @@ it("refreshes a window label without replacing transport or open settings and ig
   await screen.findByText("Your sessions, in one place");
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await screen.findByRole("region", { name: "Settings content" });
+  fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+  const label = await screen.findByText("Remote fixture");
   const original = bridge.invoke.getMockImplementation()!;
   bridge.invoke.mockImplementation(async (command: string) =>
     command === "connection_context"
@@ -299,7 +304,7 @@ it("refreshes a window label without replacing transport or open settings and ig
       : original(command),
   );
   await act(async () => changed());
-  await screen.findByText("Renamed window · Connected");
+  expect(await screen.findByText("Renamed window")).toBe(label);
   expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledTimes(1);
   expect(
@@ -311,7 +316,10 @@ it("refreshes a window label without replacing transport or open settings and ig
       : original(command),
   );
   await act(async () => changed());
-  expect(screen.getByText("Renamed window · Connected")).toBeTruthy();
+  expect(screen.getByText("Renamed window")).toBe(label);
+  expect(
+    screen.getByLabelText("Application sidebar").querySelector(".sidebar-footer"),
+  ).toBeNull();
   expect(screen.queryByText("Older result")).toBeNull();
   view.unmount();
   await waitFor(() => expect(unlisten).toHaveBeenCalledOnce());
