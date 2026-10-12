@@ -228,6 +228,48 @@ func TestSessionDeletionStartedWorkerProofRequiresKeyedWorkspaceProof(t *testing
 	}
 }
 
+func TestWorkspaceFreeDeletionRejectsUnexpectedKeyedWorkspaceProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	work.Copies = nil
+	work.Images = []domain.ImageAttachment{{ID: domain.NewID(), MachineID: work.MachineID, MediaType: domain.ImagePNG, ByteLength: 1, SHA256: strings.Repeat("a", 64)}}
+	if work.Validate() != nil {
+		t.Fatal("workspace-free deletion fixture is invalid")
+	}
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	reportID := domain.NewID()
+	marker := deletionMarker(work)
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerPublished}}
+	if err := writeDeletionMarker(sessionDeletionPath(config.Root, work.SessionID), marker); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}
+	if err := writeJSON(paths.Worker, started); err != nil {
+		t.Fatal(err)
+	}
+	keyedWorkspace := map[string]any{"version": 2, "identity": work.Identity(), "digest": work.Digest(), "removed": true}
+	if err := writeJSON(paths.Workspace, keyedWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	workspaceBefore, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("workspace-free cleanup accepted unexpected keyed workspace proof", err)
+	}
+	workspaceAfter, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil || string(workspaceAfter) != string(workspaceBefore) {
+		t.Fatal("unexpected keyed workspace proof changed", err)
+	}
+}
+
 func TestWorkspaceFreeStartedDeletionDoesNotRequireWorkspaceProof(t *testing.T) {
 	for _, version := range []uint32{1, 3} {
 		t.Run(fmt.Sprintf("version-%d", version), func(t *testing.T) {

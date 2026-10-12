@@ -274,6 +274,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 	if sessionDeletionUsesWorkspace(w) && proof.RemovalStarted && !proof.Complete && workspace.RequireKeyedDeletionWorkspaceProof(root, w) != nil {
 		return pending()
 	}
+	if !sessionDeletionUsesWorkspace(w) && workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
+		return pending()
+	}
 	if security.SyncParent(paths.Worker) != nil {
 		return pending()
 	}
