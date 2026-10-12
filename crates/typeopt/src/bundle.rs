@@ -704,9 +704,6 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
     while let Some(at) = text[..limit].rfind(MARKER) {
         limit = at;
         let url_start = at + MARKER.len();
-        let url_end = text[url_start..]
-            .find(|c: char| c.is_whitespace() || c == '*')
-            .map_or(text.len(), |e| url_start + e);
         let pragma = text[..at].trim_end_matches([' ', '\t']);
         let Some(opener) = pragma.strip_suffix(['#', '@']) else {
             continue;
@@ -714,6 +711,18 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
         let Some(start) = opener.len().checked_sub(2) else {
             continue;
         };
+        // A URL ends at whitespace; in a block directive also at the `*/`
+        // that closes it (a `*` alone is a valid URL character).
+        let block = text.get(start..opener.len()) == Some("/*");
+        let rest = &text[url_start..];
+        let whitespace = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let url_end = url_start
+            + if block {
+                rest.find("*/")
+                    .map_or(whitespace, |close| close.min(whitespace))
+            } else {
+                whitespace
+            };
         let end = match text.get(start..opener.len()) {
             Some("//") => url_end,
             Some("/*") => match text[url_end..].find("*/") {
@@ -1525,6 +1534,19 @@ mod tests {
         ] {
             assert!(super::map_reference(text).is_none(), "{text}");
         }
+        // `*` is a URL character outside the closing `*/` of a block.
+        assert_eq!(
+            super::map_reference("f();\n//# sourceMappingURL=maps/app*.js.map\n")
+                .unwrap()
+                .url,
+            "maps/app*.js.map"
+        );
+        assert_eq!(
+            super::map_reference("f();/*# sourceMappingURL=a*b.map*/")
+                .unwrap()
+                .url,
+            "a*b.map"
+        );
         let legacy = "f();\n//@ sourceMappingURL=a.js.map";
         assert_eq!(super::map_reference(legacy).unwrap().url, "a.js.map");
         assert!(super::map_reference(&format!("x=\"sourceMappingURL={url}\"")).is_none());
