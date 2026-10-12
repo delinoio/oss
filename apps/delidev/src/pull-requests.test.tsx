@@ -59,7 +59,19 @@ beforeEach(() => {
       ? nativeOpen.has(this)
       : matches.call(this, selector);
   });
-  const rect = new DOMRect(0, 0, 1024, 768);
+  // The pinned jsdom runtime has no DOMRect constructor. Keep the synthetic
+  // bounds explicit; real browser rectangles belong to the layout fixture.
+  const rect: DOMRect = {
+    x: 0,
+    y: 0,
+    width: 1024,
+    height: 768,
+    top: 0,
+    left: 0,
+    right: 1024,
+    bottom: 768,
+    toJSON: () => ({}),
+  };
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
     rect,
   );
