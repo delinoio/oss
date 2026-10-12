@@ -63,7 +63,7 @@ const terminal = {
   present: true,
 };
 const inventory = {
-  version: 1,
+  version: 1 as const,
   job_id: jobId,
   execution_id: executionId,
   native_thread_id: threadId,
@@ -197,7 +197,7 @@ describe("original native background controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Read status" }));
     expect(fixture.refetch).toHaveBeenCalledOnce();
     expect(fixture.send).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Stop", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Stop$/ }));
     expect(fixture.send).toHaveBeenCalledOnce();
     expect(fixture.send.mock.calls[0][0]).toMatchObject({
       mutation: { id: sessionId, expectedRevision: 9n },
