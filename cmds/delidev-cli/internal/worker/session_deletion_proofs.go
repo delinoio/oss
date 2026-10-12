@@ -153,7 +153,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 				return pending()
 			}
 			proof = legacy
-			if workspace.ImportLegacyDeletionWorkspaceProof(root, w) != nil {
+			if workspace.ImportLegacyDeletionWorkspaceProof(root, w, legacy.RemovalStarted || legacy.Complete) != nil {
 				return pending()
 			}
 			again, err := security.ReadPrivate(markerPath, 4096)
@@ -230,7 +230,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		// new deletion. Restored/transplanted metadata must stay pending.
 		return pending()
 	} else {
-		if workspace.ImportLegacyDeletionWorkspaceProof(root, w) != nil {
+		if workspace.ImportLegacyDeletionWorkspaceProof(root, w, false) != nil {
 			return pending()
 		}
 		// Publish the exact initial receipt in the shared fence before keyed

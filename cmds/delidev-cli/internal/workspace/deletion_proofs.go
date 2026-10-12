@@ -36,7 +36,7 @@ func legacyDeletionWorkspacePath(root string, w domain.SessionDeletionWork) stri
 // ImportLegacyDeletionWorkspaceProof requires the caller's original deletion or
 // workspace lock. Synchronize the exact keyed copy before retiring old evidence.
 // A foreign digest cannot establish another device's workspace ownership.
-func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWork, requireExisting bool) error {
 	if w.Validate() != nil {
 		return domain.SessionDeletionPending()
 	}
@@ -47,6 +47,17 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 	legacyPath := legacyDeletionWorkspacePath(root, w)
 	raw, err := security.ReadPrivate(legacyPath, 1<<20)
 	if errors.Is(err, os.ErrNotExist) {
+		if !requireExisting {
+			return nil
+		}
+		// Once Worker removal has started, a missing historical receipt is lost
+		// evidence. An exact keyed copy can finish an interrupted import; absence
+		// of both forms must keep the obligation pending.
+		current, err := security.ReadPrivate(paths.Workspace, 1<<20)
+		var keyed deletionWorkspaceProof
+		if err != nil || domain.Decode(current, &keyed) != nil || !validDeletionWorkspaceProof(keyed, w) {
+			return domain.SessionDeletionPending()
+		}
 		return nil
 	}
 	var legacy deletionWorkspaceProof

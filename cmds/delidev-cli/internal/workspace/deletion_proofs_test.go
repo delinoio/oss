@@ -44,7 +44,7 @@ func TestDeletionWorkspaceProofLegacyImportsOnlyExactEqualPairs(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err := ImportLegacyDeletionWorkspaceProof(root, work)
+			err := ImportLegacyDeletionWorkspaceProof(root, work, false)
 			accepted := stage == "original" || stage == "removed" || stage == "equal-pair"
 			if (err == nil) != accepted {
 				t.Fatalf("workspace legacy %s: %v", stage, err)
@@ -79,7 +79,7 @@ func TestDeletionLegacyAbsentWorkspaceCannotAdoptRestoredContent(t *testing.T) {
 	if err := writeDeletionWorkspaceProof(legacyDeletionWorkspacePath(manager.Root, work), legacy); err != nil {
 		t.Fatal(err)
 	}
-	if err := ImportLegacyDeletionWorkspaceProof(manager.Root, work); err != nil {
+	if err := ImportLegacyDeletionWorkspaceProof(manager.Root, work, false); err != nil {
 		t.Fatal(err)
 	}
 	restored := filepath.Join(manager.Root, "workspaces", string(work.SessionID))
@@ -115,12 +115,47 @@ func TestDeletionLegacyWorkspaceProofCannotImportForeignManifestScope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ImportLegacyDeletionWorkspaceProof(root, work) == nil {
+	if ImportLegacyDeletionWorkspaceProof(root, work, false) == nil {
 		t.Fatal("foreign original manifest acquired keyed authority")
 	}
 	after, err := security.ReadPrivate(path, 1<<20)
 	if err != nil || string(after) != string(raw) {
 		t.Fatal("foreign legacy proof changed", err)
+	}
+}
+
+func TestDeletionWorkspaceProofStartedLegacyRequiresHistoricalOrKeyedEvidence(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportLegacyDeletionWorkspaceProof(root, work, true); err == nil {
+		t.Fatal("started legacy cleanup accepted missing workspace evidence")
+	}
+
+	paths, err := SessionDeletionProofPaths(root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyed := deletionWorkspaceProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), Removed: true}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, keyed); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportLegacyDeletionWorkspaceProof(root, work, true); err != nil {
+		t.Fatalf("exact keyed evidence did not recover the interrupted import: %v", err)
+	}
+
+	if err := os.Remove(paths.Workspace); err != nil {
+		t.Fatal(err)
+	}
+	foreign := keyed
+	foreign.Identity.DeviceID = domain.NewID()
+	if err := writeDeletionWorkspaceProof(paths.Workspace, foreign); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportLegacyDeletionWorkspaceProof(root, work, true); err == nil {
+		t.Fatal("foreign keyed evidence satisfied started legacy cleanup")
 	}
 }
 

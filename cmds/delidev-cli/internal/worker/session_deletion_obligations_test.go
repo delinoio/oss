@@ -93,16 +93,22 @@ func TestSessionDeletionIndependentOriginalDevicesRetainDistinctReceipts(t *test
 }
 
 func TestSessionDeletionLegacyExactStagesAndInterruptedPairs(t *testing.T) {
-	for _, stage := range []string{"untouched", "started", "complete", "equal-pair", "changed-pair", "foreign-digest", "foreign-receipt", "missing-fence"} {
+	for _, stage := range []string{"untouched", "started", "complete", "missing-started-workspace", "missing-complete-workspace", "equal-pair", "changed-pair", "foreign-digest", "foreign-receipt", "missing-fence"} {
 		t.Run(stage, func(t *testing.T) {
 			config, works := failedDeletionObligations(t)
 			work := works[0]
 			if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
 				t.Fatal(err)
 			}
-			legacy := sessionDeletionProof{Version: 1, Digest: work.Digest(), ReportID: domain.NewID(), RemovalStarted: stage == "started" || stage == "complete", Complete: stage == "complete"}
+			legacy := sessionDeletionProof{Version: 1, Digest: work.Digest(), ReportID: domain.NewID(), RemovalStarted: stage == "started" || stage == "complete" || stage == "missing-started-workspace" || stage == "missing-complete-workspace", Complete: stage == "complete" || stage == "missing-complete-workspace"}
 			expected := legacy
 			paths, _ := workspace.SessionDeletionProofPaths(config.Root, work)
+			if stage == "started" || stage == "complete" || stage == "equal-pair" {
+				legacyWorkspacePath := filepath.Join(config.Root, "session-deletions", string(work.SessionID)+"-workspace.json")
+				if err := writeJSON(legacyWorkspacePath, map[string]any{"version": 1, "digest": work.Digest(), "removed": stage == "complete"}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if stage == "foreign-digest" {
 				legacy.Digest = works[1].Digest()
 			}

@@ -645,7 +645,11 @@ keeps acknowledgement pending; original Local directories, independent child
 copies and shared account/browser data retain their separate ownership.
 
 Legacy import belongs to the original Worker admission transition, before the
-version-2 session fence commits. Workspace cleanup checks legacy proof absence
+current session fence is published. Workspace cleanup checks legacy proof absence
 under its original locks before cleanup and again before loading keyed progress.
 An exact legacy proof restored after admission remains unchanged and keeps
 acknowledgement pending; cleanup cannot import it or reuse its removal stages.
+When a historical Worker proof already records removal started or complete,
+admission also requires its matching legacy workspace receipt or a valid keyed
+copy from an interrupted import. Missing or mismatched evidence keeps deletion
+pending and cannot establish authority from a currently present manifest.
