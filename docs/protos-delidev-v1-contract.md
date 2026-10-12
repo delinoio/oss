@@ -1613,6 +1613,7 @@ These typed identities do not grant new roots or expose absolute filesystem
 paths, credentials, instructions or native configuration. Preserve original
 mutation receipts and immutable Worker-private generation proofs under the
 [session lifecycle contract](cmds-delidev-sessions-contract.md#settled-session-directory-generations).
+
 ## Native configuration import declarations
 
 System capability 107 and Worker capability 68 negotiate the original native

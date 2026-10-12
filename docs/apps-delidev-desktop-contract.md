@@ -6260,6 +6260,7 @@ and pending Fork work remain ineligible. The connection barrier also retains
 the original transport/server/client identity when replacement connection props
 arrive during an unresolved directory receipt; same-identity transport refresh
 can continue without discarding that original request.
+
 ## Native configuration import in Harness Settings
 
 The Codex Harness Settings pane exposes the connected Source → Review → Result
