@@ -33,7 +33,7 @@ func TestFunctionOutputLostReceiptRetainsOneOriginalMessageWithoutTurnAuthority(
 	cfg := publicationWorkerConfig(t, f)
 	client := &losePublicationAck{WorkerServiceClient: f.client, t: t, path: filepath.Join(cfg.Root, "jobs", string(f.job), "publication.json"), dropAt: 4}
 	cfg.Client = client
-	publisher, mapper := bindNativeMapper(t, f, cfg)
+	publisher, mapper := bindNativeMapper(t, f, cfg, true)
 	output := &domain.FunctionOutput{Name: "tool", Structured: true, Content: []domain.FunctionOutputContent{{Kind: domain.FunctionText, Text: functionText("inert")}, {Kind: domain.FunctionEncrypted}}}
 	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.FunctionOutputEvent, ItemID: "original-output", FunctionOutput: output, FunctionOutputStage: domain.FunctionOutputStarted})
 	e := codex.Event{Kind: codex.FunctionOutputEvent, ThreadID: f.thread, TurnID: f.turn, ItemID: "original-output", Correlated: true, FunctionOutput: output, FunctionOutputStage: domain.FunctionOutputCompleted}
