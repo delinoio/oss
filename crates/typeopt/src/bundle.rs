@@ -135,12 +135,11 @@ fn forward_offset(offset: usize, edits: &[Edit]) -> Option<usize> {
 /// token moves through each round's edits; tokens inside replaced code are
 /// dropped, so inserted code maps to the original range it replaced.
 fn compose_bundle_map(
-    map: &[u8],
+    source_map: &sourcemap::SourceMap,
     original: &str,
     changed: &str,
     chain: &[Vec<Edit>],
-) -> Result<Vec<u8>> {
-    let source_map = sourcemap::SourceMap::from_slice(map).context("invalid chunk source map")?;
+) -> Result<sourcemap::SourceMap> {
     let original_starts = line_starts(original);
     let changed_starts = line_starts(changed);
     let mut builder = sourcemap::SourceMapBuilder::new(source_map.get_file());
@@ -175,9 +174,103 @@ fn compose_bundle_map(
             false,
         );
     }
-    let mut bytes = Vec::new();
-    builder.into_sourcemap().to_writer(&mut bytes)?;
-    Ok(bytes)
+    Ok(builder.into_sourcemap())
+}
+
+/// Where an edited chunk's source map lives.
+enum ChunkMap {
+    /// A `data:` URL in the chunk's `sourceMappingURL` comment.
+    Inline(String),
+    /// A map file inside the output directory.
+    File(PathBuf),
+}
+
+/// Finds the source map of a chunk: its `sourceMappingURL` (inline or a
+/// relative file), or the adjacent `<chunk>.map` of hidden source maps.
+fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<ChunkMap> {
+    let reference = sourcemap::locate_sourcemap_reference_slice(text.as_bytes())
+        .ok()
+        .flatten();
+    let path = match reference {
+        Some(reference) if reference.get_url().starts_with("data:") => {
+            return Some(ChunkMap::Inline(reference.get_url().to_owned()));
+        }
+        Some(reference) => {
+            let url = reference
+                .get_url()
+                .split(['?', '#'])
+                .next()
+                .unwrap_or_default();
+            if url.contains("://") || url.starts_with('/') {
+                return None;
+            }
+            chunk.parent()?.join(url)
+        }
+        None => chunk.with_file_name(format!("{}.map", chunk.file_name()?.to_string_lossy())),
+    };
+    let path = path.canonicalize().ok()?;
+    (path.starts_with(root.canonicalize().ok()?) && path.is_file()).then_some(ChunkMap::File(path))
+}
+
+/// Composes the source map of one edited chunk in place. Returns whether a
+/// map was composed (`Some(true)`), dropped because it could not be read
+/// (`Some(false)`) or absent (`None`).
+fn update_chunk_map(
+    root: &Path,
+    target: &Path,
+    original: &str,
+    text: &str,
+    chain: &[Vec<Edit>],
+) -> Result<Option<bool>> {
+    let Some(location) = chunk_map(root, target, text) else {
+        return Ok(None);
+    };
+    let decoded = match &location {
+        ChunkMap::Inline(url) => sourcemap::decode_data_url(url).map_err(anyhow::Error::from),
+        ChunkMap::File(path) => std::fs::read(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| sourcemap::decode_slice(&bytes).map_err(anyhow::Error::from)),
+    };
+    let composed = match decoded {
+        Ok(sourcemap::DecodedMap::Regular(map)) => compose_bundle_map(&map, original, text, chain),
+        Ok(_) => Err(anyhow::anyhow!(
+            "indexed or Hermes chunk maps are unsupported"
+        )),
+        Err(error) => Err(error),
+    };
+    match (location, composed) {
+        (ChunkMap::File(path), Ok(map)) => {
+            let mut bytes = Vec::new();
+            map.to_writer(&mut bytes)?;
+            std::fs::write(path, bytes).context("cannot write a chunk source map")?;
+            Ok(Some(true))
+        }
+        (ChunkMap::Inline(url), Ok(map)) => {
+            let at = text.rfind(&url).context("inline source map disappeared")?;
+            let updated = format!(
+                "{}{}{}",
+                &text[..at],
+                map.to_data_url()?,
+                &text[at + url.len()..]
+            );
+            std::fs::write(target, updated).context("cannot write an edited chunk")?;
+            Ok(Some(true))
+        }
+        // A map that no longer describes the chunk is worse than none.
+        (ChunkMap::File(path), Err(error)) => {
+            tracing::warn!(%error, "dropping an unreadable chunk source map");
+            std::fs::remove_file(path)?;
+            Ok(Some(false))
+        }
+        (ChunkMap::Inline(url), Err(error)) => {
+            tracing::warn!(%error, "dropping an unreadable inline chunk source map");
+            let at = text.rfind(&url).context("inline source map disappeared")?;
+            let line = text[..at].rfind("//").unwrap_or(at);
+            let updated = format!("{}{}", &text[..line], &text[at + url.len()..]);
+            std::fs::write(target, updated).context("cannot write an edited chunk")?;
+            Ok(Some(false))
+        }
+    }
 }
 
 /// `<name>-<hash>.<ext>` or `<name>.<hash>.<ext>` with an 8-character
@@ -478,25 +571,11 @@ pub fn publish(
         let target = root.join(relative);
         std::fs::write(&target, text).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
-        let map = target.with_file_name(format!(
-            "{}.map",
-            target.file_name().unwrap().to_string_lossy()
-        ));
-        if let Ok(bytes) = std::fs::read(&map) {
-            let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-            match compose_bundle_map(&bytes, original, text, chain) {
-                Ok(composed) => {
-                    std::fs::write(&map, composed).context("cannot write a chunk source map")?;
-                    maps += 1;
-                }
-                Err(error) => {
-                    // A map that no longer describes the chunk is worse than
-                    // none.
-                    tracing::warn!(%error, "dropping an unreadable chunk source map");
-                    std::fs::remove_file(&map)?;
-                    dropped += 1;
-                }
-            }
+        let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
+        match update_chunk_map(&root, &target, original, text, chain)? {
+            Some(true) => maps += 1,
+            Some(false) => dropped += 1,
+            None => {}
         }
     }
     let rehashed = if crate::app::keep_chunk_names() {

@@ -405,6 +405,60 @@ fn copies_other_files_and_composes_maps_of_edited_chunks() {
     );
 }
 
+/// Follows `sourceMappingURL`: inline `data:` maps are composed in place and
+/// a map in another directory is composed where it is.
+#[test]
+fn composes_inline_and_referenced_maps() {
+    let code = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#;
+    let map = |file: &str| {
+        let mut builder = sourcemap::SourceMapBuilder::new(Some(file));
+        let id = builder.add_source("src/main.ts");
+        builder.set_source_contents(id, Some(code));
+        let at = code.find("console").unwrap() as u32;
+        builder.add(0, at, 0, at, Some("src/main.ts"), None, false);
+        builder.into_sourcemap()
+    };
+    let inline = format!(
+        "{code}\n//# sourceMappingURL={}",
+        map("inline.js").to_data_url().unwrap()
+    );
+    let mut external = Vec::new();
+    map("external.js").to_writer(&mut external).unwrap();
+    let temp = bundle(&[
+        ("index.js", r#"import"./inline.js";import"./external.js";"#),
+        ("inline.js", &inline),
+        (
+            "external.js",
+            &format!("{code}\n//# sourceMappingURL=maps/external.map"),
+        ),
+        ("maps/external.map", std::str::from_utf8(&external).unwrap()),
+    ]);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    let console_maps_to_console = |js: &str, map: &sourcemap::SourceMap| {
+        let token = map.tokens().next().expect("one token");
+        let at = token.get_dst_col() as usize;
+        assert!(js[at..].starts_with("console"), "{js}");
+        assert_eq!(token.get_src_col() as usize, code.find("console").unwrap());
+    };
+    let edited = out(temp.path(), "inline.js");
+    assert!(
+        !edited.contains("verticalSpacing"),
+        "the fixture must be optimized"
+    );
+    let url = edited.rsplit("sourceMappingURL=").next().unwrap().trim();
+    let sourcemap::DecodedMap::Regular(decoded) = sourcemap::decode_data_url(url).unwrap() else {
+        panic!("regular map")
+    };
+    console_maps_to_console(&edited, &decoded);
+    let edited = out(temp.path(), "external.js");
+    let composed = sourcemap::SourceMap::from_slice(
+        &fs::read(temp.path().join("out/maps/external.map")).unwrap(),
+    )
+    .unwrap();
+    console_maps_to_console(&edited, &composed);
+}
+
 fn listing(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
