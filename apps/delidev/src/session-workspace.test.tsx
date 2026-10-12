@@ -1591,12 +1591,16 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
     await screen.findByRole("tab", { name: "Terminal 1" });
     f.terminalCreate.mockReturnValueOnce({ terminal: f.terminals[1]! });
-    fireEvent.click(await screen.findByRole("button", { name: "Create terminal" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create terminal" }),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id),
     );
     f.terminalCreate.mockReturnValueOnce({ terminal: f.terminals[2]! });
-    fireEvent.click(await screen.findByRole("button", { name: "Create terminal" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create terminal" }),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
     );
@@ -1614,9 +1618,9 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(1));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminal \d+$/ })).toHaveLength(
-        2,
-      ),
+      expect(
+        screen.getAllByRole("tab", { name: /^Terminal \d+$/ }),
+      ).toHaveLength(2),
     );
     const remaining = screen.getAllByRole("tab", { name: /^Terminal \d+$/ });
     expect(remaining[0]).toBe(terminalTabs[0]);
@@ -1634,9 +1638,9 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(0));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminal \d+$/ })).toHaveLength(
-        1,
-      ),
+      expect(
+        screen.getAllByRole("tab", { name: /^Terminal \d+$/ }),
+      ).toHaveLength(1),
     );
     expect(
       screen

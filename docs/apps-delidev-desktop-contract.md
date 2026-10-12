@@ -1333,23 +1333,23 @@ including the renderer-unavailable variant. Remove their unused presentation
 state and CSS. Keep original terminal selection/output, compact connection
 status, loading/empty/error guidance, reattachment and exact uncertainty retries.
 
-+ and the fixed terminal-input primary+T action share one explicit additional
-creation callback. Use the original session/revision, a fresh request identity,
-Worker default shell and unchanged 24×80 dimensions. Select/focus the verified
-returned original terminal through the existing owner. TerminalCreate is a
-read-only Session catalog action with Terminal target context, priority 2,
-input Target permission and terminal eligibility. The original visible terminal
-input host is its target. The renderer shortcut hook dispatches before PTY bytes;
-a matching disabled chord is consumed without creation or input. Preserve
-inactive/opening/unsupported/busy/uncertain/archived gates, modifier/handled/
-repeat/IME/229/AltGraph/modal/hidden/inert fences and numeric tab shortcuts.
-Composer/sidebar/tab/+ focus and other panes cannot activate TerminalCreate.
-Help describes this focus restriction and cannot invoke the target action.
-All seven existing custom T preferences remain valid. TerminalCreate does not
-participate in OpenTool override suppression and reserves no global T chord.
-Shell exit, verified-exit dismissal and Archive cleanup keep their original
-independent process ownership. Retain the accepted creation
-and explicit selection beyond the bounded 50-record history payload window.
+- and the fixed terminal-input primary+T action share one explicit additional
+  creation callback. Use the original session/revision, a fresh request identity,
+  Worker default shell and unchanged 24×80 dimensions. Select/focus the verified
+  returned original terminal through the existing owner. TerminalCreate is a
+  read-only Session catalog action with Terminal target context, priority 2,
+  input Target permission and terminal eligibility. The original visible terminal
+  input host is its target. The renderer shortcut hook dispatches before PTY bytes;
+  a matching disabled chord is consumed without creation or input. Preserve
+  inactive/opening/unsupported/busy/uncertain/archived gates, modifier/handled/
+  repeat/IME/229/AltGraph/modal/hidden/inert fences and numeric tab shortcuts.
+  Composer/sidebar/tab/+ focus and other panes cannot activate TerminalCreate.
+  Help describes this focus restriction and cannot invoke the target action.
+  All seven existing custom T preferences remain valid. TerminalCreate does not
+  participate in OpenTool override suppression and reserves no global T chord.
+  Shell exit, verified-exit dismissal and Archive cleanup keep their original
+  independent process ownership. Retain the accepted creation
+  and explicit selection beyond the bounded 50-record history payload window.
 
 Pin @wterm/dom and @wterm/ghostty to 0.5.4 with resolved
 @wterm/core 0.5.4. The synchronous TerminalScreen facade retains its

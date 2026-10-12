@@ -467,16 +467,34 @@ it("preserves each editable T override and suppresses only the tool default acro
   ).toThrow();
 });
 
-
 it("keeps all seven custom T overrides valid beside the separate fixed terminal-input context", () => {
   for (const action of editableShortcutCatalog) {
-    const overrides = { [action.id]: { state: ShortcutOverrideState.Binding, chord: { key: "t", shift: false } } };
+    const overrides = {
+      [action.id]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "t", shift: false },
+      },
+    };
     expect(parseShortcutOverrides(overrides)).toEqual(overrides);
     expect(shortcutConflicts(overrides)).toEqual([]);
-    expect(readOnlyShortcutSuppression(ShortcutId.TerminalCreate, overrides)).toBeUndefined();
-    expect(customizationBindings(ShortcutId.TerminalCreate, overrides)).toEqual([{ key: "t", primary: true }]);
+    expect(
+      readOnlyShortcutSuppression(ShortcutId.TerminalCreate, overrides),
+    ).toBeUndefined();
+    expect(customizationBindings(ShortcutId.TerminalCreate, overrides)).toEqual(
+      [{ key: "t", primary: true }],
+    );
   }
-  const action = readOnlyShortcutCatalog.find((entry) => entry.id === ShortcutId.TerminalCreate);
-  expect(action).toMatchObject({ target: ShortcutTargetContext.Terminal, priority: 2, input: ShortcutInput.Target });
-  expect(editableShortcutCatalog.some((entry) => entry.id === ShortcutId.TerminalCreate)).toBe(false);
+  const action = readOnlyShortcutCatalog.find(
+    (entry) => entry.id === ShortcutId.TerminalCreate,
+  );
+  expect(action).toMatchObject({
+    target: ShortcutTargetContext.Terminal,
+    priority: 2,
+    input: ShortcutInput.Target,
+  });
+  expect(
+    editableShortcutCatalog.some(
+      (entry) => entry.id === ShortcutId.TerminalCreate,
+    ),
+  ).toBe(false);
 });

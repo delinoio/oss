@@ -1717,6 +1717,12 @@
   overflow: auto;
   overflow-wrap: anywhere;
 }
-.session-terminal-status:not(:empty) { padding: 8px 12px; }
-.session-terminal-status[hidden] { display: none; }
-.session-terminal-status > p { margin: 0; }
+.session-terminal-status:not(:empty) {
+  padding: 8px 12px;
+}
+.session-terminal-status[hidden] {
+  display: none;
+}
+.session-terminal-status > p {
+  margin: 0;
+}

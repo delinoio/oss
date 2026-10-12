@@ -175,7 +175,9 @@ async function fixture(
         <SessionTabBar
           id={sourceId}
           tabs={tabs.tabs}
-          terminalNumber={(id) => tabs.store.terminalPresentation(sourceId).number(id)}
+          terminalNumber={(id) =>
+            tabs.store.terminalPresentation(sourceId).number(id)
+          }
           selected={tabs.selected}
           select={(key) => tabs.store.select(sourceId, key)}
           close={(key) => tabs.store.close(sourceId, key)}

@@ -14,7 +14,9 @@ export class TerminalPresentation {
     }
     return value;
   }
-  known(id: string): boolean { return this.numbers.has(id); }
+  known(id: string): boolean {
+    return this.numbers.has(id);
+  }
   private revisions = new Map<string, bigint>();
   private dismissed = new Set<string>();
   hidden(id: string) {

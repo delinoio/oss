@@ -612,30 +612,80 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
 );
 
 it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
-  "admits fixed terminal creation only from its original visible input and consumes disabled matches (%s)", (localPlatform) => {
-    const host = document.createElement("div"), input = document.createElement("textarea"), outside = document.createElement("button");
+  "admits fixed terminal creation only from its original visible input and consumes disabled matches (%s)",
+  (localPlatform) => {
+    const host = document.createElement("div"),
+      input = document.createElement("textarea"),
+      outside = document.createElement("button");
     host.dataset.shortcuts = "passthrough";
     host.append(input);
     document.body.append(host, outside);
-    const run = vi.fn(), broader = vi.fn();
-    const action = definition({ id: ShortcutId.TerminalCreate, scope: Surface.Sessions,
-      label: "shortcuts.createTerminal", bindings: [{ key: "t", primary: true }],
-      target: { current: host }, input: ShortcutInput.Target, terminal: true, run });
-    const chord = localPlatform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
-    const send = (target: HTMLElement, options: KeyboardEventInit = {}, active = action) => {
-      const event = new KeyboardEvent("keydown", { key: "t", code: "KeyT", bubbles: true, cancelable: true, ...chord, ...options });
-      target.addEventListener("keydown", () => dispatchShortcut(event, [active, definition({
-        id: ShortcutId.OpenTool, scope: Surface.Sessions, bindings: [{ key: "t", primary: true }], run: broader,
-      })], Surface.Sessions, localPlatform), { once: true });
+    const run = vi.fn(),
+      broader = vi.fn();
+    const action = definition({
+      id: ShortcutId.TerminalCreate,
+      scope: Surface.Sessions,
+      label: "shortcuts.createTerminal",
+      bindings: [{ key: "t", primary: true }],
+      target: { current: host },
+      input: ShortcutInput.Target,
+      terminal: true,
+      run,
+    });
+    const chord =
+      localPlatform === ShortcutPlatform.Mac
+        ? { metaKey: true }
+        : { ctrlKey: true };
+    const send = (
+      target: HTMLElement,
+      options: KeyboardEventInit = {},
+      active = action,
+    ) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "t",
+        code: "KeyT",
+        bubbles: true,
+        cancelable: true,
+        ...chord,
+        ...options,
+      });
+      target.addEventListener(
+        "keydown",
+        () =>
+          dispatchShortcut(
+            event,
+            [
+              active,
+              definition({
+                id: ShortcutId.OpenTool,
+                scope: Surface.Sessions,
+                bindings: [{ key: "t", primary: true }],
+                run: broader,
+              }),
+            ],
+            Surface.Sessions,
+            localPlatform,
+          ),
+        { once: true },
+      );
       target.dispatchEvent(event);
       return event;
     };
     expect(send(input).defaultPrevented).toBe(true);
     expect(run).toHaveBeenCalledOnce();
-    expect(send(input, {}, { ...action, enabled: false }).defaultPrevented).toBe(true);
+    expect(
+      send(input, {}, { ...action, enabled: false }).defaultPrevented,
+    ).toBe(true);
     expect(run).toHaveBeenCalledOnce();
     expect(broader).not.toHaveBeenCalled();
-    for (const options of [{ shiftKey: true }, { altKey: true }, { ctrlKey: true, metaKey: true }, { repeat: true }, { isComposing: true }, { keyCode: 229 }]) {
+    for (const options of [
+      { shiftKey: true },
+      { altKey: true },
+      { ctrlKey: true, metaKey: true },
+      { repeat: true },
+      { isComposing: true },
+      { keyCode: 229 },
+    ]) {
       send(input, options);
       expect(run).toHaveBeenCalledOnce();
     }
@@ -646,12 +696,16 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
       expect(send(input).defaultPrevented).toBe(false);
       host.removeAttribute(attribute);
     }
-    expect(send(input, {}, { ...action, active: false }).defaultPrevented).toBe(false);
+    expect(send(input, {}, { ...action, active: false }).defaultPrevented).toBe(
+      false,
+    );
     const dialog = document.createElement("dialog");
     dialog.open = true;
     document.body.append(dialog);
     expect(send(input).defaultPrevented).toBe(false);
     expect(run).toHaveBeenCalledOnce();
-    dialog.remove(); host.remove(); outside.remove();
+    dialog.remove();
+    host.remove();
+    outside.remove();
   },
 );

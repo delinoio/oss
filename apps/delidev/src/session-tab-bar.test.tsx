@@ -41,24 +41,45 @@ it("roves focus and selection without an absent-position alias and leaves pinned
   expect(tabs[0].getAttribute("aria-keyshortcuts")).toMatch(/1$/);
 });
 
-
 it("uses the shared friendly number for names, close controls and tooltips without changing focus", async () => {
   const store = new SessionTabsStore();
-  store.open("session", { kind: SessionTabKind.Terminal, id: "internal-original-id" });
+  store.open("session", {
+    kind: SessionTabKind.Terminal,
+    id: "internal-original-id",
+  });
   store.terminalPresentation("session").number("encountered-before-open");
-  store.open("session", { kind: SessionTabKind.Terminal, id: "third-original-id" });
+  store.open("session", {
+    kind: SessionTabKind.Terminal,
+    id: "third-original-id",
+  });
   const state = store.snapshot("session");
-  const view = render(<SessionTabBar id="session" {...state} select={() => {}} close={() => {}}
-    terminalNumber={(id) => store.terminalPresentation("session").number(id)} />);
+  const view = render(
+    <SessionTabBar
+      id="session"
+      {...state}
+      select={() => {}}
+      close={() => {}}
+      terminalNumber={(id) => store.terminalPresentation("session").number(id)}
+    />,
+  );
   const terminal = screen.getByRole("tab", { name: "Terminal 3" });
   terminal.focus();
   expect(terminal.title).toBe("Terminal 3");
   expect(screen.getByRole("button", { name: /Close Terminal 3/ })).toBeTruthy();
   expect(view.container.textContent).not.toContain("original-id");
-  await act(async () => { await i18n.changeLanguage("ko"); });
+  await act(async () => {
+    await i18n.changeLanguage("ko");
+  });
   // Session owns locale subscriptions; re-render the same descriptors only.
-  view.rerender(<SessionTabBar id="session" {...state} select={() => {}} close={() => {}}
-    terminalNumber={(id) => store.terminalPresentation("session").number(id)} />);
+  view.rerender(
+    <SessionTabBar
+      id="session"
+      {...state}
+      select={() => {}}
+      close={() => {}}
+      terminalNumber={(id) => store.terminalPresentation("session").number(id)}
+    />,
+  );
   expect(screen.getByRole("tab", { name: "터미널 3" })).toBe(terminal);
   expect(document.activeElement).toBe(terminal);
 });
