@@ -104,10 +104,17 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 				}
 				return req
 			}
+			serverEpoch := f.service.executionAuthority.epoch
+			f.service.executionAuthority.epoch = domain.NewID()
+			if _, err := f.workerClient.PublishNativeCodeReview(ctx, ownerRequest(f.workerIdentity, publication(domain.NativeReviewReady, ""))); err == nil {
+				t.Fatal("stale execution epoch admitted a new review send")
+			}
+			f.service.executionAuthority.epoch = serverEpoch
 			ready := publication(domain.NativeReviewReady, "")
 			if _, err := f.workerClient.PublishNativeCodeReview(ctx, ownerRequest(f.workerIdentity, ready)); err != nil {
 				t.Fatal(err)
 			}
+			f.service.executionAuthority.epoch = domain.NewID()
 			if control == "disconnect" {
 				account, err := f.service.Store.Get(ctx, domain.AccountKind, input.Source.AccountID)
 				if err != nil {

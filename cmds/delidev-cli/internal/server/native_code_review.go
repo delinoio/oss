@@ -352,13 +352,16 @@ func (s *Service) PublishNativeCodeReview(ctx context.Context, req *connect.Requ
 			return nil, domain.NativeCodeReviewUnavailable()
 		}
 		grant, err := tx.ExecutionGrantForJob(row.ID)
-		if err != nil || s.executionAuthority == nil || grant.ServerEpoch != s.executionAuthority.epoch || grant.ExecutionID != input.ActionID || grant.InstanceID != identity.Instance || grant.DeviceID != actor.DeviceID {
+		if err != nil || s.executionAuthority == nil || grant.ExecutionID != input.ActionID || grant.InstanceID != identity.Instance || grant.DeviceID != actor.DeviceID {
 			return nil, domain.NativeCodeReviewUnavailable()
 		}
 		// Ready is admission for the one new native send. Entered/exited/usage
 		// acknowledge already-observed original evidence after Stop, Archive or
 		// account disconnection; they cannot restore inference authority.
 		if identity.State == domain.NativeReviewReady {
+			if grant.ServerEpoch != s.executionAuthority.epoch {
+				return nil, domain.NativeCodeReviewUnavailable()
+			}
 			canceled, err := tx.JobCancellationRequested(row.ID)
 			if err != nil || canceled || reportedUsage != nil {
 				return nil, domain.NativeCodeReviewUnavailable()
