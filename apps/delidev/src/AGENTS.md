@@ -10,10 +10,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 Changes to shared renderer shortcuts must update dispatch, Help, the Settings catalog and control accessibility annotations together through the same typed declarations. Keep fixed actions outside the editable preference catalog, following the [shortcut contract](../../../docs/apps-delidev-desktop-contract.md#screen-shortcuts-and-help).
 
-The shared pure `product-identity.ts` module is owned here and consumed by the mobile renderer. Changes must read both renderer contracts; desktop React/query-cache observation stays in `product-identity-labels.tsx`.
-
-Changes to native browser resource controls must retain the original account/profile operation owner independently of visible panes. Read the operation ownership and resource-close exception before changing shared tab dismissal. Follow the [browser operation contract](../../../docs/cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
-
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
