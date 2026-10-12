@@ -526,6 +526,13 @@ in the current validated chain, so an empty first page that continues to a
 terminal page whose workers are all excluded by the project shows the guidance;
 only the first page can enable the creation entry.
 
+New session and New Chat additionally withhold the entry, showing the ordinary
+Agent Worker loading status, while the creation preference read is unsettled or a
+retained Agent's exact-ID read, project eligibility read or pending restoration
+has not settled. Once the preference is absent, the retained Agent is ineligible,
+or any of those reads failed, the same validated empty inventory offers the
+entry. A manual Agent choice or edit releases the wait and keeps its authority.
+
 Keep the Agent Worker label above an outlined 40px native non-submit button with
 an inert plus icon, 8px corners, existing selector width, semantic theme colors,
 localized accessible name and visible keyboard focus. Preserve scrollable
