@@ -1164,6 +1164,25 @@ fn keeps_dual_used_classic_workers_unchanged() {
     assert_eq!(out(temp.path(), "worker.js"), worker);
 }
 
+/// Chunks in an import cycle that no entry reaches are loaded from outside
+/// the program: their exports stay public.
+#[test]
+fn keeps_exports_of_root_import_cycles() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import{helper as h}from"./lib.js";export function api(){return h()}export const VERSION=1;"#,
+        ),
+        (
+            "lib.js",
+            r#"import{VERSION as v}from"./index.js";function helper(){return v}function externalOnly(){return 2}export{helper,externalOnly};"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert!(out(temp.path(), "index.js").contains("export function api"));
+    assert!(out(temp.path(), "lib.js").contains("externalOnly"));
+}
+
 /// A query in an import specifier still loads the chunk, but the compiler
 /// cannot link it: that chunk's exports stay public.
 #[test]

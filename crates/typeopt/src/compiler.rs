@@ -278,7 +278,7 @@ impl Project {
                  published: {outside}"
             );
         }
-        let (imported, unlinked) = project.bundle_imported();
+        let (imported, unlinked, edges) = project.bundle_imported();
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
@@ -304,11 +304,27 @@ impl Project {
         // A chunk that no chunk imports (an HTML entry, a worker or a file
         // referenced by URL) is an entry; HTML entries stay entries even when
         // lazy chunks import shared code back from them.
-        project.entries = chunks
+        let mut entries: Vec<String> = chunks
             .iter()
             .filter(|c| !imported.contains(*c) || loaded_by_html(c))
             .cloned()
             .collect();
+        // Chunks that no entry reaches (a cycle of chunks that only import
+        // each other, loaded from outside) are entries too: something
+        // outside the program loads them.
+        let mut reached: Paths = entries.iter().cloned().collect();
+        let mut pending = entries.clone();
+        while let Some(chunk) = pending.pop() {
+            for target in edges.get(&chunk).into_iter().flatten() {
+                if reached.insert(target.clone()) {
+                    pending.push(target.clone());
+                }
+            }
+        }
+        entries.extend(chunks.iter().filter(|c| !reached.contains(*c)).cloned());
+        entries.sort();
+        entries.dedup();
+        project.entries = entries;
         crate::app::set_bundle_modules(modules, classic);
         tracing::info!(
             chunks = chunks.len(),
@@ -333,10 +349,12 @@ impl Project {
     /// declaration or a literal dynamic `import()`, and the subset that is
     /// imported through a specifier with a query, fragment or `%` escape.
     /// The compiler cannot link such a specifier to the chunk, so those
-    /// chunks are public: what the importer reads stays unseen.
-    fn bundle_imported(&self) -> (Paths, Paths) {
+    /// chunks are public: what the importer reads stays unseen. Also returns
+    /// the import edges between chunks.
+    fn bundle_imported(&self) -> (Paths, Paths, BTreeMap<String, Paths>) {
         let _scope = enter_program(Some(self.version));
         let (mut imported, mut public) = (Paths::new(), Paths::new());
+        let mut edges = BTreeMap::<String, Paths>::new();
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -379,11 +397,15 @@ impl Project {
                     if path != text {
                         public.insert(resolved.clone());
                     }
+                    edges
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(resolved.clone());
                     imported.insert(resolved);
                 }
             }
         }
-        (imported, public)
+        (imported, public, edges)
     }
 
     /// Checks the original program and records the analysis snapshot.
