@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -21,6 +22,22 @@ type claudeSetupFixture struct {
 	done        chan struct{}
 	submissions int
 	closeError  error
+}
+
+type blockingClaudeTokenSecrets struct {
+	*accountTestSecrets
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (v *blockingClaudeTokenSecrets) Get(ctx context.Context, ref credentials.Ref) ([]byte, error) {
+	close(v.entered)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-v.release:
+		return v.accountTestSecrets.Get(ctx, ref)
+	}
 }
 
 func setupFixtureURL() string {
@@ -224,6 +241,58 @@ func TestManagedClaudeExclusiveExecutionPreservesGeneration(t *testing.T) {
 	_, a := f.record()
 	if string(a.Subscription.Generation) != generation || a.Connection.ID != connection || a.Subscription.Lease != nil {
 		t.Fatal("original generation or connection lost")
+	}
+}
+
+func TestManagedClaudeTokenRevalidatesCancellationAfterVaultRead(t *testing.T) {
+	f := newClaudeSubscriptionFixture(t)
+	connectManagedClaudeFixture(t, f)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.token.capability", nil, func(tx *store.Tx) (any, error) {
+		r, m, err := activeMachine(tx, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		m.WorkerCapabilities = append(m.WorkerCapabilities, domain.ManagedClaudeTokensV1)
+		_, err = tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, revision := managedClaudeExecution(t, f)
+	blocked := &blockingClaudeTokenSecrets{accountTestSecrets: f.secrets, entered: make(chan struct{}), release: make(chan struct{})}
+	f.service.accountSecrets = blocked
+	type takeResult struct {
+		response *pb.TakeSubscriptionResponse
+		err      error
+	}
+	done := make(chan takeResult, 1)
+	go func() {
+		response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, &pb.TakeSubscriptionRequest{
+			Mutation:  &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: revision},
+			MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OperationId: string(job), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE,
+		}))
+		if response != nil {
+			done <- takeResult{response: response.Msg, err: err}
+			return
+		}
+		done <- takeResult{err: err}
+	}()
+	<-blocked.entered
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.token.stop-during-vault-read", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.RequestJobCancellation(job)
+	})
+	close(blocked.release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := <-done
+	if result.err == nil || result.response != nil {
+		t.Fatal("stopped execution received the managed Claude token", result.err)
+	}
+	_, account := f.record()
+	if account.Subscription.Lease == nil || !account.Subscription.RecoveryRequired || account.Health != domain.AccountFailed {
+		t.Fatal("refused token delivery did not retain cleanup recovery ownership")
 	}
 }
 

@@ -151,6 +151,39 @@ func (s *Service) takeClaudeToken(ctx context.Context, req *connect.Request[pb.T
 		clear(raw)
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
+	// Vault I/O runs after the initial job admission snapshot. Stop or archive
+	// can request cancellation while the protected read is in progress, so
+	// revalidate both device and execution authority before returning the token.
+	err = s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		currentRecord, current, err := s.managedClaudeLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, false)
+		if err != nil {
+			return err
+		}
+		if current.Subscription.Generation != st.Generation || current.Subscription.IdentityCommitment != st.IdentityCommitment || current.Subscription.Lease.Revision != st.Lease.Revision || current.Connection == nil || a.Connection == nil || current.Connection.ID != a.Connection.ID {
+			return subscriptionDenied()
+		}
+		jr, err := tx.Get(domain.JobKind, input.Operation)
+		if err != nil {
+			return subscriptionDenied()
+		}
+		job, err := store.Decode[domain.Job](jr)
+		var execution domain.ExecutionJobInput
+		if err != nil || jr.Revision != input.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID || domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil || execution.AccountID != currentRecord.ID || execution.ConnectionID != current.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionClaude || execution.Configuration.Harness != domain.ClaudeCode {
+			return subscriptionDenied()
+		}
+		canceled, err := tx.JobCancellationRequested(jr.ID)
+		if err != nil || canceled {
+			return subscriptionDenied()
+		}
+		return nil
+	})
+	if err != nil {
+		clear(raw)
+		return nil, rpc.Error(err, c)
+	}
 	installed, _ := json.Marshal(installation)
 	s.logger.InfoContext(ctx, "claude_token_execution_granted", "lease_id", input.Lease, "machine_id", input.Machine, "generation_id", st.Generation)
 	granted = true
