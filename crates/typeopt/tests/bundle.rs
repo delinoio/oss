@@ -523,6 +523,55 @@ fn rehashes_dot_separated_hash_names() {
     );
 }
 
+/// An importer's new name covers the final content of what it imports: a
+/// different leaf edit renames the unchanged importer differently.
+#[test]
+fn importer_names_follow_dependency_content() {
+    let chunks = [
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import{m as e}from"./leaf-BBBBBBBB.js";console.log(e(2));"#,
+        ),
+        (
+            "assets/leaf-BBBBBBBB.js",
+            r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n*2}}function m(n){const o=make(n);return o.verticalSpacing+o.horizontalSpacing}function unusedHelperThatIsNeverCalled(n){return n.toString(36).repeat(3)}export{m,unusedHelperThatIsNeverCalled as u};"#,
+        ),
+    ];
+    let names = |extra: &[&str]| {
+        let temp = bundle(&chunks);
+        optimize(temp.path(), extra);
+        let assets = listing(&temp.path().join("out/assets"));
+        let index = assets
+            .iter()
+            .find(|a| a.starts_with("index-"))
+            .unwrap()
+            .clone();
+        let leaf = assets
+            .iter()
+            .find(|a| a.starts_with("leaf-"))
+            .unwrap()
+            .clone();
+        let entry = node(&temp.path().join("out/assets").join(&index));
+        assert!(
+            entry.status.success(),
+            "{}",
+            String::from_utf8_lossy(&entry.stderr)
+        );
+        (index, leaf)
+    };
+    let all = names(&[]);
+    let without_removal = names(&["--disable-pass", "residual-dependency-removal"]);
+    assert_ne!(all.1, without_removal.1, "the leaf differs");
+    assert_ne!(
+        all.0, without_removal.0,
+        "so its importer is renamed differently"
+    );
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);

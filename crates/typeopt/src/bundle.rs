@@ -212,7 +212,7 @@ fn is_text_asset(path: &Path) -> bool {
     path.extension().is_some_and(|e| {
         matches!(
             e.to_str(),
-            Some("js" | "mjs" | "cjs" | "html" | "css" | "json" | "map" | "webmanifest" | "txt")
+            Some("js" | "mjs" | "cjs" | "html" | "css" | "json" | "map" | "webmanifest")
         )
     })
 }
@@ -229,11 +229,62 @@ fn files_under(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Gives every edited content-hashed chunk, and every hashed chunk that
+/// Byte offsets where `name` occurs as a file reference: after a path
+/// separator, quote, `(` or `=`, and before a quote, `)`, `?`, `#`,
+/// whitespace, `>`, `,`, the end of the text or a `.map` suffix. Other
+/// occurrences (prose or data that merely contains the name) stay unchanged.
+fn references(text: &str, name: &str) -> Vec<usize> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find(name) {
+        let at = from + offset;
+        let end = at + name.len();
+        let before = text[..at].chars().next_back();
+        let after = &text[end..];
+        let follows = after.is_empty()
+            || after.starts_with(".map")
+            || after.starts_with(|c: char| {
+                c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | '?' | '#' | '>' | ',')
+            });
+        if matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '=')) && follows {
+            found.push(at);
+        }
+        from = end;
+    }
+    found
+}
+
+/// Replaces the references to renamed files in `text`.
+fn rewrite(text: &str, renamed: &BTreeMap<String, String>) -> String {
+    let mut edits: Vec<(usize, usize, &str)> = Vec::new();
+    for (old, new) in renamed {
+        for at in references(text, old) {
+            edits.push((at, at + old.len(), new));
+        }
+    }
+    edits.sort();
+    let mut out = String::with_capacity(text.len());
+    let mut previous = 0;
+    for (start, end, replacement) in edits {
+        if start < previous {
+            continue;
+        }
+        out.push_str(&text[previous..start]);
+        out.push_str(replacement);
+        previous = end;
+    }
+    out.push_str(&text[previous..]);
+    out
+}
+
+/// Gives every edited content-hashed chunk, and every hashed file that
 /// references a renamed one, a new hash, and rewrites the references in all
 /// text assets. Browsers cache hashed chunks immutably; an edited chunk that
 /// kept its name could otherwise meet a stale copy of a chunk it depends on.
+/// A new hash covers the final content of the file and of every renamed file
+/// it reaches, so a change in a dependency always renames its importers.
 fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
+    use sha2::{Digest, Sha256};
     let mut files = Vec::new();
     files_under(root, &mut files)?;
     files.sort();
@@ -246,54 +297,101 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
         }
     }
     let base = |p: &Path| p.file_name().unwrap().to_string_lossy().into_owned();
-    let mut renamed = BTreeMap::<String, String>::new();
-    let mut pending: Vec<PathBuf> = edited
-        .iter()
+    // Every hashed text file and the hashed files it references.
+    let hashed: BTreeMap<String, PathBuf> = texts
+        .keys()
         .filter(|p| hashed_name(&base(p)).is_some())
-        .cloned()
+        .map(|p| (base(p), p.clone()))
         .collect();
-    let mut seen = BTreeSet::new();
-    while let Some(file) = pending.pop() {
-        if !seen.insert(file.clone()) {
-            continue;
+    let mut referenced = BTreeMap::<String, BTreeSet<String>>::new();
+    for (name, path) in &hashed {
+        let text = &texts[path];
+        let targets = hashed
+            .keys()
+            .filter(|other| *other != name && !references(text, other).is_empty())
+            .cloned()
+            .collect();
+        referenced.insert(name.clone(), targets);
+    }
+    // The rename set: edited hashed chunks and, transitively, hashed files
+    // that reference a renamed file.
+    let mut renaming: BTreeSet<String> = edited
+        .iter()
+        .map(|p| base(p))
+        .filter(|n| hashed.contains_key(n))
+        .collect();
+    loop {
+        let more: Vec<String> = referenced
+            .iter()
+            .filter(|(name, targets)| {
+                !renaming.contains(*name) && targets.iter().any(|t| renaming.contains(t))
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        if more.is_empty() {
+            break;
         }
-        let old = base(&file);
-        let (name, ext, separator) = hashed_name(&old).expect("filtered to hashed names");
+        renaming.extend(more);
+    }
+    if renaming.is_empty() {
+        return Ok(0);
+    }
+    // Content digests with references to renamed files reduced to their
+    // logical names, so the digest does not depend on the new hashes.
+    let logical: BTreeMap<String, String> = renaming
+        .iter()
+        .map(|n| {
+            let (name, ext, separator) = hashed_name(n).expect("hashed");
+            (n.clone(), format!("{name}{separator}.{ext}"))
+        })
+        .collect();
+    let digests: BTreeMap<String, [u8; 32]> = renaming
+        .iter()
+        .map(|n| {
+            let normalized = rewrite(&texts[&hashed[n]], &logical);
+            (n.clone(), Sha256::digest(normalized.as_bytes()).into())
+        })
+        .collect();
+    let mut renamed = BTreeMap::<String, String>::new();
+    for old in &renaming {
+        // Renamed files this file reaches, including itself.
+        let mut reach = BTreeSet::from([old.clone()]);
+        let mut stack = vec![old.clone()];
+        while let Some(current) = stack.pop() {
+            for target in &referenced[&current] {
+                if renaming.contains(target) && reach.insert(target.clone()) {
+                    stack.push(target.clone());
+                }
+            }
+        }
+        let (name, ext, separator) = hashed_name(old).expect("hashed");
         // Uniform base64url characters from the digest bytes, like a real
         // content hash (a hex-derived name would compress unusually well),
         // and recognizable as a hash by a later run.
         let mut new_name = String::new();
         for salt in 0u32.. {
-            use sha2::{Digest, Sha256};
-            let digest = Sha256::digest(format!("{old}\0{salt}\0{}", texts[&file]).as_bytes());
+            let mut hasher = Sha256::new();
+            hasher.update(format!("{old}\0{salt}\0").as_bytes());
+            for file in &reach {
+                hasher.update(file.as_bytes());
+                hasher.update(digests[file]);
+            }
+            let digest = hasher.finalize();
             let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
             let hash: String = digest[..8]
                 .iter()
                 .map(|&b| alphabet[(b % 64) as usize] as char)
                 .collect();
             new_name = format!("{name}{separator}{hash}.{ext}");
-            if hashed_name(&new_name).is_some() && new_name != old {
+            if hashed_name(&new_name).is_some() && new_name != *old {
                 break;
             }
         }
         renamed.insert(old.clone(), new_name);
-        for (other, text) in &texts {
-            if hashed_name(&base(other)).is_some() && text.contains(&old) {
-                pending.push(other.clone());
-            }
-        }
-    }
-    if renamed.is_empty() {
-        return Ok(0);
     }
     for (file, text) in &texts {
         crate::app::check_cancelled()?;
-        let mut updated = text.clone();
-        for (old, new) in &renamed {
-            if updated.contains(old.as_str()) {
-                updated = updated.replace(old.as_str(), new);
-            }
-        }
+        let updated = rewrite(text, &renamed);
         if &updated != text {
             std::fs::write(file, updated).context("cannot rewrite a chunk reference")?;
         }
@@ -419,7 +517,23 @@ pub fn publish(
 
 #[cfg(test)]
 mod tests {
-    use super::{hashed_name, html_tags};
+    use std::collections::BTreeMap;
+
+    use super::{hashed_name, html_tags, references, rewrite};
+
+    #[test]
+    fn rewrites_only_reference_positions() {
+        let name = "index-DnKDBunT.js";
+        let text = r#"import"./index-DnKDBunT.js";url(/a/index-DnKDBunT.js)<script src=index-DnKDBunT.js>//# sourceMappingURL=index-DnKDBunT.js.map
+see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
+        assert_eq!(references(text, name).len(), 4);
+        let renamed = BTreeMap::from([(name.to_owned(), "index-NEW12345.js".to_owned())]);
+        let out = rewrite(text, &renamed);
+        assert!(out.contains(r#"import"./index-NEW12345.js""#));
+        assert!(out.contains("sourceMappingURL=index-NEW12345.js.map"));
+        assert!(out.contains("see index-DnKDBunT.js later"));
+        assert!(out.contains("xindex-DnKDBunT.jsx"));
+    }
 
     #[test]
     fn parses_html_attributes_like_browsers() {
