@@ -1001,7 +1001,15 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 		}
 		if j.Type == domain.WorkspaceStorageJob {
 			var input workspace.StorageRequest
-			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.Validate() != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID || input.Preparation.MachineID != original.MachineID {
+			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID || input.Preparation.MachineID != original.MachineID {
+				return v, domain.SessionDeletionPending()
+			}
+			machineRecord, err := t.Get(domain.MachineKind, original.MachineID)
+			if err != nil {
+				return v, err
+			}
+			machine, err := Decode[domain.Machine](machineRecord)
+			if err != nil || input.ValidateForWorkerOS(machine.OS) != nil {
 				return v, domain.SessionDeletionPending()
 			}
 			copy.SnapshotID = input.SnapshotID

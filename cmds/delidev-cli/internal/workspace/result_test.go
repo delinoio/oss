@@ -71,4 +71,11 @@ func TestRemoteManifestValidationBindsEveryPreparationSelection(t *testing.T) {
 	if err := ValidateResult(windowsRequest, windows, "windows"); err != nil {
 		t.Fatalf("Windows manifest rejected on %s: %v", runtime.GOOS, err)
 	}
+	storage := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCreate, Preparation: windowsRequest, Manifest: windows, SnapshotID: domain.NewID(), PreviousState: domain.WorkspacePresent}
+	if err := storage.ValidateForWorkerOS("windows"); err != nil {
+		t.Fatalf("server-side validation rejected the Windows Worker's paths: %v", err)
+	}
+	if runtime.GOOS != "windows" && storage.Validate() == nil {
+		t.Fatal("runtime-based validation accepted Windows paths on a non-Windows host")
+	}
 }

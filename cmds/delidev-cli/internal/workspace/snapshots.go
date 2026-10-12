@@ -57,6 +57,13 @@ type StorageRequest struct {
 }
 
 func (r StorageRequest) Validate() error {
+	return r.ValidateForWorkerOS(runtime.GOOS)
+}
+
+// ValidateForWorkerOS validates native paths using the original Worker host.
+// Server-side deletion planning must not reinterpret another Worker’s paths
+// using the server process operating system.
+func (r StorageRequest) ValidateForWorkerOS(workerOS string) error {
 	if len(r.SidechatDependents) != 0 || r.SidechatActor != nil {
 		if r.Action != StorageCleanup || len(r.SidechatDependents) == 0 || len(r.SidechatDependents) > 256 || r.SidechatActor == nil || (r.SidechatActor.Type != domain.OwnerDevice && r.SidechatActor.Type != domain.ClientDevice) || r.SidechatActor.MachineID != "" || r.SidechatActor.Type == domain.ClientDevice && r.SidechatActor.DeviceID.Validate() != nil || domain.UniqueIDs(append([]domain.ID{r.Preparation.SessionID, r.OperationID}, r.SidechatDependents...)) != nil {
 			return ResultUncertain()
@@ -69,7 +76,7 @@ func (r StorageRequest) Validate() error {
 	if r.Preparation.Type == domain.Local {
 		return domain.Fail(domain.PermissionDenied, "Original Local checkouts cannot be snapshotted or cleaned through managed storage.", "Use your own Git/backup workflow; DeliDev will never remove these checkouts.")
 	}
-	if ValidateResult(r.Preparation, r.Manifest, runtime.GOOS) != nil {
+	if ValidateResult(r.Preparation, r.Manifest, workerOS) != nil {
 		return ResultUncertain()
 	}
 	if r.Action == StorageRecover {

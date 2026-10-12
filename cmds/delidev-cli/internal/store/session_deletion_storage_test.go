@@ -26,10 +26,10 @@ func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 	storageID := domain.NewID()
 	prepareRaw, _ := json.Marshal(prepare)
 	prepareDigest := sha256.Sum256(prepareRaw)
-	operation := workspace.StorageRequest{Version: 1, OperationID: storageID, Action: workspace.StorageCreate, SnapshotID: snapshot, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: workspace.Manifest{Version: 1, SessionID: sr.ID, MachineID: machine, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(prepareDigest[:]), PrimaryPath: "/home/worker/workspaces/" + string(sr.ID) + "/chat", Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}}
+	operation := workspace.StorageRequest{Version: 1, OperationID: storageID, Action: workspace.StorageCreate, SnapshotID: snapshot, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: workspace.Manifest{Version: 1, SessionID: sr.ID, MachineID: machine, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(prepareDigest[:]), PrimaryPath: `C:\Users\worker\workspaces\` + string(sr.ID) + `\chat`, Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}}
 	raw, _ := json.Marshal(operation)
 	_, err := s.Mutate(owner, domain.NewID(), "fixture.storage", nil, func(tx *Tx) (any, error) {
-		if _, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "Worker", OS: "linux", Architecture: "amd64"}); err != nil {
+		if _, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "Worker", OS: "windows", Architecture: "amd64"}); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Preparation worker", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); err != nil {
