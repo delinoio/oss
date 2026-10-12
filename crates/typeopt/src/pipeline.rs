@@ -83,9 +83,9 @@ pub fn static_imports(code: &str) -> Vec<String> {
 
 /// Static module specifiers of bundler output in source order, independent
 /// of line layout: every `from"…"` and side-effect `import"…"` at a token
-/// boundary, with optional whitespace before the quote. Minified chunks put
-/// many import statements on one line, which [`static_imports`] does not
-/// scan. Dynamic `import(…)` and members such as `Array.from(…)` do not
+/// boundary, with optional whitespace and comments before the quote. Minified
+/// chunks put many import statements on one line, which [`static_imports`] does
+/// not scan. Dynamic `import(…)` and members such as `Array.from(…)` do not
 /// match. A string that merely contains such text can add a specifier; that
 /// is conservative, because the gate rejects a bundle whose specifiers are
 /// not a subsequence of the previous ones.
@@ -109,9 +109,25 @@ pub fn bundle_static_imports(code: &str) -> Vec<String> {
         if start > 0 && (identifier(bytes[start - 1]) || bytes[start - 1] == b'.') {
             continue;
         }
+        // Whitespace and comments may separate the keyword from the quote.
         let mut quote_at = at;
-        while quote_at < bytes.len() && bytes[quote_at].is_ascii_whitespace() {
-            quote_at += 1;
+        loop {
+            while quote_at < bytes.len() && bytes[quote_at].is_ascii_whitespace() {
+                quote_at += 1;
+            }
+            if bytes[quote_at..].starts_with(b"/*") {
+                match code[quote_at + 2..].find("*/") {
+                    Some(end) => quote_at += 2 + end + 2,
+                    None => break,
+                }
+            } else if bytes[quote_at..].starts_with(b"//") {
+                match code[quote_at..].find('\n') {
+                    Some(end) => quote_at += end + 1,
+                    None => break,
+                }
+            } else {
+                break;
+            }
         }
         let Some(&quote) = bytes.get(quote_at) else {
             break;
@@ -1073,6 +1089,14 @@ mod tests {
         assert_eq!(
             bundle_static_imports(code),
             ["./a.js", "./side.js", "./c.js", "./d.js", "./e.js"]
+        );
+        // Comments between the keyword and the specifier.
+        assert_eq!(
+            bundle_static_imports(
+                "import/* kept */\"./side.js\";export{x}from/* kept */'./dep.js';import// \
+                 c\n\"./n.js\";"
+            ),
+            ["./side.js", "./dep.js", "./n.js"]
         );
         // Multi-byte characters before and between imports.
         assert_eq!(
