@@ -1221,6 +1221,7 @@ it.each(["response", "native"] as const)(
       f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
       f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, {
         nativeAccounting: [
+          { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
           {
             totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
             models: [
