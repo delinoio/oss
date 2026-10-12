@@ -144,7 +144,9 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					if err != nil {
 						return nil, err
 					}
+					v = fixtureProjectHarnessSelectors(v)
 					v.Options.Permission = domain.PermissionReadOnly
+					fixtureCaptureHarnessSelectors(&v)
 					if _, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 						return nil, err
 					}

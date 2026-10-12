@@ -70,6 +70,9 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	}
 	switch v := value.(type) {
 	case *domain.Agent:
+		if v.HarnessSettings == nil {
+			return nil, domain.Fail(domain.Unsupported, "Portable Agents require current typed harness selectors.", "Export current live configuration using the version-7 bundle shape.")
+		}
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()
 		}
@@ -310,8 +313,8 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if bundle.Version != domain.ConfigurationBundleVersion {
-		return plan, domain.Fail(domain.Unsupported, "Earlier portable configuration versions are retired.", "Preserve the original bundle and use current source-native configuration.")
+	if bundle.Version != domain.ConfigurationBundleVersion && bundle.Version != 4 {
+		return plan, domain.Fail(domain.Unsupported, "Unsupported portable configuration version.", "Use version 4 source-native configuration or the current typed harness format.")
 	}
 	if len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
@@ -326,6 +329,12 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
 		}
+		if bundle.Version == 4 {
+			entry, err = upgradeLegacyPortableHarness(entry)
+			if err != nil {
+				return plan, err
+			}
+		}
 		if _, err := portableValue(entry.Kind, entry.Document, true); err != nil {
 			return plan, err
 		}
@@ -337,6 +346,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		entry, ok := source[binding.SourceID]
 		if !ok || bindings[binding.SourceID].SourceID != "" || binding.TargetID.Validate() != nil || usedTargets[binding.TargetID] || binding.ExpectedRevision == 0 || entry.Kind == domain.AccountKind || (binding.Action != domain.ConfigurationReuse && !(binding.Action == domain.ConfigurationReplace && entry.Kind == domain.SettingsKind)) {
 			return plan, transferInvalid()
+		}
+		if bundle.Version == 4 && binding.Action == domain.ConfigurationReplace {
+			return plan, domain.Fail(domain.Unsupported, "Legacy settings cannot replace typed harness defaults.", "Export current settings, retain every existing defaults scope and review a version-7 replacement.")
 		}
 		bindings[binding.SourceID] = binding
 		targets[binding.SourceID] = binding.TargetID
@@ -464,6 +476,19 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 
 		case *domain.Project:
+			if v.HarnessDefaults != nil {
+				for i := range v.HarnessDefaults.Entries {
+					scope := &v.HarnessDefaults.Entries[i].Scope
+					if scope.ProviderID != "" {
+						if err = rewrite(&scope.ProviderID, domain.ProviderKind); err != nil {
+							break
+						}
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 			if err = rewriteIDs(v.Repositories, domain.RepositoryKind); err == nil {
 				err = rewrite(&v.PrimaryRepository, domain.RepositoryKind)
 			}
@@ -489,6 +514,19 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 			err = rewriteRemediation(v.Remediation)
 		case *domain.Settings:
+			if v.HarnessDefaults != nil {
+				for i := range v.HarnessDefaults.Entries {
+					scope := &v.HarnessDefaults.Entries[i].Scope
+					if scope.ProviderID != "" {
+						if err = rewrite(&scope.ProviderID, domain.ProviderKind); err != nil {
+							break
+						}
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 			err = rewriteRemediation(&v.Remediation)
 		}
 		if err != nil {
@@ -603,6 +641,9 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		case domain.ConfigurationReuse, domain.ConfigurationReplace:
 			if !exists || old.Kind != change.Kind || old.Revision != change.ExpectedRevision || change.Kind == domain.AccountKind || (change.Action == domain.ConfigurationReplace && change.Kind != domain.SettingsKind) {
 				return transferConflict()
+			}
+			if change.Action == domain.ConfigurationReplace && rpc.ResourceSchemaVersion(change.Kind, old.Data) > rpc.ResourceSchemaVersion(change.Kind, change.After) {
+				return domain.Fail(domain.Unsupported, "Portable replacement would remove inherited harness defaults.", "Preserve the complete version-7 settings shape.")
 			}
 			before, err := portableDocument(old.Kind, old.Data)
 			if err != nil {
@@ -744,4 +785,39 @@ func (s *Service) PreviewConfigurationImport(ctx context.Context, req *connect.R
 	response := connect.NewResponse(&pb.PreviewConfigurationImportResponse{PreviewJson: raw})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// Version 4 was the emitted source-native format before harness inheritance.
+// Convert its configuration in memory; never rewrite the original bundle or
+// apply the automatic live-Agent conversion to imported explicit choices.
+func upgradeLegacyPortableHarness(entry domain.ConfigurationEntry) (domain.ConfigurationEntry, error) {
+	if entry.Kind != domain.AgentKind && entry.Kind != domain.ProjectKind && entry.Kind != domain.SettingsKind {
+		return entry, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := domain.Decode(entry.Document, &fields); err != nil {
+		return entry, err
+	}
+	if _, present := fields["harness_settings"]; present {
+		return entry, domain.Fail(domain.Unsupported, "Typed harness settings require the current portable version.", "Retain the version-7 marker and all selectors.")
+	}
+	if _, present := fields["harness_defaults"]; present {
+		return entry, domain.Fail(domain.Unsupported, "Typed harness defaults require the current portable version.", "Retain the version-7 marker and all defaults scopes.")
+	}
+	value, err := configurationValue(entry.Kind, entry.Document, true)
+	if err != nil {
+		return entry, err
+	}
+	switch v := value.(type) {
+	case *domain.Agent:
+		if err := domain.NormalizeNewAgentHarnessSettings(v, entry.Document); err != nil {
+			return entry, err
+		}
+	case *domain.Project:
+		v.HarnessDefaults = &domain.HarnessDefaults{Version: 1, Entries: []domain.HarnessDefaultEntry{}}
+	case *domain.Settings:
+		v.HarnessDefaults = &domain.HarnessDefaults{Version: 1, Entries: []domain.HarnessDefaultEntry{}}
+	}
+	entry.Document, err = json.Marshal(value)
+	return entry, err
 }

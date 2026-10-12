@@ -328,3 +328,17 @@ Metadata and structured logs contain only safe IDs, closed stage/state/sequence
 and classified errors. Paths, URLs, prompt/credential/native/Git content,
 percentages and ETA are excluded. Retained failed-stage context supplements the
 original failure and independent cleanup guidance without animation or controls.
+
+## Frozen harness defaults
+
+Follow [harness defaults](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance)
+for applicable fields and exact source precedence. First dispatch selects the real
+account/profile, resolves trusted defaults and freezes values plus per-field source
+provenance in the same atomic configuration/input/job boundary. Worker capability
+53 gates only provenance-bearing assignments. Continuation and Fork retain the
+original accepted values and provenance; current account/Worker restrictions still
+apply. A missing applicable native default rejects before input with the named
+`HARNESS_DEFAULT_UNVERIFIED` error. Existing accepted model evidence is read only;
+resolution does not run a separate probe or add a native version admission gate.
+Historical omission bytes and digests remain unchanged. Native startup still
+validates the actual original process and applied settings before sending input.

@@ -8,6 +8,7 @@ import (
 )
 
 type SourceRoutingPreview struct {
+	SourceRoute   domain.AgentSourceRoute
 	Route         domain.Route
 	Agent         domain.Agent
 	Model         domain.Model
@@ -33,9 +34,8 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	}
 	sources := make([]domain.SourceRouteInput, 0, len(agent.SourceRoutes()))
 	for _, route := range agent.SourceRoutes() {
-		model := route.Model.AsModel(agent.Harness)
+		model, err := route.RoutingModel(agent.Harness, agent.HarnessSettings != nil)
 		mr := Record{Revision: 1}
-		err := route.Model.Validate(agent.Harness)
 		if err != nil {
 			return result, err
 		}
@@ -99,6 +99,11 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		sources = append(sources, source)
 	}
 	route, next, err := domain.RouteSources(agentID, agent, project, sources, defaultPolicy, state, t.now)
+	for i := range route.Sources {
+		if i < len(agent.SourceRoutes()) && agent.SourceRoutes()[i].Model.NativeID == "" {
+			route.Sources[i].NativeModel = ""
+		}
+	}
 	result.Route, result.routingRecord, result.nextRouting = route, record, next
 	if err != nil {
 		return result, err
@@ -108,6 +113,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		index = int(*route.SourceIndex)
 	}
 	result.Agent = agent.WithSource(agent.SourceRoutes()[index])
+	result.SourceRoute = agent.SourceRoutes()[index]
 	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
 	if sources[index].Problem != nil {
 		return result, sources[index].Problem

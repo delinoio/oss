@@ -17,11 +17,12 @@ type AppliedTemplate struct {
 	Contents string `json:"contents"`
 }
 
-// ExecutionConfiguration contains only the user's non-secret configuration.
-// Native defaults remain unspecified here; observed effective settings belong
-// to the native execution record and cannot rewrite this accepted selection.
+// ExecutionConfiguration freezes non-secret settings and their trusted origins.
+// Historical configurations omit harness provenance and retain their original
+// default semantics. Native observations cannot rewrite an accepted snapshot.
 type ExecutionConfiguration struct {
-	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
+	HarnessProvenance *HarnessSettingsProvenance `json:"harness_provenance,omitempty"`
+	BranchPrefix      *BranchPrefixSelection     `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
@@ -123,6 +124,11 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.HarnessProvenance != nil {
+		if err := c.HarnessProvenance.Validate(c); err != nil {
+			return err
+		}
+	}
 	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
 		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")
 	}

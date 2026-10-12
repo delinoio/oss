@@ -13436,6 +13436,20 @@
       "member": "constraints",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 91
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 55
     }
   ],
   "rpcReservations": [

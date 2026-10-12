@@ -215,6 +215,10 @@ desktop/real-account/platform acceptance in pull requests, issues and CI runs.
 
 - Fresh authenticated main-desktop Worker relaunch recovery uses newly recorded immutable original-controller generation/registration/canonical-scope/desktop-client/PID/kernel-birth evidence, synchronized before admission and rechecked under final Go arbitration. Uncertain legacy/unknown proof remains blocked; same-process Stop, pending admission, updater/service and borrowed lifetimes retain their owners. Controller exit never proves native cleanup or authorizes replay/Resume. Follow the [desktop](apps-delidev-desktop-contract.md#automatic-main-window-local-worker-management), [CLI](cmds-delidev-contract.md#main-desktop-automatic-worker-management) and [process](cmds-delidev-process-contract.md#original-worker-controller-observation) contracts.
 
+## Harness configuration inheritance invariant
+
+Follow the [catalog defaults contract](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance) for System 91, Worker 55, schema-5 Agents and schema-4 Project/Settings markers. Resolve fields after selecting the actual account/profile and freeze their trusted origins before input. Existing live Agents become inherited atomically, new explicit creates remain stable across restart, and historical snapshots retain their original bytes. Portable exports use version 7, source-native version-4 imports convert in the reviewed plan, and retired formats remain unavailable without rewriting old files. The existing desktop editor preserves typed selections; full Harness settings surfaces remain separately owned.
+
 ## Diagnostic resource-kind invariant
 
 Generic diagnostic consumers must accept the complete closed stored resource-kind inventory, including child-agent and session-forward records, without interpreting retained counts as execution readiness.

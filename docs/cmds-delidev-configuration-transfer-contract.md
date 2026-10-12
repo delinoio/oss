@@ -2,8 +2,8 @@
 
 ## API format generation exclusion
 
-Portable v4 retains selected API protocols and Provider profiles, with unchanged
-v1–3 import semantics. Capability-9 current/retained connection generations,
+The prior portable v4 shape retained selected API protocols and Provider profiles.
+The current version-7 shape preserves those fields and accepts source-native version-4 imports through reviewed conversion. Capability-9 current/retained connection generations,
 `credential_id`, health/validation/catalog and protected credentials are excluded.
 Imported API accounts always start disconnected and cannot import old execution
 authority. See the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
@@ -12,9 +12,11 @@ authority. See the [account contract](cmds-delidev-accounts-contract.md#connecte
 
 Version 4 preserves Provider `api_formats` and Account `api_protocol` under the
 [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
-Current exports and reviewed import plans use version 6. Versions 1–5 remain
-importable with their original API/native/source-route semantics and reject the
-new fields rather than treating them as legacy defaults. Profile declarations
+Current exports and reviewed import plans use version 7. Source-native version 4
+remains readable. Retired versions 1–3 and never-emitted versions 5–6 remain
+unsupported; source files remain untouched. The new
+shape preserves typed harness inheritance/overrides instead of reading omitted
+fields as old explicit selections. Profile declarations
 and account selections use the existing complete relationship validation and
 atomic publication. Accounts start disconnected; connection pins, credential
 references, keyless cleanup proof state, validation/catalog/quota observations,
@@ -35,7 +37,7 @@ An owner or paired desktop client can move supported non-secret configuration be
 
 ## Interfaces and Contracts
 
-`ConfigurationService.ExportConfiguration` returns one consistent version-3 bundle with ordered entries and descriptive machine references. Export excludes authentication material, account connections/health/quota/catalog observations, model discovery provenance, device registrations, native installations, routing state and session/history contents. Provider-observed model metadata becomes user-declared advisory information; imported models are manual registrations. Instruction text, ordering, permissions, provider endpoints, project restrictions and preferred repositories remain exact. Unsupported integration references reject the complete export instead of disappearing. Server remediation defaults and optional complete repository overrides are included. Their Agent Worker references are remapped as configuration identities, and their execution machines require explicit mappings even when absent from all checkout lists. Stable GitHub reviewer actor/App IDs and permission selectors remain exact external identities; no current access or execution grant is imported.
+`ConfigurationService.ExportConfiguration` returns one consistent version-7 bundle with ordered entries and descriptive machine references. Export excludes authentication material, account connections/health/quota/catalog observations, model discovery provenance, device registrations, native installations, routing state and session/history contents. Provider-observed model metadata becomes user-declared advisory information; imported models are manual registrations. Instruction text, ordering, permissions, provider endpoints, project restrictions and preferred repositories remain exact. Unsupported integration references reject the complete export instead of disappearing. Server remediation defaults and optional complete repository overrides are included. Their Agent Worker references are remapped as configuration identities, and their execution machines require explicit mappings even when absent from all checkout lists. Stable GitHub reviewer actor/App IDs and permission selectors remain exact external identities; no current access or execution grant is imported.
 
 `PreviewConfigurationImport` takes the bundle plus explicit configuration bindings, machine bindings and checkout paths. Desktop device preferences may supply unique unconfirmed suggestions. Every row requires explicit confirmation before preview; preferences persist only the last confirmed accepted target device, never imported documents, source IDs, mappings, paths, confirmations or previews. Every referenced machine needs an explicit one-to-one mapping to a registered enabled target machine, even when its UUID matches. Every checkout needs an explicit target path, including when reusing a repository. Unused, duplicate, cross-kind, unknown and missing mappings fail. Source resource UUIDs are document-local references; newly created target UUIDs are fresh. Both current global identities and permanent deletion tombstones are rechecked before acceptance and deferred publication, so a reused/deleted target becomes a terminal preview conflict rather than an endlessly failing Worker report. Existing providers/models/templates/Agents/repositories/projects may be explicitly reused only when their complete portable values match after remapping. Account reuse is forbidden. Only server preferences can replace an existing entry, with its exact expected revision; no implicit singleton overwrite is permitted. Model identity/alias conflicts, broken dependencies and incompatible model/account/harness references reject the complete preview.
 
@@ -140,3 +142,24 @@ Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-l
 ## Name validation
 
 Preview validates the complete prospective import overlay against all live target Project and Repository names. Equivalent names within the bundle or target namespace reject the preview. Apply and deferred inspection completion repeat validation against the current target before any configuration publication. A late collision settles the original failure without partial configuration. Matching names never imply reuse, merging or replacement: explicit ID bindings and complete remapped values remain required. Comparison follows the [command naming contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness).
+
+## Typed harness defaults in version 7
+
+Follow [harness defaults](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance).
+Current bundles and reviewed plans preserve schema-5 Agent selectors and schema-4
+Project/Settings defaults. Remap Provider identities in every defaults scope along
+with Agent source routes and account references. Exact profile protocol, source
+family, mode, empty strings and zero remain unchanged. Version-7 Agent imports require the current typed marker. Version-4 source-native
+Agent imports convert submitted explicit choices to typed overrides in the reviewed
+plan, preserving source identity, values, route order and weights. Version-4 Project
+and Settings creates receive empty defaults markers. Legacy Settings replacement
+is rejected because it cannot preserve current defaults. Source files are unchanged.
+Reject unsupported versions, destructive Settings replacement and broken/removable
+profile references before publication. Imported defaults never supply native
+observations, execution provenance, credentials, account readiness or historical
+snapshot authority. Atomic graph validation and explicit target mappings remain.
+
+Earlier version-5/6 behavior and prefix paragraphs describe their original
+amendments. Versions 5 and 6 were documented amendments, but the source-native implementation
+emitted version 4. Current exports use version 7; version 4 remains readable through
+explicit in-memory conversion. Retired versions 1–3 remain unavailable. Existing source portable files are never rewritten.

@@ -1,4 +1,8 @@
 import "./wizard-presentation.css";
+import {
+  captureHarnessEditorChanges,
+  harnessEditorDocument,
+} from "./harness-settings-draft";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { WorkerSourceOrder } from "./worker-source-order";
@@ -36,6 +40,7 @@ import {
   subscriptionServiceHarnesses,
   subscriptionServiceNames,
   supportsResourceSchema,
+  configurationSchemaVersion,
   type Resource,
 } from "@delinoio/delidev-api-client";
 import {
@@ -126,6 +131,7 @@ interface Draft {
   routing?: string;
   model?: Document;
   input: string;
+  inheritModel: boolean;
 }
 interface Evidence {
   accountError: MessageKey | "";
@@ -151,6 +157,9 @@ function draft(value: Document = {}): Draft {
     routing: text(value.routing) || undefined,
     model: Object.keys(model).length ? model : undefined,
     input: text(model.native_id),
+    inheritModel:
+      object(value.model_selection).mode === "inherit" ||
+      (!text(model.native_id) && model.metadata_source === "unknown"),
   };
 }
 function showAccountChoice(row: Resource) {
@@ -275,6 +284,9 @@ function SourceGroup({
     active && Boolean(source) && step === Step.Accounts,
   );
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
+  const inheritanceSupported =
+    status.data?.capabilities.includes(SystemCapability.HARNESS_DEFAULTS_V1) ===
+    true;
   const knownSupported =
     source?.id !== SubscriptionServiceId.OpenCodeGo &&
     status.data?.capabilities.includes(
@@ -416,8 +428,9 @@ function SourceGroup({
               ? "agent-worker-wizard.fixedRoutingWeights"
               : "";
   const modelError: MessageKey | "" =
-    !value.input.trim() ||
-    new TextEncoder().encode(value.input.trim()).byteLength > 256
+    !value.inheritModel &&
+    (!value.input.trim() ||
+      new TextEncoder().encode(value.input.trim()).byteLength > 256)
       ? "agent-worker-wizard.selectModelFromSource"
       : "";
   const accountNames = selectedRows.map(resourceName).join("\u0000");
@@ -516,6 +529,7 @@ function SourceGroup({
     update(value.key, {
       model: row?.metadata,
       input: row?.nativeId ?? value.input,
+      inheritModel: false,
     });
     setPopup(false);
     setHighlight(-1);
@@ -877,6 +891,19 @@ function SourceGroup({
         </div>
         <div hidden={step !== Step.Model}>
           <p>{copy("agent-worker-wizard.endpointSuggestions")}</p>
+          {inheritanceSupported ? (
+            <label>
+              <input
+                type="checkbox"
+                checked={value.inheritModel}
+                onChange={(event) => {
+                  update(value.key, { inheritModel: event.target.checked });
+                  setPopup(false);
+                }}
+              />
+              {copy("agent-worker-wizard.inheritModel")}
+            </label>
+          ) : null}
           <div className="worker-model-combobox">
             <label htmlFor={`${listID}-input`}>
               {copy("agent-worker-wizard.modelForSource", { v0: label })}
@@ -896,6 +923,7 @@ function SourceGroup({
                   ? `${listID}-${highlight}`
                   : undefined
               }
+              disabled={value.inheritModel}
               value={value.input}
               autoComplete="off"
               onFocus={() => setPopup(true)}
@@ -910,6 +938,7 @@ function SourceGroup({
               onChange={(event) => {
                 update(value.key, {
                   input: event.target.value,
+                  inheritModel: false,
                   model: undefined,
                 });
                 setPopup(true);
@@ -1123,6 +1152,7 @@ function SourceGroup({
                 createModel={(model) =>
                   update(value.key, {
                     input: text(model.native_id),
+                    inheritModel: false,
                     model: {
                       name: text(model.name),
                       input_modalities: items(model.input_modalities),
@@ -1161,7 +1191,9 @@ export function AgentWorkerSourceWizard({
   openAccounts?: (source: Source) => void;
 }) {
   const [data, setData] = useState<Document>(() =>
-    initial ? document(initial) : newConfiguration(EntityKind.AGENT),
+    initial
+      ? harnessEditorDocument(document(initial))
+      : newConfiguration(EntityKind.AGENT),
   );
   const [routes, setRoutes] = useState<Draft[]>(() =>
     initial && items(document(initial).routes).length
@@ -1406,26 +1438,54 @@ export function AgentWorkerSourceWizard({
             ?.focus();
           return;
         }
-        const next: Document = { ...data };
+        const typed =
+          Boolean(data.harness_settings) ||
+          Boolean(initial && document(initial).harness_settings) ||
+          routes.some((route) => route.inheritModel);
+        const next: Document = captureHarnessEditorChanges(
+          initial ? document(initial) : {},
+          data,
+          typed,
+        );
         delete next.reconfiguration_required;
         delete next.accounts;
         delete next.model_id;
         delete next.routing;
         delete next.routes;
         const selections = routes.map((route) => ({
-          selection: { case: "nativeId" as const, value: route.input.trim() },
+          selection: {
+            case: "nativeId" as const,
+            value: route.inheritModel ? "" : route.input.trim(),
+          },
         }));
         next.routes = routes.map((route) => {
-          const model: Document = {
-            ...route.model,
-            native_id: route.input.trim(),
-            metadata_source: route.model?.metadata_source ?? "unknown",
-            input_modalities: route.model?.input_modalities ?? ["text"],
-            ...(route.source?.kind === SourceKind.Api
-              ? { provider_id: route.source.id }
-              : { subscription_service: route.source?.id }),
+          const model: Document = route.inheritModel
+            ? {
+                native_id: "",
+                metadata_source: "unknown",
+                ...(route.source?.kind === SourceKind.Api
+                  ? { provider_id: route.source.id }
+                  : { subscription_service: route.source?.id }),
+              }
+            : {
+                ...route.model,
+                native_id: route.input.trim(),
+                metadata_source: route.model?.metadata_source ?? "unknown",
+                input_modalities: route.model?.input_modalities ?? ["text"],
+                ...(route.source?.kind === SourceKind.Api
+                  ? { provider_id: route.source.id }
+                  : { subscription_service: route.source?.id }),
+              };
+          const result: Document = {
+            ...route.original,
+            model,
+            accounts: route.accounts,
           };
-          const result: Document = { model, accounts: route.accounts };
+          if (typed)
+            result.model_selection = route.inheritModel
+              ? { mode: "inherit" }
+              : { mode: "override", value: route.input.trim() };
+          if (!route.routing) delete result.routing;
           if (route.routing) result.routing = route.routing;
           return result;
         });
@@ -1443,7 +1503,7 @@ export function AgentWorkerSourceWizard({
             id: initial?.id ?? "",
             expectedRevision: initial?.revision ?? 0n,
           },
-          schemaVersion: 4,
+          schemaVersion: configurationSchemaVersion(EntityKind.AGENT, next),
           documentJson: encode(next),
           routeModels: selections,
         });

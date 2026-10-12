@@ -1471,3 +1471,19 @@ count, server UTC observation time and replay state. This operation acknowledges
 inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
+
+## Source-aware Harness defaults
+
+`SystemCapability.HARNESS_DEFAULTS_V1 = 91` negotiates server defaults, live
+Agent inheritance, and frozen effective settings with source provenance.
+It is independent of session defaults and project behavior settings.
+Existing RPC methods carry the additive closed configuration data; this
+capability does not change an accepted session or imply native support for
+any individual Harness option. The Harness contract owns resolution and
+validation behavior.
+
+`WorkerCapability.HARNESS_DEFAULTS_V1 = 55` declares support for frozen
+Harness settings and their source provenance in execution assignments.
+Admission requires this Worker capability only when an assignment carries that
+provenance, so older Workers never receive a configuration shape they reject.
+The capability does not imply support for every native Harness option.

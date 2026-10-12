@@ -434,11 +434,11 @@ resource-count, identity/revision and snapshot/event publication bounds.
 
 ## Project behavior settings
 
-Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and the original portable version-5 declaration (current transfer uses version 7). Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
 
 ## New-session defaults and branch prefix declarations
 
-Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and the original portable version-6 declaration. Current harness-default resources use schema 4 and portable version 7; retired imports remain unsupported. Preserve capability 52 and compatible schema-1/2 reads; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
 
 ## Mobile consumer ownership
 
@@ -477,3 +477,15 @@ connection ownership. They localize normalized values without parsing cron or
 computing calendar instants. Unimplemented supports older servers without a new
 capability gate. Preview failure cannot authorize execution or modify retained
 save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
+
+## Typed harness inheritance client
+
+System 91 and Worker 55 follow the [catalog contract](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance).
+The shared parser accepts schema-5 Agent selectors and schema-4 Project/Settings
+markers only in their owning families, validates their closed version-1 shapes,
+and preserves Project behavior separately. Model inheritance requires an empty
+native ID with unknown advisory metadata; an override binds one exact native ID.
+Null/future selectors and mismatched schema versions stay unsupported. Current
+portable exports and reviewed plans use version 7. Source-native version-4 files
+remain importable through reviewed conversion; retired versions 1–3 remain unavailable.
+Expose the named `harness_default_unverified` error without manufacturing a default.

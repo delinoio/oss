@@ -40,7 +40,7 @@ func TestAgentWorkerInlineSaveReplayAndConcurrentIsolation(t *testing.T) {
 	if err = domain.Decode(saved.Msg.Resource.DocumentJson, &agent); err != nil {
 		t.Fatal(err)
 	}
-	if saved.Msg.Resource.SchemaVersion != 4 || len(agent.Routes) != 1 || len(agent.Routes[0].Accounts) != 2 || agent.Routes[0].Accounts[1].Weight != 2 || agent.Routes[0].Model.NativeID != "exact-native" || agent.Routes[0].Model.ProviderID != domain.ID(provider.Id) {
+	if saved.Msg.Resource.SchemaVersion != 5 || len(agent.Routes) != 1 || len(agent.Routes[0].Accounts) != 2 || agent.Routes[0].Accounts[1].Weight != 2 || agent.Routes[0].Model.NativeID != "exact-native" || agent.Routes[0].Model.ProviderID != domain.ID(provider.Id) {
 		t.Fatal("original route changed", agent)
 	}
 	if agent.ModelID != "" || agent.Routes[0].ModelID != "" {

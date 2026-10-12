@@ -227,3 +227,81 @@ it("preserves the project behavior schema family without accepting destructive l
     ),
   ).toBe(false);
 });
+
+it("accepts typed schema-5 inheritance without inventing a native model", () => {
+  const body = {
+    harness_settings: {
+      version: 1,
+      effort: { mode: "override", value: "" },
+      max_concurrency: { mode: "override", value: 0 },
+    },
+    routes: [
+      {
+        model_selection: { mode: "inherit" },
+        model: {
+          native_id: "",
+          metadata_source: "unknown",
+          subscription_service: "chatgpt",
+        },
+        accounts: [{ id: "account", weight: 1 }],
+      },
+    ],
+  };
+  expect(configurationSchemaVersion(EntityKind.AGENT, body)).toBe(5);
+  expect(supportsResourceSchema(resource(EntityKind.AGENT, body, 5))).toBe(
+    true,
+  );
+  expect(supportsResourceSchema(resource(EntityKind.AGENT, body, 4))).toBe(
+    false,
+  );
+  expect(
+    supportsResourceSchema(
+      resource(
+        EntityKind.AGENT,
+        {
+          ...body,
+          harness_settings: {
+            version: 1,
+            effort: { mode: "override", value: null },
+          },
+        },
+        5,
+      ),
+    ),
+  ).toBe(false);
+  expect(
+    supportsResourceSchema(
+      resource(
+        EntityKind.AGENT,
+        {
+          ...body,
+          routes: [
+            {
+              ...body.routes[0],
+              model: { ...body.routes[0].model, native_id: "invented" },
+            },
+          ],
+        },
+        5,
+      ),
+    ),
+  ).toBe(false);
+});
+it("retains project behavior when harness defaults add schema 4", () => {
+  const body = {
+    harness_defaults: { version: 1, entries: [] },
+    settings: {
+      automatic_fetch: "inherit",
+      automatic_plan_approval: "inherit",
+      plan_mode_default: "inherit",
+      branch_prefix: "",
+    },
+  };
+  expect(configurationSchemaVersion(EntityKind.PROJECT, body)).toBe(4);
+  expect(supportsResourceSchema(resource(EntityKind.PROJECT, body, 4))).toBe(
+    true,
+  );
+  expect(supportsResourceSchema(resource(EntityKind.PROJECT, body, 3))).toBe(
+    false,
+  );
+});
