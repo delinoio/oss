@@ -71,3 +71,4 @@ export * from "./gen/delidev/v1/mcp_pb.js";
 export * as TailscaleQuery from "./gen/delidev/v1/tailscale-TailscaleService_connectquery.js";
 export * as MCPQuery from "./gen/delidev/v1/mcp-MCPService_connectquery.js";
 export * from "./gen/delidev/v1/mcp_pb.js";
+export * from "./gen/delidev/v1/native_background_pb.js";

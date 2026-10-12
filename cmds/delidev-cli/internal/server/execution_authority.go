@@ -48,16 +48,22 @@ func executionDenied() *domain.Error {
 // Resolve every authorization decision from current durable ownership. A stored
 // token digest or native account connection alone never grants inference.
 func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
-	return a.checkedScope(tx, grant, false)
+	return a.checkedScope(tx, grant, false, false)
 }
 
 // Fresh quota evidence gates new registration. An exact registered binding
 // retains original publication authority after that evidence expires.
 func (a *executionAuthority) registrationScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
-	return a.checkedScope(tx, grant, true)
+	return a.checkedScope(tx, grant, true, false)
 }
 
-func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGrant, registering bool) (apiproxy.Scope, error) {
+// The optional background observer can publish original owner closure after the
+// root terminal event. This flag grants no relay, input or replacement authority.
+func (a *executionAuthority) originalScope(tx *store.Tx, grant store.ExecutionGrant, backgroundOwner bool) (apiproxy.Scope, error) {
+	return a.checkedScope(tx, grant, false, backgroundOwner)
+}
+
+func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGrant, registering, backgroundOwner bool) (apiproxy.Scope, error) {
 	var empty apiproxy.Scope
 	if grant.ServerEpoch != a.epoch {
 		return empty, executionDenied()
@@ -104,7 +110,7 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 		return empty, executionDenied()
 	}
 	_, session, err := sessionRecord(tx, input.SessionID)
-	if err != nil || session.InitialExecution == nil || session.ActiveExecutionID != grant.ExecutionID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchClaimed || (session.Outcome != domain.ExecutionNotStarted && session.Outcome != domain.ExecutionRunning) {
+	if err != nil || session.InitialExecution == nil || session.ActiveExecutionID != grant.ExecutionID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchClaimed || (!backgroundOwner && session.Outcome != domain.ExecutionNotStarted && session.Outcome != domain.ExecutionRunning) {
 		return empty, executionDenied()
 	}
 	if input.Configuration.Subscription && !input.Configuration.IsOpenCodeGo() && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {

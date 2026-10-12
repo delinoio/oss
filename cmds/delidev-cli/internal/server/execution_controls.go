@@ -77,6 +77,9 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 	}
 	session.FinishStartupTiming(r.ID, session.ExecutionSelection().ID, tx.ObservationTime())
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+	if err := retireNativeBackground(tx, sr, session); err != nil {
+		return err
+	}
 	if err := retireSteer(tx, sr, session, false); err != nil {
 		return err
 	}
@@ -156,6 +159,9 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			}
 			session.FinishStartupTiming(r.ID, input.ExecutionID, tx.ObservationTime())
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+			if err := retireNativeBackground(tx, sr, &session); err != nil {
+				return err
+			}
 			if err := retireSteer(tx, sr, &session, false); err != nil {
 				return err
 			}

@@ -476,3 +476,5 @@ owns catalog and selection behavior. The [credential contract](cmds-delidev-cred
 owns protected references, and the [protocol contract](protos-delidev-v1-contract.md#worker-owned-managed-mcp-definitions)
 owns management negotiation. Native execution eligibility remains separate and
 requires independently verified adapter support.
+
+Original native background terminals use desktop Commands and CLI/Connect controls on the original active Codex Worker only. Retained item/process references, action receipts and bounded output follow the [harness](cmds-delidev-harness-contract.md#original-native-background-terminals), [session](cmds-delidev-sessions-contract.md#original-native-background-terminals) and [terminal](cmds-delidev-terminals-contract.md#original-native-background-terminals) contracts. Ordinary execution completion and independent product terminal lifetimes remain unchanged; completed or lost owners expose retained status without cold-resume adoption.

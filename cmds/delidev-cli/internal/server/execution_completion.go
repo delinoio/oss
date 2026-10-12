@@ -94,6 +94,9 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueAutomatically
 		}
 		if session.Recovery == domain.NoRecovery {
+			if err := retireNativeBackground(tx, sr, &session); err != nil {
+				return store.Record{}, err
+			}
 			session.ActiveExecutionID = ""
 			// Agent cleanup proves only its own process graph. Store.Put
 			// separately waits for original title, terminal and forward cleanup.
@@ -168,6 +171,9 @@ func nativeCompletionUncertain() *domain.Error {
 
 func retainNativeUncertainty(tx *store.Tx, jobID domain.ID, input domain.ExecutionJobInput, sr store.Record, session *domain.Session) error {
 	session.FinishStartupTiming(jobID, input.ExecutionID, tx.ObservationTime())
+	if err := retireNativeBackground(tx, sr, session); err != nil {
+		return err
+	}
 	if err := retireSteer(tx, sr, session, true); err != nil {
 		return err
 	}

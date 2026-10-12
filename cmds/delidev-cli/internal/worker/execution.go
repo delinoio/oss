@@ -496,6 +496,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
 	}
+	var background *nativeBackgroundController
+	if config.backgroundSupported && client.Version() == codex.NativeShellVersion && input.Configuration.SidechatPolicy == "" {
+		background = &nativeBackgroundController{config: config.execution, input: input, native: client, inventory: domain.NativeBackgroundInventory{JobID: owner, NativeThreadID: domain.NativeIdentity(bound.Thread.ID)}}
+	}
 	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
 	if err != nil {
@@ -515,6 +519,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
+	var finishBackground func() error
+	if background != nil {
+		finishBackground = startNativeBackgroundController(nativeCtx, config.backgroundControls, background)
+		defer func() {
+			if err := finishBackground(); err != nil {
+				logger.WarnContext(nativeCtx, "native_background_controller_unavailable", "code", domain.SafeError(err).Code)
+			}
+		}()
+	}
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
@@ -566,6 +579,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			return nil, err
 		}
+		if event.BackgroundResponse {
+			continue
+		}
+		if background != nil && (event.Kind == codex.ToolStartedEvent || event.Kind == codex.ToolCompletedEvent || event.Kind == codex.ToolOutputEvent) {
+			background.requestRefresh()
+		}
 		// Completion must inspect the native inventory even when spawn events
 		// were missed. Root completion alone cannot release live descendants.
 		if event.Kind == codex.SubagentActivityEvent || event.Kind == codex.TurnCompletedEvent {
@@ -603,6 +622,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			continue
 		}
 
+		// Original root terminal plus joined children ends optional control authority.
+		// Join it before native/history/process cleanup; a controller error is not
+		// an execution failure and must never cancel or extend the original turn.
+		if finishBackground != nil {
+			if err := finishBackground(); err != nil {
+				logger.WarnContext(publicationContext, "native_background_controller_unavailable", "code", domain.SafeError(err).Code)
+			}
+			background = nil
+		}
 		event = *parentTerminal
 		if managed != nil && config.quotaBlockSupported && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
 			managed.publishQuotaBlock(ctx, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})

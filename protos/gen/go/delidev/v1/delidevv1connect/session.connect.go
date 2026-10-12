@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SessionServiceGetNativeBackgroundProcedure is the fully-qualified name of the SessionService's
+	// GetNativeBackground RPC.
+	SessionServiceGetNativeBackgroundProcedure = "/delidev.v1.SessionService/GetNativeBackground"
+	// SessionServiceRequestNativeBackgroundProcedure is the fully-qualified name of the
+	// SessionService's RequestNativeBackground RPC.
+	SessionServiceRequestNativeBackgroundProcedure = "/delidev.v1.SessionService/RequestNativeBackground"
 	// SessionServiceRunNativeShellProcedure is the fully-qualified name of the SessionService's
 	// RunNativeShell RPC.
 	SessionServiceRunNativeShellProcedure = "/delidev.v1.SessionService/RunNativeShell"
@@ -154,6 +160,8 @@ const (
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	GetNativeBackground(context.Context, *connect.Request[v1.GetNativeBackgroundRequest]) (*connect.Response[v1.GetNativeBackgroundResponse], error)
+	RequestNativeBackground(context.Context, *connect.Request[v1.RequestNativeBackgroundRequest]) (*connect.Response[v1.RequestNativeBackgroundResponse], error)
 	RunNativeShell(context.Context, *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error)
 	GetNativeShell(context.Context, *connect.Request[v1.GetNativeShellRequest]) (*connect.Response[v1.GetNativeShellResponse], error)
 	CancelNativeShell(context.Context, *connect.Request[v1.CancelNativeShellRequest]) (*connect.Response[v1.CancelNativeShellResponse], error)
@@ -206,6 +214,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		getNativeBackground: connect.NewClient[v1.GetNativeBackgroundRequest, v1.GetNativeBackgroundResponse](
+			httpClient,
+			baseURL+SessionServiceGetNativeBackgroundProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetNativeBackground")),
+			connect.WithClientOptions(opts...),
+		),
+		requestNativeBackground: connect.NewClient[v1.RequestNativeBackgroundRequest, v1.RequestNativeBackgroundResponse](
+			httpClient,
+			baseURL+SessionServiceRequestNativeBackgroundProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RequestNativeBackground")),
+			connect.WithClientOptions(opts...),
+		),
 		runNativeShell: connect.NewClient[v1.RunNativeShellRequest, v1.RunNativeShellResponse](
 			httpClient,
 			baseURL+SessionServiceRunNativeShellProcedure,
@@ -445,6 +465,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	getNativeBackground      *connect.Client[v1.GetNativeBackgroundRequest, v1.GetNativeBackgroundResponse]
+	requestNativeBackground  *connect.Client[v1.RequestNativeBackgroundRequest, v1.RequestNativeBackgroundResponse]
 	runNativeShell           *connect.Client[v1.RunNativeShellRequest, v1.RunNativeShellResponse]
 	getNativeShell           *connect.Client[v1.GetNativeShellRequest, v1.GetNativeShellResponse]
 	cancelNativeShell        *connect.Client[v1.CancelNativeShellRequest, v1.CancelNativeShellResponse]
@@ -484,6 +506,16 @@ type sessionServiceClient struct {
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
 	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
+}
+
+// GetNativeBackground calls delidev.v1.SessionService.GetNativeBackground.
+func (c *sessionServiceClient) GetNativeBackground(ctx context.Context, req *connect.Request[v1.GetNativeBackgroundRequest]) (*connect.Response[v1.GetNativeBackgroundResponse], error) {
+	return c.getNativeBackground.CallUnary(ctx, req)
+}
+
+// RequestNativeBackground calls delidev.v1.SessionService.RequestNativeBackground.
+func (c *sessionServiceClient) RequestNativeBackground(ctx context.Context, req *connect.Request[v1.RequestNativeBackgroundRequest]) (*connect.Response[v1.RequestNativeBackgroundResponse], error) {
+	return c.requestNativeBackground.CallUnary(ctx, req)
 }
 
 // RunNativeShell calls delidev.v1.SessionService.RunNativeShell.
@@ -683,6 +715,8 @@ func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *co
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	GetNativeBackground(context.Context, *connect.Request[v1.GetNativeBackgroundRequest]) (*connect.Response[v1.GetNativeBackgroundResponse], error)
+	RequestNativeBackground(context.Context, *connect.Request[v1.RequestNativeBackgroundRequest]) (*connect.Response[v1.RequestNativeBackgroundResponse], error)
 	RunNativeShell(context.Context, *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error)
 	GetNativeShell(context.Context, *connect.Request[v1.GetNativeShellRequest]) (*connect.Response[v1.GetNativeShellResponse], error)
 	CancelNativeShell(context.Context, *connect.Request[v1.CancelNativeShellRequest]) (*connect.Response[v1.CancelNativeShellResponse], error)
@@ -731,6 +765,18 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
+	sessionServiceGetNativeBackgroundHandler := connect.NewUnaryHandler(
+		SessionServiceGetNativeBackgroundProcedure,
+		svc.GetNativeBackground,
+		connect.WithSchema(sessionServiceMethods.ByName("GetNativeBackground")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceRequestNativeBackgroundHandler := connect.NewUnaryHandler(
+		SessionServiceRequestNativeBackgroundProcedure,
+		svc.RequestNativeBackground,
+		connect.WithSchema(sessionServiceMethods.ByName("RequestNativeBackground")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceRunNativeShellHandler := connect.NewUnaryHandler(
 		SessionServiceRunNativeShellProcedure,
 		svc.RunNativeShell,
@@ -967,6 +1013,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceGetNativeBackgroundProcedure:
+			sessionServiceGetNativeBackgroundHandler.ServeHTTP(w, r)
+		case SessionServiceRequestNativeBackgroundProcedure:
+			sessionServiceRequestNativeBackgroundHandler.ServeHTTP(w, r)
 		case SessionServiceRunNativeShellProcedure:
 			sessionServiceRunNativeShellHandler.ServeHTTP(w, r)
 		case SessionServiceGetNativeShellProcedure:
@@ -1053,6 +1103,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) GetNativeBackground(context.Context, *connect.Request[v1.GetNativeBackgroundRequest]) (*connect.Response[v1.GetNativeBackgroundResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetNativeBackground is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RequestNativeBackground(context.Context, *connect.Request[v1.RequestNativeBackgroundRequest]) (*connect.Response[v1.RequestNativeBackgroundResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RequestNativeBackground is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) RunNativeShell(context.Context, *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RunNativeShell is not implemented"))

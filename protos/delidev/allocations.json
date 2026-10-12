@@ -14519,6 +14519,299 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1",
       "number": 95
+    },
+    {
+      "issue": 2021,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1",
+      "number": 99
+    },
+    {
+      "issue": 2021,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1",
+      "number": 61
+    },
+    {
+      "issue": 2021,
+      "kind": "enum",
+      "declaration": "NativeBackgroundOperation",
+      "member": "NATIVE_BACKGROUND_OPERATION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "enum",
+      "declaration": "NativeBackgroundOperation",
+      "member": "NATIVE_BACKGROUND_OPERATION_LIST",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "enum",
+      "declaration": "NativeBackgroundOperation",
+      "member": "NATIVE_BACKGROUND_OPERATION_TERMINATE",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "enum",
+      "declaration": "NativeBackgroundOperation",
+      "member": "NATIVE_BACKGROUND_OPERATION_CLEAN",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundRequest",
+      "member": "operation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundRequest",
+      "member": "execution_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundRequest",
+      "member": "inventory_sequence",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundRequest",
+      "member": "item_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundRequest",
+      "member": "process_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "RequestNativeBackgroundResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "GetNativeBackgroundRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "GetNativeBackgroundRequest",
+      "member": "action_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "GetNativeBackgroundResponse",
+      "member": "session",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "GetNativeBackgroundResponse",
+      "member": "action",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "ClaimNativeBackgroundRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "ClaimNativeBackgroundRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "ClaimNativeBackgroundRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "ClaimNativeBackgroundRequest",
+      "member": "job_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "ClaimNativeBackgroundResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "ClaimNativeBackgroundResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundRequest",
+      "member": "job_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundRequest",
+      "member": "observation_json",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundResponse",
+      "member": "session",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundResponse",
+      "member": "action",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "PublishNativeBackgroundResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "NativeBackgroundControl",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "NativeBackgroundControl",
+      "member": "action_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "NativeBackgroundControl",
+      "member": "revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2021,
+      "kind": "message",
+      "declaration": "WatchWorkResponse",
+      "member": "native_background",
+      "number": 8
     }
   ],
   "rpcReservations": [
@@ -15005,6 +15298,42 @@
       "method": "CancelNativeShell",
       "input": "CancelNativeShellRequest",
       "output": "CancelNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2021,
+      "service": "SessionService",
+      "method": "RequestNativeBackground",
+      "input": "RequestNativeBackgroundRequest",
+      "output": "RequestNativeBackgroundResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2021,
+      "service": "SessionService",
+      "method": "GetNativeBackground",
+      "input": "GetNativeBackgroundRequest",
+      "output": "GetNativeBackgroundResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2021,
+      "service": "WorkerService",
+      "method": "ClaimNativeBackground",
+      "input": "ClaimNativeBackgroundRequest",
+      "output": "ClaimNativeBackgroundResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2021,
+      "service": "WorkerService",
+      "method": "PublishNativeBackground",
+      "input": "PublishNativeBackgroundRequest",
+      "output": "PublishNativeBackgroundResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

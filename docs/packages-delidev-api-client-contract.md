@@ -539,3 +539,12 @@ and explicit full-access selection. Status reads cannot resubmit an action, and
 cancellation cannot adopt a product terminal or operating-system PID. Typed
 receipt revisions and observation sequences remain decimal-safe. Generated
 bindings alone provide no native, account or cleanup acceptance evidence.
+
+## Original native background clients
+
+Generated SessionService Get/RequestNativeBackground and WorkerService
+Claim/PublishNativeBackground follow the [sessions contract](cmds-delidev-sessions-contract.md#original-native-background-terminals).
+The closed native-background action variant keeps exact original session,
+execution, inventory sequence, item/process and actor identities. Reads grant no
+send authority. Native acknowledgments remain separate from inventory absence,
+command exit and owned-process cleanup. No product terminal resource is adopted.

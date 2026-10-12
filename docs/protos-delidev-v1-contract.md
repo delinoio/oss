@@ -1570,3 +1570,16 @@ settings and typed search observations. Harness-defaults support alone does not
 prove this support. Runtime admission must also verify the original installed
 native profile and negotiated peer capabilities; these declarations alone grant
 no execution authority. Existing RPC and document ownership remains unchanged.
+
+## Original native background terminals
+
+System capability `CODEX_NATIVE_BACKGROUND_TERMINALS_V1 = 99` and Worker
+capability `CODEX_NATIVE_BACKGROUND_TERMINALS_V1 = 61` own the original live
+background-control boundary. `WatchWorkResponse.native_background = 8` routes
+only metadata to the original assignment. The independent native_background
+schema declares Get/Request SessionService operations and Claim/Publish
+WorkerService operations with closed list/terminate/clean choices. Existing
+NativeAction resources and public receipt revisions remain separate from the
+Worker's private once-only send fence. Native IDs never select product terminals
+or operating-system processes. Declarations and generated bindings preserve
+unrelated allocations and do not establish native/account/platform acceptance.

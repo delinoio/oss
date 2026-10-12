@@ -24,17 +24,18 @@ const (
 type SystemCapability int32
 
 const (
-	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                       SystemCapability = 0
-	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1         SystemCapability = 90
-	SystemCapability_SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1               SystemCapability = 91
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1               SystemCapability = 100
-	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1          SystemCapability = 93
-	SystemCapability_SYSTEM_CAPABILITY_MANAGED_MCP_V1                    SystemCapability = 94
-	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1             SystemCapability = 89
-	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1 SystemCapability = 77
-	SystemCapability_SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1             SystemCapability = 80
-	SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1           SystemCapability = 42
-	SystemCapability_SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1       SystemCapability = 74
+	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                          SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1            SystemCapability = 90
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1 SystemCapability = 99
+	SystemCapability_SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1                  SystemCapability = 91
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1                  SystemCapability = 100
+	SystemCapability_SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1             SystemCapability = 93
+	SystemCapability_SYSTEM_CAPABILITY_MANAGED_MCP_V1                       SystemCapability = 94
+	SystemCapability_SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1                SystemCapability = 89
+	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1    SystemCapability = 77
+	SystemCapability_SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1                SystemCapability = 80
+	SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1              SystemCapability = 42
+	SystemCapability_SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1          SystemCapability = 74
 	// Owner/client waiting input movement and generation-bound pagination.
 	SystemCapability_SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1               SystemCapability = 75
 	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1         SystemCapability = 76
@@ -108,6 +109,7 @@ var (
 	SystemCapability_name = map[int32]string{
 		0:   "SYSTEM_CAPABILITY_UNSPECIFIED",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
+		99:  "SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1",
 		91:  "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
 		100: "SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1",
 		93:  "SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1",
@@ -181,6 +183,7 @@ var (
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":            90,
+		"SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1": 99,
 		"SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1":                  91,
 		"SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1":                  100,
 		"SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1":             93,
@@ -3014,10 +3017,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xed\x1a\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xa9\x1b\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
-	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12)\n" +
+	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12:\n" +
+	"6SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1\x10c\x12)\n" +
 	"%SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1\x10[\x12)\n" +
 	"%SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1\x10d\x12.\n" +
 	"*SYSTEM_CAPABILITY_TAILSCALE_CONNECTIONS_V1\x10]\x12$\n" +

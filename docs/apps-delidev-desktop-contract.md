@@ -6183,3 +6183,22 @@ existing semantic light/dark tokens, 40-pixel controls, 8-pixel corners and
 wrapping below 640 pixels follow the surrounding shared editor/session contract.
 Native/account/platform acceptance remains separate from fixtures and browser
 presentation checks.
+
+## Original native background controls
+
+The Native commands pane also displays bounded background inventory from the
+original live Codex execution. It keeps this inventory and its action receipts
+separate from explicit shell commands and product terminals. The pane exposes
+Refresh, Inspect output, Stop for an exact original item/process pair, and Stop
+all with a separate original-scope confirmation. Confirmation pins the exact
+session revision, execution and inventory sequence; a changed scope requires a
+new explicit action. Cancel and Escape send no control.
+
+The connection owns immutable pending requests across navigation. Reopening,
+polling and Read status are read-only and never resend a claimed control. An
+uncertain mutation or lost original owner permits status only. Native
+acknowledgment, list absence, item exit and independent owned-process cleanup
+remain separate visible facts. The renderer validates exact session/action
+identity, bounded inventory and output before presenting controls. No UUID or
+operating-system PID is a user-facing control. English/Korean copy, existing
+semantic themes, 40-pixel controls, wrapping and focus ownership are preserved.

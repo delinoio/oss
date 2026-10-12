@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/native_background.proto";
 import "delidev/v1/native_shell.proto";
 import "delidev/v1/terminal.proto";
 
@@ -15,6 +16,8 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc PublishNativeBackground(PublishNativeBackgroundRequest) returns (PublishNativeBackgroundResponse);
+  rpc ClaimNativeBackground(ClaimNativeBackgroundRequest) returns (ClaimNativeBackgroundResponse);
   rpc ClaimNativeShell(ClaimNativeShellRequest) returns (ClaimNativeShellResponse);
   rpc PublishNativeShell(PublishNativeShellRequest) returns (PublishNativeShellResponse);
 
@@ -135,6 +138,8 @@ message AttachWorkerRequest {
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1 = 62;
+
+  WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1 = 61;
   WORKER_CAPABILITY_HARNESS_DEFAULTS_V1 = 55;
   WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1 = 53;
   WORKER_CAPABILITY_MCP_MANAGEMENT_V1 = 56;
@@ -209,6 +214,7 @@ message WatchAuxiliaryWorkResponse {
 }
 
 message WatchWorkResponse {
+  NativeBackgroundControl native_background = 8;
   Resource job = 1;
   bool heartbeat = 2;
   // Bound to the included immutable assignment; no native operation may start.

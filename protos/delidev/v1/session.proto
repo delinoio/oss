@@ -3,6 +3,7 @@ package delidev.v1;
 
 import "delidev/v1/attachments.proto";
 import "delidev/v1/common.proto";
+import "delidev/v1/native_background.proto";
 import "delidev/v1/native_shell.proto";
 import "delidev/v1/skills.proto";
 
@@ -11,6 +12,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc GetNativeBackground(GetNativeBackgroundRequest) returns (GetNativeBackgroundResponse);
+  rpc RequestNativeBackground(RequestNativeBackgroundRequest) returns (RequestNativeBackgroundResponse);
   rpc RunNativeShell(RunNativeShellRequest) returns (RunNativeShellResponse);
   rpc GetNativeShell(GetNativeShellRequest) returns (GetNativeShellResponse);
   rpc CancelNativeShell(CancelNativeShellRequest) returns (CancelNativeShellResponse);

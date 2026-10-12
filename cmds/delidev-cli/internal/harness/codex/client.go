@@ -47,6 +47,11 @@ type Config struct {
 }
 type Client struct {
 	webSearch            domain.WebSearchMode
+	background           map[string]domain.NativeBackgroundTerminal
+	backgroundReads      map[domain.ID]bool
+	backgroundInvalid    bool
+	backgroundListed     map[string]bool
+	backgroundSent       map[domain.ID]bool
 	safety               modelSafetyLedger
 	managedForkHistory   bool
 	quotaUsed            atomic.Bool

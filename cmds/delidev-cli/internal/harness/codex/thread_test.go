@@ -16,6 +16,7 @@ import (
 )
 
 type threadFixture struct {
+	background             []map[string]any
 	skillRoots             []string
 	subagents              []map[string]any
 	mode                   string
@@ -31,7 +32,7 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
-	if f.handleWebSearchProfile(id, method, raw, write) {
+	if f.handleWebSearchProfile(id, method, raw, write) || f.handleBackground(id, method, raw, write) {
 		return true
 	}
 	if f.handleNativeShell(id, method, raw, write) {

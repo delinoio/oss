@@ -193,6 +193,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				rows.Close()
 				return err
 			}
+			if v.NativeBackground != nil {
+				v.NativeBackground.OwnerLost = true
+			}
 			v.Dispatch, v.Recovery = domain.DispatchPaused, domain.NeedsRecovery
 			v.Problem = restoreQuarantined().(*domain.Error)
 			value = v
@@ -229,6 +232,28 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			}
 			value = v
 		case domain.NativeActionKind:
+			var tag struct {
+				ActionType string `json:"action_type"`
+			}
+			if json.Unmarshal(raw, &tag) != nil {
+				rows.Close()
+				return domain.NativeBackgroundRecovery()
+			}
+			if tag.ActionType == "native-background" {
+				var a domain.NativeBackgroundAction
+				if domain.Decode(raw, &a) != nil || a.Validate() != nil {
+					rows.Close()
+					return domain.NativeBackgroundRecovery()
+				}
+				if a.State == domain.NativeBackgroundQueued {
+					a.State = domain.NativeBackgroundCanceled
+				} else if a.State == domain.NativeBackgroundClaimed {
+					a.State = domain.NativeBackgroundUncertain
+					a.Observation = &domain.NativeBackgroundObservation{ActionID: a.ActionID, ProblemCode: domain.RecoveryRequired, Delivery: domain.NativeBackgroundSendUnknown}
+				}
+				value = a
+				break
+			}
 			var v domain.NativeShellAction
 			if domain.Decode(raw, &v) != nil || v.Validate() != nil {
 				rows.Close()

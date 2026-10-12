@@ -45,3 +45,14 @@
   max-height: 360px;
   overflow: auto;
 }
+
+.native-background-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.native-background .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

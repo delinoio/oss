@@ -20,6 +20,7 @@ import {
 } from "./mutation";
 import { Modal, Problem } from "./ui";
 import "./native-commands.css";
+import { NativeBackground } from "./native-background";
 
 export enum NativeCommandState {
   Queued = "queued",
@@ -500,6 +501,25 @@ export function NativeCommands({
           ) : null}
         </section>
       ) : null}
+      <NativeBackground
+        session={session}
+        active={active}
+        supported={
+          !status.error &&
+          !machine.error &&
+          status.data?.capabilities.includes(
+            SystemCapability.CODEX_NATIVE_BACKGROUND_TERMINALS_V1,
+          ) === true &&
+          machineResource?.id === machineId &&
+          machineResource.kind === EntityKind.MACHINE &&
+          machineResource.schemaVersion === 1 &&
+          machineResource.revision > 0n &&
+          Array.isArray(document(machineResource).worker_capabilities) &&
+          (document(machineResource).worker_capabilities as unknown[]).includes(
+            "codex-native-background-terminals-v1",
+          )
+        }
+      />
       {confirmation && active ? (
         <Modal
           title={copy("native-commands.confirmTitle")}

@@ -5,6 +5,16 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.GetNativeBackground
+ */
+export const getNativeBackground = SessionService.method.getNativeBackground;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.RequestNativeBackground
+ */
+export const requestNativeBackground = SessionService.method.requestNativeBackground;
+
+/**
  * @generated from rpc delidev.v1.SessionService.RunNativeShell
  */
 export const runNativeShell = SessionService.method.runNativeShell;
