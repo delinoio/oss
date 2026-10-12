@@ -16,6 +16,7 @@ use cef::*;
 use delidev_desktop::{
     Connector, NativeFailure, SavedConnection,
     browser::{self, Policy, ProfileRecord, ProfileState, Tab, Tabs},
+    browser_child_lifetime::{ChildIdentity, ChildLifetime},
     browser_storage::{BrowserStorage, BrowserStorageMode},
     canonical_id,
 };
@@ -1068,6 +1069,34 @@ impl BrowserHost {
         state.exit_when_ready()
     }
 
+    fn acknowledge_child_close(
+        &self,
+        request: &ViewRequest,
+        browser_id: i32,
+        lifetime: &Mutex<ChildLifetime>,
+    ) -> Option<i32> {
+        if !lifetime
+            .lock()
+            .is_ok_and(|mut receipt| receipt.closed(browser_id, request.generation))
+        {
+            tracing::warn!(
+                operation = "browser_child_close",
+                stage = "acknowledgment",
+                classification = "duplicate_or_foreign",
+                generation = request.generation
+            );
+            return None;
+        }
+        let exit = self.child_closed(request);
+        tracing::info!(
+            operation = "browser_child_close",
+            stage = "acknowledgment",
+            state = "closed",
+            generation = request.generation
+        );
+        exit
+    }
+
     fn finish_child_created(
         &self,
         profile: &str,
@@ -1911,6 +1940,7 @@ fn create_child(
         profile,
         request.clone(),
         policy,
+        Arc::new(Mutex::new(ChildLifetime::default())),
     );
     if browser_host_create_browser(
         Some(&info),
@@ -1938,12 +1968,12 @@ fn create_child(
     };
     Ok(())
 }
-cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,}impl Client{
+cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,lifetime:Arc<Mutex<ChildLifetime>>,}impl Client{
  // The pinned runtime installs a renderer-wide JavaScript message stub. Raw
  // external children have no Tauri browser-side handler: reject every process
  // message here so that stub cannot acquire product/native authority.
  fn on_process_message_received(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_source_process:ProcessId,_message:Option<&mut ProcessMessage>)->i32{0}
- fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone()))}
+ fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone(),Arc::clone(&self.lifetime)))}
  fn request_handler(&self)->Option<RequestHandler>{Some(ExternalRequests::new(self.policy.clone()))}
  fn display_handler(&self)->Option<DisplayHandler>{Some(ExternalDisplay::new(Arc::clone(&self.host),self.profile.clone(),self.request.clone()))}
  fn permission_handler(&self)->Option<PermissionHandler>{Some(DenyPermissions::new())}
@@ -2032,20 +2062,165 @@ fn native_composition_clear(browser: &Browser) -> bool {
         false
     }
 }
-cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
+cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,lifetime:Arc<Mutex<ChildLifetime>>,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
+   let identity=ChildIdentity{browser_id:b.identifier(),generation:self.request.generation,
+     child:b.host().map_or(0,|host|native_handle(host.window_handle())),parent:self.request.parent};
+   if !self.lifetime.lock().is_ok_and(|mut receipt|receipt.created(identity)){
+     tracing::warn!(operation="browser_child_close",stage="creation",classification="duplicate_or_unavailable",generation=self.request.generation);
+     return;
+   }
    self.host.finish_child_created(&self.profile,&self.request,
      self.host.child_created(&self.profile,&self.request,b),
      ||{let _=hide_browser(b,&self.request);});
  }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
- fn on_before_close(&self,_browser:Option<&mut Browser>){
-   let exit = self.host.child_closed(&self.request);
-   tracing::info!(operation="browser_view",state="closed");
+ fn do_close(&self,browser:Option<&mut Browser>)->i32{
+   #[cfg(any(target_os="macos",windows))]
+   {
+     // CEF's default sends a product-parent close on these platforms. Always
+     // intercept it, even when evidence or dispatch fails; only the original
+     // child's before-close callback may release shutdown accounting.
+     if let Some(browser)=browser{
+       schedule_child_destroy(browser,&self.request,&self.lifetime);
+     }else{
+       tracing::warn!(operation="browser_child_close",stage="intercept",classification="missing_browser",generation=self.request.generation);
+     }
+     1
+   }
+   #[cfg(not(any(target_os="macos",windows)))]
+   {let _=browser;0}
+ }
+ fn on_before_close(&self,browser:Option<&mut Browser>){
+   let Some(browser)=browser else{return;};
+   let exit = self.host.acknowledge_child_close(&self.request,browser.identifier(),&self.lifetime);
    if let Some(code)=exit{self.app.exit(code);}
  }
 }}
+fn native_handle(handle: cef::sys::cef_window_handle_t) -> usize {
+    #[cfg(windows)]
+    {
+        handle.0 as usize
+    }
+    #[cfg(not(windows))]
+    {
+        handle as usize
+    }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+fn schedule_child_destroy(
+    browser: &Browser,
+    request: &ViewRequest,
+    lifetime: &Arc<Mutex<ChildLifetime>>,
+) {
+    let Some(identity) = lifetime
+        .lock()
+        .ok()
+        .and_then(|mut receipt| receipt.queue(browser.identifier(), request.generation))
+    else {
+        tracing::debug!(
+            operation = "browser_child_close",
+            stage = "dispatch",
+            classification = "duplicate_or_foreign",
+            generation = request.generation
+        );
+        return;
+    };
+    // Retain this browser, not the currently selected view. The client shares
+    // the receipt across every LifeSpanHandler interface CEF requests.
+    let mut task = DestroyExternalChild::new(browser.clone(), identity, Arc::clone(lifetime));
+    if cef::post_task(ThreadId::UI, Some(&mut task)) != 1 {
+        if let Ok(mut receipt) = lifetime.lock() {
+            receipt.dispatch_failed(identity);
+        }
+        tracing::warn!(
+            operation = "browser_child_close",
+            stage = "dispatch",
+            classification = "unavailable",
+            generation = identity.generation
+        );
+    } else {
+        tracing::info!(
+            operation = "browser_child_close",
+            stage = "dispatch",
+            state = "queued",
+            generation = identity.generation
+        );
+    }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdentity,lifetime:Arc<Mutex<ChildLifetime>>,}impl Task{
+ fn execute(&self){
+   if !self.lifetime.lock().is_ok_and(|mut receipt|receipt.begin_destroy(self.identity)){return;}
+   // Release the receipt lock before native calls: destruction can reenter
+   // on_before_close, which is the sole accounting acknowledgment.
+   let result=destroy_native_child(&self.browser,self.identity);
+   if let Ok(mut receipt)=self.lifetime.lock(){receipt.finish_destroy(self.identity,result.is_ok());}
+   match result{
+     Ok(())=>tracing::info!(operation="browser_child_close",stage="destruction",state="awaiting_acknowledgment",generation=self.identity.generation),
+     Err(code)=>tracing::warn!(operation="browser_child_close",stage="destruction",?code,generation=self.identity.generation),
+   }
+ }
+}}
+
+#[cfg(any(target_os = "macos", windows))]
+fn destroy_native_child(browser: &Browser, identity: ChildIdentity) -> Result<()> {
+    if cef::currently_on(ThreadId::UI) != 1
+        || browser.identifier() != identity.browser_id
+        || identity.child == 0
+        || identity.parent == 0
+        || identity.child == identity.parent
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    let host = browser.host().ok_or(NativeFailure::InvalidEvidence)?;
+    if native_handle(host.window_handle()) != identity.child {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::rc::Retained;
+        use objc2_app_kit::NSView;
+        // CEF owns this view until before-close. The receipt fences late tasks;
+        // retain the view during detachment so native reentrancy cannot leave
+        // a borrowed pointer to a deallocated view. Releasing this local retain
+        // lets CEF's view deallocation report WindowDestroyed.
+        let view = unsafe { Retained::<NSView>::retain(identity.child as *mut NSView) }
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        let parent = unsafe { view.superview() }.ok_or(NativeFailure::InvalidEvidence)?;
+        if (&*parent as *const NSView) as usize != identity.parent {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        view.removeFromSuperview();
+        if unsafe { view.superview() }.is_some() {
+            return Err(NativeFailure::SidecarFailed);
+        }
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::{
+            Foundation::HWND,
+            UI::WindowsAndMessaging::{DestroyWindow, GetParent, IsWindow},
+        };
+        let child = HWND(identity.child as *mut std::ffi::c_void);
+        unsafe {
+            if !IsWindow(Some(child)).as_bool()
+                || GetParent(child)
+                    .map_err(|_| NativeFailure::InvalidEvidence)?
+                    .0 as usize
+                    != identity.parent
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            DestroyWindow(child).map_err(|_| NativeFailure::SidecarFailed)?;
+        }
+        Ok(())
+    }
+}
 cef::wrap_request_handler! {struct ExternalRequests{policy:Arc<Mutex<Policy>>,}impl RequestHandler{
  fn on_before_browse(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,request:Option<&mut cef::Request>,_user_gesture:i32,_is_redirect:i32)->i32{if request.is_some_and(|r|self.policy.lock().is_ok_and(|p|p.navigation(&CefString::from(&r.url()).to_string()))){0}else{1}}
  fn resource_request_handler(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_request:Option<&mut cef::Request>,_is_navigation:i32,_is_download:i32,_request_initiator:Option<&CefString>,_disable_default_handling:Option<&mut i32>)->Option<ResourceRequestHandler>{Some(ExternalResources::new(self.policy.clone()))}
@@ -2259,6 +2434,107 @@ mod tests {
     use delidev_desktop::browser::Profile;
 
     use super::*;
+
+    #[test]
+    fn old_child_acknowledgment_preserves_replacement_siblings_and_quit_counts() {
+        let (_dir, host, record) = storage_fixture();
+        let request = ViewRequest {
+            window: "fixture".into(),
+            parent: 100,
+            bounds: Bounds {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 100.0,
+            },
+            scale: 1.0,
+            tab: "original".into(),
+            generation: 7,
+        };
+        let events = Arc::new(Mutex::new(Vec::new()));
+        {
+            let mut state = host.state.lock().unwrap();
+            state.live = 3;
+            state.exit_code = Some(0);
+            for (window, generation) in [("fixture", 8), ("sibling", 9)] {
+                let replacement = ViewRequest {
+                    window: window.into(),
+                    generation,
+                    tab: "replacement".into(),
+                    ..request.clone()
+                };
+                state.views.insert(
+                    window.into(),
+                    View {
+                        profile: record.id.clone(),
+                        generation,
+                        request: replacement,
+                        browser: Some(browser_fixture(&host, window, &events)),
+                        failure: None,
+                        creation_pending: false,
+                        closing: false,
+                        view_id: uuid::Uuid::now_v7().to_string(),
+                    },
+                );
+            }
+        }
+        let lifetime = Mutex::new(ChildLifetime::default());
+        let identity = ChildIdentity {
+            browser_id: 41,
+            generation: 7,
+            child: 200,
+            parent: 100,
+        };
+        lifetime.lock().unwrap().created(identity);
+        // Destruction succeeds without granting the acknowledgment yet.
+        {
+            let mut receipt = lifetime.lock().unwrap();
+            receipt.queue(41, 7);
+            receipt.begin_destroy(identity);
+            receipt.finish_destroy(identity, true);
+        }
+        assert_eq!(host.state.lock().unwrap().live, 3);
+        assert_eq!(host.acknowledge_child_close(&request, 42, &lifetime), None);
+        assert_eq!(host.state.lock().unwrap().live, 3);
+        assert_eq!(host.acknowledge_child_close(&request, 41, &lifetime), None);
+        assert_eq!(host.acknowledge_child_close(&request, 41, &lifetime), None);
+        let state = host.state.lock().unwrap();
+        assert_eq!(state.live, 2);
+        assert!(state.views["fixture"].browser.is_some());
+        assert!(state.views["sibling"].browser.is_some());
+        assert_eq!(state.views["fixture"].generation, 8);
+        assert_eq!(state.views["sibling"].generation, 9);
+        assert_eq!(state.exit_when_ready(), None);
+        assert!(events.lock().unwrap().is_empty());
+        drop(state);
+        // Normal Quit still waits for each current child's own callback.
+        for (window, generation, expected_exit) in [("fixture", 8, None), ("sibling", 9, Some(0))] {
+            let request = {
+                let mut state = host.state.lock().unwrap();
+                let view = state.views.get_mut(window).unwrap();
+                view.closing = true;
+                view.request.clone()
+            };
+            let lifetime = Mutex::new(ChildLifetime::default());
+            lifetime.lock().unwrap().created(ChildIdentity {
+                browser_id: generation as i32,
+                generation,
+                child: 200,
+                parent: 100,
+            });
+            assert_eq!(
+                host.acknowledge_child_close(&request, generation as i32, &lifetime),
+                expected_exit
+            );
+            assert_eq!(
+                host.acknowledge_child_close(&request, generation as i32, &lifetime),
+                None
+            );
+        }
+        let state = host.state.lock().unwrap();
+        assert_eq!(state.live, 0);
+        assert!(state.views.is_empty());
+    }
 
     struct CloseProbe {
         host: std::sync::Weak<BrowserHost>,

@@ -77,6 +77,9 @@ Repositories use required remote URLs with optional Local folder connections und
 ## Domain Ownership Map
 
 - `apps/delidev`: desktop presentation and native host.
+  The protected browser's `src-tauri/src/browser_child_lifetime.rs` owns exact
+  child-close receipts; `src-tauri/src/browser_host.rs` owns CEF UI destruction
+  and callback accounting under the [browser contract](cmds-delidev-browser-contract.md).
 - `apps/delidev-mobile`: separate HTTPS iOS/Android client, device-only platform state and target-bound internal beta candidates (both by default, explicit iOS-only supported); follow the [mobile contract](apps-delidev-mobile-contract.md).
 - `cmds/delidev-cli`: Go CLI, server, Worker, storage and native adapters.
 - `cmds/delidev-cli/internal/tailscale`: bounded installed-client observations and the original foreground access child under the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
