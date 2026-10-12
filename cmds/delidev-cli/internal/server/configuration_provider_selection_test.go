@@ -17,7 +17,8 @@ func providerSelectionFixture(t *testing.T, s *Service, enabled bool) (domain.ID
 	providerID, accountID, agentID := domain.NewID(), domain.NewID(), domain.NewID()
 	provider := domain.Provider{Name: "Fixture", Endpoint: "https://api.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: &enabled}
 	account := domain.Account{Alias: "Existing", ProviderID: providerID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}}
-	agent := domain.Agent{Name: "Existing", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: providerID, NativeID: "fixture"}, Name: "Fixture", MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
+	nativeModel := "fixture"
+	agent := domain.Agent{Name: "Existing", Harness: domain.Codex, HarnessSettings: &domain.HarnessSettings{Version: 1}, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: providerID, NativeID: nativeModel}, Name: "Fixture", MetadataSource: domain.UserDeclared}, ModelSelection: domain.OverrideHarnessSetting(nativeModel), Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
 	doctorPut(t, s, domain.ProviderKind, providerID, 0, provider)
 	doctorPut(t, s, domain.AccountKind, accountID, 0, account)
 	doctorPut(t, s, domain.AgentKind, agentID, 0, agent)
