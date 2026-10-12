@@ -1548,6 +1548,7 @@ Extension packages cannot supply execution instructions or alter active native
 generations. Source files and original retained runtime copies have separate
 owners. Exact restart/replay returns the accepted original outcome after package
 deletion and cannot recreate deleted resources.
+
 ## OpenCode skill checkpoint ownership
 
 Selected native packages are complete independent runtime copies. Private native

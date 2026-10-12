@@ -1213,6 +1213,7 @@ reload proof and its own location metadata; it does not borrow the parent's
 generation owner. Ordinary continuations and context actions retain that child
 location. Native-shell composition preserves the original shell-history and
 rollout digests; only a comparison copy projects the selected effective cwd.
+
 ## OpenCode native skill generations
 
 System and Worker `NATIVE_OPENCODE_SKILLS_V1` authorize only the independently

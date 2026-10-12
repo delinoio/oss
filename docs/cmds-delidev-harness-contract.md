@@ -2808,6 +2808,7 @@ Instruction-source digest collection rejects a file whose modification time is l
 The closed native configuration layer inventory also fences file-backed layers against post-Resume writes. Canonical regular sources must predate the request; a missing optional native file is allowed only with its explicit empty layer. Unknown layer families and missing configured sources fail closed. Non-file managed layers remain bound by their complete native versioned layer/origin digest.
 
 The directory adapter admits the exact verified native version `0.162.0`. An older historical fixture baseline or a different installed version does not prove the required cold Resume, original-root preservation and reload schema. Worker capability describes the implemented adapter; the actual owned process must prove this version and all original admission boundaries before a directory intent.
+
 ## OpenCode selected native skill profile
 
 The selected native source revision is `545f51d26cc39a907d2867492d498d9607ea5fa4`.

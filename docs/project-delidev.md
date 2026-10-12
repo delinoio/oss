@@ -494,6 +494,7 @@ server/Project/Agent destinations receive only confirmed settings; exact immutab
 packages remain disabled and unattached. Native/account/platform acceptance stays
 separate from fixture and schema evidence. The Claude adapter remains a separate
 consumer of this shared owner.
+
 ## Selected native OpenCode skills
 
 The independently negotiated OpenCode skill adapter consumes enabled immutable

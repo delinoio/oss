@@ -6276,6 +6276,7 @@ replaying accepted work. Back/Esc return focus and preserve accepted ownership.
 English/Korean copy, native labels/status, 40px controls, existing theme tokens and
 wrapping preserve the Settings lifetime. Fixtures do not establish real desktop,
 remote Runner, account, native, screen-reader or layout acceptance.
+
 ## OpenCode native skill composer capability
 
 The existing explicit skill completion also accepts the independently negotiated
