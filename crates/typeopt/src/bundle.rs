@@ -142,38 +142,71 @@ fn forward_offset(offset: usize, edits: &[Edit]) -> Option<usize> {
 }
 
 /// Rewrites the bundler's map of a chunk for the edited chunk text: every
-/// token moves through each round's edits; tokens inside replaced code are
-/// dropped, so inserted code maps to the original range it replaced.
+/// token moves through each round's edits and tokens inside replaced code
+/// are dropped. Inserted or replacing code gets a token at its start that
+/// maps where the original token at that position mapped, so inserted code
+/// maps to the original range it replaced.
 fn compose_bundle_map(
     source_map: &sourcemap::SourceMap,
     original: &str,
     changed: &str,
     chain: &[Vec<Edit>],
 ) -> Result<sourcemap::SourceMap> {
+    struct Mapped<'a> {
+        line: u32,
+        col: u32,
+        token: sourcemap::Token<'a>,
+    }
     let original_starts = line_starts(original);
     let changed_starts = line_starts(changed);
-    let mut builder = sourcemap::SourceMapBuilder::new(source_map.get_file());
-    for (index, source) in source_map.sources().enumerate() {
-        let id = builder.add_source(source);
-        builder.set_source_contents(id, source_map.get_source_contents(index as u32));
-    }
-    'tokens: for token in source_map.tokens() {
-        let mut offset = byte_at_utf16(
+    let forward = |mut offset: usize, rounds: &[Vec<Edit>]| -> Option<usize> {
+        for edits in rounds {
+            offset = forward_offset(offset, edits)?;
+        }
+        (offset <= changed.len()).then_some(offset)
+    };
+    let mut mapped = Vec::new();
+    for token in source_map.tokens() {
+        let offset = byte_at_utf16(
             original,
             &original_starts,
             token.get_dst_line(),
             token.get_dst_col(),
         );
-        for edits in chain {
-            match forward_offset(offset, edits) {
-                Some(next) => offset = next,
-                None => continue 'tokens,
+        if let Some(offset) = forward(offset, chain) {
+            let (line, col) = coordinate(changed, &changed_starts, offset);
+            mapped.push(Mapped { line, col, token });
+        }
+    }
+    for (round, edits) in chain.iter().enumerate() {
+        let mut delta: isize = 0;
+        for edit in edits {
+            let growth = edit.replacement.len() as isize - (edit.end - edit.start) as isize;
+            let start = (edit.start as isize + delta) as usize;
+            delta += growth;
+            if edit.replacement.is_empty() {
+                continue;
+            }
+            let Some(offset) = forward(start, &chain[round + 1..]) else {
+                continue;
+            };
+            let source = crate::pipeline::source_offset(edit.start, &chain[..round]);
+            let (line, col) = coordinate(original, &original_starts, source.min(original.len()));
+            if let Some(token) = source_map.lookup_token(line, col) {
+                let (line, col) = coordinate(changed, &changed_starts, offset);
+                mapped.push(Mapped { line, col, token });
             }
         }
-        if offset > changed.len() {
-            continue;
-        }
-        let (line, col) = coordinate(changed, &changed_starts, offset);
+    }
+    // Encoders and consumers expect generated positions in order.
+    mapped.sort_by_key(|m| (m.line, m.col));
+    mapped.dedup_by_key(|m| (m.line, m.col));
+    let mut builder = sourcemap::SourceMapBuilder::new(source_map.get_file());
+    for (index, source) in source_map.sources().enumerate() {
+        let id = builder.add_source(source);
+        builder.set_source_contents(id, source_map.get_source_contents(index as u32));
+    }
+    for Mapped { line, col, token } in mapped {
         builder.add(
             line,
             col,
@@ -662,6 +695,29 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{hashed_name, html_tags, references, rewrite};
+
+    #[test]
+    fn maps_inserted_code_to_the_position_it_was_inserted_at() {
+        let original = "a();b();";
+        let mut builder = sourcemap::SourceMapBuilder::new(None);
+        builder.add(0, 0, 10, 0, Some("src.ts"), None, false);
+        builder.add(0, 4, 20, 0, Some("src.ts"), None, false);
+        let map = builder.into_sourcemap();
+        let insertion = "import\"x\";";
+        let chain = vec![vec![crate::plan::Edit {
+            start: 4,
+            end: 4,
+            replacement: insertion.to_owned(),
+        }]];
+        let changed = format!("a();{insertion}b();");
+        let composed = super::compose_bundle_map(&map, original, &changed, &chain).unwrap();
+        let tokens: Vec<_> = composed
+            .tokens()
+            .map(|t| (t.get_dst_col(), t.get_src_line()))
+            .collect();
+        // The insertion maps where `b()` did; `b()` keeps its own mapping.
+        assert_eq!(tokens, [(0, 10), (4, 20), (4 + insertion.len() as u32, 20)]);
+    }
 
     #[test]
     fn locates_source_map_comments_exactly() {
