@@ -44,6 +44,7 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	safety               modelSafetyLedger
 	managedForkHistory   bool
 	quotaUsed            atomic.Bool
 	skillsRoot           string

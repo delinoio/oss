@@ -28,6 +28,7 @@ const (
 	validationVerification   eventValidationStage = "model-verification"
 	validationAuthRecovery   eventValidationStage = "provider-auth-recovery"
 	validationModeration     eventValidationStage = "turn-moderation"
+	validationReroute        eventValidationStage = "model-reroute"
 	validationBuffering      eventValidationStage = "model-safety-buffering"
 	validationDeprecation    eventValidationStage = "deprecation"
 	validationThreadIdentity eventValidationStage = "thread-identity"
@@ -62,6 +63,8 @@ func validationStage(method string) eventValidationStage {
 		return validationUsage
 	case "account/rateLimits/updated":
 		return validationQuota
+	case "model/rerouted":
+		return validationReroute
 	case "model/verification":
 		return validationVerification
 	case "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
@@ -117,6 +120,7 @@ const (
 	LateTurnResponseEvent         EventKind = "late-turn-response"
 	NativeExtensionEvent          EventKind = "native-extension"
 	MetadataEvent                 EventKind = "metadata"
+	ModelSafetyEvent              EventKind = "model-safety"
 	UsageEvent                    EventKind = "usage"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
@@ -164,6 +168,7 @@ type Message struct {
 
 type Event struct {
 	NativeError      *NativeErrorObservation `json:"-"`
+	Safety           *ModelSafetyObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -284,6 +289,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 		}
 		return Event{}, c.problem
 	}
+	if c.logger != nil && event.Safety != nil {
+		c.logger.InfoContext(ctx, "Codex native safety observed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "late", event.Late)
+	}
 	if event.Kind == QuestionAcceptedEvent && c.logger != nil {
 		c.logger.InfoContext(ctx, "Codex native question acceptance observed", "owner_id", c.ownerID, "interaction_id", event.InteractionState.ID, "response_id", event.InteractionState.ResponseID, "turn_id", event.TurnID)
 	}
@@ -387,6 +395,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			if turn.Status.terminal() && turn.Status != prior.Turn.Status {
 				return Event{}, incompatible()
 			}
+			if err := c.safetyCompletionProblem(turn.ID, turn.Status); err != nil {
+				return Event{}, err
+			}
 			return event, nil
 		}
 		if turn.ID != c.execution.active {
@@ -423,6 +434,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			}
 			// Neither a terminal notification nor a late response clears an
 			// uncertain send or a previous Stop/failed execution pause.
+		}
+		if err := c.safetyCompletionProblem(turn.ID, turn.Status); err != nil {
+			return Event{}, err
 		}
 		return event, nil
 	case "serverRequest/resolved":

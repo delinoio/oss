@@ -133,7 +133,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
+	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent && event.Kind != codex.ModelSafetyEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
@@ -155,6 +155,13 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	}
 	if event.Kind == codex.NativeExtensionEvent || event.Kind == codex.LateTurnResponseEvent {
 		return false, nil
+	}
+	if event.Kind == codex.ModelSafetyEvent || event.Kind == codex.MetadataEvent && event.Safety != nil {
+		if !event.Safety.MatchesPassiveEvent(event, c.thread, c.turn) || c.finished && !event.Late {
+			return false, publicationUncertain()
+		}
+		// Private safety evidence is never a prompt, response, tool or public event.
+		return true, nil
 	}
 	if !event.Correlated || event.Late || event.ThreadID != c.thread || (event.TurnID != "" && event.TurnID != c.turn) {
 		c.blocked = true
