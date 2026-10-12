@@ -930,8 +930,13 @@ export function Usage({
                                   })
                                 }
                               >
-                                {group.modelName ||
-                                  copy("usage.extra.a99bc331d9ad")}
+                                {group.model?.nativeId
+                                  ? productLabel(
+                                      PresentationKind.Model,
+                                      group.model.nativeId,
+                                      group.modelName,
+                                    )
+                                  : copy("usage.extra.a99bc331d9ad")}
                               </button>
                               <p>
                                 {group.subscriptionService

@@ -205,14 +205,20 @@ it("uses duplicate project labels without exposing original project IDs", () => 
   const table = screen.getByRole("table", {
     name: "Grok inputs by original session, account and model",
   });
-  expect(within(table).getByText("Shared project label · 1")).toBeTruthy();
-  expect(within(table).getByText("Shared project label · 2")).toBeTruthy();
+  expect(within(table).getAllByText("Shared project label · 1")).toHaveLength(
+    2,
+  );
+  expect(within(table).getAllByText("Shared project label · 2")).toHaveLength(
+    2,
+  );
   for (const project of projects)
     expect(table.textContent).not.toContain(project);
   data.groups[0].projectName = "Renamed project";
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
-  expect(within(table).getByText("Renamed project")).toBeTruthy();
-  expect(within(table).getByText("Shared project label · 2")).toBeTruthy();
+  expect(within(table).getAllByText("Renamed project")).toHaveLength(2);
+  expect(within(table).getAllByText("Shared project label · 2")).toHaveLength(
+    2,
+  );
   for (const project of projects)
     expect(table.textContent).not.toContain(project);
 });

@@ -66,6 +66,14 @@ describe("product identity presentation", () => {
       "repository unavailable · 3",
     );
   });
+  it("keeps duplicate labels numbered after another identity is renamed", () => {
+    const { registry, label } = fixture();
+    registry.observe(PresentationKind.Project, first, "Shared");
+    registry.observe(PresentationKind.Project, second, "Shared");
+    expect(label(PresentationKind.Project, second)).toBe("Shared · 2");
+    expect(label(PresentationKind.Project, first, "Renamed")).toBe("Renamed");
+    expect(label(PresentationKind.Project, second)).toBe("Shared · 2");
+  });
   it("keeps UUID-looking and non-ASCII user names and native provider slugs exactly", () => {
     const { label } = fixture();
     expect(label(PresentationKind.Project, first, second)).toBe(second);

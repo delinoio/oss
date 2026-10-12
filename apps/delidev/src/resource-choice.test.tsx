@@ -692,9 +692,11 @@ it("reserves blank option slots for missing and unknown harnesses instead of inf
     </TransportProvider>,
   );
   fireEvent.click(screen.getByRole("combobox", { name: "Agent" }));
-  for (const option of await screen.findAllByRole("option", {
-    name: "Codex",
-  })) {
+  const options = await Promise.all([
+    screen.findByRole("option", { name: "Codex · 1" }),
+    screen.findByRole("option", { name: "Codex · 2" }),
+  ]);
+  for (const option of options) {
     expect(option.querySelector(".scroll-picker-decoration")).toBeTruthy();
     expect(option.querySelector(".worker-harness-mark")).toBeNull();
   }

@@ -66,7 +66,6 @@ export class ProductIdentities {
     if (name && name !== entry.name) {
       let names = this.names.get(kind);
       if (!names) this.names.set(kind, (names = new Map()));
-      if (entry.name) names.get(entry.name)?.delete(id);
       let identities = names.get(name);
       if (!identities) names.set(name, (identities = new Set()));
       identities.add(id);

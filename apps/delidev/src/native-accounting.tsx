@@ -96,6 +96,14 @@ function NativeSummary({
 }) {
   const productLabel = useProductLabels();
   useLocale();
+  for (const group of data.groups) {
+    productLabel(PresentationKind.Model, group.model?.nativeId);
+    productLabel(PresentationKind.Provider, group.providerId);
+  }
+  for (const model of data.models) {
+    productLabel(PresentationKind.Model, model.model?.nativeId);
+    productLabel(PresentationKind.Provider, model.providerId);
+  }
   const claude =
     data.totals?.kind === AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT;
   const title = claude
@@ -226,7 +234,10 @@ function NativeSummary({
                           })
                         }
                       >
-                        {group.model?.nativeId ?? ""}
+                        {productLabel(
+                          PresentationKind.Model,
+                          group.model?.nativeId,
+                        )}
                       </button>
                       <p>
                         {productLabel(
@@ -343,7 +354,10 @@ function NativeSummary({
                             })
                           }
                         >
-                          {model.model?.nativeId ?? ""}
+                          {productLabel(
+                            PresentationKind.Model,
+                            model.model?.nativeId,
+                          )}
                         </button>
                         <p>
                           {productLabel(
