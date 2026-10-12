@@ -578,9 +578,8 @@ test.each([
 ])(
   "the $row palette row duplicates its selected family in $mode mode ($light/$dark)",
   async ({ mode, row, light, dark }) => {
-    const { defaultPreferences, palettes, colorTokens } = await import(
-      "./appearance-preferences"
-    );
+    const { defaultPreferences, palettes, colorTokens } =
+      await import("./appearance-preferences");
     scheme(true);
     const value = fixture(mode);
     const preferences = {
@@ -625,7 +624,10 @@ test.each([
     expect(themeName.value).toBe(select.selectedOptions[0].textContent);
     expect(
       Object.fromEntries(
-        colorInputs.map((input) => [input.getAttribute("aria-label"), input.value]),
+        colorInputs.map((input) => [
+          input.getAttribute("aria-label"),
+          input.value,
+        ]),
       ),
     ).toEqual(
       Object.fromEntries(
@@ -643,9 +645,8 @@ test.each([
 );
 
 test("saving a bundled palette duplicate preserves both selected references", async () => {
-  const { defaultPreferences, palettes } = await import(
-    "./appearance-preferences"
-  );
+  const { defaultPreferences, palettes } =
+    await import("./appearance-preferences");
   scheme(true);
   const value = fixture(Theme.System);
   const preferences = {
@@ -695,9 +696,8 @@ test("saving a bundled palette duplicate preserves both selected references", as
 });
 
 test("selected custom palette and library row duplication preserve the original theme", async () => {
-  const { defaultPreferences, palettes } = await import(
-    "./appearance-preferences"
-  );
+  const { defaultPreferences, palettes } =
+    await import("./appearance-preferences");
   scheme(false);
   const value = fixture();
   const custom = {
@@ -748,8 +748,11 @@ test("selected custom palette and library row duplication preserve the original 
   expect(value.bridge.update).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Duplicate theme" }));
   expect(
-    (screen.getByRole("textbox", { name: "Light background" }) as HTMLInputElement)
-      .value,
+    (
+      screen.getByRole("textbox", {
+        name: "Light background",
+      }) as HTMLInputElement
+    ).value,
   ).toBe(custom.light.background);
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(value.bridge.update).not.toHaveBeenCalled();
@@ -793,9 +796,8 @@ test("palette duplication exposes distinct English and Korean action names", asy
 });
 
 test("both palette duplication actions retain the 32-theme library limit", async () => {
-  const { defaultPreferences, palettes } = await import(
-    "./appearance-preferences"
-  );
+  const { defaultPreferences, palettes } =
+    await import("./appearance-preferences");
   scheme(false);
   const value = fixture();
   const preferences = {
@@ -822,7 +824,9 @@ test("both palette duplication actions retain the 32-theme library limit", async
     selector: ".appearance-custom > span",
   });
   for (const name of ["Duplicate light palette", "Duplicate dark palette"])
-    expect(screen.getByRole("button", { name }).matches(":disabled")).toBe(true);
+    expect(screen.getByRole("button", { name }).matches(":disabled")).toBe(
+      true,
+    );
   expect(value.bridge.update).not.toHaveBeenCalled();
 });
 
