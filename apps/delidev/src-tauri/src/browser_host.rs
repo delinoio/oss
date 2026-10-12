@@ -2143,21 +2143,114 @@ fn schedule_child_destroy(
     }
 
     if let Ok(mut receipt) = lifetime.lock() {
-        receipt.dispatch_failed(identity);
+        if !receipt.retry_pending(identity) {
+            tracing::warn!(
+                operation = "browser_child_close",
+                stage = "dispatch",
+                classification = "retry_owner_missing",
+                generation = identity.generation
+            );
+            return;
+        }
     }
     tracing::warn!(
         operation = "browser_child_close",
         stage = "dispatch",
-        classification = "unavailable_close_rejected",
+        classification = "close_rejected_retry_retained",
         generation = identity.generation
     );
+    schedule_child_destroy_retry(browser.clone(), identity, Arc::clone(lifetime), 0);
 }
 
 #[cfg(any(target_os = "macos", windows))]
-const MAX_CHILD_DESTROY_RETRIES: u8 = 3;
+const CHILD_DESTROY_RETRY_DELAY_MS: u64 = 250;
 
 #[cfg(any(target_os = "macos", windows))]
-cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdentity,lifetime:Arc<Mutex<ChildLifetime>>,attempt:u8,}impl Task{
+fn schedule_child_destroy_retry(
+    browser: Browser,
+    identity: ChildIdentity,
+    lifetime: Arc<Mutex<ChildLifetime>>,
+    attempt: u32,
+) {
+    let delay_ms = CHILD_DESTROY_RETRY_DELAY_MS
+        .min(CHILD_DESTROY_RETRY_DELAY_MS.saturating_mul(u64::from(attempt.saturating_add(1))));
+    let mut retry = DestroyExternalChild::new(
+        browser.clone(),
+        identity,
+        Arc::clone(&lifetime),
+        attempt.saturating_add(1),
+    );
+    if cef::post_delayed_task(ThreadId::UI, Some(&mut retry), delay_ms as i64) == 1 {
+        tracing::warn!(
+            operation = "browser_child_close",
+            stage = "retry_dispatch",
+            state = "retry_queued",
+            attempt = attempt.saturating_add(1),
+            generation = identity.generation
+        );
+        return;
+    }
+
+    tracing::warn!(
+        operation = "browser_child_close",
+        stage = "retry_dispatch",
+        state = "delayed_dispatch_rejected",
+        attempt = attempt.saturating_add(1),
+        generation = identity.generation
+    );
+    let worker = thread::Builder::new()
+        .name("browser-child-close-retry".into())
+        .spawn(move || {
+            let mut attempt = attempt.saturating_add(1);
+            loop {
+                if !lifetime
+                    .lock()
+                    .is_ok_and(|receipt| receipt.retry_pending(identity))
+                {
+                    return;
+                }
+                let delay_ms = CHILD_DESTROY_RETRY_DELAY_MS
+                    .min(CHILD_DESTROY_RETRY_DELAY_MS.saturating_mul(u64::from(attempt)));
+                thread::sleep(Duration::from_millis(delay_ms));
+                let mut retry = DestroyExternalChild::new(
+                    browser.clone(),
+                    identity,
+                    Arc::clone(&lifetime),
+                    attempt,
+                );
+                if cef::post_task(ThreadId::UI, Some(&mut retry)) == 1 {
+                    tracing::info!(
+                        operation = "browser_child_close",
+                        stage = "retry_dispatch",
+                        state = "retry_queued",
+                        attempt,
+                        generation = identity.generation
+                    );
+                    return;
+                }
+                tracing::warn!(
+                    operation = "browser_child_close",
+                    stage = "retry_dispatch",
+                    state = "close_rejected_retry_retained",
+                    attempt,
+                    generation = identity.generation
+                );
+                attempt = attempt.saturating_add(1);
+            }
+        });
+    if let Err(error) = worker {
+        tracing::error!(
+            operation = "browser_child_close",
+            stage = "retry_dispatch",
+            classification = "retry_owner_spawn_failed",
+            ?error,
+            generation = identity.generation
+        );
+    }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdentity,lifetime:Arc<Mutex<ChildLifetime>>,attempt:u32,}impl Task{
  fn execute(&self){
    if !self.lifetime.lock().is_ok_and(|mut receipt|receipt.begin_destroy(self.identity)){return;}
    // Release the receipt lock before native calls: destruction can reenter
@@ -2169,15 +2262,9 @@ cef::wrap_task! {struct DestroyExternalChild{browser:Browser,identity:ChildIdent
        tracing::info!(operation="browser_child_close",stage="destruction",state="awaiting_acknowledgment",generation=self.identity.generation);
      }
      Err(code)=>{
-       if self.attempt<MAX_CHILD_DESTROY_RETRIES && self.lifetime.lock().is_ok_and(|mut receipt|receipt.retry_destroy(self.identity)){
-         let mut retry=DestroyExternalChild::new(self.browser.clone(),self.identity,Arc::clone(&self.lifetime),self.attempt+1);
-         let delay_ms=50_i64 * i64::from(self.attempt+1);
-         if cef::post_delayed_task(ThreadId::UI,Some(&mut retry),delay_ms)==1{
-           tracing::warn!(operation="browser_child_close",stage="destruction",state="retry_queued",?code,attempt=self.attempt+1,generation=self.identity.generation);
-           return;
-         }
-         if let Ok(mut receipt)=self.lifetime.lock(){receipt.dispatch_failed(self.identity);}
-         tracing::warn!(operation="browser_child_close",stage="retry_dispatch",state="close_rejected",?code,attempt=self.attempt+1,generation=self.identity.generation);
+       if self.lifetime.lock().is_ok_and(|mut receipt|receipt.retry_destroy(self.identity)){
+         tracing::warn!(operation="browser_child_close",stage="destruction",state="retry_required",?code,attempt=self.attempt,generation=self.identity.generation);
+         schedule_child_destroy_retry(self.browser.clone(),self.identity,Arc::clone(&self.lifetime),self.attempt);
          return;
        }
        if let Ok(mut receipt)=self.lifetime.lock(){receipt.finish_destroy(self.identity,false);}

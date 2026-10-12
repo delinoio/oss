@@ -151,10 +151,13 @@ tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
 The raw client's lifecycle handler owns child-only closure. On macOS and Windows,
 it intercepts CEF's default parent-window close and queues destruction of only the
-original child on the CEF UI thread. A failed dispatch or exhausted destruction
-retry keeps the close intercepted and preserves the live child receipt for a later
-close attempt; CEF's default windowed close path must not close the product window
-or sibling presentations. Raw child browser creation explicitly selects CEF's
+original child on the CEF UI thread. Failed dispatch and failed destruction retain
+an automatic retry owner for the exact browser and child receipt, using bounded
+retry delays until native hierarchy destruction or the original close acknowledgment
+succeeds. Recovery must not depend on a later Hide/Quit `CloseBrowser` call because
+CEF may ignore calls while child destruction is already pending. CEF's default
+windowed close path must not close the product window or sibling presentations.
+Raw child browser creation explicitly selects CEF's
 Alloy runtime style so the lifecycle callback used by this child-only close path
 is available on every supported desktop platform. The client shares one lifecycle receipt across
 all handler interfaces, retaining the original browser ID, child handle, parent

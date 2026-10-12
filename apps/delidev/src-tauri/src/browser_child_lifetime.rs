@@ -48,12 +48,6 @@ impl ChildLifetime {
         Some(identity)
     }
 
-    pub fn dispatch_failed(&mut self, identity: ChildIdentity) {
-        if self.identity == Some(identity) && self.phase == Phase::Queued {
-            self.phase = Phase::Live;
-        }
-    }
-
     pub fn begin_destroy(&mut self, identity: ChildIdentity) -> bool {
         if self.identity != Some(identity) || self.phase != Phase::Queued {
             return false;
@@ -70,6 +64,10 @@ impl ChildLifetime {
         true
     }
 
+    pub fn retry_pending(&self, identity: ChildIdentity) -> bool {
+        self.identity == Some(identity) && self.phase == Phase::Queued
+    }
+
     pub fn finish_destroy(&mut self, identity: ChildIdentity, success: bool) {
         // Native destruction can synchronously reenter on_before_close. Never
         // reopen an acknowledged receipt when the native call returns.
@@ -77,7 +75,7 @@ impl ChildLifetime {
             self.phase = if success {
                 Phase::Destroyed
             } else {
-                Phase::Live
+                Phase::Queued
             };
         }
     }
@@ -153,23 +151,22 @@ mod tests {
             },
         ] {
             assert!(!receipt.begin_destroy(foreign));
-            receipt.dispatch_failed(foreign);
             receipt.finish_destroy(foreign, true);
         }
         assert!(receipt.begin_destroy(original));
     }
 
     #[test]
-    fn failed_dispatch_and_destruction_preserve_pending_accounting() {
+    fn failed_dispatch_and_destruction_keep_the_original_child_queued() {
         let mut receipt = ChildLifetime::default();
         let original = child();
         receipt.created(original);
         receipt.queue(41, 7);
-        receipt.dispatch_failed(original);
-        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.retry_pending(original));
+        assert_eq!(receipt.queue(41, 7), None);
         assert!(receipt.begin_destroy(original));
         receipt.finish_destroy(original, false);
-        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert_eq!(receipt.queue(41, 7), None);
         assert!(receipt.begin_destroy(original));
         receipt.finish_destroy(original, true);
         assert!(receipt.closed(41, 7));
@@ -187,7 +184,7 @@ mod tests {
             }
             assert!(receipt.closed(41, 7));
             receipt.finish_destroy(original, false);
-            receipt.dispatch_failed(original);
+            assert!(!receipt.retry_pending(original));
             assert!(!receipt.begin_destroy(original));
             assert_eq!(receipt.queue(41, 7), None);
             assert!(!receipt.closed(41, 7));
@@ -212,25 +209,26 @@ mod tests {
     }
 
     #[test]
-    fn failed_dispatch_restores_the_original_child_for_a_later_close_attempt() {
+    fn failed_dispatch_retains_the_queued_child_for_automatic_retry() {
         let mut receipt = ChildLifetime::default();
         let original = child();
         receipt.created(original);
         assert_eq!(receipt.queue(41, 7), Some(original));
-        receipt.dispatch_failed(original);
-        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.retry_pending(original));
+        assert_eq!(receipt.queue(41, 7), None);
         assert!(receipt.begin_destroy(original));
     }
 
     #[test]
-    fn exhausted_destruction_retries_restore_live_child_without_acknowledging_close() {
+    fn repeated_destruction_failures_keep_the_exact_child_queued() {
         let mut receipt = ChildLifetime::default();
         let original = child();
         receipt.created(original);
         assert_eq!(receipt.queue(41, 7), Some(original));
         assert!(receipt.begin_destroy(original));
         receipt.finish_destroy(original, false);
-        assert_eq!(receipt.queue(41, 7), Some(original));
+        assert!(receipt.retry_pending(original));
+        assert_eq!(receipt.queue(41, 7), None);
         assert!(receipt.begin_destroy(original));
     }
 
