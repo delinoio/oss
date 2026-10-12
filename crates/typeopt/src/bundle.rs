@@ -795,7 +795,7 @@ fn rewrite(text: &str, renamed: &BTreeMap<String, String>) -> String {
 /// kept its name could otherwise meet a stale copy of a chunk it depends on.
 /// A new hash covers the final content of the file and of every renamed file
 /// it reaches, so a change in a dependency always renames its importers.
-fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
+fn rehash(source: &Path, root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
     use sha2::{Digest, Sha256};
     let mut files = Vec::new();
     files_under(root, &mut files)?;
@@ -916,6 +916,54 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
         }
         renamed.insert(old.clone(), new_name);
     }
+    // A reference can spell a name with URL or HTML escapes (`%2D`,
+    // `&#45;`), which rewriting cannot follow. Such names keep their original
+    // file next to the renamed one, together with every renamed file that the
+    // original references, so the encoded reference still loads a complete,
+    // consistent original graph.
+    // File-name-like tokens of a text and how often each occurs.
+    let tokens = |text: &str| {
+        let mut counts = BTreeMap::<String, usize>::new();
+        for token in
+            text.split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+        {
+            if renamed.contains_key(token) {
+                *counts.entry(token.to_owned()).or_default() += 1;
+            }
+        }
+        counts
+    };
+    let mut retained = BTreeSet::<String>::new();
+    for text in texts.values() {
+        if !text.contains('%') && !text.contains('&') {
+            continue;
+        }
+        let unescaped = decode_references(text).unwrap_or_else(|| text.clone());
+        let unescaped = crate::compiler::percent_decode(&unescaped);
+        if unescaped == *text {
+            continue;
+        }
+        let plain = tokens(text);
+        for (name, count) in tokens(&unescaped) {
+            if count > plain.get(&name).copied().unwrap_or(0) {
+                retained.insert(name);
+            }
+        }
+    }
+    let original = |old: &str| -> Vec<PathBuf> { hashed.get(old).cloned().unwrap_or_default() };
+    let mut pending: Vec<String> = retained.iter().cloned().collect();
+    while let Some(old) = pending.pop() {
+        for path in original(&old) {
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            let text = std::fs::read_to_string(source.join(relative)).unwrap_or_default();
+            for other in renamed.keys() {
+                if !retained.contains(other) && !references(&text, other).is_empty() {
+                    retained.insert(other.clone());
+                    pending.push(other.clone());
+                }
+            }
+        }
+    }
     for (file, text) in &texts {
         crate::app::check_cancelled()?;
         let updated = rewrite(text, &renamed);
@@ -932,7 +980,18 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
         if let Some(new) = renamed.get(&stem) {
             std::fs::rename(file, file.with_file_name(format!("{new}{suffix}")))
                 .context("cannot rename a rehashed chunk")?;
+            if retained.contains(&stem) {
+                let relative = file.strip_prefix(root).unwrap_or(file);
+                std::fs::copy(source.join(relative), file)
+                    .context("cannot retain an encoded-referenced chunk")?;
+            }
         }
+    }
+    if !retained.is_empty() {
+        tracing::warn!(
+            retained = retained.len(),
+            "kept original chunks that encoded references still name"
+        );
     }
     Ok(renamed.len())
 }
@@ -1084,7 +1143,7 @@ pub fn stage(
     let rehashed = if crate::app::keep_chunk_names() {
         0
     } else {
-        rehash(&root, &edited)?
+        rehash(source, &root, &edited)?
     };
     tracing::info!(
         edited = edited.len(),

@@ -1105,7 +1105,7 @@ fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
 }
 
 /// Decodes `%XX` escapes of a URL path.
-fn percent_decode(path: &str) -> String {
+pub(crate) fn percent_decode(path: &str) -> String {
     let bytes = path.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

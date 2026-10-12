@@ -854,6 +854,37 @@ fn rehashes_rewritten_hashed_text_assets() {
     }
 }
 
+/// A reference spelled with escapes cannot be rewritten: the original chunk
+/// (and what it imports) stays under its old name next to the renamed one.
+#[test]
+fn retains_chunks_that_encoded_references_name() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script type="module" src="/assets/index%2DAAAAAAAA.js"></script>"#,
+    );
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    // The encoded page still loads the complete original graph.
+    for original in ["index-AAAAAAAA.js", "settings-BBBBBBBB.js"] {
+        assert!(assets.contains(&original.to_owned()), "{assets:?}");
+        assert_eq!(
+            out(temp.path(), &format!("assets/{original}")),
+            fs::read_to_string(temp.path().join("dist/assets").join(original)).unwrap()
+        );
+    }
+    let before = node(&temp.path().join("dist/assets/index-AAAAAAAA.js"));
+    let after = node(&temp.path().join("out/assets/index-AAAAAAAA.js"));
+    assert_eq!(before.stdout, after.stdout);
+    // The renamed, optimized graph exists as well.
+    assert!(
+        assets
+            .iter()
+            .any(|a| a.starts_with("index-") && !a.contains("AAAAAAAA"))
+    );
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);
