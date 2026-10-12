@@ -135,7 +135,7 @@ func (m *Manager) ReadMCP(ctx context.Context, request ReadRequest) (domain.MCPR
 		receipt, ok := catalog.Receipts[q.RequestID]
 		if !ok {
 			result.State = domain.MCPFailed
-			result.Problem = domain.Fail(domain.NotFound, "The original request was not delivered to this Worker.", "The original identity is now reserved without replaying it.").(*domain.Error)
+			result.Problem = domain.Fail(domain.NotFound, "The original request was not delivered to this Worker.", "The original identity is now reserved without replaying it.")
 			receiptResult := result
 			receiptResult.Definitions = []domain.MCPDefinition{}
 			catalog.Receipts[q.RequestID] = mcpReceipt{ActorID: q.ActorID, Result: receiptResult, Consumed: true}

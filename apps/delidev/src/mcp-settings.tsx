@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
@@ -200,7 +200,9 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
   }>();
   const [callback, setCallback] = useState("");
   const [parseError, setParseError] = useState<unknown>();
-  const trigger = useRef<HTMLButtonElement>(null);
+  const editorFocus = useRef<HTMLInputElement>(null);
+  const manualFocus = useRef<HTMLInputElement>(null);
+  const callbackFocus = useRef<HTMLInputElement>(null);
   const inventory = useQuery(
     MCPQuery.listMCPDefinitions,
     { machineId: machine },
@@ -340,7 +342,6 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
         </label>
         <SettingsActionButton
           icon={SettingsActionIcon.Add}
-          ref={trigger}
           type="button"
           disabled={blocked}
           onClick={() => setEditing(null)}
@@ -467,8 +468,13 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
           ))}
       </div>
       {editing !== undefined ? (
-        <Modal title={copy(editing ? "mcp.edit" : "mcp.add")} close={dismiss}>
+        <Modal
+          title={copy(editing ? "mcp.edit" : "mcp.add")}
+          close={dismiss}
+          initialFocus={editorFocus}
+        >
           <MCPEditor
+            initialFocus={editorFocus}
             initial={editing ?? undefined}
             busy={blocked}
             save={(value) => {
@@ -506,8 +512,13 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
         </Modal>
       ) : null}
       {auth && !oauth ? (
-        <Modal title={copy("mcp.authenticate")} close={dismiss}>
+        <Modal
+          title={copy("mcp.authenticate")}
+          close={dismiss}
+          initialFocus={manualFocus}
+        >
           <MCPManualAuth
+            initialFocus={manualFocus}
             transport={auth.transport}
             busy={blocked}
             save={(secrets) =>
@@ -528,6 +539,7 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
       {oauth ? (
         <Modal
           title={copy("mcp.oauth")}
+          initialFocus={callbackFocus}
           close={() => {
             setOAuth(undefined);
             dismiss();
@@ -540,7 +552,7 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
           <label>
             {copy("mcp.callback")}
             <input
-              autoFocus
+              ref={callbackFocus}
               value={callback}
               onChange={(e) => setCallback(e.target.value)}
               disabled={blocked}
@@ -621,10 +633,12 @@ function SecretInputs({
   );
 }
 function MCPManualAuth({
+  initialFocus,
   transport,
   busy,
   save,
 }: {
+  initialFocus: RefObject<HTMLInputElement | null>;
   transport: string;
   busy: boolean;
   save: (secrets: Document) => void;
@@ -650,7 +664,7 @@ function MCPManualAuth({
           <label>
             {copy("mcp.token")}
             <input
-              autoFocus
+              ref={initialFocus}
               type="password"
               autoComplete="new-password"
               value={token}
@@ -665,11 +679,13 @@ function MCPManualAuth({
   );
 }
 function MCPEditor({
+  initialFocus,
   initial,
   busy,
   save,
   cancel,
 }: {
+  initialFocus: RefObject<HTMLInputElement | null>;
   initial?: MCPDefinition;
   busy: boolean;
   save: (value: Document) => void;
@@ -738,7 +754,7 @@ function MCPEditor({
         <label>
           {copy("mcp.name")}
           <input
-            autoFocus
+            ref={initialFocus}
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
