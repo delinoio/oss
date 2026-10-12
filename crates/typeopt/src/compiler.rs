@@ -278,7 +278,7 @@ impl Project {
                  published: {outside}"
             );
         }
-        let (imported, unlinked, edges) = project.bundle_imported();
+        let (imported, unlinked, edges, computed_import) = project.bundle_imported();
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
@@ -288,8 +288,12 @@ impl Project {
             imported: from_html,
             all_public,
         } = html_scripts(dir)?;
+        let all_public = all_public || computed_import;
         if all_public {
-            tracing::info!("an HTML page can reach any chunk; every chunk is a public entry");
+            tracing::info!(
+                "an HTML page or a computed import can reach any chunk; every chunk is a public \
+                 entry"
+            );
         }
         // Chunks that inline HTML scripts import are entries: their exports
         // are observed outside the program.
@@ -350,11 +354,13 @@ impl Project {
     /// imported through a specifier with a query, fragment or `%` escape.
     /// The compiler cannot link such a specifier to the chunk, so those
     /// chunks are public: what the importer reads stays unseen. Also returns
-    /// the import edges between chunks.
-    fn bundle_imported(&self) -> (Paths, Paths, BTreeMap<String, Paths>) {
+    /// the import edges between chunks and whether some chunk has a computed
+    /// `import(…)`.
+    fn bundle_imported(&self) -> (Paths, Paths, BTreeMap<String, Paths>, bool) {
         let _scope = enter_program(Some(self.version));
         let (mut imported, mut public) = (Paths::new(), Paths::new());
         let mut edges = BTreeMap::<String, Paths>::new();
+        let mut computed = false;
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -384,6 +390,10 @@ impl Project {
                         SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
                     )
                 {
+                    // A computed `import(…)` can load any chunk.
+                    if node.kind() == SyntaxKind::CallExpression {
+                        computed = true;
+                    }
                     continue;
                 }
                 let text = specifier.text();
@@ -405,7 +415,7 @@ impl Project {
                 }
             }
         }
-        (imported, public, edges)
+        (imported, public, edges, computed)
     }
 
     /// Checks the original program and records the analysis snapshot.

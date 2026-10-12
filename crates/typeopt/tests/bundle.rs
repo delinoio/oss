@@ -1195,6 +1195,22 @@ fn keeps_dual_used_classic_workers_unchanged() {
     assert_eq!(out(temp.path(), "worker.js"), worker);
 }
 
+/// A computed `import(…)` in a chunk can load any chunk: exports stay public.
+#[test]
+fn keeps_exports_reachable_by_computed_chunk_imports() {
+    let (temp, _) = run(&[
+        (
+            "index.js",
+            r#"import{used as u}from"./lib.js";const p="./lib.js";import(p).then(m=>console.log(u(),m.htmlOnly()));"#,
+        ),
+        (
+            "lib.js",
+            r#"function used(){return 1}function htmlOnly(){return 2}export{used,htmlOnly};"#,
+        ),
+    ]);
+    assert!(out(temp.path(), "lib.js").contains("htmlOnly"));
+}
+
 /// Chunks in an import cycle that no entry reaches are loaded from outside
 /// the program: their exports stay public.
 #[test]
