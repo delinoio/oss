@@ -2808,7 +2808,7 @@ dialog nav {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  color: var(--ink);
+  color: var(--text);
   box-shadow: 0 4px 16px var(--shadow-soft);
   font-size: 12px;
   overflow: auto;
