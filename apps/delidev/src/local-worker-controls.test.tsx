@@ -127,7 +127,7 @@ it.each([
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog", { name: "Local Worker problem" });
     expect(
-      within(dialog).getByText(`Execution machine: ${value.machine_id}`),
+      within(dialog).getByText(/^Execution machine: Runner unavailable · \d+$/),
     ).toBeTruthy();
     expect(dialog.textContent).not.toContain(failure);
     expect(
@@ -149,7 +149,7 @@ it.each([
     await waitFor(() =>
       expect(
         within(screen.getByRole("dialog")).getByText(
-          `Execution machine: ${value.machine_id}`,
+          /^Execution machine: Runner unavailable · \d+$/,
         ),
       ).toBeTruthy(),
     );
@@ -265,7 +265,7 @@ it.each(Object.values(LocalWorkerPresentation))(
       screen.getByRole("button", { name: "Confirm Worker stop" }),
     );
     await screen.findByRole("button", { name: "Retry original Worker stop" });
-    await screen.findByText(`Execution machine: ${replacement.machine_id}`);
+    await screen.findByText(/^Execution machine: Runner unavailable · \d+$/);
     view.rerender(
       <LocalWorkerControls
         presentation={presentation}
@@ -422,7 +422,7 @@ it.each([
         : description,
     );
     expect(
-      screen.getByText(`Execution machine: ${value.machine_id}`),
+      screen.getByText(/^Execution machine: Runner unavailable · \d+$/),
     ).toBeTruthy();
     expect(
       Boolean(screen.queryByRole("button", { name: "Start local Worker" })),
@@ -498,7 +498,9 @@ it.each([true, false])(
     const details = screen.getByText("Details").closest("details")!;
     expect(details.open).toBe(false);
     expect(
-      within(details).getByText(`Execution machine: ${value.machine_id}`),
+      within(details).getByText(
+        /^Execution machine: Runner unavailable · \d+$/,
+      ),
     ).toBeTruthy();
     expect(
       screen

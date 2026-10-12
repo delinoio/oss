@@ -134,7 +134,6 @@ export function ProjectSettingsMenu({
         className="sidebar-project-more"
         aria-label={copy("sidebar.projectActions", {
           name: label,
-          id: projectId,
         })}
         aria-haspopup="menu"
         aria-expanded={visible}
@@ -170,7 +169,6 @@ export function ProjectSettingsMenu({
           className="sidebar-session-menu sidebar-project-menu"
           aria-label={copy("sidebar.projectActions", {
             name: label,
-            id: projectId,
           })}
           onKeyDown={(event) => {
             if (event.key === "Escape") {

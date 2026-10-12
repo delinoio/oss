@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { useSidebarPaneVisible } from "./sidebar-context";
 import {
   RepositoryDetailsPresentation,
@@ -26,7 +31,7 @@ import {
   type Resource,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, text } from "./documents";
 import {
   ItemKind,
   ItemState,
@@ -193,6 +198,7 @@ function PendingDismissal({
   intent: RetainedMutationIntent;
   id: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const mutation = useRetainedMutation(
     intent.key,
@@ -203,7 +209,9 @@ function PendingDismissal({
       <strong>
         <LocalizedText
           id="pull-requests.problemDismissal_9c312b"
-          components={{ s0: <>{id}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Resource, id)}</>,
+          }}
         />
       </strong>
       <p>
@@ -229,6 +237,7 @@ function PendingCollection({
   repositoryId: string;
   number: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const mutation = useRetainedMutation(
     intent.key,
@@ -239,7 +248,10 @@ function PendingCollection({
       <strong>
         <LocalizedText
           id="pull-requests.problemCollectionRepositoryPr_233e06"
-          components={{ s0: <>{repositoryId}</>, s1: <>{number}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Repository, repositoryId)}</>,
+            s1: <>{number}</>,
+          }}
         />
       </strong>
       <p>
@@ -265,6 +277,7 @@ function PendingAllowance({
   repositoryId: string;
   pullRequestId: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const workflow = usePRWorkflow();
   const mutation = useRetainedMutation(
@@ -280,7 +293,10 @@ function PendingAllowance({
       <strong>
         <LocalizedText
           id="pull-requests.attemptAllowanceRepositoryPr_510835"
-          components={{ s0: <>{repositoryId}</>, s1: <>{pullRequestId}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Repository, repositoryId)}</>,
+            s1: <>{pullRequestId}</>,
+          }}
         />
       </strong>
       <p>
@@ -444,6 +460,7 @@ export function PullRequests({
   active: boolean;
   openSettings: (destination?: SettingsNavigationEntry) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
@@ -472,7 +489,7 @@ export function PullRequests({
     const known = repositoryNames.current.get(row.id);
     repositoryNames.current.set(row.id, {
       number: known?.number ?? repositoryNames.current.size + 1,
-      name: resourceName(row),
+      name: productResourceName(productLabel, row),
     });
   }
   const nameCounts = new Map<string, number>();
@@ -856,7 +873,9 @@ export function PullRequests({
               <header className="pr-list-header">
                 <div>
                   <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
-                  {selected ? <p>{resourceName(selected)}</p> : null}
+                  {selected ? (
+                    <p>{productResourceName(productLabel, selected)}</p>
+                  ) : null}
                 </div>
               </header>
             ) : (

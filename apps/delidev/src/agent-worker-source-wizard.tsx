@@ -1,5 +1,10 @@
-import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
+import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { WorkerSourceOrder } from "./worker-source-order";
 import { WizardAccountNavigation } from "./wizard-account-navigation";
@@ -49,7 +54,6 @@ import {
   encode,
   items,
   object,
-  resourceName,
   text,
   type Document,
 } from "./documents";
@@ -237,6 +241,7 @@ function SourceGroup({
   openAccounts?: (source: Source) => void;
   remove: (key: string) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [known, setKnown] = useState<Record<string, Resource | undefined>>({});
   const [popup, setPopup] = useState(false);
@@ -319,7 +324,7 @@ function SourceGroup({
       setLabels((previous) => ({
         ...previous,
         [row.id]: {
-          name: resourceName(row),
+          name: productResourceName(productLabel, row),
           status: accountDisplayStatus(document(row)),
         },
       })),
@@ -353,7 +358,7 @@ function SourceGroup({
     source?.kind === SourceKind.Subscription
       ? `${subscriptionServiceNames[source.id as SubscriptionServiceId]} ${copy("agent-worker-wizard.subscription")}`
       : provider.data?.resource
-        ? resourceName(provider.data.resource)
+        ? productResourceName(productLabel, provider.data.resource)
         : source?.id || copy("agent-worker-wizard.chooseSource");
   const selectedRows = ids.flatMap((id) => (known[id] ? [known[id]!] : []));
   const refreshAccount = selectedRows.find(
@@ -420,7 +425,9 @@ function SourceGroup({
     new TextEncoder().encode(value.input.trim()).byteLength > 256
       ? "agent-worker-wizard.selectModelFromSource"
       : "";
-  const accountNames = selectedRows.map(resourceName).join("\u0000");
+  const accountNames = selectedRows
+    .map((row) => productResourceName(productLabel, row))
+    .join("\u0000");
   useEffect(() => {
     report(value.key, {
       accountError,
@@ -661,8 +668,12 @@ function SourceGroup({
                   data-wizard-field="account"
                   aria-label={copy("agent-worker-wizard.selectAccount", {
                     v0: known[id]
-                      ? resourceName(known[id])
-                      : labels[id]?.name || id,
+                      ? productResourceName(productLabel, known[id])
+                      : productLabel(
+                          PresentationKind.Account,
+                          id,
+                          labels[id]?.name,
+                        ),
                   })}
                   checked
                   onChange={() =>
@@ -676,8 +687,12 @@ function SourceGroup({
                 <span>
                   <strong>
                     {known[id]
-                      ? resourceName(known[id])
-                      : labels[id]?.name || id}
+                      ? productResourceName(productLabel, known[id])
+                      : productLabel(
+                          PresentationKind.Account,
+                          id,
+                          labels[id]?.name,
+                        )}
                   </strong>
                   <small>
                     {known[id]
@@ -727,7 +742,9 @@ function SourceGroup({
                         }}
                       />
                       <span>
-                        <strong>{resourceName(row)}</strong>
+                        <strong>
+                          {productResourceName(productLabel, row)}
+                        </strong>
                         <small>
                           {accountStatus(accountDisplayStatus(document(row)))}
                         </small>
@@ -828,8 +845,14 @@ function SourceGroup({
                 <li key={text(account.id)}>
                   <strong>
                     {known[text(account.id)]
-                      ? resourceName(known[text(account.id)])
-                      : text(account.id)}
+                      ? productResourceName(
+                          productLabel,
+                          known[text(account.id)],
+                        )
+                      : productLabel(
+                          PresentationKind.Account,
+                          text(account.id),
+                        )}
                   </strong>
                   <label>
                     {copy("agent-worker-wizard.weightForAccount", {

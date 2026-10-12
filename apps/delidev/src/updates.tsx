@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { PersistentConnectionView } from "./connections-page";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
@@ -66,6 +67,7 @@ function UpdateCandidate({
   controls?: DesktopUpdateControls;
   onRecoveryStateChange?: (id: string, required: boolean) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [local, setLocal] = useState<NativeUpdateResult>(),
     [busy, setBusy] = useState(false),
@@ -267,7 +269,7 @@ function UpdateCandidate({
           <PersistentConnectionView target={recoveryTarget} hidden>
             <dl>
               <dt>{copy("updates.retainedDesktopUpdateId_acb1d6")}</dt>
-              <dd>{row.id}</dd>
+              <dd>{productLabel(PresentationKind.Resource, row.id)}</dd>
               <dt>{copy("updates.retainedDesktopUpdateRevision_a8ee1a")}</dt>
               <dd>{row.revision.toString()}</dd>
             </dl>

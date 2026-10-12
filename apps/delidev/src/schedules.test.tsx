@@ -1541,15 +1541,15 @@ it("labels duplicate schedule repositories by their original positions and saves
       />,
     ),
   );
-  await screen.findByRole("option", { name: "oss (entry 2)" });
+  await screen.findByRole("option", { name: "oss · 2" });
   choose("Add repository override", second);
   fireEvent.click(
     screen.getByRole("button", { name: "Add starting override" }),
   );
-  const field = screen.getByLabelText("Starting oss (entry 2) name");
+  const field = screen.getByLabelText("Starting oss · 2 name");
   fireEvent.change(field, { target: { value: "feature/retained" } });
-  expect(screen.getByRole("option", { name: "oss (entry 1)" })).toBeTruthy();
-  expect(screen.queryByRole("option", { name: "oss (entry 2)" })).toBeNull();
+  expect(screen.getByRole("option", { name: "oss · 1" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "oss · 2" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   const request = value.save.mock.calls[0][0] as {
@@ -1609,7 +1609,7 @@ it.each(["missing", "unsupported", "invalid", "failure"])(
     expect(
       (
         screen.getByLabelText(
-          "Starting Repository name unavailable (entry 1) name",
+          "Starting Repository unavailable · 1 name",
         ) as HTMLInputElement
       ).value,
     ).toBe("retained");
@@ -1636,7 +1636,7 @@ it.each(["missing", "unsupported", "invalid", "failure"])(
       name:
         kind === "failure" || kind === "missing"
           ? "oss"
-          : "Repository name unavailable (entry 1)",
+          : "Repository unavailable · 1",
     });
     expect(value.save).not.toHaveBeenCalled();
   },

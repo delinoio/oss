@@ -1,4 +1,5 @@
-import { Disclosure, DisclosureSummary } from "./disclosure";
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
+
 import { Timestamp } from "./timestamp-display";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
@@ -242,6 +243,7 @@ export function validateDiagnosticPage(
 }
 
 function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
+  const productLabel = useProductLabels();
   useLocale();
   const native = value.source === Source.NATIVE_INPUT;
   const state = State[value.state].toLowerCase().replaceAll("_", " ");
@@ -252,7 +254,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
         v0: native
           ? copy("request-diagnostics.nativeInput_f0007b")
           : copy("request-diagnostics.httpRequest_f1ee11"),
-        v1: value.id,
+        v1: productLabel(PresentationKind.Request, value.id),
       })}
     >
       <h3>
@@ -263,15 +265,15 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       </h3>
       <dl>
         <dt>{copy("request-diagnostics.request_59f03d")}</dt>
-        <dd>{value.id}</dd>
+        <dd>{productLabel(PresentationKind.Request, value.id)}</dd>
         <dt>{copy("request-diagnostics.revision_2e516d")}</dt>
         <dd>{value.revision.toString()}</dd>
         <dt>{copy("request-diagnostics.execution_a45cd4")}</dt>
-        <dd>{value.executionId}</dd>
+        <dd>{productLabel(PresentationKind.Execution, value.executionId)}</dd>
         <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt>
-        <dd>{value.accountId}</dd>
+        <dd>{productLabel(PresentationKind.Account, value.accountId)}</dd>
         <dt>{copy("request-diagnostics.connection_639a40")}</dt>
-        <dd>{value.connectionId}</dd>
+        <dd>{productLabel(PresentationKind.Connection, value.connectionId)}</dd>
         <dt>
           {value.subscriptionService
             ? copy("request-diagnostics.subscriptionService_0e16df")
@@ -280,7 +282,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
         <dd>
           {value.subscriptionService
             ? subscriptionServiceLabel(value.subscriptionService)
-            : value.providerId}
+            : productLabel(PresentationKind.Provider, value.providerId)}
         </dd>
         <dt>{copy("request-diagnostics.model_5e2c61")}</dt>
         <dd>{value.model?.nativeId}</dd>
@@ -365,16 +367,10 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
         <dl>
           {[
             [
-              copy("request-diagnostics.extra.406c0cd17230"),
-              value.publicationRequestId,
-            ],
-            [
-              copy("request-diagnostics.extra.5f1a25573a30"),
-              value.correlationId,
-            ],
-            [
               copy("request-diagnostics.extra.ba2dea0965ff"),
-              value.nativeRequestId,
+              native && value.nativeRequestId === value.id
+                ? productLabel(PresentationKind.Request, value.id)
+                : value.nativeRequestId,
             ],
             [
               copy("request-diagnostics.extra.45d8583658f2"),

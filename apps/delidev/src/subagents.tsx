@@ -1,9 +1,10 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { createPortal } from "react-dom";
 import {
   useSessionActive,
   useSessionQuery as useQuery,
 } from "./session-activity";
-import { Disclosure, DisclosureSummary } from "./disclosure";
+
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -13,7 +14,6 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   EntityKind,
-  ResourceQuery,
   SystemCapability,
   SystemQuery,
   type Resource,
@@ -57,6 +57,7 @@ export function SubagentSourceRows({
   rows: readonly Resource[];
   sessionId: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const accepted = useMemo(
     () => validateSubagentPage(rows, sessionId),
@@ -87,7 +88,16 @@ export function SubagentSourceRows({
               <p>
                 <LocalizedText
                   id="subagents.execution_2ce365"
-                  components={{ s0: <>{text(record.execution_id)}</> }}
+                  components={{
+                    s0: (
+                      <>
+                        {productLabel(
+                          PresentationKind.Execution,
+                          text(record.execution_id),
+                        )}
+                      </>
+                    ),
+                  }}
                 />
               </p>
               <p>
@@ -157,6 +167,7 @@ function ChildRows({
   technical?: boolean;
   labels?: Map<string, number>;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   return (
     <table aria-label={copy("subagents.nativeChildAgentHierarchy_212425")}>
@@ -188,7 +199,16 @@ function ChildRows({
                     <p>
                       <LocalizedText
                         id="subagents.execution_2ce365"
-                        components={{ s0: <>{text(record.execution_id)}</> }}
+                        components={{
+                          s0: (
+                            <>
+                              {productLabel(
+                                PresentationKind.Execution,
+                                text(record.execution_id),
+                              )}
+                            </>
+                          ),
+                        }}
                       />
                     </p>
                     <p>

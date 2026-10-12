@@ -1,5 +1,10 @@
-import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
+import "./wizard-presentation.css";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -76,7 +81,7 @@ import {
 import "./api-account.css";
 import { AccountConnection } from "./account-connection";
 import { Authentication } from "./configuration-fields";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -335,6 +340,7 @@ function AccountCreationWizard({
   openManage: (resource: Resource) => void;
   saved: (resource: Resource) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const taskFormId = useId(),
     taskVisible = useSettingsTaskVisible(),
@@ -982,7 +988,9 @@ function AccountCreationWizard({
           {copy("account-settings.backToAiApiKeys_2d6214")}
         </SettingsActionButton>
         <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} />
-        <h2 id="api-account-created-title">{resourceName(current)}</h2>
+        <h2 id="api-account-created-title">
+          {productResourceName(productLabel, current)}
+        </h2>
         <p>
           {copy("account-settings.apiFormat")}:{" "}
           {
@@ -1794,6 +1802,7 @@ function ApiAccountSettings({
   startApiWizard,
   providerHint,
 }: AccountSettingsProps) {
+  const productLabel = useProductLabels();
   useLocale();
   const client = useQueryClient();
   const transport = useTransport();
@@ -1954,8 +1963,11 @@ function ApiAccountSettings({
               components={{
                 s0: (
                   <>
-                    {providersById.get(providerIdFilter)?.displayName ||
-                      providerIdFilter}
+                    {productLabel(
+                      PresentationKind.Provider,
+                      providerIdFilter,
+                      providersById.get(providerIdFilter)?.displayName,
+                    )}
                   </>
                 ),
               }}

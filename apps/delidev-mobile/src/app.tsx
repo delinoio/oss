@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  ProductIdentities,
+  PresentationKind,
+  type IdentityLabel,
+} from "../../delidev/src/product-identity";
+import {
   createContext,
   useContext,
   useEffect,
@@ -13,7 +18,7 @@ import { createClient } from "@connectrpc/connect";
 import {
   QueryClient,
   QueryClientProvider,
-  useQuery as useLocalQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import {
   TransportProvider,
@@ -87,9 +92,103 @@ function record(v: unknown): Record<string, unknown> {
     ? (v as Record<string, unknown>)
     : {};
 }
-function label(resource: Resource): string {
-  return text(value(resource).name) || resource.id;
+interface MobileIdentityOwner {
+  registry: ProductIdentities;
+  seen: WeakSet<object>;
 }
+const MobileIdentities = createContext<MobileIdentityOwner | undefined>(
+  undefined,
+);
+function mobileKind(kind: EntityKind): PresentationKind {
+  switch (kind) {
+    case EntityKind.PROJECT:
+      return PresentationKind.Project;
+    case EntityKind.SESSION:
+      return PresentationKind.Session;
+    case EntityKind.AGENT:
+      return PresentationKind.Agent;
+    case EntityKind.MACHINE:
+      return PresentationKind.Runner;
+    case EntityKind.ACCOUNT:
+      return PresentationKind.Account;
+    default:
+      return PresentationKind.Resource;
+  }
+}
+function MobileIdentityProvider({ children }: { children: ReactNode }) {
+  const owner = useRef<MobileIdentityOwner>({
+    registry: new ProductIdentities(),
+    seen: new WeakSet(),
+  });
+  return (
+    <MobileIdentities.Provider value={owner.current}>
+      {children}
+    </MobileIdentities.Provider>
+  );
+}
+function useMobileIdentity(): IdentityLabel {
+  const c = useCopy(),
+    context = useContext(MobileIdentities);
+  const local = useRef(new ProductIdentities());
+  const client = useQueryClient();
+  const owner = context?.registry ?? local.current;
+  const localSeen = useRef(new WeakSet<object>());
+  const labels: Partial<Record<PresentationKind, string>> = {
+    [PresentationKind.Project]: c.projectUnavailable,
+    [PresentationKind.Session]: c.sessionUnavailable,
+    [PresentationKind.Agent]: c.agentUnavailable,
+    [PresentationKind.Runner]: c.runnerUnavailable,
+    [PresentationKind.Account]: c.accountUnavailable,
+  };
+  const seen = context?.seen ?? localSeen.current;
+  const observe = (source: unknown) => {
+    if (!source || typeof source !== "object" || seen.has(source)) return;
+    seen.add(source);
+    if ("documentJson" in source && "kind" in source && "id" in source) {
+      const resource = source as Resource;
+      if (supportsResourceSchema(resource))
+        owner.observe(
+          mobileKind(resource.kind),
+          resource.id,
+          text(value(resource).name) || text(value(resource).alias),
+        );
+    } else if (Array.isArray(source)) source.forEach(observe);
+    else
+      for (const [key, entry] of Object.entries(source))
+        if (
+          ![
+            "documentJson",
+            "native",
+            "metadata",
+            "content",
+            "output",
+            "text",
+            "prompt",
+            "messages",
+            "frames",
+          ].includes(key)
+        )
+          observe(entry);
+  };
+  for (const query of client.getQueryCache().getAll())
+    observe(query.state.data);
+  return (kind, id, name) =>
+    owner.label(
+      kind,
+      id,
+      labels[kind] ?? c.resourceUnavailable,
+      (fallback, number) => `${fallback} · ${number}`,
+      name,
+    );
+}
+function mobileResourceLabel(label: IdentityLabel, resource: Resource): string {
+  return label(
+    mobileKind(resource.kind),
+    resource.id,
+    text(value(resource).name) || text(value(resource).alias),
+  );
+}
+
 function observation(v: unknown, c: Labels): string {
   const key = text(v);
   if (key === "general-chat") return c.general;
@@ -423,7 +522,10 @@ function Settings({
           {JSON.stringify(
             {
               operation: "connection-profile",
-              profile_id: state.state.selectedProfile,
+              profile:
+                state.state.profiles.find(
+                  (p) => p.id === state.state.selectedProfile,
+                )?.name ?? c.profile,
               paired: state.state.profiles.filter(
                 (p) => !p.pairing && !p.revoked,
               ).length,
@@ -543,14 +645,16 @@ function NotificationSettings({
   );
   return (
     <QueryClientProvider client={cache}>
-      <TransportProvider transport={transport}>
-        <ServerNotificationSettings
-          state={state}
-          id={id}
-          changed={changed}
-          active={active}
-        />
-      </TransportProvider>
+      <MobileIdentityProvider>
+        <TransportProvider transport={transport}>
+          <ServerNotificationSettings
+            state={state}
+            id={id}
+            changed={changed}
+            active={active}
+          />
+        </TransportProvider>
+      </MobileIdentityProvider>
     </QueryClientProvider>
   );
 }
@@ -808,159 +912,161 @@ function Connected({
   }
   return (
     <QueryClientProvider client={connection.cache}>
-      <TransportProvider transport={transport}>
-        <section>
-          <div className="connection">
-            <strong>{state.profile(id).name}</strong>
-            <span role="status">
-              {
-                c[
-                  status === Status.Live
-                    ? "live"
-                    : status === Status.Suspended
-                      ? "suspended"
-                      : status === Status.Certificate
-                        ? "certificate"
-                        : status === Status.Unavailable
-                          ? "unavailable"
-                          : status === Status.Revoked
-                            ? "revoked"
-                            : status === Status.Version
-                              ? "version"
-                              : "connecting"
-                ]
-              }
-            </span>
-            <button
-              disabled={!active || busy}
-              onClick={() => void connection.resume()}
-            >
-              {c.refresh}
-            </button>
-          </div>
-          {pending ? (
-            <aside role="status">
-              <p>{c.pending}</p>
-              <p>{c.inspectNote}</p>
+      <MobileIdentityProvider>
+        <TransportProvider transport={transport}>
+          <section>
+            <div className="connection">
+              <strong>{state.profile(id).name}</strong>
+              <span role="status">
+                {
+                  c[
+                    status === Status.Live
+                      ? "live"
+                      : status === Status.Suspended
+                        ? "suspended"
+                        : status === Status.Certificate
+                          ? "certificate"
+                          : status === Status.Unavailable
+                            ? "unavailable"
+                            : status === Status.Revoked
+                              ? "revoked"
+                              : status === Status.Version
+                                ? "version"
+                                : "connecting"
+                  ]
+                }
+              </span>
               <button
-                disabled={!enabled || busy}
-                onClick={() => void inspect()}
+                disabled={!active || busy}
+                onClick={() => void connection.resume()}
               >
-                {c.inspect}
+                {c.refresh}
               </button>
-              <button
-                disabled={!enabled || busy || inspected !== pending.request}
-                onClick={() => {
-                  setRevokeConfirm(false);
-                  setConfirm(() => async () => {
-                    setBusy(true);
-                    try {
-                      await state.retry(id);
-                      changed();
-                      await connection.cache.invalidateQueries();
-                    } catch {
-                      setError(c.error);
-                    } finally {
-                      setBusy(false);
-                      setConfirm(undefined);
-                    }
-                  });
-                }}
-              >
-                {c.retry}
-              </button>
-              {inspected === pending.request ? <p>{c.inspected}</p> : null}
-            </aside>
-          ) : null}
-          {error ? <p role="alert">{error}</p> : null}
-          {tab === "inbox" && !sessionId ? (
-            <Inbox
-              enabled={enabled}
-              busy={busy || !!pending}
-              mutate={mutate}
-              open={open}
-            />
-          ) : sessionId && draft ? (
-            <Conversation
-              key={sessionId}
-              id={sessionId}
-              draft={draft}
-              enabled={enabled}
-              busy={busy || !!pending}
-              mutate={mutate}
-              back={back}
-            />
-          ) : (
-            <Sessions
-              enabled={enabled}
-              project={project}
-              setProject={setProject}
-              open={open}
-              create={() => setCreation(true)}
-            />
-          )}
-          {creation ? (
-            <Modal title={c.newSession} close={() => setCreation(false)}>
-              <NewSession
-                enabled={enabled && !busy && !pending}
-                error={error}
-                mutate={async (r) => {
-                  await mutate(Operation.Create, r, "", () =>
-                    setCreation(false),
-                  );
-                }}
+            </div>
+            {pending ? (
+              <aside role="status">
+                <p>{c.pending}</p>
+                <p>{c.inspectNote}</p>
+                <button
+                  disabled={!enabled || busy}
+                  onClick={() => void inspect()}
+                >
+                  {c.inspect}
+                </button>
+                <button
+                  disabled={!enabled || busy || inspected !== pending.request}
+                  onClick={() => {
+                    setRevokeConfirm(false);
+                    setConfirm(() => async () => {
+                      setBusy(true);
+                      try {
+                        await state.retry(id);
+                        changed();
+                        await connection.cache.invalidateQueries();
+                      } catch {
+                        setError(c.error);
+                      } finally {
+                        setBusy(false);
+                        setConfirm(undefined);
+                      }
+                    });
+                  }}
+                >
+                  {c.retry}
+                </button>
+                {inspected === pending.request ? <p>{c.inspected}</p> : null}
+              </aside>
+            ) : null}
+            {error ? <p role="alert">{error}</p> : null}
+            {tab === "inbox" && !sessionId ? (
+              <Inbox
+                enabled={enabled}
+                busy={busy || !!pending}
+                mutate={mutate}
+                open={open}
               />
-            </Modal>
-          ) : null}
-          {confirm ? (
-            <Modal
-              title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
-              close={() => setConfirm(undefined)}
-            >
-              <button disabled={busy} onClick={() => void confirm()}>
-                {c.confirm}
-              </button>
-            </Modal>
-          ) : null}
-          <details>
-            <summary>{c.diagnostics}</summary>
-            <p>
-              {c.identity}: {state.profile(id).serverId}
-            </p>
-            <p>{status}</p>
-            <button
-              disabled={!enabled || busy || !!pending}
-              onClick={() => {
-                setRevokeConfirm(true);
-                setConfirm(() => async () => {
-                  const result = await createClient(
-                    ResourceService,
-                    transport,
-                  ).getResource({
-                    kind: EntityKind.DEVICE,
-                    id: state.profile(id).deviceId,
-                  });
-                  if (result.resource)
-                    await mutate(
-                      Operation.Revoke,
-                      create(RevokeDeviceRequestSchema, {
-                        mutation: {
-                          id: result.resource.id,
-                          expectedRevision: result.resource.revision,
-                          requestId: uuid(),
-                        },
-                      }),
-                      result.resource.id,
+            ) : sessionId && draft ? (
+              <Conversation
+                key={sessionId}
+                id={sessionId}
+                draft={draft}
+                enabled={enabled}
+                busy={busy || !!pending}
+                mutate={mutate}
+                back={back}
+              />
+            ) : (
+              <Sessions
+                enabled={enabled}
+                project={project}
+                setProject={setProject}
+                open={open}
+                create={() => setCreation(true)}
+              />
+            )}
+            {creation ? (
+              <Modal title={c.newSession} close={() => setCreation(false)}>
+                <NewSession
+                  enabled={enabled && !busy && !pending}
+                  error={error}
+                  mutate={async (r) => {
+                    await mutate(Operation.Create, r, "", () =>
+                      setCreation(false),
                     );
-                  setConfirm(undefined);
-                });
-              }}
-            >
-              {c.revoke}
-            </button>
-          </details>
-        </section>
-      </TransportProvider>
+                  }}
+                />
+              </Modal>
+            ) : null}
+            {confirm ? (
+              <Modal
+                title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
+                close={() => setConfirm(undefined)}
+              >
+                <button disabled={busy} onClick={() => void confirm()}>
+                  {c.confirm}
+                </button>
+              </Modal>
+            ) : null}
+            <details>
+              <summary>{c.diagnostics}</summary>
+              <p>
+                {c.profile}: {state.profile(id).name}
+              </p>
+              <p>{status}</p>
+              <button
+                disabled={!enabled || busy || !!pending}
+                onClick={() => {
+                  setRevokeConfirm(true);
+                  setConfirm(() => async () => {
+                    const result = await createClient(
+                      ResourceService,
+                      transport,
+                    ).getResource({
+                      kind: EntityKind.DEVICE,
+                      id: state.profile(id).deviceId,
+                    });
+                    if (result.resource)
+                      await mutate(
+                        Operation.Revoke,
+                        create(RevokeDeviceRequestSchema, {
+                          mutation: {
+                            id: result.resource.id,
+                            expectedRevision: result.resource.revision,
+                            requestId: uuid(),
+                          },
+                        }),
+                        result.resource.id,
+                      );
+                    setConfirm(undefined);
+                  });
+                }}
+              >
+                {c.revoke}
+              </button>
+            </details>
+          </section>
+        </TransportProvider>
+      </MobileIdentityProvider>
     </QueryClientProvider>
   );
 }
@@ -982,6 +1088,7 @@ function Choices({
   onSelect: (id: string) => void;
   title: string;
 }) {
+  const productLabel = useMobileIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -1024,7 +1131,7 @@ function Choices({
             )
             .map((r) => (
               <option key={r.id} value={r.id}>
-                {label(r)}
+                {mobileResourceLabel(productLabel, r)}
               </option>
             ))}
         </select>
@@ -1054,6 +1161,7 @@ function Sessions({
   open: (id: string) => void;
   create: () => void;
 }) {
+  const productLabel = useMobileIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -1105,7 +1213,7 @@ function Sessions({
         items.map((r) => (
           <article key={r.id}>
             <button className="row" onClick={() => open(r.id)}>
-              <strong>{label(r)}</strong>
+              <strong>{mobileResourceLabel(productLabel, r)}</strong>
               <span>
                 {observation(value(r).outcome, c)} ·{" "}
                 {observation(value(r).workspace, c)}
@@ -1378,6 +1486,7 @@ function Conversation({
   back: () => void;
   draft: ConversationDraft;
 }) {
+  const productLabel = useMobileIdentity();
   const transport = useTransport();
   const c = useCopy(),
     [page, setPage] = useState(""),
@@ -1433,7 +1542,9 @@ function Conversation({
   return (
     <section>
       <button onClick={back}>{c.back}</button>
-      <h2>{resource ? label(resource) : c.loading}</h2>
+      <h2>
+        {resource ? mobileResourceLabel(productLabel, resource) : c.loading}
+      </h2>
       <details>
         <summary>{c.information}</summary>
         <dl>
@@ -1445,10 +1556,11 @@ function Conversation({
           ))}
         </dl>
         <p>
-          {c.runner}: {text(data.machine_id)}
+          {c.runner}:{" "}
+          {productLabel(PresentationKind.Runner, text(data.machine_id))}
         </p>
         <p>
-          {c.agent}: {text(data.agent_id)}
+          {c.agent}: {productLabel(PresentationKind.Agent, text(data.agent_id))}
         </p>
       </details>
       {session.isError ? <p role="alert">{c.sessionGone}</p> : null}
@@ -1667,6 +1779,7 @@ function Inbox({
   mutate: Mutate;
   open: (id: string) => void;
 }) {
+  const productLabel = useMobileIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<InboxView[]>([]),
@@ -1706,7 +1819,9 @@ function Inbox({
         <article key={v.entry?.id}>
           <button className="row" onClick={() => setSelected(v.entry!.id)}>
             <strong>
-              {v.session ? label(v.session) : text(value(v.entry).source)}
+              {v.session
+                ? mobileResourceLabel(productLabel, v.session)
+                : text(value(v.entry).source)}
             </strong>
             <span>
               {observation(value(v.entry).source, c)} ·{" "}

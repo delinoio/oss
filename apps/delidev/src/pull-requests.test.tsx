@@ -245,9 +245,13 @@ async function open() {
   );
 }
 async function choose(row: Resource) {
+  const label = resourceName(row).trim();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: resourceName(row).trim(),
+      name:
+        row.schemaVersion !== 1 || label === row.id || label === "Unnamed"
+          ? /^Repository unavailable · \d+$/
+          : label,
     }),
   );
   await waitFor(() =>
@@ -1019,7 +1023,8 @@ it("keeps repository inventory visits free of GitHub content reads across langua
     fireEvent.click(
       document.querySelector('[data-settings-category="repositories"]')!,
     );
-    await screen.findByText(repositoryId);
+    await screen.findByText("Example repository");
+    expect(document.body.textContent).not.toContain(repositoryId);
     expect(document.querySelector(".repository-github-tools")).toBeNull();
     expect(
       document.querySelector('[aria-label="Browse repository GitHub items"]'),

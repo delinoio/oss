@@ -98,7 +98,7 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.click(
     await screen.findByRole(
       "button",
-      { name: `Rename Real server profile · ${savedProfile!.id}` },
+      { name: `Rename Real server profile` },
       { timeout: 15000 },
     ),
   );

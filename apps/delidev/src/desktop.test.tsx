@@ -252,7 +252,7 @@ it("registers and inspects this computer through only the saved window's fixed W
   fireEvent.click(
     screen.getByRole("button", { name: "Register this computer" }),
   );
-  await screen.findByText(`Execution machine: ${machine}`);
+  await screen.findByText(/^Execution machine: Runner unavailable · \d+$/);
   await waitFor(() =>
     expect(
       (

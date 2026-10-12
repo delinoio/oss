@@ -522,9 +522,7 @@ it.each([Code.NotFound, Code.Unavailable])(
           name: "Workspace storage and permanent deletion",
         })[1]!,
       );
-      expect(
-        await screen.findByText(new RegExp(`Next session.*${next.id}`)),
-      ).not.toBeNull();
+      expect(await screen.findByText(/Next session/)).not.toBeNull();
     } else {
       expect(
         screen.queryByRole("button", { name: "Finish storage view" }),

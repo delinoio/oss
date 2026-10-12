@@ -1,3 +1,4 @@
+import { ProductIdentityProvider } from "./product-identity-labels";
 import { DraftEditGenerations } from "./draft-edit-generations";
 import { SessionInboxReadBoundary } from "./session-inbox-read";
 import { InboxBadgePresentation } from "./inbox-badge";
@@ -10,7 +11,7 @@ import {
   useWideSidebar,
 } from "./sidebar-preference";
 import { CommandMenu, applicationCommands } from "./command-menu";
-import { resourceName } from "./documents";
+
 import {
   SessionTabsProvider,
   useSessionTabsStore,
@@ -873,37 +874,39 @@ export function App({
     <SidebarPreferenceBoundary>
       <TransportProvider transport={transport}>
         <QueryClientProvider key={connection.id} client={client}>
-          <NotificationProvider>
-            <MutationIntents>
-              <SessionTabsProvider>
-                <SessionSubmissionsProvider>
-                  <ImageDraftProvider>
-                    <PRWorkflowProvider>
-                      <ShortcutProvider>
-                        <SessionNameEditorProvider>
-                          <SessionInboxReadBoundary ready={connectionReady}>
-                            <Shell
-                              connectionReady={connectionReady}
-                              pairingAuthority={pairingAuthority}
-                              currentDeviceId={currentDeviceId}
-                              controlLocalWorker={controlLocalWorker}
-                              chooseRepositoryFolder={chooseRepositoryFolder}
-                              connectionSettings={connectionSettings}
-                              appInformationSettings={appInformationSettings}
-                              connectionTarget={connectionTarget}
-                              onConnectionHelp={onConnectionHelp}
-                              localServer={localServer}
-                              readLocalWorker={readLocalWorker}
-                            />
-                          </SessionInboxReadBoundary>
-                        </SessionNameEditorProvider>
-                      </ShortcutProvider>
-                    </PRWorkflowProvider>
-                  </ImageDraftProvider>
-                </SessionSubmissionsProvider>
-              </SessionTabsProvider>
-            </MutationIntents>
-          </NotificationProvider>
+          <ProductIdentityProvider>
+            <NotificationProvider>
+              <MutationIntents>
+                <SessionTabsProvider>
+                  <SessionSubmissionsProvider>
+                    <ImageDraftProvider>
+                      <PRWorkflowProvider>
+                        <ShortcutProvider>
+                          <SessionNameEditorProvider>
+                            <SessionInboxReadBoundary ready={connectionReady}>
+                              <Shell
+                                connectionReady={connectionReady}
+                                pairingAuthority={pairingAuthority}
+                                currentDeviceId={currentDeviceId}
+                                controlLocalWorker={controlLocalWorker}
+                                chooseRepositoryFolder={chooseRepositoryFolder}
+                                connectionSettings={connectionSettings}
+                                appInformationSettings={appInformationSettings}
+                                connectionTarget={connectionTarget}
+                                onConnectionHelp={onConnectionHelp}
+                                localServer={localServer}
+                                readLocalWorker={readLocalWorker}
+                              />
+                            </SessionInboxReadBoundary>
+                          </SessionNameEditorProvider>
+                        </ShortcutProvider>
+                      </PRWorkflowProvider>
+                    </ImageDraftProvider>
+                  </SessionSubmissionsProvider>
+                </SessionTabsProvider>
+              </MutationIntents>
+            </NotificationProvider>
+          </ProductIdentityProvider>
         </QueryClientProvider>
       </TransportProvider>
     </SidebarPreferenceBoundary>

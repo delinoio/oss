@@ -296,7 +296,7 @@ it("retries the original grouped submission after navigation without rounding re
       name: "Retry original review submission",
     }),
   );
-  await screen.findByText(`Request changes queued as input ${f.inputId}.`);
+  await screen.findByText(/Request changes queued as input Input · \d+\./);
   expect(f.submit).toHaveBeenCalledTimes(2);
   expect(f.submit.mock.calls[1][0]).toEqual(original);
 });
@@ -626,11 +626,9 @@ it("isolates retained deletion by Session and preserves historical submissions",
   expect(
     screen.queryByRole("button", { name: "Retry original comment deletion" }),
   ).toBeNull();
-  expect(
-    screen.queryByText(`Submitted review · plan · ${historical.id}`),
-  ).toBeNull();
+  expect(screen.queryByText(`Submitted review · plan · Review · 1`)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
-  await screen.findByText(`Submitted review · plan · ${historical.id}`);
+  await screen.findByText(`Submitted review · plan · Review · 1`);
   expect(screen.queryByRole("button", { name: "Delete comment" })).toBeNull();
   expect(f.remove).toHaveBeenCalledTimes(1);
   fireEvent.click(
@@ -641,7 +639,7 @@ it("isolates retained deletion by Session and preserves historical submissions",
       screen.queryByRole("button", { name: "Retry original comment deletion" }),
     ).toBeNull(),
   );
-  expect(screen.getByText(`Accepted input: ${f.inputId}`)).toBeTruthy();
+  expect(screen.getByText(/^Accepted input: Input · \d+$/)).toBeTruthy();
   expect(screen.getByText("<script>original feedback</script>")).toBeTruthy();
   expect(f.submit).not.toHaveBeenCalled();
 });

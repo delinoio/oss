@@ -6,6 +6,8 @@ mutation authority. See the [shared desktop pagination contract](apps-delidev-de
 
 Files uses the original Worker-owned read-only observation boundary with a desktop lazy tree, one serial read owner and disposable preview. Per-directory metadata stays in the open scope; cancellation fences late publication, and only complete parent ranges prove absence. Back preserves the conversation/composer and restores accepted navigation while discarding bytes. Follow the [desktop](apps-delidev-desktop-contract.md#session-file-explorer) and [Files](cmds-delidev-files-contract.md) contracts; no protocol, native change or migration is added.
 
+The desktop-owned shared pure identity presentation at `apps/delidev/src/product-identity.ts` is consumed by desktop and mobile. Product labels omit internal UUIDs across generated visible, expanded, accessible and Copy surfaces while exact original authority and user/native/external content remain unchanged. Follow the [product identity presentation](apps-delidev-desktop-contract.md#product-identity-presentation), [mobile](apps-delidev-mobile-contract.md#product-identity-presentation), diagnostics, localization and widget contracts.
+
 ## Key-preserving format amendment
 
 After main reservation the originating change, ProviderInventory capability 9 owns connected API

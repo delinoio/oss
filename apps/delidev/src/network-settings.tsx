@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
+import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
@@ -45,14 +50,7 @@ import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import {
-  document,
-  encode,
-  items,
-  object,
-  resourceName,
-  text,
-} from "./documents";
+import { document, encode, items, object, text } from "./documents";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import type { PairingAuthority } from "./pairing-grant";
 import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
@@ -192,6 +190,7 @@ function NetworkWorkspace({
   inline?: boolean;
   headerActions?: HTMLElement | null;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [draft, setDraft] = useState<Resource | "new">();
   const [deleting, setDeleting] = useState<Resource>();
@@ -511,14 +510,14 @@ function NetworkWorkspace({
                     {selectedRow &&
                     !profiles.rows.some((row) => row.id === selectedRow.id) ? (
                       <option value={selectedRow.id}>
-                        {resourceName(selectedRow)} ·{" "}
+                        {productResourceName(productLabel, selectedRow)} ·{" "}
                         {selectedRow.revision.toString()}
                       </option>
                     ) : null}
                     {profiles.rows.map((row) => (
                       <option key={row.id} value={row.id}>
                         {selectedRow?.id === row.id
-                          ? resourceName(selectedRow)
+                          ? productResourceName(productLabel, selectedRow)
                           : row.name}{" "}
                         ·{" "}
                         {(selectedRow?.id === row.id
@@ -592,7 +591,7 @@ function NetworkWorkspace({
                   className={inline ? "network-profile-row" : "result"}
                   key={row.id}
                 >
-                  <h4>{resourceName(row)}</h4>
+                  <h4>{productResourceName(productLabel, row)}</h4>
                   <p>
                     <LocalizedText
                       id="network-settings.revision_5209bc"
@@ -614,7 +613,7 @@ function NetworkWorkspace({
                   <SettingsActionButton
                     icon={SettingsActionIcon.Edit}
                     presentation={SettingsActionPresentation.Icon}
-                    targetName={resourceName(row)}
+                    targetName={productResourceName(productLabel, row)}
                     targetId={row.id}
                     disabled={pending}
                     onClick={() => setDraft(row)}
@@ -624,7 +623,7 @@ function NetworkWorkspace({
                   <SettingsActionButton
                     icon={SettingsActionIcon.Delete}
                     presentation={SettingsActionPresentation.Icon}
-                    targetName={resourceName(row)}
+                    targetName={productResourceName(productLabel, row)}
                     targetId={row.id}
                     disabled={
                       pending || text(currentData.profile_id) === row.id
@@ -760,6 +759,7 @@ function ProfileDeletion({
   close: () => void;
   deleted: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   // The confirmation owns its exact request. Dismissal never leaves a retry in
   // the still-open inline workspace or cancels an accepted deletion.
@@ -777,7 +777,7 @@ function ProfileDeletion({
         <LocalizedText
           id="network-settings.deleteAtRevisionProfilesSelectedBy_d3d3f3"
           components={{
-            s0: <>{resourceName(row)}</>,
+            s0: <>{productResourceName(productLabel, row)}</>,
             s1: <>{row.revision.toString()}</>,
           }}
         />
@@ -1103,6 +1103,7 @@ function EncryptedWorkerExport({
   authority: PairingAuthority;
   machine: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const opening = useSettingsOpening();
   const [recipient, setRecipient] = useState<WorkerRecipient>(),
@@ -1225,7 +1226,16 @@ function EncryptedWorkerExport({
           <p>
             <LocalizedText
               id="network-settings.recipientRunnerDevice_cc7e62"
-              components={{ s0: <>{recipient.authority.machine_id}</> }}
+              components={{
+                s0: (
+                  <>
+                    {productLabel(
+                      PresentationKind.Runner,
+                      recipient.authority.machine_id,
+                    )}
+                  </>
+                ),
+              }}
             />
           </p>
           {route.data && !route.data.route ? (

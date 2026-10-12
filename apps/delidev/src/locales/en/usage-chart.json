@@ -38,7 +38,7 @@
   "usage-chart.otherModels_1b8bc2": "Other models",
   "usage-chart.measuredModelGroupsNoMonetaryRollup_3a25fa": "{{v0}} measured model groups · no monetary rollup",
   "usage-chart.subscriptionService_67a163": "Subscription service {{v0}}",
-  "usage-chart.apiProvider_f01871": "API {{v0}} · provider {{v1}}",
+  "usage-chart.apiProvider_f01871": "API Provider {{v0}}",
   "usage-chart.model_be9a1a": " {{v0}} · model {{v1}}",
   "usage-chart.tokens_a59f00": "<s0/> tokens · <s1/>",
   "usage-chart.focusTheChartToInspectRanked_30453a": "Focus the chart to inspect ranked groups. Up and Down move between rows. Full identities and exact values are also available in View data.",

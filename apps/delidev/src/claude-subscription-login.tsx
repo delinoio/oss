@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import "./wizard-presentation.css";
 import { useRunnerRemediation } from "./runner-remediation";
 import {
@@ -10,7 +15,6 @@ import {
   RunnerWorkflow,
   useRunnerPreference,
 } from "./runner-device-preferences";
-// SPDX-License-Identifier: Apache-2.0
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -51,14 +55,7 @@ import {
 } from "./scroll-pagination-query";
 import { type ScrollContinuationQuery } from "./scroll-continuation";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
-import {
-  document,
-  encode,
-  items,
-  object,
-  resourceName,
-  text,
-} from "./documents";
+import { document, encode, items, object, text } from "./documents";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useSettingsOpening } from "./settings-lifetime";
 import {
@@ -218,6 +215,7 @@ export function useClaudeSubscriptionLogin(
   active: boolean,
   changed: () => void,
 ) {
+  const productLabel = useProductLabels();
   useLocale();
   const transport = useTransport(),
     native = useOAuthNativeControl(),
@@ -337,7 +335,7 @@ export function useClaudeSubscriptionLogin(
         rows: response.resources.map((row) => ({
           id: row.id,
           revision: row.revision,
-          label: resourceName(row),
+          label: productResourceName(productLabel, row),
           eligible: validRunnerObservation(row) && eligibleRunner(row),
           observation: claudeRunnerObservation(row),
         })),
@@ -937,6 +935,7 @@ interface OnboardingProps {
   retry?: () => void;
 }
 function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
+  const productLabel = useProductLabels();
   useLocale();
   const visible = useSettingsTaskVisible(),
     back = useCloseSettingsTask(p.hide),
@@ -962,7 +961,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
   };
   const runner = p.selectedRunner,
     runnerName = runner
-      ? resourceName(runner)
+      ? productResourceName(productLabel, runner)
       : (p.runners.find((row) => row.id === v.machine)?.label ??
         copy("claude-subscription.originalRunner"));
   const d = v.diagnostic,
@@ -1252,10 +1251,6 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                   <div>
                     <dt>{copy("claude-subscription.failureCode")}</dt>
                     <dd>{d.code}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy("claude-subscription.reference")}</dt>
-                    <dd>{d.correlationId}</dd>
                   </div>
                 </dl>
               ) : null}

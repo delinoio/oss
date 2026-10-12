@@ -1,5 +1,7 @@
 # DeliDev Diagnostics Presentation
 
+Product diagnostic and expanded metadata text follows the desktop [product identity contract](apps-delidev-desktop-contract.md#product-identity-presentation). Omit UUID-only correlation rows and use typed observed-name/number labels for generated resource references. Keep failure codes, states, actionable guidance and original native/user evidence. Product Copy projects only declared generated identity fields; internal diagnostic records, request proofs and technical exports retain original bytes. No presentation-driven reads or operations are introduced.
+
 ## Direct startup presentation
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing; owning failures can present the same original controller locally without category navigation. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.

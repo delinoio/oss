@@ -1,4 +1,8 @@
 import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
+import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
@@ -45,7 +49,6 @@ import {
   encode,
   items,
   object,
-  resourceName,
   text,
   type Document,
 } from "./documents";
@@ -205,6 +208,7 @@ export function ApiProviderSettings({
   ) => void;
   deleteCustom: (resource: Resource) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [localState, setLocalState] = useState<ProviderListState>({
     query: "",
@@ -343,7 +347,7 @@ export function ApiProviderSettings({
               <SettingsActionButton
                 icon={SettingsActionIcon.Edit}
                 presentation={SettingsActionPresentation.Icon}
-                targetName={resourceName(entry.provider!)}
+                targetName={productResourceName(productLabel, entry.provider!)}
                 targetId={entry.provider!.id}
                 type="button"
                 disabled={Boolean(result.error)}
@@ -354,7 +358,7 @@ export function ApiProviderSettings({
               <SettingsActionButton
                 icon={SettingsActionIcon.Delete}
                 presentation={SettingsActionPresentation.Icon}
-                targetName={resourceName(entry.provider!)}
+                targetName={productResourceName(productLabel, entry.provider!)}
                 targetId={entry.provider!.id}
                 type="button"
                 disabled={Boolean(result.error)}
@@ -611,6 +615,7 @@ export function ActiveModelSettings({
   editModel: (resource: Resource) => void;
   priceModel: (resource: Resource) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const { query } = state;
   const root = useRef<HTMLElement>(null);
@@ -885,7 +890,10 @@ export function ActiveModelSettings({
                           <SettingsActionButton
                             icon={SettingsActionIcon.Edit}
                             presentation={SettingsActionPresentation.Icon}
-                            targetName={resourceName(model)}
+                            targetName={productResourceName(
+                              productLabel,
+                              model,
+                            )}
                             targetId={model.id}
                             type="button"
                             disabled={

@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { Timestamp } from "./timestamp-display";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationPages } from "./conversation-pagination";
@@ -29,7 +34,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { JobState, OperationStatus } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { ServiceProblem, Modal, Failure, Problem } from "./ui";
@@ -91,6 +96,7 @@ interface Confirmation {
 // The connection owns this controller, including operations for sessions whose
 // resources disappear during deletion. Modal close and navigation retain work.
 export function SessionStorageProvider({ children }: { children: ReactNode }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [source, setSource] = useState<Resource>();
   const [visible, setVisible] = useState(false);
@@ -353,8 +359,8 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
             <LocalizedText
               id="session-storage.session_37c76b"
               components={{
-                s0: <>{resourceName(source)}</>,
-                s1: <>{source.id}</>,
+                s0: <>{productResourceName(productLabel, source)}</>,
+                s1: <>{productLabel(PresentationKind.Session, source.id)}</>,
               }}
             />
           </p>
@@ -529,7 +535,8 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
                           .map((row) => (
                             <article key={row.id}>
                               <p>
-                                {row.id} · {bytes(document(row).size_bytes)} ·{" "}
+                                {productLabel(PresentationKind.Storage, row.id)}{" "}
+                                · {bytes(document(row).size_bytes)} ·{" "}
                                 {
                                   <Timestamp
                                     value={text(document(row).created_at)}

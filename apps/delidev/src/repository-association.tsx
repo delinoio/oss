@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -11,7 +15,7 @@ import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, encode, object, resourceName, text } from "./documents";
+import { document, encode, object, text } from "./documents";
 import {
   ResourceChoice,
   ResourceSelectionPending,
@@ -230,6 +234,7 @@ export function RepositoryProfileAssociation({
   profiles: () => void;
   review: () => Promise<void>;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [profile, setProfile] = useState("");
   const [pending, setPending] = useState(false),
@@ -284,7 +289,7 @@ export function RepositoryProfileAssociation({
       >
         <h3>{copy("pull-requests.connectProfileHeading")}</h3>
         <p>{copy("pull-requests.connectProfileHelp")}</p>
-        <p>{resourceName(repository)}</p>
+        <p>{productResourceName(productLabel, repository)}</p>
         <ResourceChoice
           kind={EntityKind.INTEGRATION}
           label={copy("pull-requests.profileLabel")}

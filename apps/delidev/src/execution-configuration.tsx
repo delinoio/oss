@@ -1,6 +1,7 @@
-import { createPortal } from "react-dom";
 // SPDX-License-Identifier: Apache-2.0
-import { Disclosure, DisclosureSummary } from "./disclosure";
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
+import { createPortal } from "react-dom";
+
 import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokToolsTerminal } from "./native-grok-interactions";
@@ -113,6 +114,7 @@ function NativeObservations({
   harness: unknown;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const native = object(progress.observed);
   const available = Boolean(
@@ -157,8 +159,22 @@ function NativeObservations({
                         <LocalizedText
                           id="execution-configuration.observedExecutionInput_e6a4af"
                           components={{
-                            s0: <>{text(progress.execution_id)}</>,
-                            s1: <>{text(progress.input_id)}</>,
+                            s0: (
+                              <>
+                                {productLabel(
+                                  PresentationKind.Execution,
+                                  text(progress.execution_id),
+                                )}
+                              </>
+                            ),
+                            s1: (
+                              <>
+                                {productLabel(
+                                  PresentationKind.Input,
+                                  text(progress.input_id),
+                                )}
+                              </>
+                            ),
                           }}
                         />
                       </p>
@@ -288,6 +304,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
   resource: Resource;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const data = document(resource);
   const initial = object(data.initial_execution);
@@ -500,8 +517,10 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                           {copy("execution-configuration.firstAccount_2896cc")}
                         </dt>
                         <dd>
-                          {text(initial.initial_account_id) ||
-                            copy("execution-configuration.extra.ca1844969742")}
+                          {productLabel(
+                            PresentationKind.Account,
+                            text(initial.initial_account_id),
+                          )}
                         </dd>
                         <dt>
                           {copy(
@@ -509,21 +528,33 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                           )}
                         </dt>
                         <dd>
-                          {text(selection.account_id) ||
-                            copy("execution-configuration.extra.ca1844969742")}
+                          {productLabel(
+                            PresentationKind.Account,
+                            text(selection.account_id),
+                          )}
                         </dd>
                         <dt>
                           {copy(
                             "execution-configuration.firstExecution_5294a1",
                           )}
                         </dt>
-                        <dd>{text(initial.id)}</dd>
+                        <dd>
+                          {productLabel(
+                            PresentationKind.Execution,
+                            text(initial.id),
+                          )}
+                        </dd>
                         <dt>
                           {copy(
                             "execution-configuration.selectedExecution_c6fa3c",
                           )}
                         </dt>
-                        <dd>{text(selection.id)}</dd>
+                        <dd>
+                          {productLabel(
+                            PresentationKind.Execution,
+                            text(selection.id),
+                          )}
+                        </dd>
                         <dt>
                           {copy("execution-configuration.agentWorker_a4caa7")}
                         </dt>
@@ -531,7 +562,14 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                           <LocalizedText
                             id="execution-configuration.revision_dfefbf"
                             components={{
-                              s0: <>{text(configuration.agent_id)}</>,
+                              s0: (
+                                <>
+                                  {productLabel(
+                                    PresentationKind.Agent,
+                                    text(configuration.agent_id),
+                                  )}
+                                </>
+                              ),
                               s1: <>{integer(configuration.agent_revision)}</>,
                             }}
                           />
@@ -549,7 +587,12 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                         <dt>
                           {copy("execution-configuration.provider_472590")}
                         </dt>
-                        <dd>{text(configuration.provider_id)}</dd>
+                        <dd>
+                          {productLabel(
+                            PresentationKind.Provider,
+                            text(configuration.provider_id),
+                          )}
+                        </dd>
                         <dt>
                           {copy("execution-configuration.acceptedAt_1b8950")}
                         </dt>
@@ -579,10 +622,10 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                                   components={{
                                     s0: (
                                       <>
-                                        {text(account.id) ||
-                                          copy(
-                                            "execution-configuration.extra.643fd990f260",
-                                          )}
+                                        {productLabel(
+                                          PresentationKind.Account,
+                                          text(account.id),
+                                        )}
                                       </>
                                     ),
                                     s1: <>{integer(account.weight)}</>,
@@ -674,10 +717,10 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                                       s0: <>{index + 1}</>,
                                       s1: (
                                         <>
-                                          {text(template.id) ||
-                                            copy(
-                                              "execution-configuration.extra.ccd130d59f4b",
-                                            )}
+                                          {productLabel(
+                                            PresentationKind.Template,
+                                            text(template.id),
+                                          )}
                                         </>
                                       ),
                                       s2: <>{integer(template.revision)}</>,

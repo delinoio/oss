@@ -1,3 +1,4 @@
+import { ProductIdentityProvider } from "./product-identity-labels";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
@@ -99,7 +100,9 @@ function fixture(resources: Resource[] = [creationRepository]) {
   const view = (children: React.ReactNode) => (
     <StrictMode>
       <TransportProvider transport={transport}>
-        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        <QueryClientProvider client={client}>
+          <ProductIdentityProvider>{children}</ProductIdentityProvider>
+        </QueryClientProvider>
       </TransportProvider>
     </StrictMode>
   );
@@ -184,14 +187,18 @@ it("groups rows in server order with complete identities, schema guards and no e
     within(list)
       .getAllByRole("heading")
       .map((node) => node.textContent),
-  ).toEqual(["Zulu " + "long project name ".repeat(30), "Alpha", "Unnamed"]);
+  ).toEqual([
+    "Zulu " + "long project name ".repeat(30),
+    "Alpha",
+    "Project unavailable · 3",
+  ]);
   for (const row of [last, first, future])
-    expect(within(list).getByText(row.id)).toBeTruthy();
+    expect(within(list).queryByText(row.id)).toBeNull();
   for (const action of ["Edit", "Delete"])
     expect(
       (
         screen.getByRole("button", {
-          name: `${action} Unnamed · ${future.id}`,
+          name: `${action} Project unavailable · 3`,
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -233,7 +240,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])(
     );
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).not.toContain("private fixture detail");
-    expect(alert.textContent).toContain(correlationId);
+    expect(alert.textContent).not.toContain(correlationId);
     expect(screen.queryByText("No projects yet")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "New Project" }));
     expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
@@ -279,7 +286,7 @@ it.each([false, true])(
     await screen.findByText(
       "Refresh failed. Showing the last successfully loaded results.",
     );
-    expect(screen.getByRole("alert").textContent).toContain(correlationId);
+    expect(screen.getByRole("alert").textContent).not.toContain(correlationId);
     if (empty) expect(screen.queryByText("No projects yet")).toBeNull();
     else expect(screen.getByText("Retained project")).toBeTruthy();
   },
@@ -300,7 +307,7 @@ it("preserves four tabs, repository order, primary clearing, restrictions and fu
   openProjects(value);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Editable project · ${row.id}`,
+      name: `Edit Editable project`,
     }),
   );
   expect(
@@ -407,7 +414,7 @@ it("retries exact edit repository IDs without replacing unreadable names with se
   openProjects(value);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Name lookup project · ${row.id}`,
+      name: `Edit Name lookup project`,
     }),
   );
   fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
@@ -419,7 +426,7 @@ it("retries exact edit repository IDs without replacing unreadable names with se
   });
   expect(
     within(primary).getByRole("option", {
-      name: "Repository name unavailable (entry 1)",
+      name: "Exact repository",
     }),
   ).toBeTruthy();
   const reads = value.get.mock.calls.filter(([id]) => id === first.id).length;
@@ -453,7 +460,7 @@ it.each(["revision", "failure"])(
       });
     openProjects(value);
     fireEvent.click(
-      await screen.findByRole("button", { name: `Edit Original · ${row.id}` }),
+      await screen.findByRole("button", { name: `Edit Original` }),
     );
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
       target: { value: "Retained draft" },
@@ -491,7 +498,7 @@ it.each(["save", "delete"])(
     openProjects(value);
     fireEvent.click(
       await screen.findByRole("button", {
-        name: `${action === "save" ? "Edit" : "Delete"} Retry project · ${row.id}`,
+        name: `${action === "save" ? "Edit" : "Delete"} Retry project`,
       }),
     );
     if (action === "delete") {
@@ -805,7 +812,7 @@ it("reveals General and retains the Project draft after a confirmed name collisi
   openProjects(f);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Editable project · ${item.id}`,
+      name: `Edit Editable project`,
     }),
   );
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {

@@ -1,5 +1,7 @@
 # DeliDev desktop localization
 
+Product identity fallbacks and numbered disambiguation are catalog-owned in English and Korean, following the desktop [product identity contract](apps-delidev-desktop-contract.md#product-identity-presentation). Resource-kind nouns remain truthful when metadata is unavailable. Language changes update presentation while original-ID numbers and exact user/native names remain unchanged. Mobile owns matching locale copy around the shared pure registry.
+
 ## Scope
 
 `apps/delidev` owns English and Korean presentation for every desktop screen,

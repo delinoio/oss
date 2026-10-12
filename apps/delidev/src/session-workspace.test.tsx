@@ -1513,7 +1513,9 @@ it("last verified terminal exit restores the actual Session conversation, focus 
     });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Terminal · 1/ }),
+    );
     await waitFor(() =>
       expect(document.querySelector(".terminal-view")).not.toBeNull(),
     );
@@ -1570,7 +1572,9 @@ it("verified terminal removal skips intervening Files and selects the original l
     await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Terminal · 1/ }),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id),
     );
@@ -1578,15 +1582,19 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 2/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Terminal · 2/ }),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id),
     );
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 3/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Terminal · 3/ }),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
     );
-    const terminalTabs = screen.getAllByRole("tab", { name: /^Terminals ·/ });
+    const terminalTabs = screen.getAllByRole("tab", { name: /^Terminal ·/ });
     expect(terminalTabs).toHaveLength(3);
     const beforeSelection = f.terminalWatches.mock.calls.length;
     fireEvent.click(terminalTabs[1]!);
@@ -1600,11 +1608,11 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(1));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(
+      expect(screen.getAllByRole("tab", { name: /^Terminal ·/ })).toHaveLength(
         2,
       ),
     );
-    const remaining = screen.getAllByRole("tab", { name: /^Terminals ·/ });
+    const remaining = screen.getAllByRole("tab", { name: /^Terminal ·/ });
     expect(remaining[0]).toBe(terminalTabs[0]);
     expect(remaining[0]!.getAttribute("aria-selected")).toBe("true");
     await waitFor(() =>
@@ -1620,13 +1628,13 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(0));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(
+      expect(screen.getAllByRole("tab", { name: /^Terminal ·/ })).toHaveLength(
         1,
       ),
     );
     expect(
       screen
-        .getByRole("tab", { name: /^Terminals ·/ })
+        .getByRole("tab", { name: /^Terminal ·/ })
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(f.terminalControl).not.toHaveBeenCalled();

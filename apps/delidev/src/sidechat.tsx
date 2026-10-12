@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -22,6 +23,7 @@ export function SidechatFindings({
   session: Resource;
   messages: readonly Resource[];
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const fork = object(document(session).fork);
   const sidechat = Boolean(fork.sidechat_parent_snapshot);
@@ -107,7 +109,9 @@ export function SidechatFindings({
       <p>
         <LocalizedText
           id="sidechat.readOnlySidechatParentSessionSelect_ceb705"
-          components={{ s0: <>{parentId}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Session, parentId)}</>,
+          }}
         />
       </p>
       {!supported ? (

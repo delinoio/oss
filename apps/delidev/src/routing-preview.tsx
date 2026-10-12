@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { SettingsTaskDismissButton } from "./settings-task";
@@ -11,7 +16,7 @@ import {
   EntityKind,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale, type MessageKey } from "./localization";
-import { items, object, resourceName, text, type Document } from "./documents";
+import { items, object, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { Routing } from "./configuration-fields";
 import { statusLabel } from "./product-status";
@@ -160,14 +165,21 @@ function eligibilityLabel(value: string) {
     ? copy(eligibilityLabels[value])
     : statusLabel(value);
 }
-function AccountIdentity({ metadata }: { metadata?: RoutingAccountMetadata }) {
+function AccountIdentity({
+  metadata,
+  id,
+}: {
+  metadata?: RoutingAccountMetadata;
+  id: string;
+}) {
+  const productLabel = useProductLabels();
   const loading = !metadata || metadata.state === RoutingMetadataState.Loading;
   return (
     <div className="routing-account-identity">
       <strong>
         {loading
           ? copy("routing-preview.loadingAccount")
-          : metadata.name || copy("routing-preview.accountUnavailable")}
+          : productLabel(PresentationKind.Account, id, metadata.name)}
       </strong>
       <p>
         {loading || metadata?.sourceState === RoutingMetadataState.Loading
@@ -175,17 +187,6 @@ function AccountIdentity({ metadata }: { metadata?: RoutingAccountMetadata }) {
           : metadata.source || copy("routing-preview.sourceUnavailable")}
       </p>
     </div>
-  );
-}
-function AccountId({ id }: { id: string }) {
-  return (
-    <Disclosure
-      density={DisclosureDensity.Settings}
-      className="routing-account-id"
-    >
-      <DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary>
-      <code>{id}</code>
-    </Disclosure>
   );
 }
 function Candidates({
@@ -210,7 +211,10 @@ function Candidates({
           data-selected={route.selected === candidate.id}
         >
           <div className="routing-candidate-heading">
-            <AccountIdentity metadata={metadata.get(candidate.id)} />
+            <AccountIdentity
+              id={candidate.id}
+              metadata={metadata.get(candidate.id)}
+            />
             <span
               className="routing-eligibility"
               data-warning={candidate.eligibility !== "eligible"}
@@ -238,9 +242,8 @@ function Candidates({
             className="routing-account-id"
           >
             <DisclosureSummary>
-              {copy("routing-preview.accountId")}
+              {copy("routing-preview.routingDetails")}
             </DisclosureSummary>
-            <code>{candidate.id}</code>
             <dl className="routing-detail-evidence">
               {typeof candidate.score === "number" ? (
                 <div>
@@ -357,6 +360,7 @@ export function RoutingPreview({
   active: boolean;
   close: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const closeTask = useCloseSettingsTask(close);
   const [project, setProject] = useState("");
@@ -397,6 +401,9 @@ export function RoutingPreview({
     `${agent.id}:${project}:${result.dataUpdatedAt}`,
     route?.sources?.map((source) => source.source),
   );
+  for (const [id, item] of metadata)
+    if (!id.startsWith("source:"))
+      productLabel(PresentationKind.Account, id, item.name);
   const selectedSource =
     route?.source_index === undefined
       ? undefined
@@ -409,9 +416,13 @@ export function RoutingPreview({
   return (
     <section
       className="routing-preview"
-      aria-label={copy("routing-preview.label", { v0: resourceName(agent) })}
+      aria-label={copy("routing-preview.label", {
+        v0: productResourceName(productLabel, agent),
+      })}
     >
-      <p className="routing-agent-name">{resourceName(agent)}</p>
+      <p className="routing-agent-name">
+        {productResourceName(productLabel, agent)}
+      </p>
       <div className="routing-project">
         <div className="routing-project-controls">
           <span className="routing-read-only">
@@ -466,7 +477,10 @@ export function RoutingPreview({
             </h3>
             {route.selected ? (
               <>
-                <AccountIdentity metadata={metadata.get(route.selected)} />
+                <AccountIdentity
+                  id={route.selected}
+                  metadata={metadata.get(route.selected)}
+                />
                 {selectedSource ? (
                   <SourceLabel source={selectedSource} metadata={metadata} />
                 ) : null}
@@ -494,7 +508,6 @@ export function RoutingPreview({
                 </div>
               ) : null}
             </dl>
-            {route.selected ? <AccountId id={route.selected} /> : null}
           </div>
         </div>
       ) : result.isPending && !result.error ? (
@@ -587,15 +600,12 @@ export function RoutingPreview({
                           </DisclosureSummary>
                           <dl>
                             <div>
-                              <dt>{copy("routing-preview.sourceKey")}</dt>
-                              <dd>
-                                <code>{source.source}</code>
-                              </dd>
-                            </div>
-                            <div>
                               <dt>{copy("routing-preview.modelId")}</dt>
                               <dd>
-                                <code>{source.model_key}</code>
+                                <code>
+                                  {source.native_model ||
+                                    copy("routing-preview.modelUnavailable")}
+                                </code>
                               </dd>
                             </div>
                           </dl>

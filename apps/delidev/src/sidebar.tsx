@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
 import { ProjectSettingsMenu } from "./project-settings-menu";
@@ -294,12 +295,7 @@ function QueryProblem({
         : copy("sidebar.sentence.3c9f0d81b95a", { v0: label });
   return (
     <div className="sidebar-query-problem">
-      <span role="status">
-        {message}
-        {failure.correlationId
-          ? copy("sidebar.correlation_3851eb", { v0: failure.correlationId })
-          : ""}
-      </span>
+      <span role="status">{message}</span>
       <button
         type="button"
         aria-label={
@@ -968,10 +964,7 @@ function ProjectGroup({
         type="button"
         className="sidebar-project-row"
         title={label}
-        aria-label={copy("sidebar.projectId_656c43", {
-          v0: label,
-          v1: projectId,
-        })}
+        aria-label={label}
         aria-expanded={expanded}
         onClick={toggle}
       >
@@ -986,10 +979,7 @@ function ProjectGroup({
           type="button"
           className="sidebar-project-new-session"
           title={copy("sidebar.newSessionInProject", { v0: label })}
-          aria-label={copy("sidebar.newSessionInProjectId", {
-            v0: label,
-            v1: projectId,
-          })}
+          aria-label={copy("sidebar.newSessionInProject", { v0: label })}
           disabled={projectSelectionBlocked}
           onClick={(event) => {
             event.currentTarget.focus();
@@ -1076,6 +1066,7 @@ export function Sidebar({
   drawerOpen?: boolean;
   setDrawerOpen?: (open: boolean) => void;
 }) {
+  const productLabel = useProductLabels();
   const disclosureContentId3 = useId();
   useLocale();
   const [compact, setCompact] = useState(
@@ -1381,6 +1372,8 @@ export function Sidebar({
     scrollSurface.current = target;
   }, [surface]);
   const projectRows = projects.rows;
+  for (const project of projectRows)
+    productLabel(PresentationKind.Project, project.id, project.name);
   const knownProjectIds = useMemo(
     () => new Set(projectRows.map((row) => row.id)),
     [projectRows],
@@ -1840,13 +1833,17 @@ export function Sidebar({
                   {[
                     ...projectRows.map((project) => ({
                       id: project.id,
-                      label: project.name,
+                      label: productLabel(
+                        PresentationKind.Project,
+                        project.id,
+                        project.name,
+                      ),
                       fallback: false,
                       rows: globalGroups.get(project.id),
                     })),
                     ...[...fallbackGroups].map(([id, rows]) => ({
                       id,
-                      label: copy("sidebar.sentence.7436726e0559", { v0: id }),
+                      label: productLabel(PresentationKind.Project, id),
                       fallback: true,
                       rows,
                     })),

@@ -416,7 +416,8 @@ it("retains completed Fork attribution while independently timing the new child 
   expect(container.textContent).toContain("Inherited turn · Elapsed · 12s");
   expect(
     container.querySelector("[aria-label]")?.getAttribute("aria-label"),
-  ).toContain(sourceSession);
+  ).toContain("Session unavailable");
+  expect(container.textContent).not.toContain(sourceSession);
   act(() => vi.advanceTimersByTime(5000));
   expect(container.textContent).toContain("In progress · 5s");
   expect(container.textContent).toContain("Inherited turn · Elapsed · 12s");

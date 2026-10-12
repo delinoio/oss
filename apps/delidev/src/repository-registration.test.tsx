@@ -4,6 +4,7 @@ import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 import { StrictMode, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { ProductIdentityProvider } from "./product-identity-labels";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -272,7 +273,9 @@ function fixture(
       <StrictMode>
         <TransportProvider transport={transport}>
           <QueryClientProvider client={client}>
-            <Workspace />
+            <ProductIdentityProvider>
+              <Workspace />
+            </ProductIdentityProvider>
           </QueryClientProvider>
         </TransportProvider>
       </StrictMode>,
@@ -567,10 +570,10 @@ it.each([false, true])(
       await screen.findByRole("button", { name: "Add inspected checkout" }),
     );
     const primary = within(
-      screen.getByText(`${f.machine.id} · /canonical/oss`).closest("li")!,
+      screen.getByText(`Runner · /canonical/oss`).closest("li")!,
     );
     const secondary = within(
-      screen.getByText(`${other.id} · /canonical/B`).closest("li")!,
+      screen.getByText(`Other runner · /canonical/B`).closest("li")!,
     );
     expect(
       (
@@ -583,7 +586,7 @@ it.each([false, true])(
       primary.getByText("Use Change folder to replace this checkout."),
     ).toBeTruthy();
     fireEvent.click(primary.getByRole("button", { name: "Remove checkout" }));
-    expect(screen.getByText(`${f.machine.id} · /canonical/oss`)).toBeTruthy();
+    expect(screen.getByText(`Runner · /canonical/oss`)).toBeTruthy();
     expect(
       (
         secondary.getByRole("button", {
@@ -637,7 +640,7 @@ it("keeps checkout removal available when editing an existing repository", async
   f.mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Existing · ${repository.id}`,
+      name: `Edit Existing`,
     }),
   );
   const remove = screen.getByRole("button", { name: "Remove checkout" });
