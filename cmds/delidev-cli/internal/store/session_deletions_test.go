@@ -166,6 +166,51 @@ func sessionDeletionWorkerFixture(t *testing.T) (*Store, context.Context, contex
 	return s, owner, worker, instance, v
 }
 
+func TestSessionDeletionRestoresSingleLegacySharedCleanupOwner(t *testing.T) {
+	s, owner, _, _, deletion := sessionDeletionWorkerFixture(t)
+	deletion.Workers[0].Work.SharedCleanupOwnerDeviceID = ""
+	legacyDigest := deletion.Workers[0].Work.Digest()
+	if err := s.writeSessionDeletion(deletion); err != nil {
+		t.Fatal(err)
+	}
+
+	plans, err := s.SessionDeletions(owner)
+	if err != nil || len(plans) != 1 {
+		t.Fatal("legacy deletion plan was not reconciled", err)
+	}
+	work := plans[0].Workers[0].Work
+	if work.SharedCleanupOwnerDeviceID != work.DeviceID || work.Digest() == legacyDigest {
+		t.Fatal("single original path owner was not restored", work)
+	}
+	if plans[0].Revision != deletion.Revision+1 {
+		t.Fatal("legacy owner migration did not advance its plan revision", plans[0].Revision, deletion.Revision)
+	}
+
+	replayed, err := s.SessionDeletions(owner)
+	if err != nil || len(replayed) != 1 {
+		t.Fatal("reconciled plan replay failed", err)
+	}
+	if replayed[0].Revision != plans[0].Revision || replayed[0].Workers[0].Work.Digest() != work.Digest() {
+		t.Fatal("legacy owner migration was not stable on replay")
+	}
+}
+
+func TestSessionDeletionLeavesAmbiguousLegacySharedCleanupOwnersPending(t *testing.T) {
+	machine, first, second := domain.NewID(), domain.NewID(), domain.NewID()
+	plan := SessionDeletion{Workers: []SessionDeletionWorker{
+		{Work: domain.SessionDeletionWork{MachineID: machine, DeviceID: first, Copies: []domain.SessionDeletionCopy{{JobID: domain.NewID()}}}},
+		{Work: domain.SessionDeletionWork{MachineID: machine, DeviceID: second, Copies: []domain.SessionDeletionCopy{{JobID: domain.NewID()}}}},
+	}}
+	if reconcileUnambiguousLegacySharedCleanupOwners(&plan) {
+		t.Fatal("ambiguous multi-device plan gained a shared cleanup owner")
+	}
+	for _, worker := range plan.Workers {
+		if worker.Work.SharedCleanupOwnerDeviceID != "" {
+			t.Fatal("ambiguous legacy owner was rewritten", worker.Work)
+		}
+	}
+}
+
 func TestSessionDeletionRequiresOriginalOfflineWorkerAcknowledgment(t *testing.T) {
 	s, owner, worker, instance, v := sessionDeletionWorkerFixture(t)
 	session := v.SessionID

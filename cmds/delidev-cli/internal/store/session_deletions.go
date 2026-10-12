@@ -468,6 +468,9 @@ func (s *Store) reconcileSessionDeletionForkOwners(ctx context.Context, v *Sessi
 // Acknowledged plans and removed databases cannot recreate missing authority.
 func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
 	changed := false
+	if reconcileUnambiguousLegacySharedCleanupOwners(v) {
+		changed = true
+	}
 	for wi := range v.Workers {
 		worker := &v.Workers[wi]
 		if worker.Acknowledged {
@@ -511,6 +514,41 @@ func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
 		}
 	}
 	return changed, nil
+}
+
+// A legacy plan can recover an omitted shared cleanup owner only when its full
+// immutable inventory proves that exactly one original device owns paths on
+// that machine. Acknowledged work is immutable because its digest is already
+// bound to the Worker receipt.
+func reconcileUnambiguousLegacySharedCleanupOwners(v *SessionDeletion) bool {
+	owners := map[domain.ID]map[domain.ID]struct{}{}
+	for _, worker := range v.Workers {
+		work := worker.Work
+		if len(work.Copies) == 0 && work.Fork == nil {
+			continue
+		}
+		if owners[work.MachineID] == nil {
+			owners[work.MachineID] = map[domain.ID]struct{}{}
+		}
+		owners[work.MachineID][work.DeviceID] = struct{}{}
+	}
+	changed := false
+	for i := range v.Workers {
+		worker := &v.Workers[i]
+		work := &worker.Work
+		if worker.Acknowledged || (len(work.Copies) == 0 && work.Fork == nil) || work.SharedCleanupOwnerDeviceID != "" {
+			continue
+		}
+		if len(owners[work.MachineID]) != 1 {
+			continue
+		}
+		if _, exists := owners[work.MachineID][work.DeviceID]; !exists {
+			continue
+		}
+		work.SharedCleanupOwnerDeviceID = work.DeviceID
+		changed = true
+	}
+	return changed
 }
 
 func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletion, request, instance domain.ID, digest string) (SessionDeletion, error) {
