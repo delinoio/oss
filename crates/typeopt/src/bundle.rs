@@ -908,7 +908,13 @@ fn references(text: &str, name: &str) -> Vec<usize> {
             .map_or(0, |d| d + 1);
         let token = &text[token_start..at];
         let external = token.contains("://") || token.starts_with("//");
-        if matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '=')) && follows && !external {
+        // An unquoted HTML attribute value may follow `=` after whitespace.
+        let after_assignment = text[..at]
+            .trim_end_matches([' ', '\t', '\n', '\r', '\u{c}'])
+            .ends_with('=');
+        let leads = matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '='))
+            || (before.is_some_and(|c| c.is_ascii_whitespace()) && after_assignment);
+        if leads && follows && !external {
             found.push(at);
         }
         from = end;
@@ -1539,6 +1545,11 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         // Another host's file with the same name keeps its URL.
         let external = r#"src="https://cdn.example/index-DnKDBunT.js" u='//cdn.example/x/index-DnKDBunT.js' l="/assets/index-DnKDBunT.js""#;
         assert_eq!(references(external, name).len(), 1);
+        // Unquoted HTML attribute values may follow `=` after whitespace.
+        assert_eq!(
+            references("<script type=module src = index-DnKDBunT.js>", name).len(),
+            1
+        );
     }
 
     #[test]
