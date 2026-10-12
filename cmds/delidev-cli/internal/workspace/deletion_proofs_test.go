@@ -189,6 +189,44 @@ func TestDeletionWorkspaceProofStartedLegacyRequiresHistoricalOrKeyedEvidence(t 
 	}
 }
 
+func TestDeletionWorkspaceProofStartedRequiresRemovedStage(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := SessionDeletionProofPaths(root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := deletionWorkspaceProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), Removed: false}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := RequireKeyedDeletionWorkspaceProof(root, work); err == nil {
+		t.Fatal("started cleanup accepted workspace proof from before removal")
+	}
+	if err := os.Remove(paths.Workspace); err != nil {
+		t.Fatal(err)
+	}
+	legacy := stale
+	legacy.Version = 1
+	legacy.Identity = domain.SessionDeletionIdentity{}
+	legacyPath := legacyDeletionWorkspacePath(root, work)
+	if err := writeDeletionWorkspaceProof(legacyPath, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportLegacyDeletionWorkspaceProof(root, work, true); err == nil {
+		t.Fatal("started legacy cleanup imported workspace proof from before removal")
+	}
+	if _, err := os.Lstat(legacyPath); err != nil {
+		t.Fatal("stale historical workspace proof was retired", err)
+	}
+	if _, err := os.Lstat(paths.Workspace); !os.IsNotExist(err) {
+		t.Fatal("stale historical proof was copied to the keyed path", err)
+	}
+}
+
 func TestPermanentDeletionCurrentFenceBlocksWorkspaceAdmission(t *testing.T) {
 	for _, operation := range []string{"preparation", "execution", "read", "sidechat"} {
 		t.Run(operation, func(t *testing.T) {

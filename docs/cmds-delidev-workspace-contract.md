@@ -652,4 +652,9 @@ acknowledgement pending; cleanup cannot import it or reuse its removal stages.
 When a historical Worker proof already records removal started or complete,
 admission also requires its matching legacy workspace receipt or a valid keyed
 copy from an interrupted import. Missing or mismatched evidence keeps deletion
-pending and cannot establish authority from a currently present manifest.
+pending and cannot establish authority from a currently present manifest. A
+started proof must record that workspace removal completed; a valid but
+pre-removal receipt cannot authorize retrying cleanup against restored content.
+Obligations containing only images or skill snapshots do not invoke workspace
+cleanup and therefore require no workspace receipt, while unexpected legacy or
+keyed workspace evidence still keeps admission pending.

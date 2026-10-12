@@ -55,13 +55,16 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 		// of both forms must keep the obligation pending.
 		current, err := security.ReadPrivate(paths.Workspace, 1<<20)
 		var keyed deletionWorkspaceProof
-		if err != nil || domain.Decode(current, &keyed) != nil || !validDeletionWorkspaceProof(keyed, w) {
+		if err != nil || domain.Decode(current, &keyed) != nil || !validDeletionWorkspaceProof(keyed, w) || !keyed.Removed {
 			return domain.SessionDeletionPending()
 		}
 		return nil
 	}
 	var legacy deletionWorkspaceProof
 	if err != nil || domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() {
+		return domain.SessionDeletionPending()
+	}
+	if requireExisting && !legacy.Removed {
 		return domain.SessionDeletionPending()
 	}
 	legacy.Version = 2
@@ -120,7 +123,7 @@ func RequireKeyedDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 	}
 	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
 	var proof deletionWorkspaceProof
-	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) {
+	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) || !proof.Removed {
 		return domain.SessionDeletionPending()
 	}
 	return nil
