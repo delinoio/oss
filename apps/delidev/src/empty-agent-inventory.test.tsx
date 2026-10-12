@@ -13,6 +13,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -457,4 +458,140 @@ it("withholds the creation entry while the caller still restores a retained Agen
   ).toBeTruthy();
   expect(screen.queryByText("Loading Agent Worker choices…")).toBeNull();
   expect(f.change).not.toHaveBeenCalled();
+});
+
+function deferredEmpty() {
+  let release!: (result: { resources: Resource[] }) => void;
+  const pending = new Promise<{ resources: Resource[] }>((resolve) => {
+    release = resolve;
+  });
+  return { pending, release };
+}
+function listOptions(f: ReturnType<typeof fixture>) {
+  return createQueryOptions(
+    ResourceQuery.listResources,
+    { filter: { kind: EntityKind.AGENT, pageSize: 50, pageToken: "" } },
+    { transport: f.transport },
+  );
+}
+function Composer({
+  f,
+  strict = false,
+}: {
+  f: ReturnType<typeof fixture>;
+  strict?: boolean;
+}) {
+  const body = (
+    <>
+      <f.View />
+      <input aria-label="First message" />
+    </>
+  );
+  return strict ? <StrictMode>{body}</StrictMode> : body;
+}
+
+it.each([false, true])(
+  "moves focus from the loading selector to the creation button and back on refresh (strict %s)",
+  async (strict) => {
+    const first = deferredEmpty();
+    const f = fixture(() => ({ resources: [] }));
+    f.reads.mockImplementationOnce(() => first.pending);
+    render(<Composer f={f} strict={strict} />);
+    const picker = await screen.findByRole("combobox", { name: "Agent Worker" });
+    picker.focus();
+    expect(document.activeElement).toBe(picker);
+    await act(async () => first.release({ resources: [] }));
+    const action = await screen.findByRole("button", {
+      name: "Create agent worker",
+    });
+    expect(document.activeElement).toBe(action);
+    // Refresh replaces the focused creation button with the selector.
+    const second = deferredEmpty();
+    f.reads.mockImplementationOnce(() => second.pending);
+    await act(async () => {
+      await f.client.invalidateQueries({ queryKey: listOptions(f).queryKey });
+    });
+    const replacement = await screen.findByRole("combobox", {
+      name: "Agent Worker",
+    });
+    expect(document.activeElement).toBe(replacement);
+    await act(async () => second.release({ resources: [] }));
+    expect(
+      document.activeElement ===
+        (await screen.findByRole("button", { name: "Create agent worker" })),
+    ).toBe(true);
+    expect(f.invoke).not.toHaveBeenCalled();
+    expect(f.change).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves focus that already moved to another composer control", async () => {
+  const first = deferredEmpty();
+  const f = fixture(() => ({ resources: [] }));
+  f.reads.mockImplementationOnce(() => first.pending);
+  render(<Composer f={f} />);
+  const picker = await screen.findByRole("combobox", { name: "Agent Worker" });
+  picker.focus();
+  const message = screen.getByLabelText("First message");
+  message.focus();
+  await act(async () => first.release({ resources: [] }));
+  await screen.findByRole("button", { name: "Create agent worker" });
+  expect(document.activeElement).toBe(message);
+  // The unfocused creation button never pulls focus back on refresh either.
+  const second = deferredEmpty();
+  f.reads.mockImplementationOnce(() => second.pending);
+  await act(async () => {
+    await f.client.invalidateQueries({ queryKey: listOptions(f).queryKey });
+  });
+  await screen.findByRole("combobox", { name: "Agent Worker" });
+  expect(document.activeElement).toBe(message);
+});
+
+it("does not take focus when nothing in the swapped control owned it", async () => {
+  const first = deferredEmpty();
+  const f = fixture(() => ({ resources: [] }));
+  f.reads.mockImplementationOnce(() => first.pending);
+  render(<Composer f={f} />);
+  await screen.findByRole("combobox", { name: "Agent Worker" });
+  expect(document.activeElement).toBe(document.body);
+  await act(async () => first.release({ resources: [] }));
+  await screen.findByRole("button", { name: "Create agent worker" });
+  expect(document.activeElement).toBe(document.body);
+});
+
+it("dismisses an open popup when focus moves to the creation button", async () => {
+  const first = deferredEmpty();
+  const f = fixture(() => ({ resources: [] }));
+  f.reads.mockImplementationOnce(() => first.pending);
+  render(<Composer f={f} />);
+  const picker = await screen.findByRole("combobox", { name: "Agent Worker" });
+  picker.focus();
+  fireEvent.click(picker);
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  await act(async () => first.release({ resources: [] }));
+  const action = await screen.findByRole("button", {
+    name: "Create agent worker",
+  });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(document.activeElement).toBe(action);
+});
+
+it("does not focus a disabled or inactive replacement selector", async () => {
+  const f = fixture(() => ({ resources: [] }));
+  const view = render(<Composer f={f} />);
+  const action = await screen.findByRole("button", {
+    name: "Create agent worker",
+  });
+  action.focus();
+  expect(document.activeElement).toBe(action);
+  // Deactivating the surface swaps to a disabled selector without a handoff.
+  view.rerender(
+    <>
+      <f.View active={false} />
+      <input aria-label="First message" />
+    </>,
+  );
+  const picker = await screen.findByRole("combobox", { name: "Agent Worker" });
+  expect(picker.matches(":disabled")).toBe(true);
+  expect(document.activeElement).not.toBe(picker);
 });
