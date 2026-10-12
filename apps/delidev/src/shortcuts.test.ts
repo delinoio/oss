@@ -582,12 +582,13 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
         { isComposing: true },
         { keyCode: 229 },
         { key: "~", code: "Backquote" },
-      ]) invoke(options);
+      ])
+        invoke(options);
       invoke({}, item, true);
       invoke({}, { ...item, active: false });
-      expect(
-        invoke({}, { ...item, enabled: false }).defaultPrevented,
-      ).toBe(true);
+      expect(invoke({}, { ...item, enabled: false }).defaultPrevented).toBe(
+        true,
+      );
       input.setAttribute("data-shortcuts", "passthrough");
       invoke();
       input.removeAttribute("data-shortcuts");

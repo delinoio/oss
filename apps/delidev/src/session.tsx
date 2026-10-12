@@ -2113,8 +2113,7 @@ export function SessionView({
                   type="button"
                   ref={panelButtons[tool.panel]}
                   disabled={
-                    tool.panel === SessionPanel.Terminals &&
-                    terminalsDisabled
+                    tool.panel === SessionPanel.Terminals && terminalsDisabled
                   }
                   aria-keyshortcuts={
                     tool.panel === SessionPanel.Terminals
