@@ -2445,18 +2445,17 @@ it(
     fireEvent.change(composer, { target: { value: "Keep my unsent input" } });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
-    expect(
-      screen.getByRole("region", { name: "Session browser" }),
-    ).toBeTruthy();
+    const browserDialog = await screen.findByRole("dialog", {
+      name: "New browser page",
+    });
     expect(composer.isConnected).toBe(true);
-    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
     expect((composer as HTMLTextAreaElement).value).toBe(
       "Keep my unsent input",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
-    expect(window.document.activeElement).toBe(
-      screen.getByRole("tab", { name: "Conversation" }),
+    fireEvent.click(
+      within(browserDialog).getByRole("button", { name: "Cancel" }),
     );
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();

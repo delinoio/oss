@@ -712,14 +712,14 @@ it("keeps malformed startup evidence visible and does not grant retry", async ()
   expect(f.control).not.toHaveBeenCalled();
 });
 
-it("keeps Info independent of all tabs with one active content region and retained authoring", async () => {
+it("keeps Info independent of workspace tabs and the browser page dialog", async () => {
   const f = fixture();
   render(f.view());
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const info = screen.getByRole("complementary", {
     name: "Session information",
   });
-  for (const name of ["Files", "Diff", "Browser", "Diagnostics"]) {
+  for (const name of ["Files", "Diff", "Diagnostics"]) {
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name }));
     expect(
@@ -735,18 +735,31 @@ it("keeps Info independent of all tabs with one active content region and retain
       screen.getByRole("tab", { name }).getAttribute("aria-selected"),
     ).toBe("true");
   }
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+  const browserDialog = await screen.findByRole("dialog", {
+    name: "New browser page",
+  });
+  expect(composer.isConnected).toBe(true);
+  fireEvent.click(
+    within(browserDialog).getByRole("button", { name: "Cancel" }),
+  );
+  expect(
+    screen
+      .getByRole("tab", { name: "Diagnostics" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(info).toHaveProperty("hidden", false);
   fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect(f.control).not.toHaveBeenCalled();
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.rename).not.toHaveBeenCalled();
 });
-it("replaces dock/split coexistence with exact selection and presentation-only close", async () => {
+it("uses terminal workspace tabs with presentation-only close", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
   render(f.view());
   await screen.findByRole("heading", { name: "Original session" });
-  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
   await screen.findByRole("tab", { name: "Terminal 1" });
@@ -755,8 +768,6 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
       .getByRole("tab", { name: "Terminal 1" })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  expect(screen.queryByRole("region", { name: "Session browser" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
   expect(
     screen
       .getByRole("tab", { name: "Terminal 1" })
@@ -768,9 +779,6 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
       .getByRole("tab", { name: "Conversation" })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  expect(document.activeElement).toBe(
-    screen.getByRole("tab", { name: "Conversation" }),
-  );
   expect(f.control).not.toHaveBeenCalled();
 });
 it.each([580, 120])(
@@ -2040,6 +2048,16 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
     for (const name of ["Diff", "Browser", "Diagnostics"]) {
       fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
       fireEvent.click(screen.getByRole("menuitem", { name }));
+      if (name === "Browser") {
+        const browserDialog = await screen.findByRole("dialog", {
+          name: "New browser page",
+        });
+        expect(files.getAttribute("aria-selected")).toBe("true");
+        fireEvent.click(
+          within(browserDialog).getByRole("button", { name: "Cancel" }),
+        );
+        continue;
+      }
       fireEvent.keyDown(screen.getByRole("tab", { name }), chord);
       expect(screen.getByRole("tab", { name: "Files" })).toBe(files);
       expect(files.getAttribute("aria-selected")).toBe("true");
