@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.native-configuration-import {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  max-width: 720px;
+}
+.native-configuration-import fieldset {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.native-configuration-import label {
+  display: grid;
+  gap: 6px;
+}
+.native-configuration-import label:has(input[type="checkbox"]),
+.native-configuration-import label:has(input[type="radio"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.native-configuration-import input,
+.native-configuration-import select,
+.native-configuration-import textarea,
+.native-configuration-import button {
+  min-height: 40px;
+  border-radius: 8px;
+  max-width: 100%;
+}
+.native-configuration-import input[type="checkbox"],
+.native-configuration-import input[type="radio"] {
+  min-height: 20px;
+}
+.native-import-entry {
+  min-width: 0;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.native-configuration-import pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.native-configuration-import p {
+  overflow-wrap: anywhere;
+}
+.native-configuration-import :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

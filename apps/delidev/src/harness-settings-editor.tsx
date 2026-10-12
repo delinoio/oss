@@ -36,6 +36,7 @@ import {
   type HarnessRoutePreview,
 } from "./harness-settings-model";
 import "./harness-settings-editor.css";
+import { NativeConfigurationImport } from "./native-configuration-import";
 
 interface SettingField {
   key: string;
@@ -353,6 +354,7 @@ export function HarnessSettingsEditor({
         )}
       </p>
       <p>{copy("harness-settings.changesApply")}</p>
+      <NativeConfigurationImport active={active} initialScope={selectedScope} />
       <Problem
         error={status.error || server.error || provider.error || project.error}
       />
