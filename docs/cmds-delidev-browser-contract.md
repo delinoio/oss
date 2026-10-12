@@ -119,12 +119,16 @@ page without showing it or creating a child. It saves absence off the UI thread,
 then hides and closes only the original matching children. Outstanding child
 creation and superseded/hidden child callbacks retain their original identities.
 Metadata removal alone does not remove the descriptor: cleanup must settle before
-the original receipt confirms completion. Pending, failed, lost or malformed
-responses retain an accessible inline Observe original operation action. Observe
-can finish original native cleanup; it never replays Create or Close. Only the
-exact original operation receipt may dismiss its page descriptor; stale, foreign or
-inventory-only evidence cannot close it. Shared profile inventories reconcile
-completed absence without acquiring another owner's operation. Active closure selects/focuses the existing left neighbor; inactive
+the original receipt confirms completion. Pending, admitted failed, lost or
+malformed responses retain an accessible inline Observe original operation
+action. Only a tagged native rejection proven to precede receipt admission
+releases the submitted mutation so the user can make a new request; generic
+errors never establish that boundary. Observe can finish original native
+cleanup; it never replays Create or Close. Only the exact original operation
+receipt may dismiss its page descriptor; stale, foreign or inventory-only
+evidence cannot close it. Shared profile inventories reconcile completed absence
+without acquiring another owner's operation. Active closure selects/focuses the
+existing left neighbor; inactive
 closure preserves selection. The final browser page selects Conversation and
 leaves the account profile and its zero-page inventory intact.
 

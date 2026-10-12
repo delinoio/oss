@@ -434,6 +434,58 @@ it("blocks explicit creation at sixteen pages and preserves readable guidance", 
   ).toBe(true);
   expect(f.register).not.toHaveBeenCalled();
 });
+it.each(["busy", "invalid-input"])(
+  "allows a new page request after a definitive pre-admission %s rejection",
+  async (failure) => {
+    const f = fixture({ count: 0 });
+    let rejectOnce = true;
+    native.mockImplementation(async (command, input) => {
+      if (
+        command === "browser_pages" &&
+        input.request.action === "create" &&
+        rejectOnce
+      ) {
+        rejectOnce = false;
+        throw { kind: "not-admitted", failure };
+      }
+      return f.handle(command, input);
+    });
+    render(<f.View />);
+    await submit();
+    await waitFor(() => expect(actions("create")).toHaveLength(1));
+    const modal = screen.getByRole("dialog");
+    const open = within(modal).getByRole("button", { name: "Open page" });
+    await waitFor(() =>
+      expect((open as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(open);
+    await waitFor(() => expect(actions("create")).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const ids = actions("create").map(
+      ([, input]) => input.request.operation_id,
+    );
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(f.local.tabs.tabs).toHaveLength(1);
+  },
+);
+it("keeps a mutation uncertain when a rejection lacks explicit pre-admission proof", async () => {
+  const f = fixture({ count: 0 });
+  native.mockImplementation(async (command, input) => {
+    if (command === "browser_pages" && input.request.action === "create")
+      throw { failure: "busy" };
+    return f.handle(command, input);
+  });
+  render(<f.View />);
+  await submit();
+  await screen.findAllByRole("button", {
+    name: "Observe original operation",
+  });
+  expect(actions("create")).toHaveLength(1);
+  expect(
+    (screen.getByRole("button", { name: "Open page" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+});
 it("retains lost creation ownership across dismissal and observes the original operation", async () => {
   const f = fixture({ count: 0 });
   let allowObserve = false;

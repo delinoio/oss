@@ -187,6 +187,31 @@ function pageInventory(
   return value;
 }
 
+function pageOperationWasNotAdmitted(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const failure = error as { kind?: unknown; failure?: unknown };
+  return (
+    failure.kind === "not-admitted" &&
+    typeof failure.failure === "string" &&
+    [
+      "service-managed",
+      "busy",
+      "ownership-conflict",
+      "startup-conflict",
+      "sidecar-missing",
+      "sidecar-failed",
+      "timed-out",
+      "incompatible",
+      "credential-unavailable",
+      "permission-denied",
+      "invalid-evidence",
+      "invalid-input",
+      "storage-unavailable",
+      "stopped",
+    ].includes(failure.failure)
+  );
+}
+
 export interface BrowserLayoutControls {
   wide: boolean;
   expanded: boolean;
@@ -580,11 +605,22 @@ function NativeSessionBrowser({
         )
           setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
       }
-    } catch {
+    } catch (error) {
       if (
         alive.current &&
         operationRef.current?.operation_id === original.operation_id
       ) {
+        if (!read && pageOperationWasNotAdmitted(error)) {
+          operationRef.current = undefined;
+          setOperation(undefined);
+          setSubmitted(undefined);
+          setFailure(ownedMessage("session-browser.extra.51fee7071e2b"));
+          console.warn("delidev.browser_page", {
+            phase: "rejected_before_admission",
+            action: original.action,
+          });
+          return;
+        }
         original.uncertain = true;
         setOperation({ ...original });
         setFailure(ownedMessage("session-browser.operationUnknown"));

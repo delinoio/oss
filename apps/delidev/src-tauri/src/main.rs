@@ -1610,6 +1610,19 @@ async fn open_connection(
 
 // Resource operations use a native-created original window identity, never a
 // renderer-supplied path or presentation handle.
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum BrowserPagesFailure {
+    NotAdmitted { failure: NativeFailure },
+    Unknown { failure: NativeFailure },
+}
+
+impl From<NativeFailure> for BrowserPagesFailure {
+    fn from(failure: NativeFailure) -> Self {
+        Self::Unknown { failure }
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "Tauri-injected state is separate from typed IPC input"
@@ -1622,9 +1635,10 @@ async fn browser_pages(
     host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     profile_id: String,
     request: browser_host::PageRequest,
-) -> Result<browser_host::PageInventory, NativeFailure> {
-    let authority = capture_authority(&window)?;
-    canonical_id(&profile_id)?;
+) -> Result<browser_host::PageInventory, BrowserPagesFailure> {
+    let authority = capture_authority(&window)
+        .map_err(|failure| BrowserPagesFailure::NotAdmitted { failure })?;
+    canonical_id(&profile_id).map_err(|failure| BrowserPagesFailure::NotAdmitted { failure })?;
     let scope = authority.saved.clone();
     let original_owner = format!(
         "{}:{}:{}",
@@ -1637,22 +1651,36 @@ async fn browser_pages(
     let windows = Arc::clone(app.state::<Arc<ProductWindows>>().inner());
     let worker_authority = authority.clone();
     let id = profile_id.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let record = worker_connector.browser_profile(scope.as_ref(), &id)?;
-        recheck_record(&windows, &worker_authority)?;
-        worker_host.prepare_inventory(scope, record.clone())?;
-        recheck_record(&windows, &worker_authority)?;
-        worker_host.prepare_pages(
-            &worker_owner,
-            &record,
-            &worker_request,
-            |staged, committed| {
-                publish_browser_pages(&windows, &worker_authority, staged, committed)
-            },
-        )
+    let (prepared, admitted) = tauri::async_runtime::spawn_blocking(move || {
+        let mut admitted = false;
+        let result = (|| {
+            let record = worker_connector.browser_profile(scope.as_ref(), &id)?;
+            recheck_record(&windows, &worker_authority)?;
+            worker_host.prepare_inventory(scope, record.clone())?;
+            recheck_record(&windows, &worker_authority)?;
+            worker_host.prepare_pages_with_admission(
+                &worker_owner,
+                &record,
+                &worker_request,
+                || admitted = true,
+                |staged, committed| {
+                    publish_browser_pages(&windows, &worker_authority, staged, committed)
+                },
+            )
+        })();
+        (result, admitted)
     })
     .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
+    .map_err(|_| BrowserPagesFailure::Unknown {
+        failure: NativeFailure::SidecarFailed,
+    })?;
+    prepared.map_err(|failure| {
+        if admitted {
+            BrowserPagesFailure::Unknown { failure }
+        } else {
+            BrowserPagesFailure::NotAdmitted { failure }
+        }
+    })?;
     recheck_authority(&window, &authority)?;
     let ui_host = Arc::clone(host.inner());
     let (send, receive) = tokio::sync::oneshot::channel();
@@ -1666,7 +1694,7 @@ async fn browser_pages(
     .map_err(|_| NativeFailure::SidecarFailed)?;
     let result = receive.await.map_err(|_| NativeFailure::SidecarFailed)?;
     recheck_authority(&window, &authority)?;
-    result
+    result.map_err(BrowserPagesFailure::Unknown)
 }
 
 // Tauri injects trusted framework state separately from the closed IPC fields.

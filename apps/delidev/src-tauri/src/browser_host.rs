@@ -972,6 +972,17 @@ impl BrowserHost {
         request: &PageRequest,
         publish: impl FnOnce(browser::PrivateWrite, &mut bool) -> Result<()>,
     ) -> Result<()> {
+        self.prepare_pages_with_admission(owner, record, request, || {}, publish)
+    }
+
+    pub fn prepare_pages_with_admission(
+        &self,
+        owner: &str,
+        record: &ProfileRecord,
+        request: &PageRequest,
+        admitted: impl FnOnce(),
+        publish: impl FnOnce(browser::PrivateWrite, &mut bool) -> Result<()>,
+    ) -> Result<()> {
         record.validate()?;
         if record.data.state != ProfileState::Active || self.stopping.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
@@ -1134,6 +1145,8 @@ impl BrowserHost {
                 },
             },
         );
+        // The caller may discard an operation ID only before this exact point.
+        admitted();
         drop(state);
         tracing::info!(operation = "browser_page", phase = "accepted", action = ?request.action);
         let mut committed = false;
