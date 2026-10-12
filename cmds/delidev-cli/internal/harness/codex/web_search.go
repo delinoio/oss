@@ -34,16 +34,6 @@ func decodeWebSearch(raw json.RawMessage) (webSearchItem, error) {
 		if domain.Decode(item.Action, &action) != nil || action.Validate() != nil {
 			return webSearchItem{}, incompatible()
 		}
-		// The pinned union permits omission, but never explicit null action fields.
-		var fields map[string]json.RawMessage
-		if domain.Decode(item.Action, &fields) != nil {
-			return webSearchItem{}, incompatible()
-		}
-		for key, value := range fields {
-			if key != "type" && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				return webSearchItem{}, incompatible()
-			}
-		}
 		observed.Action = &action
 	}
 	if len(item.Results) > 0 && !bytes.Equal(bytes.TrimSpace(item.Results), []byte("null")) {

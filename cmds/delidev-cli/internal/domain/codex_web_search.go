@@ -127,8 +127,8 @@ func (a *CodexWebSearchAction) UnmarshalJSON(raw []byte) error {
 	default:
 		return invalidTool()
 	}
-	for key, v := range fields {
-		if !slices.Contains(allowed, key) || bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+	for key := range fields {
+		if !slices.Contains(allowed, key) {
 			return invalidTool()
 		}
 	}

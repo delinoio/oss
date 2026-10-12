@@ -61,6 +61,43 @@ func TestNativeWebSearchAcceptsOmittedResults(t *testing.T) {
 	}
 }
 
+func TestNativeWebSearchNormalizesNullableUnionMembers(t *testing.T) {
+	fixtures := []struct {
+		name       string
+		raw        string
+		query      bool
+		queries    bool
+		url        bool
+		pattern    bool
+		wantReject bool
+	}{
+		{name: "search-query-null", raw: `{"type":"webSearch","id":"x","query":"item","action":{"type":"search","query":null,"queries":["first","second"]},"results":null}`, queries: true},
+		{name: "search-queries-null", raw: `{"type":"webSearch","id":"x","query":"item","action":{"type":"search","query":"first","queries":null},"results":null}`, query: true},
+		{name: "open-url-null", raw: `{"type":"webSearch","id":"x","query":"item","action":{"type":"openPage","url":null},"results":null}`},
+		{name: "find-url-null", raw: `{"type":"webSearch","id":"x","query":"item","action":{"type":"findInPage","url":null,"pattern":"needle"},"results":null}`, pattern: true},
+		{name: "find-pattern-null", raw: `{"type":"webSearch","id":"x","query":"item","action":{"type":"findInPage","url":"https://fixture.invalid","pattern":null},"results":null}`, url: true},
+		{name: "wrong-variant-null-field", raw: `{"type":"webSearch","id":"x","query":"item","action":{"type":"search","url":null},"results":null}`, wantReject: true},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			item, err := decodeWebSearch([]byte(fixture.raw))
+			if fixture.wantReject {
+				if err == nil {
+					t.Fatal("variant-inappropriate field was accepted")
+				}
+				return
+			}
+			if err != nil || item.Observation.Action == nil {
+				t.Fatal("native nullable union member was rejected", err)
+			}
+			action := item.Observation.Action
+			if (action.Query != nil) != fixture.query || (action.Queries != nil) != fixture.queries || (action.URL != nil) != fixture.url || (action.Pattern != nil) != fixture.pattern {
+				t.Fatal("nullable fields were not normalized", action)
+			}
+		})
+	}
+}
+
 func TestWebSearchRejectsUnprovedProviderBeforeLaunch(t *testing.T) {
 	for _, mode := range []domain.WebSearchMode{domain.WebSearchCached, domain.WebSearchLive} {
 		config := Config{Mode: ThreadProtocol, WebSearch: mode, API: &APIConfig{}}
