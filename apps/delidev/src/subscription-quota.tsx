@@ -987,8 +987,12 @@ export function SubscriptionQuotaControls({
                         expectedRevision: current.revision,
                       },
                       operationId: text(creditObservation.id),
-                      connectionId: connection,
-                      generationId: generation,
+                      connectionId: reconcilingServer
+                        ? text(serverCredit.connection_id)
+                        : connection,
+                      generationId: reconcilingServer
+                        ? text(serverCredit.generation)
+                        : generation,
                     })
                   }
                 >

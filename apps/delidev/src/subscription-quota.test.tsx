@@ -42,6 +42,7 @@ function fixture(
   quotaError = "",
   automaticConsent = false,
   automaticPhase = "uncertain",
+  serverCreditGeneration = "",
 ) {
   const machine = newRequestId(),
     connection = newRequestId(),
@@ -70,6 +71,8 @@ function fixture(
             phase: creditPhase,
             cleanup_confirmed: cleanup,
             outcome: "",
+            connection_id: connection,
+            generation: serverCreditGeneration || generation,
           }
         : undefined,
       server_quota: phase
@@ -541,6 +544,41 @@ it.each([false, true])(
     }
   },
 );
+
+it("reconciles a retained server credit with its captured generation after Execute Finish", async () => {
+  const capturedGeneration = newRequestId();
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    true,
+    true,
+    "",
+    true,
+    "uncertain",
+    true,
+    false,
+    {},
+    "",
+    false,
+    "uncertain",
+    capturedGeneration,
+  );
+  render(<value.Harness />);
+  const reconcile = await screen.findByRole("button", {
+    name: "Check original operation result",
+  });
+  await waitFor(() =>
+    expect((reconcile as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(reconcile);
+  await waitFor(() => expect(value.reconcile).toHaveBeenCalledTimes(1));
+  expect(value.reconcile.mock.calls[0][0]).toMatchObject({
+    connectionId: value.connection,
+    generationId: capturedGeneration,
+  });
+  expect(capturedGeneration).not.toBe(value.generation);
+});
 
 it("preserves the server confirmation selectors in Korean", async () => {
   await i18n.changeLanguage("ko");
