@@ -17,6 +17,7 @@ import {
   shortcutCatalog,
   editableShortcutCatalog,
   readOnlyShortcutCatalog,
+  readOnlyShortcutSuppression,
   shortcutConflicts,
   type ShortcutOverrides,
 } from "./shortcut-preferences";
@@ -333,17 +334,30 @@ export function ShortcutSettings() {
             <dl>
               {readOnlyShortcutCatalog
                 .filter((action) => action.group === group)
-                .map((action) => (
-                  <div key={action.id}>
-                    <dt>{copy(action.label)}</dt>
-                    <dd>
-                      <ShortcutKeycaps
-                        bindings={action.defaults}
-                        platform={platform}
-                      />
-                    </dd>
-                  </div>
-                ))}
+                .map((action) => {
+                  // Read-only guidance follows the committed map, not the unsaved draft.
+                  const suppression = readOnlyShortcutSuppression(
+                    action.id,
+                    snapshot.overrides,
+                  );
+                  return (
+                    <div key={action.id}>
+                      <dt>
+                        {copy(action.label)}
+                        {suppression ? <small>{copy(suppression)}</small> : null}
+                      </dt>
+                      <dd>
+                        <ShortcutKeycaps
+                          bindings={customizationBindings(
+                            action.id,
+                            snapshot.overrides,
+                          )}
+                          platform={platform}
+                        />
+                      </dd>
+                    </div>
+                  );
+                })}
             </dl>
           </section>
         ))}

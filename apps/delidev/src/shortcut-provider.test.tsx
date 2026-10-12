@@ -792,3 +792,64 @@ it.each([
     await act(() => i18n.changeLanguage("en"));
   },
 );
+
+it("marks the inactive default Open tool shortcut in Help while a committed custom primary+T binding exists", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const run = vi.fn();
+  function ToolProbe() {
+    useShortcutSurface(Surface.Sessions);
+    const openHelp = useShortcutHelp();
+    useShortcuts([
+      {
+        id: ShortcutId.OpenTool,
+        scope: Surface.Sessions,
+        label: "session.openTool",
+        bindings: sessionShortcutBindings[ShortcutId.OpenTool],
+        input: ShortcutInput.Allow,
+        run,
+      },
+    ]);
+    return <button onClick={openHelp}>Help opener</button>;
+  }
+  let changed: (value: unknown) => void = () => {};
+  const bridge: ShortcutPreferenceBridge = {
+    read: async () => ({
+      revision: 1,
+      problem: null,
+      overrides: {
+        "session-focus": {
+          state: "binding",
+          chord: { key: "t", shift: false },
+        },
+      },
+    }),
+    update: vi.fn(),
+    subscribe: async (listener) => {
+      changed = listener;
+      return () => {};
+    },
+  };
+  render(
+    <ShortcutPreferenceProvider bridge={bridge}>
+      <ShortcutProvider>
+        <ToolProbe />
+      </ShortcutProvider>
+    </ShortcutPreferenceProvider>,
+  );
+  await act(async () => {});
+  const opener = screen.getByRole("button", { name: "Help opener" });
+  fireEvent.keyDown(opener, { key: "t", code: "KeyT", ctrlKey: true });
+  expect(run).not.toHaveBeenCalled();
+  fireEvent.click(opener);
+  const row = within(
+    screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
+  )
+    .getByText("Open tool")
+    .closest("div")!;
+  expect(within(row).getByText("Disabled")).toBeTruthy();
+  expect(within(row).getByText(/custom shortcut uses/)).toBeTruthy();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  act(() => changed({ revision: 2, problem: null, overrides: {} }));
+  fireEvent.keyDown(opener, { key: "t", code: "KeyT", ctrlKey: true });
+  expect(run).toHaveBeenCalledOnce();
+});

@@ -35,6 +35,7 @@ import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
 import { SessionTabsProvider } from "./session-tabs";
 import { SessionView } from "./session";
+import { ShortcutProvider } from "./shortcut-provider";
 
 vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (host: HTMLElement) => {
@@ -2539,6 +2540,72 @@ it("drops the retained presentation when the startup owner generation changes", 
     );
     await waitFor(() => expect(info).toHaveProperty("hidden", false));
     expect(f.enqueue).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+
+it("opens the shared Open tool dialog from primary+T, keeps the draft and selects Files once with destination focus", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  const view = render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
+  try {
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => expect(composer).toHaveProperty("value", "Original draft"));
+    composer.focus();
+    fireEvent.keyDown(composer, { key: "t", code: "KeyT", ctrlKey: true });
+    const dialog = screen.getByRole("dialog", { name: "Open tool" });
+    expect(
+      within(dialog)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("menuitem", { name: "Diff" }),
+    );
+    expect(composer).toHaveProperty("value", "Original draft");
+    expect(f.terminalCreate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    // The button opens the same single dialog; dismissal restores the opener.
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(document.activeElement).toBe(composer);
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getAllByRole("tab", { name: "Files" })).toHaveLength(1);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("tab", { name: "Files" }),
+      ),
+    );
+    expect(composer).toHaveProperty("value", "Original draft");
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+
+it("keeps Terminals disabled in the dialog for a Sidechat parent snapshot", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+    fork: { sidechat_parent_snapshot: {} },
+  });
+  const view = render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
+  try {
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    composer.focus();
+    fireEvent.keyDown(composer, { key: "t", code: "KeyT", ctrlKey: true });
+    const terminals = screen.getByRole("menuitem", { name: "Terminals" });
+    expect(terminals.hasAttribute("disabled")).toBe(true);
+    expect(document.activeElement).toBe(
+      screen.getByRole("menuitem", { name: "Diff" }),
+    );
+    fireEvent.click(terminals);
+    expect(screen.getByRole("dialog", { name: "Open tool" })).not.toBeNull();
+    expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
+    expect(f.terminalCreate).not.toHaveBeenCalled();
   } finally {
     view.unmount();
     f.client.clear();

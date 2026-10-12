@@ -4,6 +4,9 @@ import {
   captureShortcut,
   effectiveShortcutDefinitions,
   parseShortcutOverrides,
+  readOnlyShortcutSuppression,
+  customizationBindings,
+  shortcutCatalog,
   editableShortcutCatalog,
   readOnlyShortcutCatalog,
   fixedNativeShortcutCatalog,
@@ -336,4 +339,90 @@ it("keeps Open terminals fixed in the read-only Session catalog without expandin
     }),
   ).toThrow();
   expect(validShortcutChord({ key: "`", shift: false })).toBe(false);
+});
+
+const unshiftedT = {
+  state: ShortcutOverrideState.Binding,
+  chord: { key: "t", shift: false },
+} as const;
+const toolDefinition = {
+  id: ShortcutId.OpenTool,
+  scope: Surface.Sessions,
+  label: "session.openTool" as const,
+  bindings: sessionShortcutBindings[ShortcutId.OpenTool],
+  enabled: true,
+};
+it("keeps OpenTool read-only and outside the seven editable action IDs", () => {
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(
+    editableShortcutCatalog.some((action) => action.id === ShortcutId.OpenTool),
+  ).toBe(false);
+  expect(
+    readOnlyShortcutCatalog.find((action) => action.id === ShortcutId.OpenTool)
+      ?.defaults,
+  ).toEqual([{ key: "t", primary: true }]);
+  expect(() =>
+    parseShortcutOverrides({ [ShortcutId.OpenTool]: unshiftedT }),
+  ).toThrow("Invalid shortcut action");
+});
+it.each(editableShortcutCatalog.map((action) => action.id))(
+  "round-trips an unshifted primary+T override for %s and suppresses only the default OpenTool",
+  (id) => {
+    const overrides = { [id]: unshiftedT };
+    const before = JSON.stringify(overrides);
+    // The existing preference stays valid and unchanged byte for byte.
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    expect(JSON.stringify(overrides)).toBe(before);
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    expect(readOnlyShortcutSuppression(ShortcutId.OpenTool, overrides)).toBe(
+      "shortcuts.toolSuppressed",
+    );
+    expect(customizationBindings(ShortcutId.OpenTool, overrides)).toEqual([]);
+    const [effective] = effectiveShortcutDefinitions([toolDefinition], overrides);
+    expect(effective).toMatchObject({
+      bindings: [],
+      enabled: false,
+      unavailableReason: "shortcuts.toolSuppressed",
+    });
+    // Other read-only defaults and the closed catalog are unaffected.
+    expect(
+      readOnlyShortcutSuppression(ShortcutId.OpenTerminals, overrides),
+    ).toBeUndefined();
+    expect(shortcutCatalog.length).toBe(
+      editableShortcutCatalog.length + readOnlyShortcutCatalog.length,
+    );
+  },
+);
+it("restores OpenTool immediately and ignores disabled, Shift+T and other-key overrides", () => {
+  for (const overrides of [
+    {},
+    { [ShortcutId.SessionFocus]: { state: ShortcutOverrideState.Disabled } },
+    {
+      [ShortcutId.SessionFocus]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "t", shift: true },
+      },
+    },
+    { [ShortcutId.SessionFocus]: chord },
+    {
+      [ShortcutId.SessionFocus]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "T", shift: false },
+      },
+    },
+  ] as const) {
+    expect(
+      readOnlyShortcutSuppression(
+        ShortcutId.OpenTool,
+        overrides as Parameters<typeof readOnlyShortcutSuppression>[1],
+      ),
+    ).toBeUndefined();
+  }
+  const suppressed = { [ShortcutId.Help]: unshiftedT };
+  expect(effectiveShortcutDefinitions([toolDefinition], suppressed)[0]).toMatchObject({
+    bindings: [],
+  });
+  expect(effectiveShortcutDefinitions([toolDefinition], {})[0]).toEqual(
+    toolDefinition,
+  );
 });
