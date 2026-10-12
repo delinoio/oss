@@ -2,6 +2,8 @@
 package codex
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"testing"
@@ -82,5 +84,38 @@ func TestAssistantContinuationKeepsRawHistoryWithoutNewAuthority(t *testing.T) {
 	page, _ = json.Marshal(map[string]any{"data": []any{turn}, "nextCursor": nil, "backwardsCursor": nil})
 	if _, _, err := decodeLatestTurnInputs(page); err == nil {
 		t.Fatal("malformed retained metadata authorized continuation")
+	}
+}
+
+func TestAssistantCompleteHistoryPreservesOriginalMetadataAndDigests(t *testing.T) {
+	c, capture, checkpoint, page := continuationFixture(t, "assistant-metadata")
+	turn := page["data"].([]any)[0].(map[string]any)
+	items := turn["items"].([]any)
+	original := json.RawMessage(`{"type":"agentMessage","id":"original-assistant","text":"Original","delivery":"async","questions":[{"title":"Null","options":null},{"title":"Empty","options":[]},{"title":"Choices","options":["B","A"]}]}`)
+	items[len(items)-1] = original
+	page["nextCursor"], page["backwardsCursor"] = nil, nil
+	fixtureSignal(t, c, "history", map[string]any{"page": page})
+	if _, err := c.VerifyContinuation(context.Background(), domain.NewID(), checkpoint, ContinueAfterSuccess); err != nil {
+		t.Fatal("assistant metadata blocked original continuation", err)
+	}
+	history, err := c.compactionTurnsLocked(context.Background())
+	if err != nil || len(history) != 1 {
+		t.Fatal("original complete history unavailable", err)
+	}
+	var nativeTurn turnWire
+	if json.Unmarshal(history[0], &nativeTurn) != nil || !equivalentForkJSON(nativeTurn.Items[len(nativeTurn.Items)-1], original) {
+		t.Fatal("original nullable metadata changed in retained history")
+	}
+	for _, managed := range []bool{false, true} {
+		c.managedForkHistory = managed
+		fork, err := c.forkTurnsLocked(context.Background(), c.thread)
+		if err != nil || len(fork) != 1 || !bytes.Equal(fork[0], history[0]) || historyDigest(fork) != historyDigest(history) {
+			t.Fatal("original assistant metadata or history digest changed", managed, err)
+		}
+	}
+	for _, method := range []string{"turn/start", "turn/steer", "thread/fork"} {
+		if len(requestsOf(t, capture, method)) != 0 {
+			t.Fatal("history inspection granted native input or Fork mutation")
+		}
 	}
 }
