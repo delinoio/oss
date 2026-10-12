@@ -219,6 +219,8 @@ fn compose_bundle_map(
     mapped.sort_by_key(|m| (m.line, m.col));
     mapped.dedup_by_key(|m| (m.line, m.col));
     let mut builder = sourcemap::SourceMapBuilder::new(source_map.get_file());
+    // Sources stay relative to the original `sourceRoot`.
+    builder.set_source_root(source_map.get_source_root());
     for (index, source) in source_map.sources().enumerate() {
         let id = builder.add_source(source);
         builder.set_source_contents(id, source_map.get_source_contents(index as u32));
@@ -789,7 +791,8 @@ mod tests {
         let mut builder = sourcemap::SourceMapBuilder::new(None);
         builder.add(0, 0, 10, 0, Some("src.ts"), None, false);
         builder.add(0, 4, 20, 0, Some("src.ts"), None, false);
-        let map = builder.into_sourcemap();
+        let mut map = builder.into_sourcemap();
+        map.set_source_root(Some("../src"));
         let insertion = "import\"x\";";
         let chain = vec![vec![crate::plan::Edit {
             start: 4,
@@ -798,6 +801,7 @@ mod tests {
         }]];
         let changed = format!("a();{insertion}b();");
         let composed = super::compose_bundle_map(&map, original, &changed, &chain).unwrap();
+        assert_eq!(composed.get_source_root(), Some("../src"));
         let tokens: Vec<_> = composed
             .tokens()
             .map(|t| (t.get_dst_col(), t.get_src_line()))
