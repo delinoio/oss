@@ -1505,8 +1505,11 @@ published only after the keyed proof is synchronized. An interrupted initial
 publication may recover that exact UUID; a missing keyed proof behind a published
 entry remains pending. This lets multiple original devices share the admission
 fence without allowing a lost proof to create a new receipt. A version-2 fence
-with its keyed proof upgrades to version 3; a version-2 fence with no keyed proof
-fails closed because its device publication state cannot be established.
+with its keyed proof upgrades to version 4. If the work digest changed, the
+version-4 entry retains the previous digest until both keyed Worker and workspace
+proofs are synchronized; an interrupted workspace migration can then resume. A
+version-2 fence with no keyed proof fails closed because its device publication
+state cannot be established.
 
 When both the session fence and Worker receipt are absent, fresh admission also
 requires the identity-keyed workspace-proof path to be absent unless it has an

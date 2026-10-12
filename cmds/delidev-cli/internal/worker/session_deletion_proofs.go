@@ -245,12 +245,18 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			}
 			proof = keyed
 			marker = deletionMarker(w)
-			marker.Obligations = []sessionDeletionMarkerObligation{{Identity: w.Identity(), Digest: w.Digest(), ReportID: keyed.ReportID, Phase: sessionDeletionMarkerPublished}}
+			marker.Obligations = []sessionDeletionMarkerObligation{{Identity: w.Identity(), Digest: w.Digest(), PreviousDigest: w.PreviousDigest, ReportID: keyed.ReportID, Phase: sessionDeletionMarkerPublished}}
 			if writeDeletionMarker(markerPath, marker) != nil {
 				return pending()
 			}
 			if w.PreviousDigest != "" && workspace.MigrateKeyedDeletionWorkspaceProof(root, w, keyed.RemovalStarted && !keyed.WorkspaceRetired) != nil {
 				return pending()
+			}
+			if w.PreviousDigest != "" {
+				marker.Obligations[0].PreviousDigest = ""
+				if writeDeletionMarker(markerPath, marker) != nil {
+					return pending()
+				}
 			}
 			if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil {
 				return pending()
