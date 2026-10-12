@@ -237,6 +237,48 @@ func TestMCPManualSecretsKeepOriginalGenerationAfterDeletion(t *testing.T) {
 		t.Fatal("manual credential readback")
 	}
 }
+
+func TestMCPStdioLaunchChangesRequireFreshAuthentication(t *testing.T) {
+	for _, field := range []string{"executable", "arguments", "working-directory"} {
+		t.Run(field, func(t *testing.T) {
+			m, q := mcpFixture(t)
+			vault := &fixtureMCPVault{}
+			m.mcpOpenVault = func(string, domain.ID) (mcpSecretVault, error) { return vault, nil }
+			id := domain.NewID()
+			definition := domain.MCPDefinition{Name: "Authenticated stdio", Enabled: true, Transport: domain.MCPStdio, Executable: "/original/runner", Arguments: []string{"serve", "--safe"}, WorkingDirectory: "/original/work"}
+			q.MCP.Mutation = domain.MCPMutation{Version: 1, Action: domain.MCPSave, DefinitionID: id, Definition: &definition}
+			created, err := m.ReadMCP(context.Background(), q)
+			if err != nil || created.State != domain.MCPSucceeded {
+				t.Fatal(created, err)
+			}
+			q.MCP.RequestID = domain.NewID()
+			q.MCP.Mutation = domain.MCPMutation{Version: 1, Action: domain.MCPManualAuthentication, DefinitionID: id, ExpectedRevision: 1, Secrets: &domain.MCPSecrets{Environment: map[string]string{"TOKEN": "original-secret"}}}
+			authenticated, err := m.ReadMCP(context.Background(), q)
+			if err != nil || authenticated.State != domain.MCPSucceeded || authenticated.Definitions[0].CredentialID == "" || authenticated.Definitions[0].Authentication != domain.MCPAuthenticated {
+				t.Fatal(authenticated, err)
+			}
+			original := authenticated.Definitions[0]
+			definition = original
+			switch field {
+			case "executable":
+				definition.Executable = "/replacement/runner"
+			case "arguments":
+				definition.Arguments = []string{"serve", "--different"}
+			case "working-directory":
+				definition.WorkingDirectory = "/replacement/work"
+			}
+			q.MCP.RequestID = domain.NewID()
+			q.MCP.Mutation = domain.MCPMutation{Version: 1, Action: domain.MCPSave, DefinitionID: id, ExpectedRevision: original.Revision, Definition: &definition}
+			updated, err := m.ReadMCP(context.Background(), q)
+			if err != nil || updated.State != domain.MCPSucceeded || updated.Definitions[0].CredentialID != "" || updated.Definitions[0].Authentication != domain.MCPAuthenticationRequired {
+				t.Fatal("changed launch target retained the old authentication", updated, err)
+			}
+			if _, err := m.MCPGenerationSecrets(context.Background(), q.MCP.ServerID, q.MCP.WorkerDeviceID, original); err != nil {
+				t.Fatal("original generation was discarded instead of retired", err)
+			}
+		})
+	}
+}
 func TestMCPOAuthCancellationAndExpiryNeverExchange(t *testing.T) {
 	for _, expired := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancel", true: "expiry"}[expired], func(t *testing.T) {

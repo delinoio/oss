@@ -239,7 +239,8 @@ func (m *Manager) ReadMCP(ctx context.Context, request ReadRequest) (domain.MCPR
 		next.AuthenticationExpiresAt = current.AuthenticationExpiresAt
 		oauthBefore, _ := json.Marshal(current.OAuth)
 		oauthAfter, _ := json.Marshal(next.OAuth)
-		if exists && (next.Transport != current.Transport || next.Endpoint != current.Endpoint || string(oauthBefore) != string(oauthAfter)) {
+		stdioTargetChanged := current.Transport == domain.MCPStdio && (next.Executable != current.Executable || !slices.Equal(next.Arguments, current.Arguments) || next.WorkingDirectory != current.WorkingDirectory)
+		if exists && (next.Transport != current.Transport || next.Endpoint != current.Endpoint || string(oauthBefore) != string(oauthAfter) || stdioTargetChanged) {
 			next.CredentialID = ""
 			next.AuthenticationExpiresAt = nil
 			next.Authentication = domain.MCPAuthenticationRequired

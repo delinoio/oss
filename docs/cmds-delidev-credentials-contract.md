@@ -327,6 +327,10 @@ and references without automatic replay or speculative deletion. Safe expiry met
 prevents a fresh generation from treating an expired token as authenticated.
 Private native adapters resolve secrets only for an exact retained definition copy
 through `Manager.MCPGenerationSecrets`; catalog edits cannot redirect that copy.
+Changing a stdio definition's executable, ordered arguments or working directory
+invalidates its current credential association and requires explicit
+reauthentication. The prior immutable generation remains available only to its
+original retained execution and cleanup paths.
 
 An OAuth callback must match the exact definition revision that started the
 original request. A later edit cannot substitute the token endpoint. Explicit
