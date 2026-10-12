@@ -159,3 +159,21 @@ func TestLegacySourceProblemBlocksRouting(t *testing.T) {
 		t.Fatalf("legacy source problem was bypassed: route=%+v next=%+v err=%v", route, next, err)
 	}
 }
+
+func TestAllSourcesQuotaCausePreservesStateAndBlockerEvidence(t *testing.T) {
+	for _, problem := range []*Error{nil, Fail(ResourceExhausted, "Rate limited.", "Wait."), Fail(Unauthenticated, "Authentication required.", "Check account.")} {
+		id, agent, sources := sourceFixture()
+		for _, source := range sources {
+			for id, account := range source.Accounts {
+				account.ConfirmedExhausted = true
+				source.Accounts[id] = account
+			}
+		}
+		sources[1].Problem = problem
+		state := RoutingState{Tie: 5, Sources: map[string]RoutingCursor{sources[0].Source: {Tie: 2}}}
+		route, next, err := RouteSources(id, agent, nil, sources, Priority, state, time.Now())
+		if err == nil || SafeError(err).IsQuotaExhausted() != (problem == nil) || !reflect.DeepEqual(next, state) || route.Selected != "" {
+			t.Fatalf("incorrect all-source proof: %+v %+v %v", route, next, err)
+		}
+	}
+}

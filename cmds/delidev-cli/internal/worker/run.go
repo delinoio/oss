@@ -368,6 +368,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				profile += "\x00codex-approval-review-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1) {
+				profile += "\x00native-codex-review-v1"
+			}
 			if subagentExpected {
 				profile += "\x00codex-subagent-configuration-v1"
 			}
@@ -436,6 +439,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			// Advertise generation only after the original server opts into it.
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1)
@@ -859,7 +865,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				cancel(publicationUncertain())
 				return
 			}
-			work.native = envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob
+			work.native = envelope.Type == domain.NativeCodeReviewJob || envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob
 			if _, loaded := active.LoadOrStore(resource.Id, work); loaded {
 				stopJob()
 				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received a duplicate live assignment.", "Reconcile its original operation before another send."))
@@ -993,6 +999,17 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 	if ctx.Err() != nil {
 		return context.Cause(ctx)
 	}
+	if job.Type == domain.NativeCodeReviewJob {
+		var rejected domain.NativeCodeReviewRejectedProof
+		// Positive no-send plus joined cleanup can settle without Ready. Every
+		// other retained observation must publish before its terminal report.
+		if domain.Decode(result.Output, &rejected) != nil || rejected.Validate() != nil {
+			if err := replayNativeReviewObservations(ctx, jobConfig, jobConfig.execution); err != nil {
+				config.Logger.WarnContext(ctx, "native_review_publication_pending", "job_id", resource.Id, "code", domain.SafeError(err).Code)
+				return err
+			}
+		}
+	}
 	if err := prepareStorageRetirement(config, job, result); err != nil {
 		return err
 	}
@@ -1050,6 +1067,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		var input workspace.StorageRequest
 		if workspace.DecodeStorageRequest(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) || input.Preparation.MachineID != job.MachineID {
 			return journal{}, workspace.ResultUncertain()
+		}
+	}
+	if job.Type == domain.NativeCodeReviewJob {
+		var input domain.NativeCodeReviewInput
+		if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil || input.Source.SessionID != domain.ID(resource.SessionId) || input.Source.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
+			return journal{}, publicationUncertain()
 		}
 	}
 	if job.Type == domain.CompactSessionJob {
@@ -1124,7 +1147,21 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if err := ctx.Err(); err != nil {
-			result.Problem = domain.SafeError(err)
+			if job.Type == domain.NativeCodeReviewJob {
+				var input domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil {
+					return journal{}, publicationUncertain()
+				}
+				proof, proofErr := nativeReviewNoSendProof(input.ActionID)
+				if proofErr != nil {
+					return journal{}, proofErr
+				}
+				result.Output = proof
+				// The journal was created, but no native, workspace or authentication
+				// owner was entered, so the typed proof settles this cancellation.
+			} else {
+				result.Problem = domain.SafeError(err)
+			}
 		} else {
 			output, err := execute(ctx, config, domain.ID(resource.Id), job)
 			if err != nil {
@@ -1144,6 +1181,19 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	}
 	return result, nil
 }
+
+func nativeReviewNoSendProof(action domain.ID) (json.RawMessage, error) {
+	proof := domain.NativeCodeReviewRejectedProof{Version: 1, ActionID: action, NoSend: true, CleanupVerified: true}
+	if proof.Validate() != nil {
+		return nil, domain.NativeCodeReviewUnavailable()
+	}
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		return nil, domain.NativeCodeReviewUnavailable()
+	}
+	return raw, nil
+}
+
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	if job.Type == domain.ExecuteSessionJob {
@@ -1157,6 +1207,8 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		}
 	}
 	switch job.Type {
+	case domain.NativeCodeReviewJob:
+		return executeNativeCodeReview(ctx, config, owner, job)
 	case domain.CompactSessionJob:
 		var input domain.SessionCompactionInput
 		if domain.Decode(job.Input, &input) != nil {

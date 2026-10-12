@@ -89,5 +89,7 @@ func RouteSources(agentID ID, agent Agent, project *Project, sources []SourceRou
 		next.Sources[source.Source] = RoutingCursor{Current: chosen.Current, Rotation: chosen.Rotation, Tie: chosen.Tie}
 		return result, next, nil
 	}
-	return result, state, Fail(MissingInput, "All configured account sources have confirmed quota exhaustion.", "Wait for an observed quota recovery or explicitly configure another source.")
+	problem := Fail(MissingInput, "All configured account sources have confirmed quota exhaustion.", "Wait for an observed quota recovery or explicitly configure another source.")
+	problem.Cause = QuotaExhaustedCause
+	return result, state, problem
 }

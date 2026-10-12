@@ -1061,3 +1061,15 @@ matching records without success. Follow-up turns cannot reset completed origina
 startup time; replacement jobs use separate current identity. The optional
 private Session record is projected only into typed Resource envelope metadata.
 Native progress, assignments, checkpoints and digest inputs retain their shapes.
+
+## Blocked quota problem publication
+
+Dispatch permits blocked-problem publication with a nonempty cause only for the
+exact `MissingInput` plus `QuotaExhaustedCause` pair. Every other nonempty cause
+retains its exclusion. Preserve canceled contexts, Internal failures, preparation
+Conflict rules, complete claim rollback, expected revision, Stop/paused,
+Archive, recovery and unchanged-problem fences. Failure consumes no snapshot,
+execution, queued input or routing state. The existing structured blocked event
+records the closed cause with the code; quota blocks are not storage failures.
+No messages, prompts, account content or native output enter logs.
+This optional metadata adds no RPC, allocation, schema, migration or backfill.

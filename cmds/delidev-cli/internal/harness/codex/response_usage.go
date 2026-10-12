@@ -30,6 +30,7 @@ func (c *Client) observeResponseUsageLocked(native nativewire.Event) (Event, err
 	if params.ThreadID != c.thread {
 		return privateNative(native), nil
 	}
+	params.TurnID = c.normalizeCodeReviewChildTurn(params.TurnID)
 	turn, known := c.execution.turns[params.TurnID]
 	if !known {
 		return Event{}, incompatible()

@@ -192,3 +192,42 @@ func TestSituationNotificationQuotaBaselineRejectsSparseFailedStaleAndOtherServi
 		}
 	}
 }
+
+func TestQuotaExhaustedCauseRequiresEveryNonemptyCandidate(t *testing.T) {
+	for _, eligibility := range []Eligibility{ExhaustedAccount, Eligible, DisabledAccount, UnauthenticatedAccount, MissingAccount, ProjectRestricted, AgentRestricted, IncompatibleAccount, AutomaticExcluded} {
+		t.Run(string(eligibility), func(t *testing.T) {
+			id, agent, model, accounts := routeFixture()
+			for id, account := range accounts {
+				account.ConfirmedExhausted = true
+				accounts[id] = account
+			}
+			first := agent.Accounts[0].ID
+			blocked := map[ID]Eligibility{}
+			if eligibility == Eligible {
+				account := accounts[first]
+				account.ConfirmedExhausted = false
+				account.Quota = []QuotaWindow{{State: ObservationFailed}}
+				accounts[first] = account
+			} else {
+				blocked[first] = eligibility
+			}
+			state := RoutingState{Current: first, Tie: 9, Rotation: map[ID]int64{first: 3}}
+			route, next, err := routeAccount(id, agent, model, nil, accounts, Priority, state, time.Now(), blocked)
+			if eligibility == Eligible {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || SafeError(err).IsQuotaExhausted() != (eligibility == ExhaustedAccount) || !reflect.DeepEqual(next, state) || route.Selected != "" {
+				t.Fatalf("incorrect proof or state: %+v %+v %v", route, next, err)
+			}
+		})
+	}
+	id, agent, model, accounts := routeFixture()
+	agent.Accounts = nil
+	_, _, err := RouteAccount(id, agent, model, nil, accounts, Priority, RoutingState{}, time.Now())
+	if err == nil || SafeError(err).Cause != "" {
+		t.Fatal("empty candidates proved exhaustion", err)
+	}
+}

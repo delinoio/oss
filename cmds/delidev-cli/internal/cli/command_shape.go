@@ -70,7 +70,7 @@ var commandPaths = map[string][]string{
 		"delete", "deletion", "compact", "context", "terminal create", "terminal input", "terminal resize", "terminal close",
 		"terminal list", "terminal inspect", "terminal output", "terminal reattach", "forward start", "forward status",
 		"forward stop", "forward reconcile", "pr link", "pr unlink", "pr get", "pr list", "files roots", "files list",
-		"files read", "files diff", "files review-context", "diff", "review-context", "review create", "review edit",
+		"files read", "files diff", "files review-context", "diff", "review-context", "native-review create", "native-review get", "review create", "review edit",
 		"review delete", "review submit", "review list", "review get", "steer", "create", "enqueue", "list", "stop",
 		"archive", "restore", "unarchive", "resume", "rename", "prepare", "recover-workspace", "recover-execution",
 		"switch-account",

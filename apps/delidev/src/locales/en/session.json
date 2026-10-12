@@ -161,5 +161,15 @@
   "session.prStateUnavailable": "Pull request state unavailable or stale",
   "session.prStateEvidence": "Current pull request #{{number}} observation",
   "session.prStateReadFailed": "The current PR observation is unavailable or stale. Retry this original repository and PR read.",
-  "session.prRetryRead": "Retry PR #{{number}} read"
+  "session.prRetryRead": "Retry PR #{{number}} read",
+  "session.quotaTitle": "Usage limit reached",
+  "session.quotaExplanation": "All configured account sources have confirmed quota exhaustion.",
+  "session.quotaGuidance": "Wait for observed quota recovery or explicitly configure another source.",
+  "session.authenticationTitle": "Authentication required",
+  "session.connectionTitle": "Connection unavailable",
+  "session.executionFailureTitle": "Execution could not start",
+  "session.budgetTitle": "Session budget reached",
+  "session.recoveryTitle": "Recovery required",
+  "session.recoveryRegion": "Session recovery",
+  "session.problemCause": "Cause"
 }

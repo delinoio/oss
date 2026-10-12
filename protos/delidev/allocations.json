@@ -13438,6 +13438,692 @@
       "newDeclaration": true
     },
     {
+      "declaration": "NativeCodeReviewTargetKind",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_UNSPECIFIED",
+      "newDeclaration": true,
+      "number": 0
+    },
+    {
+      "declaration": "NativeCodeReviewTargetKind",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_UNCOMMITTED",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewTargetKind",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_BASE_BRANCH",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewTargetKind",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_COMMIT",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewTargetKind",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_TARGET_KIND_CUSTOM",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_UNSPECIFIED",
+      "newDeclaration": true,
+      "number": 0
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_QUEUED",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_READY",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_ENTERED",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_EXITED",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_COMPLETED",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_INTERRUPTED",
+      "newDeclaration": true,
+      "number": 6
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_UNCERTAIN",
+      "newDeclaration": true,
+      "number": 7
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_STALE",
+      "newDeclaration": true,
+      "number": 8
+    },
+    {
+      "declaration": "NativeCodeReviewState",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "NATIVE_CODE_REVIEW_STATE_REJECTED",
+      "newDeclaration": true,
+      "number": 9
+    },
+    {
+      "declaration": "NativeCodeReviewTarget",
+      "issue": 2019,
+      "kind": "message",
+      "member": "kind",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewTarget",
+      "issue": 2019,
+      "kind": "message",
+      "member": "repository_id",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewTarget",
+      "issue": 2019,
+      "kind": "message",
+      "member": "diff_revision",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewTarget",
+      "issue": 2019,
+      "kind": "message",
+      "member": "reference",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewTarget",
+      "issue": 2019,
+      "kind": "message",
+      "member": "instructions",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "NativeCodeReviewSelection",
+      "issue": 2019,
+      "kind": "message",
+      "member": "target",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewSelection",
+      "issue": 2019,
+      "kind": "message",
+      "member": "head_commit",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewSelection",
+      "issue": 2019,
+      "kind": "message",
+      "member": "base_commit",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewSelection",
+      "issue": 2019,
+      "kind": "message",
+      "member": "content_digest",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "title",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "body",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "confidence",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "priority",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "path",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "start_line",
+      "newDeclaration": true,
+      "number": 6
+    },
+    {
+      "declaration": "NativeCodeReviewFinding",
+      "issue": 2019,
+      "kind": "message",
+      "member": "end_line",
+      "newDeclaration": true,
+      "number": 7
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "selection",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "thread_id",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "turn_id",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "entered_item_id",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "exited_item_id",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "findings",
+      "newDeclaration": true,
+      "number": 6
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "correctness",
+      "newDeclaration": true,
+      "number": 7
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "explanation",
+      "newDeclaration": true,
+      "number": 8
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "confidence",
+      "newDeclaration": true,
+      "number": 9
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "rollout_digest",
+      "newDeclaration": true,
+      "number": 10
+    },
+    {
+      "declaration": "NativeCodeReviewResult",
+      "issue": 2019,
+      "kind": "message",
+      "member": "cleanup_verified",
+      "newDeclaration": true,
+      "number": 11
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "job",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "action_id",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "target",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "state",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "revision",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "thread_id",
+      "newDeclaration": true,
+      "number": 6
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "turn_id",
+      "newDeclaration": true,
+      "number": 7
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "entered_item_id",
+      "newDeclaration": true,
+      "number": 8
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "exited_item_id",
+      "newDeclaration": true,
+      "number": 9
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "result",
+      "newDeclaration": true,
+      "number": 10
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "usage",
+      "newDeclaration": true,
+      "number": 11
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "estimates",
+      "newDeclaration": true,
+      "number": 12
+    },
+    {
+      "declaration": "NativeCodeReview",
+      "issue": 2019,
+      "kind": "message",
+      "member": "usage_complete",
+      "newDeclaration": true,
+      "number": 13
+    },
+    {
+      "declaration": "CreateNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "mutation",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "CreateNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "target",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "CreateNativeCodeReviewResponse",
+      "issue": 2019,
+      "kind": "message",
+      "member": "review",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "CreateNativeCodeReviewResponse",
+      "issue": 2019,
+      "kind": "message",
+      "member": "request_id",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "CreateNativeCodeReviewResponse",
+      "issue": 2019,
+      "kind": "message",
+      "member": "replayed",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "GetNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "session_id",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "GetNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "job_id",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "GetNativeCodeReviewResponse",
+      "issue": 2019,
+      "kind": "message",
+      "member": "review",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "mutation",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "machine_id",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "instance_id",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "state",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "selection",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "thread_id",
+      "newDeclaration": true,
+      "number": 6
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "turn_id",
+      "newDeclaration": true,
+      "number": 7
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "item_id",
+      "newDeclaration": true,
+      "number": 8
+    },
+    {
+      "declaration": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "kind": "message",
+      "member": "usage",
+      "newDeclaration": true,
+      "number": 14
+    },
+    {
+      "declaration": "PublishNativeCodeReviewResponse",
+      "issue": 2019,
+      "kind": "message",
+      "member": "revision",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "response_digest",
+      "newDeclaration": true,
+      "number": 1
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "input",
+      "newDeclaration": true,
+      "number": 2
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "cached_input",
+      "newDeclaration": true,
+      "number": 3
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "cache_write_input",
+      "newDeclaration": true,
+      "number": 4
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "output",
+      "newDeclaration": true,
+      "number": 5
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "reasoning_output",
+      "newDeclaration": true,
+      "number": 6
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "total",
+      "newDeclaration": true,
+      "number": 7
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "counts_available",
+      "newDeclaration": true,
+      "number": 8
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "unspecified_native_cost",
+      "newDeclaration": true,
+      "number": 9
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "sequence",
+      "newDeclaration": true,
+      "number": 10
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 2019,
+      "kind": "message",
+      "member": "native_version",
+      "newDeclaration": true,
+      "number": 11
+    },
+    {
+      "declaration": "SystemCapability",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
+      "number": 96
+    },
+    {
+      "declaration": "WorkerCapability",
+      "issue": 2019,
+      "kind": "enum",
+      "member": "WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1",
+      "number": 58
+    },
+    {
       "issue": 2136,
       "declaration": "SystemCapability",
       "kind": "enum",
@@ -13833,6 +14519,165 @@
       "member": "finished_at",
       "number": 4,
       "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
+      "number": 90
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "seed_numbers",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "number",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "pull_request_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "remote_repository_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "base_sha",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "head_sha",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "page_token",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "reference",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarResponse",
+      "member": "png",
+      "number": 1,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -14089,6 +14934,33 @@
       "serverStreaming": false
     },
     {
+      "clientStreaming": false,
+      "input": "CreateNativeCodeReviewRequest",
+      "issue": 2019,
+      "method": "CreateNativeCodeReview",
+      "output": "CreateNativeCodeReviewResponse",
+      "serverStreaming": false,
+      "service": "SessionService"
+    },
+    {
+      "clientStreaming": false,
+      "input": "GetNativeCodeReviewRequest",
+      "issue": 2019,
+      "method": "GetNativeCodeReview",
+      "output": "GetNativeCodeReviewResponse",
+      "serverStreaming": false,
+      "service": "SessionService"
+    },
+    {
+      "clientStreaming": false,
+      "input": "PublishNativeCodeReviewRequest",
+      "issue": 2019,
+      "method": "PublishNativeCodeReview",
+      "output": "PublishNativeCodeReviewResponse",
+      "serverStreaming": false,
+      "service": "WorkerService"
+    },
+    {
       "issue": 2136,
       "service": "TailscaleService",
       "method": "CancelTailscaleConnection",
@@ -14211,6 +15083,33 @@
       "method": "DecideTailscaleApproval",
       "input": "DecideTailscaleApprovalRequest",
       "output": "DecideTailscaleApprovalResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "GetPullRequestWorkspace",
+      "input": "GetPullRequestWorkspaceRequest",
+      "output": "GetPullRequestWorkspaceResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ListPullRequestCommits",
+      "input": "ListPullRequestCommitsRequest",
+      "output": "ListPullRequestCommitsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ReadPullRequestAvatar",
+      "input": "ReadPullRequestAvatarRequest",
+      "output": "ReadPullRequestAvatarResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }
