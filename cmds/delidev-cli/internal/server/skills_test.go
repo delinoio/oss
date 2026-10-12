@@ -170,7 +170,7 @@ func TestSkillAcceptanceBindsOriginalRequestAndRejectsFieldUnawareEdit(t *testin
 	if domain.Decode(preparation.DocumentJson, &job) != nil || domain.Decode(job.Input, &preparationRequest) != nil {
 		t.Fatal("invalid skill-session preparation")
 	}
-	manager := workspace.Manager{Root: f.workerRoot}
+	manager := workspace.Manager{NamedDirectories: true, Root: f.workerRoot}
 	manifest, e := manager.Prepare(ctx, preparationRequest)
 	if e != nil {
 		t.Fatal(e)

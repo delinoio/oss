@@ -77,6 +77,7 @@ Repositories use required remote URLs with optional Local folder connections und
 - `apps/delidev`: desktop presentation and native host.
 - `apps/delidev-mobile`: separate HTTPS iOS/Android client, device-only platform state and target-bound internal beta candidates (both by default, explicit iOS-only supported); follow the [mobile contract](apps-delidev-mobile-contract.md).
 - `cmds/delidev-cli`: Go CLI, server, Worker, storage and native adapters.
+- `cmds/delidev-cli/internal/tailscale`: bounded installed-client observations and the original foreground access child under the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
@@ -87,6 +88,8 @@ New schedule creation adds frequency presets and a creation-only three-section l
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
 
 Named Home projects provide a New session shortcut beside their collapse control under the [chat-first creation contract](apps-delidev-desktop-contract.md#chat-first-session-creation). It selects the original project once in the mounted creation draft, preserves message/mode/budget/Options and shares existing project-selection locks without creating a session on navigation.
+The separately retained [Pull request workspace](apps-delidev-desktop-contract.md#pull-request-workspace-presentation) adds scoped stack context, lazy read-only tabs, provider change counts and sanitized server-owned avatars through independently negotiated IntegrationService reads. List and search bytes, pending PR actions and shared backend inspection remain independently owned.
+
 The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Validated repository selection loads page one automatically; state/page-size changes apply immediately and valid trimmed search applies after a 300 ms IME-aware debounce; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
 
 ## Domain Contract Documents
@@ -443,3 +446,11 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+### Initial startup group elapsed observations
+
+The startup, sessions, workspace, storage, desktop, localization, protocol and
+client contracts jointly own server-observed group timing and independent closed
+detailed disclosures. Private Session records project through additive typed
+Resource metadata while legacy document JSON and native ownership stay intact.
+No migration, Worker report or execution authority is added.

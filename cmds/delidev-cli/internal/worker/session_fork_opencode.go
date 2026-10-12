@@ -97,7 +97,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if domain.Decode(a.Preparation, &prep) != nil || domain.Decode(a.Manifest, &manifest) != nil || workspace.ValidateResult(prep, manifest, runtime.GOOS) != nil || manifest.Type != domain.GeneralChat {
 		return nil, executionCheckpointUncertain()
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	inspection, err := manager.InspectClosedExecution(ctx, workspace.ExecutionPredecessor{JobID: i.SourceJobID, ExecutionID: a.ExecutionID}, prep, manifest)
 	if err != nil {
 		return nil, err

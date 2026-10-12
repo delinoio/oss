@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/tailscale"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
@@ -26,6 +27,7 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	TailnetStartWorker func(context.Context, string) error
 	// Desktop hosts supply their already-bound listener and keep discovery
 	// separate from ordinary CLI/service endpoints.
 	Desktop *desktopruntime.Target
@@ -63,6 +65,10 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	tailscale          *tailscale.Manager
+	tailnetMu          sync.Mutex
+	tailnetStartWorker func(context.Context, string) error
+	delidevv1connect.UnimplementedTailscaleServiceHandler
 	delidevv1connect.UnimplementedAttachmentServiceHandler
 	imageTransfersMu      sync.Mutex
 	imageTransferReaders  map[domain.ID]*imageTransferReader
@@ -91,6 +97,10 @@ type Service struct {
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedNetworkServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
+	integrationQueued     map[domain.ID]int
+	integrationForeground map[domain.ID]int
+	prAvatarMu            sync.Mutex
+	prAvatars             map[string]*prAvatarEntry
 	integrationOnce       sync.Once
 	integrationGate       chan struct{}
 	integrationChecks     map[domain.ID]*integrationCheck

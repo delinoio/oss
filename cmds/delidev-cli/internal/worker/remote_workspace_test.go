@@ -32,3 +32,17 @@ func TestManagedWorkspacePreparationRequiresNegotiationBeforeFilesystemChanges(t
 		})
 	}
 }
+
+func TestNamedWorkspacePreparationRequiresSeparateNegotiation(t *testing.T) {
+	machine, session, repository := domain.NewID(), domain.NewID(), domain.NewID()
+	input := workspace.PrepareRequest{SessionID: session, MachineID: machine, Type: domain.Worktree, PrimaryRepository: repository, Repositories: []workspace.RepositorySpec{{ID: repository, DirectoryName: "oss", SourceKind: workspace.RemoteCloneSource, RemoteURL: "https://example.invalid/project.git"}}}
+	raw, _ := json.Marshal(input)
+	root := filepath.Join(t.TempDir(), "worker")
+	_, err := execute(context.Background(), Config{Root: root, remoteWorkspaceClone: true}, domain.NewID(), domain.Job{Type: domain.PrepareWorkspaceJob, MachineID: machine, Input: raw})
+	if domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("remote clone capability implied named support", err)
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		t.Fatal("unsupported names changed the filesystem", err)
+	}
+}

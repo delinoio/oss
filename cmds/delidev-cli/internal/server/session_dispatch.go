@@ -332,6 +332,9 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
 	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
 	input.Preparation, input.Manifest = job.Input, job.Output
+	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
+		return empty, err
+	}
 	return input, input.Validate()
 }
 
@@ -344,6 +347,9 @@ func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Sessio
 	}
 	if input.Validate() != nil || !session.OwnsExecution(input) {
 		return continuationConflict()
+	}
+	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
+		return err
 	}
 	candidate := input
 	if input.Version != 4 {

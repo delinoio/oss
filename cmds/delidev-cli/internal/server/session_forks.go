@@ -205,6 +205,19 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
 		}
+		named, err := workspace.ForkRequiresNamedDirectories(input)
+		if err != nil {
+			return nil, err
+		}
+		if named {
+			_, machine, err := activeMachine(tx, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.NamedWorkspaceDirectoriesV1) {
+				return nil, workspace.NamedDirectoriesUnsupported()
+			}
+		}
 		clones, err := workspace.ForkRequiresManagedClone(input)
 		if err != nil {
 			return nil, err
@@ -319,6 +332,19 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if input.Retry != nil {
 		return validateSidechatRetryForkAuthority(tx, input)
+	}
+	named, err := workspace.ForkRequiresNamedDirectories(input)
+	if err != nil {
+		return err
+	}
+	if named {
+		_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(machine.WorkerCapabilities, domain.NamedWorkspaceDirectoriesV1) {
+			return workspace.NamedDirectoriesUnsupported()
+		}
 	}
 	clones, err := workspace.ForkRequiresManagedClone(input)
 	if err != nil {
@@ -516,6 +542,9 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 			return forkConflict()
 		}
 		if input.Workspace == domain.Worktree {
+			if spec.DirectoryName != repo.DirectoryName || manifest.Repositories[i].DirectoryName != repo.DirectoryName {
+				return forkConflict()
+			}
 			independent := repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource || repo.SourceKind == workspace.LocalCheckoutSource
 			if independent {
 				if spec.SourceKind != workspace.IndependentForkSource || spec.RemoteURL != repo.RemoteURL || spec.ForkRegistrationSource != "" {

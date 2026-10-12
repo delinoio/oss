@@ -49,7 +49,7 @@ func recoverPRStartup(ctx context.Context, config Config, request domain.Executi
 	if _, err := os.Lstat(filepath.Join(config.Root, "jobs", string(request.JobID))); !errors.Is(err, os.ErrNotExist) {
 		return nil, domain.StartupRejectionUncertain()
 	}
-	manager := workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	proof, err := manager.ReadPRStartupRejection(ctx, request.JobID, request.Startup.ExecutionID, preparation, manifest, runtime.GOOS)
 	if err != nil {
 		return nil, err

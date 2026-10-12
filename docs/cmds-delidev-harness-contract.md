@@ -37,6 +37,39 @@ Unexpected original-root archived, deleted or closed notifications retain the or
 
 Deprecated thread-compacted requires the exact original turn's manual compaction owner or canonical ContextCompaction/history record. Thread-reverted requires the existing durable Revert send claim or independently verified Revert continuation while no input/compaction is active or pending. A subsequent original input or compaction ends that supplement scope without changing the durable history proof. Discard these content-free supplements without adding transcript entries, acknowledging a mutation, completing an item/turn, changing history, creating a successor checkpoint or proving cleanup. Unowned supplements retain recovery. Original compaction and Revert responses, canonical items, complete history and private rollout verification remain authoritative under the [compaction contract](cmds-delidev-compaction-contract.md). No goal or Revert mutation authority is added.
 
+### Codex remote-control policy observations
+
+The original execution process recognizes `remoteControl/status/changed` only
+as a notification. Decode the closed `disabled`, `connecting`, `connected` and
+`errored` status enum, required string `serverName` and `installationId`, and
+nullable string `environmentId` under the
+[pinned native schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/RemoteControlStatusChangedNotification.json).
+Accept omitted `environmentId` for the legacy notification shape.
+Bound the envelope to 32 KiB and each identity string to 1024 UTF-8 bytes.
+Empty strings retain their schema meaning. Reject missing/null required fields,
+unknown/duplicate keys, case aliases, invalid states, collections, malformed
+UTF-8 and NUL text.
+Malformed observations use the closed `remote-control-policy` diagnostic stage;
+raw payloads and native identities never enter logs or product events.
+
+Disabled with absent/null environment remains passive private metadata. Every
+other valid status, or disabled with any non-null environment, retains a typed
+redacted refusal on the original Client and pauses further input. Closed
+`remote-state-refused` and `remote-environment-refused` classifications preserve
+the first refusal independently of the first existing recovery cause. Exact
+replays, later disabled status, malformed observations and original terminal
+notifications cannot clear that cause or pause. An acknowledged input remains
+recovery-required. The Worker exits through its existing failure path and joins
+original process/control/workspace cleanup independently; observed original turn
+outcomes cannot supply cleanup or successful execution authority.
+
+Do not pair, enable, disable, reconnect, adopt remote ownership, select another
+model or send replacement input. Original account, settings, input, receipts and
+turn evidence retain their ownership. Server requests with this method retain
+the unsupported request boundary and cannot acquire notification/reply handling.
+The external-token quota profile keeps its independent disabled-only policy.
+This private refusal adds no public schema allocation or database migration.
+
 ### Passive Codex fuzzy-search notifications
 
 The original execution process accepts `fuzzyFileSearch/sessionUpdated` and
@@ -96,10 +129,41 @@ populated questions retain the private extension boundary. Quota snapshots accep
 the advisory `normalModelSlug` without selecting a model. Response-usage
 `usageMetadata.metadata` stays opaque and excluded from publication, cost and
 logs; original counters and amount-evidence classification remain unchanged.
-The installed schema also declares scoped `model/verification` notifications.
-Accept only a required empty verification array bound to the original known root
-turn as discarded metadata. Populated verification remains a private extension;
-the empty observation cannot establish model eligibility or account readiness.
+Native Codex safety observations bind to the original known root thread and turn.
+Retain typed `model/verification` values, including `trustedAccessForCyber`,
+without granting account readiness, model eligibility or permissions. Required
+empty verification arrays retain their existing discarded-metadata representation.
+`model/safetyBuffering/updated` retains the original model, ordered use cases and
+reasons, buffering UI flag and required nullable faster-model descriptor.
+`turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
+scalars and explicit null. These private observations emit no product prompt,
+response, tool or input mutation. Neither buffering nor verification selects a
+model; original usage and effective settings remain authoritative.
+
+`model/rerouted` validates the original selected `fromModel`, the actual `toModel`
+and closed `highRiskCyberActivity` reason. Retain the safety decision without
+reversing it or adopting a faster-model descriptor. An actual model change pauses
+fresh sends and prevents selected-model success publication. Keep the first
+problem when earlier uncertainty exists. Original native terminal evidence remains
+available for reconciliation and independent cleanup; neither terminal completion
+nor passive observations clears the pause or replays input.
+
+Reject unknown enums, malformed or ambiguous fields and unowned root turns.
+Foreign threads and server requests retain their existing private boundaries.
+After terminal completion, accept only an exact previously retained observation
+as late private evidence; changed or unseen late observations fail validation.
+Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors
+to 4,096 bytes, descriptor arrays to 64 entries, JSON nesting to 64 levels, and
+aggregate execution evidence to 1,024 observations and 1 MiB of canonical and
+retained descriptor/metadata bytes. Late replays add no retained evidence.
+Native descriptors, moderation and reroute contents are excluded from generic
+serialization, diagnostic formatting and public logs. Logs use closed family
+classifications only. Both ordinary execution and isolated title consumers require
+the matching opaque passive proof before discarding an observation.
+These observations add no RPC, migration, fallback, readiness or input authority.
+[Native safety schemas](https://github.com/openai/codex/tree/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/typescript/v2)
+own the notification shapes and closed enum values.
+
 Managed ChatGPT execution also consumes the original root's passive
 `mcpServer/startupStatus/updated` notifications for the built-in `codex_apps`
 connector. Validate the closed starting/ready/failed/cancelled states, nullable
@@ -2571,3 +2635,9 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Original managed Codex helper retirement
+
+Managed Codex Thread initialization retains the private original process-bound helper proof under the [subscription cleanup contract](cmds-delidev-subscription-contract.md#original-managed-codex-execution-helpers). Pin the canonical home, retained native directory identities, canonical verified executable identity and prelaunch bounded directory inventory before launch. Capture and validate the exact original Unix `apply_patch`, `applypatch` and `codex-execve-wrapper` aliases after initialized startup and before thread input admission. This proof is private, in memory and unavailable to historical runtime recovery, other execution owners or public RPCs. Windows regular batch scripts and other aliases grant no removal authority.
+
+Closure returns original process-join and helper-retirement results independently. Only a joined original native tree permits retirement through retained no-follow parent operations. Changed/foreign entries, missing startup proof and failed removal/synchronization remain recovery-required. Native destructor absence requires its unchanged retained original parent; basename lookup at cleanup cannot adopt entries. Preserve unrelated native files, lock files and history. The Worker must still run final original authentication comparison/removal and the complete unchanged bounded raw/encoded-credential scan after process join if helper retirement fails. Helper cleanup cannot settle native execution, input, history or credential ownership alone. Accepted-input native failures remain failed with once-only reporting and no replay even when both cleanup owners succeed. No capability, public protocol, migration or automatic historical-account recovery is introduced.

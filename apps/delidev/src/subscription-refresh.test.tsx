@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
+import { isValidElement, type ComponentProps, type MouseEvent } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ import {
   SystemService,
   SubscriptionObservationAction,
   newRequestId,
+  type Resource,
 } from "@delinoio/delidev-api-client";
 import { document as resourceDocument, encode } from "./documents";
 import { i18n } from "./localization";
@@ -29,6 +31,8 @@ import {
   SubscriptionAccounts,
 } from "./subscription-accounts";
 import { SettingsActionScope } from "./settings-action";
+import * as settingsAction from "./settings-action";
+import * as subscriptionLogin from "./subscription-login";
 
 type Options = {
   supported?: boolean;
@@ -72,7 +76,7 @@ function fixture(options: Options = {}) {
   const initial = account;
   const close = vi.fn();
   let readFailure = false;
-  const read = vi.fn(async () => {
+  const read = vi.fn(async (): Promise<{ resource?: Resource }> => {
     if (readFailure)
       throw new ConnectError("private-status-fixture", Code.Unavailable);
     return { resource: account };
@@ -99,6 +103,7 @@ function fixture(options: Options = {}) {
         capabilities: [
           SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
           SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
+          SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
           ...(options.supported === false
             ? []
             : [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]),
@@ -177,6 +182,326 @@ function fixture(options: Options = {}) {
   };
 }
 const combined = "Refresh account status and quota";
+const refreshLogin = "Refresh login";
+const logout = "Log out";
+const statusRefresh = "Refresh account status";
+
+function actionDisabled(name: string) {
+  return (screen.getByRole("button", { name }) as HTMLButtonElement).disabled;
+}
+async function readyAction(name: string) {
+  const button = await screen.findByRole("button", { name });
+  await waitFor(() => expect(actionDisabled(name)).toBe(false));
+  return button;
+}
+
+function holdRead(f: ReturnType<typeof fixture>) {
+  let resolve!: (value: { resource?: typeof f.initial }) => void;
+  let reject!: (error: ConnectError) => void;
+  let started!: () => void;
+  const ready = new Promise<void>((resolveStarted) => {
+    started = resolveStarted;
+  });
+  f.read.mockImplementationOnce(
+    () =>
+      new Promise((accept, refuse) => {
+        started();
+        resolve = accept;
+        reject = refuse;
+      }),
+  );
+  return {
+    ready,
+    resolve: (resource = f.initial) => resolve({ resource }),
+    missing: () => resolve({}),
+    reject: () =>
+      reject(new ConnectError("private-status-fixture", Code.Unavailable)),
+  };
+}
+
+function captureActions() {
+  const callbacks = new Map<string, () => void>();
+  const Button = settingsAction.SettingsActionButton;
+  vi.spyOn(settingsAction, "SettingsActionButton").mockImplementation(
+    (props: ComponentProps<typeof Button>) => {
+      const name =
+        typeof props.children === "string"
+          ? props.children
+          : isValidElement<{ id?: string }>(props.children)
+            ? props.children.props.id
+            : undefined;
+      if (name && props.onClick)
+        callbacks.set(name, () =>
+          props.onClick!({} as MouseEvent<HTMLButtonElement>),
+        );
+      return <Button {...props} />;
+    },
+  );
+  return (name: string) => {
+    const callback = callbacks.get(name);
+    if (!callback) throw new Error("Missing action callback: " + name);
+    return callback;
+  };
+}
+
+function stubLogin() {
+  const begin = vi.fn();
+  vi.spyOn(subscriptionLogin, "useSubscriptionLogin").mockReturnValue({
+    service: undefined,
+    begin,
+    body: null,
+    workflow: false,
+    retained: false,
+    hidden: false,
+    available: true,
+    hide: vi.fn(),
+    show: vi.fn(),
+    leave: vi.fn(),
+  });
+  return begin;
+}
+
+it.each([Code.Aborted, Code.PermissionDenied])(
+  "retains lifecycle admission after definitive quota refusal %s until the explicit read settles",
+  async (code) => {
+    const action = captureActions();
+    const f = fixture();
+    f.quota.mockRejectedValueOnce(
+      new ConnectError("private-quota-fixture", code),
+    );
+    render(<f.Harness />);
+    const refresh = await readyAction(combined);
+    await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+    const held = holdRead(f);
+    const directRefresh = action(combined);
+    const directLogin = action(refreshLogin);
+    const directLogout = action(logout);
+    // Invoke before React commits the refreshing state to exercise the ref lock.
+    act(() => {
+      directRefresh();
+      directLogin();
+      directLogout();
+    });
+    await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
+    const quotaResult = f.quota.mock.results[0];
+    if (quotaResult.type !== "return") throw new Error("Missing quota promise");
+    await act(async () => {
+      await quotaResult.value.catch(() => undefined);
+    });
+    await waitFor(() =>
+      expect(actionDisabled("Back to subscriptions")).toBe(false),
+    );
+    expect((refresh as HTMLButtonElement).disabled).toBe(true);
+    expect(actionDisabled(refreshLogin)).toBe(true);
+    expect(actionDisabled(logout)).toBe(true);
+    act(() => {
+      action(refreshLogin)();
+      action(logout)();
+    });
+    expect(screen.queryByRole("button", { name: "Confirm logout" })).toBeNull();
+    expect(f.lifecycle).not.toHaveBeenCalled();
+    await held.ready;
+    await act(async () => held.resolve());
+    await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+    expect(actionDisabled(logout)).toBe(false);
+  },
+);
+
+it("read-only explicit refresh fences an already-open logout confirmation and permits dismissal", async () => {
+  const action = captureActions();
+  const f = fixture({ supported: false });
+  render(<f.Harness />);
+  await readyAction(statusRefresh);
+  await waitFor(() => expect(actionDisabled(logout)).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: logout }));
+  const directConfirm = action("Confirm logout");
+  const held = holdRead(f);
+  act(() => {
+    action(statusRefresh)();
+    directConfirm();
+  });
+  await waitFor(() => expect(actionDisabled("Confirm logout")).toBe(true));
+  act(() => action("Confirm logout")());
+  expect(f.lifecycle).not.toHaveBeenCalled();
+  expect(f.quota).not.toHaveBeenCalled();
+  const dismiss = screen.getByRole("button", { name: "Close Log out" });
+  expect((dismiss as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(dismiss);
+  expect(screen.queryByRole("button", { name: "Confirm logout" })).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Back to subscriptions" }),
+  );
+  expect(f.close).toHaveBeenCalledOnce();
+  await held.ready;
+  await act(async () => held.resolve());
+  await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+});
+
+it.each([
+  {
+    name: "disconnected sign-in",
+    data: { connection: {}, health: "disconnected" },
+    label: "Sign in to ChatGPT",
+    key: "subscription-accounts.signInTo_fa4edf",
+  },
+  {
+    name: "Claude reauthentication",
+    data: { subscription_service: "claude" },
+    label: "Sign in again",
+    key: "Sign in again",
+  },
+])(
+  "blocks $name through the explicit read owner, including direct callbacks",
+  async ({ data, label, key }) => {
+    const begin = stubLogin();
+    const action = captureActions();
+    const f = fixture({ supported: false, data });
+    render(<f.Harness />);
+    const button = await screen.findByRole("button", { name: label });
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(false),
+    );
+    await readyAction(statusRefresh);
+    const direct = action(key);
+    const held = holdRead(f);
+    act(() => {
+      action(statusRefresh)();
+      direct();
+    });
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(true),
+    );
+    act(() => action(key)());
+    expect(begin).not.toHaveBeenCalled();
+    expect(f.lifecycle).not.toHaveBeenCalled();
+    expect(f.quota).not.toHaveBeenCalled();
+    await held.ready;
+    await act(async () => held.resolve());
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(false),
+    );
+  },
+);
+
+it.each([
+  "failure",
+  "missing",
+  "wrong ID",
+  "wrong service",
+  "older revision",
+  "recovery",
+  "removal",
+])(
+  "keeps lifecycle unavailable after explicit refresh returns %s evidence",
+  async (condition) => {
+    const f = fixture({ supported: false });
+    render(<f.Harness />);
+    const refresh = await readyAction(statusRefresh);
+    await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+    const held = holdRead(f);
+    fireEvent.click(refresh);
+    await waitFor(() =>
+      expect((refresh as HTMLButtonElement).disabled).toBe(true),
+    );
+    let resource = f.initial;
+    if (condition === "wrong ID")
+      resource = create(ResourceSchema, {
+        ...resource,
+        id: newRequestId(),
+      });
+    if (condition === "wrong service")
+      resource = create(ResourceSchema, {
+        ...resource,
+        documentJson: encode({
+          ...resourceDocument(resource),
+          subscription_service: "claude",
+        }),
+      });
+    if (condition === "older revision")
+      resource = create(ResourceSchema, {
+        ...resource,
+        revision: resource.revision - 1n,
+      });
+    if (condition === "recovery")
+      resource = create(ResourceSchema, {
+        ...resource,
+        documentJson: encode({
+          ...resourceDocument(resource),
+          subscription: { recovery_required: true },
+        }),
+      });
+    if (condition === "removal")
+      resource = create(ResourceSchema, {
+        ...resource,
+        documentJson: encode({
+          ...resourceDocument(resource),
+          removal: { id: newRequestId() },
+        }),
+      });
+    await held.ready;
+    await act(async () => {
+      if (condition === "failure") held.reject();
+      else if (condition === "missing") held.missing();
+      else held.resolve(resource);
+    });
+    await waitFor(() =>
+      expect((refresh as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(actionDisabled(refreshLogin)).toBe(true);
+    expect(actionDisabled(logout)).toBe(true);
+    expect(f.lifecycle).not.toHaveBeenCalled();
+    expect(f.quota).not.toHaveBeenCalled();
+  },
+);
+
+it("a newer quota acknowledgment cannot restore lifecycle through a held older read", async () => {
+  const f = fixture();
+  const newer = create(ResourceSchema, {
+    ...f.initial,
+    revision: f.initial.revision + 1n,
+  });
+  f.quota.mockImplementationOnce(async (request) => ({
+    account: newer,
+    operationId: request.mutation.requestId,
+  }));
+  render(<f.Harness />);
+  const refresh = await readyAction(combined);
+  await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+  const held = holdRead(f);
+  fireEvent.click(refresh);
+  await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
+  await held.ready;
+  await act(async () => held.resolve());
+  await waitFor(() =>
+    expect((refresh as HTMLButtonElement).disabled).toBe(false),
+  );
+  expect(actionDisabled(refreshLogin)).toBe(true);
+  expect(actionDisabled(logout)).toBe(true);
+  f.setAccount({}, newer.revision);
+  fireEvent.click(refresh);
+  await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+  expect(f.lifecycle).not.toHaveBeenCalled();
+});
+
+it("ordinary background status reads keep their existing lifecycle readiness", async () => {
+  const f = fixture({ supported: false });
+  render(<f.Harness />);
+  await readyAction(statusRefresh);
+  await waitFor(() => expect(actionDisabled(refreshLogin)).toBe(false));
+  const held = holdRead(f);
+  let background!: Promise<void>;
+  act(() => {
+    background = f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await waitFor(() => expect(actionDisabled(statusRefresh)).toBe(true));
+  expect(actionDisabled(refreshLogin)).toBe(false);
+  expect(actionDisabled(logout)).toBe(false);
+  await held.ready;
+  await act(async () => {
+    held.resolve();
+    await background;
+  });
+});
 
 it("one Manage footer activation captures original bigint bindings and reads status once", async () => {
   const f = fixture();
@@ -294,6 +619,7 @@ it("locks overlap and retains the exact uncertain quota owner through changed st
   );
   render(<f.Harness />);
   const button = await screen.findByRole("button", { name: combined });
+  const held = holdRead(f);
   fireEvent.click(button);
   fireEvent.click(button);
   await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
@@ -306,6 +632,11 @@ it("locks overlap and retains the exact uncertain quota owner through changed st
   );
   expect(f.quota).toHaveBeenCalledOnce();
   const original = f.quota.mock.calls[0][0];
+  expect(actionDisabled(refreshLogin)).toBe(true);
+  expect(actionDisabled(logout)).toBe(true);
+  await held.ready;
+  await act(async () => held.resolve());
+  expect(actionDisabled(refreshLogin)).toBe(true);
   f.setAccount({ connection: {}, health: "disconnected" });
   await act(async () => {
     await f.client.invalidateQueries({ refetchType: "active" });

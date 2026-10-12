@@ -50,7 +50,7 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		return err
 	}
 	defer stream.Close()
-	manager := workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	for stream.Receive() {
 		deadline.Reset(domain.WorkerConnectionTimeout)
 		message := stream.Msg()

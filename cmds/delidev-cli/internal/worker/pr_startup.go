@@ -47,7 +47,7 @@ func reportPRStartupRejection(config Config, owner domain.ID, job domain.Job, ca
 	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil {
 		return nil, fail()
 	}
-	manager := workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	// The preflight may have been canceled. This separate bounded metadata read
 	// proves its already joined rejection without extending native lifetime.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
