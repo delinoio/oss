@@ -165,6 +165,7 @@ func finishSessionWorkspace(tx *store.Tx, jobID domain.ID) error {
 	default:
 		return nil
 	}
+	session.FinishStartupTiming(jobID, "", tx.ObservationTime())
 	if session.Dispatch != domain.DispatchPaused {
 		session.Dispatch = domain.DispatchBlocked
 	}
@@ -178,6 +179,9 @@ func finishSessionWorkspace(tx *store.Tx, jobID domain.ID) error {
 // Return true only when preparation has no outstanding native ownership.
 // Claimed envelopes remain immutable so cancellation survives journal replay.
 func stopSessionWorkspace(tx *store.Tx, session *domain.Session) (bool, error) {
+	if session.Preparation != nil {
+		session.FinishStartupTiming(session.Preparation.JobID, "", tx.ObservationTime())
+	}
 	if session.Preparation == nil {
 		return true, nil
 	}

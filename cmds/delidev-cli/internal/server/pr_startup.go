@@ -80,6 +80,7 @@ func settlePRStartupRejection(tx *store.Tx, record store.Record, job domain.Job,
 	if ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || (recoveryID == "" && queued.Delivery != domain.InputClaimed || recoveryID != "" && queued.Delivery != domain.InputUncertain) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, false, nil
 	}
+	session.FinishStartupTiming(record.ID, input.ExecutionID, tx.ObservationTime())
 	queued.Delivery = domain.InputRejected
 	session.PendingInputs--
 	session.PendingInputBytes -= uint64(len(queued.Prompt))

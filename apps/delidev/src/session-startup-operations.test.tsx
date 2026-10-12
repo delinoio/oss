@@ -209,9 +209,25 @@ it("renders grouped applicable operations with stable polite status and native k
   const status = screen.getByRole("status");
   expect(status.textContent).toBe("Session startup");
   expect(screen.getByText(/Repository 2\/2/)).toBeTruthy();
-  expect(
-    screen.getByRole("region", { name: "Workspace preparation" }),
-  ).toBeTruthy();
+  const groups = [
+    ...view.container.querySelectorAll<HTMLDetailsElement>(
+      ".session-startup-group",
+    ),
+  ];
+  expect(groups).toHaveLength(2);
+  expect(groups.every((group) => !group.open)).toBe(true);
+  const workspaceSummary = screen
+    .getByText("Workspace preparation")
+    .closest("summary")!;
+  const agentSummary = screen.getByText("Agent startup").closest("summary")!;
+  fireEvent.click(workspaceSummary);
+  expect(groups[0].open).toBe(true);
+  expect(groups[1].open).toBe(false);
+  fireEvent.click(agentSummary);
+  fireEvent.click(workspaceSummary);
+  expect(groups[0].open).toBe(false);
+  expect(groups[1].open).toBe(true);
+  expect(screen.getByRole("status")).toBe(status);
   const draft = screen.getByRole("textbox");
   draft.focus();
   view.rerender(

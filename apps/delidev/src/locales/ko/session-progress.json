@@ -23,5 +23,10 @@
   "session-progress.running": "진행 중",
   "session-progress.completed": "완료",
   "session-progress.observed": "관측된 작업",
-  "session-progress.repository": "저장소"
+  "session-progress.repository": "저장소",
+  "session-progress.seconds": "{{v0}}초",
+  "session-progress.timingElapsed": "소요 시간 {{v0}}초",
+  "session-progress.timingRunning": "진행 중, {{v0}}초 경과",
+  "session-progress.timingUnconfirmed": "마지막으로 관찰된 경과 시간 {{v0}}초, 확인되지 않음",
+  "session-progress.unconfirmed": "확인되지 않음"
 }

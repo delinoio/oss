@@ -1476,6 +1476,18 @@ inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
 
+## Startup group timing envelope
+
+Resource.startup_timing uses field 10. SessionStartupTiming has workspace 1 and
+agent 2. StartupGroupTiming has job_id 1, execution_id 2, started_at 3 and
+finished_at 4. The complete additive declaration allocation and generated split
+Go/TypeScript bindings belong to the feature under the shared allocation workflow.
+The metadata is optional and server-owned. The common Session Resource projection
+strips its private startup_timing key from document_json across individual/list,
+change and event reads, including malformed private timing. Legacy closed Session
+JSON and old protobuf peers remain compatible. No Worker report, new RPC,
+capability or database migration is added.
+
 ## Tailscale connection protocol
 
 System `TAILSCALE_CONNECTIONS_V1 = 93` negotiates `TailscaleService` in

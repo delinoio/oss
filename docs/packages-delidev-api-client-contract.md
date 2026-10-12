@@ -478,6 +478,16 @@ computing calendar instants. Unimplemented supports older servers without a new
 capability gate. Preview failure cannot authorize execution or modify retained
 save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
 
+## Startup group timing
+
+Generated Resource.startupTiming exposes optional SessionStartupTiming workspace
+and agent records with exact original job/execution IDs and UTC start/end strings.
+Session documentJson retains its prior closed shape. Consumers validate original
+attempt ownership and nonnegative intervals before display, use paired server
+clock/presence evidence for live time and retain unconfirmed observations without
+animation. Timing grants no execution, retry or recovery authority. Missing older
+peer metadata remains unavailable.
+
 TailscaleService and TailscaleQuery export the generated connection surface under
 the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
 Closed bounded JSON projections retain public observation metadata only; private

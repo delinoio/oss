@@ -376,11 +376,14 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		captured = captureErr == nil
 		stop()
 	}
-	closeErr = client.Close()
-	if managed != nil && closeErr == nil {
+	nativeErr, helperErr := client.CloseWithExecutionHelpers()
+	closeErr = errors.Join(nativeErr, helperErr)
+	if managed != nil && nativeErr == nil {
 		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "cleanup")
-		cleanup = cleanupExecutionAuthentication(nativeConfig.Home, latest, managed.response.Bundle) == nil
-		if !captured || !cleanup {
+		authErr := cleanupExecutionAuthentication(nativeConfig.Home, latest, managed.response.Bundle)
+		cleanup = helperErr == nil && authErr == nil
+		logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
+		if !captured || authErr != nil {
 			return nil, &managedExecutionUncertain{subscription.Invalid()}
 		}
 	}
