@@ -826,7 +826,11 @@ fn rewrite(text: &str, renamed: &BTreeMap<String, String>) -> String {
 /// kept its name could otherwise meet a stale copy of a chunk it depends on.
 /// A new hash covers the final content of the file and of every renamed file
 /// it reaches, so a change in a dependency always renames its importers.
-fn rehash(source: &Path, root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
+fn rehash(
+    root: &Path,
+    edited: &BTreeSet<PathBuf>,
+    originals: &BTreeMap<PathBuf, String>,
+) -> Result<usize> {
     use sha2::{Digest, Sha256};
     let mut files = Vec::new();
     files_under(root, &mut files)?;
@@ -983,12 +987,20 @@ fn rehash(source: &Path, root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usiz
             }
         }
     }
-    let original = |old: &str| -> Vec<PathBuf> { hashed.get(old).cloned().unwrap_or_default() };
+    // Original contents come from the analyzed snapshot: the analyzed text
+    // of edited chunks and the staged (verified) copy of every other file,
+    // never the live input directory.
+    let original_text = |path: &PathBuf| -> String {
+        originals
+            .get(path)
+            .or_else(|| texts.get(path))
+            .cloned()
+            .unwrap_or_default()
+    };
     let mut pending: Vec<String> = retained.iter().cloned().collect();
     while let Some(old) = pending.pop() {
-        for path in original(&old) {
-            let relative = path.strip_prefix(root).unwrap_or(&path);
-            let text = std::fs::read_to_string(source.join(relative)).unwrap_or_default();
+        for path in hashed.get(&old).into_iter().flatten() {
+            let text = original_text(path);
             for other in renamed.keys() {
                 if !retained.contains(other) && !references(&text, other).is_empty() {
                     retained.insert(other.clone());
@@ -1013,9 +1025,8 @@ fn rehash(source: &Path, root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usiz
         if let Some(new) = renamed.get(&stem) {
             std::fs::rename(file, file.with_file_name(format!("{new}{suffix}")))
                 .context("cannot rename a rehashed chunk")?;
-            if retained.contains(&stem) {
-                let relative = file.strip_prefix(root).unwrap_or(file);
-                std::fs::copy(source.join(relative), file)
+            if retained.contains(&stem) && suffix.is_empty() {
+                std::fs::write(file, original_text(file))
                     .context("cannot retain an encoded-referenced chunk")?;
             }
         }
@@ -1153,6 +1164,8 @@ pub fn stage(
         "the bundle directory changed during analysis; rerun typeopt on a stable build"
     );
     let mut edited = BTreeSet::new();
+    // Analyzed texts of edited chunks, for chunks that rehashing retains.
+    let mut originals = BTreeMap::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
@@ -1166,6 +1179,7 @@ pub fn stage(
         let target = root.join(relative);
         std::fs::write(&target, text).context("cannot write an edited chunk")?;
         edited.insert(target.clone());
+        originals.insert(target.clone(), original.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
         match update_chunk_map(&root, &target, original, text, chain)? {
             Some(true) => maps += 1,
@@ -1176,7 +1190,7 @@ pub fn stage(
     let rehashed = if crate::app::keep_chunk_names() {
         0
     } else {
-        rehash(source, &root, &edited)?
+        rehash(&root, &edited, &originals)?
     };
     tracing::info!(
         edited = edited.len(),
