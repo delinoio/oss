@@ -733,8 +733,9 @@ fn files_under(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 /// Byte offsets where `name` occurs as a file reference: after a path
 /// separator, quote, `(` or `=`, and before a quote, `)`, `?`, `#`,
-/// whitespace, `>`, `,`, the end of the text or a `.map` suffix. Other
-/// occurrences (prose or data that merely contains the name) stay unchanged.
+/// whitespace, `>`, `,`, the end of the text or a `.map` suffix, and not in
+/// an absolute or protocol-relative URL. Other occurrences (prose, data or
+/// other hosts' files that merely share the name) stay unchanged.
 fn references(text: &str, name: &str) -> Vec<usize> {
     let mut found = Vec::new();
     let mut from = 0;
@@ -748,7 +749,16 @@ fn references(text: &str, name: &str) -> Vec<usize> {
             || after.starts_with(|c: char| {
                 c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | '?' | '#' | '>' | ',')
             });
-        if matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '=')) && follows {
+        // The URL token the name ends: an absolute or protocol-relative URL
+        // names another host's file, which keeps its name.
+        let token_start = text[..at]
+            .rfind(|c: char| {
+                c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '(' | '=' | '<' | '>' | ',')
+            })
+            .map_or(0, |d| d + 1);
+        let token = &text[token_start..at];
+        let external = token.contains("://") || token.starts_with("//");
+        if matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '=')) && follows && !external {
             found.push(at);
         }
         from = end;
@@ -1205,6 +1215,9 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert!(out.contains("sourceMappingURL=index-NEW12345.js.map"));
         assert!(out.contains("see index-DnKDBunT.js later"));
         assert!(out.contains("xindex-DnKDBunT.jsx"));
+        // Another host's file with the same name keeps its URL.
+        let external = r#"src="https://cdn.example/index-DnKDBunT.js" u='//cdn.example/x/index-DnKDBunT.js' l="/assets/index-DnKDBunT.js""#;
+        assert_eq!(references(external, name).len(), 1);
     }
 
     #[test]
