@@ -116,6 +116,12 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 				if _, err := client.ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Action: action})); err != nil {
 					t.Fatal(err)
 				}
+				if control == "stop" {
+					_, err := client.CreateNativeCodeReview(ctx, ownerRequest(f.identity, &pb.CreateNativeCodeReviewRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), Target: rpc.NativeReviewTargetWire(target)}))
+					if err == nil {
+						t.Fatal("stopped session admitted a new native review")
+					}
+				}
 			}
 			if lease, err := f.service.executionAuthority.Acquire(ctx, token); err == nil {
 				lease.Release()

@@ -36,6 +36,9 @@ func contextActionSourceForReview(tx *store.Tx, sr store.Record, session domain.
 	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
 		return empty, domain.CompactionUncertain()
 	}
+	if codeReview && session.Dispatch != domain.DispatchReady {
+		return empty, domain.NativeCodeReviewUnavailable()
+	}
 	h := session.InitialExecution.Configuration.Harness
 	switch h {
 	case domain.ClaudeCode:

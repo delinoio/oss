@@ -24,7 +24,7 @@ func nativeReviewAuthority(tx *store.Tx, row store.Record, job domain.Job) (doma
 		return i, err
 	}
 	sr, session, err := sessionRecord(tx, row.SessionID)
-	if err != nil || session.Archive != domain.NotArchived {
+	if err != nil || session.Archive != domain.NotArchived || session.Dispatch != domain.DispatchReady {
 		return i, domain.NativeCodeReviewUnavailable()
 	}
 	if err := tx.RequireForkActor(i.Actor); err != nil {
