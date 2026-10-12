@@ -38,6 +38,7 @@ export enum ShortcutTargetContext {
   Files = "files",
   Diff = "diff",
   Diagnostics = "diagnostics",
+  Terminal = "terminal",
 }
 interface CatalogAction {
   fixed?: readonly ShortcutBinding[];
@@ -172,6 +173,18 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
     priority: 1,
     input: ShortcutInput.Allow,
     defaults: sessionShortcutBindings[ShortcutId.OpenTerminals],
+  },
+  {
+    // Read-only and target-bound: only terminal input can invoke it, so it
+    // never participates in the Open tool custom-override suppression.
+    target: ShortcutTargetContext.Terminal,
+    id: ShortcutId.TerminalCreate,
+    label: "shortcuts.terminalCreate",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 2,
+    input: ShortcutInput.Target,
+    defaults: sessionShortcutBindings[ShortcutId.TerminalCreate],
   },
   {
     target: ShortcutTargetContext.SessionMessage,

@@ -116,11 +116,15 @@ function fixture(
   );
   const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
   const terminalControl = vi.fn(),
-    terminalCreate = vi.fn((request: { preferredTerminalId?: string }) => ({
-      terminal:
-        terminals.find((row) => row.id === request.preferredTerminalId) ??
-        terminal,
-    })),
+    terminalCreate = vi.fn(
+      (request: {
+        preferredTerminalId?: string;
+      }): { terminal: typeof terminal } | Promise<{ terminal: typeof terminal }> => ({
+        terminal:
+          terminals.find((row) => row.id === request.preferredTerminalId) ??
+          terminal,
+      }),
+    ),
     terminalWatches = vi.fn();
   const retained = new Map([[id, session]]);
   const events: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] =
@@ -726,7 +730,7 @@ it("keeps Info independent of all tabs with one active content region and retain
   const info = screen.getByRole("complementary", {
     name: "Session information",
   });
-  for (const name of ["Files", "Diff", "Terminals", "Browser", "Diagnostics"]) {
+  for (const name of ["Files", "Diff", "Browser", "Diagnostics"]) {
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name }));
     expect(
@@ -742,6 +746,16 @@ it("keeps Info independent of all tabs with one active content region and retain
       screen.getByRole("tab", { name }).getAttribute("aria-selected"),
     ).toBe("true");
   }
+  // Terminals is a reuse-or-create intent, never a management tab: the current
+  // pane stays selected and no placeholder tab appears.
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
+  expect(
+    screen
+      .getByRole("tab", { name: "Diagnostics" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
   fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect(f.control).not.toHaveBeenCalled();
@@ -756,19 +770,12 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
   fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  // The unsupported Terminals gesture creates no tab and keeps Browser selected.
+  expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
   expect(
-    screen
-      .getByRole("tab", { name: "Terminals" })
-      .getAttribute("aria-selected"),
+    screen.getByRole("tab", { name: "Browser" }).getAttribute("aria-selected"),
   ).toBe("true");
-  expect(screen.queryByRole("region", { name: "Session browser" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
-  expect(
-    screen
-      .getByRole("tab", { name: "Terminals" })
-      .getAttribute("aria-selected"),
-  ).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Close Terminals tab" }));
   expect(
     screen
       .getByRole("tab", { name: "Conversation" })
@@ -782,11 +789,20 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
 it.each([580, 120])(
   "keeps retained composer isolated from terminal pane at body height %s",
   async (height) => {
-    const f = fixture();
-    render(f.view());
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+    const view = render(f.view());
+    try {
     const composer = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    // The verified original terminal opens its direct tab; Conversation stays
+    // mounted until that atomic admission returns.
+    expect(composer.closest("[inert]")).toBeNull();
+    expect(
+      (await screen.findByRole("tab", { name: "Terminal 1" })).getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
     expect(composer.isConnected).toBe(true);
     expect(composer.closest("[inert]")).not.toBeNull();
     expect(
@@ -798,6 +814,11 @@ it.each([580, 120])(
     expect(composer).toHaveProperty("value", "Original draft");
     expect(height).toBeGreaterThan(0);
     expect(f.control).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.releaseTerminal();
+      f.client.clear();
+    }
   },
 );
 
@@ -1829,9 +1850,11 @@ it("last verified terminal exit restores the actual Session conversation, focus 
     });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 1/ }),
-    );
+    expect(
+      (await screen.findByRole("tab", { name: "Terminal 1" })).getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
     await waitFor(() =>
       expect(document.querySelector(".terminal-view")).not.toBeNull(),
     );
@@ -1888,9 +1911,7 @@ it("verified terminal removal skips intervening Files and selects the original l
     await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 1/ }),
-    );
+    await screen.findByRole("tab", { name: "Terminal 1" });
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id),
     );
@@ -1898,19 +1919,21 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    // Reuse selects the first terminal again; inventory rows open the others.
+    await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledTimes(2));
     fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 2/ }),
+      await screen.findByRole("button", { name: /^Terminal 2 ·/ }),
     );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: /Terminal · 3/ }),
+      await screen.findByRole("button", { name: /^Terminal 3 ·/ }),
     );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
     );
-    const terminalTabs = screen.getAllByRole("tab", { name: /^Terminal ·/ });
+    const terminalTabs = screen.getAllByRole("tab", { name: /^Terminal \d/ });
     expect(terminalTabs).toHaveLength(3);
     const beforeSelection = f.terminalWatches.mock.calls.length;
     fireEvent.click(terminalTabs[1]!);
@@ -1924,11 +1947,11 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(1));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminal ·/ })).toHaveLength(
+      expect(screen.getAllByRole("tab", { name: /^Terminal \d/ })).toHaveLength(
         2,
       ),
     );
-    const remaining = screen.getAllByRole("tab", { name: /^Terminal ·/ });
+    const remaining = screen.getAllByRole("tab", { name: /^Terminal \d/ });
     expect(remaining[0]).toBe(terminalTabs[0]);
     expect(remaining[0]!.getAttribute("aria-selected")).toBe("true");
     await waitFor(() =>
@@ -1944,13 +1967,13 @@ it("verified terminal removal skips intervening Files and selects the original l
     );
     await act(async () => f.releaseTerminal(0));
     await waitFor(() =>
-      expect(screen.getAllByRole("tab", { name: /^Terminal ·/ })).toHaveLength(
+      expect(screen.getAllByRole("tab", { name: /^Terminal \d/ })).toHaveLength(
         1,
       ),
     );
     expect(
       screen
-        .getByRole("tab", { name: /^Terminal ·/ })
+        .getByRole("tab", { name: /^Terminal \d/ })
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(f.terminalControl).not.toHaveBeenCalled();
@@ -1990,21 +2013,28 @@ it.each([false, true])(
       openTerminal();
       expect(f.terminalWatches).not.toHaveBeenCalled();
       expect(f.terminalCreate).not.toHaveBeenCalled();
-      if (departed)
-        fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+      // A later explicit pane selection departs from the unsent intent.
+      if (departed) {
+        fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+      }
       await act(async () => release());
       await screen.findByRole("heading", { name: "Original session" });
       if (departed) {
         expect(f.terminalWatches).not.toHaveBeenCalled();
         expect(
-          screen
-            .getByRole("tab", { name: "Conversation" })
-            .getAttribute("aria-selected"),
+          screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
         ).toBe("true");
+        expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
       } else {
         await waitFor(() =>
           expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id),
         );
+        expect(
+          screen
+            .getByRole("tab", { name: "Terminal 1" })
+            .getAttribute("aria-selected"),
+        ).toBe("true");
         expect(f.terminalWatches).toHaveBeenCalledOnce();
       }
       expect(f.terminalCreate).toHaveBeenCalledTimes(departed ? 0 : 1);
@@ -2017,6 +2047,88 @@ it.each([false, true])(
     }
   },
 );
+
+it("keeps the current pane with a non-modal opening strip, coalesces gestures and then selects the verified terminal", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.terminalCreate.mockImplementation(async () => {
+    await gate;
+    return { terminal: f.terminals[0]! };
+  });
+  const view = render(f.view());
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    for (let gesture = 0; gesture < 2; gesture++) {
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    }
+    const opening = await screen.findByText("Opening terminal…");
+    expect(opening.closest("dialog")).toBeNull();
+    expect(opening.closest(".session-terminal-status")).not.toBeNull();
+    // No placeholder tab appears and Conversation stays selected and mounted.
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledOnce());
+    await act(async () => release());
+    expect(
+      (await screen.findByRole("tab", { name: "Terminal 1" })).getAttribute(
+        "aria-selected",
+      ),
+    ).toBe("true");
+    expect(f.terminalCreate).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Opening terminal…")).toBeNull();
+    // The label never exposes the original terminal ID.
+    expect(
+      screen.getByRole("tab", { name: "Terminal 1" }).getAttribute("title"),
+    ).toBe("Terminal 1");
+    expect(f.terminalControl).not.toHaveBeenCalled();
+  } finally {
+    release();
+    view.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+});
+
+it("keeps uncertain open recovery reachable below the tab row without replacing the current pane", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+  f.terminalCreate.mockRejectedValueOnce(
+    new ConnectError("acknowledgment lost", Code.Unavailable),
+  );
+  const view = render(f.view());
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    const retry = await screen.findByRole("button", {
+      name: "Retry the same terminal creation",
+    });
+    expect(retry.closest(".session-terminal-status")).not.toBeNull();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(f.terminalCreate).toHaveBeenCalledOnce();
+    const original = f.terminalCreate.mock.calls[0]![0] as {
+      mutation: { requestId: string };
+    };
+    fireEvent.click(retry);
+    await screen.findByRole("tab", { name: "Terminal 1" });
+    expect(f.terminalCreate).toHaveBeenCalledTimes(2);
+    expect(
+      (f.terminalCreate.mock.calls[1]![0] as typeof original).mutation
+        .requestId,
+    ).toBe(original.mutation.requestId);
+  } finally {
+    view.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
+});
 
 it.each(["succeeded", "failed", "canceled"])(
   "does not observe Worker presence for terminal %s retained startup history",

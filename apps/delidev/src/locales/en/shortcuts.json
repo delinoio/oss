@@ -10,6 +10,7 @@
   "shortcuts.filesSuppressed": "The default Files shortcut is inactive because a saved custom shortcut uses Command or Control + E.",
   "shortcuts.openTerminals": "Open terminals",
   "shortcuts.terminalsUnavailable": "Terminals are unavailable in a read-only Sidechat.",
+  "shortcuts.terminalCreate": "New terminal (while terminal input has focus)",
   "shortcuts.newSession": "New session",
   "shortcuts.focusMessage": "Focus message input",
   "shortcuts.queueMessage": "Add message to queue",

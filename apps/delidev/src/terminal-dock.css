@@ -104,21 +104,6 @@
   padding: 0;
   margin: 0;
 }
-.terminal-dock-details,
-.terminal-resource-details {
-  max-height: 200px;
-  overflow: auto;
-  padding: 8px;
-  overflow-wrap: anywhere;
-}
-.terminal-dock-details[hidden],
-.terminal-resource-details[hidden] {
-  display: none;
-}
-.terminal-dock-details input {
-  background: var(--terminal-background);
-  color: var(--terminal-foreground);
-}
 .terminal-view {
   display: flex;
   flex: 1;
