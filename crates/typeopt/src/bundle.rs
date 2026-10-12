@@ -195,8 +195,9 @@ enum ChunkMap {
     File(PathBuf),
 }
 
-/// Finds the source map of a chunk: its `sourceMappingURL` (inline or a
-/// relative file), or the adjacent `<chunk>.map` of hidden source maps.
+/// Finds the source map of a chunk: its `sourceMappingURL` (inline, relative
+/// to the chunk or root-relative within the output), or the adjacent
+/// `<chunk>.map` of hidden source maps.
 fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<ChunkMap> {
     let reference = sourcemap::locate_sourcemap_reference_slice(text.as_bytes())
         .ok()
@@ -211,10 +212,20 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<ChunkMap> {
                 .split(['?', '#'])
                 .next()
                 .unwrap_or_default();
-            if url.contains("://") || url.starts_with('/') {
+            if url.contains("://") || url.starts_with("//") {
                 return None;
             }
-            chunk.parent()?.join(url)
+            match url.strip_prefix('/') {
+                // Root-relative: resolve under the output root, dropping
+                // leading segments of a deployment base path when needed.
+                Some(rooted) => {
+                    let segments: Vec<&str> = rooted.split('/').collect();
+                    (0..segments.len())
+                        .map(|skip| root.join(segments[skip..].join("/")))
+                        .find(|candidate| candidate.is_file())?
+                }
+                None => chunk.parent()?.join(url),
+            }
         }
         None => chunk.with_file_name(format!("{}.map", chunk.file_name()?.to_string_lossy())),
     };

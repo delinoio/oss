@@ -445,14 +445,25 @@ fn composes_inline_and_referenced_maps() {
     );
     let mut external = Vec::new();
     map("external.js").to_writer(&mut external).unwrap();
+    let mut rooted = Vec::new();
+    map("rooted.js").to_writer(&mut rooted).unwrap();
     let temp = bundle(&[
-        ("index.js", r#"import"./inline.js";import"./external.js";"#),
+        (
+            "index.js",
+            r#"import"./inline.js";import"./external.js";import"./rooted.js";"#,
+        ),
         ("inline.js", &inline),
         (
             "external.js",
             &format!("{code}\n//# sourceMappingURL=maps/external.map"),
         ),
         ("maps/external.map", std::str::from_utf8(&external).unwrap()),
+        // Root-relative, below a deployment base path.
+        (
+            "rooted.js",
+            &format!("{code}\n//# sourceMappingURL=/app/maps/rooted.map"),
+        ),
+        ("maps/rooted.map", std::str::from_utf8(&rooted).unwrap()),
     ]);
     optimize(temp.path(), &[]);
     same_behavior(temp.path());
@@ -475,6 +486,12 @@ fn composes_inline_and_referenced_maps() {
     let edited = out(temp.path(), "external.js");
     let composed = sourcemap::SourceMap::from_slice(
         &fs::read(temp.path().join("out/maps/external.map")).unwrap(),
+    )
+    .unwrap();
+    console_maps_to_console(&edited, &composed);
+    let edited = out(temp.path(), "rooted.js");
+    let composed = sourcemap::SourceMap::from_slice(
+        &fs::read(temp.path().join("out/maps/rooted.map")).unwrap(),
     )
     .unwrap();
     console_maps_to_console(&edited, &composed);
