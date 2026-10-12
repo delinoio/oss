@@ -244,9 +244,7 @@ async function loadTerminalPage(f: ReturnType<typeof fixture>) {
 it("shows project restriction guidance when a terminal page is fully excluded after an empty first page", async () => {
   const later = worker(),
     f = fixture((token) =>
-      token
-        ? { resources: [later] }
-        : { resources: [], nextPageToken: "next" },
+      token ? { resources: [later] } : { resources: [], nextPageToken: "next" },
     );
   render(<f.View allowed={[]} />);
   await loadTerminalPage(f);
@@ -292,9 +290,7 @@ it("does not report restriction when every reached page is raw-empty", async () 
 it("lists an allowed worker from a later page without restriction guidance", async () => {
   const later = worker(),
     f = fixture((token) =>
-      token
-        ? { resources: [later] }
-        : { resources: [], nextPageToken: "next" },
+      token ? { resources: [later] } : { resources: [], nextPageToken: "next" },
     );
   render(<f.View allowed={[later.id]} />);
   await loadTerminalPage(f);
