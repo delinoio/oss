@@ -193,3 +193,70 @@ func directoryReceiptFixture(t *testing.T, before bool) (string, *directoryRecei
 	t.Cleanup(server.Close)
 	return t.TempDir(), f, Credential{Endpoint: server.URL, MachineID: domain.NewID()}
 }
+
+func TestDirectoryDeletionRemovesGenerationAndOriginalReceiptWithoutForeignCopies(t *testing.T) {
+	config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	job, generation, instance := domain.NewID(), domain.NewID(), work.Copies[0].InstanceID
+	digest := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: job, Type: domain.ChangeSessionDirectoryJob, Revision: 2, Digest: digest, InstanceID: instance, ActionID: generation})
+	if err := work.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Join(config.Root, "jobs", string(job))
+	if err := security.PrivateDir(folder); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(config.Root, "jobs", string(job)+".json"), journal{Version: 1, JobID: job, InstanceID: instance, Revision: 2, Digest: digest, State: journalReported, ReportID: domain.NewID()}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := filepath.Join(config.Root, "runtimes", string(generation))
+	for _, path := range []string{runtime, filepath.Join(config.Root, "directory-checkpoints"), filepath.Join(config.Root, "managed-auth")} {
+		if err := security.PrivateDir(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := []string{runtime, filepath.Join(config.Root, "directory-checkpoints", string(generation)+".json"), folder, filepath.Join(config.Root, "jobs", string(job)+".json")}
+	if err := security.WriteAtomic(paths[1], []byte("fixture-generation")); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(filepath.Join(folder, "directory-ready.json"), []byte("fixture-ready")); err != nil {
+		t.Fatal(err)
+	}
+	var foreign string
+	for _, own := range []bool{true, false} {
+		lease := domain.NewID()
+		operation := job
+		if !own {
+			operation = domain.NewID()
+		}
+		journal := managedSubscriptionJournal{Version: 1, Lease: lease, Account: domain.NewID(), Operation: operation, Instance: instance, Finish: domain.NewID(), Generation: domain.NewID(), LeaseRevision: 3, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, State: managedReported}
+		path := filepath.Join(config.Root, "managed-auth", string(lease)+".json")
+		if err := writeJSON(path, journal); err != nil {
+			t.Fatal(err)
+		}
+		if err := security.WriteAtomic(path+".directory-finish.pb", []byte("fixture-protected-receipt")); err != nil {
+			t.Fatal(err)
+		}
+		if own {
+			paths = append(paths, path, path+".directory-finish.pb")
+		} else {
+			foreign = path
+		}
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); err != nil {
+		t.Fatal("complete directory deletion", err)
+	}
+	for _, path := range paths {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatal("owned directory copy remains", path, err)
+		}
+	}
+	for _, path := range []string{foreign, foreign + ".directory-finish.pb"} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal("foreign lease removed", err)
+		}
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, work); err != nil {
+		t.Fatal("exact completed deletion replay", err)
+	}
+}
