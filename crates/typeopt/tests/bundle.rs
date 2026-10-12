@@ -440,6 +440,59 @@ fn rehashes_edited_chunks_and_their_importers() {
     assert_eq!(assets, listing(&again.path().join("out/assets")));
 }
 
+/// Rollup's `[name].[hash].js` pattern (used by Outline) is renamed too.
+#[test]
+fn rehashes_dot_separated_hash_names() {
+    let chunks: Vec<(&str, String)> = HASHED
+        .iter()
+        .map(|(name, code)| {
+            let rename = |s: &str| {
+                s.replace("-AAAAAAAA", ".AAAAAAAA")
+                    .replace("-BBBBBBBB", ".BBBBBBBB")
+                    .replace("-CCCCCCCC", ".CCCCCCCC")
+            };
+            (*name, rename(code))
+        })
+        .collect();
+    let named: Vec<(String, String)> = chunks
+        .iter()
+        .map(|(name, code)| {
+            (
+                name.replace("-AAAAAAAA", ".AAAAAAAA")
+                    .replace("-BBBBBBBB", ".BBBBBBBB")
+                    .replace("-CCCCCCCC", ".CCCCCCCC"),
+                code.clone(),
+            )
+        })
+        .collect();
+    let borrowed: Vec<(&str, &str)> = named
+        .iter()
+        .map(|(n, c)| (n.as_str(), c.as_str()))
+        .collect();
+    let temp = bundle(&borrowed);
+    optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    assert!(
+        assets.contains(&"plain.CCCCCCCC.js".to_owned()),
+        "{assets:?}"
+    );
+    assert!(
+        !assets
+            .iter()
+            .any(|a| a.contains("BBBBBBBB") || a.contains("AAAAAAAA")),
+        "{assets:?}"
+    );
+    let entry = assets.iter().find(|a| a.starts_with("index.")).unwrap();
+    let html = fs::read_to_string(temp.path().join("out/index.html")).unwrap();
+    assert!(html.contains(&format!("/assets/{entry}")), "{html}");
+    let after = node(&temp.path().join("out/assets").join(entry));
+    assert!(
+        after.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);

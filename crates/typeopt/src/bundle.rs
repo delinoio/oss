@@ -91,19 +91,32 @@ fn compose_bundle_map(
     Ok(bytes)
 }
 
-/// `<name>-<hash>.<ext>` with the 8-character base64url content hash that
-/// Vite and Rollup use by default.
-fn hashed_name(file: &str) -> Option<(&str, &str)> {
+/// `<name>-<hash>.<ext>` or `<name>.<hash>.<ext>` with an 8-character
+/// base64url content hash, as Vite and Rollup name chunks. A hash must
+/// contain a digit, an uppercase letter, `-` or `_`, so ordinary words such
+/// as `polyfill` are not mistaken for one.
+fn hashed_name(file: &str) -> Option<(&str, &str, char)> {
     let (stem, ext) = file.rsplit_once('.')?;
     if !matches!(ext, "js" | "mjs") {
         return None;
     }
-    let (name, hash) = stem.rsplit_once('-')?;
-    (hash.len() == 8
-        && hash
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
-    .then_some((name, ext))
+    // The hash alphabet includes `-`, so split at a fixed width.
+    let at = stem.len().checked_sub(9)?;
+    if !stem.is_char_boundary(at) {
+        return None;
+    }
+    let separator = stem[at..].chars().next()?;
+    if !matches!(separator, '-' | '.') {
+        return None;
+    }
+    let (name, hash) = (&stem[..at], &stem[at + 1..]);
+    let alphabet = hash
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    let random = hash
+        .bytes()
+        .any(|b| b.is_ascii_digit() || b.is_ascii_uppercase() || b == b'_' || b == b'-');
+    (!name.is_empty() && hash.len() == 8 && alphabet && random).then_some((name, ext, separator))
 }
 
 fn is_text_asset(path: &Path) -> bool {
@@ -156,7 +169,7 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
             continue;
         }
         let old = base(&file);
-        let (name, ext) = hashed_name(&old).expect("filtered to hashed names");
+        let (name, ext, separator) = hashed_name(&old).expect("filtered to hashed names");
         let digest = sha256_hex(format!("{old}\0{}", texts[&file]).as_bytes());
         let hash: String = digest
             .bytes()
@@ -166,7 +179,7 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
                 alphabet[(b as usize * 7) % 64] as char
             })
             .collect();
-        renamed.insert(old.clone(), format!("{name}-{hash}.{ext}"));
+        renamed.insert(old.clone(), format!("{name}{separator}{hash}.{ext}"));
         for (other, text) in &texts {
             if hashed_name(&base(other)).is_some() && text.contains(&old) {
                 pending.push(other.clone());
@@ -301,4 +314,23 @@ pub fn publish(
     );
     std::fs::rename(&root, destination).context("cannot publish bundle output")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hashed_name;
+
+    #[test]
+    fn recognizes_vite_and_rollup_hash_patterns() {
+        assert_eq!(hashed_name("index-DnKDBunT.js"), Some(("index", "js", '-')));
+        assert_eq!(hashed_name("index.D-Q9VWEY.js"), Some(("index", "js", '.')));
+        assert_eq!(
+            hashed_name("vendor-a1b2c3d4.mjs"),
+            Some(("vendor", "mjs", '-'))
+        );
+        assert_eq!(hashed_name("worker.polyfill.js"), None);
+        assert_eq!(hashed_name("react-dom-client.js"), None);
+        assert_eq!(hashed_name("style-DnKDBunT.css"), None);
+        assert_eq!(hashed_name("-DnKDBunT.js"), None);
+    }
 }
