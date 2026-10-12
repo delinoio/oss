@@ -31,6 +31,7 @@ func deletionRemovalFixture(t *testing.T, action StorageAction) (*Manager, Stora
 	preview := storageDo(t, m, input)
 	input.OperationID, input.SnapshotID, input.Action, input.PreviewDigest = domain.NewID(), domain.NewID(), action, preview.PreviewDigest
 	work := domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: domain.NewID(), SessionID: prepare.SessionID, MachineID: prepare.MachineID, DeviceID: domain.NewID(), PreparationDigests: []string{manifest.InputDigest}}
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: domain.NewID(), Type: domain.PrepareWorkspaceJob, InstanceID: domain.NewID(), Revision: 1, Digest: strings.Repeat("b", 64)})
 	copyFor := func() domain.SessionDeletionCopy {
 		return domain.SessionDeletionCopy{JobID: input.OperationID, Type: domain.WorkspaceStorageJob, SnapshotID: input.SnapshotID, InstanceID: domain.NewID(), Revision: 2, Digest: strings.Repeat("a", 64)}
 	}

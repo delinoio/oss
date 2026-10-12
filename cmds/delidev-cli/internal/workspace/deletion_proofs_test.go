@@ -16,6 +16,30 @@ import (
 func deletionProofWork() domain.SessionDeletionWork {
 	return domain.SessionDeletionWork{Version: 1, ServerID: domain.NewID(), SessionID: domain.NewID(), DeletionID: domain.NewID(), MachineID: domain.NewID(), DeviceID: domain.NewID(), Copies: []domain.SessionDeletionCopy{{JobID: domain.NewID(), Type: domain.PrepareWorkspaceJob, Revision: 1, InstanceID: domain.NewID(), Digest: strings.Repeat("a", 64)}}}
 }
+
+func TestStorageOnlyDeletionCannotUseSnapshotDigestToRemoveWorkspace(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "worker")
+	manager := Manager{Root: root}
+	work := deletionProofWork()
+	input := PrepareRequest{SessionID: work.SessionID, MachineID: work.MachineID, OriginMachineID: work.MachineID, Type: domain.GeneralChat, Repositories: []RepositorySpec{}}
+	manifest, err := manager.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work.Copies = []domain.SessionDeletionCopy{{JobID: domain.NewID(), SnapshotID: domain.NewID(), Type: domain.WorkspaceStorageJob, Revision: 1, InstanceID: domain.NewID(), Digest: strings.Repeat("b", 64)}}
+	work.PreparationDigests = []string{manifest.InputDigest}
+	work.SnapshotPreparationDigests = []string{manifest.InputDigest}
+	work.SharedCleanupOwnerDeviceID = work.DeviceID
+	called := false
+	err = manager.DeleteOwnedWorkspace(context.Background(), work, true, func() error { called = true; return nil })
+	if domain.SafeError(err).Code != domain.RecoveryRequired || called {
+		t.Fatal("storage-only proof removed a workspace owned by another obligation", err)
+	}
+	if current, err := manager.Read(work.SessionID); err != nil || manifestDigest(current) != manifestDigest(manifest) {
+		t.Fatal("storage-only deletion changed the original workspace", err)
+	}
+}
+
 func TestDeletionWorkspaceProofLegacyImportsOnlyExactEqualPairs(t *testing.T) {
 	for _, stage := range []string{"original", "removed", "equal-pair", "changed-pair", "foreign-work"} {
 		t.Run(stage, func(t *testing.T) {

@@ -85,6 +85,17 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		return e
 	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
+	workspaceOwner := w.Fork != nil
+	for _, copy := range w.Copies {
+		workspaceOwner = workspaceOwner || copy.Type == domain.PrepareWorkspaceJob
+	}
+	if !workspaceOwner {
+		// A storage-only Worker may own and retire its snapshot, but its request
+		// digest cannot authorize removal of another device's live workspace.
+		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+	}
 	stage = "retained-proof"
 	paths, e := SessionDeletionProofPaths(m.Root, w)
 	if e != nil {
@@ -114,7 +125,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			proof.Manifest = &manifest
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
-		} else if storedManifest != nil {
+		} else if storedManifest != nil && workspaceOwner {
 			proof.Manifest = storedManifest
 		} else if !allowAbsent {
 			return domain.SessionDeletionPending()
@@ -144,6 +155,9 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				return domain.SessionDeletionPending()
 			}
 		} else if !errors.Is(e, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+		if !workspaceOwner && proof.Manifest != nil {
 			return domain.SessionDeletionPending()
 		}
 		git := m.Git

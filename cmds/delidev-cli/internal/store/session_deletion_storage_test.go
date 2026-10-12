@@ -90,8 +90,11 @@ func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 	if !matched {
 		t.Fatal("interrupted storage lost reserved snapshot identity")
 	}
-	if !slices.Contains(work.PreparationDigests, operation.Manifest.InputDigest) {
-		t.Fatal("storage owner did not retain the authenticated preparation digest")
+	if !slices.Contains(work.SnapshotPreparationDigests, operation.Manifest.InputDigest) {
+		t.Fatal("storage owner did not retain its snapshot-specific preparation digest")
+	}
+	if slices.Contains(work.PreparationDigests, operation.Manifest.InputDigest) {
+		t.Fatal("storage owner gained workspace ownership from its snapshot digest")
 	}
 	retained, err := s.GetSessionDeletion(owner, sr.ID)
 	if err != nil {

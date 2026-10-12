@@ -1014,10 +1014,10 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			}
 			copy.SnapshotID = input.SnapshotID
 			// A storage operation can be owned by a different device than the
-			// preparation that produced its snapshot. Retain the request's validated
-			// preparation digest on this storage owner's cleanup plan as well.
-			if !slices.Contains(w.PreparationDigests, input.Manifest.InputDigest) {
-				w.PreparationDigests = append(w.PreparationDigests, input.Manifest.InputDigest)
+			// preparation that produced its snapshot. Keep this digest separate from
+			// workspace ownership evidence.
+			if !slices.Contains(w.SnapshotPreparationDigests, input.Manifest.InputDigest) {
+				w.SnapshotPreparationDigests = append(w.SnapshotPreparationDigests, input.Manifest.InputDigest)
 			}
 		}
 		if j.Type == domain.CompactSessionJob {
