@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
 import {
   act,
   fireEvent,
@@ -9,6 +8,11 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import {
+  Code,
+  ConnectError,
+  createRouterTransport,
+} from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -446,3 +450,215 @@ it("keeps an evicted older question receipt before newer page requests", async (
   expect(requests.textContent?.match(/Response: queued/g)).toHaveLength(1);
   expect(respond).toHaveBeenCalledTimes(1);
 });
+
+enum RecoveredResult {
+  Advancing = "advancing",
+  Equal = "equal",
+  OtherSession = "other-session",
+  OtherInteraction = "other-interaction",
+}
+
+/** Sends the first of four paged questions, loses its acknowledgement, evicts
+ * its payload page, retries through the compact receipt, then reopens the
+ * request so any surviving edit draft becomes visible again. */
+async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
+  const sessionId = newRequestId();
+  const session = create(ResourceSchema, {
+    id: sessionId,
+    sessionId,
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 1n,
+    documentJson: encode({
+      name: "Recovered draft fixture",
+      workspace: "general-chat",
+      outcome: "succeeded",
+      archive: "active",
+      dispatch: "paused",
+      recovery: "clear",
+    }),
+  });
+  const question = (header: string) => ({
+    type: "user-question",
+    closure: "open",
+    questions: {
+      questions: [
+        {
+          id: "original",
+          text: header,
+          header,
+          secret: false,
+          other: true,
+          options: [],
+        },
+      ],
+    },
+  });
+  const pages = ["First", "Second", "Third", "Fourth"].map((header) =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId,
+      kind: EntityKind.INTERACTION,
+      schemaVersion: 1,
+      revision: 9n,
+      documentJson: encode(question(`${header} question`)),
+    }),
+  );
+  let first = pages[0];
+  const returnedResource = () => {
+    const base = {
+      ...pages[0],
+      documentJson: encode({
+        ...question("First question"),
+        response: { state: "queued" },
+      }),
+    };
+    switch (returned) {
+      case RecoveredResult.Advancing:
+        return create(ResourceSchema, { ...base, revision: 10n });
+      case RecoveredResult.Equal:
+        return create(ResourceSchema, { ...base, revision: 9n });
+      case RecoveredResult.OtherSession:
+        return create(ResourceSchema, {
+          ...base,
+          revision: 10n,
+          sessionId: newRequestId(),
+        });
+      case RecoveredResult.OtherInteraction:
+        return create(ResourceSchema, {
+          ...base,
+          revision: 10n,
+          id: newRequestId(),
+        });
+    }
+  };
+  const respond = vi
+    .fn()
+    .mockRejectedValueOnce(new ConnectError("Lost acknowledgement", Code.Unavailable))
+    .mockImplementation(async () => ({ interaction: returnedResource() }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SessionService, {
+      listSessions: () => ({ sessions: [session] }),
+      listQueue: () => ({ inputs: [] }),
+    });
+    router.service(InteractionService, { respondQuestion: respond });
+    router.service(ResourceService, {
+      getSnapshot: () => ({
+        resources: [session],
+        cursor: "recovered-draft-snapshot",
+      }),
+      getResource: () => ({ resource: first }),
+      listResources: (request) => {
+        if (request.filter?.kind !== EntityKind.INTERACTION)
+          return { resources: [] };
+        const index = request.filter.pageToken
+          ? Number(request.filter.pageToken)
+          : 0;
+        return {
+          resources: [index === 0 ? first : pages[index]],
+          nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+        };
+      },
+      async *watchEvents(_request, context) {
+        await new Promise<void>((done) =>
+          context.signal.addEventListener("abort", () => done()),
+        );
+      },
+    });
+    router.service(InboxService, {
+      listInbox: () => ({ entries: [] }),
+      getNotificationPreferences: () => ({
+        preferences: create(NotificationPreferencesSchema, { revision: 1n }),
+      }),
+    });
+  });
+  render(<App transport={transport} />);
+  fireEvent.click(
+    await within(
+      screen.getByRole("complementary", { name: "Application sidebar" }),
+    ).findByRole("button", { name: /General Chat Recovered draft fixture/ }),
+  );
+  const region = screen.getByRole("region", { name: "Current session" });
+  const answer = await within(region).findByRole("textbox", {
+    name: "Your answer",
+  });
+  fireEvent.change(answer, { target: { value: "Original response bytes" } });
+  fireEvent.click(within(region).getByRole("button", { name: "Send answers" }));
+  await within(region).findByRole("button", { name: "Retry the same answers" });
+  const requests = region.querySelector<HTMLElement>(".requests")!;
+  for (let page = 1; page < pages.length; page++) {
+    fireEvent.click(
+      await within(requests).findByRole("button", { name: /^Load more/ }),
+    );
+    await waitFor(() =>
+      expect(requests.querySelectorAll("[data-payload-page]")).toHaveLength(
+        page + 1,
+      ),
+    );
+    if (page === 1) {
+      // An unrelated draft on the second request must survive the recovery.
+      const rows = [...requests.querySelectorAll("[data-payload-page]")];
+      const second = rows.find((node) =>
+        node.textContent?.includes("Second question"),
+      ) as HTMLElement;
+      fireEvent.change(within(second).getByRole("textbox"), {
+        target: { value: "Second draft" },
+      });
+    }
+  }
+  await waitFor(() =>
+    expect(
+      within(requests).getByRole("button", {
+        name: "Restore previously loaded items",
+      }),
+    ).not.toBeNull(),
+  );
+  const retry = within(requests).getByRole("button", {
+    name: "Retry the same answers",
+  });
+  fireEvent.click(retry);
+  await waitFor(() => expect(respond).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 50));
+  });
+  expect(respond.mock.calls[1][0]).toEqual(respond.mock.calls[0][0]);
+  // Reopen the request so a surviving draft is visible after payload restore.
+  first = create(ResourceSchema, {
+    ...pages[0],
+    revision: 11n,
+    documentJson: encode(question("First question")),
+  });
+  fireEvent.click(
+    within(requests).getByRole("button", {
+      name: "Restore previously loaded items",
+    }),
+  );
+  await waitFor(() =>
+    expect(requests.textContent).toContain("First question"),
+  );
+  const values = () =>
+    within(requests)
+      .queryAllByRole("textbox", { name: "Your answer" })
+      .map((node) => (node as HTMLTextAreaElement | HTMLInputElement).value);
+  return { values, respond };
+}
+
+it("clears only the recovered request draft after a retry through an evicted receipt", async () => {
+  const { values, respond } = await recoverThroughEvictedReceipt(
+    RecoveredResult.Advancing,
+  );
+  expect(respond).toHaveBeenCalledTimes(2);
+  expect(values()).not.toContain("Original response bytes");
+  expect(values()).toContain("");
+  expect(values()).toContain("Second draft");
+}, 30_000);
+
+it.each([
+  RecoveredResult.Equal,
+  RecoveredResult.OtherSession,
+  RecoveredResult.OtherInteraction,
+])("keeps the recovered draft when the retry returns a %s result", async (returned) => {
+  const { values } = await recoverThroughEvictedReceipt(returned);
+  expect(values()).toContain("Original response bytes");
+}, 30_000);
