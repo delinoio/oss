@@ -48,6 +48,16 @@ func executionDenied() *domain.Error {
 // Resolve every authorization decision from current durable ownership. A stored
 // token digest or native account connection alone never grants inference.
 func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
+	return a.checkedScope(tx, grant, false)
+}
+
+// Fresh quota evidence gates new registration. An exact registered binding
+// retains original publication authority after that evidence expires.
+func (a *executionAuthority) registrationScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
+	return a.checkedScope(tx, grant, true)
+}
+
+func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGrant, registering bool) (apiproxy.Scope, error) {
 	var empty apiproxy.Scope
 	if grant.ServerEpoch != a.epoch {
 		return empty, executionDenied()
@@ -127,10 +137,33 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		}
 	}
 	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
-	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
+	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
 	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService.Harness() == input.Configuration.Harness && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && (input.Configuration.Harness == domain.Codex || input.Configuration.Harness == domain.ClaudeCode)
+	if account.ConfirmedExhausted {
+		managedCodex := managed && input.Configuration.Harness == domain.Codex && account.SubscriptionService == domain.SubscriptionChatGPT
+		if !managedCodex {
+			return empty, executionDenied()
+		}
+		if registering {
+			// PutExecutionGrant also accepts an identical original binding with a
+			// different request receipt. It must not become new quota admission.
+			stored, storedErr := tx.ExecutionGrant(grant.Digest)
+			if storedErr != nil || !sameExecutionGrantOwnership(stored, grant) {
+				admission := domain.ClassifyExecutionQuotaAdmission(account, input.Configuration.Harness, tx.ObservationTime())
+				a.service.logger.Info("execution_quota_admission", "job_id", grant.JobID, "account_id", input.AccountID, "classification", admission)
+				if admission == domain.QuotaAdmissionBlocked {
+					return empty, executionDenied()
+				}
+			}
+		} else {
+			stored, storedErr := tx.ExecutionGrantForJob(grant.JobID)
+			if storedErr != nil || !sameExecutionGrantOwnership(stored, grant) {
+				return empty, executionDenied()
+			}
+		}
+	}
 	var provider domain.Provider
 	var operations []apiproxy.Operation
 	keySubscription := input.Configuration.IsOpenCodeGo() && account.IsOpenCodeGo() && account.Validate() == nil && slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGoSubscriptionsV1)
@@ -189,6 +222,10 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		}
 	}
 	return scope, nil
+}
+
+func sameExecutionGrantOwnership(left, right store.ExecutionGrant) bool {
+	return left.JobID == right.JobID && left.ExecutionID == right.ExecutionID && left.MachineID == right.MachineID && left.InstanceID == right.InstanceID && left.DeviceID == right.DeviceID && left.ServerEpoch == right.ServerEpoch
 }
 
 // Relay compatibility is narrower than native protocol discovery. In particular,
@@ -728,7 +765,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 			}
 			grant.ExecutionID = input.ExecutionID
 		}
-		scope, err := s.executionAuthority.scope(tx, grant)
+		scope, err := s.executionAuthority.registrationScope(tx, grant)
 		if err != nil {
 			return nil, err
 		}
