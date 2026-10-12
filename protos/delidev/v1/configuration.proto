@@ -6,6 +6,10 @@ import "delidev/v1/common.proto";
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 service ConfigurationService {
+  rpc PreviewNativeConfigurationImport(PreviewNativeConfigurationImportRequest) returns (PreviewNativeConfigurationImportResponse);
+  rpc PrepareNativeConfigurationImport(PrepareNativeConfigurationImportRequest) returns (PrepareNativeConfigurationImportResponse);
+  rpc ApplyNativeConfigurationImport(ApplyNativeConfigurationImportRequest) returns (ApplyNativeConfigurationImportResponse);
+  rpc GetNativeConfigurationImport(GetNativeConfigurationImportRequest) returns (GetNativeConfigurationImportResponse);
   rpc ListProjectPromptHistory(ListProjectPromptHistoryRequest) returns (ListProjectPromptHistoryResponse);
   rpc ClearProjectPromptHistory(ClearProjectPromptHistoryRequest) returns (ClearProjectPromptHistoryResponse);
   rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
@@ -128,4 +132,45 @@ message ClearProjectPromptHistoryResponse {
   string request_id = 2;
   bool replayed = 3;
   uint32 removed_count = 4;
+}
+
+message PreviewNativeConfigurationImportRequest {
+  string request_id = 1;
+  bytes selection_json = 2;
+}
+message PreviewNativeConfigurationImportResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  Resource job = 3;
+}
+message PrepareNativeConfigurationImportRequest {
+  string preview_job_id = 1;
+  bytes selection_json = 2;
+}
+message PrepareNativeConfigurationImportResponse {
+  bytes plan_json = 1;
+}
+message ApplyNativeConfigurationImportRequest {
+  string request_id = 1;
+  bytes plan_json = 2;
+}
+message ApplyNativeConfigurationImportResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  Resource job = 3;
+}
+enum NativeConfigurationImportState {
+  NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED = 0;
+  NATIVE_CONFIGURATION_IMPORT_STATE_UNDELIVERED = 1;
+  NATIVE_CONFIGURATION_IMPORT_STATE_PENDING = 2;
+  NATIVE_CONFIGURATION_IMPORT_STATE_SUCCEEDED = 3;
+  NATIVE_CONFIGURATION_IMPORT_STATE_FAILED = 4;
+}
+message GetNativeConfigurationImportRequest {
+  string request_id = 1;
+}
+message GetNativeConfigurationImportResponse {
+  string request_id = 1;
+  Resource job = 2;
+  NativeConfigurationImportState state = 3;
 }

@@ -145,19 +145,22 @@ const (
 func (s JobState) Terminal() bool { return s == JobSucceeded || s == JobFailed || s == JobCanceled }
 
 type Job struct {
-	Startup             *ExecutionStartupRecord `json:"startup,omitempty"`
-	Type                JobType                 `json:"type"`
-	State               JobState                `json:"state"`
-	MachineID           ID                      `json:"machine_id,omitempty"`
-	InstanceID          ID                      `json:"instance_id,omitempty"`
-	AssignedDeviceID    ID                      `json:"assigned_device_id,omitempty"`
-	ParentID            ID                      `json:"parent_id,omitempty"`
-	StorageReconciledBy ID                      `json:"storage_reconciled_by,omitempty"`
-	Input               json.RawMessage         `json:"input"`
-	Output              json.RawMessage         `json:"output,omitempty"`
-	Problem             *Error                  `json:"problem,omitempty"`
-	AcceptedAt          time.Time               `json:"accepted_at"`
-	FinishedAt          *time.Time              `json:"finished_at,omitempty"`
+	NativeConfigurationSettingsCount uint32                  `json:"native_configuration_settings_count,omitempty"`
+	NativeConfigurationPackageCount  uint32                  `json:"native_configuration_package_count,omitempty"`
+	NativeConfigurationDigest        string                  `json:"native_configuration_digest,omitempty"`
+	Startup                          *ExecutionStartupRecord `json:"startup,omitempty"`
+	Type                             JobType                 `json:"type"`
+	State                            JobState                `json:"state"`
+	MachineID                        ID                      `json:"machine_id,omitempty"`
+	InstanceID                       ID                      `json:"instance_id,omitempty"`
+	AssignedDeviceID                 ID                      `json:"assigned_device_id,omitempty"`
+	ParentID                         ID                      `json:"parent_id,omitempty"`
+	StorageReconciledBy              ID                      `json:"storage_reconciled_by,omitempty"`
+	Input                            json.RawMessage         `json:"input"`
+	Output                           json.RawMessage         `json:"output,omitempty"`
+	Problem                          *Error                  `json:"problem,omitempty"`
+	AcceptedAt                       time.Time               `json:"accepted_at"`
+	FinishedAt                       *time.Time              `json:"finished_at,omitempty"`
 }
 
 // Storage recovery duplicates bounded original preparation/manifest evidence.
@@ -171,7 +174,10 @@ const (
 )
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{ImageAttachmentJob, CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, DiscoverRepositoryBranchesJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ChangeSessionDirectoryJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if j.NativeConfigurationDigest != "" && (j.Type != NativeConfigurationPreviewJob || j.State != JobSucceeded || j.NativeConfigurationDigest != HarnessEvidenceDigest(j.Output)) {
+		return NativeConfigurationInvalid()
+	}
+	if !slices.Contains([]JobType{NativeConfigurationPreviewJob, NativeConfigurationApplyJob, ImageAttachmentJob, CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, DiscoverRepositoryBranchesJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ChangeSessionDirectoryJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
@@ -209,6 +215,9 @@ func (j Job) Validate() error {
 		maxInput = MaxStorageRecoveryInputBytes
 	}
 	maxOutput := maxJobDocumentBytes
+	if j.Type == NativeConfigurationPreviewJob || j.Type == NativeConfigurationApplyJob {
+		maxOutput = MaxNativeConfigurationObservationBytes
+	}
 	if j.Type == DiscoverRepositoryBranchesJob {
 		maxOutput = MaxRepositoryBranchesBytes
 	}

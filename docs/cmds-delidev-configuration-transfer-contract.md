@@ -182,3 +182,131 @@ copies resources, reads local/remote source paths, downloads packages or adopts
 host-native configuration. The user must explicitly choose a package from the
 selected authenticated Runner catalog before the reference grants generation
 eligibility. Omitted old-client Agent fields cannot erase saved managed selections.
+
+## Selective native configuration import
+
+An owner or current paired client can inspect explicit Codex source directories
+on one selected connected Worker and import deliberate selections into existing
+server defaults, a Project, or one original Agent source route. Native import is
+independent of portable bundle transfer. It uses the same typed harness selectors,
+configuration relationship validation, Worker assignments, immutable package
+resources and transactional publication owners. It cannot infer account readiness
+or effective native availability from compatible saved values.
+
+### Source observation
+
+The version-1 source descriptor binds the harness, exact machine revision and
+existing target ID/revision/source/profile. Agent selection names one route index;
+model import updates only that route without changing its accounts or weights.
+The Worker device and process instance, server and original authenticated actor
+are captured before dispatch. Every admission, claim and publication rechecks
+current authority. No alternate Worker or actor can complete the operation.
+
+Source scopes are explicit absolute directories. At most one home scope comes
+first, followed by explicitly selected nested project directories from outer to
+inner. The reader never discovers ancestors, follows native includes, consults
+ambient environment, expands config-supplied paths, launches a native process,
+reads credentials, or adopts managed/cloud/system/generated-memory layers.
+An optional named profile is selected explicitly. A profile selector in the
+source does not activate it or expand the read set. Unknown structured settings
+remain unavailable with closed reasons and without their values.
+
+Home reads `config.toml` and the first nonempty `AGENTS.override.md`/`AGENTS.md`.
+Project reads `.codex/config.toml`; the first existing regular project override
+masks the default even when blank. A masked default is never opened. Selected
+instruction bytes, source digests, order and masking evidence remain exact.
+The 32 KiB project instruction budget is independent of the bounded home source.
+The complete source is bounded to 512 KiB, individual files to 128 KiB, scopes to
+16, candidates to 128 and observation JSON to 2 MiB. Exceeding a bound fails the
+complete observation without truncation.
+
+Open directory descriptors anchor regular-file reads. Every path component must
+be a non-symlink directory; symlinks, changed file identity/mode/size/mtime, changed
+root identity, invalid UTF-8, malformed TOML and invalid nested scope order reject
+inspection. Presence, root identity, file bytes and selected resource modes are
+observed again on the same original Worker before applying. Source drift rejects
+the whole import.
+
+Compatible Codex scalars are `model`, `model_reasoning_effort`, `sandbox_mode`,
+scalar `approval_policy` and `service_tier`. They become explicit typed overrides
+only in the exact selected target source/profile. Service-tier names include
+`default`, `priority`, `flex` and retained native `fast`; import compatibility
+never establishes actual native support. Permission tables, environment, provider,
+login, managed restrictions and generated-memory settings are never flattened.
+A secret-bearing source file is excluded as a whole before parsing candidates or
+presenting bytes. Quoted secret assignments and common credential token formats
+are covered. Original authentication files are never opened.
+
+### Immutable disabled packages
+
+Instructions and explicit skill/hook/plugin/MCP resources share the existing
+managed package resource manifest shape: exact relative path, byte count, digest
+and executable mode. Additional resources require a complete deliberate list
+within one admitted selected directory; there is no directory scan or download.
+Native extension tables retain their exact selected TOML expressions and nested
+headers, together with nonsecret source provenance. Unrelated unsupported values
+from the source file cannot become package preview contents. A secret in any
+selected resource excludes that whole package.
+
+Imported resources are immutable schema-2 instruction templates with version-1
+`native_import` metadata, harness/kind, original source digest, selected order,
+`enabled:false` and complete resource bytes/manifests. They are stored disabled
+and unattached. Import has no activation control, trust state, credentials or
+managed native generation authority. Ordinary template editing cannot remove the
+metadata or make an imported package mutable. Direct Agent relationships and
+execution preparation reject extension packages as instructions; compatible
+plain instruction attachment remains a separate deliberate template action.
+Portable transfer preserves immutable metadata and exact resource bytes without
+adding Worker bindings or executable authority. Active accepted native runtime
+copies and original source files retain their existing independent owners.
+
+### Review, application and original status
+
+`PreviewNativeConfigurationImport` accepts an original UUID request and queues a
+bounded original Worker observation job. It changes no configuration or package.
+A successful preview includes an exact observation digest. All candidates start
+unchecked. At most one selected candidate can supply each target scalar field.
+`PrepareNativeConfigurationImport` validates the complete explicit selection and
+returns a signed 24-hour plan bound to the server, actor, preview job and selection.
+Prepare creates no package, execution or apply receipt.
+
+`ApplyNativeConfigurationImport` takes the exact reviewed plan and an original
+UUID request. Exact durable receipt replay runs before token freshness, target
+revision and source freshness checks. New acceptance requires the signed plan,
+current authority and exact preview digest. The original Worker rereads the
+selected sources; changed roots, presence, bytes, modes, process identity, machine
+revision, source profile, route or destination revision fail without partial
+publication. The SQLite transaction validates every staged package and complete
+target relationship before publishing package resources, selected settings,
+job result, metadata events and the report receipt together. Failed storage
+publication rolls back the whole result and retains the exact original report.
+
+`GetNativeConfigurationImport` observes only the original actor/request. It never
+applies again. Proved undelivered status durably fences that original ID against a
+late apply; a new deliberate import needs a fresh preview/confirmation/request.
+Pending/uncertain outcomes retain the accepted original operation. Restart and
+package deletion cannot turn successful exact replay into package recreation.
+The native preview/apply job names, System capability 107, Worker capability 68,
+exclusive ConfigurationService messages/RPCs and closed original-status enum are
+additive declarations. No database migration or native adapter activation is added.
+CLI `configuration native-preview`, `native-prepare`, `native-apply` and `native-status --original-request` expose
+the same descriptor/selection/plan path; stdin authentication and source descriptor
+bytes cannot share one input stream.
+
+### Presentation and validation boundary
+
+The connected Harness Settings pane owns Source → Review → Result. Review has
+selection and bound confirmation states. Source/destination edits invalidate
+preview/confirmation. Category departure fences late reads and disposes source
+bytes; the original accepted request remains available for explicit status.
+The pane shows complete selected before/after settings, ordered instruction
+contents and full disabled resource manifests. Source hashes and revisions stay
+in provenance disclosures. Result shows selected counts, preserved originals,
+the exact destination and explicit package inspection. English/Korean labels,
+native form semantics, focus return, Esc and narrow wrapping use existing tokens.
+
+Fixtures cover selected atomic publication, rollback/replay, authority/drift,
+masking, secret exclusion, explicit manifests and confirmation ownership. These
+checks do not establish installed native, remote Worker, account, platform,
+screen-reader or actual layout acceptance. Preserve their separate validation
+records and unresolved limits in the feature publication and CI evidence.

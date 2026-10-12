@@ -1613,3 +1613,14 @@ These typed identities do not grant new roots or expose absolute filesystem
 paths, credentials, instructions or native configuration. Preserve original
 mutation receipts and immutable Worker-private generation proofs under the
 [session lifecycle contract](cmds-delidev-sessions-contract.md#settled-session-directory-generations).
+## Native configuration import declarations
+
+System capability 107 and Worker capability 68 negotiate the original native
+import owner under the [configuration transfer contract](cmds-delidev-configuration-transfer-contract.md#selective-native-configuration-import).
+ConfigurationService adds exclusive PreviewNativeConfigurationImport,
+PrepareNativeConfigurationImport, ApplyNativeConfigurationImport and
+GetNativeConfigurationImport request/response messages. Descriptor/selection/plan
+JSON remains bounded and closed by Go. Get uses the dedicated closed
+NativeConfigurationImportState enum and returns only the original accepted job.
+These declarations do not grant native, account, trust or activation authority.
+No shared field is renumbered and no database migration is added.

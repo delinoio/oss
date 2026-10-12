@@ -105,6 +105,7 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1           SystemCapability = 13
 	SystemCapability_SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 SystemCapability = 16
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1           SystemCapability = 95
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1  SystemCapability = 107
 )
 
 // Enum value maps for SystemCapability.
@@ -185,6 +186,7 @@ var (
 		13:  "SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1",
 		16:  "SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1",
 		95:  "SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+		107: "SYSTEM_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1",
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
@@ -262,6 +264,7 @@ var (
 		"SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1":                13,
 		"SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1":      16,
 		"SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1":                95,
+		"SYSTEM_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1":       107,
 	}
 )
 
@@ -3026,7 +3029,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xbe\x1c\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xf4\x1c\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
 	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12:\n" +
@@ -3103,7 +3106,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"*SYSTEM_CAPABILITY_SERVER_OUTBOUND_PROXY_V1\x10\x06\x12+\n" +
 	"'SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1\x10\r\x125\n" +
 	"1SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1\x10\x10\x12+\n" +
-	"'SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1\x10_*\x84\x01\n" +
+	"'SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1\x10_\x124\n" +
+	"0SYSTEM_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1\x10k*\x84\x01\n" +
 	"\x13BackupDeletionState\x12%\n" +
 	"!BACKUP_DELETION_STATE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dBACKUP_DELETION_STATE_PENDING\x10\x01\x12#\n" +

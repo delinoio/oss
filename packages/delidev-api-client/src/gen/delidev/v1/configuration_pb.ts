@@ -2,8 +2,8 @@
 // @generated from file delidev/v1/configuration.proto (package delidev.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { EntityKind, Mutation, Resource } from "./common_pb.js";
 import { file_delidev_v1_common } from "./common_pb.js";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/configuration.proto.
  */
 export const file_delidev_v1_configuration: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kZWxpZGV2L3YxL2NvbmZpZ3VyYXRpb24ucHJvdG8SCmRlbGlkZXYudjEi4gEKFlNhdmVBZ2VudFdvcmtlclJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhUKDWRvY3VtZW50X2pzb24YAiABKAwSNAoFbW9kZWwYAyABKAsyJS5kZWxpZGV2LnYxLkFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SFgoOc2NoZW1hX3ZlcnNpb24YBCABKA0SOwoMcm91dGVfbW9kZWxzGAUgAygLMiUuZGVsaWRldi52MS5BZ2VudFdvcmtlck1vZGVsU2VsZWN0aW9uInIKGUFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SEgoIbW9kZWxfaWQYASABKAlIABITCgluYXRpdmVfaWQYAiABKAlIABIfChdleHBlY3RlZF9tb2RlbF9yZXZpc2lvbhgDIAEoBEILCglzZWxlY3Rpb24ilwEKGFNhdmVDb25maWd1cmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIWCg5zY2hlbWFfdmVyc2lvbhgDIAEoDRIVCg1kb2N1bWVudF9qc29uGAQgASgMIowBChlTYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEiEKA2pvYhgEIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiagoaRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEiQKBGtpbmQYAiABKA4yFi5kZWxpZGV2LnYxLkVudGl0eUtpbmQiTwobRGVsZXRlQ29uZmlndXJhdGlvblJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiPQoVUHJldmlld1JvdXRpbmdSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkiLAoWUHJldmlld1JvdXRpbmdSZXNwb25zZRISCgpyb3V0ZV9qc29uGAEgASgMIhwKGkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0IjQKG0V4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRIVCg1kb2N1bWVudF9qc29uGAEgASgMIjsKIVByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBIWCg5zZWxlY3Rpb25fanNvbhgBIAEoDCI6CiJQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhQKDHByZXZpZXdfanNvbhgBIAEoDCJLCh9BcHBseUNvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFAoMcHJldmlld19qc29uGAIgASgMIl0KIEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgSEwoLcmVzdWx0X2pzb24YAyABKAwifQoZUHJvamVjdFByb21wdEhpc3RvcnlFbnRyeRIKCgJpZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEg4KBnByb21wdBgDIAEoCRITCgthY2NlcHRlZF9hdBgEIAEoCRIbChNhY2NlcHRhbmNlX3NlcXVlbmNlGAUgASgEIlwKH0xpc3RQcm9qZWN0UHJvbXB0SGlzdG9yeVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSJzCiBMaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRI2CgdlbnRyaWVzGAEgAygLMiUuZGVsaWRldi52MS5Qcm9qZWN0UHJvbXB0SGlzdG9yeUVudHJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJdCiBDbGVhclByb2plY3RQcm9tcHRIaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEQoJY29uZmlybWVkGAMgASgIInQKIUNsZWFyUHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSFQoNcmVtb3ZlZF9jb3VudBgEIAEoDTLkBwoUQ29uZmlndXJhdGlvblNlcnZpY2USdQoYTGlzdFByb2plY3RQcm9tcHRIaXN0b3J5EisuZGVsaWRldi52MS5MaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXF1ZXN0GiwuZGVsaWRldi52MS5MaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRJ4ChlDbGVhclByb2plY3RQcm9tcHRIaXN0b3J5EiwuZGVsaWRldi52MS5DbGVhclByb2plY3RQcm9tcHRIaXN0b3J5UmVxdWVzdBotLmRlbGlkZXYudjEuQ2xlYXJQcm9qZWN0UHJvbXB0SGlzdG9yeVJlc3BvbnNlEmYKE0V4cG9ydENvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5FeHBvcnRDb25maWd1cmF0aW9uUmVzcG9uc2USewoaUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnQSLS5kZWxpZGV2LnYxLlByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBouLmRlbGlkZXYudjEuUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRJ1ChhBcHBseUNvbmZpZ3VyYXRpb25JbXBvcnQSKy5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QaLC5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlElwKD1NhdmVBZ2VudFdvcmtlchIiLmRlbGlkZXYudjEuU2F2ZUFnZW50V29ya2VyUmVxdWVzdBolLmRlbGlkZXYudjEuU2F2ZUNvbmZpZ3VyYXRpb25SZXNwb25zZRJgChFTYXZlQ29uZmlndXJhdGlvbhIkLmRlbGlkZXYudjEuU2F2ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0GiUuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEmYKE0RlbGV0ZUNvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkRlbGV0ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5EZWxldGVDb25maWd1cmF0aW9uUmVzcG9uc2USVwoOUHJldmlld1JvdXRpbmcSIS5kZWxpZGV2LnYxLlByZXZpZXdSb3V0aW5nUmVxdWVzdBoiLmRlbGlkZXYudjEuUHJldmlld1JvdXRpbmdSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("Ch5kZWxpZGV2L3YxL2NvbmZpZ3VyYXRpb24ucHJvdG8SCmRlbGlkZXYudjEi4gEKFlNhdmVBZ2VudFdvcmtlclJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhUKDWRvY3VtZW50X2pzb24YAiABKAwSNAoFbW9kZWwYAyABKAsyJS5kZWxpZGV2LnYxLkFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SFgoOc2NoZW1hX3ZlcnNpb24YBCABKA0SOwoMcm91dGVfbW9kZWxzGAUgAygLMiUuZGVsaWRldi52MS5BZ2VudFdvcmtlck1vZGVsU2VsZWN0aW9uInIKGUFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SEgoIbW9kZWxfaWQYASABKAlIABITCgluYXRpdmVfaWQYAiABKAlIABIfChdleHBlY3RlZF9tb2RlbF9yZXZpc2lvbhgDIAEoBEILCglzZWxlY3Rpb24ilwEKGFNhdmVDb25maWd1cmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIWCg5zY2hlbWFfdmVyc2lvbhgDIAEoDRIVCg1kb2N1bWVudF9qc29uGAQgASgMIowBChlTYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEiEKA2pvYhgEIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiagoaRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEiQKBGtpbmQYAiABKA4yFi5kZWxpZGV2LnYxLkVudGl0eUtpbmQiTwobRGVsZXRlQ29uZmlndXJhdGlvblJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiPQoVUHJldmlld1JvdXRpbmdSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkiLAoWUHJldmlld1JvdXRpbmdSZXNwb25zZRISCgpyb3V0ZV9qc29uGAEgASgMIhwKGkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0IjQKG0V4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRIVCg1kb2N1bWVudF9qc29uGAEgASgMIjsKIVByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBIWCg5zZWxlY3Rpb25fanNvbhgBIAEoDCI6CiJQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhQKDHByZXZpZXdfanNvbhgBIAEoDCJLCh9BcHBseUNvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFAoMcHJldmlld19qc29uGAIgASgMIl0KIEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgSEwoLcmVzdWx0X2pzb24YAyABKAwifQoZUHJvamVjdFByb21wdEhpc3RvcnlFbnRyeRIKCgJpZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEg4KBnByb21wdBgDIAEoCRITCgthY2NlcHRlZF9hdBgEIAEoCRIbChNhY2NlcHRhbmNlX3NlcXVlbmNlGAUgASgEIlwKH0xpc3RQcm9qZWN0UHJvbXB0SGlzdG9yeVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSJzCiBMaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRI2CgdlbnRyaWVzGAEgAygLMiUuZGVsaWRldi52MS5Qcm9qZWN0UHJvbXB0SGlzdG9yeUVudHJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJdCiBDbGVhclByb2plY3RQcm9tcHRIaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEQoJY29uZmlybWVkGAMgASgIInQKIUNsZWFyUHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSFQoNcmVtb3ZlZF9jb3VudBgEIAEoDSJVCidQcmV2aWV3TmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIWCg5zZWxlY3Rpb25fanNvbhgCIAEoDCJzCihQcmV2aWV3TmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgSIQoDam9iGAMgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSJZCidQcmVwYXJlTmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QSFgoOcHJldmlld19qb2JfaWQYASABKAkSFgoOc2VsZWN0aW9uX2pzb24YAiABKAwiPQooUHJlcGFyZU5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRIRCglwbGFuX2pzb24YASABKAwiTgolQXBwbHlOYXRpdmVDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhEKCXBsYW5fanNvbhgCIAEoDCJxCiZBcHBseU5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRISCgpyZXF1ZXN0X2lkGAEgASgJEhAKCHJlcGxheWVkGAIgASgIEiEKA2pvYhgDIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiOQojR2V0TmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCSKYAQokR2V0TmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSIQoDam9iGAIgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRI5CgVzdGF0ZRgDIAEoDjIqLmRlbGlkZXYudjEuTmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFN0YXRlKpQCCh5OYXRpdmVDb25maWd1cmF0aW9uSW1wb3J0U3RhdGUSMQotTkFUSVZFX0NPTkZJR1VSQVRJT05fSU1QT1JUX1NUQVRFX1VOU1BFQ0lGSUVEEAASMQotTkFUSVZFX0NPTkZJR1VSQVRJT05fSU1QT1JUX1NUQVRFX1VOREVMSVZFUkVEEAESLQopTkFUSVZFX0NPTkZJR1VSQVRJT05fSU1QT1JUX1NUQVRFX1BFTkRJTkcQAhIvCitOQVRJVkVfQ09ORklHVVJBVElPTl9JTVBPUlRfU1RBVEVfU1VDQ0VFREVEEAMSLAooTkFUSVZFX0NPTkZJR1VSQVRJT05fSU1QT1JUX1NUQVRFX0ZBSUxFRBAEMpIMChRDb25maWd1cmF0aW9uU2VydmljZRKNAQogUHJldmlld05hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnQSMy5kZWxpZGV2LnYxLlByZXZpZXdOYXRpdmVDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBo0LmRlbGlkZXYudjEuUHJldmlld05hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRKNAQogUHJlcGFyZU5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnQSMy5kZWxpZGV2LnYxLlByZXBhcmVOYXRpdmVDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBo0LmRlbGlkZXYudjEuUHJlcGFyZU5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRKHAQoeQXBwbHlOYXRpdmVDb25maWd1cmF0aW9uSW1wb3J0EjEuZGVsaWRldi52MS5BcHBseU5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0GjIuZGVsaWRldi52MS5BcHBseU5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRKBAQocR2V0TmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydBIvLmRlbGlkZXYudjEuR2V0TmF0aXZlQ29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QaMC5kZWxpZGV2LnYxLkdldE5hdGl2ZUNvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRJ1ChhMaXN0UHJvamVjdFByb21wdEhpc3RvcnkSKy5kZWxpZGV2LnYxLkxpc3RQcm9qZWN0UHJvbXB0SGlzdG9yeVJlcXVlc3QaLC5kZWxpZGV2LnYxLkxpc3RQcm9qZWN0UHJvbXB0SGlzdG9yeVJlc3BvbnNlEngKGUNsZWFyUHJvamVjdFByb21wdEhpc3RvcnkSLC5kZWxpZGV2LnYxLkNsZWFyUHJvamVjdFByb21wdEhpc3RvcnlSZXF1ZXN0Gi0uZGVsaWRldi52MS5DbGVhclByb2plY3RQcm9tcHRIaXN0b3J5UmVzcG9uc2USZgoTRXhwb3J0Q29uZmlndXJhdGlvbhImLmRlbGlkZXYudjEuRXhwb3J0Q29uZmlndXJhdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLkV4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRJ7ChpQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydBItLmRlbGlkZXYudjEuUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0Gi4uZGVsaWRldi52MS5QcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEnUKGEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydBIrLmRlbGlkZXYudjEuQXBwbHlDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBosLmRlbGlkZXYudjEuQXBwbHlDb25maWd1cmF0aW9uSW1wb3J0UmVzcG9uc2USXAoPU2F2ZUFnZW50V29ya2VyEiIuZGVsaWRldi52MS5TYXZlQWdlbnRXb3JrZXJSZXF1ZXN0GiUuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEmAKEVNhdmVDb25maWd1cmF0aW9uEiQuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlcXVlc3QaJS5kZWxpZGV2LnYxLlNhdmVDb25maWd1cmF0aW9uUmVzcG9uc2USZgoTRGVsZXRlQ29uZmlndXJhdGlvbhImLmRlbGlkZXYudjEuRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLkRlbGV0ZUNvbmZpZ3VyYXRpb25SZXNwb25zZRJXCg5QcmV2aWV3Um91dGluZxIhLmRlbGlkZXYudjEuUHJldmlld1JvdXRpbmdSZXF1ZXN0GiIuZGVsaWRldi52MS5QcmV2aWV3Um91dGluZ1Jlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_common]);
 
 /**
  * Saves a Worker and resolves its source-scoped model atomically.
@@ -507,9 +507,258 @@ export const ClearProjectPromptHistoryResponseSchema: GenMessage<ClearProjectPro
   messageDesc(file_delidev_v1_configuration, 18);
 
 /**
+ * @generated from message delidev.v1.PreviewNativeConfigurationImportRequest
+ */
+export type PreviewNativeConfigurationImportRequest = Message<"delidev.v1.PreviewNativeConfigurationImportRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bytes selection_json = 2;
+   */
+  selectionJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.PreviewNativeConfigurationImportRequest.
+ * Use `create(PreviewNativeConfigurationImportRequestSchema)` to create a new message.
+ */
+export const PreviewNativeConfigurationImportRequestSchema: GenMessage<PreviewNativeConfigurationImportRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 19);
+
+/**
+ * @generated from message delidev.v1.PreviewNativeConfigurationImportResponse
+ */
+export type PreviewNativeConfigurationImportResponse = Message<"delidev.v1.PreviewNativeConfigurationImportResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 2;
+   */
+  replayed: boolean;
+
+  /**
+   * @generated from field: delidev.v1.Resource job = 3;
+   */
+  job?: Resource | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.PreviewNativeConfigurationImportResponse.
+ * Use `create(PreviewNativeConfigurationImportResponseSchema)` to create a new message.
+ */
+export const PreviewNativeConfigurationImportResponseSchema: GenMessage<PreviewNativeConfigurationImportResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 20);
+
+/**
+ * @generated from message delidev.v1.PrepareNativeConfigurationImportRequest
+ */
+export type PrepareNativeConfigurationImportRequest = Message<"delidev.v1.PrepareNativeConfigurationImportRequest"> & {
+  /**
+   * @generated from field: string preview_job_id = 1;
+   */
+  previewJobId: string;
+
+  /**
+   * @generated from field: bytes selection_json = 2;
+   */
+  selectionJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.PrepareNativeConfigurationImportRequest.
+ * Use `create(PrepareNativeConfigurationImportRequestSchema)` to create a new message.
+ */
+export const PrepareNativeConfigurationImportRequestSchema: GenMessage<PrepareNativeConfigurationImportRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 21);
+
+/**
+ * @generated from message delidev.v1.PrepareNativeConfigurationImportResponse
+ */
+export type PrepareNativeConfigurationImportResponse = Message<"delidev.v1.PrepareNativeConfigurationImportResponse"> & {
+  /**
+   * @generated from field: bytes plan_json = 1;
+   */
+  planJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.PrepareNativeConfigurationImportResponse.
+ * Use `create(PrepareNativeConfigurationImportResponseSchema)` to create a new message.
+ */
+export const PrepareNativeConfigurationImportResponseSchema: GenMessage<PrepareNativeConfigurationImportResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 22);
+
+/**
+ * @generated from message delidev.v1.ApplyNativeConfigurationImportRequest
+ */
+export type ApplyNativeConfigurationImportRequest = Message<"delidev.v1.ApplyNativeConfigurationImportRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bytes plan_json = 2;
+   */
+  planJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.ApplyNativeConfigurationImportRequest.
+ * Use `create(ApplyNativeConfigurationImportRequestSchema)` to create a new message.
+ */
+export const ApplyNativeConfigurationImportRequestSchema: GenMessage<ApplyNativeConfigurationImportRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 23);
+
+/**
+ * @generated from message delidev.v1.ApplyNativeConfigurationImportResponse
+ */
+export type ApplyNativeConfigurationImportResponse = Message<"delidev.v1.ApplyNativeConfigurationImportResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 2;
+   */
+  replayed: boolean;
+
+  /**
+   * @generated from field: delidev.v1.Resource job = 3;
+   */
+  job?: Resource | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.ApplyNativeConfigurationImportResponse.
+ * Use `create(ApplyNativeConfigurationImportResponseSchema)` to create a new message.
+ */
+export const ApplyNativeConfigurationImportResponseSchema: GenMessage<ApplyNativeConfigurationImportResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 24);
+
+/**
+ * @generated from message delidev.v1.GetNativeConfigurationImportRequest
+ */
+export type GetNativeConfigurationImportRequest = Message<"delidev.v1.GetNativeConfigurationImportRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetNativeConfigurationImportRequest.
+ * Use `create(GetNativeConfigurationImportRequestSchema)` to create a new message.
+ */
+export const GetNativeConfigurationImportRequestSchema: GenMessage<GetNativeConfigurationImportRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 25);
+
+/**
+ * @generated from message delidev.v1.GetNativeConfigurationImportResponse
+ */
+export type GetNativeConfigurationImportResponse = Message<"delidev.v1.GetNativeConfigurationImportResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.Resource job = 2;
+   */
+  job?: Resource | undefined;
+
+  /**
+   * @generated from field: delidev.v1.NativeConfigurationImportState state = 3;
+   */
+  state: NativeConfigurationImportState;
+};
+
+/**
+ * Describes the message delidev.v1.GetNativeConfigurationImportResponse.
+ * Use `create(GetNativeConfigurationImportResponseSchema)` to create a new message.
+ */
+export const GetNativeConfigurationImportResponseSchema: GenMessage<GetNativeConfigurationImportResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 26);
+
+/**
+ * @generated from enum delidev.v1.NativeConfigurationImportState
+ */
+export enum NativeConfigurationImportState {
+  /**
+   * @generated from enum value: NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: NATIVE_CONFIGURATION_IMPORT_STATE_UNDELIVERED = 1;
+   */
+  UNDELIVERED = 1,
+
+  /**
+   * @generated from enum value: NATIVE_CONFIGURATION_IMPORT_STATE_PENDING = 2;
+   */
+  PENDING = 2,
+
+  /**
+   * @generated from enum value: NATIVE_CONFIGURATION_IMPORT_STATE_SUCCEEDED = 3;
+   */
+  SUCCEEDED = 3,
+
+  /**
+   * @generated from enum value: NATIVE_CONFIGURATION_IMPORT_STATE_FAILED = 4;
+   */
+  FAILED = 4,
+}
+
+/**
+ * Describes the enum delidev.v1.NativeConfigurationImportState.
+ */
+export const NativeConfigurationImportStateSchema: GenEnum<NativeConfigurationImportState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_configuration, 0);
+
+/**
  * @generated from service delidev.v1.ConfigurationService
  */
 export const ConfigurationService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.ConfigurationService.PreviewNativeConfigurationImport
+   */
+  previewNativeConfigurationImport: {
+    methodKind: "unary";
+    input: typeof PreviewNativeConfigurationImportRequestSchema;
+    output: typeof PreviewNativeConfigurationImportResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.ConfigurationService.PrepareNativeConfigurationImport
+   */
+  prepareNativeConfigurationImport: {
+    methodKind: "unary";
+    input: typeof PrepareNativeConfigurationImportRequestSchema;
+    output: typeof PrepareNativeConfigurationImportResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.ConfigurationService.ApplyNativeConfigurationImport
+   */
+  applyNativeConfigurationImport: {
+    methodKind: "unary";
+    input: typeof ApplyNativeConfigurationImportRequestSchema;
+    output: typeof ApplyNativeConfigurationImportResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.ConfigurationService.GetNativeConfigurationImport
+   */
+  getNativeConfigurationImport: {
+    methodKind: "unary";
+    input: typeof GetNativeConfigurationImportRequestSchema;
+    output: typeof GetNativeConfigurationImportResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.ConfigurationService.ListProjectPromptHistory
    */

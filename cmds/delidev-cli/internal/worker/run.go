@@ -463,6 +463,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				profile += "\x00session-startup-progress-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1) {
+				profile += "\x00native-configuration-import-v1"
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
@@ -1295,6 +1298,8 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 	switch job.Type {
 	case domain.ChangeSessionDirectoryJob:
 		return executeSessionDirectory(ctx, config, owner, job)
+	case domain.NativeConfigurationPreviewJob, domain.NativeConfigurationApplyJob:
+		return executeNativeConfigurationImport(ctx, config, job)
 	case domain.CompactSessionJob:
 		var input domain.SessionCompactionInput
 		if domain.Decode(job.Input, &input) != nil {

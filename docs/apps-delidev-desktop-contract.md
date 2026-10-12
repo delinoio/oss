@@ -6260,3 +6260,18 @@ and pending Fork work remain ineligible. The connection barrier also retains
 the original transport/server/client identity when replacement connection props
 arrive during an unresolved directory receipt; same-identity transport refresh
 can continue without discarding that original request.
+## Native configuration import in Harness Settings
+
+The Codex Harness Settings pane exposes the connected Source → Review → Result
+flow under the [native import contract](cmds-delidev-configuration-transfer-contract.md#selective-native-configuration-import).
+Source uses explicit Worker folders/resources and existing server/Project/Agent
+destinations with source/profile or exact original Agent route. Candidates start
+unchecked; selection is separate from signed confirmation and apply. Review shows
+complete before/after selectors and exact instruction/disabled package resources.
+Zero selection cannot confirm or apply. No control can activate imported packages.
+Uncertain submission retains one original request with read-only Check status.
+Category departure discards source bytes and fences late presentation without
+replaying accepted work. Back/Esc return focus and preserve accepted ownership.
+English/Korean copy, native labels/status, 40px controls, existing theme tokens and
+wrapping preserve the Settings lifetime. Fixtures do not establish real desktop,
+remote Runner, account, native, screen-reader or layout acceptance.

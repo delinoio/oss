@@ -47,6 +47,8 @@ export type ResourceDocument = Record<string, unknown>;
 
 enum LargeJobType {
   Compaction = "compact-session",
+  NativeConfigurationPreview = "native-configuration-preview",
+  NativeConfigurationApply = "native-configuration-apply",
   WorkspaceStorage = "workspace-storage",
 }
 enum StorageDocumentAction {
@@ -59,6 +61,8 @@ function largeJob(value: ResourceDocument): boolean {
   if (!object(value.input)) return false;
   return (
     value.type === LargeJobType.Compaction ||
+    value.type === LargeJobType.NativeConfigurationPreview ||
+    value.type === LargeJobType.NativeConfigurationApply ||
     (value.type === LargeJobType.WorkspaceStorage &&
       value.input.action === StorageDocumentAction.Recover)
   );
@@ -98,6 +102,11 @@ function supportsDocumentSchema(
 ): boolean {
   if (resource.kind === EntityKind.MODEL) return false;
   const harnessShape = configurationSchemaVersion(resource.kind, value);
+  if (
+    resource.kind === EntityKind.TEMPLATE &&
+    Object.hasOwn(value, "native_import")
+  )
+    return resource.schemaVersion === 2 && nativeImportPackage(value);
   if (resource.kind === EntityKind.AGENT && resource.schemaVersion === 5) {
     if (!harnessSettings(value.harness_settings)) return false;
   }
@@ -252,6 +261,8 @@ export function configurationSchemaVersion(
   kind: EntityKind,
   value: Record<string, unknown>,
 ): number {
+  if (kind === EntityKind.TEMPLATE && Object.hasOwn(value, "native_import"))
+    return 2;
   if (kind === EntityKind.AGENT && Object.hasOwn(value, "harness_settings"))
     return 5;
   if (
@@ -449,4 +460,47 @@ export function subscriptionServiceLabel(
 ): string | undefined {
   const service = subscriptionServiceFromWire(value);
   return service ? subscriptionServiceNames[service] : undefined;
+}
+
+function nativeImportPackage(value: ResourceDocument): boolean {
+  const meta = value.native_import;
+  if (
+    !object(meta) ||
+    meta.version !== 1 ||
+    meta.enabled !== false ||
+    !["codex", "claude-code"].includes(meta.harness as string) ||
+    !["instruction", "inert-extension"].includes(meta.kind as string) ||
+    typeof meta.source_digest !== "string" ||
+    !/^[a-f0-9]{64}$/.test(meta.source_digest) ||
+    !Number.isInteger(meta.order) ||
+    Number(meta.order) < 0 ||
+    Number(meta.order) >= 128 ||
+    !Array.isArray(meta.files) ||
+    meta.files.length === 0 ||
+    meta.files.length > 64 ||
+    typeof value.contents !== "string"
+  )
+    return false;
+  const seen = new Set<string>();
+  let total = 0;
+  return meta.files.every((file) => {
+    if (
+      !object(file) ||
+      typeof file.path !== "string" ||
+      !file.path ||
+      file.path.startsWith("/") ||
+      file.path.split("/").some((v) => !v || v === "." || v === "..") ||
+      /[\\\r\n\x00]/.test(file.path) ||
+      seen.has(file.path) ||
+      typeof file.contents !== "string" ||
+      typeof file.digest !== "string" ||
+      !/^[a-f0-9]{64}$/.test(file.digest) ||
+      typeof file.executable !== "boolean" ||
+      file.bytes !== new TextEncoder().encode(file.contents).length
+    )
+      return false;
+    seen.add(file.path);
+    total += Number(file.bytes);
+    return total <= 512 << 10;
+  });
 }

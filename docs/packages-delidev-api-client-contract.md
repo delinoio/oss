@@ -559,3 +559,15 @@ mutation messages; response loss permits inspection without replacement mutation
 Safe package projection and read-only text have separate bounded decoders.
 Presence-aware Agent managed selections preserve old-client omission and explicit
 clear. Imported references require explicit Worker/package rebinding.
+
+## Native configuration import client
+
+Generated ConfigurationService/ConfigurationQuery bindings expose bounded native
+preview, reviewed plan preparation, exact apply and original status under the
+[owning contract](cmds-delidev-configuration-transfer-contract.md#selective-native-configuration-import).
+The renderer uses direct original transport calls for disposable source bytes;
+ordinary server configuration reads retain Connect Query ownership. Native jobs
+retain bounded duplicated observation bytes and original digest metadata.
+Schema-2 imported templates require the complete disabled immutable metadata and
+managed resource manifest shape. Portable values preserve that metadata without
+trust or native activation. Byte disposal and original status cannot replay apply.

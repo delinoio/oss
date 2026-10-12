@@ -1535,3 +1535,16 @@ cleanup remains recovery-required and is never replayed automatically. Inspectio
 uses the original actor/request and fences a proved undelivered identity. Metadata
 projection is bounded separately from read-only Markdown/manifest bytes; raw
 package contents never enter server mutation records, exports or logs.
+
+## Native configuration import retention
+
+The [native import owner](cmds-delidev-configuration-transfer-contract.md#selective-native-configuration-import)
+uses existing original jobs, transaction receipts and private metadata without a
+migration. Exact original actor/request metadata binds one accepted job; status
+can fence an undelivered identity. Immutable imported Template resources and the
+selected destination publish in the same transaction as the original Worker
+report. Metadata events and operational logs contain safe IDs/counts only.
+Extension packages cannot supply execution instructions or alter active native
+generations. Source files and original retained runtime copies have separate
+owners. Exact restart/replay returns the accepted original outcome after package
+deletion and cannot recreate deleted resources.

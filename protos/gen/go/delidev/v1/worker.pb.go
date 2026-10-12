@@ -71,6 +71,7 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1   WorkerCapability = 11
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1  WorkerCapability = 12
 	WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1             WorkerCapability = 57
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1    WorkerCapability = 68
 )
 
 // Enum value maps for WorkerCapability.
@@ -122,6 +123,7 @@ var (
 		11: "WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
 		12: "WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1",
 		57: "WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+		68: "WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1",
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                          0,
@@ -170,6 +172,7 @@ var (
 		"WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":      11,
 		"WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1":     12,
 		"WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1":                57,
+		"WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1":       68,
 	}
 )
 
@@ -4409,7 +4412,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xd7\x11\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\x8d\x12\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1\x10>\x12:\n" +
@@ -4457,7 +4460,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x125\n" +
 	"1WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1\x10\v\x126\n" +
 	"2WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1\x10\f\x12+\n" +
-	"'WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1\x109*\xb6\x02\n" +
+	"'WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1\x109\x124\n" +
+	"0WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1\x10D*\xb6\x02\n" +
 	"\x16WorkerNativeRouteState\x12)\n" +
 	"%WORKER_NATIVE_ROUTE_STATE_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORKER_NATIVE_ROUTE_STATE_UNSUPPORTED\x10\x01\x12)\n" +

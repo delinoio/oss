@@ -486,3 +486,11 @@ contracts. Explicit import leaves Worker source directories untouched. Managed
 selections and existing explicit composer bindings keep separate ownership;
 accepted execution, history and dependent copies retain immutable package digests.
 Native discovery support remains independently negotiated for each adapter.
+
+The connected Codex Harness Settings pane implements explicit selective native
+configuration import under the [configuration transfer contract](cmds-delidev-configuration-transfer-contract.md#selective-native-configuration-import).
+The original selected Worker observes and rechecks bounded sources. Existing
+server/Project/Agent destinations receive only confirmed settings; exact immutable
+packages remain disabled and unattached. Native/account/platform acceptance stays
+separate from fixture and schema evidence. The Claude adapter remains a separate
+consumer of this shared owner.

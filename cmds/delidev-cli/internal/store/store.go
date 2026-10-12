@@ -732,6 +732,15 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 		if old.Revision != expected {
 			return Record{}, domain.Fail(domain.Conflict, "The entity revision changed.", "Read its latest revision before editing.")
 		}
+		if kind == domain.TemplateKind {
+			previous, err := Decode[domain.Template](old)
+			if err != nil {
+				return Record{}, err
+			}
+			if previous.NativeImport != nil {
+				return Record{}, domain.Fail(domain.Conflict, "Imported native packages are immutable.", "Keep the original package or import a new independent package.")
+			}
+		}
 		created = old.CreatedAt.UnixMilli()
 		action = Updated
 		var result sql.Result

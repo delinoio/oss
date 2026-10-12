@@ -134,6 +134,12 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 }
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
+	if kind == domain.TemplateKind {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && fields["native_import"] != nil {
+			return 2
+		}
+	}
 	if kind == domain.AgentKind || kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(raw, &fields) == nil && (fields["harness_settings"] != nil || fields["harness_defaults"] != nil) {

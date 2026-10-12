@@ -21,6 +21,61 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type NativeConfigurationImportState int32
+
+const (
+	NativeConfigurationImportState_NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED NativeConfigurationImportState = 0
+	NativeConfigurationImportState_NATIVE_CONFIGURATION_IMPORT_STATE_UNDELIVERED NativeConfigurationImportState = 1
+	NativeConfigurationImportState_NATIVE_CONFIGURATION_IMPORT_STATE_PENDING     NativeConfigurationImportState = 2
+	NativeConfigurationImportState_NATIVE_CONFIGURATION_IMPORT_STATE_SUCCEEDED   NativeConfigurationImportState = 3
+	NativeConfigurationImportState_NATIVE_CONFIGURATION_IMPORT_STATE_FAILED      NativeConfigurationImportState = 4
+)
+
+// Enum value maps for NativeConfigurationImportState.
+var (
+	NativeConfigurationImportState_name = map[int32]string{
+		0: "NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED",
+		1: "NATIVE_CONFIGURATION_IMPORT_STATE_UNDELIVERED",
+		2: "NATIVE_CONFIGURATION_IMPORT_STATE_PENDING",
+		3: "NATIVE_CONFIGURATION_IMPORT_STATE_SUCCEEDED",
+		4: "NATIVE_CONFIGURATION_IMPORT_STATE_FAILED",
+	}
+	NativeConfigurationImportState_value = map[string]int32{
+		"NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED": 0,
+		"NATIVE_CONFIGURATION_IMPORT_STATE_UNDELIVERED": 1,
+		"NATIVE_CONFIGURATION_IMPORT_STATE_PENDING":     2,
+		"NATIVE_CONFIGURATION_IMPORT_STATE_SUCCEEDED":   3,
+		"NATIVE_CONFIGURATION_IMPORT_STATE_FAILED":      4,
+	}
+)
+
+func (x NativeConfigurationImportState) Enum() *NativeConfigurationImportState {
+	p := new(NativeConfigurationImportState)
+	*p = x
+	return p
+}
+
+func (x NativeConfigurationImportState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (NativeConfigurationImportState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_configuration_proto_enumTypes[0].Descriptor()
+}
+
+func (NativeConfigurationImportState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_configuration_proto_enumTypes[0]
+}
+
+func (x NativeConfigurationImportState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use NativeConfigurationImportState.Descriptor instead.
+func (NativeConfigurationImportState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{0}
+}
+
 // Saves a Worker and resolves its source-scoped model atomically.
 type SaveAgentWorkerRequest struct {
 	state         protoimpl.MessageState     `protogen:"open.v1"`
@@ -1133,6 +1188,430 @@ func (x *ClearProjectPromptHistoryResponse) GetRemovedCount() uint32 {
 	return 0
 }
 
+type PreviewNativeConfigurationImportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SelectionJson []byte                 `protobuf:"bytes,2,opt,name=selection_json,json=selectionJson,proto3" json:"selection_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewNativeConfigurationImportRequest) Reset() {
+	*x = PreviewNativeConfigurationImportRequest{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewNativeConfigurationImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewNativeConfigurationImportRequest) ProtoMessage() {}
+
+func (x *PreviewNativeConfigurationImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewNativeConfigurationImportRequest.ProtoReflect.Descriptor instead.
+func (*PreviewNativeConfigurationImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PreviewNativeConfigurationImportRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PreviewNativeConfigurationImportRequest) GetSelectionJson() []byte {
+	if x != nil {
+		return x.SelectionJson
+	}
+	return nil
+}
+
+type PreviewNativeConfigurationImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Job           *Resource              `protobuf:"bytes,3,opt,name=job,proto3" json:"job,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewNativeConfigurationImportResponse) Reset() {
+	*x = PreviewNativeConfigurationImportResponse{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewNativeConfigurationImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewNativeConfigurationImportResponse) ProtoMessage() {}
+
+func (x *PreviewNativeConfigurationImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewNativeConfigurationImportResponse.ProtoReflect.Descriptor instead.
+func (*PreviewNativeConfigurationImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PreviewNativeConfigurationImportResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *PreviewNativeConfigurationImportResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *PreviewNativeConfigurationImportResponse) GetJob() *Resource {
+	if x != nil {
+		return x.Job
+	}
+	return nil
+}
+
+type PrepareNativeConfigurationImportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PreviewJobId  string                 `protobuf:"bytes,1,opt,name=preview_job_id,json=previewJobId,proto3" json:"preview_job_id,omitempty"`
+	SelectionJson []byte                 `protobuf:"bytes,2,opt,name=selection_json,json=selectionJson,proto3" json:"selection_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareNativeConfigurationImportRequest) Reset() {
+	*x = PrepareNativeConfigurationImportRequest{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareNativeConfigurationImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareNativeConfigurationImportRequest) ProtoMessage() {}
+
+func (x *PrepareNativeConfigurationImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareNativeConfigurationImportRequest.ProtoReflect.Descriptor instead.
+func (*PrepareNativeConfigurationImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *PrepareNativeConfigurationImportRequest) GetPreviewJobId() string {
+	if x != nil {
+		return x.PreviewJobId
+	}
+	return ""
+}
+
+func (x *PrepareNativeConfigurationImportRequest) GetSelectionJson() []byte {
+	if x != nil {
+		return x.SelectionJson
+	}
+	return nil
+}
+
+type PrepareNativeConfigurationImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlanJson      []byte                 `protobuf:"bytes,1,opt,name=plan_json,json=planJson,proto3" json:"plan_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareNativeConfigurationImportResponse) Reset() {
+	*x = PrepareNativeConfigurationImportResponse{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareNativeConfigurationImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareNativeConfigurationImportResponse) ProtoMessage() {}
+
+func (x *PrepareNativeConfigurationImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareNativeConfigurationImportResponse.ProtoReflect.Descriptor instead.
+func (*PrepareNativeConfigurationImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *PrepareNativeConfigurationImportResponse) GetPlanJson() []byte {
+	if x != nil {
+		return x.PlanJson
+	}
+	return nil
+}
+
+type ApplyNativeConfigurationImportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	PlanJson      []byte                 `protobuf:"bytes,2,opt,name=plan_json,json=planJson,proto3" json:"plan_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyNativeConfigurationImportRequest) Reset() {
+	*x = ApplyNativeConfigurationImportRequest{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyNativeConfigurationImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyNativeConfigurationImportRequest) ProtoMessage() {}
+
+func (x *ApplyNativeConfigurationImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyNativeConfigurationImportRequest.ProtoReflect.Descriptor instead.
+func (*ApplyNativeConfigurationImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ApplyNativeConfigurationImportRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ApplyNativeConfigurationImportRequest) GetPlanJson() []byte {
+	if x != nil {
+		return x.PlanJson
+	}
+	return nil
+}
+
+type ApplyNativeConfigurationImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Job           *Resource              `protobuf:"bytes,3,opt,name=job,proto3" json:"job,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyNativeConfigurationImportResponse) Reset() {
+	*x = ApplyNativeConfigurationImportResponse{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyNativeConfigurationImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyNativeConfigurationImportResponse) ProtoMessage() {}
+
+func (x *ApplyNativeConfigurationImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyNativeConfigurationImportResponse.ProtoReflect.Descriptor instead.
+func (*ApplyNativeConfigurationImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ApplyNativeConfigurationImportResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ApplyNativeConfigurationImportResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *ApplyNativeConfigurationImportResponse) GetJob() *Resource {
+	if x != nil {
+		return x.Job
+	}
+	return nil
+}
+
+type GetNativeConfigurationImportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNativeConfigurationImportRequest) Reset() {
+	*x = GetNativeConfigurationImportRequest{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNativeConfigurationImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNativeConfigurationImportRequest) ProtoMessage() {}
+
+func (x *GetNativeConfigurationImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNativeConfigurationImportRequest.ProtoReflect.Descriptor instead.
+func (*GetNativeConfigurationImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *GetNativeConfigurationImportRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type GetNativeConfigurationImportResponse struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	RequestId     string                         `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Job           *Resource                      `protobuf:"bytes,2,opt,name=job,proto3" json:"job,omitempty"`
+	State         NativeConfigurationImportState `protobuf:"varint,3,opt,name=state,proto3,enum=delidev.v1.NativeConfigurationImportState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNativeConfigurationImportResponse) Reset() {
+	*x = GetNativeConfigurationImportResponse{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNativeConfigurationImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNativeConfigurationImportResponse) ProtoMessage() {}
+
+func (x *GetNativeConfigurationImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNativeConfigurationImportResponse.ProtoReflect.Descriptor instead.
+func (*GetNativeConfigurationImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *GetNativeConfigurationImportResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *GetNativeConfigurationImportResponse) GetJob() *Resource {
+	if x != nil {
+		return x.Job
+	}
+	return nil
+}
+
+func (x *GetNativeConfigurationImportResponse) GetState() NativeConfigurationImportState {
+	if x != nil {
+		return x.State
+	}
+	return NativeConfigurationImportState_NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED
+}
+
 var File_delidev_v1_configuration_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_configuration_proto_rawDesc = "" +
@@ -1222,8 +1701,49 @@ const file_delidev_v1_configuration_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x12#\n" +
-	"\rremoved_count\x18\x04 \x01(\rR\fremovedCount2\xe4\a\n" +
-	"\x14ConfigurationService\x12u\n" +
+	"\rremoved_count\x18\x04 \x01(\rR\fremovedCount\"o\n" +
+	"'PreviewNativeConfigurationImportRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eselection_json\x18\x02 \x01(\fR\rselectionJson\"\x8d\x01\n" +
+	"(PreviewNativeConfigurationImportResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\x12&\n" +
+	"\x03job\x18\x03 \x01(\v2\x14.delidev.v1.ResourceR\x03job\"v\n" +
+	"'PrepareNativeConfigurationImportRequest\x12$\n" +
+	"\x0epreview_job_id\x18\x01 \x01(\tR\fpreviewJobId\x12%\n" +
+	"\x0eselection_json\x18\x02 \x01(\fR\rselectionJson\"G\n" +
+	"(PrepareNativeConfigurationImportResponse\x12\x1b\n" +
+	"\tplan_json\x18\x01 \x01(\fR\bplanJson\"c\n" +
+	"%ApplyNativeConfigurationImportRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1b\n" +
+	"\tplan_json\x18\x02 \x01(\fR\bplanJson\"\x8b\x01\n" +
+	"&ApplyNativeConfigurationImportResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\x12&\n" +
+	"\x03job\x18\x03 \x01(\v2\x14.delidev.v1.ResourceR\x03job\"D\n" +
+	"#GetNativeConfigurationImportRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"\xaf\x01\n" +
+	"$GetNativeConfigurationImportResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12&\n" +
+	"\x03job\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12@\n" +
+	"\x05state\x18\x03 \x01(\x0e2*.delidev.v1.NativeConfigurationImportStateR\x05state*\x94\x02\n" +
+	"\x1eNativeConfigurationImportState\x121\n" +
+	"-NATIVE_CONFIGURATION_IMPORT_STATE_UNSPECIFIED\x10\x00\x121\n" +
+	"-NATIVE_CONFIGURATION_IMPORT_STATE_UNDELIVERED\x10\x01\x12-\n" +
+	")NATIVE_CONFIGURATION_IMPORT_STATE_PENDING\x10\x02\x12/\n" +
+	"+NATIVE_CONFIGURATION_IMPORT_STATE_SUCCEEDED\x10\x03\x12,\n" +
+	"(NATIVE_CONFIGURATION_IMPORT_STATE_FAILED\x10\x042\x92\f\n" +
+	"\x14ConfigurationService\x12\x8d\x01\n" +
+	" PreviewNativeConfigurationImport\x123.delidev.v1.PreviewNativeConfigurationImportRequest\x1a4.delidev.v1.PreviewNativeConfigurationImportResponse\x12\x8d\x01\n" +
+	" PrepareNativeConfigurationImport\x123.delidev.v1.PrepareNativeConfigurationImportRequest\x1a4.delidev.v1.PrepareNativeConfigurationImportResponse\x12\x87\x01\n" +
+	"\x1eApplyNativeConfigurationImport\x121.delidev.v1.ApplyNativeConfigurationImportRequest\x1a2.delidev.v1.ApplyNativeConfigurationImportResponse\x12\x81\x01\n" +
+	"\x1cGetNativeConfigurationImport\x12/.delidev.v1.GetNativeConfigurationImportRequest\x1a0.delidev.v1.GetNativeConfigurationImportResponse\x12u\n" +
 	"\x18ListProjectPromptHistory\x12+.delidev.v1.ListProjectPromptHistoryRequest\x1a,.delidev.v1.ListProjectPromptHistoryResponse\x12x\n" +
 	"\x19ClearProjectPromptHistory\x12,.delidev.v1.ClearProjectPromptHistoryRequest\x1a-.delidev.v1.ClearProjectPromptHistoryResponse\x12f\n" +
 	"\x13ExportConfiguration\x12&.delidev.v1.ExportConfigurationRequest\x1a'.delidev.v1.ExportConfigurationResponse\x12{\n" +
@@ -1246,65 +1766,87 @@ func file_delidev_v1_configuration_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_configuration_proto_rawDescData
 }
 
-var file_delidev_v1_configuration_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_delidev_v1_configuration_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_delidev_v1_configuration_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_delidev_v1_configuration_proto_goTypes = []any{
-	(*SaveAgentWorkerRequest)(nil),             // 0: delidev.v1.SaveAgentWorkerRequest
-	(*AgentWorkerModelSelection)(nil),          // 1: delidev.v1.AgentWorkerModelSelection
-	(*SaveConfigurationRequest)(nil),           // 2: delidev.v1.SaveConfigurationRequest
-	(*SaveConfigurationResponse)(nil),          // 3: delidev.v1.SaveConfigurationResponse
-	(*DeleteConfigurationRequest)(nil),         // 4: delidev.v1.DeleteConfigurationRequest
-	(*DeleteConfigurationResponse)(nil),        // 5: delidev.v1.DeleteConfigurationResponse
-	(*PreviewRoutingRequest)(nil),              // 6: delidev.v1.PreviewRoutingRequest
-	(*PreviewRoutingResponse)(nil),             // 7: delidev.v1.PreviewRoutingResponse
-	(*ExportConfigurationRequest)(nil),         // 8: delidev.v1.ExportConfigurationRequest
-	(*ExportConfigurationResponse)(nil),        // 9: delidev.v1.ExportConfigurationResponse
-	(*PreviewConfigurationImportRequest)(nil),  // 10: delidev.v1.PreviewConfigurationImportRequest
-	(*PreviewConfigurationImportResponse)(nil), // 11: delidev.v1.PreviewConfigurationImportResponse
-	(*ApplyConfigurationImportRequest)(nil),    // 12: delidev.v1.ApplyConfigurationImportRequest
-	(*ApplyConfigurationImportResponse)(nil),   // 13: delidev.v1.ApplyConfigurationImportResponse
-	(*ProjectPromptHistoryEntry)(nil),          // 14: delidev.v1.ProjectPromptHistoryEntry
-	(*ListProjectPromptHistoryRequest)(nil),    // 15: delidev.v1.ListProjectPromptHistoryRequest
-	(*ListProjectPromptHistoryResponse)(nil),   // 16: delidev.v1.ListProjectPromptHistoryResponse
-	(*ClearProjectPromptHistoryRequest)(nil),   // 17: delidev.v1.ClearProjectPromptHistoryRequest
-	(*ClearProjectPromptHistoryResponse)(nil),  // 18: delidev.v1.ClearProjectPromptHistoryResponse
-	(*Mutation)(nil),                           // 19: delidev.v1.Mutation
-	(EntityKind)(0),                            // 20: delidev.v1.EntityKind
-	(*Resource)(nil),                           // 21: delidev.v1.Resource
+	(NativeConfigurationImportState)(0),              // 0: delidev.v1.NativeConfigurationImportState
+	(*SaveAgentWorkerRequest)(nil),                   // 1: delidev.v1.SaveAgentWorkerRequest
+	(*AgentWorkerModelSelection)(nil),                // 2: delidev.v1.AgentWorkerModelSelection
+	(*SaveConfigurationRequest)(nil),                 // 3: delidev.v1.SaveConfigurationRequest
+	(*SaveConfigurationResponse)(nil),                // 4: delidev.v1.SaveConfigurationResponse
+	(*DeleteConfigurationRequest)(nil),               // 5: delidev.v1.DeleteConfigurationRequest
+	(*DeleteConfigurationResponse)(nil),              // 6: delidev.v1.DeleteConfigurationResponse
+	(*PreviewRoutingRequest)(nil),                    // 7: delidev.v1.PreviewRoutingRequest
+	(*PreviewRoutingResponse)(nil),                   // 8: delidev.v1.PreviewRoutingResponse
+	(*ExportConfigurationRequest)(nil),               // 9: delidev.v1.ExportConfigurationRequest
+	(*ExportConfigurationResponse)(nil),              // 10: delidev.v1.ExportConfigurationResponse
+	(*PreviewConfigurationImportRequest)(nil),        // 11: delidev.v1.PreviewConfigurationImportRequest
+	(*PreviewConfigurationImportResponse)(nil),       // 12: delidev.v1.PreviewConfigurationImportResponse
+	(*ApplyConfigurationImportRequest)(nil),          // 13: delidev.v1.ApplyConfigurationImportRequest
+	(*ApplyConfigurationImportResponse)(nil),         // 14: delidev.v1.ApplyConfigurationImportResponse
+	(*ProjectPromptHistoryEntry)(nil),                // 15: delidev.v1.ProjectPromptHistoryEntry
+	(*ListProjectPromptHistoryRequest)(nil),          // 16: delidev.v1.ListProjectPromptHistoryRequest
+	(*ListProjectPromptHistoryResponse)(nil),         // 17: delidev.v1.ListProjectPromptHistoryResponse
+	(*ClearProjectPromptHistoryRequest)(nil),         // 18: delidev.v1.ClearProjectPromptHistoryRequest
+	(*ClearProjectPromptHistoryResponse)(nil),        // 19: delidev.v1.ClearProjectPromptHistoryResponse
+	(*PreviewNativeConfigurationImportRequest)(nil),  // 20: delidev.v1.PreviewNativeConfigurationImportRequest
+	(*PreviewNativeConfigurationImportResponse)(nil), // 21: delidev.v1.PreviewNativeConfigurationImportResponse
+	(*PrepareNativeConfigurationImportRequest)(nil),  // 22: delidev.v1.PrepareNativeConfigurationImportRequest
+	(*PrepareNativeConfigurationImportResponse)(nil), // 23: delidev.v1.PrepareNativeConfigurationImportResponse
+	(*ApplyNativeConfigurationImportRequest)(nil),    // 24: delidev.v1.ApplyNativeConfigurationImportRequest
+	(*ApplyNativeConfigurationImportResponse)(nil),   // 25: delidev.v1.ApplyNativeConfigurationImportResponse
+	(*GetNativeConfigurationImportRequest)(nil),      // 26: delidev.v1.GetNativeConfigurationImportRequest
+	(*GetNativeConfigurationImportResponse)(nil),     // 27: delidev.v1.GetNativeConfigurationImportResponse
+	(*Mutation)(nil),                                 // 28: delidev.v1.Mutation
+	(EntityKind)(0),                                  // 29: delidev.v1.EntityKind
+	(*Resource)(nil),                                 // 30: delidev.v1.Resource
 }
 var file_delidev_v1_configuration_proto_depIdxs = []int32{
-	19, // 0: delidev.v1.SaveAgentWorkerRequest.mutation:type_name -> delidev.v1.Mutation
-	1,  // 1: delidev.v1.SaveAgentWorkerRequest.model:type_name -> delidev.v1.AgentWorkerModelSelection
-	1,  // 2: delidev.v1.SaveAgentWorkerRequest.route_models:type_name -> delidev.v1.AgentWorkerModelSelection
-	19, // 3: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	20, // 4: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	21, // 5: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
-	21, // 6: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
-	19, // 7: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	20, // 8: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	14, // 9: delidev.v1.ListProjectPromptHistoryResponse.entries:type_name -> delidev.v1.ProjectPromptHistoryEntry
-	15, // 10: delidev.v1.ConfigurationService.ListProjectPromptHistory:input_type -> delidev.v1.ListProjectPromptHistoryRequest
-	17, // 11: delidev.v1.ConfigurationService.ClearProjectPromptHistory:input_type -> delidev.v1.ClearProjectPromptHistoryRequest
-	8,  // 12: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
-	10, // 13: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
-	12, // 14: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
-	0,  // 15: delidev.v1.ConfigurationService.SaveAgentWorker:input_type -> delidev.v1.SaveAgentWorkerRequest
-	2,  // 16: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	4,  // 17: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	6,  // 18: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	16, // 19: delidev.v1.ConfigurationService.ListProjectPromptHistory:output_type -> delidev.v1.ListProjectPromptHistoryResponse
-	18, // 20: delidev.v1.ConfigurationService.ClearProjectPromptHistory:output_type -> delidev.v1.ClearProjectPromptHistoryResponse
-	9,  // 21: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
-	11, // 22: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
-	13, // 23: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
-	3,  // 24: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
-	3,  // 25: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	5,  // 26: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	7,  // 27: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	19, // [19:28] is the sub-list for method output_type
-	10, // [10:19] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	28, // 0: delidev.v1.SaveAgentWorkerRequest.mutation:type_name -> delidev.v1.Mutation
+	2,  // 1: delidev.v1.SaveAgentWorkerRequest.model:type_name -> delidev.v1.AgentWorkerModelSelection
+	2,  // 2: delidev.v1.SaveAgentWorkerRequest.route_models:type_name -> delidev.v1.AgentWorkerModelSelection
+	28, // 3: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	29, // 4: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	30, // 5: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
+	30, // 6: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
+	28, // 7: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	29, // 8: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	15, // 9: delidev.v1.ListProjectPromptHistoryResponse.entries:type_name -> delidev.v1.ProjectPromptHistoryEntry
+	30, // 10: delidev.v1.PreviewNativeConfigurationImportResponse.job:type_name -> delidev.v1.Resource
+	30, // 11: delidev.v1.ApplyNativeConfigurationImportResponse.job:type_name -> delidev.v1.Resource
+	30, // 12: delidev.v1.GetNativeConfigurationImportResponse.job:type_name -> delidev.v1.Resource
+	0,  // 13: delidev.v1.GetNativeConfigurationImportResponse.state:type_name -> delidev.v1.NativeConfigurationImportState
+	20, // 14: delidev.v1.ConfigurationService.PreviewNativeConfigurationImport:input_type -> delidev.v1.PreviewNativeConfigurationImportRequest
+	22, // 15: delidev.v1.ConfigurationService.PrepareNativeConfigurationImport:input_type -> delidev.v1.PrepareNativeConfigurationImportRequest
+	24, // 16: delidev.v1.ConfigurationService.ApplyNativeConfigurationImport:input_type -> delidev.v1.ApplyNativeConfigurationImportRequest
+	26, // 17: delidev.v1.ConfigurationService.GetNativeConfigurationImport:input_type -> delidev.v1.GetNativeConfigurationImportRequest
+	16, // 18: delidev.v1.ConfigurationService.ListProjectPromptHistory:input_type -> delidev.v1.ListProjectPromptHistoryRequest
+	18, // 19: delidev.v1.ConfigurationService.ClearProjectPromptHistory:input_type -> delidev.v1.ClearProjectPromptHistoryRequest
+	9,  // 20: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
+	11, // 21: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
+	13, // 22: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
+	1,  // 23: delidev.v1.ConfigurationService.SaveAgentWorker:input_type -> delidev.v1.SaveAgentWorkerRequest
+	3,  // 24: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	5,  // 25: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	7,  // 26: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	21, // 27: delidev.v1.ConfigurationService.PreviewNativeConfigurationImport:output_type -> delidev.v1.PreviewNativeConfigurationImportResponse
+	23, // 28: delidev.v1.ConfigurationService.PrepareNativeConfigurationImport:output_type -> delidev.v1.PrepareNativeConfigurationImportResponse
+	25, // 29: delidev.v1.ConfigurationService.ApplyNativeConfigurationImport:output_type -> delidev.v1.ApplyNativeConfigurationImportResponse
+	27, // 30: delidev.v1.ConfigurationService.GetNativeConfigurationImport:output_type -> delidev.v1.GetNativeConfigurationImportResponse
+	17, // 31: delidev.v1.ConfigurationService.ListProjectPromptHistory:output_type -> delidev.v1.ListProjectPromptHistoryResponse
+	19, // 32: delidev.v1.ConfigurationService.ClearProjectPromptHistory:output_type -> delidev.v1.ClearProjectPromptHistoryResponse
+	10, // 33: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
+	12, // 34: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
+	14, // 35: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
+	4,  // 36: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
+	4,  // 37: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	6,  // 38: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	8,  // 39: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	27, // [27:40] is the sub-list for method output_type
+	14, // [14:27] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_configuration_proto_init() }
@@ -1322,13 +1864,14 @@ func file_delidev_v1_configuration_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_configuration_proto_rawDesc), len(file_delidev_v1_configuration_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   19,
+			NumEnums:      1,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_delidev_v1_configuration_proto_goTypes,
 		DependencyIndexes: file_delidev_v1_configuration_proto_depIdxs,
+		EnumInfos:         file_delidev_v1_configuration_proto_enumTypes,
 		MessageInfos:      file_delidev_v1_configuration_proto_msgTypes,
 	}.Build()
 	File_delidev_v1_configuration_proto = out.File

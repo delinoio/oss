@@ -33,6 +33,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ConfigurationServicePreviewNativeConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's PreviewNativeConfigurationImport RPC.
+	ConfigurationServicePreviewNativeConfigurationImportProcedure = "/delidev.v1.ConfigurationService/PreviewNativeConfigurationImport"
+	// ConfigurationServicePrepareNativeConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's PrepareNativeConfigurationImport RPC.
+	ConfigurationServicePrepareNativeConfigurationImportProcedure = "/delidev.v1.ConfigurationService/PrepareNativeConfigurationImport"
+	// ConfigurationServiceApplyNativeConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's ApplyNativeConfigurationImport RPC.
+	ConfigurationServiceApplyNativeConfigurationImportProcedure = "/delidev.v1.ConfigurationService/ApplyNativeConfigurationImport"
+	// ConfigurationServiceGetNativeConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's GetNativeConfigurationImport RPC.
+	ConfigurationServiceGetNativeConfigurationImportProcedure = "/delidev.v1.ConfigurationService/GetNativeConfigurationImport"
 	// ConfigurationServiceListProjectPromptHistoryProcedure is the fully-qualified name of the
 	// ConfigurationService's ListProjectPromptHistory RPC.
 	ConfigurationServiceListProjectPromptHistoryProcedure = "/delidev.v1.ConfigurationService/ListProjectPromptHistory"
@@ -64,6 +76,10 @@ const (
 
 // ConfigurationServiceClient is a client for the delidev.v1.ConfigurationService service.
 type ConfigurationServiceClient interface {
+	PreviewNativeConfigurationImport(context.Context, *connect.Request[v1.PreviewNativeConfigurationImportRequest]) (*connect.Response[v1.PreviewNativeConfigurationImportResponse], error)
+	PrepareNativeConfigurationImport(context.Context, *connect.Request[v1.PrepareNativeConfigurationImportRequest]) (*connect.Response[v1.PrepareNativeConfigurationImportResponse], error)
+	ApplyNativeConfigurationImport(context.Context, *connect.Request[v1.ApplyNativeConfigurationImportRequest]) (*connect.Response[v1.ApplyNativeConfigurationImportResponse], error)
+	GetNativeConfigurationImport(context.Context, *connect.Request[v1.GetNativeConfigurationImportRequest]) (*connect.Response[v1.GetNativeConfigurationImportResponse], error)
 	ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error)
 	ClearProjectPromptHistory(context.Context, *connect.Request[v1.ClearProjectPromptHistoryRequest]) (*connect.Response[v1.ClearProjectPromptHistoryResponse], error)
 	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
@@ -90,6 +106,30 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	configurationServiceMethods := v1.File_delidev_v1_configuration_proto.Services().ByName("ConfigurationService").Methods()
 	return &configurationServiceClient{
+		previewNativeConfigurationImport: connect.NewClient[v1.PreviewNativeConfigurationImportRequest, v1.PreviewNativeConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServicePreviewNativeConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PreviewNativeConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
+		prepareNativeConfigurationImport: connect.NewClient[v1.PrepareNativeConfigurationImportRequest, v1.PrepareNativeConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServicePrepareNativeConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PrepareNativeConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
+		applyNativeConfigurationImport: connect.NewClient[v1.ApplyNativeConfigurationImportRequest, v1.ApplyNativeConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServiceApplyNativeConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ApplyNativeConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
+		getNativeConfigurationImport: connect.NewClient[v1.GetNativeConfigurationImportRequest, v1.GetNativeConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServiceGetNativeConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("GetNativeConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
 		listProjectPromptHistory: connect.NewClient[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse](
 			httpClient,
 			baseURL+ConfigurationServiceListProjectPromptHistoryProcedure,
@@ -149,15 +189,42 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	listProjectPromptHistory   *connect.Client[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse]
-	clearProjectPromptHistory  *connect.Client[v1.ClearProjectPromptHistoryRequest, v1.ClearProjectPromptHistoryResponse]
-	exportConfiguration        *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
-	previewConfigurationImport *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
-	applyConfigurationImport   *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
-	saveAgentWorker            *connect.Client[v1.SaveAgentWorkerRequest, v1.SaveConfigurationResponse]
-	saveConfiguration          *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
-	deleteConfiguration        *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
-	previewRouting             *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+	previewNativeConfigurationImport *connect.Client[v1.PreviewNativeConfigurationImportRequest, v1.PreviewNativeConfigurationImportResponse]
+	prepareNativeConfigurationImport *connect.Client[v1.PrepareNativeConfigurationImportRequest, v1.PrepareNativeConfigurationImportResponse]
+	applyNativeConfigurationImport   *connect.Client[v1.ApplyNativeConfigurationImportRequest, v1.ApplyNativeConfigurationImportResponse]
+	getNativeConfigurationImport     *connect.Client[v1.GetNativeConfigurationImportRequest, v1.GetNativeConfigurationImportResponse]
+	listProjectPromptHistory         *connect.Client[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse]
+	clearProjectPromptHistory        *connect.Client[v1.ClearProjectPromptHistoryRequest, v1.ClearProjectPromptHistoryResponse]
+	exportConfiguration              *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
+	previewConfigurationImport       *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
+	applyConfigurationImport         *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
+	saveAgentWorker                  *connect.Client[v1.SaveAgentWorkerRequest, v1.SaveConfigurationResponse]
+	saveConfiguration                *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
+	deleteConfiguration              *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
+	previewRouting                   *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+}
+
+// PreviewNativeConfigurationImport calls
+// delidev.v1.ConfigurationService.PreviewNativeConfigurationImport.
+func (c *configurationServiceClient) PreviewNativeConfigurationImport(ctx context.Context, req *connect.Request[v1.PreviewNativeConfigurationImportRequest]) (*connect.Response[v1.PreviewNativeConfigurationImportResponse], error) {
+	return c.previewNativeConfigurationImport.CallUnary(ctx, req)
+}
+
+// PrepareNativeConfigurationImport calls
+// delidev.v1.ConfigurationService.PrepareNativeConfigurationImport.
+func (c *configurationServiceClient) PrepareNativeConfigurationImport(ctx context.Context, req *connect.Request[v1.PrepareNativeConfigurationImportRequest]) (*connect.Response[v1.PrepareNativeConfigurationImportResponse], error) {
+	return c.prepareNativeConfigurationImport.CallUnary(ctx, req)
+}
+
+// ApplyNativeConfigurationImport calls
+// delidev.v1.ConfigurationService.ApplyNativeConfigurationImport.
+func (c *configurationServiceClient) ApplyNativeConfigurationImport(ctx context.Context, req *connect.Request[v1.ApplyNativeConfigurationImportRequest]) (*connect.Response[v1.ApplyNativeConfigurationImportResponse], error) {
+	return c.applyNativeConfigurationImport.CallUnary(ctx, req)
+}
+
+// GetNativeConfigurationImport calls delidev.v1.ConfigurationService.GetNativeConfigurationImport.
+func (c *configurationServiceClient) GetNativeConfigurationImport(ctx context.Context, req *connect.Request[v1.GetNativeConfigurationImportRequest]) (*connect.Response[v1.GetNativeConfigurationImportResponse], error) {
+	return c.getNativeConfigurationImport.CallUnary(ctx, req)
 }
 
 // ListProjectPromptHistory calls delidev.v1.ConfigurationService.ListProjectPromptHistory.
@@ -207,6 +274,10 @@ func (c *configurationServiceClient) PreviewRouting(ctx context.Context, req *co
 
 // ConfigurationServiceHandler is an implementation of the delidev.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
+	PreviewNativeConfigurationImport(context.Context, *connect.Request[v1.PreviewNativeConfigurationImportRequest]) (*connect.Response[v1.PreviewNativeConfigurationImportResponse], error)
+	PrepareNativeConfigurationImport(context.Context, *connect.Request[v1.PrepareNativeConfigurationImportRequest]) (*connect.Response[v1.PrepareNativeConfigurationImportResponse], error)
+	ApplyNativeConfigurationImport(context.Context, *connect.Request[v1.ApplyNativeConfigurationImportRequest]) (*connect.Response[v1.ApplyNativeConfigurationImportResponse], error)
+	GetNativeConfigurationImport(context.Context, *connect.Request[v1.GetNativeConfigurationImportRequest]) (*connect.Response[v1.GetNativeConfigurationImportResponse], error)
 	ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error)
 	ClearProjectPromptHistory(context.Context, *connect.Request[v1.ClearProjectPromptHistoryRequest]) (*connect.Response[v1.ClearProjectPromptHistoryResponse], error)
 	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
@@ -229,6 +300,30 @@ type ConfigurationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	configurationServiceMethods := v1.File_delidev_v1_configuration_proto.Services().ByName("ConfigurationService").Methods()
+	configurationServicePreviewNativeConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServicePreviewNativeConfigurationImportProcedure,
+		svc.PreviewNativeConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("PreviewNativeConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServicePrepareNativeConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServicePrepareNativeConfigurationImportProcedure,
+		svc.PrepareNativeConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("PrepareNativeConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceApplyNativeConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServiceApplyNativeConfigurationImportProcedure,
+		svc.ApplyNativeConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("ApplyNativeConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceGetNativeConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServiceGetNativeConfigurationImportProcedure,
+		svc.GetNativeConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("GetNativeConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceListProjectPromptHistoryHandler := connect.NewUnaryHandler(
 		ConfigurationServiceListProjectPromptHistoryProcedure,
 		svc.ListProjectPromptHistory,
@@ -285,6 +380,14 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 	)
 	return "/delidev.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigurationServicePreviewNativeConfigurationImportProcedure:
+			configurationServicePreviewNativeConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServicePrepareNativeConfigurationImportProcedure:
+			configurationServicePrepareNativeConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServiceApplyNativeConfigurationImportProcedure:
+			configurationServiceApplyNativeConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServiceGetNativeConfigurationImportProcedure:
+			configurationServiceGetNativeConfigurationImportHandler.ServeHTTP(w, r)
 		case ConfigurationServiceListProjectPromptHistoryProcedure:
 			configurationServiceListProjectPromptHistoryHandler.ServeHTTP(w, r)
 		case ConfigurationServiceClearProjectPromptHistoryProcedure:
@@ -311,6 +414,22 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 
 // UnimplementedConfigurationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigurationServiceHandler struct{}
+
+func (UnimplementedConfigurationServiceHandler) PreviewNativeConfigurationImport(context.Context, *connect.Request[v1.PreviewNativeConfigurationImportRequest]) (*connect.Response[v1.PreviewNativeConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewNativeConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) PrepareNativeConfigurationImport(context.Context, *connect.Request[v1.PrepareNativeConfigurationImportRequest]) (*connect.Response[v1.PrepareNativeConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PrepareNativeConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ApplyNativeConfigurationImport(context.Context, *connect.Request[v1.ApplyNativeConfigurationImportRequest]) (*connect.Response[v1.ApplyNativeConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ApplyNativeConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) GetNativeConfigurationImport(context.Context, *connect.Request[v1.GetNativeConfigurationImportRequest]) (*connect.Response[v1.GetNativeConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.GetNativeConfigurationImport is not implemented"))
+}
 
 func (UnimplementedConfigurationServiceHandler) ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ListProjectPromptHistory is not implemented"))
