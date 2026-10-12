@@ -27,6 +27,7 @@ func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (E
 	if envelope.ThreadID != c.thread {
 		return privateNative(native), nil
 	}
+	envelope.TurnID = c.normalizeCodeReviewChildTurn(envelope.TurnID)
 	turn, known := c.execution.turns[envelope.TurnID]
 	if !known {
 		return Event{}, incompatible()

@@ -519,3 +519,9 @@ vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
 Reset. Date precision, invalid drafts, presets, picker selection, query identity
 and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
+
+## Dedicated review usage
+
+Dedicated Codex review responses use the closed `native-code-review` auxiliary purpose. Each immutable typed metadata receipt binds its original job, action, session, account, model, context, native thread/turn and provider response digest. The owning Worker publishes observed responses before terminal completion, so unknown completion cannot erase measured usage. Sequence replay never changes the original receipt or charges it twice. Legacy conversation/session-title SQL CHECK values remain unchanged; no migration is added.
+
+Each receipt freezes its exact eligible pricing basis and estimate at observation time. A separate typed metadata lifetime aggregate contributes once to the original session budget, including unavailable counts and independent currencies. Restore preserves these current accounting claims without granting native execution or replay; original session deletion removes their receipts and totals. `GetNativeCodeReview` exposes independent `UsageTotals` and `EstimateTotals` for the exact review. Completion without an exact observed response remains unavailable, not zero. Ordinary conversation response counts and missing-response coverage do not absorb auxiliary reviews, and no estimate establishes actual spending.

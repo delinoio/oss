@@ -486,3 +486,15 @@ it("does not refresh a successful diagnostics page for unchanged Apply filters",
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(f.read).toHaveBeenCalledTimes(initial + 1);
 });
+
+it("retains independent native review diagnostic purpose without borrowing conversation input", () => {
+  const f = fixture();
+  f.row.purpose = "native-code-review";
+  f.row.inputId = "";
+  const page = create(ListRequestDiagnosticsResponseSchema, {
+    records: [f.row],
+  });
+  expect(validateDiagnosticPage(page, f.session, f.execution)).toBe(page);
+  page.records[0]!.purpose = "foreign-review";
+  expect(() => validateDiagnosticPage(page, f.session, f.execution)).toThrow();
+});

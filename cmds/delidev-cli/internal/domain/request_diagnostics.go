@@ -133,7 +133,7 @@ func (d RequestDiagnostic) Validate() error {
 			return invalidObservation()
 		}
 	}
-	if !slices.Contains([]RequestDiagnosticSource{DiagnosticNativeInput, DiagnosticProxyHTTP}, d.Source) || d.Operation < DiagnosticInput || d.Operation > DiagnosticCount || d.State < DiagnosticInProgress || d.State > DiagnosticCanceled || d.ObservedAt.IsZero() || d.Purpose != ConversationUsage && d.Purpose != SessionTitleUsage {
+	if !slices.Contains([]RequestDiagnosticSource{DiagnosticNativeInput, DiagnosticProxyHTTP}, d.Source) || d.Operation < DiagnosticInput || d.Operation > DiagnosticCount || d.State < DiagnosticInProgress || d.State > DiagnosticCanceled || d.ObservedAt.IsZero() || d.Purpose != ConversationUsage && d.Purpose != SessionTitleUsage && d.Purpose != NativeCodeReviewUsage {
 		return invalidObservation()
 	}
 	if !slices.Contains([]Harness{Codex, ClaudeCode, OpenCode, GrokBuild}, d.Harness) || d.Revision > uint64(1<<63-1) || (d.State == DiagnosticInProgress) != (d.FinishedAt == nil) || (d.State == DiagnosticInProgress || d.State == DiagnosticSucceeded) && d.ErrorCode != "" {

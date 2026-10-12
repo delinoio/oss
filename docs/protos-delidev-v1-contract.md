@@ -1476,6 +1476,12 @@ inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
 
+## Dedicated Codex code review
+
+The complete feature owns System 96 and Worker 58, both `NATIVE_CODEX_REVIEW_V1`. `SessionService.CreateNativeCodeReview` admits one original owner/client target at the expected session revision; `GetNativeCodeReview` projects that exact job. `WorkerService.PublishNativeCodeReview` accepts only the assigned original Worker, job revision, instance and execution grant. Closed new target/state enums and `NativeCodeReview*` messages preserve original selection, typed lifecycle/findings and independent usage projections. Optional field 14 of the new `PublishNativeCodeReviewRequest` owns `NativeCodeReviewResponseUsage`; it publishes an immutable response receipt without advancing native lifecycle state. Account/model/context/price authority is server-derived from the frozen original assignment. These declarations add no field to an existing main message and no database migration.
+
+Keep all four targets separate from ordinary feedback and approval review. A public target or finding cannot authorize file writes, GitHub publication, merge, a replacement native operation or credential access. Omitted capabilities grant no support. Tool-owned Go/TypeScript bindings are generated from these reconciled declarations. Follow the [harness](cmds-delidev-harness-contract.md#dedicated-codex-code-review), [usage](cmds-delidev-usage-contract.md#dedicated-review-usage) and storage contracts for independent runtime and accounting ownership.
+
 ## Startup group timing envelope
 
 Resource.startup_timing uses field 10. SessionStartupTiming has workspace 1 and

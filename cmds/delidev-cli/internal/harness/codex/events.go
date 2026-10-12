@@ -169,6 +169,7 @@ type Message struct {
 
 type Event struct {
 	NativeError      *NativeErrorObservation `json:"-"`
+	CodeReview       *CodeReviewObservation
 	Safety           *ModelSafetyObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
@@ -370,6 +371,19 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		} else if turn.Status != TurnRunning {
 			return Event{}, incompatible()
 		}
+		if native.Method == "turn/started" && c.codeReview != nil && turn.ID != c.codeReview.turn {
+			a := c.codeReview
+			prior, exists := c.execution.turns[a.turn]
+			if a.turn.Validate() != nil || a.turn != c.execution.active || !exists || prior.Turn.Status != TurnRunning || (a.childTurn != "" && a.childTurn != turn.ID) {
+				return Event{}, codeReviewUncertain()
+			}
+			// Codex may report review/start's child turn separately from the
+			// acknowledged review turn. Keep the acknowledgment authoritative;
+			// the child identity is accepted only to correlate its tool events.
+			a.childTurn = turn.ID
+			canonical := prior.Turn
+			return Event{Kind: TurnStartedEvent, ThreadID: c.thread, TurnID: a.turn, Turn: &canonical, Correlated: true}, nil
+		}
 		event := Event{Kind: kind, ThreadID: c.thread, TurnID: turn.ID, Turn: &turn}
 		prior, exists := c.execution.turns[turn.ID]
 		if !exists && native.Method == "turn/started" && c.execution.compaction != nil && c.execution.compaction.turnID == "" && c.execution.compaction.acknowledged && c.execution.active == "" && c.problem == nil {
@@ -418,6 +432,16 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			if a := c.execution.compaction; a != nil && a.turnID == turn.ID {
 				if turn.Status != TurnCompleted || a.itemID == "" {
 					return Event{}, compactionUncertain()
+				}
+				a.terminal = true
+			}
+			if a := c.codeReview; a != nil && a.turn == turn.ID {
+				if turn.Status == TurnCompleted {
+					entered, enteredOK := a.items[a.entered]
+					exited, exitedOK := a.items[a.exited]
+					if !enteredOK || !exitedOK || entered.completed == nil || exited.completed == nil {
+						return Event{}, codeReviewUncertain()
+					}
 				}
 				a.terminal = true
 			}
@@ -596,6 +620,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "enteredReviewMode", "exitedReviewMode":
+		return c.observeCodeReviewLocked(native, params.ThreadID, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":
@@ -620,6 +646,9 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "commandExecution", "fileChange", "imageView", "sleep":
+		if a := c.codeReview; a != nil && a.childTurn != "" && params.TurnID == a.childTurn {
+			params.TurnID = a.turn
+		}
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {
 			return Event{}, err

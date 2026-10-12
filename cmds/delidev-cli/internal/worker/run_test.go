@@ -59,6 +59,15 @@ func TestJournalReusesCompletionAndPreservesInterruptedExecution(t *testing.T) {
 	}
 }
 
+func TestNativeReviewPreExecutionCancellationHasPositiveNoSendProof(t *testing.T) {
+	action := domain.NewID()
+	raw, err := nativeReviewNoSendProof(action)
+	var proof domain.NativeCodeReviewRejectedProof
+	if err != nil || domain.Decode(raw, &proof) != nil || proof.Validate() != nil || proof.ActionID != action {
+		t.Fatal("pre-execution cancellation did not produce valid no-send cleanup proof", err)
+	}
+}
+
 func TestAuxiliaryTitleCapabilityRequiresServerEcho(t *testing.T) {
 	if auxiliaryTitleCapability(nil) {
 		t.Fatal("missing AttachWorker response enabled the auxiliary stream")

@@ -105,3 +105,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ### Codex native Fast tier
 
 Original Codex native input records preserve exact selected/effective `fast` through the closed native tier filter. This applies only to original Codex native source evidence; other native harnesses and provider HTTP observations retain their existing tier domains. Unknown values stay unavailable/redacted. The server projection uses the immutable execution configuration and original applied-setting event, never current Worker settings or requested-to-effective substitution. Frontend validation retains the same source/harness boundary. Native Fast observations grant no billing, acceleration, entitlement, account or retry authority.
+
+## Dedicated review request diagnostics
+
+Dedicated native Codex review uses the separate `native-code-review` auxiliary purpose in original request diagnostics. Preserve its action, original account/model/context and independent proxy observation identity. Existing metadata-only diagnostic presentation accepts this purpose without merging it into conversation usage or granting native review input, workspace mutation or GitHub publication authority. Native findings and raw rollout remain outside diagnostics.
