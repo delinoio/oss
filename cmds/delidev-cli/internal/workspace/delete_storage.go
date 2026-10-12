@@ -100,7 +100,7 @@ func (m *Manager) deletionSnapshotManifest(ctx context.Context, w domain.Session
 	return manifest, nil
 }
 
-func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.SessionDeletionWork, manifest Manifest) (bool, error) {
+func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.SessionDeletionWork, manifest Manifest, cleanupProcessRoot ...string) (bool, error) {
 	raw, err := security.ReadPrivate(m.restoreBindingPath(w.SessionID), 4096)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -125,6 +125,9 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 		}
 		git := m.Git
 		git.OwnerID, git.readOnly, git.offline = w.SessionID, true, true
+		if len(cleanupProcessRoot) == 1 {
+			git.ProcessRoot = cleanupProcessRoot[0]
+		}
 		fields, err := git.revParseFields(ctx, repo.Path, 2, "--git-common-dir", "--absolute-git-dir")
 		expected := filepath.Join(repo.Path, ".git")
 		if err != nil || !sameNativePath(fields[0], expected) || !sameNativePath(fields[1], expected) {

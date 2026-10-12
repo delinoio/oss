@@ -20,9 +20,22 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+type sessionDeletionPhase string
+
+const (
+	deletionProofAdmission     sessionDeletionPhase = "proof-admission"
+	deletionNativeCapture      sessionDeletionPhase = "native-capture"
+	deletionLegacyAbsence      sessionDeletionPhase = "legacy-absence"
+	deletionOriginalValidation sessionDeletionPhase = "original-validation"
+	deletionNativeAdmission    sessionDeletionPhase = "native-admission"
+	deletionCopyRemoval        sessionDeletionPhase = "copy-removal"
+	deletionCompletion         sessionDeletionPhase = "completion"
+)
+
 type sessionDeletionProof struct {
 	Version          uint32                         `json:"version"`
 	Identity         domain.SessionDeletionIdentity `json:"identity,omitempty"`
+	AdmissionDigest  string                         `json:"admission_digest,omitempty"`
 	WorkspaceRetired bool                           `json:"workspace_retired,omitempty"`
 	Digest           string                         `json:"digest"`
 	ReportID         domain.ID                      `json:"report_id"`
@@ -83,7 +96,19 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 // Tombstones close native admission before cleanup. A once-persisted plan may
 // resume removals after a crash; it never replays preparation or native input.
 func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDeletionWork) (sessionDeletionProof, error) {
+	return deleteSessionCopiesWithAdmissionHooks(ctx, config, w, nil, nil)
+}
+
+// The optional hook belongs to deterministic fixtures and never runs in production.
+func deleteSessionCopiesWithAdmissionHooks(ctx context.Context, config Config, w domain.SessionDeletionWork, hook, afterAdmission func()) (returnedProof sessionDeletionProof, returnedError error) {
 	proof := sessionDeletionProof{Version: 2, Identity: w.Identity(), Digest: w.Digest(), ReportID: domain.NewID()}
+	phase := deletionProofAdmission
+	defer func() {
+		if returnedError != nil && config.Logger != nil {
+			config.Logger.DebugContext(ctx, "session_deletion_native_admission_pending", "deletion_id", w.DeletionID, "device_id", w.DeviceID, "phase", phase, "removal_started", returnedProof.RemovalStarted, "code", domain.SafeError(returnedError).Code)
+		}
+	}()
+
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
 	}
@@ -103,6 +128,10 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
+	rootPin, e := security.CaptureRemovalAdmission(ctx, root, nil)
+	if e != nil {
+		return proof, e
+	}
 	proof, path, lock, e := loadSessionDeletionProof(root, w)
 	if e != nil {
 		if config.Logger != nil {
@@ -111,10 +140,24 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		return proof, e
 	}
 	defer lock.Close()
+	if rootPin.Check(ctx, root, false) != nil {
+		return proof, domain.SessionDeletionPending()
+	}
 	if config.Logger != nil {
 		config.Logger.DebugContext(ctx, "session_deletion_obligation_loaded", "deletion_id", w.DeletionID, "device_id", w.DeviceID, "removal_started", proof.RemovalStarted, "complete", proof.Complete, "workspace_retired", proof.WorkspaceRetired)
 	}
 	if proof.Complete {
+		phase = deletionCompletion
+		admission, _, err := loadSessionRemovalAdmission(root, path, w, proof)
+		if err != nil {
+			return proof, err
+		}
+		if admission != nil && admission.Check(ctx, root, true) != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+		if err := workspace.RequireDeletionGitRemoved(root, w); err != nil {
+			return proof, err
+		}
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {
 			return proof, err
 		}
@@ -142,6 +185,40 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		return finishSessionDeletionProof(root, path, w, proof)
 	}
+	phase = deletionNativeCapture
+	admission, _, e := loadSessionRemovalAdmission(root, path, w, proof)
+	if e != nil {
+		return proof, e
+	}
+	if proof.RemovalStarted && admission == nil {
+		phase = deletionLegacyAbsence
+		// Already-started historical progress cannot capture replacement authority.
+		// Only the existing complete/absence rule may finish its original receipt.
+		return completeLegacySessionDeletion(ctx, config, root, path, w, proof)
+	}
+	if admission == nil {
+		if err := prepareSessionDeletionRecoveryLocks(ctx, root, w); err != nil {
+			return proof, err
+		}
+		var err error
+		admission, err = captureSessionRemovalAdmission(ctx, root, w, nil)
+		if err != nil {
+			return proof, err
+		}
+		if rootPin.Check(ctx, root, false) != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+	} else if admission.Check(ctx, root, proof.RemovalStarted) != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	admittedRemover, err := security.NewAdmittedRemover(root, admission)
+	if err != nil {
+		return proof, err
+	}
+	// A synchronized admission left before progress publication is reused exactly.
+	// It becomes authoritative only after this attempt revalidates original work.
+
+	phase = deletionOriginalValidation
 	// The publisher lock precedes the session lock throughout the Worker. A live
 	// owner must finish cancellation and release its handles before removal.
 	locks := []*security.Lock{}
@@ -197,11 +274,15 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			if e := security.CheckPrivateDir(folder); e != nil {
 				return proof, domain.SessionDeletionPending()
 			}
-			l, e := security.TryLock(filepath.Join(folder, "publication.lock"))
-			if e != nil {
+			l, e := security.TryLockExisting(filepath.Join(folder, "publication.lock"))
+			if e != nil && !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
 			}
-			locks = append(locks, l)
+			// The original outer job owner already joined. A never-created publisher
+			// lock grants no further work; do not create it inside an admitted operand.
+			if e == nil {
+				locks = append(locks, l)
+			}
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return proof, domain.SessionDeletionPending()
 		}
@@ -222,6 +303,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			ownerRoot := filepath.Join(root, "processes", string(copy.JobID))
 			if _, e := os.Lstat(ownerRoot); e == nil {
+				if e := admission.CheckTree(ctx, root, ownerRoot); e != nil {
+					return proof, e
+				}
 				if e := process.ReconcileOwnerContext(ctx, filepath.Join(root, "processes"), copy.JobID); e != nil {
 					return proof, e
 				}
@@ -263,7 +347,8 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if len(w.Copies) != 0 || w.Fork != nil {
-		e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
+		e = manager.DeleteOwnedWorkspaceAdmitted(ctx, w, allowAbsentWorkspace, admission, func() error {
+			phase = deletionNativeAdmission
 			// Admission is tombstoned and every native/publisher owner was joined.
 			// Release handles before unlinking their lock files on Windows.
 			for _, lock := range locks {
@@ -272,12 +357,22 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 			}
 			locks = nil
-			if !proof.RemovalStarted {
-				proof.RemovalStarted = true
-				if e := writeJSON(path, proof); e != nil {
-					return e
-				}
+
+			if hook != nil {
+				hook()
+				hook = nil
 			}
+			if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission); err != nil {
+				return err
+			}
+			if afterAdmission != nil {
+				afterAdmission()
+				afterAdmission = nil
+			}
+			return nil
+		}, func() error {
+			phase = deletionCopyRemoval
+
 			for _, binding := range w.SkillSnapshots {
 				if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
 					return domain.SessionDeletionPending()
@@ -294,7 +389,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 					}
 					continue
 				}
-				if e := removeSessionCopy(ctx, root, path); e != nil {
+				if e := removeSessionCopyAdmitted(ctx, root, path, admittedRemover); e != nil {
 					return e
 				}
 			}
@@ -322,9 +417,17 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// All original native and workspace owners have joined before image
 	// removal. Opaque references never grant access to original Local files.
 	if !proof.RemovalStarted {
-		proof.RemovalStarted = true
-		if err := writeJSON(path, proof); err != nil {
+		phase = deletionNativeAdmission
+		if hook != nil {
+			hook()
+			hook = nil
+		}
+		if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission); err != nil {
 			return proof, err
+		}
+		if afterAdmission != nil {
+			afterAdmission()
+			afterAdmission = nil
 		}
 	}
 	for _, binding := range w.SkillSnapshots {
@@ -343,6 +446,13 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if err := images.Removed(w.MachineID, ref); err != nil {
 			return proof, err
 		}
+	}
+	phase = deletionCompletion
+	if admission.Check(ctx, root, true) != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	if err := requireSessionDeletionAbsent(ctx, root, w); err != nil {
+		return proof, err
 	}
 	proof.Complete = true
 	if err := writeJSON(path, proof); err != nil {
@@ -375,6 +485,13 @@ func removeSessionCopy(ctx context.Context, root, path string) error {
 		return nil
 	}
 	return removeSessionTree(ctx, root, path)
+}
+
+func removeSessionCopyAdmitted(ctx context.Context, root, path string, remover *security.AdmittedRemover) error {
+	if independentSessionCopy(root, path) {
+		return removeSessionCopy(ctx, root, path)
+	}
+	return remover.Remove(ctx, path)
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each

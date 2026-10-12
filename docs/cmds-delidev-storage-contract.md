@@ -1535,3 +1535,38 @@ Resource document_json always excludes this key. Native assignments, closed
 progress attempts, checkpoints and digests do not include display timing.
 Legacy omission receives no backfill; replacement jobs retain independent current
 identity and original deletion ownership. No schema or migration is added.
+## Native admission for permanent cleanup
+
+Before original ownership reads, pin the original data root, existing ancestors,
+managed operands and expected absence. Journal directories are pinned before
+private-directory and publisher admission. Join original native owners in their
+existing order. Cleanup-owned reconciliation lock metadata is established before
+capturing its removal operand; it grants no native data ownership.
+
+After full immutable work and workspace validation, synchronize a private native
+removal admission before committing `RemovalStarted` or invoking workspace Git
+removal. The record binds the original server/session/deletion/machine/device,
+complete work digest and report receipt. It contains only relative names and
+stable native identities, bounded to 100,000 entries and 32 MiB. Unix uses eager
+native device/inode values; Windows captures volume/file-index values from an
+open no-follow handle. Path-based lazy file identity cannot grant removal.
+
+Traversal admission rejects changed identities, unknown names, ancestor changes
+and creations at originally absent operands. Every generic unlink rechecks its
+original operand and ancestors. Original entries may disappear during joined
+cleanup or recovery; synchronize a formerly present operand while its original
+parent remains. Initial absence grants no unlink or parent synchronization.
+Retain the exact admission and receipt across interruption. A started historical
+proof without native admission cannot capture a fresh inventory; only the existing
+complete absence rule can finish it. Untouched historical work still requires full
+original ownership validation. Reappearance keeps cleanup unacknowledged.
+
+Independent workspace storage, skills, images and unpublished-child cleanup keep
+their original ownership controls. This metadata adds no protocol or migration.
+The final native check-to-unlink syscall race remains a separate limitation;
+these checks do not provide atomic protection against hostile same-user changes.
+
+Before dynamic title/runtime and storage-remnant inventory, pin the original root,
+its ancestors and each shared namespace identity or expected absence. Verify these
+pins before enumeration and on both sides of extending admission with discovered
+operands. A root or namespace replacement cannot become the remover baseline.

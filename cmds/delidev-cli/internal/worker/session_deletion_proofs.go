@@ -146,7 +146,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		switch header.Version {
 		case 1:
 			var legacy sessionDeletionProof
-			if domain.Decode(legacyRaw, &legacy) != nil || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.WorkspaceRetired || legacy.Digest != w.Digest() || legacy.ReportID.Validate() != nil || legacy.Complete && !legacy.RemovalStarted {
+			if domain.Decode(legacyRaw, &legacy) != nil || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.WorkspaceRetired || legacy.AdmissionDigest != "" || legacy.Digest != w.Digest() || legacy.ReportID.Validate() != nil || legacy.Complete && !legacy.RemovalStarted {
 				return pending()
 			}
 			legacy.Version = 2

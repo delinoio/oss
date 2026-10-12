@@ -16,17 +16,24 @@ import (
 )
 
 type deletionWorkspaceProof struct {
-	Version  uint32                         `json:"version"`
-	Identity domain.SessionDeletionIdentity `json:"identity,omitempty"`
-	Digest   string                         `json:"digest"`
-	Manifest *Manifest                      `json:"manifest,omitempty"`
-	Removed  bool                           `json:"removed"`
+	Version         uint32                         `json:"version"`
+	Identity        domain.SessionDeletionIdentity `json:"identity,omitempty"`
+	Digest          string                         `json:"digest"`
+	Manifest        *Manifest                      `json:"manifest,omitempty"`
+	AdmissionDigest string                         `json:"admission_digest,omitempty"`
+	Removed         bool                           `json:"removed"`
 }
 
 // DeleteOwnedWorkspace holds the same lock as preparation, execution and reads.
 // Its external proof retains the original manifest across a crash during Git
 // worktree removal. Local paths are never traversed or deleted.
-func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) (returned error) {
+func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, removeCopies func() error) error {
+	return m.DeleteOwnedWorkspaceAdmitted(ctx, w, allowAbsent, nil, nil, removeCopies)
+}
+
+// DeleteOwnedWorkspaceAdmitted binds generic cleanup to the Worker's captured
+// originals. The callback durably admits all original copies before Git unlink.
+func (m *Manager) DeleteOwnedWorkspaceAdmitted(ctx context.Context, w domain.SessionDeletionWork, allowAbsent bool, admission *security.RemovalAdmission, admit func() error, removeCopies func() error) (returned error) {
 	stage := "validate"
 	defer func() {
 		if m.Logger != nil {
@@ -42,6 +49,14 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	}
 	if e := m.initialize(); e != nil {
 		return e
+	}
+	if admission == nil {
+		// Direct callers retain the same native boundary before any manifest read.
+		var err error
+		admission, err = security.CaptureRemovalAdmission(ctx, m.Root, []string{filepath.Join(m.Root, "workspaces", string(w.SessionID)), filepath.Join(m.Root, "processes", string(w.SessionID))})
+		if err != nil {
+			return err
+		}
 	}
 	stage = "session-lock"
 	lock, e := security.TryLock(filepath.Join(m.Root, "locks", string(w.SessionID)+".lock"))
@@ -134,6 +149,56 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			return e
 		}
 	}
+	retained, err := loadWorkspaceRemovalAdmission(proofPath, w, proof)
+	if err != nil {
+		return err
+	}
+	if retained != nil {
+		admission = retained
+	}
+	if proof.Removed && proof.AdmissionDigest == "" {
+		// Historical removed workspace authority is strictly absence-only.
+		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+	} else if admission.Check(ctx, m.Root, true) != nil {
+		return domain.SessionDeletionPending()
+	}
+	admitted := false
+	admitOriginals := func() error {
+		if admitted {
+			return admission.Check(ctx, m.Root, true)
+		}
+		if admission.Check(ctx, m.Root, true) != nil {
+			return domain.SessionDeletionPending()
+		}
+		if admit != nil {
+			if err := admit(); err != nil {
+				return err
+			}
+		}
+		if err := persistWorkspaceRemovalAdmission(ctx, m.Root, proofPath, w, &proof, admission); err != nil {
+			return err
+		}
+		admitted = true
+		return nil
+	}
+	cleanupGitRoot, err := deletionGitRoot(m.Root, w)
+	if err != nil {
+		return err
+	}
+	if err := security.PrivateDir(cleanupGitRoot); err != nil {
+		return domain.SessionDeletionPending()
+	}
+	if err := reconcileDeletionGit(ctx, m.Root, w); err != nil {
+		return err
+	}
+	defer func() {
+		// Independently join every child even when ownership validation fails.
+		if err := reconcileDeletionGit(ctx, m.Root, w); err != nil {
+			returned = domain.SessionDeletionPending()
+		}
+	}()
 	stage = "owned-manifest"
 	if proof.Manifest == nil {
 		// The retained proof admitted absence, not a newly appearing workspace.
@@ -142,6 +207,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			return domain.SessionDeletionPending()
 		}
 	}
+	gitRemovals := []func() error{}
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
 		if err := m.requireNamedDirectories(PrepareRequest{Repositories: manifestRepositorySpecs(manifest)}); err != nil {
@@ -168,15 +234,20 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		stage = "owned-processes"
 		processRoot := filepath.Join(m.Root, "processes", string(w.SessionID))
 		if _, e := os.Lstat(processRoot); e == nil {
+			if e := admission.CheckTree(ctx, m.Root, processRoot); e != nil {
+				return e
+			}
 			if e := process.ReconcileOwnerContext(ctx, git.ProcessRoot, w.SessionID); e != nil {
 				return e
 			}
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}
+		// Reconcile the original owner before redirecting new cleanup Git children.
+		git.ProcessRoot = cleanupGitRoot
 		independent := false
 		if _, err := os.Lstat(root); err == nil {
-			independent, e = m.deletionRestoredWorkspace(ctx, w, manifest)
+			independent, e = m.deletionRestoredWorkspace(ctx, w, manifest, cleanupGitRoot)
 			if e != nil {
 				return e
 			}
@@ -260,12 +331,26 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			}
 			stage = "git-removal"
 			if present {
-				if _, e := git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", repo.Path); e != nil {
-					return e
-				}
+				gitRemovals = append(gitRemovals, func() error {
+					if err := admission.CheckTree(ctx, m.Root, repo.Path); err != nil {
+						return err
+					}
+					_, err := git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", repo.Path)
+					return err
+				})
 			} else if info != nil {
 				return domain.SessionDeletionPending()
 			}
+		}
+	}
+	if !proof.Removed || proof.AdmissionDigest != "" {
+		if err := admitOriginals(); err != nil {
+			return err
+		}
+	}
+	for _, remove := range gitRemovals {
+		if err := remove(); err != nil {
+			return err
 		}
 	}
 	stage = "workspace-removal"
@@ -274,15 +359,20 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		// paths on recovery therefore preserve the exact original deletion intent.
 		var removeErr error
 		if proof.Manifest != nil && proof.Manifest.Reference != nil {
-			removeErr = m.removeSidechatMetadata(ctx, root, *proof.Manifest)
+			if err := admission.Check(ctx, m.Root, true); err != nil {
+				return err
+			}
+			removeErr = m.removeSidechatMetadataAdmitted(ctx, root, *proof.Manifest, admission)
 		} else {
-			removeErr = security.RemoveOwnedTree(ctx, m.Root, root)
+			removeErr = security.RemoveAdmittedTree(ctx, m.Root, root, admission)
 		}
 		if e := removeErr; e != nil {
 			return domain.SafeError(e)
 		}
-		if e := security.SyncParent(root); e != nil {
-			return domain.SafeError(e)
+		if admission.OriginallyPresent(m.Root, root) {
+			if e := security.SyncParent(root); e != nil {
+				return domain.SafeError(e)
+			}
 		}
 		proof.Removed = true
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {
@@ -290,6 +380,14 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		}
 	} else if _, e := os.Lstat(root); !errors.Is(e, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
+	}
+	if err := reconcileDeletionGit(ctx, m.Root, w); err != nil {
+		return err
+	}
+	if admit != nil {
+		if err := admit(); err != nil {
+			return err
+		}
 	}
 	stage = "copy-removal"
 	if e := removeCopies(); e != nil {

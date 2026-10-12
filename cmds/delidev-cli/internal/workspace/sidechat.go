@@ -293,6 +293,9 @@ func sidechatMetadataIdentity(root string) (string, error) {
 // Remove only the single original metadata file from the inode-bound child
 // scope. No source root or referenced repository becomes removal authority.
 func (m *Manager) removeSidechatMetadata(ctx context.Context, root string, manifest Manifest) error {
+	return m.removeSidechatMetadataAdmitted(ctx, root, manifest, nil)
+}
+func (m *Manager) removeSidechatMetadataAdmitted(ctx context.Context, root string, manifest Manifest, admission *security.RemovalAdmission) error {
 	ref := manifest.Reference
 	if root != filepath.Join(m.Root, "workspaces", string(manifest.SessionID)) || manifest.SessionID.Validate() != nil || ref == nil || ref.SessionID.Validate() != nil || ref.SessionID == manifest.SessionID || !digestValid(ref.MetadataIdentity) || slices.ContainsFunc(manifest.Repositories, func(r PreparedRepository) bool { return r.Owned }) {
 		return ResultUncertain()
@@ -330,6 +333,11 @@ func (m *Manager) removeSidechatMetadata(ctx context.Context, root string, manif
 		if domain.Decode(raw, &stored) != nil || manifestDigest(stored) != manifestDigest(manifest) {
 			return ResultUncertain()
 		}
+		if admission != nil {
+			if err := admission.CheckTree(ctx, m.Root, filepath.Join(root, "manifest.json")); err != nil {
+				return err
+			}
+		}
 		if err := anchored.Remove("manifest.json"); err != nil {
 			return ResultUncertain()
 		}
@@ -343,6 +351,11 @@ func (m *Manager) removeSidechatMetadata(ctx context.Context, root string, manif
 	// no file operation may use the closed view or adopt another directory.
 	if err := anchored.Close(); err != nil {
 		return ResultUncertain()
+	}
+	if admission != nil {
+		if err := admission.CheckTree(ctx, m.Root, root); err != nil {
+			return err
+		}
 	}
 	if err := os.Remove(root); err != nil {
 		return ResultUncertain()

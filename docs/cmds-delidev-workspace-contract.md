@@ -688,3 +688,27 @@ preparation settlement freezes elapsed time; failed, canceled, uncertain and Sto
 settlements freeze unfinished time without implying preparation success. The
 Worker's operation report shape and original workspace/native cleanup authority
 remain unchanged. Missing historical timing cannot be derived from Job timestamps.
+## Retained native workspace removal admission
+
+Permanent cleanup captures the original managed workspace tree before manifest
+ownership reads and retains native root, ancestor and per-entry identities across
+Git validation and removal. Its obligation-owned external admission is synchronized
+before the first workspace destructive operation. Validate all repository owners
+before removing any repository. A native Git removal requires the original complete
+tree inventory at its invocation boundary; the generic workspace remover checks
+retained identities at traversal and every unlink. Local source directories and
+shared Git/account/browser storage retain their existing independent boundaries.
+
+Reconcile the original session process index against the original Git process root
+before directing new cleanup Git children to their independent obligation-owned
+index. Cleanup commands cannot recreate a session process operand whose admission
+proved absence. Join and retire only their positively completed original processes,
+using their own durable native admission. Interruption preserves this scope and its
+metadata; completed replay requires its original process names absent. No new
+execution, preparation or native input authority is introduced.
+
+Reuse exact workspace native admission after interruption. A historical removed
+workspace proof grants absence only and cannot adopt a restored root. Retain native
+admission metadata independently of the non-content workspace proof retirement.
+The storage contract owns bounds, stable platform identity and the separate final
+check-to-unlink race limit.
