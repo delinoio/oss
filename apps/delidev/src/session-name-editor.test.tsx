@@ -23,6 +23,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents, useRetainedMutation } from "./mutation";
+import { ProductIdentityProvider } from "./product-identity-labels";
 import {
   SessionNameEditorProvider,
   useSessionNameEditor,
@@ -76,9 +77,11 @@ function fixture() {
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
-          <SessionNameEditorProvider>
-            <Names id={id} />
-          </SessionNameEditorProvider>
+          <ProductIdentityProvider>
+            <SessionNameEditorProvider>
+              <Names id={id} />
+            </SessionNameEditorProvider>
+          </ProductIdentityProvider>
         </MutationIntents>
       </QueryClientProvider>
     </TransportProvider>
@@ -122,6 +125,24 @@ it("opens only on double-click and shares a retained draft across both original-
     mutation: { id: f.id, expectedRevision: 8n },
     name: "Retained draft",
   });
+});
+it("keeps duplicate-name presentation labels out of an unchanged rename draft", async () => {
+  const f = fixture();
+  const duplicate = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    revision: 8n,
+    schemaVersion: 1,
+    documentJson: encode({ name: "Original name" }),
+  });
+  f.client.setQueryData(["identity-observations"], { resources: [duplicate] });
+  render(f.view);
+  fireEvent.doubleClick(screen.getByText("Sidebar name"));
+  const input = await screen.findByLabelText("Session name");
+  await waitFor(() => expect(input).toHaveProperty("value", "Original name"));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(f.rename).toHaveBeenCalledTimes(1));
+  expect(f.rename.mock.calls[0][0]).toMatchObject({ name: "Original name" });
 });
 it("blocks peer conflicts until explicit draft discard and preserves original uncertain requests", async () => {
   const f = fixture();
