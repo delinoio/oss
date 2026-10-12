@@ -189,10 +189,11 @@ it("configures a real Go server through the settings forms and explicitly valida
     filter: { kind: EntityKind.AGENT },
   });
   expect(agents.resources).toHaveLength(1);
-  expect(agents.resources[0].schemaVersion).toBe(4);
+  expect(agents.resources[0].schemaVersion).toBe(5);
   expect(document(agents.resources[0])).toMatchObject({
     name: "Configured agent",
     harness: "codex",
+    harness_settings: { version: 1 },
     routes: [
       {
         model: {

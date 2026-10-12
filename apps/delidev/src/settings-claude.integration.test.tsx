@@ -21,7 +21,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
-import { document, encode } from "./documents";
+import { document, encode, object } from "./documents";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
@@ -177,14 +177,25 @@ it("persists native Claude permission selection through the desktop and real Go 
   const agent = agents.resources.find(
     (row) => document(row).name === "Native Claude settings",
   )!;
+  expect(agent.schemaVersion).toBe(5);
   expect(document(agent)).toMatchObject({
     harness: "claude-code",
-    options: { permission: "default", claude_permission: "dontAsk" },
+    harness_settings: {
+      version: 1,
+      claude_permission: { mode: "override", value: "dontAsk" },
+    },
+    options: { permission: "default" },
   });
+  expect(object(document(agent).options).claude_permission).toBeUndefined();
   const prior = document(agent);
   const retained = {
     ...prior,
-    options: { permission: "read-only", claude_permission: "plan" },
+    // Native Plan and filesystem permission remain independent selectors.
+    harness_settings: {
+      ...object(prior.harness_settings),
+      permission: { mode: "override", value: "read-only" },
+      claude_permission: { mode: "override", value: "plan" },
+    },
   };
   await configurations.saveConfiguration({
     kind: EntityKind.AGENT,
@@ -193,7 +204,7 @@ it("persists native Claude permission selection through the desktop and real Go 
       expectedRevision: agent.revision,
       requestId: newRequestId(),
     },
-    schemaVersion: 4,
+    schemaVersion: agent.schemaVersion,
     documentJson: encode(retained),
   });
   expect(
