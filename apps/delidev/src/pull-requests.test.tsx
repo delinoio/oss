@@ -60,7 +60,9 @@ beforeEach(() => {
       : matches.call(this, selector);
   });
   const rect = new DOMRect(0, 0, 1024, 768);
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    rect,
+  );
   vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue({
     0: rect,
     length: 1,
@@ -75,7 +77,8 @@ afterEach(() => {
     ["showPopover", originalShow],
     ["hidePopover", originalHide],
   ] as const) {
-    if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+    if (descriptor)
+      Object.defineProperty(HTMLElement.prototype, name, descriptor);
     else delete (HTMLElement.prototype as Partial<HTMLElement>)[name];
   }
 });
@@ -1411,14 +1414,24 @@ it("dismisses details on outside activation without moving focus and gives Escap
   const value = fixture();
   render(<App transport={value.transport} />);
   const pane = await open();
-  const opener = await pane.findByRole("button", { name: "Details for Example repository" });
+  const opener = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
   opener.focus();
   fireEvent.click(opener);
-  const popup = pane.getByRole("region", { name: "Details for Example repository" });
+  const popup = pane.getByRole("region", {
+    name: "Details for Example repository",
+  });
   expect(nativeOpen.has(popup)).toBe(true);
-  const key = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  const key = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
   opener.dispatchEvent(key);
-  await waitFor(() => expect(opener.getAttribute("aria-expanded")).toBe("false"));
+  await waitFor(() =>
+    expect(opener.getAttribute("aria-expanded")).toBe("false"),
+  );
   expect(key.defaultPrevented).toBe(true);
   expect(document.activeElement).toBe(opener);
   fireEvent.click(opener);
@@ -1435,11 +1448,17 @@ it("does not consume Escape from a different control while details is visible", 
   const value = fixture();
   render(<App transport={value.transport} />);
   const pane = await open();
-  const opener = await pane.findByRole("button", { name: "Details for Example repository" });
+  const opener = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
   fireEvent.click(opener);
   const outside = pane.getByRole("button", { name: "Repository settings" });
   outside.focus();
-  const key = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  const key = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
   outside.dispatchEvent(key);
   expect(key.defaultPrevented).toBe(false);
   expect(document.activeElement).toBe(outside);
@@ -1448,17 +1467,39 @@ it("does not consume Escape from a different control while details is visible", 
 it("classifies absent, throwing and canceled native popup APIs without exposing an in-flow panel", async () => {
   for (const behavior of ["absent", "throw", "cancel"] as const) {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
-    Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, value: behavior === "absent" ? undefined : function () { if (behavior === "throw") throw new DOMException("Synthetic failure"); } });
+    Object.defineProperty(HTMLElement.prototype, "showPopover", {
+      configurable: true,
+      value:
+        behavior === "absent"
+          ? undefined
+          : function () {
+              if (behavior === "throw")
+                throw new DOMException("Synthetic failure");
+            },
+    });
     const value = fixture();
     const view = render(<App transport={value.transport} />);
     const pane = await open();
-    const opener = await pane.findByRole("button", { name: "Details for Example repository" });
+    const opener = await pane.findByRole("button", {
+      name: "Details for Example repository",
+    });
     fireEvent.click(opener);
     expect(opener.getAttribute("aria-expanded")).toBe("false");
-    const popup = document.getElementById(opener.getAttribute("aria-controls")!)!;
+    const popup = document.getElementById(
+      opener.getAttribute("aria-controls")!,
+    )!;
     expect(popup.hidden).toBe(true);
-    expect(pane.getByText("Repository details could not open. Try again in a supported app version.").getAttribute("role")).toBe("status");
-    expect(warning).toHaveBeenCalledWith({ event: "repository_details_popup", outcome: behavior === "absent" ? "unavailable" : "failed" });
+    expect(
+      pane
+        .getByText(
+          "Repository details could not open. Try again in a supported app version.",
+        )
+        .getAttribute("role"),
+    ).toBe("status");
+    expect(warning).toHaveBeenCalledWith({
+      event: "repository_details_popup",
+      outcome: behavior === "absent" ? "unavailable" : "failed",
+    });
     expect(value.get).not.toHaveBeenCalled();
     expect(value.query).not.toHaveBeenCalled();
     view.unmount();
@@ -1467,32 +1508,46 @@ it("classifies absent, throwing and canceled native popup APIs without exposing 
 });
 
 it("keeps duplicate-name numbers after reorder and preserves user UUID-like names verbatim", async () => {
-  const first = repository("Same name"), second = repository("Same name");
+  const first = repository("Same name"),
+    second = repository("Same name");
   second.id = newRequestId();
   const userName = `User name ${newRequestId()}`;
-  const third = repository(userName); third.id = newRequestId();
+  const third = repository(userName);
+  third.id = newRequestId();
   const value = fixture([first, second, third]);
   render(<App transport={value.transport} />);
   const pane = await open();
   await pane.findByRole("button", { name: "Same name · 1" });
   value.rows.reverse();
   fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
-  const firstSelection = await pane.findByRole("button", { name: "Same name · 1" });
+  const firstSelection = await pane.findByRole("button", {
+    name: "Same name · 1",
+  });
   expect(pane.getByRole("button", { name: "Same name · 2" })).toBeTruthy();
-  expect(pane.getByRole("button", { name: userName }).textContent).toBe(userName);
+  expect(pane.getByRole("button", { name: userName }).textContent).toBe(
+    userName,
+  );
   fireEvent.click(firstSelection);
   await waitFor(() => expect(value.get).toHaveBeenCalled());
   expect(value.get.mock.calls.at(-1)?.[0].id).toBe(first.id);
-  expect(pane.getByRole("button", { name: "Same name · 1" }).getAttribute("aria-pressed")).toBe("true");
+  expect(
+    pane
+      .getByRole("button", { name: "Same name · 1" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
 });
 
 it("retires a hidden original opener and cleans up its native layer without reading another row", async () => {
   const value = fixture();
   const view = render(<App transport={value.transport} />);
   const pane = await open();
-  const opener = await pane.findByRole("button", { name: "Details for Example repository" });
+  const opener = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
   fireEvent.click(opener);
-  const popup = pane.getByRole("region", { name: "Details for Example repository" });
+  const popup = pane.getByRole("region", {
+    name: "Details for Example repository",
+  });
   opener.hidden = true;
   await waitFor(() => expect(nativeOpen.has(popup)).toBe(false));
   expect(opener.getAttribute("aria-expanded")).toBe("false");

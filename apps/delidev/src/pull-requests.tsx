@@ -148,7 +148,9 @@ function RepositoryNavigationRow({
           aria-expanded={visible}
           aria-describedby={failed ? failureId : undefined}
           title={
-            failed ? copy("pull-requests.repositoryDetailsUnavailable") : undefined
+            failed
+              ? copy("pull-requests.repositoryDetailsUnavailable")
+              : undefined
           }
           aria-controls={detailsId}
           onClick={() => (expanded && !visible ? reveal() : toggleDetails())}

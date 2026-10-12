@@ -250,7 +250,8 @@ export function useRepositoryDetailsPopup({
       close(true);
     };
     const scroll = (event: Event) => {
-      if (event.target instanceof Node && element.contains(event.target)) return;
+      if (event.target instanceof Node && element.contains(event.target))
+        return;
       position();
     };
     const lifetime = new MutationObserver(position);
