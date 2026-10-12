@@ -46,7 +46,8 @@ export function importReceiptMatches(
 ) {
   return (
     result.requestId === request.requestId &&
-    (result.canceled || result.package?.selection?.packageId === request.requestId)
+    (result.canceled ||
+      result.package?.selection?.packageId === request.requestId)
   );
 }
 
@@ -255,7 +256,11 @@ function RunnerSkills({
             agentNames.get(id) || copy("managed-skills-settings.unnamedAgent"),
         );
         return (
-          <article key={packageId} className="result" data-enabled={row.enabled}>
+          <article
+            key={packageId}
+            className="result"
+            data-enabled={row.enabled}
+          >
             <h3>{row.name}</h3>
             <p>{row.description}</p>
             <p>
@@ -325,12 +330,12 @@ function RunnerSkills({
         );
       })}
       <Problem error={toggle.error} summary={writeHelp} />
-      <Problem error={imported.error && !importing ? imported.error : null} summary={writeHelp} />
+      <Problem
+        error={imported.error && !importing ? imported.error : null}
+        summary={writeHelp}
+      />
       {toggle.uncertain ? (
-        <Retry
-          busy={toggle.busy}
-          retry={toggle.retry}
-        />
+        <Retry busy={toggle.busy} retry={toggle.retry} />
       ) : null}
       {imported.uncertain && !importing ? (
         <ImportRecovery
@@ -393,7 +398,9 @@ function RunnerSkills({
             <Problem error={imported.error} summary={writeHelp} />
             {imported.uncertain ? (
               <ImportRecovery
-                busy={imported.busy || cancelImport.busy || cancelImport.uncertain}
+                busy={
+                  imported.busy || cancelImport.busy || cancelImport.uncertain
+                }
                 retry={imported.retry}
                 cancel={() => setCanceling(true)}
               />
@@ -467,7 +474,8 @@ function RunnerSkills({
                 {shown.package.resources.map((resource) => (
                   <li key={resource.path}>
                     <code>{resource.path}</code> · {resource.size.toString()} B
-                    · {resource.mode.toString(8)} · <code>{resource.digest}</code>
+                    · {resource.mode.toString(8)} ·{" "}
+                    <code>{resource.digest}</code>
                   </li>
                 ))}
               </ul>
@@ -498,7 +506,9 @@ function RunnerSkills({
           <SettingsTaskActions>
             <SettingsActionButton
               icon={Icon.Delete}
-              disabled={pending || !ready || deleting.referencingAgentIds.length > 0}
+              disabled={
+                pending || !ready || deleting.referencingAgentIds.length > 0
+              }
               onClick={() =>
                 void remove.send({
                   machineId: machine,

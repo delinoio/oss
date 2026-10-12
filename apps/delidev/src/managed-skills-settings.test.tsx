@@ -3,7 +3,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -143,7 +149,12 @@ async function fixture(options: { lost?: boolean; selection?: boolean } = {}) {
           name: "free-skill",
           enabled: true,
           resources: [
-            { path: "SKILL.md", size: 42n, mode: 0o644, digest: "b".repeat(64) },
+            {
+              path: "SKILL.md",
+              size: 42n,
+              mode: 0o644,
+              digest: "b".repeat(64),
+            },
           ],
         },
         skillMarkdown: "<script>literal only</script>",
@@ -189,22 +200,37 @@ it("shows Runner-scoped inventory, neutral disabled rows, named references and d
   await screen.findByText("free-skill");
   const linked = screen.getByText("linked-skill").closest("article")!;
   expect(
-    await within(linked).findByText("Referenced by Agent Workers: Review agent"),
+    await within(linked).findByText(
+      "Referenced by Agent Workers: Review agent",
+    ),
   ).toBeTruthy();
   expect(
-    (within(linked).getByRole("button", { name: /Delete/ }) as HTMLButtonElement)
-      .disabled,
+    (
+      within(linked).getByRole("button", {
+        name: /Delete/,
+      }) as HTMLButtonElement
+    ).disabled,
   ).toBe(true);
-  expect(screen.getByText("disabled-skill").closest("article")!.getAttribute("data-enabled")).toBe("false");
+  expect(
+    screen
+      .getByText("disabled-skill")
+      .closest("article")!
+      .getAttribute("data-enabled"),
+  ).toBe("false");
   expect(document.body.textContent).not.toContain(f.free.selection!.packageId);
-  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "missing" } });
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "missing" },
+  });
   expect(screen.getByText("No matching skills.")).toBeTruthy();
 });
 it("views SKILL.md and the manifest as inert text", async () => {
   await fixture();
   await screen.findByText("free-skill");
   fireEvent.click(
-    within(screen.getByText("free-skill").closest("article")!).getByRole("button", { name: /View/ }),
+    within(screen.getByText("free-skill").closest("article")!).getByRole(
+      "button",
+      { name: /View/ },
+    ),
   );
   await screen.findByText("<script>literal only</script>");
   expect(document.querySelector("script")).toBeNull();
@@ -215,10 +241,14 @@ it("imports only the explicit directory on the selected Runner", async () => {
   await screen.findByText("free-skill");
   fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
   fireEvent.change(
-    await screen.findByLabelText("Package directory on the selected Runner Device"),
+    await screen.findByLabelText(
+      "Package directory on the selected Runner Device",
+    ),
     { target: { value: "/worker/selected-package" } },
   );
-  fireEvent.click(screen.getAllByRole("button", { name: "Import skill" }).at(-1)!);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Import skill" }).at(-1)!,
+  );
   await waitFor(() => expect(f.imported).toHaveBeenCalledOnce());
   expect(f.imported.mock.calls[0][0]).toMatchObject({
     machineId: machine,
@@ -230,21 +260,32 @@ it("retains the original import request after response loss and offers explicit 
   await screen.findByText("free-skill");
   fireEvent.click(screen.getByRole("button", { name: "Import skill" }));
   fireEvent.change(
-    await screen.findByLabelText("Package directory on the selected Runner Device"),
+    await screen.findByLabelText(
+      "Package directory on the selected Runner Device",
+    ),
     { target: { value: "/worker/selected-package" } },
   );
-  fireEvent.click(screen.getAllByRole("button", { name: "Import skill" }).at(-1)!);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Import skill" }).at(-1)!,
+  );
   await screen.findByRole("button", { name: "Retry original request" });
-  fireEvent.click(screen.getByRole("button", { name: "Retry original request" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original request" }),
+  );
   await waitFor(() => expect(f.imported).toHaveBeenCalledTimes(2));
   expect(f.imported.mock.calls[1][0]).toEqual(f.imported.mock.calls[0][0]);
-  expect(screen.getByRole("button", { name: "Cancel unconfirmed import" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Cancel unconfirmed import" }),
+  ).toBeTruthy();
 });
 it("enables and deletes with revision-checked mutations", async () => {
   const f = await fixture();
   await screen.findByText("free-skill");
   fireEvent.click(
-    within(screen.getByText("free-skill").closest("article")!).getByRole("button", { name: /Disable/ }),
+    within(screen.getByText("free-skill").closest("article")!).getByRole(
+      "button",
+      { name: /Disable/ },
+    ),
   );
   await waitFor(() => expect(f.toggled).toHaveBeenCalledOnce());
   expect(f.toggled.mock.calls[0][0]).toMatchObject({
@@ -253,20 +294,33 @@ it("enables and deletes with revision-checked mutations", async () => {
     mutation: { id: f.free.selection!.packageId, expectedRevision: 1n },
   });
   fireEvent.click(
-    within(screen.getByText("free-skill").closest("article")!).getByRole("button", { name: /Delete/ }),
+    within(screen.getByText("free-skill").closest("article")!).getByRole(
+      "button",
+      { name: /Delete/ },
+    ),
   );
   expect(f.removed).not.toHaveBeenCalled();
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm deletion" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm deletion" }),
+  );
   await waitFor(() => expect(f.removed).toHaveBeenCalledOnce());
 });
 it("writes explicit-presence Agent selections for eligible packages only", async () => {
   const f = await fixture({ selection: true });
   const add = await screen.findByLabelText("Add skill selection");
   expect(
-    (screen.getByRole("option", { name: /disabled-skill/ }) as HTMLOptionElement).disabled,
+    (
+      screen.getByRole("option", {
+        name: /disabled-skill/,
+      }) as HTMLOptionElement
+    ).disabled,
   ).toBe(true);
   fireEvent.change(add, { target: { value: f.free.selection!.packageId } });
   expect(f.change.mock.calls[0][0].managed_skills.selections).toEqual([
-    { worker_device_id: device, package_id: f.free.selection!.packageId, content_revision: revision },
+    {
+      worker_device_id: device,
+      package_id: f.free.selection!.packageId,
+      content_revision: revision,
+    },
   ]);
 });

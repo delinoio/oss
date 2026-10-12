@@ -60,9 +60,7 @@ export function AgentManagedSkills({
           );
           return (
             <li key={`${text(selection.package_id)}:${index}`}>
-              <span>
-                {row?.name ?? copy("agent-managed-skills.retained")}
-              </span>{" "}
+              <span>{row?.name ?? copy("agent-managed-skills.retained")}</span>{" "}
               <button
                 type="button"
                 onClick={() =>

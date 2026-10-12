@@ -408,7 +408,9 @@ it("retains only selected definite failure classes for original recovery", async
     );
     return (
       <>
-        <button onClick={() => void mutation.send({ sessionId: id, requestId })}>
+        <button
+          onClick={() => void mutation.send({ sessionId: id, requestId })}
+        >
           Submit predicate
         </button>
         <button onClick={mutation.retry}>Retry predicate</button>
