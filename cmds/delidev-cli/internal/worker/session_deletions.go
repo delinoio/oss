@@ -87,6 +87,13 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
 	}
+	// Old multi-device plans predate explicit shared-path ownership. One Worker
+	// cannot infer whether another original device already removed a session-wide
+	// path, so missing ownership must remain pending instead of granting every
+	// device authority to remove a restored path.
+	if (len(w.Copies) != 0 || w.Fork != nil) && w.SharedCleanupOwnerDeviceID == "" {
+		return proof, domain.SessionDeletionPending()
+	}
 	for _, copy := range w.Copies {
 		if copy.Type == domain.ForkSessionJob && copy.ExecutionID != "" && copy.UnpublishedSidechatID == "" && copy.UnpublishedChildProcessID == "" && !copy.SidechatRetry {
 			return proof, domain.SessionDeletionPending()
@@ -390,7 +397,7 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 	if len(w.Copies) == 0 && w.Fork == nil {
 		return paths, nil
 	}
-	sharedCleanupOwner := w.SharedCleanupOwnerDeviceID == "" || w.SharedCleanupOwnerDeviceID == w.DeviceID
+	sharedCleanupOwner := w.SharedCleanupOwnerDeviceID == w.DeviceID
 	if sharedCleanupOwner {
 		paths = append(paths, filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock"))
 	}

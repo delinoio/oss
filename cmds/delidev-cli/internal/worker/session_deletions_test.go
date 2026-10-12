@@ -73,7 +73,7 @@ func deletionWorkerFixture(t *testing.T, kind domain.WorkspaceType) (Config, dom
 	if e := writeJSON(filepath.Join(root, "jobs", string(job)+".json"), journal{Version: 1, JobID: job, InstanceID: instance, Revision: 2, Digest: hex.EncodeToString(hash[:]), State: journalReported, ReportID: domain.NewID(), Output: output}); e != nil {
 		t.Fatal(e)
 	}
-	w := domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: domain.NewID(), SessionID: session, MachineID: machine, DeviceID: j.AssignedDeviceID, Copies: []domain.SessionDeletionCopy{{JobID: job, Type: j.Type, Revision: 2, Digest: hex.EncodeToString(hash[:]), InstanceID: instance}}, PreparationDigests: []string{manifest.InputDigest}}
+	w := domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: domain.NewID(), SessionID: session, MachineID: machine, DeviceID: j.AssignedDeviceID, Copies: []domain.SessionDeletionCopy{{JobID: job, Type: j.Type, Revision: 2, Digest: hex.EncodeToString(hash[:]), InstanceID: instance}}, PreparationDigests: []string{manifest.InputDigest}, SharedCleanupOwnerDeviceID: j.AssignedDeviceID}
 	return Config{Root: root, Logger: logger}, w, manifest, source
 }
 

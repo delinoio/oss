@@ -42,6 +42,13 @@ func failedDeletionObligations(t *testing.T) (Config, []domain.SessionDeletionWo
 		}
 		works = append(works, work)
 	}
+	owner := works[0].DeviceID
+	if string(works[1].DeviceID) < string(owner) {
+		owner = works[1].DeviceID
+	}
+	for i := range works {
+		works[i].SharedCleanupOwnerDeviceID = owner
+	}
 	return config, works
 }
 
@@ -132,6 +139,29 @@ func TestSessionDeletionSharedCopiesHaveOneDeterministicOwner(t *testing.T) {
 	}
 	if content, err := os.ReadFile(marker); err != nil || string(content) != "restored" {
 		t.Fatal("non-owner removed a restored shared path", err)
+	}
+}
+
+func TestLegacySessionDeletionWithoutSharedOwnerStaysPending(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	shared := filepath.Join(config.Root, "execution-history", string(works[0].SessionID))
+	if err := os.MkdirAll(shared, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(shared, "restored")
+	if err := os.WriteFile(marker, []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for i := range works {
+		// An omitted field models a durable plan written before explicit shared
+		// cleanup ownership was added.
+		works[i].SharedCleanupOwnerDeviceID = ""
+		if _, err := deleteSessionCopies(context.Background(), config, works[i]); err == nil {
+			t.Fatal("legacy plan without a shared owner was admitted")
+		}
+	}
+	if content, err := os.ReadFile(marker); err != nil || string(content) != "preserve" {
+		t.Fatal("legacy cleanup removed a restored shared path", err)
 	}
 }
 
