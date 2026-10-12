@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -369,6 +370,27 @@ func recoveryRequest(original StorageRequest) StorageRequest {
 	claim := StorageJournalClaim{JobID: original.OperationID, InstanceID: domain.NewID(), Revision: 1, AssignmentDigest: strings.Repeat("a", 64)}
 	return StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageRecover, Preparation: original.Preparation, Manifest: original.Manifest, SnapshotID: original.SnapshotID, PreviousState: original.PreviousState, Recovery: &StorageRecovery{Original: original, Claims: []StorageJournalClaim{claim}, InstanceID: claim.InstanceID, Revision: claim.Revision, AssignmentDigest: claim.AssignmentDigest}}
 }
+
+func TestStorageRecoveryValidatesOriginalWithWorkerOS(t *testing.T) {
+	session, machine, repo := domain.NewID(), domain.NewID(), domain.NewID()
+	ref := domain.Reference{Type: domain.LocalBranch, Name: "main"}
+	checkout := `C:/Users/worker/projects/repository`
+	prepare := PrepareRequest{SessionID: session, MachineID: machine, Type: domain.Worktree, PrimaryRepository: repo, Repositories: []RepositorySpec{{ID: repo, Checkout: checkout, Base: ref, Starting: ref}}}
+	raw, err := json.Marshal(prepare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputDigest := sha256.Sum256(raw)
+	commit := strings.Repeat("a", 40)
+	path := `C:/Users/worker/.delidev/workspaces/` + string(session) + `/` + string(repo)
+	manifest := Manifest{Version: 1, SessionID: session, MachineID: machine, Type: domain.Worktree, State: Ready, InputDigest: hex.EncodeToString(inputDigest[:]), PrimaryPath: path, CreatedAt: time.Now().UTC(), Repositories: []PreparedRepository{{ID: repo, Source: checkout, Path: path, Base: ref, Starting: ref, BaseCommit: commit, StartingCommit: commit, Owned: true}}}
+	original := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCleanup, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID(), PreviousState: domain.WorkspacePresent, PreviewDigest: strings.Repeat("b", 64)}
+	recovery := recoveryRequest(original)
+	if err := recovery.ValidateForWorkerOS("windows"); err != nil {
+		t.Fatalf("valid Windows recovery originals were rejected by a server host: %v", err)
+	}
+}
+
 func TestSnapshotRecoveryInspectsLostCompletionWithoutRecreating(t *testing.T) {
 	m := manager(t)
 	prepare := PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.GeneralChat}

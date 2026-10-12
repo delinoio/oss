@@ -80,7 +80,7 @@ func (r StorageRequest) ValidateForWorkerOS(workerOS string) error {
 		return ResultUncertain()
 	}
 	if r.Action == StorageRecover {
-		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.Validate() != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) || r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != r.Recovery.Original.SnapshotID {
+		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.ValidateForWorkerOS(workerOS) != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) || r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != r.Recovery.Original.SnapshotID {
 			return ResultUncertain()
 		}
 		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > MaxStorageRecoveryClaims {
