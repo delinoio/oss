@@ -66,7 +66,7 @@ func TestDeletionWorkspaceProofLegacyImportsOnlyExactEqualPairs(t *testing.T) {
 }
 
 func TestDeletionLegacyAbsentWorkspaceCannotAdoptRestoredContent(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "worker")
 	work := deletionProofWork()
 	manager := Manager{Root: root}
 	if err := manager.initialize(); err != nil {

@@ -19,7 +19,10 @@ import (
 // with positive no-workspace outcomes. No duplicate live storage is fabricated.
 func failedDeletionObligations(t *testing.T) (Config, []domain.SessionDeletionWork) {
 	t.Helper()
-	config := Config{Root: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	config := Config{Root: filepath.Join(t.TempDir(), "worker"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := security.PrivateDir(config.Root); err != nil {
+		t.Fatal(err)
+	}
 	if err := security.PrivateDir(filepath.Join(config.Root, "jobs")); err != nil {
 		t.Fatal(err)
 	}
