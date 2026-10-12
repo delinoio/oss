@@ -4,7 +4,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   ResourceSchema,
@@ -273,7 +279,7 @@ it("preserves authoritative count, confirms the selected credit and retains the 
   expect(screen.getByText("1 returned details")).toBeTruthy();
   expect(value.request).not.toHaveBeenCalled();
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm credit consumption" }),
+    screen.getByRole("button", { name: "Consume reset credit" }),
   );
   fireEvent.click(
     await screen.findByRole("button", {
@@ -306,7 +312,7 @@ it("requires an explicit count-only next-credit confirmation and fences stale re
   expect(
     (
       screen.getByRole("button", {
-        name: "Confirm credit consumption",
+        name: "Consume reset credit",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -440,7 +446,7 @@ it.each([undefined, null])(
         screen.getByRole("button", { name: "Select Reset credit 1" }),
       );
     fireEvent.click(
-      screen.getByRole("button", { name: "Confirm credit consumption" }),
+      screen.getByRole("button", { name: "Consume reset credit" }),
     );
     await waitFor(() => expect(value.request).toHaveBeenCalledTimes(1));
     expect(value.request.mock.calls[0][0]).toMatchObject({
@@ -499,11 +505,32 @@ it.each([false, true])(
     );
     render(<value.Harness />);
     const reconcile = await screen.findByRole("button", {
-      name: "Reconcile original credit operation",
+      name: "Check original operation result",
     });
     await waitFor(() =>
       expect((reconcile as HTMLButtonElement).disabled).toBe(!cleanup),
     );
+    expect(
+      screen
+        .getByRole("region", { name: "Results and recovery" })
+        .contains(reconcile),
+    ).toBe(true);
+    expect(
+      screen.getByRole("heading", {
+        name: "The consumption result could not be confirmed",
+      }),
+    ).toBeTruthy();
+    if (!cleanup)
+      expect(
+        screen.getByText(
+          "You can check the result after the original operation finishes cleanup.",
+        ),
+      ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Reset credit consumption and quota recovery are verified separately.",
+      ),
+    ).toBeTruthy();
     fireEvent.click(reconcile);
     if (cleanup) {
       await waitFor(() => expect(value.reconcile).toHaveBeenCalledTimes(1));
@@ -522,7 +549,7 @@ it("preserves the server confirmation selectors in Korean", async () => {
   try {
     const value = fixture(undefined, undefined, "", true, true, "", true);
     render(<value.Harness />);
-    const use = await screen.findByRole("button", { name: "사용" });
+    const use = await screen.findByRole("button", { name: "사용하기" });
     await waitFor(() =>
       expect((use as HTMLButtonElement).disabled).toBe(false),
     );
@@ -566,7 +593,7 @@ it("retains original Worker reconciliation after a terminal server-credit histor
   );
   render(<value.Harness />);
   const button = await screen.findByRole("button", {
-    name: "Reconcile original credit operation",
+    name: "Check original operation result",
   });
   await waitFor(() =>
     expect((button as HTMLButtonElement).disabled).toBe(false),
@@ -599,10 +626,10 @@ it("starts collapsed, uses authoritative count, and restores selection focus wit
   const select = screen.getByRole("button", { name: "Select Reset credit 1" });
   fireEvent.click(select);
   expect(globalThis.document.activeElement).toBe(
-    screen.getByRole("heading", { name: "Confirm reset credit consumption" }),
+    screen.getByRole("heading", { name: "Use a reset credit?" }),
   );
-  expect(screen.getByText("Account: Quota fixture")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep credit" }));
+  expect(screen.getByText("Quota fixture")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(globalThis.document.activeElement).toBe(select);
   expect(value.request).not.toHaveBeenCalled();
 });
@@ -612,9 +639,9 @@ it("retains original confirmation outside collapsed details and restores section
   await selectExactCredit();
   fireEvent.click(screen.getByRole("button", { name: "Hide details" }));
   expect(
-    screen.getByRole("button", { name: "Confirm credit consumption" }),
+    screen.getByRole("button", { name: "Consume reset credit" }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep credit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(globalThis.document.activeElement).toBe(
     screen.getByRole("heading", { name: "Reset credits" }),
   );
@@ -643,7 +670,7 @@ it.each([
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "View details" }));
     expect(
-      screen.queryByRole("button", { name: "Confirm credit consumption" }),
+      screen.queryByRole("button", { name: "Consume reset credit" }),
     ).toBeNull();
     expect(value.request).not.toHaveBeenCalled();
   },
@@ -697,15 +724,21 @@ it("locale changes and collapsed details retain the original exact selection wit
   try {
     await i18n.changeLanguage("ko");
     expect(
-      await screen.findByRole("button", { name: "리셋권 사용 확인" }),
+      await screen.findByRole("button", { name: "리셋권 사용" }),
     ).toBeTruthy();
-    expect(screen.getByText("리셋권 1 사용")).toBeTruthy();
+    expect(
+      within(
+        globalThis.document.querySelector<HTMLElement>(
+          ".reset-credit-confirmation",
+        )!,
+      ).getByText("리셋권 1"),
+    ).toBeTruthy();
     expect(value.request).not.toHaveBeenCalled();
   } finally {
     await i18n.changeLanguage("en");
   }
   expect(
-    screen.getByRole("button", { name: "Confirm credit consumption" }),
+    screen.getByRole("button", { name: "Consume reset credit" }),
   ).toBeTruthy();
 });
 
@@ -723,7 +756,7 @@ it("restores the section heading when background inventory disables the original
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Keep credit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(globalThis.document.activeElement).toBe(
     screen.getByRole("heading", { name: "Reset credits" }),
   );
@@ -737,7 +770,7 @@ it("restores the section heading instead of an inert original selection opener",
     .getByRole("button", { name: "Select Reset credit 1" })
     .closest(".reset-credit-rows")!
     .setAttribute("inert", "");
-  fireEvent.click(screen.getByRole("button", { name: "Keep credit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(globalThis.document.activeElement).toBe(
     screen.getByRole("heading", { name: "Reset credits" }),
   );
@@ -827,7 +860,7 @@ it.each(["2030", "2030-02-30T00:00:00Z", "", true, 0])(
       screen.queryByRole("button", { name: "Select Reset credit 1" }),
     ).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Confirm credit consumption" }),
+      screen.queryByRole("button", { name: "Consume reset credit" }),
     ).toBeNull();
     expect(value.request).not.toHaveBeenCalled();
   },
@@ -848,7 +881,7 @@ it.each([undefined, null, "2999-01-01T00:00:00Z"])(
     expect(
       (
         screen.getByRole("button", {
-          name: "Confirm credit consumption",
+          name: "Consume reset credit",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false);
@@ -874,11 +907,11 @@ it("restores the heading after another credit replaces the selected row", async 
   expect(
     (
       screen.getByRole("button", {
-        name: "Confirm credit consumption",
+        name: "Consume reset credit",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Keep credit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(globalThis.document.activeElement).toBe(
     screen.getByRole("heading", { name: "Reset credits" }),
   );
@@ -918,7 +951,7 @@ it.each(["en", "ko"])(
       );
       render(<value.Harness />);
       const use = await screen.findByRole("button", {
-        name: language === "en" ? "Use" : "사용",
+        name: language === "en" ? "Use" : "사용하기",
       });
       await waitFor(() =>
         expect((use as HTMLButtonElement).disabled).toBe(false),
@@ -954,9 +987,11 @@ it.each(["en", "ko"])(
       );
       expect(value.request).not.toHaveBeenCalled();
       expect(
-        screen.getByText(
-          language === "en" ? "Consume reset credit 3" : "리셋권 3 사용",
-        ),
+        within(
+          globalThis.document.querySelector<HTMLElement>(
+            ".reset-credit-confirmation",
+          )!,
+        ).getByText(language === "en" ? "Reset credit 3" : "리셋권 3"),
       ).toBeTruthy();
       fireEvent.click(
         screen.getByRole("button", {
@@ -1003,12 +1038,12 @@ it("retains captured ordinal and full identity through reorder, replacement, loc
   const confirmation = globalThis.document.querySelector(
     ".reset-credit-confirmation",
   )!;
-  expect(confirmation.textContent).toContain("Consume reset credit 3");
+  expect(confirmation.textContent).toContain("Reset credit 3");
   expect(confirmation.textContent).toContain(`ID: ${numberedDetails[2].id}`);
   expect(
     (
       screen.getByRole("button", {
-        name: "Confirm credit consumption",
+        name: "Consume reset credit",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -1017,12 +1052,14 @@ it("retains captured ordinal and full identity through reorder, replacement, loc
   ).toBeTruthy();
   try {
     await i18n.changeLanguage("ko");
-    expect(await screen.findByText("리셋권 3 사용")).toBeTruthy();
+    expect(
+      await within(confirmation as HTMLElement).findByText("리셋권 3"),
+    ).toBeTruthy();
     expect(confirmation.textContent).toContain(numberedDetails[2].id);
     expect(
       (
         screen.getByRole("button", {
-          name: "리셋권 사용 확인",
+          name: "리셋권 사용",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -1032,9 +1069,9 @@ it("retains captured ordinal and full identity through reorder, replacement, loc
   fireEvent.click(
     screen.getByRole("button", { name: "Replace fixture credit" }),
   );
-  expect(confirmation.textContent).toContain("Consume reset credit 3");
+  expect(confirmation.textContent).toContain("Reset credit 3");
   expect(confirmation.textContent).toContain(numberedDetails[2].id);
-  fireEvent.click(screen.getByRole("button", { name: "Keep credit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(globalThis.document.activeElement).toBe(
     screen.getByRole("heading", { name: "Reset credits" }),
   );
@@ -1046,7 +1083,7 @@ it("keeps automatic credits off until exact confirmation and disables them expli
   const value = fixture();
   render(<value.Harness />);
   const checkbox = (await screen.findByRole("checkbox", {
-    name: "Automatically use a reset credit when subscription quota is exhausted",
+    name: "Automatic use",
   })) as HTMLInputElement;
   await waitFor(() => expect(checkbox.disabled).toBe(false));
   expect(checkbox.checked).toBe(false);
@@ -1054,11 +1091,32 @@ it("keeps automatic credits off until exact confirmation and disables them expli
   expect(value.consent).not.toHaveBeenCalled();
   expect(
     await screen.findByRole("heading", {
-      name: "Enable automatic reset credits",
+      name: "Enable automatic reset credit use?",
     }),
   ).toBeTruthy();
+  expect(screen.getByText("Quota fixture")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Uses the earliest-expiring eligible reset credit first.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "If individual details are unavailable, Codex selects the next reset credit.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Automatic use continues after this dialog closes.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Failed sessions do not resume automatically.",
+    ),
+  ).toBeTruthy();
   fireEvent.click(
-    screen.getByRole("button", { name: "Enable automatic reset credits" }),
+    screen.getByRole("button", { name: "Enable automatic use" }),
   );
   await waitFor(() => expect(value.consent).toHaveBeenCalledTimes(1));
   expect(value.consent.mock.calls[0][0]).toMatchObject({
@@ -1069,7 +1127,7 @@ it("keeps automatic credits off until exact confirmation and disables them expli
     mutation: { id: value.account.id, expectedRevision: 1n },
   });
   const enabled = (await screen.findByRole("checkbox", {
-    name: "Automatically use a reset credit when subscription quota is exhausted",
+    name: "Automatic use",
   })) as HTMLInputElement;
   await waitFor(() => expect(enabled.checked).toBe(true));
   fireEvent.click(enabled);
@@ -1084,7 +1142,7 @@ it("fences a consent confirmation after account revision replacement", async () 
   const value = fixture();
   render(<value.Harness />);
   const checkbox = await screen.findByRole("checkbox", {
-    name: "Automatically use a reset credit when subscription quota is exhausted",
+    name: "Automatic use",
   });
   await waitFor(() =>
     expect((checkbox as HTMLInputElement).disabled).toBe(false),
@@ -1096,18 +1154,18 @@ it("fences a consent confirmation after account revision replacement", async () 
   expect(
     (
       screen.getByRole("button", {
-        name: "Enable automatic reset credits",
+        name: "Enable automatic use",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   expect(value.consent).not.toHaveBeenCalled();
   fireEvent.click(
-    screen.getByRole("button", { name: "Keep automatic reset credits off" }),
+    screen.getByRole("button", { name: "Cancel" }),
   );
   expect(
     (
       (await screen.findByRole("checkbox", {
-        name: "Automatically use a reset credit when subscription quota is exhausted",
+        name: "Automatic use",
       })) as HTMLInputElement
     ).checked,
   ).toBe(false);
@@ -1122,7 +1180,7 @@ it.each(["light", "dark"])(
       const value = fixture();
       render(<value.Harness />);
       const checkbox = await screen.findByRole("checkbox", {
-        name: "구독 한도가 소진되면 리셋 크레딧 자동 사용",
+        name: "자동 사용",
       });
       await waitFor(() =>
         expect((checkbox as HTMLInputElement).disabled).toBe(false),
@@ -1130,16 +1188,16 @@ it.each(["light", "dark"])(
       fireEvent.click(checkbox);
       expect(
         await screen.findByRole("heading", {
-          name: "리셋 크레딧 자동 사용 켜기",
+          name: "리셋권 자동 사용을 켤까요?",
         }),
       ).toBeTruthy();
       expect(
         screen.getByText(
-          "서버가 실행 중일 때 동작합니다. 다시 로그인하면 재승인이 필요합니다.",
+          "서버 실행 중에 동작합니다. 다시 로그인하면 재승인이 필요합니다.",
         ),
       ).toBeTruthy();
       fireEvent.click(
-        screen.getByRole("button", { name: "자동 사용 끄기 유지" }),
+        screen.getByRole("button", { name: "취소" }),
       );
       expect(value.consent).not.toHaveBeenCalled();
     } finally {
@@ -1170,7 +1228,7 @@ it.each(["queued", "sending", "uncertain"])(
     );
     render(<value.Harness />);
     const checkbox = (await screen.findByRole("checkbox", {
-      name: "Automatically use a reset credit when subscription quota is exhausted",
+      name: "Automatic use",
     })) as HTMLInputElement;
     await waitFor(() => expect(checkbox.disabled).toBe(false));
     expect(checkbox.checked).toBe(true);

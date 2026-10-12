@@ -31,6 +31,7 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import {
   SettingsTaskDialog,
+  SettingsTaskActions,
   SettingsDialogFocus,
   SettingsDialogSize,
 } from "./settings-task";
@@ -525,23 +526,42 @@ export function SubscriptionQuotaControls({
         close={closeConsent}
         onDismiss={() => setConsentConfirmation(undefined)}
       >
-        <p>
-          {copy("subscription-quota.confirmAccount", {
-            v0:
-              text(document(consentConfirmation).alias) ||
-              copy("subscription-quota.extra.ca1844969742"),
-          })}
-        </p>
-        <p>{copy("subscription-quota.automaticConfirmBody")}</p>
-        <p className="reset-credit-secondary">
-          {copy("subscription-quota.automaticLifetime")}
-        </p>
+        <div className="reset-credit-consent">
+          <dl className="reset-credit-account">
+            <dt>{copy("subscription-quota.accountLabel")}</dt>
+            <dd>
+              {text(document(consentConfirmation).alias) ||
+                copy("subscription-quota.extra.ca1844969742")}
+            </dd>
+          </dl>
+          <p>{copy("subscription-quota.automaticConfirmBody")}</p>
+          <ul className="reset-credit-rules">
+            <li>{copy("subscription-quota.automaticEarliestExpiry")}</li>
+            <li>{copy("subscription-quota.automaticNativeNext")}</li>
+            <li>{copy("subscription-quota.automaticAfterClose")}</li>
+          </ul>
+          <div className="reset-credit-note reset-credit-secondary">
+            <p>{copy("subscription-quota.automaticConsentLifetime")}</p>
+            <p>{copy("subscription-quota.automaticSession")}</p>
+          </div>
+          <p className="reset-credit-warning">
+            {copy("subscription-quota.automaticRecoveryWarning")}
+          </p>
+        </div>
         {consentConfirmation.revision !== current.revision ||
         consentConfirmation.id !== current.id ? (
           <p role="alert">{copy("subscription-quota.automaticChanged")}</p>
         ) : null}
         <Problem error={consent.error} />
-        <div className="actions">
+        <SettingsTaskActions>
+          <SettingsActionButton
+            icon={SettingsActionIcon.Cancel}
+            type="button"
+            disabled={consent.busy}
+            onClick={closeConsent}
+          >
+            {copy("subscription-quota.automaticCancel")}
+          </SettingsActionButton>
           <SettingsActionButton
             icon={SettingsActionIcon.Confirm}
             type="button"
@@ -555,15 +575,7 @@ export function SubscriptionQuotaControls({
           >
             {copy("subscription-quota.automaticEnable")}
           </SettingsActionButton>
-          <SettingsActionButton
-            icon={SettingsActionIcon.Cancel}
-            type="button"
-            disabled={consent.busy}
-            onClick={closeConsent}
-          >
-            {copy("subscription-quota.automaticCancel")}
-          </SettingsActionButton>
-        </div>
+        </SettingsTaskActions>
         {consent.uncertain ? (
           <SettingsActionButton
             icon={SettingsActionIcon.Retry}
@@ -640,21 +652,21 @@ export function SubscriptionQuotaControls({
           className="reset-credit-section"
           aria-labelledby={detailsHeadingId + "-section"}
         >
+          <h3
+            ref={sectionHeading}
+            id={detailsHeadingId + "-section"}
+            tabIndex={-1}
+          >
+            {copy("subscription-quota.resetCredits_321f63")}
+          </h3>
           <div className="reset-credit-summary">
-            <h3
-              ref={sectionHeading}
-              id={detailsHeadingId + "-section"}
-              tabIndex={-1}
-            >
-              {copy("subscription-quota.resetCredits_321f63")}
-            </h3>
-            <span>
+            <strong>
               {countValid
                 ? copy("subscription-quota.availableResetCredits_d85d49", {
                     v0: count,
                   })
                 : copy("subscription-quota.availableCreditCountUnknown_4e840a")}
-            </span>
+            </strong>
             <SettingsActionButton
               icon={SettingsActionIcon.Inspect}
               type="button"
@@ -665,6 +677,9 @@ export function SubscriptionQuotaControls({
               {copy("subscription-quota.useCredit")}
             </SettingsActionButton>
           </div>
+          <p className="reset-credit-secondary">
+            {copy("subscription-quota.summaryRecoveryWarning")}
+          </p>
           {creditReason ? (
             <p role="status" className="reset-credit-secondary">
               {creditReason}
@@ -677,35 +692,38 @@ export function SubscriptionQuotaControls({
               {copy("subscription-quota.serverCreditsUnavailable")}
             </p>
           ) : null}
-          <label className="checkbox reset-credit-automatic">
-            <input
-              ref={consentOpener}
-              type="checkbox"
-              checked={automaticEnabled}
-              disabled={
-                automaticEnabled ? !automaticDisableReady : !automaticReady
-              }
-              onChange={(event) =>
-                event.target.checked
-                  ? setConsentConfirmation(current)
-                  : sendConsent(false)
-              }
-            />
-            {copy("subscription-quota.automaticLabel")}
-          </label>
-          <p className="reset-credit-secondary">
-            {copy("subscription-quota.automaticLifetime")}
-          </p>
-          {!automaticSupported ? (
-            <p role="status" className="reset-credit-secondary">
-              {copy("subscription-quota.automaticUnsupported")}
+          <div className="reset-credit-setting">
+            <label className="checkbox reset-credit-automatic">
+              <span>{copy("subscription-quota.automaticLabel")}</span>
+              <input
+                ref={consentOpener}
+                type="checkbox"
+                checked={automaticEnabled}
+                disabled={
+                  automaticEnabled ? !automaticDisableReady : !automaticReady
+                }
+                onChange={(event) =>
+                  event.target.checked
+                    ? setConsentConfirmation(current)
+                    : sendConsent(false)
+                }
+              />
+            </label>
+            <p>{copy("subscription-quota.automaticDescription")}</p>
+            <p className="reset-credit-secondary">
+              {copy("subscription-quota.automaticLifetime")}
             </p>
-          ) : null}
-          {text(object(state.automatic_credit_episode).id) ? (
-            <p role="status" className="reset-credit-secondary">
-              {copy("subscription-quota.automaticEpisode")}
-            </p>
-          ) : null}
+            {!automaticSupported ? (
+              <p role="status" className="reset-credit-secondary">
+                {copy("subscription-quota.automaticUnsupported")}
+              </p>
+            ) : null}
+            {text(object(state.automatic_credit_episode).id) ? (
+              <p role="status" className="reset-credit-secondary">
+                {copy("subscription-quota.automaticEpisode")}
+              </p>
+            ) : null}
+          </div>
           <DisclosureButton
             density={DisclosureDensity.Settings}
             type="button"
@@ -745,14 +763,7 @@ export function SubscriptionQuotaControls({
                         v0: index + 1,
                       })}
                     </strong>
-                    <span className="reset-credit-secondary">
-                      {copy("subscription-quota.creditId", {
-                        v0:
-                          text(credit.id) ||
-                          copy("subscription-quota.extra.ca1844969742"),
-                      })}
-                    </span>
-                    <span className="reset-credit-secondary">
+                    <span className="reset-credit-availability">
                       {copy(
                         credit.status === "available"
                           ? "subscription-quota.creditAvailable"
@@ -765,6 +776,13 @@ export function SubscriptionQuotaControls({
                         <Timestamp value={text(credit.expires_at)} />
                       </span>
                     ) : null}
+                    <span className="reset-credit-secondary">
+                      {copy("subscription-quota.creditId", {
+                        v0:
+                          text(credit.id) ||
+                          copy("subscription-quota.extra.ca1844969742"),
+                      })}
+                    </span>
                   </div>
                   {selectable.includes(credit) ? (
                     <SettingsActionButton
@@ -804,19 +822,24 @@ export function SubscriptionQuotaControls({
                   "subscription-quota.confirmResetCreditConsumption_1ce436",
                 )}
               </h4>
-              <p>
-                {copy("subscription-quota.confirmAccount", {
-                  v0:
-                    text(document(confirmation.account).alias) ||
-                    copy("subscription-quota.extra.ca1844969742"),
-                })}
+              <dl className="reset-credit-account">
+                <dt>{copy("subscription-quota.accountLabel")}</dt>
+                <dd>
+                  {text(document(confirmation.account).alias) ||
+                    copy("subscription-quota.extra.ca1844969742")}
+                </dd>
+              </dl>
+              <p className="reset-credit-secondary">
+                {copy("subscription-quota.selectedCreditLabel")}
               </p>
               <p>
-                {confirmation.next
-                  ? copy("subscription-quota.detailsUnavailableNext")
-                  : copy("subscription-quota.consumeResetCredit_7eb25b", {
-                      v0: confirmation.ordinal,
-                    })}
+                <strong>
+                  {confirmation.next
+                    ? copy("subscription-quota.detailsUnavailableNext")
+                    : copy("subscription-quota.creditNumber", {
+                        v0: confirmation.ordinal,
+                      })}
+                </strong>
               </p>
               {!confirmation.next ? (
                 <p className="reset-credit-secondary">
@@ -825,9 +848,10 @@ export function SubscriptionQuotaControls({
                   })}
                 </p>
               ) : null}
-              <p className="reset-credit-secondary">
-                {copy("subscription-quota.consumptionWarning")}
-              </p>
+              <div className="reset-credit-warning">
+                <p>{copy("subscription-quota.consumptionWarning")}</p>
+                <p>{copy("subscription-quota.quotaRecoveryWarning")}</p>
+              </div>
               {!exactConfirmation ? (
                 <p role="alert">
                   {copy(
@@ -836,6 +860,14 @@ export function SubscriptionQuotaControls({
                 </p>
               ) : null}
               <div className="actions">
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Cancel}
+                  type="button"
+                  disabled={busy}
+                  onClick={keepCredit}
+                >
+                  {copy("subscription-quota.keepCredit_53e67f")}
+                </SettingsActionButton>
                 <SettingsActionButton
                   icon={SettingsActionIcon.Confirm}
                   type="button"
@@ -866,140 +898,168 @@ export function SubscriptionQuotaControls({
                 >
                   {copy("subscription-quota.confirmCreditConsumption_251822")}
                 </SettingsActionButton>
-                <SettingsActionButton
-                  icon={SettingsActionIcon.Cancel}
-                  type="button"
-                  disabled={busy}
-                  onClick={keepCredit}
-                >
-                  {copy("subscription-quota.keepCredit_53e67f")}
-                </SettingsActionButton>
               </div>
             </section>
           ) : null}
         </section>
-        {serverSupported &&
-        text(serverObservation.error_code) === "unsupported" ? (
-          <p role="status">
-            {copy("subscription-quota.serverNativeQuotaUnavailable")}
-          </p>
-        ) : null}
-        {serverSupported &&
-        text(serverObservation.error_code) === "unavailable" ? (
-          <p role="status">
-            {copy("subscription-quota.serverQuotaAuthenticationUnavailable")}
-          </p>
-        ) : null}
-        {text(serverObservation.id) ? (
-          <p role="status">{statusLabel(text(serverObservation.phase))}</p>
-        ) : null}
-        {text(serverCredit.id) ? (
-          <p role="status">
-            {statusLabel(text(serverCredit.phase))}
-            {outcomeLabels[text(serverCredit.outcome)]
-              ? copy("subscription-quota.message_2fa20b", {
-                  v0: outcomeLabels[text(serverCredit.outcome)],
-                })
-              : ""}
-          </p>
-        ) : null}
-        {text(observation.id) ? (
-          <p role="status">
-            {text(observation.action)} · {statusLabel(text(observation.phase))}
-            {outcomeLabels[text(observation.outcome)]
-              ? copy("subscription-quota.message_2fa20b", {
-                  v0: outcomeLabels[text(observation.outcome)],
-                })
-              : ""}
-          </p>
-        ) : null}
-        {(observation.action === "reset-credit" || text(serverCredit.id)) &&
-        creditObservation.phase === "uncertain" ? (
-          <>
-            <p>
-              {copy(
-                "subscription-quota.theOriginalConsumptionResultIsUncertain_11cf11",
-              )}
-            </p>
-            <SettingsActionButton
-              icon={SettingsActionIcon.Retry}
-              type="button"
-              disabled={
-                !creditReady ||
-                !creditsSupported ||
-                (reconcilingServer && serverCredit.cleanup_confirmed !== true)
+        {text(serverObservation.id) ||
+        (serverSupported &&
+          ["unsupported", "unavailable"].includes(
+            text(serverObservation.error_code),
+          )) ||
+        text(serverCredit.id) ||
+        text(observation.id) ||
+        status.error ||
+        consent.error ||
+        observe.error ||
+        reconcile.error ||
+        preferences.error ||
+        observe.uncertain ||
+        reconcile.uncertain ||
+        consent.uncertain ||
+        preferences.uncertain ? (
+          <section
+            className="reset-credit-results"
+            aria-label={copy("subscription-quota.resultsTitle")}
+          >
+            <h4>{copy("subscription-quota.resultsTitle")}</h4>
+            {serverSupported &&
+            text(serverObservation.error_code) === "unsupported" ? (
+              <p role="status">
+                {copy("subscription-quota.serverNativeQuotaUnavailable")}
+              </p>
+            ) : null}
+            {serverSupported &&
+            text(serverObservation.error_code) === "unavailable" ? (
+              <p role="status">
+                {copy("subscription-quota.serverQuotaAuthenticationUnavailable")}
+              </p>
+            ) : null}
+            {text(serverObservation.id) ? (
+              <p role="status">{statusLabel(text(serverObservation.phase))}</p>
+            ) : null}
+            {text(serverCredit.id) ? (
+              <p role="status">
+                {statusLabel(text(serverCredit.phase))}
+                {outcomeLabels[text(serverCredit.outcome)]
+                  ? copy("subscription-quota.message_2fa20b", {
+                      v0: outcomeLabels[text(serverCredit.outcome)],
+                    })
+                  : ""}
+              </p>
+            ) : null}
+            {text(observation.id) ? (
+              <p role="status">
+                {text(observation.action)} · {statusLabel(text(observation.phase))}
+                {outcomeLabels[text(observation.outcome)]
+                  ? copy("subscription-quota.message_2fa20b", {
+                      v0: outcomeLabels[text(observation.outcome)],
+                    })
+                  : ""}
+              </p>
+            ) : null}
+            {(observation.action === "reset-credit" || text(serverCredit.id)) &&
+            creditObservation.phase === "uncertain" ? (
+              <>
+                <div className="reset-credit-warning" role="status">
+                  <h4>{copy("subscription-quota.uncertainResultTitle")}</h4>
+                  <p>
+                    {copy(
+                      "subscription-quota.theOriginalConsumptionResultIsUncertain_11cf11",
+                    )}
+                  </p>
+                </div>
+                {reconcilingServer && serverCredit.cleanup_confirmed !== true ? (
+                  <p className="reset-credit-secondary">
+                    {copy("subscription-quota.cleanupBeforeReconciliation")}
+                  </p>
+                ) : null}
+                <SettingsActionButton
+                  icon={SettingsActionIcon.Retry}
+                  type="button"
+                  disabled={
+                    !creditReady ||
+                    !creditsSupported ||
+                    (reconcilingServer && serverCredit.cleanup_confirmed !== true)
+                  }
+                  onClick={() =>
+                    void reconcile.send({
+                      mutation: {
+                        requestId: newRequestId(),
+                        id: current.id,
+                        expectedRevision: current.revision,
+                      },
+                      operationId: text(creditObservation.id),
+                      connectionId: connection,
+                      generationId: generation,
+                    })
+                  }
+                >
+                  {copy(
+                    "subscription-quota.reconcileOriginalCreditOperation_2ca418",
+                  )}
+                </SettingsActionButton>
+              </>
+            ) : null}
+            <Problem
+              error={
+                status.error ||
+                consent.error ||
+                observe.error ||
+                reconcile.error ||
+                preferences.error
               }
-              onClick={() =>
-                void reconcile.send({
-                  mutation: {
-                    requestId: newRequestId(),
-                    id: current.id,
-                    expectedRevision: current.revision,
-                  },
-                  operationId: text(creditObservation.id),
-                  connectionId: connection,
-                  generationId: generation,
-                })
-              }
-            >
-              {copy(
-                "subscription-quota.reconcileOriginalCreditOperation_2ca418",
-              )}
-            </SettingsActionButton>
-          </>
-        ) : null}
-        <Problem
-          error={
-            status.error ||
-            consent.error ||
-            observe.error ||
-            reconcile.error ||
-            preferences.error
-          }
-        />
-        {observe.uncertain ? (
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            type="button"
-            disabled={observe.busy}
-            onClick={observe.retry}
-          >
-            {copy(
-              "subscription-quota.retryOriginalQuotaOrCreditRequest_071535",
-            )}
-          </SettingsActionButton>
-        ) : null}
-        {reconcile.uncertain ? (
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            type="button"
-            disabled={reconcile.busy}
-            onClick={reconcile.retry}
-          >
-            {copy(
-              "subscription-quota.retryOriginalCreditReconciliationRequest_1dd094",
-            )}
-          </SettingsActionButton>
-        ) : null}
-        {consent.uncertain ? (
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            type="button"
-            disabled={consent.busy}
-            onClick={consent.retry}
-          >
-            {copy("subscription-quota.automaticRetry")}
-          </SettingsActionButton>
-        ) : null}
-        {preferences.uncertain ? (
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            type="button"
-            disabled={preferences.busy}
-            onClick={preferences.retry}
-          >
-            {copy("subscription-quota.retryOriginalRecoveryPreference_fa3cb3")}
-          </SettingsActionButton>
+            />
+            {observe.uncertain ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="button"
+                disabled={observe.busy}
+                onClick={observe.retry}
+              >
+                {copy(
+                  "subscription-quota.retryOriginalQuotaOrCreditRequest_071535",
+                )}
+              </SettingsActionButton>
+            ) : null}
+            {reconcile.uncertain ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="button"
+                disabled={reconcile.busy}
+                onClick={reconcile.retry}
+              >
+                {copy(
+                  "subscription-quota.retryOriginalCreditReconciliationRequest_1dd094",
+                )}
+              </SettingsActionButton>
+            ) : null}
+            {consent.uncertain ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="button"
+                disabled={consent.busy}
+                onClick={consent.retry}
+              >
+                {copy("subscription-quota.automaticRetry")}
+              </SettingsActionButton>
+            ) : null}
+            {preferences.uncertain ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="button"
+                disabled={preferences.busy}
+                onClick={preferences.retry}
+              >
+                {copy("subscription-quota.retryOriginalRecoveryPreference_fa3cb3")}
+              </SettingsActionButton>
+            ) : null}
+            {observation.action === "reset-credit" || text(serverCredit.id) ? (
+              <p className="reset-credit-secondary">
+                {copy("subscription-quota.resultRecoveryWarning")}
+              </p>
+            ) : null}
+          </section>
         ) : null}
       </section>
       {footer?.(refreshQuota)}

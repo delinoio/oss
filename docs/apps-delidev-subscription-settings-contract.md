@@ -224,16 +224,18 @@ The saved quota rail popover reports each retained window’s actual observation
 
 ### Compact reset-credit presentation
 
-The account-management reset-credit section shows the authoritative available
-count and one Use action. Details start collapsed. Use expands exact-credit
+The account-management reset-credit section orders the Reset credits heading,
+authoritative available count and Use action, quota-recovery guidance, a divided
+automatic-use setting, then initially collapsed details. Automatic use has a short
+exhaustion description and separate server-lifetime/reauthorization guidance.
+Details start collapsed. Use expands exact-credit
 selection and focuses its heading; it never automatically selects or consumes a
 credit. Only explicitly null details with a valid positive fresh count permit the
 original native-next confirmation. Missing or malformed details grant no selector.
 The returned detail count remains separate from the authoritative available count.
 Rows show localized one-based Reset credit / 리셋권 names in the current returned
-detail order, including unavailable rows. Full inert original IDs appear below
-with a localized ID label, followed by availability and valid supplied expiry
-timestamps. Selection accessible names use the friendly number. Native titles
+detail order, including unavailable rows. Each row shows availability and valid
+supplied expiry before its full inert original ID with a localized ID label. Selection accessible names use the friendly number. Native titles
 and descriptions remain private. Numbers never become resource or request IDs.
 Selection uses the same strict RFC3339 calendar validation as expiry presentation.
 Omitted/null expiry retains ordinary eligibility; malformed or expired supplied
@@ -243,22 +245,33 @@ Confirmation captures the selected ordinal alongside the original credit ID and
 account/revision/connection/generation/inventory/owner bindings. It displays that
 captured ordinal in the current locale and the complete original ID, even after
 returned rows change order or are replaced; stale bindings still disable sending.
-Confirmation names the original account and selection, explains that consumption
-spends a credit, and keeps quota recovery separate. Keep dismisses it without a
-request and restores its original selection opener or the section heading.
+Confirmation names the original account and selection in separate labelled
+sections. A semantic warning groups one-credit consumption and independent quota
+recovery. Cancel precedes the explicit Consume reset credit action. Cancel
+dismisses confirmation without a request and restores its original selection opener or the section heading.
 Credit identity participates in the row key, so a different credit at the same
 position cannot inherit the original opener DOM node or focus. Collapse,
 locale changes, resize and background updates retain the mounted controller,
 original selection, request IDs and account/revision/connection/generation,
 inventory and owner bindings. Only explicit confirmation sends consumption.
 Outcomes, failures, uncertainty, original retries and cleanup-gated reconciliation
-remain visible outside details. Existing Worker/server capability and eligibility
+remain visible in a separate Results and recovery section outside details.
+Preserve each original phase and outcome. An uncertain-result warning instructs
+the user to inspect the original operation instead of consuming the same credit
+again. Show the cleanup prerequisite when original server cleanup is unconfirmed.
+Consumption and quota recovery remain independently verified. Existing
+Worker/server capability and eligibility
 gates remain authoritative; unknown, zero, stale, pending, unsupported and
 ineligible states expose localized reasons without manufacturing zero counts.
 
 Use “Reset credits” in English and “리셋권” in Korean. Scope the semantic themed
 styles to this section: 14px body, 12px secondary, 16px heading/padding, 8px corners
-and controls at least 40px tall. Below 480px section width, wrap the summary action
+and controls at least 40px tall. Automatic consent reuses the parent task size,
+scrolling body and fixed action footer. It shows the original account, short
+expiry/native-next/after-close rules, a separate server-lifetime/session note and
+a quota-recovery warning, followed by Cancel and Enable automatic use. No
+checkbox activation or dialog dismissal sends consumption. Below 480px section
+width, wrap the summary action
 and stack detail rows. Preserve parent dialog dismissal and keyboard ownership.
 Browser fixtures cover 640px/320px sections, both languages/themes and 200% zoom;
 they grant no installed-native, real-account or platform acceptance. Add no RPC,

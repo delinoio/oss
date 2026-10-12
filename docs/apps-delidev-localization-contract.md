@@ -277,3 +277,14 @@ previews use bundled example text and contain no live conversation data.
 ## App information copy
 
 Bundled English/Korean Settings catalogs define the final System App information category, its native version/platform labels, all six local platform names, loading/unavailable/read failures, fixed related-link labels and source-notices explanation. Updates copy distinguishes unchecked, confirmed no matching candidate, checking, available, preparing, prepared, installing, installed, failed and unconfirmed observations. Recovery labels and exact-original inspection guidance remain localized. Static Settings/command search reuses these bundled labels; server metadata and native destination strings do not become search content.
+
+## Reset-credit presentation
+
+The subscription quota catalogs use Reset credits / 리셋권 consistently across
+management, manual confirmation, automatic consent and results/recovery. Keep
+available and returned-detail counts separate. Localize account/selection labels,
+short automatic-use rules, server lifetime, reauthorization, failed-session limits,
+consumption warnings, uncertain-result guidance and cleanup prerequisites.
+Captured ordinals follow the current locale while original IDs remain inert and
+complete. Catalog changes preserve confirmation/controller lifetimes and send
+no consumption, consent or reconciliation request by themselves.
