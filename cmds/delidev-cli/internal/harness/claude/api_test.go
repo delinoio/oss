@@ -338,12 +338,16 @@ func TestAPIConfigurationNeverSerializesExecutionAuthority(t *testing.T) {
 }
 
 func TestManagedClaudeTokenNativeAuthority(t *testing.T) {
-	for _, mode := range []string{"managed-token-valid", "managed-token-api-source", "managed-token-foreign-source"} {
+	for _, mode := range []string{"managed-token-valid", "managed-token-api-source", "managed-token-foreign-source", "managed-token-missing"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, logs := apiFixtureConfig(t, mode)
 			cfg.ManagedToken = []byte("synthetic-managed-token")
 			cfg.API.ManagedToken = cfg.ManagedToken
 			cfg.Authentication = TokenAuthentication
+			if mode == "managed-token-missing" {
+				cfg.ManagedToken = nil
+				cfg.API.ManagedToken = nil
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			stream, e := OpenAPIStream(ctx, cfg)

@@ -105,6 +105,9 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 }
 
 func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config, error) {
+	if config.Authentication > TokenAuthentication || config.Authentication == TokenAuthentication && len(config.ManagedToken) == 0 {
+		return process.Config{}, apiConfigurationError()
+	}
 
 	if config.Version != "" && !domain.ValidNativeVersionMetadata(config.Version) || config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) || config.SessionID.Validate() != nil || domain.Text(config.Model, "native model", 256, true) != nil || domain.Text(config.Instructions, "native instructions", 256<<10, false) != nil ||
 		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission, AutoPermission}, config.Permission) ||
