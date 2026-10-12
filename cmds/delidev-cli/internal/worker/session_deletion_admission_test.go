@@ -196,15 +196,26 @@ func TestSessionDeletionAdmissionStartedLegacyIsAbsenceOnly(t *testing.T) {
 		t.Run(map[bool]string{false: "original journal present", true: "all copies absent"}[absent], func(t *testing.T) {
 			config, works := failedDeletionObligations(t)
 			work := works[0]
+			if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+				t.Fatal(err)
+			}
+			reportID := domain.NewID()
+			legacy := sessionDeletionProof{Version: 1, Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}
+			if err := writeJSON(sessionDeletionPath(config.Root, work.SessionID), legacy); err != nil {
+				t.Fatal(err)
+			}
+			legacyWorkspacePath := filepath.Join(config.Root, "session-deletions", string(work.SessionID)+"-workspace.json")
+			if err := writeJSON(legacyWorkspacePath, map[string]any{"version": 1, "digest": work.Digest(), "removed": true}); err != nil {
+				t.Fatal(err)
+			}
 			proof, path, lock, err := loadSessionDeletionProof(config.Root, work)
 			if err != nil {
 				t.Fatal(err)
 			}
-			proof.RemovalStarted = true
-			if err := writeJSON(path, proof); err != nil {
-				t.Fatal(err)
-			}
 			lock.Close()
+			if proof.ReportID != reportID || !proof.RemovalStarted {
+				t.Fatal("legacy started receipt was not preserved", proof)
+			}
 			journalPath := filepath.Join(config.Root, "jobs", string(work.Copies[0].JobID)+".json")
 			if absent {
 				if err := os.Remove(journalPath); err != nil {
