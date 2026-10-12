@@ -317,6 +317,52 @@ it("keeps the original receipt retry accessible after closure without an answer 
   );
 });
 
+it("collapses the active tray to compact recovery as soon as an answer is uncertain", async () => {
+  const value = fixture(question, true);
+  value.questions.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgement", Code.Unavailable),
+  );
+  render(value.view());
+  for (const checkbox of screen.getAllByRole("checkbox", {
+    name: "Leave this question unanswered",
+  }))
+    fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByRole("button", { name: "Retry the same answers" });
+  // No newer revision has arrived: the original controls must already be gone.
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+  expect(value.questions).toHaveBeenCalledTimes(1);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry the same answers" }),
+  );
+  await screen.findByText("Response: queued");
+  expect(value.questions).toHaveBeenCalledTimes(2);
+  expect(value.questions.mock.calls[1][0]).toEqual(
+    value.questions.mock.calls[0][0],
+  );
+  expect(
+    screen.queryByRole("button", { name: "Retry the same answers" }),
+  ).toBeNull();
+});
+
+it("keeps original answer controls beside an uncertain answer outside the active tray", async () => {
+  const value = fixture(question);
+  value.questions.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgement", Code.Unavailable),
+  );
+  render(value.view());
+  for (const checkbox of screen.getAllByRole("checkbox", {
+    name: "Leave this question unanswered",
+  }))
+    fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByRole("button", { name: "Retry the same answers" });
+  expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: "Send answers" })).toBeTruthy();
+});
+
 it("accepts only a same-interaction result that advances the retained revision", () => {
   const expected = {
     id: newRequestId(),

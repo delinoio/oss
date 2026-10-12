@@ -584,6 +584,11 @@ async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
   fireEvent.change(answer, { target: { value: "Original response bytes" } });
   fireEvent.click(within(region).getByRole("button", { name: "Send answers" }));
   await within(region).findByRole("button", { name: "Retry the same answers" });
+  // Compacting the uncertain answer moves focus to its retry control. The
+  // reader then scrolls away, so focus protection must not pin the first page.
+  act(() => {
+    (window.document.activeElement as HTMLElement | null)?.blur();
+  });
   const requests = region.querySelector<HTMLElement>(".requests")!;
   for (let page = 1; page < pages.length; page++) {
     fireEvent.click(

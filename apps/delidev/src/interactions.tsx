@@ -27,7 +27,7 @@ import {
   text,
   type Document,
 } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { Problem } from "./ui";
 import { NativeInteraction } from "./native-interaction";
 import { NativeClaudeInteraction } from "./native-claude-interaction";
@@ -139,11 +139,20 @@ export function Interaction({
     projection && projection.revision >= current.revision
       ? projection
       : interactionProjection(current);
+  // An uncertain answer transport error retains the exact request in the
+  // mutation registry before any newer revision arrives. The active tray must
+  // collapse to the compact receipt (with the exact retry) immediately instead
+  // of leaving editable controls beside an unresolved answer.
+  const retained = useRetainedMutationIntents(presentation.mutationKey);
+  const retainedUncertain = retained.some(
+    (intent) => intent.key === presentation.mutationKey && intent.uncertain,
+  );
   const compact =
     activeTray &&
     presentation.question &&
     (presentation.presentation !== InteractionPresentation.Form ||
-      presentation.revision > current.revision);
+      presentation.revision > current.revision ||
+      retainedUncertain);
   return (
     <article className="interaction">
       <header>
