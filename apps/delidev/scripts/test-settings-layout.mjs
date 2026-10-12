@@ -2333,7 +2333,19 @@ try {
                 getComputedStyle(tiles).gridTemplateColumns.split(" "),
               minimumRows: Array.from(
                 node.querySelectorAll(".appearance-row"),
-              ).every((row) => row.getBoundingClientRect().height >= 64),
+              ).every((row) => row.getBoundingClientRect().height >= 56),
+              checkboxes: Array.from(
+                node.querySelectorAll(".appearance-row input[type=checkbox]"),
+              ).map((box) => {
+                const rect = box.getBoundingClientRect();
+                const indicator = getComputedStyle(box, "::before");
+                return {
+                  width: rect.width,
+                  height: rect.height,
+                  indicatorWidth: indicator.width,
+                  indicatorHeight: indicator.height,
+                };
+              }),
               described: Array.from(
                 node.querySelectorAll(
                   ".appearance-row input, .appearance-row select",
@@ -2349,15 +2361,21 @@ try {
               }),
             };
           });
-          assert(geometry.width <= 880 && !geometry.overflow);
+          assert(geometry.width <= 720 && !geometry.overflow);
           assert.equal(geometry.minimumRows, true);
+          assert(geometry.checkboxes.length > 0);
+          for (const box of geometry.checkboxes) {
+            assert(box.width >= 40 && box.height >= 40);
+            assert.equal(box.indicatorWidth, "18px");
+            assert.equal(box.indicatorHeight, "18px");
+          }
           assert.equal(geometry.described, true);
           assert.equal(
             geometry.rowColumns.length,
             geometry.width < 640 ? 1 : 2,
           );
           if (geometry.width >= 640)
-            assert.equal(geometry.rowColumns[1], "220px");
+            assert.equal(geometry.rowColumns[1], "200px");
           assert.equal(
             geometry.tileColumns.length,
             geometry.width < 640 ? 1 : 3,

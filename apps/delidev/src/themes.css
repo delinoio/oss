@@ -190,15 +190,15 @@
 .appearance-content {
   container: appearance-body / inline-size;
   width: 100%;
-  max-width: 880px;
+  max-width: 720px;
   min-width: 0;
 }
 .appearance-settings {
-  max-width: 880px;
+  max-width: 720px;
 }
 .appearance-settings legend {
   font-weight: 600;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 .appearance-choice {
   display: flex;
@@ -262,20 +262,62 @@
 }
 .appearance-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr) 200px;
   align-items: center;
-  gap: 16px;
-  min-height: 64px;
+  gap: 24px;
+  min-height: 56px;
   margin: 0;
-  padding: 12px 0;
+  padding: 8px 0;
   font-size: 14px;
   line-height: 20px;
 }
+/* The native checkbox is a transparent 40px target around an 18px indicator. */
 .appearance-row input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
   width: 40px;
   height: 40px;
   margin: 0;
+  border: 0;
+  background: transparent;
   justify-self: start;
+  cursor: pointer;
+}
+.appearance-row input[type="checkbox"]::before,
+.appearance-row input[type="checkbox"]::after {
+  content: "";
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+}
+.appearance-row input[type="checkbox"]::before {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+.appearance-row input[type="checkbox"]:checked::before {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.appearance-row input[type="checkbox"]:checked::after {
+  width: 5px;
+  height: 10px;
+  margin-top: -2px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.appearance-row input[type="checkbox"]:disabled {
+  cursor: default;
+}
+.appearance-row input[type="checkbox"]:disabled::before {
+  opacity: 0.5;
+}
+.appearance-row input[type="checkbox"]:disabled::after {
+  opacity: 0.7;
 }
 .appearance-row select {
   width: 100%;
@@ -515,7 +557,7 @@
   border-radius: 8px;
 }
 .appearance-palette-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 200px;
 }
 .appearance-palette-controls {
   display: flex;
@@ -526,8 +568,8 @@
   max-width: 100%;
 }
 .appearance-content .appearance-palette-controls select {
-  flex: 1 1 220px;
-  width: 220px;
+  flex: 1 1 200px;
+  width: 200px;
 }
 .appearance-disclosure-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
