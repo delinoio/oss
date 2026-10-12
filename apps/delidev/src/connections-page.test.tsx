@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -307,13 +313,10 @@ it.each([
     const input = field
       ? (screen.getByLabelText(field) as HTMLInputElement)
       : undefined;
-    if (input)
-      fireEvent.change(input, { target: { value: "Retained draft" } });
+    if (input) fireEvent.change(input, { target: { value: "Retained draft" } });
     for (const dismissal of ["Close", "Escape"]) {
       if (dismissal === "Close")
-        fireEvent.click(
-          screen.getByRole("button", { name: `Close ${title}` }),
-        );
+        fireEvent.click(screen.getByRole("button", { name: `Close ${title}` }));
       else fireEvent(dialog, new Event("cancel", { cancelable: true }));
       expect(dialog.open).toBe(false);
       const navigation = screen.getByRole("button", {
@@ -361,9 +364,7 @@ it.each([
       fireEvent.click(screen.getByRole("button", { name: action }));
       expect(screen.getByRole("dialog", { name: title })).toBeTruthy();
     } else if (action === "Remove Studio server") {
-      fireEvent.click(
-        screen.getByRole("button", { name: "Keep connection" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Keep connection" }));
       const menu = screen.getByLabelText("Actions for Studio server");
       if (!(menu.closest("details") as HTMLDetailsElement).open)
         fireEvent.click(menu);
@@ -420,9 +421,9 @@ it("presents a new Add task without remounting the retained form", async () => {
     ).toBe(false),
   );
   fireEvent.click(screen.getByRole("button", { name: "Add server" }));
-  expect(
-    screen.getByRole("dialog", { name: "Add a server connection" }),
-  ).toBe(dialog);
+  expect(screen.getByRole("dialog", { name: "Add a server connection" })).toBe(
+    dialog,
+  );
   expect(screen.getByLabelText("Connection name")).toBe(input);
   expect(input.value).toBe("");
   expect(
