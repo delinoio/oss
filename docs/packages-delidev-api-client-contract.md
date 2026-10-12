@@ -490,3 +490,8 @@ List/Search and shared inspection exports remain unchanged. Connection disposal
 cancels and removes private tab/list/graph/avatar caches; unsupported peers retain
 safe flat-list and supported-tab fallbacks. Fixture validation is separate from
 real GitHub-account and packaged CEF/platform acceptance.
+
+TailscaleService and TailscaleQuery export the generated connection surface under
+the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
+Closed bounded JSON projections retain public observation metadata only; private
+keys, decrypted grants and protected Worker inputs stay Go-owned.

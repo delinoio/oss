@@ -4,6 +4,7 @@ import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -26,6 +27,7 @@ import {
   UsageService,
   TokenPricingMode,
   SystemService,
+  SubscriptionServiceIdentity,
   UsageTimeGranularity,
   UsageAccountingProfile,
   UsageTotalsSchema,
@@ -33,6 +35,7 @@ import {
   type GetUsageSummaryRequest,
 } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
+import { priceIdentity } from "./pricing";
 import { i18n, SupportedLanguage } from "./localization";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { encode } from "./documents";
@@ -846,9 +849,11 @@ it("keeps historical currency subtotals, partial coverage and source basis separ
     }),
   ];
   render(f.view());
-  await screen.findByText("USD 9,223.372036854775807");
+  const overview = screen.getByRole("tabpanel", { name: "Overview" });
+  await within(overview).findByText("USD 9,223.372036854775807");
   fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
-  expect(screen.getByText("EUR 0")).toBeTruthy();
+  const history = screen.getByRole("tabpanel", { name: "Usage history" });
+  expect(within(history).getByText("EUR 0")).toBeTruthy();
   expect(
     screen.getByText(/1 responses have no matching historical price/),
   ).toBeTruthy();
@@ -1154,61 +1159,335 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
   expect(detail.open).toBe(true);
 });
 
-it("shows independent source totals and exact retained estimates without manufacturing Claude or Grok totals", async () => {
+it.each([
+  {
+    language: SupportedLanguage.English,
+    profile: UsageAccountingProfile.UNSPECIFIED,
+  },
+  {
+    language: SupportedLanguage.Korean,
+    profile: UsageAccountingProfile.UNSPECIFIED,
+  },
+  {
+    language: SupportedLanguage.English,
+    profile: UsageAccountingProfile.NATIVE_UNITS_V1,
+  },
+  {
+    language: SupportedLanguage.Korean,
+    profile: UsageAccountingProfile.NATIVE_UNITS_V1,
+  },
+])(
+  "preserves response-ledger Overview values in $language with profile=$profile",
+  async ({ language, profile }) => {
+    await i18n.changeLanguage(language);
+    const f = fixture();
+    f.data.accountingProfile = profile;
+    f.data.estimates = create(EstimateTotalsSchema, {
+      currencies: [
+        { currency: "USD", knownAmount: "0.270966", completeResponses: 2 },
+        { currency: "EUR", knownAmount: "0", completeResponses: 1 },
+      ],
+    });
+    render(f.view());
+    const english = language === SupportedLanguage.English;
+    const panel = await screen.findByRole("tabpanel", {
+      name: english ? "Overview" : "개요",
+    });
+    await within(panel).findByText("USD 0.270966");
+    const row = within(panel)
+      .getByRole("rowheader", { name: "Codex" })
+      .closest("tr")!;
+    expect(row.cells[1].textContent).toContain(
+      BigInt("18446744073709551614").toLocaleString(
+        english ? "en-US" : "ko-KR",
+      ),
+    );
+    expect(row.cells[2].textContent).toContain("EUR 0");
+    expect(row.cells[3].textContent).toBe(
+      english ? "3 recorded units" : "기록 3개",
+    );
+    for (const name of ["Claude Code", "OpenCode"])
+      expect(
+        within(panel).getByRole("rowheader", { name }).closest("tr")!.cells[3]
+          .textContent,
+      ).toBe(
+        english
+          ? "Unavailable · update or inspect source evidence"
+          : "사용 불가 · 업데이트하거나 원본 근거를 확인하세요",
+      );
+    expect(f.read).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each([
+  {
+    evidence: "absent totals",
+    tokens: "—",
+    status: "Unavailable · update or inspect source evidence",
+    missingTotal: false,
+  },
+  {
+    evidence: "unmeasured total",
+    tokens: "—",
+    status: "3 recorded units",
+    missingTotal: true,
+  },
+  {
+    evidence: "absent total measure",
+    tokens: "—",
+    status: "3 recorded units",
+    missingTotal: true,
+  },
+  {
+    evidence: "measured zero",
+    tokens: "0",
+    status: "3 recorded units",
+    missingTotal: false,
+  },
+  {
+    evidence: "empty interval",
+    tokens: "—",
+    status: "No recorded usage",
+    missingTotal: false,
+  },
+])(
+  "keeps legacy Overview $evidence distinct from measured usage",
+  async ({ evidence, tokens, status, missingTotal }) => {
+    const f = fixture();
+    if (evidence === "absent totals") f.data.totals = undefined;
+    if (evidence === "unmeasured total")
+      f.data.totals!.total!.measuredResponses = 0;
+    if (evidence === "absent total measure") f.data.totals!.total = undefined;
+    if (evidence === "measured zero") f.data.totals!.total!.knownTotal = "0";
+    if (evidence === "empty interval")
+      f.data.totals = create(UsageTotalsSchema);
+    render(f.view());
+    await screen.findByText("Incomplete coverage");
+    const row = screen.getByRole("rowheader", { name: "Codex" }).closest("tr")!;
+    expect(row.cells[1].firstChild!.textContent).toBe(tokens);
+    expect(row.cells[2].firstChild!.textContent).toBe("—");
+    expect(
+      row.cells[2].textContent.includes("No retained price estimate."),
+    ).toBe(f.data.totals !== undefined && f.data.totals.responses > 0);
+    expect(row.cells[3].firstChild!.textContent).toBe(status);
+    expect(
+      row.cells[3].textContent.includes("The tool did not report a total."),
+    ).toBe(missingTotal);
+  },
+);
+
+it("retains legacy Codex Overview values and coverage after a failed refresh", async () => {
   const f = fixture();
-  f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
-  f.data.totals = create(UsageTotalsSchema, {
-    responses: 16,
-    total: { knownTotal: "269410", measuredResponses: 16 },
-    accounting: [
-      {
-        kind: AccountingUnitKind.GROK_CLOSED_INPUT,
-        units: 1,
-        knownTotal: "125",
-        measuredUnits: 1,
-      },
-    ],
-  });
   f.data.estimates = create(EstimateTotalsSchema, {
     currencies: [
-      { currency: "USD", knownAmount: "0.270966", completeResponses: 16 },
-      { currency: "EUR", knownAmount: "0", completeResponses: 1 },
+      { currency: "USD", knownAmount: "2.50", completeResponses: 2 },
     ],
   });
-  f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, {
-    nativeAccounting: [
-      {
-        totals: {
-          kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT,
-          units: 1,
-          input: { knownTotal: "456", measuredUnits: 1 },
-        },
-      },
-      {
-        totals: {
-          kind: AccountingUnitKind.OPENCODE_STEP,
-          units: 1,
-          total: { knownTotal: "0", measuredUnits: 1 },
-        },
-      },
-    ],
-  }).nativeAccounting;
   render(f.view());
-  const panel = await screen.findByRole("tabpanel", { name: "Overview" });
-  await within(panel).findByText("USD 0.270966");
-  const row = (name: string) =>
-    within(panel).getByRole("rowheader", { name }).closest("tr")!;
-  expect(row("Codex").textContent).toContain("269,410");
-  expect(row("Codex").textContent).toContain("EUR 0");
-  expect(row("Claude Code").textContent).toContain(
-    "The tool did not report a total.",
+  const overview = screen.getByRole("tabpanel", { name: "Overview" });
+  await within(overview).findByText("USD 2.50");
+  const row = within(overview)
+    .getByRole("rowheader", { name: "Codex" })
+    .closest("tr")!;
+  const retained = row.textContent;
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Fixture unavailable", Code.Unavailable),
   );
-  expect(row("Claude Code").textContent).not.toContain("456");
-  expect(row("OpenCode").textContent).toContain("0Native-reported total");
-  expect(row("Grok Build").textContent).toContain("125Input tokens");
-  expect(row("Grok Build").textContent).not.toContain("USD");
-  expect(f.read).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText(/These are the last successfully retrieved values/);
+  expect(row.textContent).toBe(retained);
+  expect(screen.getByText("Incomplete coverage")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain(
+    "failed read does not establish zero usage or cost",
+  );
+  expect(f.read).toHaveBeenCalledTimes(2);
 });
+
+it.each(["response", "native"] as const)(
+  "hands focus to Model prices once per explicit %s model activation",
+  async (source) => {
+    const f = fixture();
+    if (source === "native") {
+      f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+      f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, {
+        nativeAccounting: [
+          { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
+          {
+            totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+            models: [
+              {
+                model: {
+                  nativeId: f.ids.model,
+                  subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+                },
+                subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+                totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+              },
+            ],
+          },
+        ],
+      }).nativeAccounting;
+    }
+    const view = render(f.view());
+    await screen.findByText("Incomplete coverage");
+    const historyTab = screen.getByRole("tab", { name: "Usage history" });
+    const pricesTab = screen.getByRole("tab", { name: "Model prices" });
+    const focus = vi.spyOn(pricesTab, "focus");
+    for (let activation = 1; activation <= 2; activation++) {
+      fireEvent.click(historyTab);
+      const history = screen.getByRole("tabpanel", { name: "Usage history" });
+      const model = within(history).getByRole("button", {
+        name: source === "response" ? "Original model" : f.ids.model,
+      });
+      model.focus();
+      fireEvent.click(model);
+      expect(document.activeElement).toBe(pricesTab);
+      expect(pricesTab.getAttribute("aria-selected")).toBe("true");
+      expect(history.hidden).toBe(true);
+      expect(focus).toHaveBeenCalledTimes(activation);
+      const panel = screen.getByRole("tabpanel", { name: "Model prices" });
+      const selector = within(panel).getByRole("combobox", {
+        name: "Pricing model",
+      });
+      expect(selector.getAttribute("data-value")).toBe(
+        priceIdentity({
+          nativeId: f.ids.model,
+          providerId: source === "response" ? f.ids.provider : "",
+          subscriptionService:
+            source === "response"
+              ? SubscriptionServiceIdentity.UNSPECIFIED
+              : SubscriptionServiceIdentity.OPENCODE_GO,
+        }),
+      );
+      expect(selector.textContent).toContain(f.ids.model);
+      expect(selector.textContent).toContain(
+        source === "response" ? "Original API" : "OpenCode Go",
+      );
+    }
+    const reset = screen.getByRole("button", { name: "Reset to last 30 days" });
+    reset.focus();
+    view.rerender(f.view());
+    expect(document.activeElement).toBe(reset);
+    fireEvent.click(historyTab);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+    expect(document.activeElement).toBe(reset);
+    fireEvent.click(pricesTab);
+    expect(document.activeElement).toBe(reset);
+    expect(focus).toHaveBeenCalledTimes(2);
+    expect(f.read).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each(["inactive", "hidden"] as const)(
+  "discards a model focus handoff when Usage becomes %s before commit",
+  async (departure) => {
+    const f = fixture();
+    const viewFor = (departed = false) => (
+      <>
+        <button type="button">Outside Usage</button>
+        <div hidden={departed && departure === "hidden"}>
+          {f.view(!(departed && departure === "inactive"))}
+        </div>
+      </>
+    );
+    const view = render(viewFor());
+    await screen.findByText("Incomplete coverage");
+    fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
+    const model = screen.getByRole("button", { name: "Original model" });
+    const pricesTab = screen.getByRole("tab", { name: "Model prices" });
+    const focus = vi.spyOn(pricesTab, "focus");
+    const outside = screen.getByRole("button", { name: "Outside Usage" });
+    outside.focus();
+    act(() => {
+      fireEvent.click(model);
+      view.rerender(viewFor(true));
+    });
+    expect(document.activeElement).toBe(outside);
+    expect(focus).not.toHaveBeenCalled();
+    view.rerender(viewFor());
+    expect(document.activeElement).toBe(outside);
+    expect(focus).not.toHaveBeenCalled();
+    expect(pricesTab.getAttribute("aria-selected")).toBe("true");
+  },
+);
+
+it.each([
+  { profile: UsageAccountingProfile.UNSPECIFIED, completeNative: true },
+  { profile: UsageAccountingProfile.NATIVE_UNITS_V1, completeNative: true },
+  { profile: UsageAccountingProfile.NATIVE_UNITS_V1, completeNative: false },
+])(
+  "evaluates independent source evidence with profile=$profile and complete native summaries=$completeNative",
+  async ({ profile, completeNative }) => {
+    const f = fixture();
+    f.data.accountingProfile = profile;
+    f.data.totals = create(UsageTotalsSchema, {
+      responses: 16,
+      total: { knownTotal: "269410", measuredResponses: 16 },
+      accounting: [
+        {
+          kind: AccountingUnitKind.GROK_CLOSED_INPUT,
+          units: 1,
+          knownTotal: "125",
+          measuredUnits: 1,
+        },
+      ],
+    });
+    f.data.estimates = create(EstimateTotalsSchema, {
+      currencies: [
+        { currency: "USD", knownAmount: "0.270966", completeResponses: 16 },
+        { currency: "EUR", knownAmount: "0", completeResponses: 1 },
+      ],
+    });
+    f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, {
+      nativeAccounting: [
+        {
+          totals: {
+            kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT,
+            units: 1,
+            input: { knownTotal: "456", measuredUnits: 1 },
+          },
+        },
+        {
+          totals: {
+            kind: AccountingUnitKind.OPENCODE_STEP,
+            units: 1,
+            total: { knownTotal: "0", measuredUnits: 1 },
+          },
+        },
+      ],
+    }).nativeAccounting;
+    if (!completeNative) f.data.nativeAccounting.pop();
+    render(f.view());
+    const panel = await screen.findByRole("tabpanel", { name: "Overview" });
+    await within(panel).findByText("USD 0.270966");
+    const row = (name: string) =>
+      within(panel).getByRole("rowheader", { name }).closest("tr")!;
+    expect(row("Codex").textContent).toContain("269,410");
+    expect(row("Codex").textContent).toContain("EUR 0");
+    expect(row("Codex").textContent).toContain("16 recorded units");
+    expect(row("Claude Code").textContent).not.toContain("456");
+    if (profile === UsageAccountingProfile.NATIVE_UNITS_V1 && completeNative) {
+      expect(row("Claude Code").textContent).toContain(
+        "The tool did not report a total.",
+      );
+      expect(row("OpenCode").textContent).toContain("0Native-reported total");
+    } else {
+      for (const name of ["Claude Code", "OpenCode"])
+        expect(row(name).textContent).toContain(
+          "Unavailable · update or inspect source evidence",
+        );
+    }
+    if (profile === UsageAccountingProfile.NATIVE_UNITS_V1)
+      expect(row("Grok Build").textContent).toContain("125Input tokens");
+    else
+      expect(row("Grok Build").textContent).toContain(
+        "Unavailable · update or inspect source evidence",
+      );
+    expect(row("Grok Build").textContent).not.toContain("USD");
+    expect(f.read).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("opens exact historical pricing without changing filters and retains read-only deleted evidence", async () => {
   const f = fixture();
@@ -1233,7 +1512,12 @@ it("opens exact historical pricing without changing filters and retains read-onl
   render(f.view());
   await screen.findByText("Incomplete coverage");
   fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
-  fireEvent.click(screen.getByRole("button", { name: "Original model" }));
+  const model = screen.getByRole("button", { name: "Original model" });
+  model.focus();
+  fireEvent.click(model);
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Model prices" }),
+  );
   const panel = screen.getByRole("tabpanel", { name: "Model prices" });
   await within(panel).findByText(
     "This original identity has no editable current model. Historical price evidence is read-only.",

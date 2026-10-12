@@ -152,7 +152,7 @@ function NativeSummary({
           ))}
         </dl>
         <Estimates totals={data.totals} />
-        {data.groups.length ? (
+        {data.groups.length || data.days.length || data.models.length ? (
           <div
             className="usage-table"
             role="region"
