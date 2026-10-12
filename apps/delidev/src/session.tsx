@@ -46,6 +46,16 @@ import {
   useSessionSubmissions,
 } from "./session-submissions";
 import { imageMime } from "./image-input";
+import {
+  AssistantDeliveryLabel,
+  NativeAssistantMetadata,
+  originalAssistantMetadata,
+  type AssistantSuggestion,
+} from "./native-assistant-metadata";
+import {
+  placeAssistantSuggestion,
+  type SuggestionState,
+} from "./assistant-suggestion";
 import { NativeImageGeneration } from "./native-image-generation";
 import {
   ImageAttachmentInput,
@@ -445,12 +455,14 @@ export const TranscriptItem = memo(function TranscriptItem({
   actions,
   revertAction,
   contextRevision = 0,
+  suggestion,
 }: {
   resource: Resource;
   active?: boolean;
   actions?: ReactNode;
   revertAction?: ReactNode;
   contextRevision?: number;
+  suggestion?: AssistantSuggestion;
 }) {
   useLocale();
   const data = readDocument(resource);
@@ -604,7 +616,29 @@ export const TranscriptItem = memo(function TranscriptItem({
           <small>{statusLabel(text(data.state))}</small>
         </header>
       )}
+      {roleClass &&
+      data.role === "assistant" &&
+      data.codex_assistant != null ? (
+        <AssistantDeliveryLabel
+          value={data.codex_assistant}
+          state={text(data.state)}
+        />
+      ) : null}
       {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+      {data.codex_assistant != null ? (
+        <NativeAssistantMetadata
+          value={
+            roleClass &&
+            data.role === "assistant" &&
+            !data.native_parent_id &&
+            !data.input_id
+              ? data.codex_assistant
+              : undefined
+          }
+          state={text(data.state)}
+          suggestion={suggestion}
+        />
+      ) : null}
       {Number(data.context_revision ?? 0) < contextRevision ? (
         <small>{copy("session.previousContext")}</small>
       ) : null}
@@ -1361,6 +1395,115 @@ export function SessionView({
     Boolean(draft.trim() || images.images.length) &&
     (!images.images.length || imageRoute.ready) &&
     text(data.archive) === "active";
+
+  const suggestionGeneration =
+    draftGeneration ?? (() => localDraftGeneration.current);
+  const suggestionGuard = {
+    sessionId: id,
+    transport: submissionTransport,
+    generation: live.generation,
+    revision: session?.revision ?? 0n,
+    draftGeneration: suggestionGeneration(),
+  };
+  const suggestionCurrent = useRef<SuggestionState>({
+    ...suggestionGuard,
+    active: false,
+    supported: false,
+    draft: "",
+    images: 0,
+    skills: 0,
+    blocked: true,
+    composing: false,
+  });
+  suggestionCurrent.current = {
+    ...suggestionGuard,
+    active:
+      conversationActive &&
+      session?.id === id &&
+      live.state === ConnectionState.Live &&
+      !live.error,
+    supported:
+      !queueStatus.isPending &&
+      !queueStatus.isFetching &&
+      !queueStatus.error &&
+      queueStatus.data?.capabilities.includes(
+        SystemCapability.CODEX_ASYNC_MESSAGES_V1,
+      ) === true,
+    draft,
+    images: images.images.length,
+    skills: skills.selections.length,
+    blocked:
+      locked ||
+      contextLocked ||
+      skills.blocked ||
+      text(data.archive) !== "active",
+    composing: composerComposing.current,
+  };
+  const assistantSuggestion = (
+    row: Resource,
+  ): AssistantSuggestion | undefined => {
+    const original = readDocument(row),
+      observed = originalAssistantMetadata(
+        original.codex_assistant,
+        text(original.state),
+      );
+    if (
+      !conversationActive ||
+      row.sessionId !== id ||
+      row.kind !== EntityKind.MESSAGE ||
+      original.role !== "assistant" ||
+      original.native_parent_id ||
+      original.input_id ||
+      !observed ||
+      !suggestionCurrent.current.supported
+    )
+      return;
+    const disabled =
+      text(original.state) !== "complete" ||
+      !suggestionCurrent.current.active ||
+      suggestionCurrent.current.blocked ||
+      draft !== "" ||
+      images.images.length > 0 ||
+      skills.selections.length > 0;
+    return {
+      disabled,
+      occupied: draft !== "",
+      choose: (option) => {
+        const current = suggestionCurrent.current,
+          latest = live.resources.get(row.id);
+        if (
+          text(original.state) !== "complete" ||
+          (latest && latest.revision !== row.revision) ||
+          !observed.questions?.some((question) =>
+            question.options?.includes(option),
+          )
+        )
+          return;
+        const accepted = placeAssistantSuggestion(
+          suggestionGuard,
+          {
+            ...current,
+            blocked:
+              current.blocked ||
+              images.controller.snapshot().busy ||
+              submissions.store.preparing(id),
+            images: images.controller.snapshot().images.length,
+            draftGeneration: suggestionGeneration(),
+            draft: composer.current?.value ?? current.draft,
+            composing: composerComposing.current,
+          },
+          option,
+          (value) => {
+            if (setDraft(value, [], true) === false) return false;
+            localDraftGeneration.current += 1n;
+            skills.clearAccepted();
+            return true;
+          },
+        );
+        if (accepted) composer.current?.focus();
+      },
+    };
+  };
   const enqueue = async () => {
     if (!canSend) return;
     const requestId = images.images.length
@@ -2263,6 +2406,7 @@ export function SessionView({
                             resource={row}
                             active={conversationActive}
                             contextRevision={Number(data.context_revision ?? 0)}
+                            suggestion={assistantSuggestion(row)}
                             revertAction={revert.action(row)}
                             actions={
                               <SidechatRetryAction

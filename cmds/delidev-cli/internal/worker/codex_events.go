@@ -265,6 +265,13 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		default:
 			return false, nil
 		}
+		if event.Message.CodexAssistant != nil && !c.publisher.input.NativeAsyncMessages {
+			return false, publicationUncertain()
+		}
+		if event.Kind == codex.MessageCompletedEvent && !domain.CodexAssistantMetadataExtends(message.CodexAssistant, event.Message.CodexAssistant) {
+			return false, publicationUncertain()
+		}
+		message.CodexAssistant = event.Message.CodexAssistant.Clone()
 		message.Phase = nil
 		if event.Message.Phase != nil {
 			phase := domain.CommentaryMessage

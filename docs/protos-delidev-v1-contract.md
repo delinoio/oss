@@ -1501,3 +1501,7 @@ workspace/commits documents retain bounded source observations; avatars return
 sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
 Worker allocation, feature flag or database migration. Reconcile the capability
 and all declarations against current allocations before merge.
+
+## Original Codex assistant metadata negotiation
+
+System `CODEX_ASYNC_MESSAGES_V1 = 98` and Worker `CODEX_ASYNC_MESSAGES_V1 = 60` independently negotiate bounded root assistant delivery and embedded questions. The original immutable Codex assignment carries optional `native_async_messages`; only a supporting original Worker may publish optional typed `codex_assistant` in the existing message lifecycle. Message resources retain separate immutable started/completed metadata. Preserve absent, null and empty fields and exact question/option order. Reuse the current publication envelopes and identical durable receipts without a new RPC, event version, entity kind or database migration. Embedded questions grant no native response, Interaction or input authority. See [the harness contract](cmds-delidev-harness-contract.md#codex-assistant-delivery-and-embedded-questions).

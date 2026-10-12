@@ -191,7 +191,11 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					if _, err := decodeSleep(item); err != nil {
 						return nil, unsupportedFork()
 					}
-				} else if !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
+				} else if identity.Type == "agentMessage" {
+					if _, citation, err := decodeAssistantMessage(item); err != nil || citation {
+						return nil, unsupportedFork()
+					}
+				} else if !slices.Contains([]string{"userMessage", "reasoning"}, identity.Type) {
 					if !c.managedForkHistory || !settledForkTool(item, identity.Type) {
 						return nil, unsupportedFork()
 					}
@@ -471,24 +475,9 @@ func managedForkItem(raw json.RawMessage, kind string) bool {
 		return err == nil
 	}
 	if kind == "agentMessage" {
-		var item struct {
-			Type           string            `json:"type"`
-			ID             string            `json:"id"`
-			Text           *string           `json:"text"`
-			Phase          *MessagePhase     `json:"phase"`
-			Delivery       json.RawMessage   `json:"delivery"`
-			MemoryCitation json.RawMessage   `json:"memoryCitation"`
-			Questions      []json.RawMessage `json:"questions,omitempty"`
-		}
-		if domain.Decode(raw, &item) != nil || item.Type != kind || domain.Text(item.ID, "native fork message identity", 1024, true) != nil || item.Text == nil || domain.Text(*item.Text, "native fork message text", nativewire.MaxFrame, false) != nil {
-			return false
-		}
-		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
-			return false
-		}
-		// Native history remains untouched. Eligibility uses the same plain
-		// metadata boundary as live assistant messages, never rich extensions.
-		return len(item.Questions) == 0 && (len(item.Delivery) == 0 || string(item.Delivery) == "null") && (len(item.MemoryCitation) == 0 || string(item.MemoryCitation) == "null")
+
+		_, citation, err := decodeAssistantMessage(raw)
+		return err == nil && !citation
 	}
 	if kind != "userMessage" {
 		return false

@@ -368,6 +368,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				profile += "\x00codex-approval-review-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1) {
+				profile += "\x00codex-async-messages-v1"
+			}
 			if subagentExpected {
 				profile += "\x00codex-subagent-configuration-v1"
 			}
@@ -477,6 +480,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_ASYNC_MESSAGES_V1)
 			}
 			if subagentExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)

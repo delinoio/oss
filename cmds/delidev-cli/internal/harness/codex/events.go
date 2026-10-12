@@ -157,13 +157,14 @@ const (
 )
 
 type Message struct {
-	Attachments   []domain.ImageAttachment
-	ID            string
-	ClientInputID domain.ID
-	Role          MessageRole
-	Phase         *MessagePhase
-	Text          string
-	Parts         []string
+	CodexAssistant *domain.CodexAssistantMetadata
+	Attachments    []domain.ImageAttachment
+	ID             string
+	ClientInputID  domain.ID
+	Role           MessageRole
+	Phase          *MessagePhase
+	Text           string
+	Parts          []string
 }
 
 type Event struct {
@@ -678,28 +679,21 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 
 	case "agentMessage":
-		var item struct {
-			Type           string            `json:"type"`
-			ID             string            `json:"id"`
-			Text           *string           `json:"text"`
-			Phase          *MessagePhase     `json:"phase"`
-			Delivery       json.RawMessage   `json:"delivery"`
-			MemoryCitation json.RawMessage   `json:"memoryCitation"`
-			Questions      []json.RawMessage `json:"questions,omitempty"`
+
+		decoded, citation, err := decodeAssistantMessage(params.Item)
+		if err != nil {
+			return Event{}, err
 		}
-		if domain.Decode(params.Item, &item) != nil || item.Text == nil {
-			return Event{}, incompatible()
-		}
-		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
-			return Event{}, incompatible()
-		}
-		if len(item.Questions) != 0 || (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
+		if citation || !c.asyncMessages && decoded.CodexAssistant.Populated() {
 			return privateNative(native), nil
 		}
-		message.ID = item.ID
-		message.Role = AssistantRole
-		message.Text = *item.Text
-		message.Phase = item.Phase
+		message = decoded
+		if !c.asyncMessages {
+			message.CodexAssistant = nil
+		} else if message.CodexAssistant != nil && c.logger != nil {
+			c.logger.Debug("Codex assistant metadata observed", "owner_id", c.ownerID, "delivery_present", message.CodexAssistant.DeliveryPresent, "questions_present", message.CodexAssistant.QuestionsPresent)
+		}
+
 	default:
 		return privateNative(native), nil
 	}

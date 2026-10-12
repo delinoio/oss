@@ -261,6 +261,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "agentMessage" {
+			if _, citation, err := decodeAssistantMessage(rawItem); err != nil || citation {
+				return Turn{}, nil, incompatible()
+			}
+		}
 		if identity.Type == "sleep" {
 			if _, err := decodeSleep(rawItem); err != nil {
 				return Turn{}, nil, err
