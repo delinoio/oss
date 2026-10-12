@@ -1271,6 +1271,26 @@ fn inline_imports_follow_escapes_and_import_maps() {
     }
 }
 
+/// A base inside inert content (template, noscript) does not apply.
+#[test]
+fn ignores_base_elements_in_inert_content() {
+    let shared = r#"function sharedGlobalHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var sharedState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<template><base href="/decoy/"></template><script src="shared.js"></script><script type="module" src="/index.js"></script>"#,
+        ),
+        ("shared.js", shared),
+        ("decoy/shared.js", "console.log(0);"),
+        (
+            "index.js",
+            r#"import"./shared.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "shared.js"), shared);
+}
+
 /// A script resolves against the base parsed before it, not a later one.
 #[test]
 fn applies_base_urls_only_to_later_scripts() {

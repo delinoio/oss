@@ -988,7 +988,22 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
             // A script resolves against the first `<base href>` parsed before
             // it, or against the page.
             let mut base: Option<url::Url> = None;
+            // Template and noscript contents are inert: their base and
+            // script elements neither apply nor run.
+            let mut inert = 0usize;
             for tag in &tags {
+                match tag.name.as_str() {
+                    "template" | "noscript" => {
+                        inert += 1;
+                        continue;
+                    }
+                    "/template" | "/noscript" => {
+                        inert = inert.saturating_sub(1);
+                        continue;
+                    }
+                    _ if inert > 0 => continue,
+                    _ => {}
+                }
                 if tag.name == "base"
                     && base.is_none()
                     && let Some(href) = tag.attribute("href")

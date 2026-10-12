@@ -207,7 +207,8 @@ impl HtmlTag {
     }
 }
 
-/// Start tags of an HTML document. Comments and the contents of raw-text
+/// Start tags of an HTML document, and end tags as `/name`. Comments and the
+/// contents of raw-text
 /// elements (`script`, `style`, `textarea`, `title`) are skipped; attribute
 /// names are case-insensitive and may have whitespace around `=`; values may be
 /// double-quoted, single-quoted or unquoted.
@@ -221,11 +222,27 @@ pub(crate) fn html_tags(html: &str) -> Vec<HtmlTag> {
             i = html[i..].find("-->").map_or(html.len(), |end| i + end + 3);
             continue;
         }
+        // End tags are reported as `/name`, so callers can track nesting.
+        let end_tag = html[i..].starts_with('/');
+        if end_tag {
+            i += 1;
+        }
         let start = i;
         while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
             i += 1;
         }
         if i == start {
+            continue;
+        }
+        if end_tag {
+            let name = format!("/{}", html[start..i].to_ascii_lowercase());
+            i = html[i..].find('>').map_or(html.len(), |end| i + end + 1);
+            tags.push(HtmlTag {
+                name,
+                attributes: Vec::new(),
+                undecodable: Vec::new(),
+                text: None,
+            });
             continue;
         }
         let name = html[start..i].to_ascii_lowercase();
@@ -1415,26 +1432,27 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
             "<!-- <script src=a.js> --><SCRIPT Type = \"module\" SRC='/x/a.js' INTEGRITY = \
              sha384-x defer></script><link rel=modulepreload href=b.js>",
         );
-        assert_eq!(tags.len(), 2);
+        assert_eq!(tags.len(), 3);
         assert_eq!(tags[0].name, "script");
+        assert_eq!(tags[1].name, "/script");
         assert_eq!(tags[0].attribute("type"), Some("module"));
         assert_eq!(tags[0].attribute("src"), Some("/x/a.js"));
         assert_eq!(tags[0].attribute("integrity"), Some("sha384-x"));
         assert_eq!(tags[0].attribute("defer"), Some(""));
-        assert_eq!(tags[1].attribute("href"), Some("b.js"));
+        assert_eq!(tags[2].attribute("href"), Some("b.js"));
         // Markup inside script text is not a tag.
         let tags = html_tags(
             r#"<script>const s='<script type="module" src="./legacy.js" integrity=x>';</SCRIPT><p>"#,
         );
         let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["script", "p"]);
+        assert_eq!(names, ["script", "/script", "p"]);
         assert_eq!(tags[0].attribute("src"), None);
         // Only an exact end tag name ends the raw text.
         let tags = html_tags(
             r#"<script>s='</scripture><script type="module" src="./legacy.js">';</script ><p>"#,
         );
         let names: Vec<_> = tags.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["script", "p"]);
+        assert_eq!(names, ["script", "/script", "p"]);
         // Character references in attribute values are decoded.
         let tags = html_tags(
             "<script src=\"shared&#46;js\" type=\"&#x6d;odule\" data-x=\"a&amp;b&c\"></script><a \
@@ -1443,7 +1461,7 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert_eq!(tags[0].attribute("src"), Some("shared.js"));
         assert_eq!(tags[0].attribute("type"), Some("module"));
         assert_eq!(tags[0].attribute("data-x"), Some("a&b&c"));
-        assert_eq!(tags[1].undecodable, ["href"]);
+        assert_eq!(tags[2].undecodable, ["href"]);
         // Legacy references without `;` decode unless alphanumerics follow.
         assert_eq!(
             super::decode_references("shared&amp.js").as_deref(),
