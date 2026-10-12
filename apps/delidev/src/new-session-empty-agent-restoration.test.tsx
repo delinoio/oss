@@ -77,9 +77,14 @@ function fixture(kind: NewSessionKind) {
     update: vi.fn(),
   };
   const getResource = vi.fn(
-    (request: { kind: EntityKind; id: string }): Promise<{
-      resource?: Resource;
-    }> | { resource?: Resource } => {
+    (request: {
+      kind: EntityKind;
+      id: string;
+    }):
+      | Promise<{
+          resource?: Resource;
+        }>
+      | { resource?: Resource } => {
       if (request.kind === EntityKind.AGENT && request.id === agent.id)
         return exact.promise;
       if (request.kind === EntityKind.MACHINE && request.id === machine.id)
@@ -93,7 +98,9 @@ function fixture(kind: NewSessionKind) {
       listResources: () => ({ resources: [] }),
     });
     router.service(SystemService, {
-      getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }),
+      getStatus: () => ({
+        capabilities: [SystemCapability.AUTOMATIC_TITLES_V1],
+      }),
     });
     router.service(SessionService, {});
   });
