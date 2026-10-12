@@ -78,6 +78,10 @@ pub struct Project {
     size_options: CompilerOptions,
     /// Owns the synthetic configuration of a bundle-mode program.
     _bundle_config: Option<tempfile::TempDir>,
+    /// Bundle mode: semantic diagnostic codes of each original chunk. A chunk
+    /// can opt into checking with `// @ts-check`, and its unchecked types may
+    /// be wrong, so only diagnostics that an edit adds count as failures.
+    semantic_baseline: std::cell::RefCell<BTreeMap<String, Vec<String>>>,
 }
 
 fn deny_write() -> ts_goport::frontend::vfs::FsError {
@@ -225,6 +229,7 @@ impl Project {
             config_files,
             size_options,
             _bundle_config: None,
+            semantic_baseline: Default::default(),
         })
     }
 
@@ -356,7 +361,14 @@ impl Project {
             }
             crate::app::check_cancelled()?;
             check_diagnostics(&get_syntactic_diagnostics(file))?;
-            check_diagnostics(&get_semantic_diagnostics(file))?;
+            if crate::app::bundle_mode() {
+                self.semantic_baseline.borrow_mut().insert(
+                    source_file_info(file).file_name.clone(),
+                    diagnostic_codes(&get_semantic_diagnostics(file)),
+                );
+            } else {
+                check_diagnostics(&get_semantic_diagnostics(file))?;
+            }
         }
         let mut sources = BTreeMap::new();
         let mut inputs = Vec::new();
@@ -641,10 +653,16 @@ impl crate::pipeline::Backend for Backend<'_> {
                     // Bundle edits are not parsed per candidate: a syntax
                     // error, including TypeScript-only syntax in a chunk,
                     // rolls the responsible bundle back.
+                    let name = source_file_info(file).file_name.clone();
+                    let baseline = self.project.semantic_baseline.borrow();
+                    let before = baseline.get(&name).map_or(&[][..], Vec::as_slice);
                     if !get_syntactic_diagnostics(file).is_empty()
-                        || !get_semantic_diagnostics(file).is_empty()
+                        || adds_diagnostics(
+                            before,
+                            &diagnostic_codes(&get_semantic_diagnostics(file)),
+                        )
                     {
-                        failing.push(source_file_info(file).file_name.clone());
+                        failing.push(name);
                     }
                     continue;
                 }
@@ -908,6 +926,27 @@ fn html_scripts(dir: &std::path::Path) -> Result<(Paths, Paths)> {
     let (mut modules, mut classic) = (Paths::new(), Paths::new());
     walk(dir, dir, &mut modules, &mut classic)?;
     Ok((modules, classic))
+}
+
+/// Sorted diagnostic codes with their message templates' arguments omitted.
+fn diagnostic_codes(diagnostics: &[Diagnostic]) -> Vec<String> {
+    let mut codes: Vec<String> = diagnostics.iter().map(|d| d.code.to_string()).collect();
+    codes.sort();
+    codes
+}
+
+/// Whether `after` has a diagnostic code more often than `before`.
+fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
+    let mut remaining = before.to_vec();
+    after
+        .iter()
+        .any(|code| match remaining.iter().position(|c| c == code) {
+            Some(at) => {
+                remaining.swap_remove(at);
+                false
+            }
+            None => true,
+        })
 }
 
 /// Whether a file uses `eval` (direct or aliased) or `with`, which can look

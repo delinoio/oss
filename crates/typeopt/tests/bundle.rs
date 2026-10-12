@@ -188,6 +188,20 @@ fn does_not_trust_unchecked_javascript_types() {
     assert!(index.contains("o?.v"));
 }
 
+/// `// @ts-check` opts a chunk into semantic checking, but bundle types may
+/// be wrong: existing diagnostics do not block optimization.
+#[test]
+fn ignores_preexisting_ts_check_diagnostics() {
+    let (temp, report) = run(&[(
+        "index.js",
+        "// @ts-check\n/** @type {string} */\nconst n = 42;\nfunction \
+         own(x){return{verticalSpacing:x,horizontalSpacing:x}}const \
+         s=own(1);console.log(n,s.verticalSpacing+s.horizontalSpacing);export{};",
+    )]);
+    assert!(saved(&report) > 0, "{report:#}");
+    assert!(!out(temp.path(), "index.js").contains("verticalSpacing"));
+}
+
 #[test]
 fn keeps_dynamically_selected_namespace_exports() {
     let (temp, _) = run(&[
