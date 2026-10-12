@@ -54,6 +54,9 @@ func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, pro
 			return nil, false, err
 		}
 	} else if message.value.User != nil {
+		if o.input.skill != nil && o.input.receipt.PartID == "" && value.Kind == TextPartKind && value.Text != nil && sha256.Sum256([]byte(value.Text.Text)) == o.input.digest {
+			o.input.receipt.PartID = value.ID
+		}
 		if value.ID != o.input.receipt.PartID || value.Kind != TextPartKind || value.Text.Timing != nil || value.Text.Synthetic != nil || value.Text.Ignored != nil || value.Text.Metadata != nil || sha256.Sum256([]byte(value.Text.Text)) != o.input.digest || old != nil {
 			return nil, false, observerProblem()
 		}
@@ -133,6 +136,9 @@ func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, pro
 }
 
 func (o *inputObserver) tool(value NativePart, old *observedPart) error {
+	if err := o.verifySkillTool(value.Tool); err != nil {
+		return err
+	}
 	tool := value.Tool
 	if tool.State == ToolError && tool.Title != nil {
 		if tool.Name != "task" || old == nil || old.value.Tool.State != ToolRunning || o.stop == nil || !o.stop.sent || !interruptedTool(tool) || !reflect.DeepEqual(old.value.Tool.Title, tool.Title) {

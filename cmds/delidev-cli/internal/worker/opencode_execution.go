@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -156,7 +157,14 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := opencode.APIExecutionConfig{OrdinaryTools: ordinaryTools,
+	var skillSources []skills.NativeSelection
+	if checkpoint == nil && forkSeed == nil {
+		skillSources, err = (skills.Manager{Root: config.Root}).OpenCodeSources(ctx, connection.Credential.ServerID, connection.Credential.DeviceID, input.Configuration.ManagedSkills, input.Input.Skills)
+		if err != nil {
+			return nil, err
+		}
+	}
+	nativeConfig := opencode.APIExecutionConfig{SkillSources: skillSources, OrdinaryTools: ordinaryTools,
 		Probe:     opencode.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), Root: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
 		References: openCodeWorkspaceReferences(manifest),
@@ -178,6 +186,24 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		valueCheckpoint := *checkpoint
 		valueCheckpoint.Native, valueCheckpoint.NativeReference = value.Native, value.NativeReference
 		checkpoint = &valueCheckpoint
+	}
+	// Restored packages come from the authenticated predecessor copies. Current
+	// catalog edits or deletion cannot change this frozen generation.
+	if forkSeed != nil {
+		previousHome := filepath.Join(runtimeRoot, string(input.Fork.RuntimeID), "native")
+		nativeConfig.SkillSources, err = opencode.CheckpointSkillSources(ctx, previousHome, forkSeed.Native, forkSeed.NativeReference)
+		if err != nil {
+			return nil, err
+		}
+	} else if checkpoint != nil {
+		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
+		if compacted != nil {
+			previousHome = filepath.Join(runtimeRoot, string(compacted.Input.ActionID))
+		}
+		nativeConfig.SkillSources, err = opencode.CheckpointSkillSources(ctx, previousHome, checkpoint.Native, checkpoint.NativeReference)
+		if err != nil {
+			return nil, err
+		}
 	}
 	var resumeClaim *opencode.SessionClaim
 	if forkSeed != nil {
@@ -275,7 +301,11 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	input.Installation.Version = api.Version()
 	publisher.nativeVersion = api.Version()
 	config.startup.claimInput()
-	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
+	if len(input.Input.Skills) > 0 {
+		if _, err := api.StartSkillCommand(nativeCtx, input.TurnRequestID, input.Input); err != nil {
+			return nil, err
+		}
+	} else if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
 	phase = "first-input"

@@ -12,6 +12,7 @@ type checkpointToolName string
 
 const (
 	checkpointReadTool     checkpointToolName = "read"
+	checkpointSkillTool    checkpointToolName = "skill"
 	checkpointShellTool    checkpointToolName = "bash"
 	checkpointQuestionTool checkpointToolName = "question"
 )
@@ -40,6 +41,7 @@ type checkpointToolPart struct {
 // Version 11 binds other original inline tool rejections to permission names.
 // Version 12 retains independently ended Read errors without rejection replay.
 // Version 13 retains original external-directory allowances and policy closures.
+// Version 14 retains positively identified original selected native skill tools.
 type checkpointToolHistory struct {
 	Version         uint32                          `json:"version"`
 	InteractionFree bool                            `json:"interaction_free"`
@@ -62,7 +64,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 		return false
 	}
 	index := 0
-	searchOrTodo, fileTool, instructionsLoaded := false, false, false
+	searchOrTodo, fileTool, instructionsLoaded, skillTool := false, false, false, false
 	for _, history := range checkpointHistories(value) {
 		if history.Todo != nil {
 			if proof.Version < 6 || !nativeID(history.Todo.EventID, "evt") || !checkpointDigest(history.Todo.Digest) {
@@ -92,6 +94,11 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 					instructionsLoaded = true
 				}
 				switch tool.Name {
+				case checkpointSkillTool:
+					skillTool = true
+					if proof.Version < 14 {
+						return false
+					}
 				case checkpointReadTool, checkpointShellTool:
 				case checkpointQuestionTool:
 					if proof.Version < 5 {
@@ -114,7 +121,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded) && (proof.Version != 11 || checkpointHasNamedRejection(proof)) && (proof.Version != 12 || checkpointHasReadError(proof)) && (proof.Version != 13 || checkpointHasExternalAllowance(proof))
+	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded) && (proof.Version != 11 || checkpointHasNamedRejection(proof)) && (proof.Version != 12 || checkpointHasReadError(proof)) && (proof.Version != 13 || checkpointHasExternalAllowance(proof)) && (proof.Version != 14 || skillTool)
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -301,6 +308,11 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	if checkpointHasExternalAllowance(proof) {
 		proof.Version = 13
 	}
+	for _, part := range proof.Parts {
+		if part.Name == checkpointSkillTool {
+			proof.Version = 14
+		}
+	}
 	if !validCheckpointTools(value) {
 		return nil
 	}
@@ -330,6 +342,8 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 		return false
 	}
 	switch checkpointToolName(tool.Name) {
+	case checkpointSkillTool:
+		return checkpointInlineSkill(tool)
 	case checkpointReadTool:
 		_, valid := checkpointReadMetadata(tool.Metadata)
 		return valid

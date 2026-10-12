@@ -268,6 +268,9 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 		operationProfile{"/path", "get", "path.get", "200", "application/json"},
 		operationProfile{"/agent", "get", "app.agents", "200", "application/json"},
 	)
+	if len(profile.Skills) > 0 {
+		initializationOperations = append(initializationOperations, nativeSkillOperations()...)
+	}
 	if restore != nil && restore.source.Project == "global" && restore.source.Snapshot != nil {
 		initializationOperations = append(initializationOperations, operationProfile{"/project/current", "get", "project.current", "200", "application/json"})
 		api.projectProfile = true

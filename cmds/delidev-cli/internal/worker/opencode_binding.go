@@ -40,6 +40,7 @@ type OpenCodeBindingPublisher struct {
 	requested      openCodeRequestedSettings
 	creationClaim  opencode.SessionClaim
 	inputClaim     opencode.SessionClaim
+	inputPart      string
 	textAttached   bool
 	expectedReply  *opencode.SessionClaim
 	replyClaims    []opencode.SessionClaim
@@ -88,7 +89,7 @@ func (c *OpenCodeBindingPublisher) Claim(ctx context.Context, claim opencode.Ses
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if claim.Kind == opencode.ResumeSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim == nil || *c.resumeClaim != claim) || claim.Kind == opencode.CreateSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim != nil) || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound && c.stage != openCodeForkPrepared {
+	if claim.Kind == opencode.ResumeSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim == nil || *c.resumeClaim != claim) || claim.Kind == opencode.CreateSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim != nil) || (claim.Kind == opencode.SubmitInputMutation || claim.Kind == opencode.SubmitSkillCommandMutation || claim.Kind == opencode.ObserveSkillInputMutation) && c.stage != openCodeBound && c.stage != openCodeForkPrepared {
 		return openCodeClaimUncertain()
 	}
 	reply := claim.Kind == opencode.ReplyPermissionMutation || claim.Kind == opencode.ReplyQuestionMutation || claim.Kind == opencode.RejectQuestionMutation
@@ -179,9 +180,17 @@ func (c *OpenCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error)
 		return nil, openCodeClaimUncertain()
 	}
 	if len(claims) > 1 {
-		expected, err := opencode.TextInputClaimDigest(c.requested.Session, claims[1].MessageID, claims[1].PartID, c.publisher.input.Input.Prompt)
+		expected, err := openCodeImmutableInputDigest(c.publisher.config.Root, c.publisher.input, c.requested.Session, claims[1])
 		if err != nil || claims[1].BodyDigest != expected {
 			return nil, openCodeClaimUncertain()
+		}
+	}
+	for _, claim := range claims[2:] {
+		if claim.Kind == opencode.ObserveSkillInputMutation {
+			expected, err := openCodeImmutableInputDigest(c.publisher.config.Root, c.publisher.input, c.requested.Session, claim)
+			if err != nil || claim.BodyDigest != expected {
+				return nil, openCodeClaimUncertain()
+			}
 		}
 	}
 	return claims, nil
@@ -258,10 +267,11 @@ func (c *OpenCodeBindingPublisher) AcceptInput(ctx context.Context, receipt open
 		return c.block()
 	}
 	claims, err := c.readClaims()
-	if err != nil || len(claims) < 2 || claims[1].RequestID != receipt.RequestID || claims[1].SessionID != receipt.SessionID || claims[1].MessageID != receipt.MessageID || claims[1].PartID != receipt.PartID {
+	if err != nil || len(claims) < 2 || claims[1].RequestID != receipt.RequestID || claims[1].SessionID != receipt.SessionID || claims[1].MessageID != receipt.MessageID || openCodeClaimPart(claims) != receipt.PartID {
 		return c.block()
 	}
 	c.inputClaim = claims[1]
+	c.inputPart = receipt.PartID
 	// Storage independently confirms the original input after a lost 204.
 	// HTTPAccepted is deliberately not inferred, required or rewritten here.
 	c.turn, c.sequence, c.stage = receipt.MessageID, 2, openCodeAcceptancePending

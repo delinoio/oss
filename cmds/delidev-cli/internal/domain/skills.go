@@ -56,6 +56,7 @@ type SkillPreparationProof struct {
 }
 
 type SkillReadRequest struct {
+	Harness          Harness                `json:"harness,omitempty"`
 	ManagedServerID  ID                     `json:"managed_server_id,omitempty"`
 	ManagedPackages  []ManagedSkillPackage  `json:"managed_packages,omitempty"`
 	Action           SkillReadAction        `json:"action,omitempty"`
@@ -98,4 +99,12 @@ func ValidateSkillPreparation(scope SkillReadRequest) error {
 		}
 	}
 	return nil
+}
+
+// An omitted Harness retains the original Codex-only wire profile.
+func (r SkillReadRequest) HarnessOrCodex() Harness {
+	if r.Harness == "" {
+		return Codex
+	}
+	return r.Harness
 }

@@ -1548,3 +1548,18 @@ Extension packages cannot supply execution instructions or alter active native
 generations. Source files and original retained runtime copies have separate
 owners. Exact restart/replay returns the accepted original outcome after package
 deletion and cannot recreate deleted resources.
+## OpenCode skill checkpoint ownership
+
+Selected native packages are complete independent runtime copies. Private native
+checkpoint metadata retains package names, owned locations, complete resource/mode
+digests and invocation policy. Command history retains original native input,
+part, assistant and invocation event identities plus argument/text/part digests.
+These records contain no raw skill content, arguments or credentials.
+
+The Worker checkpoint preserves the accepted prompt digest separately from an
+optional native expanded-input digest. Original mutation claims and stored native
+part evidence bind both; an absent optional field preserves ordinary text history.
+Continuation and compaction inspect the original closed runtime and copy packages
+from it. Independent Fork retains its source proof and separately verified child
+package/history relocation. Catalog edits and enablement changes cannot rewrite
+accepted copies. Cleanup remains the original session/runtime deletion operation.

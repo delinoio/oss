@@ -29,13 +29,14 @@ type HistoryMessage struct {
 // live process. It proves neither process closure, durable Worker checkpoint
 // publication, interaction acceptance nor permission to resume or replay input.
 type HistoryObservation struct {
-	RequestID   domain.ID
-	SessionID   string
-	InputID     string
-	AssistantID string
-	Messages    []HistoryMessage
-	Digest      string
-	Todo        *TodoHistoryObservation `json:",omitempty"`
+	RequestID    domain.ID
+	SessionID    string
+	InputID      string
+	AssistantID  string
+	Messages     []HistoryMessage
+	Digest       string
+	SkillCommand *SkillCommandProof      `json:",omitempty"`
+	Todo         *TodoHistoryObservation `json:",omitempty"`
 }
 
 type historyPageRead struct {
@@ -122,6 +123,13 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 	if o.contextManual != "" {
 		result.RequestID = o.contextManual
 		result.InputID = o.messageOrder[0]
+	}
+	if o.input.skill != nil {
+		if o.skillCommand == nil {
+			return fail(sessionUncertain())
+		}
+		proof := *o.skillCommand
+		result.SkillCommand = &proof
 	}
 	base := "/session/" + receipt.SessionID + "/message?limit=1"
 	path, bytesRead, partsRead := base, 0, 0

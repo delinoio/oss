@@ -10,6 +10,7 @@ type OpenCodeBuiltinName string
 
 const (
 	OpenCodeTask         OpenCodeBuiltinName = "task"
+	OpenCodeSkill        OpenCodeBuiltinName = "skill"
 	OpenCodeWrite        OpenCodeBuiltinName = "write"
 	OpenCodeEdit         OpenCodeBuiltinName = "edit"
 	OpenCodeApplyPatch   OpenCodeBuiltinName = "apply_patch"
@@ -19,7 +20,7 @@ const (
 )
 
 func (n OpenCodeBuiltinName) Valid() bool {
-	return slices.Contains([]OpenCodeBuiltinName{OpenCodeWrite, OpenCodeEdit, OpenCodeApplyPatch, OpenCodeGlob, OpenCodeGrep, OpenCodeQuestionTool, OpenCodeTask}, n)
+	return slices.Contains([]OpenCodeBuiltinName{OpenCodeSkill, OpenCodeWrite, OpenCodeEdit, OpenCodeApplyPatch, OpenCodeGlob, OpenCodeGrep, OpenCodeQuestionTool, OpenCodeTask}, n)
 }
 
 // This closed builtin family retains complete original input/metadata JSON as

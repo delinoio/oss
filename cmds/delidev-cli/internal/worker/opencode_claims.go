@@ -141,7 +141,7 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 		return nil, openCodeClaimUncertain()
 	}
 	return &openCodeClaimJournal{path: path, state: state, saved: raw, release: lock.Close, logger: p.config.Logger, inputDigest: func(c opencode.SessionClaim) (string, error) {
-		return opencode.TextInputClaimDigest(requested.Session, c.MessageID, c.PartID, i.Input.Prompt)
+		return openCodeImmutableInputDigest(p.config.Root, i, requested.Session, c)
 	}}, nil
 }
 
@@ -180,13 +180,13 @@ func (s openCodeClaimState) validateNext(c opencode.SessionClaim) error {
 		return nil
 	}
 	if len(s.Claims) == 1 {
-		if c.Kind != opencode.SubmitInputMutation || c.RequestID != s.Reference.InputRequestID || s.Resume != nil && (c.SessionID != s.Resume.SessionID || c.MessageID == s.Resume.MessageID || c.PartID == s.Resume.PartID || c.RequestID == s.Resume.InputRequestID) {
+		if (c.Kind != opencode.SubmitInputMutation && c.Kind != opencode.SubmitSkillCommandMutation) || c.RequestID != s.Reference.InputRequestID || s.Resume != nil && (c.SessionID != s.Resume.SessionID || c.MessageID == s.Resume.MessageID || c.PartID == s.Resume.PartID || c.RequestID == s.Resume.InputRequestID) {
 			return openCodeClaimUncertain()
 		}
 		return nil
 	}
 	input := s.Claims[1]
-	if c.Kind == opencode.CreateSessionMutation || c.Kind == opencode.SubmitInputMutation || c.InputRequestID != input.RequestID || c.SessionID != input.SessionID {
+	if c.Kind == opencode.CreateSessionMutation || (c.Kind == opencode.SubmitInputMutation || c.Kind == opencode.SubmitSkillCommandMutation) || c.InputRequestID != input.RequestID || c.SessionID != input.SessionID {
 		return openCodeClaimUncertain()
 	}
 	var stop *opencode.SessionClaim
@@ -204,8 +204,12 @@ func (s openCodeClaimState) validateNext(c opencode.SessionClaim) error {
 		return openCodeClaimUncertain()
 	}
 	switch c.Kind {
+	case opencode.ObserveSkillInputMutation:
+		if input.Kind != opencode.SubmitSkillCommandMutation || c.MessageID != input.MessageID || openCodeClaimPart(s.Claims) != "" {
+			return openCodeClaimUncertain()
+		}
 	case opencode.StopInputMutation, opencode.StopOwnedRuntimeMutation, opencode.RecoverStoppedRuntimeMutation:
-		if c.MessageID != input.MessageID || c.PartID != input.PartID {
+		if c.MessageID != input.MessageID || c.PartID != openCodeClaimPart(s.Claims) {
 			return openCodeClaimUncertain()
 		}
 		if c.Kind == opencode.RecoverStoppedRuntimeMutation && (stop == nil || c.StopRequestID != stop.RequestID || recoveries >= 32) {
@@ -236,7 +240,7 @@ func (j *openCodeClaimJournal) Claim(ctx context.Context, c opencode.SessionClai
 	if err := j.state.validateNext(c); err != nil {
 		return err
 	}
-	if c.Kind == opencode.SubmitInputMutation {
+	if c.Kind == opencode.SubmitInputMutation || c.Kind == opencode.SubmitSkillCommandMutation || c.Kind == opencode.ObserveSkillInputMutation {
 		phase = "immutable-input"
 		if j.inputDigest == nil {
 			j.failed = true

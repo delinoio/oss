@@ -247,6 +247,11 @@ func (m Manager) List(ctx context.Context, scope domain.SkillReadRequest, projec
 		if e != nil || digest != managed.ContentRevision {
 			return result, unavailable()
 		}
+		if scope.Harness == domain.OpenCode {
+			if _, e := OpenCodePackage(ctx, NativeSelection{Name: managed.Name, Path: filepath.Join(path, "SKILL.md"), ContentRevision: digest}); e != nil {
+				return result, e
+			}
+		}
 		item := domain.SkillEntry{WorkerDeviceID: scope.WorkerDeviceID, InventoryID: id, SkillID: domain.NewID(), ContentRevision: digest, Name: managed.Name, Description: managed.Description, Provenance: "user"}
 		inv.Packages = append(inv.Packages, packageRecord{Entry: item, Path: path, ManagedPackageID: managed.ID})
 		result.Entries = append(result.Entries, item)
@@ -256,6 +261,9 @@ func (m Manager) List(ctx context.Context, scope domain.SkillReadRequest, projec
 	roots := []struct{ path, provenance string }{{filepath.Join(m.Home, ".agents", "skills"), "user"}, {filepath.Join(m.Home, ".codex", "skills"), "user"}}
 	for _, p := range projectRoots {
 		roots = append(roots, struct{ path, provenance string }{filepath.Join(p, ".agents", "skills"), "project"}, struct{ path, provenance string }{filepath.Join(p, ".codex", "skills"), "project"})
+	}
+	if scope.Harness == domain.OpenCode {
+		roots = nil
 	}
 	for _, root := range roots {
 		entries, e := boundedDirectory(root.path, MaxInventory)
@@ -316,7 +324,7 @@ func (m Manager) List(ctx context.Context, scope domain.SkillReadRequest, projec
 	return result, nil
 }
 func sameScope(a, b domain.SkillReadRequest) bool {
-	return a.ProjectID == b.ProjectID && a.WorkerInstanceID == b.WorkerInstanceID && a.WorkerDeviceID == b.WorkerDeviceID && a.AgentRevision == b.AgentRevision && a.ActorID == b.ActorID && a.MachineID == b.MachineID && a.AgentID == b.AgentID && a.SessionID == b.SessionID
+	return a.Harness == b.Harness && a.ProjectID == b.ProjectID && a.WorkerInstanceID == b.WorkerInstanceID && a.WorkerDeviceID == b.WorkerDeviceID && a.AgentRevision == b.AgentRevision && a.ActorID == b.ActorID && a.MachineID == b.MachineID && a.AgentID == b.AgentID && a.SessionID == b.SessionID
 }
 func snapshotPath(root string, id domain.ID) string {
 	return filepath.Join(root, "skill-snapshots", string(id))
@@ -403,7 +411,7 @@ func (m Manager) CheckContext(bindings []domain.SkillBinding, input domain.Execu
 			return unavailable()
 		}
 		var saved snapshot
-		if domain.Decode(b, &saved) != nil || saved.Scope.WorkerDeviceID != binding.WorkerDeviceID || saved.Scope.MachineID != input.MachineID || saved.Scope.AgentID != input.Configuration.AgentID || saved.Scope.AgentRevision != input.Configuration.AgentRevision || (saved.Scope.SessionID != "" && saved.Scope.SessionID != input.SessionID) {
+		if domain.Decode(b, &saved) != nil || saved.Scope.WorkerDeviceID != binding.WorkerDeviceID || saved.Scope.MachineID != input.MachineID || saved.Scope.AgentID != input.Configuration.AgentID || saved.Scope.AgentRevision != input.Configuration.AgentRevision || saved.Scope.Harness != "" && saved.Scope.Harness != input.Configuration.Harness || (saved.Scope.SessionID != "" && saved.Scope.SessionID != input.SessionID) {
 			return unavailable()
 		}
 	}

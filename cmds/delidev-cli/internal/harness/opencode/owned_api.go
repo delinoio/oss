@@ -312,6 +312,9 @@ func (a *OwnedAPI) Close(ctx context.Context) error {
 	}
 	defer s.leave()
 	joined := s.joinCompactionHTTP(ctx, true)
+	if err := s.joinSkillCommandHTTP(ctx, true); err != nil {
+		joined = err
+	}
 	err := s.closeOwned(ctx)
 	if joined != nil {
 		err = joined

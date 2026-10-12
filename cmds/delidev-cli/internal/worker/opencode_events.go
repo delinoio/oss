@@ -156,7 +156,7 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 			if err := c.publishTodo(ctx, o); err != nil {
 				return c.fail(err)
 			}
-		case opencode.SessionDiffEvent:
+		case opencode.CommandExecutedEvent, opencode.SessionDiffEvent:
 			if err := c.publishChanges(ctx, o); err != nil {
 				return c.fail(err)
 			}

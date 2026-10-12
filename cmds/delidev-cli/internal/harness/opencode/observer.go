@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
 const maxObservedBytes = 32 << 20
@@ -107,6 +108,8 @@ type inputObserver struct {
 	mu                   sync.Mutex
 	creation             sessionCreation
 	input                sessionInput
+	skillCommand         *SkillCommandProof
+	skillPackages        []skills.OpenCodeSelection
 	cwd, root            string
 	logger               *slog.Logger
 	owner                domain.ID
@@ -184,6 +187,9 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	}
 	if s.predecessor != nil {
 		s.observer.contextBaseInventory = checkpointInventory(*s.predecessor)
+	}
+	if s.apiProfile != nil {
+		s.observer.skillPackages = slices.Clone(s.apiProfile.Skills)
 	}
 	return s.observer, nil
 }
@@ -272,6 +278,14 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 	}
 	stage := "notification"
 	switch event.Kind {
+	case CommandExecutedEvent:
+		stage = "skill-command"
+		if o.input.skill == nil || o.skillCommand != nil || !session([]string{"name", "arguments", "messageID"}, nil) || !scalar(fields["name"], o.input.skill.Name) || !scalar(fields["arguments"], o.input.skill.Arguments) || !scalar(fields["messageID"], o.progress.AssistantID) || !o.progress.TerminalObserved || o.input.receipt.PartID == "" || o.parts[o.input.receipt.PartID] == nil {
+			err = observerProblem()
+		} else {
+			o.skillCommand = &SkillCommandProof{Name: o.input.skill.Name, Location: o.input.skill.Location, ContentRevision: o.input.skill.ContentRevision, ArgumentsSHA256: mutationDigest([]byte(o.input.skill.Arguments)), TextSHA256: mutationDigest([]byte(o.input.skill.Text)), EventID: event.ID, InputID: o.input.receipt.MessageID, PartID: o.input.receipt.PartID, AssistantID: o.progress.AssistantID, PartSHA256: mutationDigest(canonicalNative(o.parts[o.input.receipt.PartID].raw))}
+			result.Ancillary = slices.Clone(event.Properties)
+		}
 	case PermissionAskedEvent, QuestionAskedEvent:
 		stage = "interaction"
 		result.Interaction, err = o.interaction(event)
@@ -481,7 +495,7 @@ func (o *inputObserver) refresh() {
 		}
 	}
 	o.progress.StoppedOnRejection = message != nil && o.rejectionStopsMessage(message.value.ID)
-	o.progress.SettledObserved = o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && (o.progress.IdleNotification || o.progress.IdleReconciled)
+	o.progress.SettledObserved = (o.input.skill == nil || o.skillCommand != nil) && o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && (o.progress.IdleNotification || o.progress.IdleReconciled)
 }
 
 func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem error) {

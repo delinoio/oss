@@ -494,3 +494,16 @@ server/Project/Agent destinations receive only confirmed settings; exact immutab
 packages remain disabled and unattached. Native/account/platform acceptance stays
 separate from fixture and schema evidence. The Claude adapter remains a separate
 consumer of this shared owner.
+## Selected native OpenCode skills
+
+The independently negotiated OpenCode skill adapter consumes enabled immutable
+Agent selections from Worker-owned management. It verifies the original HTTP
+skill inventory and native permission owner before input. Automatic skill use and
+one explicit native command retain complete package bytes, executable modes,
+ordered arguments and original history through continuation and compaction.
+Independent Fork copies preserve package ownership and authenticated relocation.
+Follow the [sessions](cmds-delidev-sessions-contract.md#opencode-native-skill-generations),
+[harness](cmds-delidev-harness-contract.md#opencode-selected-native-skill-profile),
+[Fork](cmds-delidev-forks-contract.md#selected-opencode-skill-package-relocation)
+and [protocol](protos-delidev-v1-contract.md#native-opencode-skills-capability)
+contracts. Fixture evidence does not establish installed native or account acceptance.

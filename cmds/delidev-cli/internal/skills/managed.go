@@ -232,7 +232,7 @@ func (m Manager) Managed(ctx context.Context, q domain.ManagedSkillRequest) (dom
 		if err != nil {
 			return finish(err)
 		}
-		next := domain.ManagedSkillPackage{ID: q.Mutation.PackageID, WorkerDeviceID: q.WorkerDeviceID, Revision: 1, ContentRevision: content, Name: name, Description: description, Provenance: "worker-import", Enabled: true, Support: []domain.MCPHarnessSupport{{Harness: domain.Codex, Profile: "codex-extra-roots-v1", Verified: false}}}
+		next := domain.ManagedSkillPackage{ID: q.Mutation.PackageID, WorkerDeviceID: q.WorkerDeviceID, Revision: 1, ContentRevision: content, Name: name, Description: description, Provenance: "worker-import", Enabled: true, Support: []domain.MCPHarnessSupport{{Harness: domain.Codex, Profile: "codex-extra-roots-v1", Verified: false}, {Harness: domain.OpenCode, Profile: "opencode-native-skills-v1", Verified: false}}}
 		if next.Validate() != nil || slices.ContainsFunc(inventory(), func(p domain.ManagedSkillPackage) bool { return strings.EqualFold(p.Name, name) }) {
 			return finish(domain.Fail(domain.Conflict, "The native skill name is invalid or ambiguous.", "Choose a package with a unique native name."))
 		}

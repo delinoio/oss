@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: Apache-2.0
+package opencode
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
+)
+
+func nativeSkillToolFixture(t *testing.T) (*inputObserver, *NativeToolPart) {
+	return nativeSkillToolResourceFixture(t, false)
+}
+func nativeSkillToolResourceFixture(t *testing.T, withResource bool) (*inputObserver, *NativeToolPart) {
+	t.Helper()
+	source := t.TempDir()
+	content := "Original native skill instructions.\n"
+	markdown := []byte("---\nname: selected\ndescription: Fixture\n---\n" + content)
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), markdown, 0600); err != nil {
+		t.Fatal(err)
+	}
+	file := sha256.Sum256(markdown)
+	record, _ := json.Marshal([]any{"SKILL.md", hex.EncodeToString(file[:]), false})
+	hasher := sha256.New()
+	hasher.Write(record)
+	if withResource {
+		if err := os.Mkdir(filepath.Join(source, "scripts"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		resource := []byte("#!/bin/sh\necho fixture\n")
+		if err := os.WriteFile(filepath.Join(source, "scripts", "fixture.sh"), resource, 0700); err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(resource)
+		record, _ := json.Marshal([]any{"scripts/fixture.sh", hex.EncodeToString(digest[:]), true})
+		hasher.Write(record)
+	}
+	revision := hasher.Sum(nil)
+	selected, err := skills.CopyOpenCodeRuntime(context.Background(), []skills.NativeSelection{{Name: "selected", Path: filepath.Join(source, "SKILL.md"), ContentRevision: hex.EncodeToString(revision)}}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Dir(selected[0].Path)
+	title := "Loaded skill: selected"
+	output := "<skill_content name=\"selected\">\n# Skill: selected\n\nOriginal native skill instructions.\n\nBase directory for this skill: " + directory + "\nRelative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\nNote: file list is sampled.\n\n<skill_files>\n\n</skill_files>\n</skill_content>"
+	if withResource {
+		output = strings.Replace(output, "<skill_files>\n\n", "<skill_files>\n<file>"+filepath.Join(directory, "scripts", "fixture.sh")+"</file>\n", 1)
+	}
+	metadata, _ := json.Marshal(map[string]string{"name": "selected", "dir": directory})
+	return &inputObserver{skillPackages: selected}, &NativeToolPart{Name: "skill", State: ToolCompleted, Input: json.RawMessage(`{"name":"selected"}`), Metadata: metadata, Title: &title, Output: &output}
+}
+func TestNativeSkillToolMatchesCompleteOwnedPackageAndPolicy(t *testing.T) {
+	for _, mutation := range []string{"original", "foreign-name", "foreign-dir", "changed-output", "explicit-only", "changed-resource"} {
+		t.Run(mutation, func(t *testing.T) {
+			o, tool := nativeSkillToolFixture(t)
+			switch mutation {
+			case "foreign-name":
+				tool.Input = json.RawMessage(`{"name":"unselected"}`)
+			case "foreign-dir":
+				tool.Metadata = json.RawMessage(`{"name":"selected","dir":"/foreign"}`)
+			case "changed-output":
+				changed := *tool.Output + "foreign"
+				tool.Output = &changed
+			case "explicit-only":
+				o.skillPackages[0].ExplicitOnly = true
+			case "changed-resource":
+				if err := os.WriteFile(filepath.Join(filepath.Dir(o.skillPackages[0].Path), "foreign"), []byte("changed"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := o.verifySkillTool(tool)
+			if (err == nil) != (mutation == "original") {
+				t.Fatalf("owned native tool %s: %v", mutation, err)
+			}
+		})
+	}
+}
+func TestNativeSkillPendingCannotGrantPackageAuthority(t *testing.T) {
+	o := &inputObserver{}
+	pending := &NativeToolPart{Name: "skill", State: ToolPending, Input: json.RawMessage(`{}`)}
+	if err := o.verifySkillTool(pending); err != nil {
+		t.Fatal("native empty pending envelope was rejected", err)
+	}
+	pending.State = ToolRunning
+	pending.Input = json.RawMessage(`{"name":"foreign"}`)
+	if o.verifySkillTool(pending) == nil {
+		t.Fatal("running foreign package acquired authority")
+	}
+}
+
+func TestForkSkillToolAuthenticatesCurrentCopyAtRetainedDirectory(t *testing.T) {
+	observer, tool := nativeSkillToolResourceFixture(t, true)
+	currentDirectory := filepath.Dir(observer.skillPackages[0].Path)
+	retiredDirectory := filepath.Join(t.TempDir(), "retired", "opencode", "skills", "selected")
+	output := strings.ReplaceAll(*tool.Output, currentDirectory, retiredDirectory)
+	tool.Output = &output
+	tool.Metadata, _ = json.Marshal(map[string]string{"name": "selected", "dir": retiredDirectory})
+	if observer.verifySkillTool(tool) == nil {
+		t.Fatal("ordinary observation accepted a historical directory")
+	}
+	if err := observer.verifySkillToolAtDirectory(tool, retiredDirectory); err != nil {
+		t.Fatal("owned current copy could not authenticate retained output", err)
+	}
+	foreign := strings.Replace(output, filepath.Join(retiredDirectory, "scripts", "fixture.sh"), filepath.Join(retiredDirectory, "foreign.sh"), 1)
+	tool.Output = &foreign
+	if observer.verifySkillToolAtDirectory(tool, retiredDirectory) == nil {
+		t.Fatal("foreign historical resource acquired authority")
+	}
+	tool.Output = &output
+	if err := os.WriteFile(filepath.Join(currentDirectory, "foreign"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if observer.verifySkillToolAtDirectory(tool, retiredDirectory) == nil {
+		t.Fatal("changed current package authenticated historical output")
+	}
+}

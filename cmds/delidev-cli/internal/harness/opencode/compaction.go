@@ -60,6 +60,10 @@ func (a *OwnedAPI) StartCompaction(ctx context.Context, action domain.ID) (Compa
 		s.leave()
 		return CompactionReceipt{}, sessionConflict()
 	}
+	if err := s.verifyInstructions(ctx, "manual-compaction"); err != nil {
+		s.leave()
+		return CompactionReceipt{}, err
+	}
 	body, err := json.Marshal(struct {
 		Provider string `json:"providerID"`
 		Model    string `json:"modelID"`

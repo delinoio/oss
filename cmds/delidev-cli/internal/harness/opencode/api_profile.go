@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
 const nativeAPIProviderName = "DeliDev execution"
@@ -20,21 +21,23 @@ const nativeAPIProviderPackage = "@ai-sdk/openai-compatible"
 // readiness. Its production owner must separately validate the registered
 // execution relay, managed policy and canonical private runtime/workspace.
 type nativeAPIProfile struct {
-	Settings            SessionSettings      `json:"-"`
-	BaseURL             string               `json:"-"`
-	Token               string               `json:"-"`
-	Prune               bool                 `json:"-"`
-	ContextLimit        int64                `json:"-"`
-	OutputLimit         int64                `json:"-"`
-	Rejection           RejectionPolicy      `json:"-"`
-	Instructions        string               `json:"-"`
-	InstructionsPath    string               `json:"-"`
-	ProjectInstructions *projectInstructions `json:"-"`
-	WorkspaceRoot       *WorkspaceRoot       `json:"-"`
-	ProjectConfig       *projectConfigScope  `json:"-"`
-	References          []WorkspaceReference `json:"-"`
-	ReferencePath       string               `json:"-"`
-	ReferenceWorkspace  string               `json:"-"`
+	Skills              []skills.OpenCodeSelection `json:"-"`
+	SkillHome           string                     `json:"-"`
+	Settings            SessionSettings            `json:"-"`
+	BaseURL             string                     `json:"-"`
+	Token               string                     `json:"-"`
+	Prune               bool                       `json:"-"`
+	ContextLimit        int64                      `json:"-"`
+	OutputLimit         int64                      `json:"-"`
+	Rejection           RejectionPolicy            `json:"-"`
+	Instructions        string                     `json:"-"`
+	InstructionsPath    string                     `json:"-"`
+	ProjectInstructions *projectInstructions       `json:"-"`
+	WorkspaceRoot       *WorkspaceRoot             `json:"-"`
+	ProjectConfig       *projectConfigScope        `json:"-"`
+	References          []WorkspaceReference       `json:"-"`
+	ReferencePath       string                     `json:"-"`
+	ReferenceWorkspace  string                     `json:"-"`
 }
 
 func (p nativeAPIProfile) config() (map[string]any, error) {
@@ -61,6 +64,15 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 				"modalities": map[string]any{"input": []string{"text"}, "output": []string{"text"}},
 			}},
 		}},
+	}
+	if len(p.Skills) > 0 {
+		policy := map[string]any{"*": "deny"}
+		for _, selection := range p.Skills {
+			if !selection.ExplicitOnly {
+				policy[selection.Name] = "allow"
+			}
+		}
+		result["permission"] = map[string]any{"skill": policy}
 	}
 	if p.Settings.Effort != "" {
 		provider := result["provider"].(map[string]any)[p.Settings.Provider].(map[string]any)
@@ -210,6 +222,9 @@ func (s *sessionAPI) verifyAPIProfile(ctx context.Context) error {
 			}
 			return err
 		}
+	}
+	if err := s.verifyNativeSkills(ctx); err != nil {
+		return err
 	}
 	s.apiVerified = true
 	return nil

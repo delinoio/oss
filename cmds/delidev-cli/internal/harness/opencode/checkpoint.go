@@ -31,6 +31,7 @@ type CheckpointReference struct {
 }
 
 type nativeCheckpoint struct {
+	Skills            []checkpointSkill          `json:"skills,omitempty"`
 	Version           uint32                     `json:"version"`
 	NativeVersion     string                     `json:"native_version"`
 	Reference         CheckpointReference        `json:"reference"`
@@ -141,7 +142,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	requiresResume := stop != nil || s.observer.progress.StoppedOnRejection || last.value.Assistant.Error != nil
 	s.observer.mu.Unlock()
 	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
-	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
+	value := nativeCheckpoint{Skills: retainedCheckpointSkills(s.apiProfile.Skills), Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
 	if scope := s.apiProfile.WorkspaceRoot; scope != nil && scope.windowsGlobal() {
 		if scope.native != s.runtimeRoot || scope.directory != s.cwd || c.identity.project != "global" {
 			return nil, CheckpointReference{}, sessionUncertain()
@@ -242,6 +243,9 @@ func InspectCheckpoint(ctx context.Context, home string, raw []byte, ref Checkpo
 	if err != nil {
 		return err
 	}
+	if err := inspectCheckpointSkills(ctx, value); err != nil {
+		return err
+	}
 	files, err := checkpointFiles(ctx, home)
 	if err != nil || !sameCheckpointFiles(files, value.Files) {
 		return sessionUncertain()
@@ -260,7 +264,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
-	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) {
+	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) || !validCheckpointSkills(value) {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {
@@ -325,6 +329,9 @@ func checkpointPath(path string) bool {
 }
 
 func validCheckpointHistory(h HistoryObservation) bool {
+	if !validSkillCommandHistory(h) {
+		return false
+	}
 	if h.Todo != nil && (!nativeID(h.Todo.EventID, "evt") || !checkpointDigest(h.Todo.Digest)) {
 		return false
 	}
@@ -403,8 +410,9 @@ func checkpointSettingsForAgent(s *sessionAPI, agent PrimaryAgent) (string, erro
 		References                []WorkspaceReference `json:",omitempty"`
 		Prune                     bool                 `json:",omitempty"`
 		// Omission preserves historical default-profile checkpoint digests.
-		Effort string `json:",omitempty"`
-	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References, p.Prune, p.Settings.Effort})
+		Effort string                    `json:",omitempty"`
+		Skills []checkpointSkillSettings `json:",omitempty"`
+	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References, p.Prune, p.Settings.Effort, checkpointSkillFingerprint(p.Skills)})
 	if err != nil {
 		return "", sessionUncertain()
 	}

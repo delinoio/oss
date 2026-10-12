@@ -16,7 +16,7 @@ import (
 )
 
 func skillUnavailable() error {
-	return domain.Fail(domain.Unavailable, "Skills are unavailable for this Runner Device and Harness.", "Connect a supported Codex Runner Device and retry.")
+	return domain.Fail(domain.Unavailable, "Skills are unavailable for this Runner Device and Harness.", "Connect a supported Runner Device and retry.")
 }
 func validateSkillResult(result domain.SkillReadResult) error {
 	if len(result.Entries) > 256 {
@@ -55,7 +55,17 @@ func skillScope(tx *store.Tx, request domain.SkillReadRequest) (workspace.Prepar
 	if err != nil {
 		return input, manifest, err
 	}
-	if !slices.Contains(machine.WorkerCapabilities, domain.NativeSkillsV1) {
+	harness := agent.Harness
+	if request.SessionID != "" {
+		_, session, e := sessionRecord(tx, request.SessionID)
+		if e != nil {
+			return input, manifest, e
+		}
+		if session.InitialExecution != nil {
+			harness = session.InitialExecution.Configuration.Harness
+		}
+	}
+	if request.Harness != "" && request.Harness != harness || !supportsNativeSkills(machine, harness, false) {
 		return input, manifest, skillUnavailable()
 	}
 	if err = tx.WorkerUpdateAdmission(request.MachineID); err != nil {
@@ -70,16 +80,16 @@ func skillScope(tx *store.Tx, request domain.SkillReadRequest) (workspace.Prepar
 			return input, manifest, skillUnavailable()
 		}
 		if session.InitialExecution != nil {
-			if session.InitialExecution.Configuration.Harness != domain.Codex {
+			if session.InitialExecution.Configuration.Harness != domain.Codex && session.InitialExecution.Configuration.Harness != domain.OpenCode {
 				return input, manifest, skillUnavailable()
 			}
-		} else if agent.Harness != domain.Codex {
+		} else if agent.Harness != domain.Codex && agent.Harness != domain.OpenCode {
 			return input, manifest, skillUnavailable()
 		}
 		if session.WorkspaceAvailable() {
 			return workspaceReadScope(tx, request.SessionID)
 		}
-	} else if agent.Harness != domain.Codex {
+	} else if agent.Harness != domain.Codex && agent.Harness != domain.OpenCode {
 		return input, manifest, skillUnavailable()
 	}
 	input.MachineID = request.MachineID
@@ -120,6 +130,11 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 		if readErr != nil {
 			return readErr
 		}
+		agent, e := store.Decode[domain.Agent](row)
+		if e != nil {
+			return e
+		}
+		scope.Harness = nativeSkillReadHarness(agent.Harness)
 		scope.AgentRevision = row.Revision
 		if scope.SessionID != "" {
 			_, session, readErr := sessionRecord(tx, scope.SessionID)
@@ -127,6 +142,7 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 				return readErr
 			}
 			if session.InitialExecution != nil {
+				scope.Harness = nativeSkillReadHarness(session.InitialExecution.Configuration.Harness)
 				scope.AgentRevision = session.InitialExecution.Configuration.AgentRevision
 			}
 		}
@@ -221,7 +237,7 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 			if err != nil {
 				return err
 			}
-			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedNativeSkillsV1) {
+			if !supportsNativeSkills(machine, scope.HarnessOrCodex(), true) {
 				return skillUnavailable()
 			}
 		}
@@ -408,4 +424,28 @@ func checkManagedSkillScope(tx *store.Tx, scope *domain.SkillReadRequest) error 
 		return skillUnavailable()
 	}
 	return nil
+}
+
+// Native skill capabilities are independent profiles; one cannot authorize a
+// different Harness merely because both share the managed catalog.
+func supportsNativeSkills(machine domain.Machine, harness domain.Harness, managed bool) bool {
+	if harness == domain.OpenCode {
+		return slices.Contains(machine.WorkerCapabilities, domain.OpenCodeNativeSkillsV1)
+	}
+	if harness != domain.Codex {
+		return false
+	}
+	if managed {
+		return slices.Contains(machine.WorkerCapabilities, domain.ManagedNativeSkillsV1)
+	}
+	return slices.Contains(machine.WorkerCapabilities, domain.NativeSkillsV1)
+}
+
+// Codex keeps its original closed request envelope and preparation digest. Only
+// the independently negotiated OpenCode profile carries a Harness selector.
+func nativeSkillReadHarness(harness domain.Harness) domain.Harness {
+	if harness == domain.Codex {
+		return ""
+	}
+	return harness
 }

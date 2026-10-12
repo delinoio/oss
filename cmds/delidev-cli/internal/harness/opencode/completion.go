@@ -8,6 +8,10 @@ import (
 )
 
 func copyHistoryObservation(value HistoryObservation) HistoryObservation {
+	if value.SkillCommand != nil {
+		proof := *value.SkillCommand
+		value.SkillCommand = &proof
+	}
 	if value.Todo != nil {
 		todo := *value.Todo
 		value.Todo = &todo
@@ -55,6 +59,9 @@ func (a *OwnedAPI) CloseCompleted(ctx context.Context) (HistoryObservation, erro
 	}
 	history, err := s.readHistory(ctx, s.observer)
 	if err != nil {
+		return HistoryObservation{}, err
+	}
+	if err := s.joinSkillCommandHTTP(ctx, false); err != nil {
 		return HistoryObservation{}, err
 	}
 	if err := s.verifyForegroundChildren(ctx); err != nil {

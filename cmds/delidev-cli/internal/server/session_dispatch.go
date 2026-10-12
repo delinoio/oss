@@ -158,10 +158,10 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 }
 
 func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
-	if len(input.Configuration.ManagedSkills) > 0 && (input.Configuration.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.ManagedNativeSkillsV1)) {
+	if len(input.Configuration.ManagedSkills) > 0 && !supportsNativeSkills(machine, input.Configuration.Harness, true) {
 		return domain.Installation{}, domain.ManagedSkillUnavailable()
 	}
-	if len(input.Input.Skills) > 0 && (input.Configuration.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.NativeSkillsV1)) {
+	if len(input.Input.Skills) > 0 && !supportsNativeSkills(machine, input.Configuration.Harness, false) {
 		return domain.Installation{}, skillUnavailable()
 	}
 	var empty domain.Installation

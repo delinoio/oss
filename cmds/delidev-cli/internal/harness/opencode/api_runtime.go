@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
 // Ordinary execution must register Token against its durable execution before
@@ -26,7 +27,8 @@ import (
 // selected-account readiness. Root comes from independent Worker Git /
 // General Chat workspace inspection, never from a native message's own path.
 type apiSessionConfig struct {
-	OrdinaryTools executionenv.Ordinary `json:"-"`
+	SkillSources  []skills.NativeSelection `json:"-"`
+	OrdinaryTools executionenv.Ordinary    `json:"-"`
 
 	Probe        ProbeConfig                               `json:"-"`
 	Workspace    string                                    `json:"-"`
@@ -117,11 +119,16 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 		return nil, nil, err
 	}
 	profile.ProjectInstructions = project
-	raw, err := profile.configBytes()
+	env, err := probeEnvironment(config.Probe)
 	if err != nil {
 		return nil, nil, err
 	}
-	env, err := probeEnvironment(config.Probe)
+	profile.SkillHome = root
+	profile.Skills, err = skills.CopyOpenCodeRuntime(context.Background(), config.SkillSources, root)
+	if err != nil {
+		return nil, nil, err
+	}
+	raw, err := profile.configBytes()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -233,7 +240,7 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 	}{
 		{"/path", func(raw []byte) error { return exactPrivateJSON(raw, paths) }},
 		{"/agent", func(raw []byte) error {
-			return validatePrimaryAgent(raw, config.Settings.Agent, root, scope.native, s.apiProfile.References...)
+			return validatePrimaryAgentSkills(raw, config.Settings.Agent, root, scope.native, s.apiProfile)
 		}},
 	} {
 		raw, status, err := s.request(ctx, http.MethodGet, step.path, nil, http.StatusOK)

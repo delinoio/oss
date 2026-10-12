@@ -45,7 +45,7 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	}
 	claims, err := readOpenCodeClaims(root, ref)
 	claimBytes, encodeErr := json.Marshal(claims)
-	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 || claims[1].SessionID != checkpoint.NativeReference.SessionID || claims[1].MessageID != checkpoint.NativeReference.InputID || claims[1].PartID != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID {
+	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 || claims[1].SessionID != checkpoint.NativeReference.SessionID || claims[1].MessageID != checkpoint.NativeReference.InputID || openCodeClaimPart(claims) != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID {
 		return empty, executionCheckpointUncertain()
 	}
 	if err := verifyOpenCodeContinuationJournals(root, ref, c.Completion); err != nil {

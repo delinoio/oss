@@ -175,7 +175,7 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 		}
 	} else if native.Assistant != nil && native.User == nil {
 		assistant := native.Assistant
-		inputPart := c.parts[b.inputClaim.PartID]
+		inputPart := c.parts[b.originalInputPart()]
 		if inputPart == nil || !inputPart.complete {
 			return publicationUncertain()
 		}
@@ -238,10 +238,11 @@ func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode
 		}
 		message := domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: native.ID, NativeParentID: native.MessageID, Role: owner.role, Text: text.Text}
 		if owner.role == domain.UserMessage {
-			if native.Kind != opencode.TextPartKind || native.MessageID != b.turn || native.ID != b.inputClaim.PartID || text.Text != b.publisher.input.Input.Prompt || len(owner.parts) != 0 {
+			if native.Kind != opencode.TextPartKind || native.MessageID != b.turn || native.ID != b.originalInputPart() || !b.originalNativeInputText(text.Text) || len(owner.parts) != 0 {
 				return publicationUncertain()
 			}
 			message.InputID = b.publisher.input.InputID
+			message.Text = b.publisher.input.Input.Prompt
 		}
 		if err := c.publish(ctx, domain.ExecutionMessageStarted, message, native.Kind); err != nil {
 			return err

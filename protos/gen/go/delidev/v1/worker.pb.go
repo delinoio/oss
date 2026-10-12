@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                          WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1            WorkerCapability = 69
 	WorkerCapability_WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1                  WorkerCapability = 62
 	WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1 WorkerCapability = 61
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1          WorkerCapability = 65
@@ -78,6 +79,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		69: "WORKER_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1",
 		62: "WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1",
 		61: "WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1",
 		65: "WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1",
@@ -127,6 +129,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                          0,
+		"WORKER_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1":            69,
 		"WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1":                  62,
 		"WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1": 61,
 		"WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1":          65,
@@ -4412,9 +4415,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\x8d\x12\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xbe\x12\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"+WORKER_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1\x10E\x12)\n" +
 	"%WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1\x10>\x12:\n" +
 	"6WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1\x10=\x121\n" +
 	"-WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1\x10A\x12.\n" +

@@ -28,7 +28,7 @@ func (c *OpenCodeEventPublisher) RequestStop(ctx context.Context, request domain
 	claims, err := b.readClaims()
 	valid := err == nil && b.validPublicationClaims(claims) && b.stage == openCodeAccepted && b.stopClaim == nil && !c.text.blocked
 	digest := sha256.Sum256(nil)
-	expected := opencode.SessionClaim{RequestID: request, Kind: opencode.StopInputMutation, SessionID: b.thread, MessageID: b.turn, PartID: b.inputClaim.PartID, InputRequestID: b.reference.InputRequestID, BodyDigest: hex.EncodeToString(digest[:])}
+	expected := opencode.SessionClaim{RequestID: request, Kind: opencode.StopInputMutation, SessionID: b.thread, MessageID: b.turn, PartID: b.originalInputPart(), InputRequestID: b.reference.InputRequestID, BodyDigest: hex.EncodeToString(digest[:])}
 	if valid && expected.Validate() == nil {
 		b.expectedStop = &expected
 	} else {
@@ -86,7 +86,7 @@ func (c *OpenCodeEventPublisher) finishStoppedPublication(ctx context.Context) (
 	if !validClaims() || r.RequestID != c.stopRequest || r.InputRequestID != b.reference.InputRequestID || r.SessionID != b.thread || r.MessageID != b.turn || !r.NativeAttempted || r.RepliesUncertain || h.RequestID != r.InputRequestID || h.SessionID != r.SessionID || h.InputID != r.MessageID {
 		return opencode.HistoryObservation{}, publicationUncertain()
 	}
-	observation := domain.OpenCodeStopObservation{RequestID: r.RequestID, InputRequestID: r.InputRequestID, InputPartID: b.inputClaim.PartID, AssistantID: h.AssistantID, HistoryDigest: h.Digest, HTTPAccepted: r.HTTPAccepted, InterruptedObserved: r.InterruptedObserved, TerminalObserved: r.TerminalObserved, IdleObserved: r.IdleObserved, PendingCleared: r.PendingCleared, CleanupVerified: r.CleanupVerified}
+	observation := domain.OpenCodeStopObservation{RequestID: r.RequestID, InputRequestID: r.InputRequestID, InputPartID: b.originalInputPart(), AssistantID: h.AssistantID, HistoryDigest: h.Digest, HTTPAccepted: r.HTTPAccepted, InterruptedObserved: r.InterruptedObserved, TerminalObserved: r.TerminalObserved, IdleObserved: r.IdleObserved, PendingCleared: r.PendingCleared, CleanupVerified: r.CleanupVerified}
 	observation.RetryObservations = slices.Clone(proof.Retries)
 	observation.RetryCanceledObserved = r.RetryCanceledObserved
 	if observation.Validate() != nil {

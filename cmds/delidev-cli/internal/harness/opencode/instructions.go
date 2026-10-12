@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
 // The native loader treats missing/unreadable instructions as empty. Retain an
@@ -29,6 +30,9 @@ func (p *nativeAPIProfile) writeInstructions() error {
 }
 
 func (p *nativeAPIProfile) inspectInstructions() error {
+	if err := skills.VerifyOpenCodeRuntime(context.Background(), p.SkillHome, p.Skills); err != nil {
+		return err
+	}
 	if p.WorkspaceRoot != nil {
 		if err := p.WorkspaceRoot.inspect(); err != nil {
 			return err
@@ -59,7 +63,11 @@ func (s *sessionAPI) verifyInstructions(ctx context.Context, phase string) error
 	if s.apiProfile == nil {
 		return nil
 	}
-	if err := s.apiProfile.inspectInstructions(); err != nil {
+	err := s.apiProfile.inspectInstructions()
+	if err == nil {
+		err = s.verifyNativeSkillContext(ctx)
+	}
+	if err != nil {
 		s.problem, s.apiVerified = sessionProblem(), false
 		if s.logger != nil {
 			s.logger.WarnContext(ctx, "OpenCode original instructions require reconciliation", "owner_id", s.owner, "phase", phase, "code", s.problem.Code)

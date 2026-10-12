@@ -26,6 +26,7 @@ type SystemCapability int32
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                          SystemCapability = 0
 	SystemCapability_SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1            SystemCapability = 90
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1            SystemCapability = 108
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1 SystemCapability = 99
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1          SystemCapability = 104
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1             SystemCapability = 105
@@ -113,6 +114,7 @@ var (
 	SystemCapability_name = map[int32]string{
 		0:   "SYSTEM_CAPABILITY_UNSPECIFIED",
 		90:  "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
+		108: "SYSTEM_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1",
 		99:  "SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1",
 		104: "SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1",
 		105: "SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1",
@@ -191,6 +193,7 @@ var (
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
 		"SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1":            90,
+		"SYSTEM_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1":            108,
 		"SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1": 99,
 		"SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1":          104,
 		"SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1":             105,
@@ -3029,10 +3032,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xf4\x1c\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xa5\x1d\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
-	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12:\n" +
+	"+SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1\x10Z\x12/\n" +
+	"+SYSTEM_CAPABILITY_NATIVE_OPENCODE_SKILLS_V1\x10l\x12:\n" +
 	"6SYSTEM_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1\x10c\x121\n" +
 	"-SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1\x10h\x12.\n" +
 	"*SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1\x10i\x12)\n" +

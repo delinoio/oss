@@ -588,3 +588,15 @@ Native session compaction for the feature follows the planned shared boundary in
 Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
+
+## Retained OpenCode skill generations
+
+Native compaction preserves the original selected package generation and native
+command/tool history. Its checkpoint uses complete predecessor package copies,
+including executable modes and invocation policy. Current catalog enablement,
+removal or source edits cannot replace those bytes. Continuation rechecks the
+original private packages, native registry and permission owner before new input.
+Compaction retains its existing independent original action claims and joined
+cleanup; it cannot replay a prior skill command or tool. Follow the
+[harness skill profile](cmds-delidev-harness-contract.md#opencode-selected-native-skill-profile)
+and [session generation contract](cmds-delidev-sessions-contract.md#opencode-native-skill-generations).
