@@ -60,13 +60,15 @@ exclusive end boundaries, exact BigInt counts, independent currencies and every
 decimal digit. Missing, uncertain, incomplete and stale observations stay distinct
 from measured zero, success, actual cost and execution readiness.
 
-Error codes select localized guidance. Original server message/guidance remains inert evidence. Session recovery
-cards show safe cause and guidance inline; other error surfaces retain their
-explicit Technical details disclosure. Secondary technical metadata stays in
-that disclosure. Existing native diagnostic redaction remains authoritative: protected
-native content is not made available by localization. A disclosure contains only
-original details already admitted by the owning diagnostic contract. A translation
-never replaces original evidence or creates retry permission.
+Error codes select localized guidance. Session recovery cards show the safe
+cause, supported guidance and safe original server/provider evidence as inert text;
+raw message text never selects or changes the cause. Secondary technical metadata
+stays in an explicit Technical details disclosure. Other error surfaces retain
+original server message/guidance and technical metadata in that disclosure. Existing
+native diagnostic redaction remains authoritative: protected native content is not
+made available by localization. A disclosure contains only original details already
+admitted by the owning diagnostic contract. A translation never replaces original
+evidence or creates retry permission.
 
 The Appearance category retains all 19 categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
@@ -278,6 +280,17 @@ previews use bundled example text and contain no live conversation data.
 ## App information copy
 
 Bundled English/Korean Settings catalogs define the final System App information category, its native version/platform labels, all six local platform names, loading/unavailable/read failures, fixed related-link labels and source-notices explanation. Updates copy distinguishes unchecked, confirmed no matching candidate, checking, available, preparing, prepared, installing, installed, failed and unconfirmed observations. Recovery labels and exact-original inspection guidance remain localized. Static Settings/command search reuses these bundled labels; server metadata and native destination strings do not become search content.
+
+## Reset-credit presentation
+
+The subscription quota catalogs use Reset credits / 리셋권 consistently across
+management, manual confirmation, automatic consent and results/recovery. Keep
+available and returned-detail counts separate. Localize account/selection labels,
+short automatic-use rules, server lifetime, reauthorization, failed-session limits,
+consumption warnings, uncertain-result guidance and cleanup prerequisites.
+Captured ordinals follow the current locale while original IDs remain inert and
+complete. Catalog changes preserve confirmation/controller lifetimes and send
+no consumption, consent or reconciliation request by themselves.
 
 ## Startup group elapsed presentation
 

@@ -38,14 +38,23 @@ const account = create(ResourceSchema, {
     subscription: {
       generation: newRequestId(),
       owner_machine_id: machine,
+      ...(args.get("state") === "uncertain"
+        ? {
+            server_credit: {
+              id: newRequestId(),
+              phase: "uncertain",
+              cleanup_confirmed: false,
+            },
+          }
+        : {}),
       reset_credits: {
         observation_id: newRequestId(),
         observed_at: new Date().toISOString(),
-        available_count: "2",
-        credits: ["a", "b"].map((suffix) => ({
+        available_count: "3",
+        credits: ["a", "b", "c"].map((suffix) => ({
           id: `RateLimitResetCredit_${"long_original_identity_".repeat(4)}${suffix}`,
           reset_type: "codexRateLimits",
-          status: "available",
+          status: suffix === "c" ? "unavailable" : "available",
           expires_at: "2099-01-01T00:00:00Z",
         })),
       },
@@ -58,10 +67,18 @@ const transport = createRouterTransport((router) => {
       capabilities: [
         SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
         SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2,
+        SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1,
+        SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
       ],
     }),
   });
   router.service(SubscriptionService, {
+    setAutomaticResetCreditConsent: () => {
+      throw new Error("Presentation fixture must not approve automatic use");
+    },
+    reconcileSubscriptionCredit: () => {
+      throw new Error("Presentation fixture must not reconcile a credit");
+    },
     requestSubscriptionObservation: () => {
       throw new Error("Presentation fixture must not consume a credit");
     },

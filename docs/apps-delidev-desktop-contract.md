@@ -5588,7 +5588,16 @@ Resume. Bind the exact account revision, connection and credential generation;
 replacement invalidates confirmation. Retain original uncertain consent requests,
 keyboard focus and dismissal ownership. Use 14px primary/12px secondary text,
 16px section padding, 8px radius and at least 40px controls with narrow wrapping.
-English and Korean use generated localized copy. Capability 77 gates the mutation;
+The management section orders the count/Use summary, divided automatic setting
+and collapsed details. Inline manual confirmation groups the original account,
+captured selection/ID and a semantic consumption warning, with Cancel before
+Consume reset credit. Results and recovery remain outside collapsed details.
+The consent task groups the original account, three short expiry/native-next/
+after-close rules, a lifetime/session note and a quota-recovery warning. Its
+existing fixed footer places Cancel before Enable automatic use. Preserve parent
+size, scrolling and all original action/revocation/retry guards. English and
+Korean use generated localized copy and Korean consistently uses 리셋권.
+Capability 77 gates the mutation;
 older servers receive update guidance. UI presence grants no native support.
 
 ## Process-owned unread Inbox badge
