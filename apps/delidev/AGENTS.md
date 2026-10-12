@@ -23,3 +23,7 @@
 - [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)
 - [DeliDev native read-only Sidechat](../../docs/cmds-delidev-sidechat-contract.md)
 - [Repository Workflow Contract](../../docs/repository-workflow-contract.md)
+
+## Shortcut defaults
+
+- Open Files (`ShortcutId.OpenFiles`, primary+E) uses the same policy with key `e`; its Files entry badge and ARIA derive from the effective binding and disappear while suppressed.

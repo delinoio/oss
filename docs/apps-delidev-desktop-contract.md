@@ -323,6 +323,32 @@ hidden/inert, capture, other-modal, terminal-passthrough and focused native
 Browser fences are unchanged. The dialog adds no RPC, protocol allocation,
 migration, dependency or key/content logging.
 
+The read-only Session Open Files / 파일 열기 action (`ShortcutId.OpenFiles`) uses
+primary+E (Command+E on macOS, Control+E on Windows/Linux) for the active
+selected nonembedded parent Session, including its composer and resource panes,
+with ordinary editable input allowed. It is a read-only catalog entry outside the
+seven editable IDs and invokes the original Files entry callback once. Repeated
+opening selects the singleton Files tab without closing, duplicating or forcing
+refresh of it. Original availability, drafts, mode, requests, observation
+ownership and focus-local Escape stay unchanged, and an inactive session or
+embedded Sidechat registers no independent Files action. It reuses the shared
+`readOnlyShortcutSuppression` policy, which protects the unshifted primary key
+`e` for this ID: any committed editable unshifted primary+E override suppresses
+only this new default, in memory and across all scopes. Disabled and Shift+E
+overrides do not suppress it, and removing or changing the committed override
+restores it immediately. Conflict validation uses the same effective policy, so
+existing E overrides stay valid without changes to preference bytes, the seven
+IDs or native validation. Dispatch, Help, the read-only Settings catalog (which
+follows the committed map) and the Files entry badge/ARIA share the effective
+platform binding. The Files row in the Open tool dialog shows a decorative
+muted shortcut hint (Command+E or Ctrl+E) that wraps inside the original row
+geometry; the hint and its `aria-keyshortcuts` are omitted while suppressed, and
+English/Korean Help and Settings explain the suppression. Owned Help closes
+before the callback and retains destination focus. Existing terminal, native
+Browser, capture, modal, handled-event, repeat, IME, modifier and hidden/inert
+fences remain. Opening Files adds no execution, recovery, RPC, migration or
+native authority.
+
 The fixed Session Open terminals / 터미널 열기 action uses primary+logical grave (`). Register it only for the active selected nonembedded Session, with ordinary editable input allowed and the original Sidechat parent-snapshot guard. Invoke the existing Terminals open action once, retaining the composer draft, original inventory, revision-bound reuse/create intent, pending/uncertain recovery and Worker ownership. Repeated opening selects the destination without closing it or replacing its controller. Help, the read-only Session Settings catalog and the original tool entry ARIA share the same platform binding. Accepted invocation from Help closes Help before the original callback and preserves destination focus. Grave matching has no physical Backquote fallback. Terminal input, focused native Browser pages, shortcut capture, unrelated modals and the existing handled/IME/repeat/extra-modifier/hidden/inert fences remain excluded. The seven editable actions and native preference format stay unchanged.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
@@ -351,7 +377,7 @@ Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
 primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool default yields to it. No palette, window action or tab action is added.
+chords cannot be assigned. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool and Open Files defaults yield to their T and E overrides. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an

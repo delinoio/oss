@@ -431,3 +431,86 @@ it("restores OpenTool immediately and ignores disabled, Shift+T and other-key ov
     toolDefinition,
   );
 });
+
+const unshiftedE = {
+  state: ShortcutOverrideState.Binding,
+  chord: { key: "e", shift: false },
+} as const;
+const filesDefinition = {
+  id: ShortcutId.OpenFiles,
+  scope: Surface.Sessions,
+  label: "shortcuts.openFiles" as const,
+  bindings: sessionShortcutBindings[ShortcutId.OpenFiles],
+  enabled: true,
+};
+it("keeps OpenFiles read-only and outside the seven editable action IDs", () => {
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(
+    editableShortcutCatalog.some((action) => action.id === ShortcutId.OpenFiles),
+  ).toBe(false);
+  expect(
+    readOnlyShortcutCatalog.find((action) => action.id === ShortcutId.OpenFiles)
+      ?.defaults,
+  ).toEqual([{ key: "e", primary: true }]);
+  expect(() =>
+    parseShortcutOverrides({ [ShortcutId.OpenFiles]: unshiftedE }),
+  ).toThrow("Invalid shortcut action");
+});
+it.each(editableShortcutCatalog.map((action) => action.id))(
+  "round-trips an unshifted primary+E override for %s and suppresses only the default OpenFiles",
+  (id) => {
+    const overrides = { [id]: unshiftedE };
+    const before = JSON.stringify(overrides);
+    // The existing preference stays valid and unchanged byte for byte.
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    expect(JSON.stringify(overrides)).toBe(before);
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    expect(readOnlyShortcutSuppression(ShortcutId.OpenFiles, overrides)).toBe(
+      "shortcuts.filesSuppressed",
+    );
+    expect(customizationBindings(ShortcutId.OpenFiles, overrides)).toEqual([]);
+    expect(
+      effectiveShortcutDefinitions([filesDefinition], overrides)[0],
+    ).toMatchObject({
+      bindings: [],
+      enabled: false,
+      unavailableReason: "shortcuts.filesSuppressed",
+    });
+    // The T policy stays independent of an E override.
+    expect(
+      readOnlyShortcutSuppression(ShortcutId.OpenTool, overrides),
+    ).toBeUndefined();
+    expect(
+      readOnlyShortcutSuppression(ShortcutId.OpenTerminals, overrides),
+    ).toBeUndefined();
+  },
+);
+it("restores OpenFiles immediately and ignores disabled, Shift+E and other-key overrides", () => {
+  for (const overrides of [
+    {},
+    { [ShortcutId.SessionFocus]: { state: ShortcutOverrideState.Disabled } },
+    {
+      [ShortcutId.SessionFocus]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "e", shift: true },
+      },
+    },
+    { [ShortcutId.SessionFocus]: chord },
+    { [ShortcutId.SessionFocus]: unshiftedT },
+  ] as const) {
+    expect(
+      readOnlyShortcutSuppression(
+        ShortcutId.OpenFiles,
+        overrides as Parameters<typeof readOnlyShortcutSuppression>[1],
+      ),
+    ).toBeUndefined();
+  }
+  expect(
+    effectiveShortcutDefinitions([filesDefinition], {
+      [ShortcutId.Help]: unshiftedE,
+    })[0],
+  ).toMatchObject({ bindings: [] });
+  expect(effectiveShortcutDefinitions([filesDefinition], {})[0]).toEqual(
+    filesDefinition,
+  );
+});

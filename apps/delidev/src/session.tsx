@@ -91,6 +91,7 @@ import {
 import { useShortcuts } from "./shortcut-provider";
 import {
   sessionShortcutBindings,
+  bindingKeys,
   ShortcutExecution,
   ShortcutId,
   ShortcutInput,
@@ -1467,6 +1468,16 @@ export function SessionView({
   const terminalsDisabled = Boolean(object(data.fork).sidechat_parent_snapshot);
   const shortcuts = useShortcuts([
     {
+      id: ShortcutId.OpenFiles,
+      scope: Surface.Sessions,
+      label: "shortcuts.openFiles",
+      bindings: sessionShortcutBindings[ShortcutId.OpenFiles],
+      input: ShortcutInput.Allow,
+      active: active && !embedded,
+      // Reuse the original Files entry callback; it selects the singleton tab and never closes it.
+      run: () => togglePanel(SessionPanel.Files),
+    },
+    {
       id: ShortcutId.OpenTerminals,
       scope: Surface.Sessions,
       label: "shortcuts.openTerminals",
@@ -2272,14 +2283,27 @@ export function SessionView({
                     tool.panel === SessionPanel.Terminals && terminalsDisabled
                   }
                   aria-keyshortcuts={
-                    tool.panel === SessionPanel.Terminals
-                      ? shortcuts.aria(ShortcutId.OpenTerminals)
-                      : undefined
+                    tool.panel === SessionPanel.Files
+                      ? shortcuts.aria(ShortcutId.OpenFiles) || undefined
+                      : tool.panel === SessionPanel.Terminals
+                        ? shortcuts.aria(ShortcutId.OpenTerminals)
+                        : undefined
                   }
                   onClick={() => togglePanel(tool.panel)}
                 >
                   <SessionIcon kind={tool.icon} />
-                  {tool.label}
+                  <span className="session-tool-label">{tool.label}</span>
+                  {tool.panel === SessionPanel.Files &&
+                  shortcuts.bindings(ShortcutId.OpenFiles).length ? (
+                    <kbd className="session-tool-shortcut" aria-hidden="true">
+                      {shortcuts
+                        .bindings(ShortcutId.OpenFiles)
+                        .map((binding) =>
+                          bindingKeys(binding, shortcuts.platform).join(" + "),
+                        )
+                        .join(` ${copy("shortcuts.or")} `)}
+                    </kbd>
+                  ) : null}
                 </button>
               ))}
               {session &&
