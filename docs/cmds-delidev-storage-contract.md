@@ -297,6 +297,19 @@ foreign, busy or uncertain evidence remains pending. A missing workspace without
 original removal proof is not completion, except for positively failed preparations
 that never produced a workspace. Worker attempts are bounded to two minutes.
 
+Worker retained deletion state is bound to each original device obligation, not
+only to the session. The Worker keeps `session-deletions/<session>.json` solely
+as a content-independent admission tombstone (`{"version":2}`) that closes
+preparation, execution, sidechat and read admission; it is written before any
+cleanup. Each obligation owns its proof, workspace proof and lock at
+`session-deletions/<session>-<deletion>-<device>{.json,-workspace.json,.lock}`, so
+two device obligations for one session and machine recover and acknowledge
+independently, and a proof copied to another obligation fails its digest check.
+A pre-existing session-keyed (version 1) proof or workspace proof migrates only to
+the one obligation whose digest matches exactly (or an untouched proof upgraded by
+server-proved child owners), preserving its report UUID; any other legacy scope
+stays pending and is never copied to another device.
+
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked
 worktree; dirty/untracked owned worktree files are included. Original Local

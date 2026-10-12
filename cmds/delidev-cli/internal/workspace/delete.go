@@ -79,8 +79,11 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
-	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
+	proofPath := filepath.Join(m.Root, "session-deletions", SessionDeletionObligationName(w)+"-workspace.json")
 	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
+	if err := migrateLegacyWorkspaceProof(m.Root, proofPath, w); err != nil {
+		return err
+	}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
 	if e == nil {
 		if domain.Decode(b, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() {
@@ -263,6 +266,47 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	// Retain only a non-content cleanup acknowledgement after all copies commit.
 	proof.Manifest = nil
 	return writeDeletionWorkspaceProof(proofPath, proof)
+}
+
+// SessionDeletionObligationName identifies one original device obligation. Its
+// retained proofs and locks never alias another device's obligation.
+func SessionDeletionObligationName(w domain.SessionDeletionWork) string {
+	return string(w.SessionID) + "-" + string(w.DeletionID) + "-" + string(w.DeviceID)
+}
+
+// migrateLegacyWorkspaceProof moves the session-keyed proof to this obligation
+// only when its digest is exactly this work. A different legacy digest is left
+// in place and keeps this obligation pending.
+func migrateLegacyWorkspaceProof(root, proofPath string, w domain.SessionDeletionWork) error {
+	legacyPath := filepath.Join(root, "session-deletions", string(w.SessionID)+"-workspace.json")
+	raw, e := security.ReadPrivate(legacyPath, 1<<20)
+	if errors.Is(e, os.ErrNotExist) {
+		return nil
+	}
+	if e != nil {
+		return domain.SessionDeletionPending()
+	}
+	var legacy deletionWorkspaceProof
+	if domain.Decode(raw, &legacy) != nil || legacy.Version != 1 {
+		return domain.SessionDeletionPending()
+	}
+	if legacy.Digest != w.Digest() {
+		if _, err := os.Lstat(proofPath); err == nil {
+			return nil
+		}
+		return domain.SessionDeletionPending()
+	}
+	if _, err := os.Lstat(proofPath); errors.Is(err, os.ErrNotExist) {
+		if err := writeDeletionWorkspaceProof(proofPath, legacy); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	if err := os.Remove(legacyPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
+	return nil
 }
 
 func writeDeletionWorkspaceProof(path string, v deletionWorkspaceProof) error {
