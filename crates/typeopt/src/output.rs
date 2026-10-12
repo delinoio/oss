@@ -11,7 +11,7 @@ use crate::{
     report::Report,
 };
 
-fn line_starts(text: &str) -> Vec<usize> {
+pub(crate) fn line_starts(text: &str) -> Vec<usize> {
     let mut starts = vec![0];
     let mut chars = text.char_indices().peekable();
     while let Some((offset, ch)) = chars.next() {
@@ -26,7 +26,7 @@ fn line_starts(text: &str) -> Vec<usize> {
     }
     starts
 }
-fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize {
+pub(crate) fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize {
     let start = starts.get(line as usize).copied().unwrap_or(text.len());
     let mut units = 0;
     for (offset, ch) in text[start..].char_indices() {
@@ -37,7 +37,7 @@ fn byte_at_utf16(text: &str, starts: &[usize], line: u32, column: u32) -> usize 
     }
     text.len()
 }
-fn coordinate(text: &str, starts: &[usize], offset: usize) -> (u32, u32) {
+pub(crate) fn coordinate(text: &str, starts: &[usize], offset: usize) -> (u32, u32) {
     let line = starts.partition_point(|&start| start <= offset) - 1;
     (
         line as u32,
@@ -262,7 +262,7 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
-fn rename_exclusive(from: &Path, to: &Path) -> Result<()> {
+pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Result<()> {
     use std::os::unix::ffi::OsStrExt;
     let from = std::ffi::CString::new(from.as_os_str().as_bytes())?;
     let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;

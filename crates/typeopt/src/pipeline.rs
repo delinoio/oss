@@ -81,6 +81,92 @@ pub fn static_imports(code: &str) -> Vec<String> {
     imports
 }
 
+/// Offset of the first byte at or after `at` that is not whitespace or part
+/// of a `/* */` or `//` comment.
+pub fn skip_js_trivia(code: &str, mut at: usize) -> usize {
+    let len = code.len();
+    loop {
+        at = at.min(len);
+        // ECMAScript whitespace and line terminators.
+        while let Some(c) = code[at..].chars().next()
+            && is_js_space(c)
+        {
+            at += c.len_utf8();
+        }
+        let rest = &code[at..];
+        if let Some(block) = rest.strip_prefix("/*") {
+            match block.find("*/") {
+                Some(end) => at += 2 + end + 2,
+                None => return len,
+            }
+        } else if rest.starts_with("//") {
+            match rest.find(['\n', '\r', '\u{2028}', '\u{2029}']) {
+                Some(end) => at += end,
+                None => return len,
+            }
+        } else {
+            return at;
+        }
+    }
+}
+
+/// ECMAScript whitespace (including NBSP, ZWNBSP and every space
+/// separator) or line terminator.
+pub fn is_js_space(c: char) -> bool {
+    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
+}
+
+/// Static module specifiers of bundler output in source order, independent
+/// of line layout: every `from"…"` and side-effect `import"…"` at a token
+/// boundary, with optional whitespace and comments before the quote. Minified
+/// chunks put many import statements on one line, which [`static_imports`] does
+/// not scan. Dynamic `import(…)` and members such as `Array.from(…)` do not
+/// match. A string that merely contains such text can add a specifier; that
+/// is conservative, because the gate rejects a bundle whose specifiers are
+/// not a subsequence of the previous ones.
+pub fn bundle_static_imports(code: &str) -> Vec<String> {
+    let bytes = code.as_bytes();
+    // Whether the character before `at` continues an identifier or a member
+    // access, so `from`/`import` there is not a keyword.
+    let joined = |at: usize| {
+        code[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '$' | '.'))
+    };
+    let mut imports = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        // Compare bytes: `at` can be inside a multi-byte character.
+        let keyword = if bytes[at..].starts_with(b"from") {
+            4
+        } else if bytes[at..].starts_with(b"import") {
+            6
+        } else {
+            at += 1;
+            continue;
+        };
+        let start = at;
+        at += keyword;
+        if joined(start) {
+            continue;
+        }
+        // Whitespace and comments may separate the keyword from the quote.
+        let quote_at = skip_js_trivia(code, at);
+        let Some(&quote) = bytes.get(quote_at) else {
+            break;
+        };
+        if quote != b'"' && quote != b'\'' {
+            continue;
+        }
+        if let Some(end) = code[quote_at + 1..].find(quote as char) {
+            imports.push(code[quote_at + 1..quote_at + 1 + end].to_owned());
+            at = quote_at + 1 + end + 1;
+        }
+    }
+    imports
+}
+
 /// End of the statement that starts `code`: one past the first `;` outside a
 /// string literal, so a `;` inside a module specifier does not cut it short.
 fn statement_end(code: &str) -> usize {
@@ -1019,6 +1105,36 @@ mod tests {
         assert_eq!(outcome.texts["a.ts"], "ab");
         assert_eq!(outcome.bundles.len(), 1);
         assert_eq!(outcome.bundles[0].pass, PassId::EnumRuntimeReduction);
+    }
+
+    #[test]
+    fn bundle_static_imports_scan_minified_lines() {
+        let code = r#"import{a as b}from"./a.js";import"./side.js";import * as c from './c.js';export{d}from"./d.js";export*from"./e.js";const f=import("./lazy.js"),g=Array.from("xy"),h=x.from("no"),i=frommer;"#;
+        assert_eq!(
+            bundle_static_imports(code),
+            ["./a.js", "./side.js", "./c.js", "./d.js", "./e.js"]
+        );
+        // ECMAScript whitespace beyond ASCII and line terminators.
+        assert_eq!(
+            bundle_static_imports(
+                "f();\u{a0}import{u}from\u{a0}\"./a.js\";import\u{feff}'./b.js';import// \
+                 c\u{2028}\"./c.js\""
+            ),
+            ["./a.js", "./b.js", "./c.js"]
+        );
+        // Comments between the keyword and the specifier.
+        assert_eq!(
+            bundle_static_imports(
+                "import/* kept */\"./side.js\";export{x}from/* kept */'./dep.js';import// \
+                 c\n\"./n.js\";"
+            ),
+            ["./side.js", "./dep.js", "./n.js"]
+        );
+        // Multi-byte characters before and between imports.
+        assert_eq!(
+            bundle_static_imports(r#"/*ü*/import"./ä.js";const s="한글→";import{x}from"./b.js";"#),
+            ["./ä.js", "./b.js"]
+        );
     }
 
     #[test]

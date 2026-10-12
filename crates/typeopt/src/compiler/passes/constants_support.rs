@@ -1086,6 +1086,11 @@ pub(super) fn render(site: Node, value: &str, ty: &str, fresh: bool) -> String {
     } else {
         value.to_owned()
     };
+    if crate::app::bundle_mode() {
+        // JavaScript chunks have no recheck to satisfy; the emitter would
+        // drop the assertion's parentheses as well.
+        return value;
+    }
     let bang = if fresh { "!" } else { "" };
     format!("({value} as {ty}){bang}")
 }

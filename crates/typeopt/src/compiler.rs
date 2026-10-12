@@ -76,6 +76,13 @@ pub struct Project {
     entries: Vec<String>,
     config_files: Vec<String>,
     size_options: CompilerOptions,
+    /// Owns the synthetic configuration of a bundle-mode program.
+    _bundle_config: Option<tempfile::TempDir>,
+    /// Bundle mode: semantic diagnostic identities of each original chunk. A
+    /// chunk can opt into checking with `// @ts-check`, and its unchecked
+    /// types may be wrong, so only diagnostics that an edit adds count as
+    /// failures.
+    semantic_baseline: std::cell::RefCell<BTreeMap<String, Vec<String>>>,
 }
 
 fn deny_write() -> ts_goport::frontend::vfs::FsError {
@@ -91,6 +98,11 @@ fn deny_write() -> ts_goport::frontend::vfs::FsError {
 
 impl Project {
     pub fn load(path: &str, entries: Vec<String>) -> Result<Self> {
+        Self::load_rooted(path, entries, Vec::new())
+    }
+
+    /// Loads the program rooted at `entries`, `roots` and declaration files.
+    fn load_rooted(path: &str, entries: Vec<String>, extra_roots: Vec<String>) -> Result<Self> {
         let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
         // Every file the compiler reads, including module-resolution
         // metadata such as package manifests, is part of the analysis
@@ -194,6 +206,7 @@ impl Project {
         // Include ambient declarations discovered by tsconfig, but root runtime
         // traversal at the explicit entries rather than every include match.
         let mut roots = entries.clone();
+        roots.extend(extra_roots);
         roots.extend(
             config
                 .file_names()
@@ -216,7 +229,305 @@ impl Project {
             entries,
             config_files,
             size_options,
+            _bundle_config: None,
+            semantic_baseline: Default::default(),
         })
+    }
+
+    /// Loads the JavaScript chunks of a bundler output directory as one closed
+    /// ES module program. Chunks that no other chunk imports (HTML entries,
+    /// workers) are public entries; every other chunk is internal.
+    pub fn load_bundle(dir: &std::path::Path) -> Result<Self> {
+        let chunks = bundle_chunks(dir)?;
+        ensure!(
+            !chunks.is_empty(),
+            "bundle directory contains no JavaScript chunk"
+        );
+        let config_dir = tempfile::Builder::new()
+            .prefix("typeopt-bundle-")
+            .tempdir()
+            .context("cannot create bundle configuration")?;
+        let config = serde_json::json!({
+            "compilerOptions": {
+                "allowJs": true,
+                "checkJs": false,
+                "module": "esnext",
+                "moduleResolution": "bundler",
+                "moduleDetection": "force",
+                "target": "esnext",
+                "lib": ["esnext", "dom", "dom.iterable"],
+                "types": [],
+                "skipLibCheck": true,
+                "rootDir": dir.to_string_lossy(),
+            },
+            "files": chunks,
+        });
+        let path = config_dir.path().join("tsconfig.json");
+        std::fs::write(&path, serde_json::to_vec_pretty(&config)?)
+            .context("cannot write bundle configuration")?;
+        // Every chunk is a root: chunks that only HTML, workers, classic
+        // scripts or non-literal loaders reach still belong to the program.
+        let mut project = Self::load_rooted(
+            &path.canonicalize()?.to_string_lossy(),
+            Vec::new(),
+            chunks.clone(),
+        )?;
+        if let Some(outside) = project.application_file_outside(dir) {
+            bail!(
+                "a bundle chunk imports a module outside the bundle directory, which cannot be \
+                 published: {outside}"
+            );
+        }
+        let BundleImports {
+            imported,
+            unlinked,
+            edges,
+            computed: computed_import,
+            bare,
+            worker_scripts,
+        } = project.bundle_imported(dir);
+        // Chunks known to run as ES modules: imported by another chunk or
+        // loaded by an HTML module script. Others count as modules only with
+        // ESM statements; classic scripts stay unchanged boundaries.
+        let HtmlScripts {
+            modules: scripts,
+            classic,
+            imported: from_html,
+            all_public,
+            import_map,
+        } = html_scripts(dir)?;
+        // Without an import map, a package specifier would load a module
+        // outside the bundle: the program is not closed.
+        if let Some(specifier) = bare.filter(|_| !import_map) {
+            bail!(
+                "a bundle chunk imports a module outside the bundle directory (specifier \
+                 {specifier:?}); bundle mode needs a self-contained bundle"
+            );
+        }
+        let all_public = all_public || computed_import;
+        if all_public {
+            tracing::info!(
+                "an HTML page or a computed import can reach any chunk; every chunk is a public \
+                 entry"
+            );
+        }
+        // Chunks that inline HTML scripts import are entries: their exports
+        // are observed outside the program.
+        let loaded_by_html = |chunk: &String| {
+            all_public
+                || scripts.contains(chunk)
+                || from_html.contains(chunk)
+                || unlinked.contains(chunk)
+        };
+        let mut modules = imported.clone();
+        modules.extend(chunks.iter().filter(|c| loaded_by_html(c)).cloned());
+        // A chunk that no chunk imports (an HTML entry, a worker or a file
+        // referenced by URL) is an entry; HTML entries stay entries even when
+        // lazy chunks import shared code back from them.
+        let mut entries: Vec<String> = chunks
+            .iter()
+            .filter(|c| !imported.contains(*c) || loaded_by_html(c))
+            .cloned()
+            .collect();
+        // Chunks that no entry reaches (a cycle of chunks that only import
+        // each other, loaded from outside) are entries too: something
+        // outside the program loads them.
+        let mut reached: Paths = entries.iter().cloned().collect();
+        let mut pending = entries.clone();
+        while let Some(chunk) = pending.pop() {
+            for target in edges.get(&chunk).into_iter().flatten() {
+                if reached.insert(target.clone()) {
+                    pending.push(target.clone());
+                }
+            }
+        }
+        entries.extend(chunks.iter().filter(|c| !reached.contains(*c)).cloned());
+        entries.sort();
+        entries.dedup();
+        project.entries = entries;
+        let mut classic = classic;
+        classic.extend(worker_scripts);
+        crate::app::set_bundle_modules(modules, classic);
+        tracing::info!(
+            chunks = chunks.len(),
+            entries = project.entries.len(),
+            "bundle program loaded"
+        );
+        project._bundle_config = Some(config_dir);
+        Ok(project)
+    }
+
+    /// Bundle chunks that stay unchanged unchecked boundaries: excluded,
+    /// classic scripts and chunks with `eval`, `with` or `importScripts`.
+    /// Publication leaves them byte-for-byte unchanged.
+    pub fn bundle_boundaries(&self) -> Paths {
+        let _scope = enter_program(Some(self.version));
+        source_files()
+            .into_iter()
+            .filter(|&file| is_application(file))
+            .filter_map(|file| {
+                let name = source_file_info(file).file_name.clone();
+                let mut nodes = Vec::new();
+                collect(file, &mut nodes);
+                let esm = has_esm_statements(file) || uses_import_meta(&nodes);
+                (crate::app::bundle_boundary(&name, esm) || uses_eval_or_with(&nodes))
+                    .then_some(name)
+            })
+            .collect()
+    }
+
+    /// A program file outside `dir` other than the bundled standard
+    /// libraries: a chunk import resolved to a sibling file, a package or a
+    /// declaration elsewhere. The bundle is not a closed program then.
+    fn application_file_outside(&self, dir: &std::path::Path) -> Option<String> {
+        let _scope = enter_program(Some(self.version));
+        source_files()
+            .into_iter()
+            .map(|file| source_file_info(file).file_name.clone())
+            .filter(|name| !name.starts_with("bundled:"))
+            .find(|name| !std::path::Path::new(name).starts_with(dir))
+    }
+
+    /// Bundle chunks that another chunk imports with an import or export
+    /// declaration or a literal dynamic `import()`, and the subset that is
+    /// imported through a specifier with a query, fragment or `%` escape.
+    /// The compiler cannot link such a specifier to the chunk, so those
+    /// chunks are public: what the importer reads stays unseen.
+    fn bundle_imported(&self, dir: &std::path::Path) -> BundleImports {
+        let _scope = enter_program(Some(self.version));
+        let (mut imported, mut public) = (Paths::new(), Paths::new());
+        let mut edges = BTreeMap::<String, Paths>::new();
+        let mut computed = false;
+        let mut bare = None;
+        let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
+        let mut non_esm = Paths::new();
+        for file in source_files() {
+            if !is_application(file) {
+                continue;
+            }
+            let name = source_file_info(file).file_name.clone();
+            let base = std::path::Path::new(&name)
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_default();
+            let mut nodes = Vec::new();
+            collect(file, &mut nodes);
+            if !has_esm_statements(file) && !uses_import_meta(&nodes) {
+                non_esm.insert(name.clone());
+            }
+            for node in nodes {
+                // `importScripts(…)` loads its targets as classic scripts.
+                if node.kind() == SyntaxKind::CallExpression {
+                    let callee = node.expression();
+                    let callee_name = match callee.kind() {
+                        SyntaxKind::Identifier => callee.text(),
+                        SyntaxKind::PropertyAccessExpression => callee.name().text(),
+                        _ => "",
+                    };
+                    if callee_name == "importScripts" {
+                        for argument in node.arguments().iter() {
+                            let literal = matches!(
+                                argument.kind(),
+                                SyntaxKind::StringLiteral
+                                    | SyntaxKind::NoSubstitutionTemplateLiteral
+                            );
+                            if !literal {
+                                worker_computed = true;
+                                continue;
+                            }
+                            let path = percent_decode(
+                                argument.text().split(['?', '#']).next().unwrap_or_default(),
+                            );
+                            if let Ok(resolved) = base.join(&path).canonicalize() {
+                                worker_scripts.insert(resolved.to_string_lossy().into_owned());
+                            }
+                        }
+                        continue;
+                    }
+                }
+                let specifier = match node.kind() {
+                    SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
+                        node.module_specifier()
+                    }
+                    SyntaxKind::CallExpression
+                        if node.expression().kind() == SyntaxKind::ImportKeyword =>
+                    {
+                        node.arguments().iter().next().unwrap_or(Node::NIL)
+                    }
+                    _ => continue,
+                };
+                if specifier.is_nil()
+                    || !matches!(
+                        specifier.kind(),
+                        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+                    )
+                {
+                    // A computed `import(…)` can load any chunk.
+                    if node.kind() == SyntaxKind::CallExpression {
+                        computed = true;
+                    }
+                    continue;
+                }
+                let text = specifier.text();
+                // Root-relative: resolve under the bundle root, dropping
+                // leading segments of a deployment base path when needed. The
+                // compiler cannot link it, so the target is public.
+                if text.starts_with('/') && !text.starts_with("//") {
+                    let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
+                    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+                    let resolved = (0..segments.len())
+                        .filter_map(|skip| dir.join(segments[skip..].join("/")).canonicalize().ok())
+                        .find(|c| c.starts_with(dir) && c.is_file());
+                    match resolved {
+                        Some(resolved) => {
+                            let resolved = resolved.to_string_lossy().into_owned();
+                            public.insert(resolved.clone());
+                            edges
+                                .entry(name.clone())
+                                .or_default()
+                                .insert(resolved.clone());
+                            imported.insert(resolved);
+                        }
+                        None if bare.is_none() => bare = Some(text.to_owned()),
+                        None => {}
+                    }
+                    continue;
+                }
+                if !(text.starts_with("./") || text.starts_with("../")) {
+                    // A package specifier names a module outside the bundle.
+                    if !text.contains(':') && bare.is_none() {
+                        bare = Some(text.to_owned());
+                    }
+                    continue;
+                }
+                // URL semantics: queries and fragments do not name files.
+                let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
+                if let Ok(resolved) = base.join(&path).canonicalize() {
+                    let resolved = resolved.to_string_lossy().into_owned();
+                    if path != text {
+                        public.insert(resolved.clone());
+                    }
+                    edges
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(resolved.clone());
+                    imported.insert(resolved);
+                }
+            }
+        }
+        // A computed `importScripts` target can be any chunk that a classic
+        // script can parse: every chunk without ESM syntax.
+        if worker_computed {
+            worker_scripts.extend(non_esm);
+        }
+        BundleImports {
+            imported,
+            unlinked: public,
+            edges,
+            computed,
+            bare,
+            worker_scripts,
+        }
     }
 
     /// Checks the original program and records the analysis snapshot.
@@ -236,7 +547,14 @@ impl Project {
             }
             crate::app::check_cancelled()?;
             check_diagnostics(&get_syntactic_diagnostics(file))?;
-            check_diagnostics(&get_semantic_diagnostics(file))?;
+            if crate::app::bundle_mode() {
+                self.semantic_baseline.borrow_mut().insert(
+                    source_file_info(file).file_name.clone(),
+                    diagnostic_identities(&get_semantic_diagnostics(file)),
+                );
+            } else {
+                check_diagnostics(&get_semantic_diagnostics(file))?;
+            }
         }
         let mut sources = BTreeMap::new();
         let mut inputs = Vec::new();
@@ -272,12 +590,15 @@ impl Project {
             let mut nodes = Vec::new();
             collect(file, &mut nodes);
             for node in &nodes {
+                // A bundle chunk with eval or with stays an unchecked
+                // boundary instead (see `uses_eval_or_with`).
                 ensure!(
-                    node.kind() != SyntaxKind::WithStatement,
+                    crate::app::bundle_mode() || node.kind() != SyntaxKind::WithStatement,
                     "with is unsupported"
                 );
                 ensure!(
-                    !(node.kind() == SyntaxKind::Identifier && node.text() == "eval"),
+                    crate::app::bundle_mode()
+                        || !(node.kind() == SyntaxKind::Identifier && node.text() == "eval"),
                     "eval is unsupported (including aliases); remove it before optimizing"
                 );
                 // module: Preserve emits these forms as require/module.exports,
@@ -514,6 +835,23 @@ impl crate::pipeline::Backend for Backend<'_> {
             let mut failing = Vec::new();
             for file in source_files() {
                 crate::app::check_cancelled()?;
+                if crate::app::bundle_mode() {
+                    // Bundle edits are not parsed per candidate: a syntax
+                    // error, including TypeScript-only syntax in a chunk,
+                    // rolls the responsible bundle back.
+                    let name = source_file_info(file).file_name.clone();
+                    let baseline = self.project.semantic_baseline.borrow();
+                    let before = baseline.get(&name).map_or(&[][..], Vec::as_slice);
+                    if !get_syntactic_diagnostics(file).is_empty()
+                        || adds_diagnostics(
+                            before,
+                            &diagnostic_identities(&get_semantic_diagnostics(file)),
+                        )
+                    {
+                        failing.push(name);
+                    }
+                    continue;
+                }
                 check_diagnostics(&get_syntactic_diagnostics(file))?;
                 if !get_semantic_diagnostics(file).is_empty() {
                     failing.push(source_file_info(file).file_name.clone());
@@ -538,6 +876,16 @@ impl crate::pipeline::Backend for Backend<'_> {
         let key = (file.to_owned(), hasher.finish());
         if let Some(emitted) = self.sizes.get(&key) {
             return Ok(emitted.clone());
+        }
+        if crate::app::bundle_mode() {
+            // Bundle chunks are published as edited text, so the text itself
+            // is the measured output. Parsing every candidate chunk would
+            // retain compiler memory per candidate; syntax errors are caught
+            // by the recheck after each round and rolled back there.
+            return Ok(crate::pipeline::Emitted {
+                size: crate::bundle::chunk_code_len(text),
+                imports: crate::pipeline::bundle_static_imports(text),
+            });
         }
         if is_js_name(file) {
             // JavaScript passes through unchanged and has no emitted form.
@@ -643,6 +991,362 @@ fn redacted_message(d: &Diagnostic) -> String {
     template.message_args = vec![REDACTED_ARGUMENT.to_owned(); d.message_args.len()];
     template.localize(&ts_goport::locale::DEFAULT)
 }
+/// JavaScript chunks of a bundler output directory, sorted, as canonical
+/// paths. Classic scripts, including `importScripts` workers, belong to the
+/// program as unchecked boundaries, so the chunks they reach stay observed.
+fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<String>) -> Result<()> {
+        for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                walk(&path, out)?;
+            } else if path.extension().is_some_and(|e| e == "js" || e == "mjs") {
+                out.push(path.canonicalize()?.to_string_lossy().into_owned());
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+pub(crate) type Paths = std::collections::BTreeSet<String>;
+
+/// Bundle files that HTML pages reach, as canonical paths.
+#[derive(Default)]
+struct HtmlScripts {
+    /// Loaded with `<script type="module" src>`.
+    modules: Paths,
+    /// Loaded as classic scripts.
+    classic: Paths,
+    /// Imported by inline scripts (static imports of inline modules and
+    /// literal dynamic imports): public entries of the bundle.
+    imported: Paths,
+    /// A page has an import map or an inline import this scan cannot
+    /// resolve: every chunk is a public entry.
+    all_public: bool,
+    /// A page has an import map, which can resolve package specifiers.
+    import_map: bool,
+}
+
+/// How the chunks of a bundle import each other.
+struct BundleImports {
+    /// Chunks that another chunk imports.
+    imported: Paths,
+    /// Chunks imported through specifiers the compiler cannot link.
+    unlinked: Paths,
+    /// Import edges between chunks.
+    edges: BTreeMap<String, Paths>,
+    /// Some chunk has a computed `import(…)`.
+    computed: bool,
+    /// A package specifier, or a root-relative one that names no bundle
+    /// file, that some chunk imports.
+    bare: Option<String>,
+    /// Chunks that `importScripts` can load as classic scripts.
+    worker_scripts: Paths,
+}
+
+/// JavaScript MIME type essences, which make a `<script>` a classic script
+/// (https://mimesniff.spec.whatwg.org/#javascript-mime-type).
+const JAVASCRIPT_MIME_TYPES: [&str; 16] = [
+    "application/ecmascript",
+    "application/javascript",
+    "application/x-ecmascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript",
+];
+
+/// What HTML pages in the bundle load. Script URLs resolve with URL
+/// semantics against the page's first `<base href>` (or the page) within a
+/// virtual origin rooted at the bundle directory; a path that does not exist
+/// there is retried without leading segments (a deployment base path).
+/// External URLs are ignored.
+fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
+    const ORIGIN: &str = "http://bundle.invalid/";
+    fn resolve(root: &std::path::Path, base: &url::Url, reference: &str) -> Option<String> {
+        let url = base.join(reference.trim()).ok()?;
+        if url.scheme() != "http" || url.host_str() != Some("bundle.invalid") {
+            return None;
+        }
+        let path = percent_decode(url.path().trim_start_matches('/'));
+        let segments: Vec<&str> = path.split('/').collect();
+        (0..segments.len())
+            .map(|skip| root.join(segments[skip..].join("/")))
+            .filter_map(|c| c.canonicalize().ok())
+            .find(|c| c.starts_with(root) && c.is_file())
+            .map(|c| c.to_string_lossy().into_owned())
+    }
+    fn walk(root: &std::path::Path, dir: &std::path::Path, found: &mut HtmlScripts) -> Result<()> {
+        for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                walk(root, &path, found)?;
+                continue;
+            }
+            if !crate::bundle::is_html(&path) {
+                continue;
+            }
+            let html = std::fs::read_to_string(&path).context("cannot read an HTML page")?;
+            let tags = crate::bundle::html_tags(&html);
+            // A reference this parser cannot decode could name any file.
+            ensure!(
+                !tags.iter().any(|t| {
+                    (t.name == "script" && t.undecodable.iter().any(|a| a == "src" || a == "type"))
+                        || (t.name == "base" && t.undecodable.iter().any(|a| a == "href"))
+                }),
+                "an HTML script or base URL uses an unsupported character reference"
+            );
+            let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
+            let origin = url::Url::parse(ORIGIN).expect("valid origin");
+            let page = origin
+                .join(&relative)
+                .context("cannot form a URL for an HTML page")?;
+            // A script resolves against the first `<base href>` parsed before
+            // it, or against the page.
+            let mut base: Option<url::Url> = None;
+            // A base inside template or noscript content does not apply.
+            // Scripts and handlers there are still counted: template content
+            // can be cloned into the document and run later.
+            let mut inert = 0usize;
+            for tag in &tags {
+                match tag.name.as_str() {
+                    "template" | "noscript" => {
+                        inert += 1;
+                        continue;
+                    }
+                    "/template" | "/noscript" => {
+                        inert = inert.saturating_sub(1);
+                        continue;
+                    }
+                    _ => {}
+                }
+                // Event handlers and `javascript:` URLs are inline code that
+                // can import chunks.
+                for (attribute, value) in &tag.attributes {
+                    let code = if attribute.starts_with("on") {
+                        Some(value.as_str())
+                    } else {
+                        let trimmed = value.trim_start();
+                        trimmed
+                            .get(..11)
+                            .filter(|scheme| scheme.eq_ignore_ascii_case("javascript:"))
+                            .map(|_| &trimmed[11..])
+                    };
+                    let Some(code) = code else {
+                        continue;
+                    };
+                    let dynamic = crate::bundle::literal_dynamic_imports(code);
+                    if dynamic.non_literal {
+                        found.all_public = true;
+                    }
+                    for raw in dynamic.literals {
+                        match crate::bundle::decode_js_string(&raw).filter(|_| !raw.contains("${"))
+                        {
+                            Some(specifier) => {
+                                if let Some(file) =
+                                    resolve(root, base.as_ref().unwrap_or(&page), &specifier)
+                                {
+                                    found.imported.insert(file);
+                                }
+                            }
+                            None => found.all_public = true,
+                        }
+                    }
+                }
+                if tag.name == "base"
+                    && inert == 0
+                    && base.is_none()
+                    && let Some(href) = tag.attribute("href")
+                {
+                    base = Some(
+                        page.join(href.trim())
+                            .context("an HTML page has an invalid base URL")?,
+                    );
+                    continue;
+                }
+                if tag.name != "script" {
+                    continue;
+                }
+                let base = base.as_ref().unwrap_or(&page);
+                // The MIME type essence: parameters and case do not matter.
+                let kind = tag.attribute("type").map(|t| {
+                    t.split(';')
+                        .next()
+                        .unwrap_or_default()
+                        .trim()
+                        .to_ascii_lowercase()
+                });
+                // An import map can map any specifier to any chunk.
+                if kind.as_deref() == Some("importmap") {
+                    found.all_public = true;
+                    found.import_map = true;
+                    continue;
+                }
+                let module = kind.as_deref() == Some("module");
+                let classic = kind
+                    .as_deref()
+                    .is_none_or(|t| t.is_empty() || JAVASCRIPT_MIME_TYPES.contains(&t));
+                if !module && !classic {
+                    continue;
+                }
+                match tag.attribute("src") {
+                    Some(src) => {
+                        if let Some(file) = resolve(root, base, src) {
+                            if module {
+                                found.modules.insert(file);
+                            } else {
+                                found.classic.insert(file);
+                            }
+                        }
+                    }
+                    None => {
+                        // Inline code can import chunks: they become public.
+                        let code = tag.text.as_deref().unwrap_or_default();
+                        let dynamic = crate::bundle::literal_dynamic_imports(code);
+                        // A computed specifier can name any chunk.
+                        if dynamic.non_literal {
+                            found.all_public = true;
+                        }
+                        let mut specifiers = dynamic.literals;
+                        if module {
+                            specifiers.extend(crate::pipeline::bundle_static_imports(code));
+                        }
+                        for raw in specifiers {
+                            // The specifier is JavaScript string source: decode
+                            // its escapes; a template with substitutions or a
+                            // malformed escape could name any chunk.
+                            match crate::bundle::decode_js_string(&raw)
+                                .filter(|_| !raw.contains("${"))
+                            {
+                                Some(specifier) => {
+                                    if let Some(file) = resolve(root, base, &specifier) {
+                                        found.imported.insert(file);
+                                    }
+                                }
+                                None => found.all_public = true,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    let mut found = HtmlScripts::default();
+    walk(dir, dir, &mut found)?;
+    Ok(found)
+}
+
+/// Sorted identities of diagnostics: code, message with its arguments and
+/// the source text at the diagnostic. Positions move with every edit, so
+/// they are not part of the identity; a new diagnostic that reuses an old
+/// code at different code still differs.
+fn diagnostic_identities(diagnostics: &[Diagnostic]) -> Vec<String> {
+    let mut identities: Vec<String> = diagnostics
+        .iter()
+        .map(|d| {
+            let snippet = if d.file.is_some() {
+                let text = source_file_text(d.file);
+                let (pos, end) = (d.loc().pos() as usize, d.loc().end() as usize);
+                text.get(pos.min(text.len())..end.min(text.len()))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned()
+            } else {
+                String::new()
+            };
+            format!(
+                "{}\0{}\0{snippet}",
+                d.code,
+                d.localize(&ts_goport::locale::DEFAULT)
+            )
+        })
+        .collect();
+    identities.sort();
+    identities
+}
+
+/// Whether `after` has a diagnostic identity more often than `before`.
+fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
+    let mut remaining = before.to_vec();
+    after
+        .iter()
+        .any(|code| match remaining.iter().position(|c| c == code) {
+            Some(at) => {
+                remaining.swap_remove(at);
+                false
+            }
+            None => true,
+        })
+}
+
+/// Decodes `%XX` escapes of a URL path.
+pub(crate) fn percent_decode(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let Some(byte) = path
+                .get(i + 1..i + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        {
+            out.push(byte);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Whether a file uses `eval` (direct or aliased) or `with`, which can look
+/// up the file's bindings by runtime strings, or `importScripts`, which only
+/// a classic worker has: such a file may run as a classic script whose
+/// top-level bindings are globals, even if a module also imports it.
+pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
+    nodes.iter().any(|node| {
+        node.kind() == SyntaxKind::WithStatement
+            || (node.kind() == SyntaxKind::Identifier
+                && matches!(node.text(), "eval" | "importScripts"))
+    })
+}
+
+/// Whether a file uses `import.meta`, which only ES modules can parse.
+pub(crate) fn uses_import_meta(nodes: &[Node]) -> bool {
+    nodes.iter().any(|node| {
+        node.kind() == SyntaxKind::MetaProperty && node.keyword_token() == SyntaxKind::ImportKeyword
+    })
+}
+
+/// Whether the file has ES module statements (imports or exports).
+pub(crate) fn has_esm_statements(file: Node) -> bool {
+    file.statements().iter().any(|statement| {
+        matches!(
+            statement.kind(),
+            SyntaxKind::ImportDeclaration
+                | SyntaxKind::ExportDeclaration
+                | SyntaxKind::ExportAssignment
+        ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT)
+    })
+}
+
 fn is_js_name(n: &str) -> bool {
     n.ends_with(".js") || n.ends_with(".jsx") || n.ends_with(".mjs") || n.ends_with(".cjs")
 }

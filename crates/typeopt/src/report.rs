@@ -45,12 +45,28 @@ pub struct PassConfig {
 
 /// Emitted ESM bytes of all transformed-language application modules, with
 /// equal emitter settings for both sides and no source maps.
+/// What `size.before` and `size.after` count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SizeMetric {
+    /// Stage 1: ESM bytes the compiler emits for the analyzed modules.
+    EmittedEsmBytes,
+    /// Stage 2: bytes of the edited bundler chunk text, without its trailing
+    /// source map comment.
+    ChunkTextBytes,
+}
+
 #[derive(Serialize)]
 pub struct Size {
-    pub metric: &'static str,
+    pub metric: SizeMetric,
     pub before: usize,
     pub after: usize,
     pub saved: isize,
+    /// Stage 2: code bytes of original chunks published next to their renamed
+    /// optimized copies because encoded or boundary references still name
+    /// them. They are not part of `after`, which describes the optimized
+    /// chunk graph. Always 0 in stage 1.
+    pub retained: usize,
 }
 
 #[derive(Serialize, Default)]
@@ -219,10 +235,15 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
         rounds: outcome.rounds,
         round_limit_reached: outcome.round_limit_reached,
         size: Size {
-            metric: "emitted_esm_bytes",
+            metric: if crate::app::bundle_mode() {
+                SizeMetric::ChunkTextBytes
+            } else {
+                SizeMetric::EmittedEsmBytes
+            },
             before: outcome.size_before,
             after: outcome.size_after,
             saved: outcome.size_before as isize - outcome.size_after as isize,
+            retained: 0,
         },
         pass_summary: summary,
         transformations,

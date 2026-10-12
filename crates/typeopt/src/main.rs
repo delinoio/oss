@@ -1,4 +1,6 @@
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+mod bundle;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod compiler;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod optimizer;
@@ -33,7 +35,7 @@ mod app {
     use clap::Parser;
 
     use super::{
-        compiler, output,
+        bundle, compiler, output,
         passes::{PassId, PassSet},
         pipeline, report,
     };
@@ -44,6 +46,48 @@ mod app {
 
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
+    /// Stage 2: the program is a closed set of bundler output chunks.
+    static BUNDLE: AtomicBool = AtomicBool::new(false);
+    pub(crate) fn bundle_mode() -> bool {
+        BUNDLE.load(Ordering::Relaxed)
+    }
+    static KEEP_CHUNK_NAMES: AtomicBool = AtomicBool::new(false);
+    pub(crate) fn keep_chunk_names() -> bool {
+        KEEP_CHUNK_NAMES.load(Ordering::Relaxed)
+    }
+    /// Bundle chunks (path substrings) kept as unchecked boundaries.
+    static BUNDLE_EXCLUDE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    /// Bundle chunks known to run as ES modules (imported by a chunk or
+    /// loaded by an HTML module script).
+    static BUNDLE_MODULES: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    /// Bundle chunks that an HTML page loads as a classic script.
+    static BUNDLE_CLASSIC: std::sync::OnceLock<std::collections::BTreeSet<String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_modules(
+        modules: std::collections::BTreeSet<String>,
+        classic: std::collections::BTreeSet<String>,
+    ) {
+        let _ = BUNDLE_MODULES.set(modules);
+        let _ = BUNDLE_CLASSIC.set(classic);
+    }
+    /// Whether a bundle chunk is an unchecked boundary: excluded by the
+    /// operator, or not known to be an ES module (a classic script shares
+    /// its top-level bindings with other scripts). `.mjs` files, chunks with
+    /// ESM statements and chunks that a chunk or an HTML module script loads
+    /// are ES modules.
+    pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
+        BUNDLE_EXCLUDE
+            .get()
+            .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
+            // A chunk that any page loads as a classic script shares its
+            // top-level bindings as globals there, even if it is also
+            // imported as a module.
+            || BUNDLE_CLASSIC.get().is_some_and(|c| c.contains(path))
+            || !(esm_statements
+                || path.ends_with(".mjs")
+                || BUNDLE_MODULES.get().is_some_and(|m| m.contains(path)))
+    }
     pub(crate) fn check_cancelled() -> Result<()> {
         ensure!(!CANCELLED.load(Ordering::Relaxed), "operation cancelled");
         Ok(())
@@ -52,13 +96,25 @@ mod app {
     #[derive(Parser)]
     #[command(
         version,
-        about = "Conservative type-aware TypeScript size optimization (experimental)"
+        about = "Conservative two-stage type-aware size optimization (experimental)"
     )]
     struct Args {
-        #[arg(long)]
-        project: PathBuf,
-        #[arg(long, required = true, num_args = 1..)]
+        #[arg(long, required_unless_present = "bundle", conflicts_with = "bundle")]
+        project: Option<PathBuf>,
+        #[arg(long, required_unless_present = "bundle", conflicts_with = "bundle", num_args = 1..)]
         entry: Vec<PathBuf>,
+        /// Stage 2: optimize the JavaScript chunks of a bundler output
+        /// directory as one closed program.
+        #[arg(long, value_name = "DIR")]
+        bundle: Option<PathBuf>,
+        /// Bundle mode: keep chunks whose path contains this text unchanged
+        /// as unchecked boundaries (for example very large vendor chunks);
+        /// repeat to exclude several.
+        #[arg(long = "bundle-exclude", value_name = "TEXT", requires = "bundle", action = clap::ArgAction::Append)]
+        bundle_exclude: Vec<String>,
+        /// Bundle mode: keep the names of edited content-hashed chunks.
+        #[arg(long, requires = "bundle")]
+        keep_chunk_names: bool,
         #[arg(long, required_unless_present = "check", conflicts_with = "check")]
         out_dir: Option<PathBuf>,
         #[arg(long)]
@@ -113,10 +169,14 @@ mod app {
                 "output destination already exists or cannot be inspected"
             );
         }
-        let project = if args.project.is_dir() {
-            args.project.join("tsconfig.json")
+        if let Some(dir) = args.bundle.clone() {
+            return run_bundle(args, &dir, started);
+        }
+        let project = args.project.clone().context("--project is required")?;
+        let project = if project.is_dir() {
+            project.join("tsconfig.json")
         } else {
-            args.project
+            project
         };
         let project = project
             .canonicalize()
@@ -184,6 +244,91 @@ mod app {
         } else {
             report.measure(started);
             println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        Ok(())
+    }
+
+    fn run_bundle(args: Args, dir: &std::path::Path, started: Instant) -> Result<()> {
+        BUNDLE.store(true, Ordering::Relaxed);
+        KEEP_CHUNK_NAMES.store(args.keep_chunk_names, Ordering::Relaxed);
+        let _ = BUNDLE_EXCLUDE.set(args.bundle_exclude.clone());
+        let dir = dir.canonicalize().context("cannot find bundle directory")?;
+        ensure!(dir.is_dir(), "--bundle must be a directory");
+        if let Some(destination) = &args.out_dir {
+            let parent = destination
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(std::path::Path::new("."))
+                .canonicalize()
+                .context("cannot find the output parent directory")?;
+            ensure!(
+                !parent.starts_with(&dir),
+                "the output directory must be outside the bundle directory"
+            );
+        }
+        let passes = PassSet::bundle_without(&args.disable_pass);
+        tracing::info!(
+            enabled = ?passes.enabled().iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+            "bundle mode passes"
+        );
+        bundle::preflight(&dir)?;
+        // Publication verifies that it copies the directory as analyzed.
+        let analyzed = bundle::fingerprint(&dir)?;
+        let compiler = compiler::Project::load_bundle(&dir)?;
+        let snapshot = compiler.snapshot()?;
+        check_cancelled()?;
+        let outcome = {
+            let mut backend = compiler::Backend::new(&compiler, &snapshot);
+            pipeline::Pipeline {
+                backend: &mut backend,
+                enabled: &passes,
+            }
+            .run(&snapshot.sources)?
+        };
+        let mut report = report::build(&snapshot, &outcome, &passes);
+        tracing::info!(
+            files = snapshot.sources.len(),
+            bundles = outcome.bundles.len(),
+            rounds = outcome.rounds,
+            bytes_before = outcome.size_before,
+            bytes_after = outcome.size_after,
+            renamed = report.renamed_properties,
+            "bundle analysis complete"
+        );
+        // Check mode stages into a temporary directory as well, so it reports
+        // the same size and publication blockers as output mode.
+        let boundaries = compiler.bundle_boundaries();
+        let scratch = tempfile::tempdir().context("cannot create a check staging directory")?;
+        let destination = args
+            .out_dir
+            .clone()
+            .unwrap_or_else(|| scratch.path().join("out"));
+        let staged = bundle::stage(
+            &dir,
+            &destination,
+            &snapshot,
+            &outcome,
+            &analyzed,
+            &boundaries,
+        )?;
+        // Original chunks kept for encoded or boundary references are
+        // published next to the optimized graph; the report discloses them.
+        report.size.retained = staged.retained_bytes;
+        let staged = args.out_dir.is_some().then_some(staged);
+        report.measure(started);
+        // The report is part of the result: publish only after it was
+        // delivered, so a closed or full standard output leaves no output.
+        {
+            use std::io::Write as _;
+            let mut stdout = std::io::stdout().lock();
+            writeln!(stdout, "{}", serde_json::to_string_pretty(&report)?)
+                .and_then(|()| stdout.flush())
+                .context("cannot write the report to standard output")?;
+        }
+        check_cancelled()?;
+        if let Some(staged) = staged {
+            staged.commit()?;
+            tracing::info!(bundles = outcome.bundles.len(), "bundle output published");
         }
         Ok(())
     }
