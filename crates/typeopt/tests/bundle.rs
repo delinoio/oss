@@ -739,6 +739,32 @@ fn matches_html_module_scripts_by_path() {
     assert!(!out(temp.path(), "modern/index.js").contains("verticalSpacing"));
 }
 
+/// The report is part of the result: when it cannot be delivered, nothing
+/// is published and no staging directory remains.
+#[test]
+fn publishes_nothing_when_the_report_cannot_be_written() {
+    let temp = bundle(&[(
+        "index.js",
+        r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+    )]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(temp.path())
+        .args(["--bundle", "dist", "--out-dir", "out"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    // Close the read end before the report is written.
+    drop(child.stdout.take());
+    let status = child.wait().unwrap();
+    assert!(!status.success());
+    let leftovers: Vec<_> = fs::read_dir(temp.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(leftovers, ["dist"], "{leftovers:?}");
+}
+
 #[test]
 fn bundle_output_is_deterministic() {
     let chunks = [

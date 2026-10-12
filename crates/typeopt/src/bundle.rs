@@ -503,15 +503,31 @@ fn rehash(root: &Path, edited: &BTreeSet<PathBuf>) -> Result<usize> {
     Ok(renamed.len())
 }
 
-/// Stage 2 publication: copies the bundler output directory, replaces the
-/// edited chunks, composes their source maps with the edits and gives edited
-/// content-hashed chunks (and their importers) new hashes.
-pub fn publish(
+/// A complete bundle output in an operation-owned staging directory. It is
+/// published only by [`Staged::commit`]; dropping it removes the staging
+/// directory, so a failure after staging never leaves a published result.
+pub struct Staged {
+    _staging: tempfile::TempDir,
+    root: PathBuf,
+    destination: PathBuf,
+}
+
+impl Staged {
+    /// Moves the staged output to its destination.
+    pub fn commit(self) -> Result<()> {
+        std::fs::rename(&self.root, &self.destination).context("cannot publish bundle output")
+    }
+}
+
+/// Stage 2 output: copies the bundler output directory into staging,
+/// replaces the edited chunks, composes their source maps with the edits and
+/// gives edited content-hashed chunks (and their importers) new hashes.
+pub fn stage(
     source: &Path,
     destination: &Path,
     snapshot: &Snapshot,
     outcome: &Outcome,
-) -> Result<()> {
+) -> Result<Staged> {
     ensure!(
         std::fs::symlink_metadata(destination)
             .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
@@ -590,8 +606,11 @@ pub fn publish(
         rehashed,
         "bundle chunks written"
     );
-    std::fs::rename(&root, destination).context("cannot publish bundle output")?;
-    Ok(())
+    Ok(Staged {
+        _staging: staging,
+        root,
+        destination: destination.to_path_buf(),
+    })
 }
 
 #[cfg(test)]

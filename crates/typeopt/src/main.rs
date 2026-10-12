@@ -281,12 +281,25 @@ mod app {
             renamed = report.renamed_properties,
             "bundle analysis complete"
         );
-        if let Some(destination) = args.out_dir {
-            bundle::publish(&dir, &destination, &snapshot, &outcome)?;
+        let staged = args
+            .out_dir
+            .map(|destination| bundle::stage(&dir, &destination, &snapshot, &outcome))
+            .transpose()?;
+        report.measure(started);
+        // The report is part of the result: publish only after it was
+        // delivered, so a closed or full standard output leaves no output.
+        {
+            use std::io::Write as _;
+            let mut stdout = std::io::stdout().lock();
+            writeln!(stdout, "{}", serde_json::to_string_pretty(&report)?)
+                .and_then(|()| stdout.flush())
+                .context("cannot write the report to standard output")?;
+        }
+        check_cancelled()?;
+        if let Some(staged) = staged {
+            staged.commit()?;
             tracing::info!(bundles = outcome.bundles.len(), "bundle output published");
         }
-        report.measure(started);
-        println!("{}", serde_json::to_string_pretty(&report)?);
         Ok(())
     }
 
