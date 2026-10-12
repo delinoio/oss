@@ -371,13 +371,6 @@ export function GrokAccounting({
                             model.modelName,
                           )}
                         </button>
-                        <small>
-                          {productLabel(
-                            PresentationKind.Model,
-                            model.model?.nativeId,
-                            model.modelName,
-                          )}
-                        </small>
                         <p>
                           {productLabel(
                             PresentationKind.Provider,
@@ -385,12 +378,6 @@ export function GrokAccounting({
                             model.providerName,
                           )}
                         </p>
-                        <small>
-                          {productLabel(
-                            PresentationKind.Provider,
-                            model.providerId,
-                          )}
-                        </small>
                       </td>
                       <td>
                         {grok(model.totals)?.units.toLocaleString(

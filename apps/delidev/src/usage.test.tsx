@@ -406,7 +406,14 @@ it.each([false, true])(
     const nativeModelTable = within(nativeSection).getByRole("table", {
       name: "Verified Grok inputs by model",
     });
-    expect(within(nativeModelTable).getByText("Grok-only model")).toBeTruthy();
+    expect(
+      within(nativeModelTable).getByRole("button", {
+        name: "Grok-only model",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(nativeModelTable).getAllByText("Grok-only model"),
+    ).toHaveLength(1);
     expect(f.data.analytics.models).toHaveLength(mixed ? 2 : 1);
   },
 );
