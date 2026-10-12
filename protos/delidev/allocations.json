@@ -14025,6 +14025,132 @@
       "serverStreaming": false
     },
     {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CancelTailscaleConnection",
+      "input": "CancelTailscaleConnectionRequest",
+      "output": "CancelTailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CancelTailscaleApproval",
+      "input": "CancelTailscaleApprovalRequest",
+      "output": "CancelTailscaleApprovalResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "ListTailscaleConnections",
+      "input": "ListTailscaleConnectionsRequest",
+      "output": "ListTailscaleConnectionsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "BeginTailscaleConnection",
+      "input": "BeginTailscaleConnectionRequest",
+      "output": "BeginTailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "ResumeTailscaleConnection",
+      "input": "ResumeTailscaleConnectionRequest",
+      "output": "ResumeTailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "DeliverTailscaleWorker",
+      "input": "DeliverTailscaleWorkerRequest",
+      "output": "DeliverTailscaleWorkerResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "DiscoverTailscale",
+      "input": "DiscoverTailscaleRequest",
+      "output": "DiscoverTailscaleResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CheckTailscale",
+      "input": "CheckTailscaleRequest",
+      "output": "CheckTailscaleResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "GetTailscaleAccess",
+      "input": "GetTailscaleAccessRequest",
+      "output": "GetTailscaleAccessResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "SetTailscaleAccess",
+      "input": "SetTailscaleAccessRequest",
+      "output": "SetTailscaleAccessResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "RequestTailscaleApproval",
+      "input": "RequestTailscaleApprovalRequest",
+      "output": "RequestTailscaleApprovalResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "GetTailscaleApproval",
+      "input": "GetTailscaleApprovalRequest",
+      "output": "GetTailscaleApprovalResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "ListTailscaleApprovals",
+      "input": "ListTailscaleApprovalsRequest",
+      "output": "ListTailscaleApprovalsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "DecideTailscaleApproval",
+      "input": "DecideTailscaleApprovalRequest",
+      "output": "DecideTailscaleApprovalResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
       "issue": 2673,
       "service": "ScheduleService",
       "method": "PreviewScheduleCalendar",
