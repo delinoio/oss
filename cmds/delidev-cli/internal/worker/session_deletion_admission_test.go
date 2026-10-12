@@ -112,7 +112,8 @@ func TestSessionDeletionAdmissionRejectsOriginalValidationBoundarySwaps(t *testi
 			if err != nil || domain.Decode(b, &retained) != nil || retained.ReportID != proof.ReportID || retained.RemovalStarted {
 				t.Fatal("original report changed", err)
 			}
-			if err := os.Rename(path, path+"-foreign"); err != nil {
+			foreignWorkspace := filepath.Join(config.Root, "foreign-workspace-"+string(work.SessionID))
+			if err := os.Rename(path, foreignWorkspace); err != nil {
 				t.Fatal(err)
 			}
 			if kind != "creation-after-absence" {
@@ -123,6 +124,11 @@ func TestSessionDeletionAdmissionRejectsOriginalValidationBoundarySwaps(t *testi
 			again, err := deleteSessionCopies(context.Background(), config, work)
 			if err != nil || !again.Complete || again.ReportID != proof.ReportID {
 				t.Fatal("original restoration did not finish exact receipt", err)
+			}
+			if kind == "restored-workspace" {
+				if raw, err := os.ReadFile(filepath.Join(foreignWorkspace, "manifest.json")); err != nil || len(raw) == 0 {
+					t.Fatal("foreign workspace material changed", err)
+				}
 			}
 		})
 	}
