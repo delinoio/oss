@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 // Profiles are installed-version contracts, not guesses based on version order.
@@ -24,6 +25,7 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	CodeReviewModel       string `json:"-"`
 	ManagedForkHistory    bool
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
@@ -44,6 +46,10 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	codeReviewModel      string
+	codeReviewRoot       string
+	codeReview           *codeReviewAttempt
+	reviewProtected      security.ProtectedJSON
 	safety               modelSafetyLedger
 	managedForkHistory   bool
 	quotaUsed            atomic.Bool
@@ -179,6 +185,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := configureCodeReview(&config); err != nil {
+		return nil, err
+	}
 	if err := configureSidechat(&config); err != nil {
 		return nil, err
 	}
@@ -289,7 +298,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations)
 	}
-	client = &Client{executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

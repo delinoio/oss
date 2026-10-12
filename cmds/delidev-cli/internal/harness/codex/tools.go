@@ -107,6 +107,9 @@ func (c *Client) observeToolUpdateLocked(native nativewire.Event) (Event, error)
 	if params.ThreadID != c.thread {
 		return privateNative(native), nil
 	}
+	if a := c.codeReview; a != nil && a.childTurn != "" && params.TurnID == a.childTurn {
+		params.TurnID = a.turn
+	}
 	turn, known := c.execution.turns[params.TurnID]
 	if !known && c.problem == nil {
 		return Event{}, incompatible()

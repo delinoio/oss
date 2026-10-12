@@ -16,6 +16,8 @@ type SidechatProfile string
 
 const ReadOnlySidechatV1 SidechatProfile = "codex-read-only-sidechat-v1"
 
+const nativeReviewPermissionProfile = "delidev-native-review-read-v1"
+
 // Pin native execution features before app-server starts. MCP tables merge
 // across layers, so empty CLI tables are insufficient: verification below also
 // rejects every inherited server/plugin/hook/notification entry before Fork.
@@ -53,18 +55,44 @@ func configureSidechat(config *Config) error {
 	for _, key := range sidechatDisabledFeatures {
 		config.Process.Args = append(config.Process.Args, "-c", "features."+key+"=false")
 	}
-	for _, option := range []string{
-		`features.skip_host_skill_discovery=true`, `sandbox_mode="read-only"`,
+	options := []string{
+		`features.skip_host_skill_discovery=true`,
 		`approval_policy="never"`, `approvals_reviewer="user"`, `allow_login_shell=false`,
 		`web_search="disabled"`, `notify=[]`, `mcp_servers={}`, `plugins={}`, `hooks={}`,
 		`tools.experimental_request_user_input.enabled=false`,
-	} {
+	}
+	if config.CodeReviewModel == "" {
+		options = append(options, `sandbox_mode="read-only"`)
+	} else {
+		// Legacy read-only grants disk-wide reads. Keep the review's native
+		// command and image tools behind a Codex-owned allowlist rooted only at
+		// the selected repository; Codex fails closed if this profile cannot be
+		// enforced by the installed platform sandbox.
+		options = append(options,
+			`default_permissions="`+nativeReviewPermissionProfile+`"`,
+			`permissions.`+nativeReviewPermissionProfile+`.filesystem.":root"="deny"`,
+			`permissions.`+nativeReviewPermissionProfile+`.filesystem.":minimal"="read"`,
+			`permissions.`+nativeReviewPermissionProfile+`.filesystem.":workspace_roots"."."="read"`,
+			`permissions.`+nativeReviewPermissionProfile+`.network.enabled=false`,
+		)
+	}
+	for _, option := range options {
 		config.Process.Args = append(config.Process.Args, "-c", option)
 	}
 	return nil
 }
 
 func validateSidechatConfig(config map[string]json.RawMessage) error {
+	if err := validateSidechatCommonConfig(config); err != nil {
+		return err
+	}
+	if string(config["sandbox_mode"]) != `"read-only"` {
+		return sidechatMismatch("sandbox_mode")
+	}
+	return nil
+}
+
+func validateSidechatCommonConfig(config map[string]json.RawMessage) error {
 	var features map[string]json.RawMessage
 	if json.Unmarshal(config["features"], &features) != nil || features == nil {
 		return sidechatUnavailable()
@@ -117,7 +145,7 @@ func validateSidechatConfig(config map[string]json.RawMessage) error {
 		}
 	}
 	for key, expected := range map[string]string{
-		"sandbox_mode": `"read-only"`, "approval_policy": `"never"`,
+		"approval_policy":    `"never"`,
 		"approvals_reviewer": `"user"`, "allow_login_shell": "false", "web_search": `"disabled"`,
 	} {
 		if string(config[key]) != expected {
@@ -159,7 +187,17 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 	if response.ErrorCode != nil || domain.Decode(response.Result, &config) != nil {
 		return sidechatMismatch("config-shape")
 	}
-	if err := validateSidechatConfig(config.Config); err != nil {
+	if c.codeReviewModel != "" {
+		var model string
+		if json.Unmarshal(config.Config["review_model"], &model) != nil || model != c.codeReviewModel {
+			return domain.NativeCodeReviewUnavailable()
+		}
+	}
+	if c.codeReviewModel != "" {
+		if !nativePathEqual(cwd, c.codeReviewRoot) || validateNativeReviewPermissionProfile(config.Config) != nil {
+			return sidechatMismatch("restricted-review-filesystem")
+		}
+	} else if err := validateSidechatConfig(config.Config); err != nil {
 		return err
 	}
 	response, err = c.wire.Call(ctx, domain.NewID(), "experimentalFeature/list", struct {
@@ -200,6 +238,50 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 		}
 	}
 	return nil
+}
+
+func validateNativeReviewPermissionProfile(config map[string]json.RawMessage) error {
+	if err := validateSidechatCommonConfig(config); err != nil {
+		return err
+	}
+	var selected string
+	if json.Unmarshal(config["default_permissions"], &selected) != nil || selected != nativeReviewPermissionProfile {
+		return sidechatUnavailable()
+	}
+	if raw := config["sandbox_mode"]; len(raw) != 0 && string(raw) != "null" {
+		return sidechatUnavailable()
+	}
+	var profiles map[string]json.RawMessage
+	if json.Unmarshal(config["permissions"], &profiles) != nil {
+		return sidechatUnavailable()
+	}
+	var profile map[string]json.RawMessage
+	if json.Unmarshal(profiles[nativeReviewPermissionProfile], &profile) != nil || len(profile) != 2 {
+		return sidechatUnavailable()
+	}
+	var filesystem map[string]json.RawMessage
+	if json.Unmarshal(profile["filesystem"], &filesystem) != nil || len(filesystem) != 3 || string(filesystem[":root"]) != `"deny"` || string(filesystem[":minimal"]) != `"read"` {
+		return sidechatUnavailable()
+	}
+	var roots map[string]json.RawMessage
+	if json.Unmarshal(filesystem[":workspace_roots"], &roots) != nil || len(roots) != 1 || string(roots["."]) != `"read"` {
+		return sidechatUnavailable()
+	}
+	var network map[string]json.RawMessage
+	if json.Unmarshal(profile["network"], &network) != nil || len(network) != 1 || string(network["enabled"]) != "false" {
+		return sidechatUnavailable()
+	}
+	return nil
+}
+
+func activeNativeReviewProfile(raw json.RawMessage) bool {
+	var response struct {
+		ActivePermissionProfile struct {
+			ID      string  `json:"id"`
+			Extends *string `json:"extends"`
+		} `json:"activePermissionProfile"`
+	}
+	return json.Unmarshal(raw, &response) == nil && response.ActivePermissionProfile.ID == nativeReviewPermissionProfile && response.ActivePermissionProfile.Extends == nil
 }
 
 func sidechatSettings(settings ThreadSettings) bool {
