@@ -8,7 +8,9 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"google.golang.org/protobuf/proto"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +19,7 @@ import (
 func TestDirectorySettlementLostReplyReplaysExactOriginalBytes(t *testing.T) {
 	for _, name := range []string{"before commit", "after commit"} {
 		t.Run(name, func(t *testing.T) {
-			root, f, credential := managedLaneFixture(t, connect.NewError(connect.CodeUnavailable, nil))
+			root, f, credential := directoryReceiptFixture(t, name == "before commit")
 			client, closeRPC, err := subscriptionRPC(context.Background(), Config{Root: root}, credential)
 			if err != nil {
 				t.Fatal(err)
@@ -45,7 +47,6 @@ func TestDirectorySettlementLostReplyReplaysExactOriginalBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.finishError = nil
 			// Reconstruct only receipt ownership after restart. No bundle or native call
 			// is recoverable from this object; the protected original bytes own replay.
 			lease.response.Bundle = nil
@@ -53,7 +54,7 @@ func TestDirectorySettlementLostReplyReplaysExactOriginalBytes(t *testing.T) {
 				t.Fatal(err)
 			}
 			second := <-f.finished
-			if !proto.Equal(first, second) {
+			if !proto.Equal(first, second) || f.commits != 1 {
 				t.Fatal("lost response changed exact receipt arguments")
 			}
 			after, err := os.ReadFile(path + ".directory-finish.pb")
@@ -155,4 +156,40 @@ func TestDirectorySettlementRecoveryPromotesOnlyOriginalReadyGeneration(t *testi
 		t.Fatal("foreign revision replayed settlement")
 	default:
 	}
+}
+
+type directoryReceiptServer struct {
+	delidevv1connect.UnimplementedSubscriptionServiceHandler
+	finished          chan *pb.FinishSubscriptionRequest
+	beforeCommit      bool
+	attempts, commits int
+	receipt           *pb.FinishSubscriptionRequest
+}
+
+func (f *directoryReceiptServer) FinishSubscription(_ context.Context, req *connect.Request[pb.FinishSubscriptionRequest]) (*connect.Response[pb.FinishSubscriptionResponse], error) {
+	request := proto.Clone(req.Msg).(*pb.FinishSubscriptionRequest)
+	f.finished <- request
+	first := f.attempts == 0
+	f.attempts++
+	if first && f.beforeCommit {
+		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
+	if f.receipt == nil {
+		f.receipt = proto.Clone(request).(*pb.FinishSubscriptionRequest)
+		f.commits++
+	} else if !proto.Equal(f.receipt, request) {
+		return nil, connect.NewError(connect.CodeAborted, nil)
+	}
+	if first {
+		return nil, connect.NewError(connect.CodeUnavailable, nil)
+	}
+	return connect.NewResponse(&pb.FinishSubscriptionResponse{}), nil
+}
+func directoryReceiptFixture(t *testing.T, before bool) (string, *directoryReceiptServer, Credential) {
+	t.Helper()
+	f := &directoryReceiptServer{finished: make(chan *pb.FinishSubscriptionRequest, 2), beforeCommit: before}
+	_, handler := delidevv1connect.NewSubscriptionServiceHandler(f)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return t.TempDir(), f, Credential{Endpoint: server.URL, MachineID: domain.NewID()}
 }
