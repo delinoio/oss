@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust, with Node.js 24 for fixture execution and integration tooling. Pin `ts_goport` to upstream revision `b4144b4769d13bbfe9e648840fe6297893981427`; manually validate upstream changes. Keep optimizer code separate from upstream compiler code. Initial distribution is Cargo source builds for macOS arm64 and Linux x64.
+Rust, with Node.js 24 for fixture execution and integration tooling. Pin `ts_goport` to upstream revision `a1dc8be88dfb837b4fb199d4355fa0a4d9eced96`; manually validate upstream changes. Keep optimizer code separate from upstream compiler code. Initial distribution is Cargo source builds for macOS arm64 and Linux x64.
 
 ## Users and Operators
 
@@ -42,7 +42,7 @@ Edits apply to the chunk text, and the size gate compares the edited chunk text 
 
 ## Storage
 
-One-shot, in-memory analysis; no daemon, watch mode or persistent cache. Never modify input files or an existing output destination. Stage output in an operation-owned temporary directory and publish without replacing an existing destination. Error and cancellation paths return failure, remove owned temporary artifacts and never publish a complete result.
+One-shot, in-memory analysis; no daemon, watch mode or persistent cache. Each round rebuilds the program from in-memory texts; as in `tsc --watch`, parses of files that an earlier program published are freeable file versions that own their nodes (`ts_goport::ast::set_watch_process` and `program::mark_freeable_parses`), so releasing a program frees its parses. `GOPORT_FREE_FILE_VERSIONS=0` or `GOPORT_OWNED_NODES=0` turns this off. Never modify input files or an existing output destination. Stage output in an operation-owned temporary directory and publish without replacing an existing destination. Error and cancellation paths return failure, remove owned temporary artifacts and never publish a complete result.
 
 ## Security
 

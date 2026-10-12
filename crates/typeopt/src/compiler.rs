@@ -935,6 +935,10 @@ fn build(config: Rc<ParsedCommandLine>, fs: Rc<dyn Fs>, cwd: &str) -> &'static G
         create_module_resolver: None,
         skip_module_resolution: false,
     }));
+    // A parse of a file that an earlier program published gets a freeable
+    // file version, which `release_program` frees with its last holder.
+    // Without it, every rebuild leaks the parse of every file.
+    mark_freeable_parses(&np);
     new_program_version(&np, None)
 }
 

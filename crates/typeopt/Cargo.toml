@@ -18,5 +18,5 @@ sourcemap = "9"
 tempfile.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
-ts_goport = { git = "https://github.com/kdy1/ts-rust", rev = "b4144b4769d13bbfe9e648840fe6297893981427", default-features = false }
+ts_goport = { git = "https://github.com/kdy1/ts-rust", rev = "a1dc8be88dfb837b4fb199d4355fa0a4d9eced96", default-features = false }
 url = "2"

@@ -42,7 +42,7 @@ mod app {
 
     /// Upstream compiler revision recorded in reports. It must match the
     /// `ts_goport` pin in Cargo.toml; a unit test enforces this.
-    pub(crate) const COMPILER_REVISION: &str = "b4144b4769d13bbfe9e648840fe6297893981427";
+    pub(crate) const COMPILER_REVISION: &str = "a1dc8be88dfb837b4fb199d4355fa0a4d9eced96";
 
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
@@ -162,6 +162,16 @@ mod app {
     fn run(args: Args) -> Result<()> {
         let started = Instant::now();
         ctrlc::set_handler(|| CANCELLED.store(true, Ordering::Relaxed))?;
+        // Every round rebuilds the program from in-memory texts. As in
+        // `tsc --watch`, parses of files that an earlier program published
+        // become freeable file versions that own their nodes, so a released
+        // program frees its parse. `GOPORT_FREE_FILE_VERSIONS=0` and
+        // `GOPORT_OWNED_NODES=0` still turn this off.
+        ts_goport::ast::set_watch_process();
+        tracing::debug!(
+            free_file_versions = ts_goport::ast::free_file_versions(),
+            "compiler memory release configured"
+        );
         if let Some(path) = &args.out_dir {
             ensure!(
                 std::fs::symlink_metadata(path)
