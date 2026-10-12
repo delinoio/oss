@@ -23,5 +23,10 @@
   "session-progress.running": "In progress",
   "session-progress.completed": "Completed",
   "session-progress.observed": "Observed operation",
-  "session-progress.repository": "Repository"
+  "session-progress.repository": "Repository",
+  "session-progress.seconds": "{{v0}}s",
+  "session-progress.timingElapsed": "Elapsed {{v0}} seconds",
+  "session-progress.timingRunning": "In progress, {{v0}} seconds elapsed",
+  "session-progress.timingUnconfirmed": "Last observed elapsed time {{v0}} seconds, unconfirmed",
+  "session-progress.unconfirmed": "Unconfirmed"
 }

@@ -1040,3 +1040,14 @@ bounds include the projected JSON bytes. A projection that exceeds the existing
 list-read failure path. No per-row database read, additional RPC, protocol
 allocation, migration or new response/execution authority is introduced. Older
 servers omit the field; clients that ignore additive JSON keep their display.
+
+## Initial-agent startup timing
+
+Initial-agent timing starts at its first accepted Running startup report and
+finishes only at the validated original primary-input acceptance transaction.
+READY, settings, descriptive Input reports and first response do not substitute
+for acceptance. Terminal/failure/Stop/lost-owner settlement freezes unfinished
+matching records without success. Follow-up turns cannot reset completed original
+startup time; replacement jobs use separate current identity. The optional
+private Session record is projected only into typed Resource envelope metadata.
+Native progress, assignments, checkpoints and digest inputs retain their shapes.
