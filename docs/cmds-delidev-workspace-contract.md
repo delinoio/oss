@@ -621,3 +621,12 @@ keep their existing ownership boundaries.
 ## Repository registration name collisions
 
 Repository saves check server-wide same-kind name uniqueness at admission and after the original checkout inspections finish. Concurrent accepted inspections cannot both publish equivalent names. Clone completion uses the same transactional publication gate and settles a definitive name collision in the original job. The reported checkout has already transferred to user-owned Local lifetime; registration failure retains its original inspection metadata and grants no deletion authority. Native source proof, job ownership and revision conflicts keep their existing categories. See the [command naming contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness).
+
+## Workspace preparation group timing
+
+The server starts workspace group time only on the first accepted Running
+observation for its exact original preparation job. Its original successful
+preparation settlement freezes elapsed time; failed, canceled, uncertain and Stop
+settlements freeze unfinished time without implying preparation success. The
+Worker's operation report shape and original workspace/native cleanup authority
+remain unchanged. Missing historical timing cannot be derived from Job timestamps.

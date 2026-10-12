@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import type { StartupTime, StartupTimes } from "./session-startup-timing";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { SessionProgressPhase } from "./session-progress";
 import {
@@ -68,25 +69,109 @@ function Step({
     </li>
   );
 }
-function Groups({ operations }: { operations: StartupOperations }) {
+function Timing({ time }: { time?: StartupTime }) {
+  if (!time || time.seconds === undefined) return null;
+  const label = time.unconfirmed
+    ? "session-progress.timingUnconfirmed"
+    : time.running
+      ? "session-progress.timingRunning"
+      : "session-progress.timingElapsed";
   return (
-    <div className="session-startup-groups">
-      <section aria-label={copy("session-progress.workspace")}>
-        <h4>{copy("session-progress.workspace")}</h4>
-        <ol>
-          {operations.workspace.map((row) => (
-            <Step key={row.operation} row={row} labels={workspaceLabels} />
-          ))}
-        </ol>
-      </section>
-      <section aria-label={copy("session-progress.agent")}>
-        <h4>{copy("session-progress.agent")}</h4>
-        <ol>
-          {operations.native.map((row) => (
-            <Step key={row.operation} row={row} labels={nativeLabels} />
-          ))}
-        </ol>
-      </section>
+    <span className="session-startup-timing" aria-live="off">
+      <span
+        className="session-startup-seconds"
+        aria-label={copy(label, { v0: time.seconds })}
+      >
+        {copy("session-progress.seconds", { v0: time.seconds })}
+      </span>
+      {time.unconfirmed ? (
+        <span className="session-startup-unconfirmed">
+          {copy("session-progress.unconfirmed")}
+        </span>
+      ) : null}
+      {time.running ? (
+        <span className="session-progress-spinner" aria-hidden="true" />
+      ) : null}
+    </span>
+  );
+}
+export function RetainedStartupTimes({ timing }: { timing: StartupTimes }) {
+  useLocale();
+  return (
+    <div className="session-startup-retained-time" aria-live="off">
+      {(["workspace", "agent"] as const).map((key) =>
+        timing[key]?.seconds !== undefined ? (
+          <p key={key}>
+            {copy(key === "workspace"
+              ? "session-progress.workspace"
+              : "session-progress.agent")} {" "}
+            <Timing time={{
+              ...timing[key]!,
+              running: false,
+              unconfirmed: timing[key]!.running || timing[key]!.unconfirmed,
+            }} />
+          </p>
+        ) : null,
+      )}
+    </div>
+  );
+}
+function Groups({
+  operations,
+  detailed = false,
+  timing,
+}: {
+  operations: StartupOperations;
+  detailed?: boolean;
+  timing?: StartupTimes;
+}) {
+  const groups = [
+    {
+      key: "workspace" as const,
+      title: "session-progress.workspace" as const,
+      rows: operations.workspace,
+      labels: workspaceLabels,
+    },
+    {
+      key: "agent" as const,
+      title: "session-progress.agent" as const,
+      rows: operations.native,
+      labels: nativeLabels,
+    },
+  ];
+  return (
+    <div className={`session-startup-groups${detailed ? " is-detailed" : ""}`}>
+      {groups.map((group) => {
+        const content = (
+          <ol>
+            {group.rows.map((row) => (
+              <Step key={row.operation} row={row} labels={group.labels} />
+            ))}
+          </ol>
+        );
+        return detailed ? (
+          <Disclosure
+            key={group.key}
+            density={DisclosureDensity.Settings}
+            className="session-startup-group"
+          >
+            <DisclosureSummary>
+              <span className="disclosure-label">
+                <span className="session-startup-group-title">
+                  {copy(group.title)}
+                </span>
+                <Timing time={timing?.[group.key]} />
+              </span>
+            </DisclosureSummary>
+            {content}
+          </Disclosure>
+        ) : (
+          <section key={group.key} aria-label={copy(group.title)}>
+            <h4>{copy(group.title)}</h4>
+            {content}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -94,10 +179,12 @@ export function SessionProgressStatus({
   phase,
   compact,
   operations,
+  timing,
 }: {
   phase: SessionProgressPhase;
   compact: boolean;
   operations?: StartupOperations;
+  timing?: StartupTimes;
 }) {
   useLocale();
   const currentWorkspace = operations?.workspace.find(
@@ -142,7 +229,7 @@ export function SessionProgressStatus({
             <Groups operations={operations} />
           </Disclosure>
         ) : (
-          <Groups operations={operations} />
+          <Groups operations={operations} detailed timing={timing} />
         )
       ) : null}
     </div>

@@ -13436,6 +13436,61 @@
       "member": "constraints",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "Resource",
+      "member": "startup_timing",
+      "number": 10
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "SessionStartupTiming",
+      "member": "workspace",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "SessionStartupTiming",
+      "member": "agent",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "StartupGroupTiming",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "StartupGroupTiming",
+      "member": "execution_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "StartupGroupTiming",
+      "member": "started_at",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2972,
+      "kind": "message",
+      "declaration": "StartupGroupTiming",
+      "member": "finished_at",
+      "number": 4,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
