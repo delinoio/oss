@@ -274,7 +274,12 @@ or roll back together. Replayed original requests retain their exact identities.
 
 The first execution claim of a new session evaluates sources in configured order.
 A source advances only when every configured candidate is classified as confirmed
-quota exhaustion. Missing accounts, project restrictions, disabled accounts,
+quota exhaustion that blocks new admission. Fresh exact Codex paid availability
+and independently fresh explicit spend-control clearance can keep an exhausted
+managed ChatGPT/Codex candidate eligible under the [subscription admission
+contract](cmds-delidev-subscription-contract.md#paid-credit-execution-admission).
+That exception preserves included exhaustion and quota scores; it does not apply
+to API, Claude or OpenCode. Missing accounts, project restrictions, disabled accounts,
 invalid authentication/generation/validation, unsupported model/harness/provider
 protocol, and unavailable quota that cannot establish exhaustion are blockers.
 A failed query or elapsed reset time never clears exhaustion. Only observed
@@ -801,3 +806,17 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Quota exhaustion cause projection
+
+`QuotaExhaustedCause` has the exact string `quota_exhausted` in the existing
+Error cause field. Single-source routing attaches it only when candidates are
+nonempty and every resulting eligibility is `exhausted`. Ordered source routing
+attaches it only after complete all-source exhaustion proof. Disabled, missing,
+restricted, incompatible, unauthenticated, unavailable/unknown observations,
+rate limits and source problems cannot establish that proof. Fresh admitted
+Codex paid-credit or unlimited evidence remains eligible under its existing
+independent spend-control and freshness rules. Failures preserve routing state,
+code, message, guidance, exit code and transport semantics. Per-source metadata
+never turns a later selected outer result into an exhaustion failure.
+This cause grants no fallback, quota recovery, account or execution authority.

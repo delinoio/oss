@@ -84,11 +84,11 @@ The shared presentation validator accepts only exact HTTPS `github.com` official
 
 `QueryRepositoryIntegration` accepts the configured local repository UUID, schema version 1 and strict query JSON. Kinds are `pull-request` or `issue`; operations are `list`, `search` and `detail`. List/search select `open`, `closed` or `all`, a one-based page at most 10,000 and a page size 1–20. Detail requires only a canonical positive decimal item number. Search accepts bounded plain letter/number/space/hyphen/underscore/period terms; it does not expose GitHub's query language. The adapter quotes individual terms, supplies its own exact `repo`, kind, title/body and optional state qualifiers, and rejects a constructed query over GitHub's 256-byte limit. Search cannot override repository scope.
 
-Every query refreshes the selected token's identity and exact repository metadata. Search additionally reads the matching repository feature endpoint, because GitHub search itself documents no fine-grained permission requirement. No identity-only result, unrelated feature, system token, response URL or older access observation grants query authority. The same one-per-profile/eight-global bounded owner, cancellation and post-read authorization/repository-revision/generation checks serve content reads. Queries persist no receipt, content, page state or authorization grant.
+Every query refreshes the selected token's identity and exact repository metadata. Search additionally reads the matching repository feature endpoint, because GitHub search itself documents no fine-grained permission requirement. No identity-only result, unrelated feature, system token, response URL or older access observation grants query authority. The same one-per-profile/eight-global bounded owner, cancellation and post-read authorization/repository-revision/generation checks serve content reads. Negotiated workspace and avatar enrichment uses the bounded serialized queue with foreground selection/tab priority described below. Queries persist no receipt, content, page state or authorization grant.
 
 The adapter projects only bounded stable identities, original state/title/author and times. It distinguishes the `issue-api` and `pull-request-api` numeric identity namespaces: the issue/search number ID for a PR is different from the PR REST numeric ID, even when their node ID and repository/number match. Keep both provenance and exact decimal strings; future durable PR association must resolve the actual PR identity rather than guessing across namespaces. Actor type retains original provider type and a known `User`/`Bot`/`Organization` classification or explicit unknown classification, never proof of an installed App or effective reviewer permission. An unknown type remains visible for manual inspection with no inferred reviewer authority; a deleted/null author stays unavailable.
 
-List responses omit bodies. Detail returns bounded original Markdown as inert text; a null body becomes empty text. PR detail preserves observed base/head refs and SHA values, draft/merged booleans and nullable mergeability. Validate its base repository's stable identities against the selected repository; an absent/deleted head-fork repository does not erase the original ref/SHA. Unknown mergeability stays unknown and does not authorize a conflict fix or prove checks/rules satisfaction. API and GitHub item addresses must match the selected repository/number; the returned GitHub address is constructed from those validated fields. No remote HTML, images or external URLs are fetched/rendered.
+List responses omit bodies. Detail returns bounded original Markdown as inert text; a null body becomes empty text. PR detail preserves observed base/head refs and SHA values, draft/merged booleans and nullable mergeability. Validate its base repository's stable identities against the selected repository; an absent/deleted head-fork repository does not erase the original ref/SHA. Unknown mergeability stays unknown and does not authorize a conflict fix or prove checks/rules satisfaction. API and GitHub item addresses must match the selected repository/number; the returned GitHub address is constructed from those validated fields. No remote HTML or arbitrary external content is fetched/rendered. The negotiated workspace permits only sanitized server-owned avatar bytes and inert Markdown under its dedicated contract.
 
 Repository issue listing includes PR entries in GitHub. Validate their scope, then omit them from the issue projection while preserving original API page progression. An empty projected page with a next page is not a complete issue inventory. Link headers are metadata only: a next link must preserve exact official origin, endpoint and every query parameter, contain exactly one consecutive page value and add no fragment/userinfo. GitHub's numeric `/repositories/{id}` alias is accepted only when it matches the same freshly observed stable repository ID and unchanged endpoint suffix. Never follow the supplied link. Each next request is independently constructed and authorized. These are live API pages, not an immutable cross-page snapshot; concurrent GitHub edits can shift page contents.
 
@@ -96,7 +96,7 @@ Search preserves exact total count and `incomplete_results`; neither a timeout n
 
 The desktop has a standalone Pull requests surface. Repository Settings owns saved configuration and management only, with no GitHub content browser or content read on entry/revisit. The sidebar selects one exact repository resource and automatically loads page one only after its current authenticated metadata validates the supported schema, selected profile and GitHub mapping. Selection of a different repository resets Open state, empty search and 20 rows. State and page-size changes apply immediately; valid trimmed plain title/body search applies after 300 ms without edits and only after IME composition ends. Equivalent trimmed terms, same-repository selection, Details, locale and layout changes do not repeat a read. Invalid search cancels pending application and leaves prior results labeled with their last applied conditions. Capacity recovery permits 1/5/10/20 rows with cumulative scroll continuation. It never aggregates repositories or exposes GitHub query syntax. A changed repository drops old observations immediately. Leaving the surface cancels timers and disposable reads; returning automatically reloads page one with retained filters. The connection-scoped bounded mutation registry retains exact original dismissal, collection and allowance-resumption requests as Pending PR actions. Retries reuse original bytes and never need refreshed rows. Unsent confirmations cannot authorize a fresh mutation without matching current evidence. Existing explicit detail, observation, refresh, Open on GitHub and operation/server authorization remain unchanged. Automatic activation never closes the drawer or changes focus. Generated Connect Query cancellation and original scope/query/revision fences reject late responses.
 
-The retained standalone Pull requests results provide explicit detail/back/refresh and observation actions through generated Connect Query. It validates the whole observation before rendering, marks previous observations during refresh/failure, distinguishes search incompleteness and unknown mergeability, and cancels/discards queries on close/inactivation. Bodies remain inert text. Validated detail addresses offer an explicit native Open on GitHub button, disabled while refreshing or after a read error. Entering Repository Settings from the PR sidebar uses the shared Settings navigation and selects Repositories immediately, disposing the previous category presentation without replaying or canceling accepted effects. Evaluated-commit/reviewer evidence and remediation remain required separately.
+The retained standalone Pull requests workspace provides independent list and selected-detail owners through generated Connect Query. It validates the whole observation before rendering, marks previous observations during refresh/failure, distinguishes search incompleteness and unknown mergeability, and cancels/discards queries on close/inactivation. Bodies remain inert text. Validated detail addresses offer an explicit native Open on GitHub button, disabled while refreshing or after a read error. Entering Repository Settings from the PR sidebar uses the shared Settings navigation and selects Repositories immediately, disposing the previous category presentation without replaying or canceling accepted effects. Evaluated-commit/reviewer evidence and remediation remain required separately.
 
 ## PR Diff, Checks and Commit Statuses
 
@@ -108,7 +108,7 @@ Checks use the exact head commit with explicit `filter=latest`. Preserve origina
 
 Combined commit statuses are a separate head observation. Validate original aggregate SHA and repository identities, exact total count, aggregate native state and each latest context's original identity, context, state, description, nullable creator and timestamps. Preserve pending/failure/error/success and unknown native classifications. A zero-context response cannot claim success/failure/error; GitHub's ordinary empty aggregate is pending. Never merge Checks and statuses into a passing-CI result, infer an absent required context or substitute the PR head for a ruleset's evaluated commit.
 
-CLI commands are `github pr diff --repository-id ID --number N` and `github pr checks|statuses --repository-id ID --number N [--page N --page-size N]`. Desktop PR detail has separate read actions, inert patch/digest/base/head display, independent Checks/status tables and a bounded eight-entry Back history. Its decoder validates exact heads, original classifications, decimal IDs/counts, timestamps and exclusive response shape; it checks digest format, while Go validates the actual patch digest. Unknown/missing/pending data stays explicit. Reads reuse the same profile lifetime, cancellation/join, revision/generation recheck, deadlines and no-persistence boundary as other repository queries.
+CLI commands are `github pr diff --repository-id ID --number N` and `github pr checks|statuses --repository-id ID --number N [--page N --page-size N]`. The ordinary desktop Diff tab retains inert patch/digest/base/head presentation; Checks/status tables and the legacy read renderer remain shared inspection capabilities rather than ordinary workspace actions. Its decoder validates exact heads, original classifications, decimal IDs/counts, timestamps and exclusive response shape; it checks digest format, while Go validates the actual patch digest. Unknown/missing/pending data stays explicit. Reads reuse the same profile lifetime, cancellation/join, revision/generation recheck, deadlines and no-persistence boundary as other repository queries.
 
 ## Applicable Active PR Rules
 
@@ -168,7 +168,7 @@ Desktop validates the additive source, run, attempt, job and requirement-referen
 
 ## Published PR Feedback
 
-PR-only `feedback` uses the existing authenticated repository query, with an exact positive-decimal PR number and no caller paging. CLI exposes `github pr feedback --repository-id ID --number N`; the desktop offers Read published feedback from PR detail. The selected profile/generation/repository authorization and bounded joined read lifetime remain unchanged. Reading feedback never persists handling state, selects an agent or starts a fix.
+PR-only `feedback` uses the existing authenticated repository query, with an exact positive-decimal PR number and no caller paging. CLI exposes `github pr feedback --repository-id ID --number N`; the desktop reads published feedback lazily from its Reviews tab. The selected profile/generation/repository authorization and bounded joined read lifetime remain unchanged. Reading feedback never persists handling state, selects an agent or starts a fix.
 
 Four fixed read-only GraphQL documents collect submitted review bodies, ordinary PR conversation comments, review threads and all nested thread comments. Each connection uses independent bounded cursors and original node identities, exact complete totals, at most 100 nodes per page and five pages. Nested continuation is bound to the original thread, repository and current PR base/head. Re-read the entire inventory and then the original REST PR detail before returning; changed content, provider state, thread resolution, identities or operands fail without a mixed result. Any GraphQL error rejects accompanying partial data. The shared GraphQL transport allows only the closed CI/feedback documents, never arbitrary documents or mutations.
 
@@ -546,3 +546,76 @@ contracts describe these rules; validation commands, source revisions and actual
 native/account/platform acceptance limits belong in PRs/issues/CI artifacts.
 
 Desktop GitHub list adapters use the [shared scroll contract](apps-delidev-desktop-contract.md#shared-scroll-continuation). They validate complete numeric-page responses, repository/profile generations, namespace identities and retained problem-set revisions before atomic append. Safe display projections accumulate; full observations retain at most three reached pages and restore exact accepted request tokens. Refresh cannot discover an unseen tail, and cursor or boundary drift requires explicit Reload list. Existing complete-result, capped/incomplete-search, permission, mutation receipt and original recovery authority remain independent.
+
+## Read-only pull request workspace
+
+The standalone desktop retains its accepted List/Search owner beside a separate
+selected-PR owner. Pending PR actions remains one region above the workspace;
+its original accepted requests and recovery semantics are unchanged. Available
+body widths of at least 900 CSS pixels use independently scrolling 40/60 list
+and detail panes. Compact Back restores the retained list position and row focus.
+Repository, applied-filter or connection replacement disposes the selection.
+
+System capability `PULL_REQUEST_WORKSPACE_V1` negotiates three independent reads:
+`GetPullRequestWorkspace`, `ListPullRequestCommits` and `ReadPullRequestAvatar`.
+Legacy List/Search documents, shared CLI inspection, rules, CI, reviewer and
+remediation operations remain unchanged. Unsupported peers retain a flat list,
+Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
+
+Workspace requests bind the original local repository revision and at most 20
+accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+identities, exact head-repository identity and base/head branch relationships in
+all states. Context rows are labeled and never increase filtered match counts.
+Each component renders once under its earliest accepted matching seed, parents
+before children and numeric sibling ties. Discovery retains at most 100 PRs,
+depth 20 and 40 provider-page reads under the original query deadline. The graph
+rechecks every discovered relationship page, including empty boundaries, original PR refs and numeric repository identity before complete claims. Desktop enrichment and tabs must also match the retained original profile generation and numeric repository scope. Limits, missing source repositories, access
+failures and relationship drift remain incomplete; cycles and competing parents
+remain ambiguous and render flat selectable observations. Foreign forks grant
+no same-repository graph relationship.
+
+Each observed PR retains its own provider-reported additions/deletions, bound to
+its exact repository/PR/base/head. Commit counts come independently from commit
+fields. Counts never sum patch lines, commits or stack members. Exact unsigned
+integer zero is valid; absent or invalid values remain unavailable. Negative,
+fractional, string-valued and overflowing provider numbers are not admitted.
+
+Description reads on selection; Diff, Reviews and Commits read on first tab
+activation. Successful same-PR observations remain in bounded disposable memory
+until refresh or disposal. Other tab activation never reloads the list. The
+ordinary workspace omits technical query buttons, Overview and PR problem history;
+shared backend/CLI and pending-action recovery retain their existing authority.
+Description uses the locked Markdown parser with inert supported text elements;
+HTML, images, links and unsupported nodes remain original source without fetches.
+The original body remains available. Diff preserves immutable bytes, full SHAs
+and digest, with contextual lines and inert fallback for unsupported sections.
+Reviews retain all published bodies, original states/times, thread context and
+excluded drafts; this read performs no author-permission verification.
+
+Commits uses a server-owned GraphQL connection with page size 20. Every page
+rechecks the original numeric repository, PR identity and exact base/head both
+before and after collection. Server-signed continuation binds the authenticated
+actor, repository revision, selected profile generation, PR and immutable SHAs;
+changed heads require explicit reload. Messages, author/committer names and dates,
+parent SHAs and independent counts remain complete. Oversized responses fail;
+email addresses are never projected. No database migration or Worker capability
+is introduced.
+
+Opaque avatar references retain their original actor, local repository revision,
+selected profile generation and numeric author in a bounded 64-entry memory
+cache. The authenticated byte read denies foreign, revoked and evicted scope.
+Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
+bounded known query fields are fetched through the selected outbound route. No
+PAT, client bearer, cookies or origin Authorization is attached, and redirects
+are refused. Fetches are bounded to five seconds and 128 KiB. PNG/JPEG/WebP decode
+must have dimensions at most 1024 by 1024; re-encoding emits a small sanitized PNG.
+Unknown/failed actors use decorative fallback; imagery establishes no identity.
+The desktop remote-image CSP is unchanged.
+
+The shared per-profile read owner serializes foreground reads and bounded queued
+background work while retaining eight active global inspections. Foreground
+selection/tab work displaces and joins a running enrichment owner and precedes
+queued background work. Interrupted enrichment requires explicit retry. Original
+post-read authorization, repository revision, profile generation, cancellation,
+response limits and safe structured logs remain authoritative. Fixtures and CI
+builds do not establish real-account or packaged native acceptance.

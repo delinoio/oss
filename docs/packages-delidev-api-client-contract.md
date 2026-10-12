@@ -500,7 +500,26 @@ clock/presence evidence for live time and retain unconfirmed observations withou
 animation. Timing grants no execution, retry or recovery authority. Missing older
 peer metadata remains unavailable.
 
-TailscaleService and TailscaleQuery export the generated connection surface under
-the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
-Closed bounded JSON projections retain public observation metadata only; private
-keys, decrypted grants and protected Worker inputs stay Go-owned.
+## Pull request workspace client
+
+The generated IntegrationQuery client exposes independently negotiated workspace,
+commit-page and avatar-byte reads under System `PULL_REQUEST_WORKSPACE_V1`.
+Preserve original repository revision, numeric PR/repository and immutable
+base/head scope, actor/profile generation fences and signed continuation. The
+schema-version-1 decoders reject mixed or foreign observations and invalid counts.
+Avatar references are opaque scope, never URLs. Legacy QueryRepositoryIntegration
+List/Search and shared inspection exports remain unchanged. Connection disposal
+cancels and removes private tab/list/graph/avatar caches; unsupported peers retain
+safe flat-list and supported-tab fallbacks. Fixture validation is separate from
+real GitHub-account and packaged CEF/platform acceptance.
+
+## Closed quota failure cause
+
+`FailureCause.QuotaExhausted` is exactly `quota_exhausted`. `failureCause`
+projects only the exact `FailureCode.MissingInput` and quota cause pair, plus the
+existing Conflict/configuration-name-conflict pair. RPC ClientFailure and retained
+Session presentation share that validator. Omitted, unknown, malformed and
+mismatched causes are not typed causes; untyped transport messages never prove
+exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlation
+validation remain unchanged. No generated protocol field or compatibility
+allocation is added; older documents and clients keep their generic fallback.

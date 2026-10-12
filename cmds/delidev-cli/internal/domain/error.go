@@ -28,12 +28,19 @@ const (
 	Internal             Code = "internal"
 )
 
+// QuotaExhaustedCause is presentation metadata for complete exhaustion proof.
+const QuotaExhaustedCause = "quota_exhausted"
+
 type Error struct {
 	Code          Code   `json:"code"`
 	Message       string `json:"message"`
 	Guidance      string `json:"guidance,omitempty"`
 	Cause         string `json:"cause,omitempty"`
 	CorrelationID string `json:"correlation_id,omitempty"`
+}
+
+func (e *Error) IsQuotaExhausted() bool {
+	return e.Code == MissingInput && e.Cause == QuotaExhaustedCause
 }
 
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }

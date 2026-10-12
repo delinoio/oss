@@ -2945,7 +2945,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "EntityKind",
       "member": "ENTITY_KIND_COMPACTION",
@@ -2953,7 +2956,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -2961,7 +2967,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "enum",
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1",
@@ -2969,7 +2978,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "SessionChange",
       "member": "compaction_job",
@@ -4802,7 +4814,9 @@
     },
     {
       "issue": 1202,
-      "sharedIssues": [1203],
+      "sharedIssues": [
+        1203
+      ],
       "kind": "message",
       "declaration": "GetUsageSummaryResponse",
       "member": "accepted_compactions_without_response",
@@ -6845,7 +6859,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "CompactSessionRequest",
       "member": "expected_execution_id",
@@ -6853,7 +6870,10 @@
     },
     {
       "issue": 1203,
-      "sharedIssues": [1093, 1202],
+      "sharedIssues": [
+        1093,
+        1202
+      ],
       "kind": "message",
       "declaration": "CompactSessionResponse",
       "member": "session",
@@ -12061,7 +12081,9 @@
       "number": 2,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12070,7 +12092,9 @@
       "number": 3,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12079,7 +12103,9 @@
       "number": 4,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12088,7 +12114,9 @@
       "number": 6,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "kind": "message",
@@ -12097,7 +12125,9 @@
       "number": 4,
       "newDeclaration": true,
       "issue": 964,
-      "sharedIssues": [2138]
+      "sharedIssues": [
+        2138
+      ]
     },
     {
       "issue": 2138,
@@ -13185,7 +13215,9 @@
     },
     {
       "issue": 964,
-      "sharedIssues": [2138],
+      "sharedIssues": [
+        2138
+      ],
       "kind": "message",
       "declaration": "ListTokenPricingResponse",
       "member": "models",
@@ -13438,18 +13470,163 @@
       "newDeclaration": true
     },
     {
-      "issue": 1986,
+      "issue": 2678,
       "kind": "enum",
       "declaration": "SystemCapability",
-      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
-      "number": 91
+      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
+      "number": 90
     },
     {
-      "issue": 1986,
-      "kind": "enum",
-      "declaration": "WorkerCapability",
-      "member": "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
-      "number": 55
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "seed_numbers",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "number",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "pull_request_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "remote_repository_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "base_sha",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "head_sha",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "page_token",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "reference",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarResponse",
+      "member": "png",
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 2136,
@@ -13847,6 +14024,20 @@
       "member": "finished_at",
       "number": 4,
       "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 91
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 55
     }
   ],
   "rpcReservations": [
@@ -14099,6 +14290,33 @@
       "method": "PreviewScheduleCalendar",
       "input": "PreviewScheduleCalendarRequest",
       "output": "PreviewScheduleCalendarResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "GetPullRequestWorkspace",
+      "input": "GetPullRequestWorkspaceRequest",
+      "output": "GetPullRequestWorkspaceResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ListPullRequestCommits",
+      "input": "ListPullRequestCommitsRequest",
+      "output": "ListPullRequestCommitsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ReadPullRequestAvatar",
+      "input": "ReadPullRequestAvatarRequest",
+      "output": "ReadPullRequestAvatarResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },

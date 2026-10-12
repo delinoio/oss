@@ -50,7 +50,7 @@ export const bounded = (
   !value.includes("\0");
 export const date = (value: unknown) =>
   bounded(value, 64) && Number.isFinite(Date.parse(value));
-export const sha = (value: unknown) =>
+export const sha = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 export function actorValid(raw: unknown, identity = false) {
   const actor = object(raw),

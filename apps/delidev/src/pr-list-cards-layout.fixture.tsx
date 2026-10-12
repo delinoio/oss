@@ -12,6 +12,7 @@ import {
   ResourceService,
   SessionService,
   SystemService,
+  SystemCapability,
 } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
@@ -61,7 +62,12 @@ const rows =
         }),
       );
 const transport = createRouterTransport((router) => {
-  router.service(SystemService, { getStatus: () => ({ protocolVersion: 1 }) });
+  router.service(SystemService, {
+    getStatus: () => ({
+      protocolVersion: 2,
+      capabilities: [SystemCapability.PULL_REQUEST_WORKSPACE_V1],
+    }),
+  });
   router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
   router.service(InboxService, {
     listInbox: () => ({ entries: [] }),
@@ -79,6 +85,116 @@ const transport = createRouterTransport((router) => {
     },
   });
   router.service(IntegrationService, {
+    getPullRequestWorkspace: (request) => {
+      const row = rows.find((row) => row.id === request.repositoryId)!,
+        config = JSON.parse(new TextDecoder().decode(row.documentJson));
+      return {
+        schemaVersion: 1,
+        documentJson: encode({
+          repository_id: row.id,
+          repository_revision: "1",
+          profile_id: config.integration_id,
+          generation_id: "0195c9c0-7b13-7000-8000-000000000011",
+          observed_at: "2026-10-07T08:11:52.759123456Z",
+          repository: {
+            provider: "github.com",
+            id: "37",
+            node_id: "R_37",
+            owner: config.github_owner,
+            name: config.github_name,
+            private: true,
+          },
+          seeds: request.seedNumbers,
+          state: "complete",
+          reasons: [],
+          edges: [],
+          nodes: request.seedNumbers.map((number, index) => ({
+            seed: true,
+            counts: { additions: "24", deletions: "8" },
+            item: {
+              provider: "github.com",
+              kind: "pull-request",
+              identity_source: "pull-request-api",
+              id: String(Number(number) + 10000),
+              node_id: `ITEM_${number}`,
+              number,
+              title:
+                index === 0
+                  ? "feat(delidev): preserve original account authority with a long fully wrapping title ".repeat(
+                      5,
+                    )
+                  : `Fixture pull request ${number}`,
+              state: "open",
+              created_at: "2026-09-01T00:00:00Z",
+              updated_at: "2026-10-07T08:07:22.123456789Z",
+              url: `https://github.com/${config.github_owner}/${config.github_name}/pull/${number}`,
+              draft: false,
+              merged: false,
+              body: "Original fixture body",
+              base_ref: "main",
+              base_sha: "a".repeat(40),
+              head_ref: "feature",
+              head_sha: "b".repeat(40),
+              head_repository: {
+                state: "available",
+                repository: {
+                  provider: "github.com",
+                  id: "37",
+                  node_id: "R_37",
+                  owner: config.github_owner,
+                  name: config.github_name,
+                  private: true,
+                  default_branch: "main",
+                },
+              },
+            },
+          })),
+        }),
+      };
+    },
+    listPullRequestCommits: (request) => {
+      const row = rows.find((row) => row.id === request.repositoryId)!,
+        config = JSON.parse(new TextDecoder().decode(row.documentJson));
+      return {
+        schemaVersion: 1,
+        documentJson: encode({
+          repository_id: row.id,
+          repository_revision: "1",
+          profile_id: config.integration_id,
+          generation_id: "0195c9c0-7b13-7000-8000-000000000011",
+          observed_at: "2026-10-07T08:11:52.759123456Z",
+          repository: {
+            provider: "github.com",
+            id: "37",
+            node_id: "R_37",
+            owner: config.github_owner,
+            name: config.github_name,
+            private: true,
+          },
+          pull_request_id: request.pullRequestId,
+          number: request.number,
+          base_sha: request.baseSha,
+          head_sha: request.headSha,
+          page_token: request.pageToken,
+          next_page_token: "",
+          commits: [
+            {
+              sha: "c".repeat(40),
+              message:
+                "A complete commit headline that wraps ".repeat(10) +
+                "\n\nFull original message",
+              author: { name: "Original author", date: "2026-10-07T08:07:22Z" },
+              committer: {
+                name: "Original committer",
+                date: "2026-10-07T08:07:22Z",
+              },
+              parents: [request.headSha],
+              counts: { additions: "8", deletions: "3" },
+            },
+          ],
+        }),
+      };
+    },
     saveIntegrationProfile: () => {
       requests.mutations++;
       return {};
@@ -105,7 +221,7 @@ const transport = createRouterTransport((router) => {
         : query.page === 1
           ? [1674, 974, 1671, 1649]
           : [];
-      const detail = query.operation === "detail";
+      const detail = ["detail", "diff", "feedback"].includes(query.operation);
       return {
         schemaVersion: 1,
         documentJson: encode({
@@ -154,6 +270,18 @@ const transport = createRouterTransport((router) => {
               ? {
                   body: "Original fixture body",
                   merged: false,
+                  head_repository: {
+                    state: "available",
+                    repository: {
+                      provider: "github.com",
+                      id: "37",
+                      node_id: "R_37",
+                      owner: config.github_owner,
+                      name: config.github_name,
+                      private: true,
+                      default_branch: "main",
+                    },
+                  },
                   base_ref: "main",
                   base_sha: "a".repeat(40),
                   head_ref: "feature",
@@ -161,6 +289,27 @@ const transport = createRouterTransport((router) => {
                 }
               : {}),
           })),
+          ...(query.operation === "diff"
+            ? {
+                diff: {
+                  patch: "diff --git a/file b/file\n@@ -1 +1 @@\n-old\n+new\n",
+                  digest: "c".repeat(64),
+                  base_sha: "a".repeat(40),
+                  head_sha: "b".repeat(40),
+                },
+              }
+            : {}),
+          ...(query.operation === "feedback"
+            ? {
+                feedback: {
+                  base_sha: "a".repeat(40),
+                  head_sha: "b".repeat(40),
+                  entries: [],
+                  threads: [],
+                  excluded_draft_reviews: 0,
+                },
+              }
+            : {}),
           ...(!detail && query.page === 1 ? { next_page: 2 } : {}),
           ...(query.operation === "search"
             ? { total_count: "4", incomplete: true }

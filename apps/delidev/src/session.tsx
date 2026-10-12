@@ -163,6 +163,8 @@ import {
   SessionIcon,
   SessionIconKind,
   SessionNotice,
+  SessionProblemNotice,
+  SessionNoticeSeverity,
 } from "./session-presentation";
 import "./session.css";
 import { Interaction, PendingInteractionReceipt } from "./interactions";
@@ -2149,121 +2151,6 @@ export function SessionView({
                   hidden={!conversationActive}
                   inert={!conversationActive}
                 >
-                  <div className="session-notices">
-                    {live.error || live.state === ConnectionState.Failed ? (
-                      <SessionNotice details={(opener) => showInfo(opener)}>
-                        {live.error
-                          ? failureSummary(live.error.code)
-                          : connectionLabel}
-                      </SessionNotice>
-                    ) : null}
-                    {startupFailure ? (
-                      <SessionNotice>
-                        <strong>{copy("session.startupFailed")}</strong>
-                        <span>
-                          {startupFailure.state === 2
-                            ? startupCorrection(startupFailure)
-                            : startupRecoveryGuidance(startupFailure)}
-                        </span>
-                        <StartupObservedOperation session={session} />
-                        <ExecutionStartupDetails
-                          key={text(startupFailure.correlation_id)}
-                          failure={startupFailure}
-                        />
-                        {startupFailure.state === 2 ? (
-                          <p>{copy("session.startupManualSteps")}</p>
-                        ) : null}
-                      </SessionNotice>
-                    ) : Object.keys(object(object(data.startup).failure))
-                        .length ? (
-                      <p role="alert">
-                        {copy("session.startupInvalidEvidence")}
-                      </p>
-                    ) : null}
-                    {text(problem.message) &&
-                    !startupFailure &&
-                    !(
-                      initialExecutionPending(data.problem) &&
-                      (progress === SessionProgressPhase.Preparing ||
-                        progress === SessionProgressPhase.Queued)
-                    ) ? (
-                      <SessionNotice details={(opener) => showInfo(opener)}>
-                        <strong>
-                          {text(data.dispatch) === "blocked"
-                            ? copy("session.executionBlocked")
-                            : copy("session.attentionRequired")}
-                        </strong>
-                        <span>
-                          {failureSummary(
-                            text(problem.code) || text(problem.problem_code),
-                          )}
-                        </span>
-                        <StartupObservedOperation session={session} />
-                      </SessionNotice>
-                    ) : null}
-                    {recovering ? (
-                      <SessionNotice details={(opener) => showInfo(opener)}>
-                        <LocalizedText
-                          id="session.recoveryExecutionRemainsUnderServerControl_d80aa1"
-                          components={{
-                            s0: <>{statusLabel(text(data.recovery))}</>,
-                          }}
-                        />
-                      </SessionNotice>
-                    ) : null}
-                    {session && Object.hasOwn(data, "startup_rejection") ? (
-                      <StartupRejection session={session} />
-                    ) : null}
-                    {budgetBlocked ? (
-                      <SessionNotice
-                        details={(opener) =>
-                          showInfo(opener, InfoTarget.Budget)
-                        }
-                      >
-                        {copy(
-                          "session-budget.budgetThresholdReachedNewTurnsAnd_6236ce",
-                        )}
-                      </SessionNotice>
-                    ) : null}
-                    {control.error ? (
-                      <SessionNotice details={(opener) => showInfo(opener)}>
-                        {failureSummary(clientFailure(control.error).code)}
-                      </SessionNotice>
-                    ) : null}
-                    {control.uncertain ? (
-                      <SessionNotice details={(opener) => showInfo(opener)}>
-                        <span>{copy("session.startupControlUncertain")}</span>
-                        <button
-                          type="button"
-                          onClick={control.retry}
-                          disabled={control.busy}
-                        >
-                          {copy("session.retryTheSameControlRequest_609aff")}
-                        </button>
-                      </SessionNotice>
-                    ) : null}
-                    {submissionError ? (
-                      <SessionNotice>
-                        {failureSummary(clientFailure(submissionError).code)}
-                      </SessionNotice>
-                    ) : null}
-                    {send.error ? (
-                      <SessionNotice details={(opener) => showInfo(opener)}>
-                        {failureSummary(clientFailure(send.error).code)}
-                      </SessionNotice>
-                    ) : null}
-                    <RunnerTaskRemediation
-                      active={conversationActive}
-                      machineId={text(data.machine_id)}
-                      disabled={control.busy || control.uncertain}
-                      visible={Boolean(startupFailure)}
-                      onPending={setRunnerRemediationPending}
-                    />
-                    <div
-                      ref={setRecoveryLauncherTarget}
-                      hidden={!inlineRecovery}
-                    />
-                  </div>
                   {session ? (
                     <SessionActivityProvider
                       active={
@@ -2724,6 +2611,167 @@ export function SessionView({
                         ))}
                       </section>
                     ) : null}
+                  </div>
+                  <div
+                    className="session-notices"
+                    role="region"
+                    aria-label={copy("session.recoveryRegion")}
+                  >
+                    {live.error || live.state === ConnectionState.Failed ? (
+                      <SessionNotice
+                        title={copy("session.connectionTitle")}
+                        details={(opener) => showInfo(opener)}
+                      >
+                        <p>{connectionLabel}</p>
+                        {live.error ? <p>{live.error.message}</p> : null}
+                        {live.error?.guidance ? (
+                          <p>{live.error.guidance}</p>
+                        ) : null}
+                        {live.state === ConnectionState.Failed ? (
+                          <button type="button" onClick={live.retry}>
+                            {copy("session.refreshConnection_73791f")}
+                          </button>
+                        ) : null}
+                      </SessionNotice>
+                    ) : null}
+                    {startupFailure ? (
+                      <SessionNotice
+                        title={copy(
+                          startupFailure.state === 2
+                            ? "session.executionFailureTitle"
+                            : "session.recoveryTitle",
+                        )}
+                        severity={
+                          startupFailure.state === 2
+                            ? SessionNoticeSeverity.Error
+                            : SessionNoticeSeverity.Warning
+                        }
+                        details={(opener) => showInfo(opener)}
+                      >
+                        <span>{startupCorrection(startupFailure)}</span>
+                        <p>{startupRecoveryGuidance(startupFailure)}</p>
+                        <StartupObservedOperation session={session} />
+                        <ExecutionStartupDetails
+                          key={text(startupFailure.correlation_id)}
+                          failure={startupFailure}
+                        />
+                        {startupFailure.state === 2 ? (
+                          <p>{copy("session.startupManualSteps")}</p>
+                        ) : null}
+                      </SessionNotice>
+                    ) : Object.keys(object(object(data.startup).failure))
+                        .length ? (
+                      <SessionNotice
+                        title={copy("session.attentionRequired")}
+                        details={(opener) => showInfo(opener)}
+                      >
+                        {copy("session.startupInvalidEvidence")}
+                      </SessionNotice>
+                    ) : null}
+                    {text(problem.message) &&
+                    !startupFailure &&
+                    !(
+                      initialExecutionPending(data.problem) &&
+                      (progress === SessionProgressPhase.Preparing ||
+                        progress === SessionProgressPhase.Queued)
+                    ) ? (
+                      <SessionProblemNotice
+                        fallbackTitle={copy(
+                          text(data.dispatch) === "blocked"
+                            ? "session.executionBlocked"
+                            : "session.attentionRequired",
+                        )}
+                        code={problem.code ?? problem.problem_code}
+                        cause={problem.cause}
+                        message={text(problem.message)}
+                        guidance={text(problem.guidance)}
+                        correlationId={text(problem.correlation_id)}
+                        details={(opener) => showInfo(opener)}
+                      >
+                        <StartupObservedOperation session={session} />
+                      </SessionProblemNotice>
+                    ) : null}
+                    {recovering ? (
+                      <SessionNotice
+                        title={copy("session.recoveryTitle")}
+                        details={(opener) =>
+                          showInfo(opener, InfoTarget.Recovery)
+                        }
+                      >
+                        <LocalizedText
+                          id="session.recoveryExecutionRemainsUnderServerControl_d80aa1"
+                          components={{
+                            s0: <>{statusLabel(text(data.recovery))}</>,
+                          }}
+                        />
+                      </SessionNotice>
+                    ) : null}
+                    {session && Object.hasOwn(data, "startup_rejection") ? (
+                      <SessionNotice
+                        title={copy("session.executionFailureTitle")}
+                        severity={SessionNoticeSeverity.Error}
+                        details={(opener) => showInfo(opener)}
+                      >
+                        <StartupRejection session={session} />
+                      </SessionNotice>
+                    ) : null}
+                    {budgetBlocked ? (
+                      <SessionNotice
+                        title={copy("session.budgetTitle")}
+                        details={(opener) =>
+                          showInfo(opener, InfoTarget.Budget)
+                        }
+                      >
+                        {copy(
+                          "session-budget.budgetThresholdReachedNewTurnsAnd_6236ce",
+                        )}
+                      </SessionNotice>
+                    ) : null}
+                    {control.error ? (
+                      <SessionProblemNotice
+                        {...clientFailure(control.error)}
+                        details={(opener) => showInfo(opener)}
+                      />
+                    ) : null}
+                    {control.uncertain ? (
+                      <SessionNotice
+                        title={copy("session.recoveryTitle")}
+                        details={(opener) =>
+                          showInfo(opener, InfoTarget.Recovery)
+                        }
+                      >
+                        <span>{copy("session.startupControlUncertain")}</span>
+                        <button
+                          type="button"
+                          onClick={control.retry}
+                          disabled={control.busy}
+                        >
+                          {copy("session.retryTheSameControlRequest_609aff")}
+                        </button>
+                      </SessionNotice>
+                    ) : null}
+                    {submissionError ? (
+                      <SessionProblemNotice
+                        {...clientFailure(submissionError)}
+                      />
+                    ) : null}
+                    {send.error ? (
+                      <SessionProblemNotice
+                        {...clientFailure(send.error)}
+                        details={(opener) => showInfo(opener)}
+                      />
+                    ) : null}
+                    <RunnerTaskRemediation
+                      active={conversationActive}
+                      machineId={text(data.machine_id)}
+                      disabled={control.busy || control.uncertain}
+                      visible={Boolean(startupFailure)}
+                      onPending={setRunnerRemediationPending}
+                    />
+                    <div
+                      ref={setRecoveryLauncherTarget}
+                      hidden={!inlineRecovery}
+                    />
                   </div>
                   <form
                     className="composer"

@@ -1504,18 +1504,16 @@ change and event reads, including malformed private timing. Legacy closed Sessio
 JSON and old protobuf peers remain compatible. No Worker report, new RPC,
 capability or database migration is added.
 
-## Tailscale connection protocol
+## Pull request workspace read allocation
 
-System `TAILSCALE_CONNECTIONS_V1 = 93` negotiates `TailscaleService` in
-`v1/tailscale.proto`. The complete additive field and method ownership is recorded
-in the allocation ledger. Preserve DeviceType client/Worker meaning and all
-existing capability numbers. Generated Go, Connect Go, TypeScript and Connect
-Query bindings come from the pinned generators.
-
-Local authenticated discovery/access and original outgoing request operations
-remain separate from public bounded target request/status/key-proved cancellation
-and encrypted Worker delivery. Authenticated owner/client decisions retain the
-original actor, transcript and existing Device pairing receipt. Bounded JSON
-projections follow the closed states and private/public separation in the
-[connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
-No new SQLite entity or migration is introduced.
+System `PULL_REQUEST_WORKSPACE_V1 = 90` independently negotiates the implemented
+IntegrationService `GetPullRequestWorkspace`, `ListPullRequestCommits` and
+`ReadPullRequestAvatar` reads. Complete message-field and RPC declarations are
+retained in the allocation ledger and canonical integration schema. Each request
+binds the selected local repository revision; commits additionally bind original
+PR/numeric repository/base/head and a signed scoped continuation, while avatar
+reads accept only a server-issued scoped opaque reference. Closed schema-version-1
+workspace/commits documents retain bounded source observations; avatars return
+sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
+Worker allocation, feature flag or database migration. Reconcile the capability
+and all declarations against current allocations before merge.
