@@ -358,13 +358,14 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 		if session.Archive == domain.ArchivePending {
 			session.Archive = domain.Archived
 		}
-		if evidence.Completion.Outcome == domain.ExecutionSucceeded && session.NameMode == domain.AutomaticSessionName && session.NameOwner == domain.AutomaticNameOwner && session.TitleState == domain.TitleWaiting && session.TitleOperationID == "" {
-			if job.MachineID == previous.MachineID && job.InstanceID == previous.InstanceID && job.AssignedDeviceID == previous.AssignedDeviceID {
-				var originalInput domain.ExecutionJobInput
-				if err := domain.Decode(previous.Input, &originalInput); err != nil || originalInput.Validate() != nil {
+		if pendingInitialSessionTitle(session, retryInput) {
+			if evidence.Completion.Outcome != domain.ExecutionSucceeded {
+				settleUnsuccessfulInitialTitle(&session, retryInput, evidence.Completion.Outcome)
+			} else if job.MachineID == previous.MachineID && job.InstanceID == previous.InstanceID && job.AssignedDeviceID == previous.AssignedDeviceID {
+				if retryInput.Validate() != nil {
 					return domain.ExecutionRecoveryUncertain()
 				}
-				if err := queueAutomaticSessionTitle(tx, sr, &session, original, originalInput, true); err != nil {
+				if err := queueAutomaticSessionTitle(tx, sr, &session, original, retryInput, true); err != nil {
 					return err
 				}
 			} else {
