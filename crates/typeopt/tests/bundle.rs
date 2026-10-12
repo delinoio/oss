@@ -489,6 +489,9 @@ fn rejects_an_existing_destination_and_bundles_without_chunks() {
         .unwrap();
     assert!(!output.status.success());
     assert!(!inside.path().join("dist/optimized").exists());
+    // Chunks with TypeScript-only syntax are not JavaScript.
+    let typed = bundle(&[("index.js", "const a={b:1};console.log(a!.b);")]);
+    assert!(!run_typeopt(typed.path(), &[]).status.success());
     let empty = bundle(&[("index.html", "<p>")]);
     assert!(!run_typeopt(empty.path(), &[]).status.success());
 }

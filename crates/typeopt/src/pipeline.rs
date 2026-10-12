@@ -39,21 +39,6 @@ pub trait Backend {
     fn emit_module(&mut self, file: &str, text: &str) -> Result<Emitted>;
 }
 
-/// A bundle-mode candidate produced TypeScript-only syntax, which a
-/// JavaScript chunk cannot contain. The gate rejects that candidate.
-#[derive(Debug)]
-pub struct TypeScriptOnlySyntax(pub u32);
-impl std::fmt::Display for TypeScriptOnlySyntax {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "TypeScript-only syntax in a JavaScript chunk (TS{})",
-            self.0
-        )
-    }
-}
-impl std::error::Error for TypeScriptOnlySyntax {}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Emitted {
     pub size: usize,
@@ -282,17 +267,12 @@ impl<B: Backend> Gate<'_, B> {
                 merged.extend(edits);
                 merged.sort();
                 let text = apply(&self.texts[&file], &merged)?;
-                let emitted = match self.backend.emit_module(&file, &text) {
-                    Ok(emitted) => emitted,
-                    Err(error) if error.is::<TypeScriptOnlySyntax>() => {
-                        tracing::debug!(pass = candidate.pass.as_str(), %error, "rejecting candidate");
-                        return Ok(Decision::Reject(Reason::UnsupportedSyntax));
-                    }
-                    Err(error) => bail!(
+                let emitted = self.backend.emit_module(&file, &text).map_err(|error| {
+                    anyhow::anyhow!(
                         "{} produced output the compiler rejects in a module: {error}",
                         candidate.pass
-                    ),
-                };
+                    )
+                })?;
                 let Some(removed) = removed_imports(&current.imports, &emitted.imports) else {
                     return Ok(Decision::Reject(Reason::ModuleInitialization));
                 };

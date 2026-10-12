@@ -641,6 +641,17 @@ impl crate::pipeline::Backend for Backend<'_> {
             let mut failing = Vec::new();
             for file in source_files() {
                 crate::app::check_cancelled()?;
+                if crate::app::bundle_mode() {
+                    // Bundle edits are not parsed per candidate: a syntax
+                    // error, including TypeScript-only syntax in a chunk,
+                    // rolls the responsible bundle back.
+                    if !get_syntactic_diagnostics(file).is_empty()
+                        || !get_semantic_diagnostics(file).is_empty()
+                    {
+                        failing.push(source_file_info(file).file_name.clone());
+                    }
+                    continue;
+                }
                 check_diagnostics(&get_syntactic_diagnostics(file))?;
                 if !get_semantic_diagnostics(file).is_empty() {
                     failing.push(source_file_info(file).file_name.clone());
@@ -667,35 +678,14 @@ impl crate::pipeline::Backend for Backend<'_> {
             return Ok(emitted.clone());
         }
         if crate::app::bundle_mode() {
-            // Bundle chunks are published as edited text: the text itself is
-            // the measured output. Parse it to reject syntax errors.
-            let output = ts_goport::transpile::transpile_module(
-                &ts_goport::gostd::context::background(),
-                text,
-                ts_goport::transpile::Options {
-                    compiler_options: Some(self.project.size_options.clone()),
-                    file_name: file.to_owned(),
-                    report_diagnostics: true,
-                },
-            )
-            .context("size evaluation was cancelled")?;
-            if let Some(d) = output
-                .diagnostics
-                .iter()
-                .find(|d| d.category == ts_goport::diagnostics::Category::Error)
-            {
-                // TS8002-TS8017: TypeScript-only syntax in a JavaScript file.
-                if (8000..8100).contains(&d.code) {
-                    return Err(crate::pipeline::TypeScriptOnlySyntax(d.code as u32).into());
-                }
-                bail!("transformed chunk has syntax errors (TS{})", d.code);
-            }
-            let emitted = crate::pipeline::Emitted {
+            // Bundle chunks are published as edited text, so the text itself
+            // is the measured output. Parsing every candidate chunk would
+            // retain compiler memory per candidate; syntax errors are caught
+            // by the recheck after each round and rolled back there.
+            return Ok(crate::pipeline::Emitted {
                 size: text.len(),
                 imports: crate::pipeline::static_imports(text),
-            };
-            self.sizes.insert(key, emitted.clone());
-            return Ok(emitted);
+            });
         }
         if is_js_name(file) {
             // JavaScript passes through unchanged and has no emitted form.
