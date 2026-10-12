@@ -112,6 +112,9 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	stage = "owned-manifest"
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
+		if err := m.requireNamedDirectories(PrepareRequest{Repositories: manifestRepositorySpecs(manifest)}); err != nil {
+			return err
+		}
 		if manifest.SessionID != w.SessionID || manifest.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, manifest.InputDigest) {
 			return domain.SessionDeletionPending()
 		}
@@ -168,7 +171,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				}
 				continue
 			}
-			if manifest.Type != domain.Worktree || !repo.Owned || repo.ID.Validate() != nil || repo.Path != filepath.Join(root, string(repo.ID)) || repo.SourceKind == CheckoutSource && repo.Source == repo.Path {
+			if manifest.Type != domain.Worktree || !repo.Owned || validateFrozenDirectory(repo.DirectoryName) != nil || repo.ID.Validate() != nil || repo.Path != ownedRepositoryPath(root, repo.ID, repo.DirectoryName) || repo.SourceKind == CheckoutSource && repo.Source == repo.Path {
 				return domain.SessionDeletionPending()
 			}
 			if independent {

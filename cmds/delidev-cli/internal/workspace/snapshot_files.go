@@ -111,6 +111,12 @@ func walkSnapshotEntries(ctx context.Context, source, destination string, skip f
 }
 
 func walkSnapshotBudget(ctx context.Context, source, destination string, skip func(string) bool, entryLimit int, budget *snapshotCopyBudget, merge ...bool) (snapshotInventory, error) {
+	return walkSnapshotBudgetMapped(ctx, source, destination, skip, entryLimit, budget, nil, merge...)
+}
+
+// Map only owned top-level names. Source traversal and returned observations
+// retain their original paths; output paths use the closed immutable map.
+func walkSnapshotBudgetMapped(ctx context.Context, source, destination string, skip func(string) bool, entryLimit int, budget *snapshotCopyBudget, roots map[string]string, merge ...bool) (snapshotInventory, error) {
 	var inventory snapshotInventory
 	if budget != nil && budget.privatePathLimit < 0 {
 		return inventory, domain.Fail(domain.ResourceExhausted, "The Worker root leaves no cleanup path headroom.", "Choose a shorter Worker state root; source files remain intact.")
@@ -184,7 +190,7 @@ func walkSnapshotBudget(ctx context.Context, source, destination string, skip fu
 			entry := snapshotEntry{Path: filepath.ToSlash(path), Mode: uint32(before.Mode())}
 			target := ""
 			if destination != "" {
-				target = filepath.Join(destination, path)
+				target = filepath.Join(destination, filepath.FromSlash(mapSnapshotPath(filepath.ToSlash(path), roots)))
 			}
 			switch {
 			case before.IsDir():

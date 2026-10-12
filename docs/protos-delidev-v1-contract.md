@@ -1,5 +1,9 @@
 # DeliDev v1 Connect contract
 
+## Named managed checkout negotiation
+
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` is allocated and activated with the complete frozen checkout layout. Preserve Worker 19 remote clone ownership and every existing numeric assignment. Private version-1 preparation/result JSON adds optional immutable `directory_name`; historical omission preserves bytes and UUID paths. Original session/Schedule admission, assignment, execution, storage/restoration and independent Fork separately require the negotiated capability. Unsupported peers cannot receive named work or substitute UUID directories. No public RPC, System capability or SQLite migration is added. Go and TypeScript Worker descriptors expose the new enum; other service/query declarations remain unchanged. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names) and [storage contract](cmds-delidev-storage-contract.md#frozen-live-checkout-layout).
+
 ## Read-only schedule calendar preview
 
 `ScheduleService.PreviewScheduleCalendar` accepts owner and paired-client

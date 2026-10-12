@@ -258,7 +258,7 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 				w.WriteHeader(500)
 				return
 			}
-			manager := &workspace.Manager{Root: f.workerRoot}
+			manager := &workspace.Manager{NamedDirectories: true, Root: f.workerRoot}
 			inspection, err := manager.InspectClosedExecution(r.Context(), workspace.ExecutionPredecessor{JobID: jobID.Load().(domain.ID), ExecutionID: input.ExecutionID}, preparation, manifest)
 			if cleanupFailure {
 				if err == nil {

@@ -48,7 +48,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 				t.Fatal(err)
 			}
 			workerRoot := filepath.Join(t.TempDir(), "worker")
-			manager := workspace.Manager{Root: workerRoot}
+			manager := workspace.Manager{NamedDirectories: true, Root: workerRoot}
 			manifest, err := manager.Prepare(context.Background(), preparation)
 			if err != nil {
 				t.Fatal(err)

@@ -97,7 +97,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return nil, err
 		}
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: logger}
 	inspection, err := manager.InspectClosedExecution(ctx, workspace.ExecutionPredecessor{JobID: input.SourceJobID, ExecutionID: assignment.ExecutionID}, preparation, manifest)
 	if err != nil {
 		return nil, err

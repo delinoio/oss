@@ -46,7 +46,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery; no PATH fallback is used.")
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
 		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
