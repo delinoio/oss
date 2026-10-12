@@ -79,7 +79,12 @@ import {
 } from "./execution-startup";
 
 import { useShortcuts } from "./shortcut-provider";
-import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
+import {
+  sessionShortcutBindings,
+  ShortcutExecution,
+  ShortcutId,
+  ShortcutInput,
+} from "./shortcuts";
 import { Surface } from "./surface";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -1397,7 +1402,19 @@ export function SessionView({
       attachments,
     });
   };
+  const terminalsDisabled = Boolean(object(data.fork).sidechat_parent_snapshot);
   const shortcuts = useShortcuts([
+    {
+      id: ShortcutId.OpenTerminals,
+      scope: Surface.Sessions,
+      label: "shortcuts.openTerminals",
+      bindings: sessionShortcutBindings[ShortcutId.OpenTerminals],
+      input: ShortcutInput.Allow,
+      active: active && !embedded,
+      enabled: !terminalsDisabled,
+      unavailableReason: "shortcuts.terminalsUnavailable",
+      run: () => togglePanel(SessionPanel.Terminals),
+    },
     ...(!embedded
       ? Array.from({ length: 9 }, (_, index) => ({
           id: tabShortcutIds[index]!,
@@ -1702,6 +1719,7 @@ export function SessionView({
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
     if (next === SessionPanel.Files) setFilesOpened(true);
     if (next === SessionPanel.Terminals) {
+      if (terminalsDisabled) return;
       setTerminalOpened(true);
       if (session)
         setTerminalOpenIntent(
@@ -2096,7 +2114,12 @@ export function SessionView({
                   ref={panelButtons[tool.panel]}
                   disabled={
                     tool.panel === SessionPanel.Terminals &&
-                    Boolean(object(data.fork).sidechat_parent_snapshot)
+                    terminalsDisabled
+                  }
+                  aria-keyshortcuts={
+                    tool.panel === SessionPanel.Terminals
+                      ? shortcuts.aria(ShortcutId.OpenTerminals)
+                      : undefined
                   }
                   onClick={() => togglePanel(tool.panel)}
                 >

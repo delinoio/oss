@@ -6,6 +6,7 @@ import {
   bindingMatches,
   dispatchShortcut,
   globalShortcutBindings,
+  sessionShortcutBindings,
   ShortcutExecution,
   ShortcutId,
   ShortcutInput,
@@ -524,5 +525,87 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
       localPlatform === ShortcutPlatform.Mac ? "Meta+," : "Control+,",
     );
     input.remove();
+  },
+);
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
+  "opens terminals once from ordinary input with logical grave on %s and retains dispatch fences",
+  (platform) => {
+    const input = document.createElement("textarea");
+    input.value = "Retained draft";
+    document.body.append(input);
+    const run = vi.fn();
+    const item: ShortcutDefinition = {
+      id: ShortcutId.OpenTerminals,
+      scope: Surface.Sessions,
+      label: "shortcuts.openTerminals",
+      bindings: sessionShortcutBindings[ShortcutId.OpenTerminals],
+      input: ShortcutInput.Allow,
+      run,
+    };
+    const invoke = (
+      options: KeyboardEventInit = {},
+      definition = item,
+      handled = false,
+    ) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "`",
+        code: "Backquote",
+        bubbles: true,
+        cancelable: true,
+        metaKey: platform === ShortcutPlatform.Mac,
+        ctrlKey: platform === ShortcutPlatform.Other,
+        ...options,
+      });
+      if (handled) event.preventDefault();
+      input.addEventListener(
+        "keydown",
+        () => dispatchShortcut(event, [definition], Surface.Sessions, platform),
+        { once: true },
+      );
+      input.dispatchEvent(event);
+      return event;
+    };
+    try {
+      expect(invoke().defaultPrevented).toBe(true);
+      expect(run).toHaveBeenCalledOnce();
+      expect(input.value).toBe("Retained draft");
+      for (const options of [
+        { metaKey: false, ctrlKey: false },
+        {
+          metaKey: platform !== ShortcutPlatform.Mac,
+          ctrlKey: platform === ShortcutPlatform.Mac,
+        },
+        { shiftKey: true },
+        { altKey: true },
+        { repeat: true },
+        { isComposing: true },
+        { keyCode: 229 },
+        { key: "~", code: "Backquote" },
+      ]) invoke(options);
+      invoke({}, item, true);
+      invoke({}, { ...item, active: false });
+      expect(
+        invoke({}, { ...item, enabled: false }).defaultPrevented,
+      ).toBe(true);
+      input.setAttribute("data-shortcuts", "passthrough");
+      invoke();
+      input.removeAttribute("data-shortcuts");
+      input.hidden = true;
+      invoke();
+      input.hidden = false;
+      input.setAttribute("inert", "");
+      invoke();
+      input.removeAttribute("inert");
+      const modal = document.createElement("dialog");
+      modal.open = true;
+      document.body.append(modal);
+      invoke();
+      modal.remove();
+      expect(run).toHaveBeenCalledOnce();
+      expect(input.value).toBe("Retained draft");
+    } finally {
+      input.remove();
+    }
   },
 );
