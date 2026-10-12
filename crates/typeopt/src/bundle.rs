@@ -287,9 +287,10 @@ fn chunk_map(root: &Path, chunk: &Path, text: &str) -> Option<MapRef> {
         .then_some(MapRef::Local(ChunkMap::File(path)))
 }
 
-/// The last `//# sourceMappingURL=<url>` or `/*# sourceMappingURL=<url> */`
-/// comment (with `#` or the legacy `@`): its URL and the byte span of the
-/// whole comment.
+/// The trailing `//# sourceMappingURL=<url>` or
+/// `/*# sourceMappingURL=<url> */` comment (with `#` or the legacy `@`) on its
+/// own line at the end of the chunk: its URL and the byte span of the whole
+/// comment.
 struct MapComment<'a> {
     url: &'a str,
     start: usize,
@@ -320,6 +321,13 @@ fn map_reference(text: &str) -> Option<MapComment<'_>> {
             },
             _ => continue,
         };
+        // A directive is a trailing comment on its own line: only whitespace
+        // before its opener on that line and after it to the end of the
+        // text. String or template text that looks like one never is.
+        let line_start = text[..start].rfind('\n').map_or(0, |n| n + 1);
+        if !text[line_start..start].trim().is_empty() || !text[end..].trim().is_empty() {
+            continue;
+        }
         if url_end > url_start {
             return Some(MapComment {
                 url: &text[url_start..url_end],
@@ -818,13 +826,21 @@ mod tests {
         assert_eq!(comment.url, url);
         assert_eq!(&line[..comment.start], "const u=\"http://x\";f();\n");
         assert_eq!(comment.end, line.len());
-        let block = format!("const u=\"http://x\";f();/*# sourceMappingURL={url} */g();");
+        let block = format!("const u=\"http://x\";f();\n/*# sourceMappingURL={url} */\n");
         let comment = super::map_reference(&block).unwrap();
         assert_eq!(comment.url, url);
         assert_eq!(
             format!("{}{}", &block[..comment.start], &block[comment.end..]),
-            "const u=\"http://x\";f();g();"
+            "const u=\"http://x\";f();\n\n"
         );
+        // Directive-like text inside strings or followed by code is not one.
+        for text in [
+            "const m=\"//# sourceMappingURL=https://maps.example/x.map\";",
+            "f();/*# sourceMappingURL=a.js.map */g();",
+            "const t=`\n//# sourceMappingURL=a.js.map\n`;",
+        ] {
+            assert!(super::map_reference(text).is_none(), "{text}");
+        }
         let legacy = "f();\n//@ sourceMappingURL=a.js.map";
         assert_eq!(super::map_reference(legacy).unwrap().url, "a.js.map");
         assert!(super::map_reference(&format!("x=\"sourceMappingURL={url}\"")).is_none());

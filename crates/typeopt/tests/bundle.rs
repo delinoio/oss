@@ -563,10 +563,20 @@ fn drops_remote_map_references_of_edited_chunks() {
     let code = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#;
     let untouched = "console.log(1);\n//# sourceMappingURL=https://maps.example/untouched.js.map";
     let temp = bundle(&[
-        ("index.js", r#"import"./edited.js";import"./untouched.js";"#),
+        (
+            "index.js",
+            r#"import"./edited.js";import"./untouched.js";import"./literal.js";"#,
+        ),
         (
             "edited.js",
             &format!("{code}\n/*# sourceMappingURL=//maps.example/edited.js.map */"),
+        ),
+        // Directive-like text in a string is code, not a map reference.
+        (
+            "literal.js",
+            &format!(
+                "{code}const marker=\"//# sourceMappingURL=https://maps.example/x.map\";console.log(marker.length);"
+            ),
         ),
         ("untouched.js", untouched),
     ]);
@@ -579,6 +589,7 @@ fn drops_remote_map_references_of_edited_chunks() {
     );
     assert!(!edited.contains("sourceMappingURL"), "{edited}");
     assert_eq!(out(temp.path(), "untouched.js"), untouched);
+    assert!(out(temp.path(), "literal.js").contains("maps.example/x.map\";"));
 }
 
 fn listing(dir: &Path) -> Vec<String> {
