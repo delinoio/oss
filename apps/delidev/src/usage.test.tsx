@@ -4,6 +4,7 @@ import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -26,6 +27,7 @@ import {
   UsageService,
   TokenPricingMode,
   SystemService,
+  SubscriptionServiceIdentity,
   UsageTimeGranularity,
   UsageAccountingProfile,
   UsageTotalsSchema,
@@ -33,6 +35,7 @@ import {
   type GetUsageSummaryRequest,
 } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
+import { priceIdentity } from "./pricing";
 import { i18n, SupportedLanguage } from "./localization";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { encode } from "./documents";
@@ -1210,6 +1213,112 @@ it("shows independent source totals and exact retained estimates without manufac
   expect(f.read).toHaveBeenCalledTimes(1);
 });
 
+it.each(["response", "native"] as const)(
+  "hands focus to Model prices once per explicit %s model activation",
+  async (source) => {
+    const f = fixture();
+    if (source === "native") {
+      f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+      f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, {
+        nativeAccounting: [
+          {
+            totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+            models: [
+              {
+                model: {
+                  nativeId: f.ids.model,
+                  subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+                },
+                subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+                totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+              },
+            ],
+          },
+        ],
+      }).nativeAccounting;
+    }
+    const view = render(f.view());
+    await screen.findByText("Incomplete coverage");
+    const historyTab = screen.getByRole("tab", { name: "Usage history" });
+    const pricesTab = screen.getByRole("tab", { name: "Model prices" });
+    const focus = vi.spyOn(pricesTab, "focus");
+    for (let activation = 1; activation <= 2; activation++) {
+      fireEvent.click(historyTab);
+      const history = screen.getByRole("tabpanel", { name: "Usage history" });
+      const model = within(history).getByRole("button", {
+        name: source === "response" ? "Original model" : f.ids.model,
+      });
+      model.focus();
+      fireEvent.click(model);
+      expect(document.activeElement).toBe(pricesTab);
+      expect(pricesTab.getAttribute("aria-selected")).toBe("true");
+      expect(history.hidden).toBe(true);
+      expect(focus).toHaveBeenCalledTimes(activation);
+      const panel = screen.getByRole("tabpanel", { name: "Model prices" });
+      const selector = within(panel).getByRole("combobox");
+      expect(selector.getAttribute("data-value")).toBe(
+        priceIdentity({
+          nativeId: f.ids.model,
+          providerId: source === "response" ? f.ids.provider : "",
+          subscriptionService:
+            source === "response"
+              ? SubscriptionServiceIdentity.UNSPECIFIED
+              : SubscriptionServiceIdentity.OPENCODE_GO,
+        }),
+      );
+      expect(selector.textContent).toContain(f.ids.model);
+      expect(selector.textContent).toContain(
+        source === "response" ? "Original API" : "OpenCode Go",
+      );
+    }
+    const reset = screen.getByRole("button", { name: "Reset to last 30 days" });
+    reset.focus();
+    view.rerender(f.view());
+    expect(document.activeElement).toBe(reset);
+    fireEvent.click(historyTab);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+    expect(document.activeElement).toBe(reset);
+    fireEvent.click(pricesTab);
+    expect(document.activeElement).toBe(reset);
+    expect(focus).toHaveBeenCalledTimes(2);
+    expect(f.read).toHaveBeenCalledTimes(2);
+  },
+);
+
+it.each(["inactive", "hidden"] as const)(
+  "discards a model focus handoff when Usage becomes %s before commit",
+  async (departure) => {
+    const f = fixture();
+    const viewFor = (departed = false) => (
+      <>
+        <button type="button">Outside Usage</button>
+        <div hidden={departed && departure === "hidden"}>
+          {f.view(!(departed && departure === "inactive"))}
+        </div>
+      </>
+    );
+    const view = render(viewFor());
+    await screen.findByText("Incomplete coverage");
+    fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
+    const model = screen.getByRole("button", { name: "Original model" });
+    const pricesTab = screen.getByRole("tab", { name: "Model prices" });
+    const focus = vi.spyOn(pricesTab, "focus");
+    const outside = screen.getByRole("button", { name: "Outside Usage" });
+    outside.focus();
+    act(() => {
+      fireEvent.click(model);
+      view.rerender(viewFor(true));
+    });
+    expect(document.activeElement).toBe(outside);
+    expect(focus).not.toHaveBeenCalled();
+    view.rerender(viewFor());
+    expect(document.activeElement).toBe(outside);
+    expect(focus).not.toHaveBeenCalled();
+    expect(pricesTab.getAttribute("aria-selected")).toBe("true");
+  },
+);
+
 it("opens exact historical pricing without changing filters and retains read-only deleted evidence", async () => {
   const f = fixture();
   const version = newRequestId();
@@ -1233,7 +1342,12 @@ it("opens exact historical pricing without changing filters and retains read-onl
   render(f.view());
   await screen.findByText("Incomplete coverage");
   fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
-  fireEvent.click(screen.getByRole("button", { name: "Original model" }));
+  const model = screen.getByRole("button", { name: "Original model" });
+  model.focus();
+  fireEvent.click(model);
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Model prices" }),
+  );
   const panel = screen.getByRole("tabpanel", { name: "Model prices" });
   await within(panel).findByText(
     "This original identity has no editable current model. Historical price evidence is read-only.",
