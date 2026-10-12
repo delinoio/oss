@@ -121,3 +121,14 @@ The feature exposes current connection and main-window saved-profile management 
 ### Session technical evidence
 
 Session Diagnostics receives original source-owned Session details, saved execution configuration, native setting/usage observations, current PR observation timestamps and independent response-only lifetime range evidence. The primary Info surface keeps saved selection chips, PR/Subagent/Context/Usage and budget summaries, applicable recovery failures and original interactive controls. Moving read-only evidence never replaces SessionTools portal ownership, confirmations, uncertain mutation bytes, retained jobs, native control owners or storage/budget guards. PR detail failure and stale observations remain neutral; explicit Retry repeats only the original authenticated read. Lifetime evidence retains half-open bounds, exact measured/unavailable input/output subtotals and per-range missing execution/compaction counts without a combined coverage or atomic-snapshot claim. Follow the [desktop contract](apps-delidev-desktop-contract.md) and [usage contract](cmds-delidev-usage-contract.md).
+
+## Session recovery presentation
+
+Session-wide safe causes and guidance appear in independent composer-adjacent
+cards under the [desktop contract](apps-delidev-desktop-contract.md#contextual-session-recovery-cards).
+The retained Info owner continues to show original diagnostic evidence and own
+Budget/Recovery targets. Cards only forward existing actions and opener targets;
+they add no Doctor reads, repair authority or independent mutation controllers.
+Technical disclosure hides only secondary metadata. Unknown or legacy causes
+retain visible safe evidence and generic localized presentation. Operational
+logging remains content-free.

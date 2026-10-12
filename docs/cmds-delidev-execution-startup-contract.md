@@ -328,3 +328,32 @@ Metadata and structured logs contain only safe IDs, closed stage/state/sequence
 and classified errors. Paths, URLs, prompt/credential/native/Git content,
 percentages and ETA are excluded. Retained failed-stage context supplements the
 original failure and independent cleanup guidance without animation or controls.
+
+## Startup group elapsed observations
+
+The first accepted Running report starts the original workspace or initial-agent
+group using the transaction UTC observation clock. Duplicate sequences and exact
+receipt replay retain the original start. A replacement original job has a
+separate current record; follow-up execution cannot replace initial startup time.
+Descriptive Completed/Input/READY reports never finish Agent timing or fabricate
+acceptance. Workspace freezes in its original preparation settlement; Agent
+freezes at the validated original initial native input acceptance. Matching
+failure, Stop, terminal or lost-owner settlement freezes unfinished records
+without granting success, cleanup, recovery or execution authority.
+
+The private optional Session timing contains only current workspace/agent job,
+optional execution, UTC start and optional end. No history or legacy backfill is
+created. The common Resource projection removes the private key from every public
+Session document and exposes the additive typed envelope instead. Worker reports,
+closed progress attempts, assignments, checkpoints and digests retain their
+original shapes. No Worker field, RPC, capability or migration is introduced.
+
+## Composer-adjacent startup presentation
+
+The retained session recovery region shows a definitive startup failure with
+error styling and uncertain delivery/cleanup with warning styling. Show the
+validated correction and independent original delivery/cleanup guidance before
+Technical details. Original Runner remediation and Info controllers remain
+single owners; moving their presentation grants no read, retry or native action.
+All original positive no-send/cleanup, Resume revision and recovery gates remain
+unchanged. See [session recovery cards](apps-delidev-desktop-contract.md#contextual-session-recovery-cards).

@@ -365,7 +365,17 @@ Managed execution captures native identity and the final authentication bundle o
 
 Credential cleanup scans retained native files for raw token material and padded or unpadded standard/URL Base64 copies under the existing file/count/byte bounds. Finding a remnant leaves cleanup unconfirmed and retains recovery ownership without erasing the original native history.
 
-Ordinary Codex closure fences new protocol writes, closes stdin on the retained original process and allows at most three seconds for native EOF shutdown before forced cancellation. Join the original process controller and any input-close operation before returning. Codex's temporary helper aliases require normal native destructor cleanup; forced cancellation can leave them behind. Protocol failure, caller cancellation and expired grace retain immediate original-owner termination. The subsequent authentication scan still refuses symlinks and credential remnants. A graceful exit is process evidence only: it cannot release an existing recovery fence, change a protected completion receipt or establish bundle/file cleanup by itself. Closed structured shutdown logs distinguish timeout and joined cleanup without paths or native content.
+Ordinary Codex closure fences new protocol writes, closes stdin on the retained original process and allows at most three seconds for native EOF shutdown before forced cancellation. Join the original process controller and any input-close operation before returning. Codex's temporary helper aliases normally retire through native destructor cleanup; forced cancellation can leave them behind. Protocol failure, caller cancellation and expired grace retain immediate original-owner termination. Managed execution additionally retains the original startup helper proof described below. The subsequent authentication scan still refuses remaining symlinks and credential remnants. A graceful exit is process evidence only: it cannot release an existing recovery fence, change a protected completion receipt or establish bundle/file cleanup by itself. Closed structured shutdown logs distinguish timeout and joined cleanup without paths or native content.
+
+### Original managed Codex execution helpers
+
+Before launching the original managed Thread process, pin the canonical private native home, open directory identities for `tmp/arg0`, the canonical verified executable's open identity, and a bounded inventory of at most 32 existing helper-directory entries. After initialized native startup and before product input admission, retain a private in-memory manifest bound to the exact original process identity and execution owner. On Unix, only one newly observed helper directory can supply retirement authority for exactly `apply_patch`, `applypatch`, and `codex-execve-wrapper`. Capture each original symlink identity and its exact canonical executable target. Existing directory names cannot supply new removal authority. An initialized startup with no new directory records no alias authority; later links still fail the retained credential scan. Windows regular batch scripts grant no Unix alias removal authority.
+
+After independently joining the original native tree, validate the canonical home, executable and retained directory chain without following helper entries. Compare the complete original alias inventory before the first unlink, then recheck each original alias at its own anchored removal boundary. Retire only those unchanged aliases and synchronize their retained original parent. Native destructor removal can satisfy original absence only through the unchanged retained parent and its synchronization. Do not erase the helper directory, lock files, unrelated entries or native history. Missing startup proof, ambiguous new directories, changed or transplanted ownership, alias targets, executable or directory identities, and removal/synchronization failures leave cleanup unconfirmed. The final check-to-unlink interval is not an adversarial same-user filesystem sandbox.
+
+Run the final protected `auth.json` comparison/removal and the complete bounded raw/encoded-credential scan after a confirmed original process join even when helper retirement fails. Both helper retirement and authentication cleanup must succeed to report `CleanupConfirmed=true`. Successful final bundle capture can report `Succeeded=true` for subscription Finish while the original execution remains failed after accepted input. Preserve that failure, original history, once-only reporting and input delivery; never replay input or infer execution success from credential cleanup. Historical recovery records cannot reconstruct this in-memory startup proof and are never cleared automatically. Arbitrary links, pending files, special files, credential remnants and the existing inventory limits retain their recovery fences.
+
+Helper diagnostics use only the original operation reference, closed `startup`/`retirement` stage and `verified`, `missing-startup-proof`, `identity-changed`, `inventory-invalid`, `alias-changed`, `unlink-failed` or `sync-failed` reason with bounded alias/removal counters. Independent execution-authentication diagnostics identify `auth-file` or `retained-credential-scan`, closed verification/filesystem/bundle/identity/link/pending/special-file/limit/remnant reasons and bounded inventory counters on failure. Do not log paths, targets, native messages, account identities, contents or credentials. Controlled original-helper, changed/foreign/historical proof, injected filesystem failure, accepted-input extension abort and retained credential fixtures are separate from installed native/account/platform acceptance.
 
 ## Logging
 
@@ -643,6 +653,32 @@ contract. Consumption outcomes and quota recovery remain separate.
 The approved Settings confirmation uses the existing task lifetime, retained
 mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
 accepted server processing. No consumption resumes a failed session automatically.
+
+## Paid-credit execution admission
+
+Included-quota exhaustion remains recorded independently from new managed
+ChatGPT/Codex execution admission. One shared Go predicate permits that admission
+only for the exact `codex` paid bucket with native `hasCredits=true` or
+`unlimited=true`, plus independently observed explicit `spend_control_reached=false`.
+Each observation must be nonfuture and no older than five minutes at the original
+routing or transaction observation time. Missing, stale, future, unavailable or
+reached evidence blocks the exception. Exact balance is display-only; never
+calculate availability from it or combine buckets.
+
+Routing, fresh dispatch/continuation and new execution-authority registration
+apply the same predicate. Keep health, authentication, removal, model/project
+compatibility, connection/credential generation, Worker capability and lease
+restrictions. Registered original grant/receipt ownership remains authoritative
+after credit evidence expires for completion, cleanup and exact registration
+replay. Other live ownership fences still apply. API, Claude and OpenCode retain
+their existing exhaustion rules.
+
+Paid admission never clears included exhaustion, changes quota scores, creates
+recovery notifications or rearms automatic reset-credit episodes. Native Codex
+remains the final input authority; native rejection retains the existing failure
+path without replay, account substitution or automatic Resume. Structured logs
+use closed admission classifications and opaque original IDs without balances,
+credentials or raw native content. No RPC, allocation or migration is added.
 
 ## Paid-credit observations
 

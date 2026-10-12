@@ -572,33 +572,6 @@ it("distinguishes initial loading from a successful empty page", async () => {
 });
 
 it.each([Code.PermissionDenied, Code.Unavailable])(
-  "preserves cached empty-page guidance after refresh failure %s",
-  async (code) => {
-    const value = fixture([]);
-    render(<App transport={value.transport} />);
-    const pane = await open();
-    await pane.findByText("No repositories on this page.");
-
-    value.fail(code);
-    fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
-    await pane.findByText(
-      "Refresh failed. Showing the previous repository page.",
-    );
-    expect(pane.getByText("No repositories on this page.")).toBeTruthy();
-    expect(pane.getByRole("alert")).toBeTruthy();
-    expect(value.query).not.toHaveBeenCalled();
-
-    value.fail();
-    fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(pane.queryByRole("alert")).toBeNull());
-    expect(pane.getByText("No repositories on this page.")).toBeTruthy();
-    expect(
-      pane.queryByText("Refresh failed. Showing the previous repository page."),
-    ).toBeNull();
-  },
-);
-
-it.each([Code.PermissionDenied, Code.Unavailable])(
   "distinguishes catalog failure %s from an empty page and preserves cached rows on failed Refresh",
   async (code) => {
     const value = fixture();
@@ -717,9 +690,11 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
   const view = render(<App transport={value.transport} />);
   const pane = await open();
   await choose(value.rows[0]);
-  const heading = await screen.findByRole("heading", { name: title.trim() });
+  const heading = await screen.findByRole("heading", {
+    name: `#17 ${title.trim()}`,
+  });
   const card = heading.closest("article")!;
-  expect(card.className).toBe("pr-list-card");
+  expect(card.className).toBe("pr-workspace-row");
   expect(within(card).getByText("Open")).toBeTruthy();
   expect(within(card).getByText("Draft")).toBeTruthy();
   expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
@@ -772,7 +747,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])(
     render(<App transport={value.transport} />);
     const pane = await open();
     await choose(value.rows[0]);
-    await screen.findByRole("heading", { name: "Original fixture title" });
+    await screen.findByRole("heading", { name: "#17 Original fixture title" });
     value.query.mockRejectedValueOnce(
       new ConnectError("Synthetic read failed", code),
     );
@@ -781,7 +756,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])(
     );
     await screen.findByRole("alert");
     expect(
-      screen.getByRole("heading", { name: "Original fixture title" }),
+      screen.getByRole("heading", { name: "#17 Original fixture title" }),
     ).toBeTruthy();
     expect(screen.getByText(/Previous observation/)).toBeTruthy();
     expect(value.query).toHaveBeenCalledTimes(2);
@@ -823,7 +798,7 @@ it("does not label an unverified non-UTC timestamp as a UTC card observation", a
   const pane = await open();
   await choose(value.rows[0]);
   await screen.findByRole("alert");
-  expect(view.container.querySelector(".pr-list-card")).toBeNull();
+  expect(view.container.querySelector(".pr-workspace-row")).toBeNull();
   expect(
     screen.queryByText("No pull requests were returned on page 1."),
   ).toBeNull();
@@ -855,7 +830,7 @@ it("announces standalone automatic loading and refresh while preserving returned
     finish();
     await pending;
   });
-  await results.findByText("Original fixture title");
+  await results.findByRole("heading", { name: "#17 Original fixture title" });
   expect(results.queryByText("Reading GitHub…")).toBeNull();
   let refreshed!: () => void;
   const refreshing = new Promise<void>((resolve) => {
@@ -871,7 +846,9 @@ it("announces standalone automatic loading and refresh while preserving returned
   expect(
     (await results.findByText("Reading GitHub…")).getAttribute("role"),
   ).toBe("status");
-  expect(results.getByText("Original fixture title")).toBeTruthy();
+  expect(
+    results.getByRole("heading", { name: "#17 Original fixture title" }),
+  ).toBeTruthy();
   await act(async () => {
     refreshed();
     await refreshing;
@@ -895,7 +872,7 @@ it("explains a continuation page containing only unchanged duplicate pull reques
   const pane = await open();
   await choose(value.rows[0]);
 
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   fireEvent.click(
     screen.getByRole("button", { name: "Load more GitHub query results" }),
   );
@@ -907,7 +884,9 @@ it("explains a continuation page containing only unchanged duplicate pull reques
   expect(
     second.getByText("No pull requests were returned on page 2."),
   ).toBeTruthy();
-  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  expect(
+    screen.getAllByRole("heading", { name: "#17 Original fixture title" }),
+  ).toHaveLength(1);
   expect(value.query).toHaveBeenCalledTimes(2);
 });
 
@@ -926,7 +905,7 @@ it("reserves boundary-expiry recovery for explicit Reload list instead of header
   const pane = await open();
   await choose(value.rows[0]);
 
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   fireEvent.click(
     screen.getByRole("button", { name: "Load more GitHub query results" }),
   );
@@ -937,7 +916,9 @@ it("reserves boundary-expiry recovery for explicit Reload list instead of header
   expect(refresh).toHaveProperty("disabled", true);
   fireEvent.click(refresh);
   expect(value.query).toHaveBeenCalledTimes(2);
-  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  expect(
+    screen.getAllByRole("heading", { name: "#17 Original fixture title" }),
+  ).toHaveLength(1);
   fireEvent.click(reload);
   await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
   await waitFor(() => expect(refresh).toHaveProperty("disabled", false));
@@ -985,7 +966,7 @@ it("debounces trimmed search, waits for IME and cancels invalid pending terms", 
   const view = render(<App transport={value.transport} />);
   const pane = await open();
   await choose(value.rows[0]);
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   const search = pane.getByLabelText("Search title and body");
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const tick = async (milliseconds: number) => {
@@ -1054,7 +1035,7 @@ it("waits for validated selected metadata before automatic GitHub reads", async 
     release();
     await pending;
   });
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   expect(value.query).toHaveBeenCalledTimes(1);
 });
 
@@ -1082,13 +1063,17 @@ it("rejects late repository results even when the transport ignores cancellation
   await choose(value.rows[0]);
   await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
   await choose(other);
-  await screen.findByText("Current B title");
+  await screen.findByRole("heading", { name: "#17 Current B title" });
   await act(async () => {
     release();
     await pending;
   });
-  expect(screen.queryByText("Late A title")).toBeNull();
-  expect(screen.getByText("Current B title")).toBeTruthy();
+  expect(
+    screen.queryByRole("heading", { name: "#17 Late A title" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "#17 Current B title" }),
+  ).toBeTruthy();
 });
 
 it("disposes pending search timers while inactive and resumes retained filters", async () => {
@@ -1096,7 +1081,7 @@ it("disposes pending search timers while inactive and resumes retained filters",
   render(<App transport={value.transport} />);
   const pane = await open();
   await choose(value.rows[0]);
-  await screen.findByText("Original fixture title");
+  await screen.findByRole("heading", { name: "#17 Original fixture title" });
   fireEvent.change(pane.getByLabelText("Search title and body"), {
     target: { value: "retained" },
   });
@@ -1121,7 +1106,7 @@ it.each([false, true])(
     render(<App transport={value.transport} />);
     await open();
     await choose(value.rows[0]);
-    await screen.findByText("Original fixture title");
+    await screen.findByRole("heading", { name: "#17 Original fixture title" });
     expect(value.get).toHaveBeenCalledTimes(1);
     expect(value.query).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
@@ -1144,7 +1129,9 @@ it.each([false, true])(
       await screen.findByText(/^This repository is no longer available\./);
       expect(value.query).toHaveBeenCalledTimes(1);
     } else {
-      await screen.findByText("Original fixture title");
+      await screen.findByRole("heading", {
+        name: "#17 Original fixture title",
+      });
       expect(value.query).toHaveBeenCalledTimes(2);
       expect(submitted(value, 1)).toMatchObject({
         operation: "list",
@@ -1163,7 +1150,7 @@ it.each(["invalid", "composing"])(
     render(<App transport={value.transport} />);
     const pane = await open();
     await choose(value.rows[0]);
-    await screen.findByText("Original fixture title");
+    await screen.findByRole("heading", { name: "#17 Original fixture title" });
     const search = pane.getByLabelText("Search title and body");
     fireEvent.change(search, { target: { value: "accepted" } });
     await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2));

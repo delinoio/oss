@@ -246,7 +246,7 @@ func retireStorageReport(ctx context.Context, config Config, path string, receip
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	manager := workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	if err := manager.RetireStorageRemoval(bounded, receipt.Removal); err != nil {
 		return err
 	}

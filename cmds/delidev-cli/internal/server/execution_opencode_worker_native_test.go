@@ -163,7 +163,7 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
 	defer upstream.Close()
-	manager := &workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
+	manager := &workspace.Manager{NamedDirectories: true, Root: filepath.Join(t.TempDir(), "worker")}
 	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) {
 		if scenario == openCodeWorkerAutomaticCompaction {
 			input.Configuration.OpenCodeContext = &domain.OpenCodeModelContext{Tokens: 80000, Source: domain.UserDeclared}

@@ -1,5 +1,9 @@
 # DeliDev v1 Connect contract
 
+## Named managed checkout negotiation
+
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` is allocated and activated with the complete frozen checkout layout. Preserve Worker 19 remote clone ownership and every existing numeric assignment. Private version-1 preparation/result JSON adds optional immutable `directory_name`; historical omission preserves bytes and UUID paths. Original session/Schedule admission, assignment, execution, storage/restoration and independent Fork separately require the negotiated capability. Unsupported peers cannot receive named work or substitute UUID directories. No public RPC, System capability or SQLite migration is added. Go and TypeScript Worker descriptors expose the new enum; other service/query declarations remain unchanged. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names) and [storage contract](cmds-delidev-storage-contract.md#frozen-live-checkout-layout).
+
 ## Read-only schedule calendar preview
 
 `ScheduleService.PreviewScheduleCalendar` accepts owner and paired-client
@@ -1471,3 +1475,29 @@ count, server UTC observation time and replay state. This operation acknowledges
 inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
+
+## Startup group timing envelope
+
+Resource.startup_timing uses field 10. SessionStartupTiming has workspace 1 and
+agent 2. StartupGroupTiming has job_id 1, execution_id 2, started_at 3 and
+finished_at 4. The complete additive declaration allocation and generated split
+Go/TypeScript bindings belong to the feature under the shared allocation workflow.
+The metadata is optional and server-owned. The common Session Resource projection
+strips its private startup_timing key from document_json across individual/list,
+change and event reads, including malformed private timing. Legacy closed Session
+JSON and old protobuf peers remain compatible. No Worker report, new RPC,
+capability or database migration is added.
+
+## Pull request workspace read allocation
+
+System `PULL_REQUEST_WORKSPACE_V1 = 90` independently negotiates the implemented
+IntegrationService `GetPullRequestWorkspace`, `ListPullRequestCommits` and
+`ReadPullRequestAvatar` reads. Complete message-field and RPC declarations are
+retained in the allocation ledger and canonical integration schema. Each request
+binds the selected local repository revision; commits additionally bind original
+PR/numeric repository/base/head and a signed scoped continuation, while avatar
+reads accept only a server-issued scoped opaque reference. Closed schema-version-1
+workspace/commits documents retain bounded source observations; avatars return
+sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
+Worker allocation, feature flag or database migration. Reconcile the capability
+and all declarations against current allocations before merge.

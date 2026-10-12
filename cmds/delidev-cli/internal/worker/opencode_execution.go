@@ -48,7 +48,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
+	manager := &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
 		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)

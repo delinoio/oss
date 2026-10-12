@@ -132,7 +132,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -196,7 +196,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	if domain.Decode(job.Input, &request) != nil {
 		t.Fatal("invalid preparation")
 	}
-	manager := workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
+	manager := workspace.Manager{NamedDirectories: true, Root: filepath.Join(t.TempDir(), "worker")}
 	if workspaceType == domain.Worktree {
 		sources := map[string]string{}
 		for _, spec := range request.Repositories {
@@ -580,5 +580,49 @@ func TestInitialDispatchCandidatePagesExcludeOtherLifecycleStates(t *testing.T) 
 	second, more, err := f.service.Store.InitialExecutionCandidates(ctx, first[0].ID, 1)
 	if err != nil || more || len(second) != 1 || second[0].ID != eligible[1] {
 		t.Fatal("unsafe lifecycle candidate or wrong continuation")
+	}
+}
+
+func TestInitialDispatchQuotaCausePublishesOnlyBlockedProblem(t *testing.T) {
+	f := newFirstDispatchFixture(t)
+	ctx := context.Background()
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.exhaust", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, domain.ID(f.account.Id), 0)
+		if err != nil {
+			return nil, err
+		}
+		a.ConfirmedExhausted = true
+		return tx.Put(r.Kind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := f.refresh(t)
+	err = f.service.dispatchExecution(ctx, before)
+	if err == nil || !domain.SafeError(err).IsQuotaExhausted() {
+		t.Fatal("missing exact quota cause", err)
+	}
+	blocked := f.refresh(t)
+	state, _ := store.Decode[domain.Session](blocked)
+	input := inputBody(t, currentCatalogResource(t, f.accountFixture, f.change.Input))
+	if state.Problem == nil || !state.Problem.IsQuotaExhausted() || state.Dispatch != domain.DispatchBlocked || state.InitialExecution != nil || state.ActiveExecutionID != "" || state.PendingInputs != 1 || input.Delivery != domain.InputQueued || input.ExecutionID != "" {
+		t.Fatal("quota publication consumed execution ownership", state, input)
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		r, _, err := tx.Routing(f.selection.AgentID)
+		if r.ID != "" {
+			t.Error("quota failure advanced routing")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.service.dispatchExecution(ctx, blocked)
+	if f.refresh(t).Revision != blocked.Revision {
+		t.Fatal("unchanged quota problem republished")
+	}
+	_ = f.service.dispatchExecution(ctx, before)
+	if f.refresh(t).Revision != blocked.Revision {
+		t.Fatal("old revision replaced quota problem")
 	}
 }

@@ -256,7 +256,7 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		}
 	}
 	apiReady := account.Type == domain.APIAccount && account.Validation != nil && account.Validation.ConnectionID == input.ConnectionID && account.Validation.State == domain.Observed && account.Validation.Problem == nil && !account.Validation.ObservedAt.IsZero() && account.Connection != nil && !account.Validation.ObservedAt.Before(account.Connection.ConnectedAt) && !account.Validation.ObservedAt.After(time.Now().UTC().Add(time.Second)) && (account.Validation.Authentication == domain.CredentialAccepted || account.Validation.Authentication == domain.KeylessEndpoint)
-	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady && !keySubscription) {
+	if !account.Enabled || account.Removal != nil || domain.ClassifyExecutionQuotaAdmission(account, c.Harness, tx.ObservationTime()) == domain.QuotaAdmissionBlocked || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady && !keySubscription) {
 		return empty, domain.Fail(domain.Unsupported, "The selected account lacks verified API execution authority.", "Connect and validate the selected API account; stored credentials or a model catalog alone do not authorize inference.")
 	}
 	if !managed && !keySubscription {
@@ -332,6 +332,9 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
 	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
 	input.Preparation, input.Manifest = job.Input, job.Output
+	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
+		return empty, err
+	}
 	return input, input.Validate()
 }
 
@@ -344,6 +347,9 @@ func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Sessio
 	}
 	if input.Validate() != nil || !session.OwnsExecution(input) {
 		return continuationConflict()
+	}
+	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
+		return err
 	}
 	candidate := input
 	if input.Version != 4 {
@@ -457,7 +463,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 	if problem.Code == domain.ProviderDisabled {
 		s.logger.InfoContext(ctx, "session_dispatch_denied", "operation", "new_execution", "session_id", record.ID, "reason", problem.Code, "enabled", false)
 	}
-	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || problem.Cause != "" {
+	if ctx.Err() != nil || (problem.Code == domain.Conflict && prepareErr == nil) || problem.Code == domain.Internal || (problem.Cause != "" && !problem.IsQuotaExhausted()) {
 		return err
 	}
 	// A failed native/configuration check rolls back the complete claim first.
@@ -481,7 +487,7 @@ func (s *Service) dispatchExecution(ctx context.Context, record store.Record) er
 		return sessionReceipt{SessionID: sr.ID}, nil
 	})
 	if updateErr == nil {
-		s.logger.InfoContext(ctx, "session_execution_blocked", "session_id", record.ID, "code", problem.Code)
+		s.logger.InfoContext(ctx, "session_execution_blocked", "session_id", record.ID, "code", problem.Code, "cause", problem.Cause)
 	} else if domain.SafeError(updateErr).Code != domain.Conflict {
 		return updateErr
 	}
@@ -575,7 +581,7 @@ func (s *Service) runExecutionDispatchTicks(parent context.Context, ticks <-chan
 			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
 			err = s.dispatchExecution(bounded, record)
 			cancel()
-			if err != nil && (domain.SafeError(err).Cause != "" || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {
+			if err != nil && ((domain.SafeError(err).Cause != "" && !domain.SafeError(err).IsQuotaExhausted()) || domain.SafeError(err).Code == domain.Internal) && ctx.Err() == nil {
 				s.logger.WarnContext(ctx, "session_execution_storage_failed", "session_id", record.ID, "code", domain.SafeError(err).Code)
 			}
 		}
