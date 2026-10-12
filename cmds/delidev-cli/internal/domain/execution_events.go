@@ -551,6 +551,7 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
+	CodexAssistant     *CodexAssistantContent     `json:"codex_assistant,omitempty"`
 	ContextRevision    uint64                     `json:"context_revision,omitempty"`
 	TurnTiming         *TurnTiming                `json:"turn_timing,omitempty"`
 	Attachments        []ImageAttachment          `json:"attachments,omitempty"`
