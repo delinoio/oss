@@ -1475,3 +1475,19 @@ count, server UTC observation time and replay state. This operation acknowledges
 inbox entries only; it does not answer interactions, execute actions or claim
 notification delivery. Paired clients preserve the original request on uncertain
 transport outcomes, and a replay cannot acknowledge later arrivals.
+
+## Tailscale connection protocol
+
+System `TAILSCALE_CONNECTIONS_V1 = 93` negotiates `TailscaleService` in
+`v1/tailscale.proto`. The complete additive field and method ownership is recorded
+in the allocation ledger. Preserve DeviceType client/Worker meaning and all
+existing capability numbers. Generated Go, Connect Go, TypeScript and Connect
+Query bindings come from the pinned generators.
+
+Local authenticated discovery/access and original outgoing request operations
+remain separate from public bounded target request/status/key-proved cancellation
+and encrypted Worker delivery. Authenticated owner/client decisions retain the
+original actor, transcript and existing Device pairing receipt. Bounded JSON
+projections follow the closed states and private/public separation in the
+[connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
+No new SQLite entity or migration is introduced.

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Reduce application JavaScript size through conservative type-aware property optimization before bundling. Preserve observable behavior; report unmet application acceptance rather than weaken safety.
+Reduce application JavaScript size through eighteen conservative type-aware optimization passes before bundling. Preserve observable behavior; report unmet application acceptance rather than weaken safety.
 
 ## Project ID
 
@@ -10,7 +10,7 @@ Reduce application JavaScript size through conservative type-aware property opti
 
 ## Domain Ownership Map
 
-- `crates/typeopt`: experimental Rust CLI, private analysis and compiler adapter, fixtures, Vite example and benchmark tooling.
+- `crates/typeopt`: experimental Rust CLI, private analysis and compiler adapter, optimization passes and pipeline, fixtures, Vite example and benchmark tooling.
 
 ## Domain Contract Documents
 

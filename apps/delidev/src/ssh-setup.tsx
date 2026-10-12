@@ -28,7 +28,13 @@ enum Authentication {
   Password = "password",
   PrivateKey = "private-key",
 }
-export function SSHSetup({ active }: { active: boolean }) {
+export function SSHSetup({
+  active,
+  initialHost = "",
+}: {
+  active: boolean;
+  initialHost?: string;
+}) {
   useLocale();
   const [expanded, setExpanded] = useState(false);
   return (
@@ -42,7 +48,11 @@ export function SSHSetup({ active }: { active: boolean }) {
       </SettingsActionButton>
       {expanded ? (
         <SettingsTaskScope>
-          <SSHSetupTask active={active} close={() => setExpanded(false)} />
+          <SSHSetupTask
+            active={active}
+            initialHost={initialHost}
+            close={() => setExpanded(false)}
+          />
         </SettingsTaskScope>
       ) : null}
     </section>
@@ -51,14 +61,16 @@ export function SSHSetup({ active }: { active: boolean }) {
 
 function SSHSetupTask({
   active,
+  initialHost,
   close,
 }: {
   active: boolean;
+  initialHost: string;
   close: () => void;
 }) {
   useLocale();
   const formId = useId();
-  const [host, setHost] = useState(""),
+  const [host, setHost] = useState(initialHost),
     [port, setPort] = useState("22"),
     [user, setUser] = useState(""),
     [name, setName] = useState(""),

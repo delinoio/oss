@@ -65,3 +65,13 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ### Implemented product path
 
 InstallationService owns inspect/start/get/cancel/reconcile, surfaced through `machine ssh` and Runner Devices. Host inspection aborts before authentication. The installer uploads immutable signed Worker bytes, passes an original protected pairing document through encrypted stdin, then verifies both native generation readiness and original server registration. Repeated explicit setup reuses a running registration and generation without erasing workspaces. Cancellation of uncertain remote execution retains protected reconciliation authority. The remote helper accepts only the release-embedded version/source and exact binary digest; generic pairing still requires the matching server version. A remote host requires a reachable explicitly configured TLS server endpoint; loopback endpoints are usable only for a same-computer host. Windows and Linux installed acceptance remains independent of fixture/build checks.
+
+### Tailscale peer setup
+
+The Local Connections device action prefills only the observed canonical hostname
+in the existing SSH installer. It supplies no credentials or fingerprint consent.
+Before accepting remote setup, use the current Ready Tailscale HTTPS origin when
+available and pin it in the original SSH operation's `reachable_endpoint`.
+Protected staging and the signed Worker pairing document retain that exact
+endpoint through retries. Original legacy operations keep their configured
+server endpoint. Access changes cannot rewrite an accepted SSH operation.

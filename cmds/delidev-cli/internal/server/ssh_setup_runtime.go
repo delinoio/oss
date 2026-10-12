@@ -377,7 +377,11 @@ func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOper
 		if e != nil {
 			return e, nil
 		}
-		grant := worker.PairingCode{Version: 1, PairingID: domain.NewID(), ServerID: s.Identity.ServerID, Endpoint: s.Endpoint.URL, Code: code}
+		endpoint := o.ReachableEndpoint
+		if endpoint == "" {
+			endpoint = s.Endpoint.URL
+		}
+		grant := worker.PairingCode{Version: 1, PairingID: domain.NewID(), ServerID: s.Identity.ServerID, Endpoint: endpoint, Code: code}
 		document = sshsetup.SetupDocument{Version: 1, OperationID: r.ID, ServerID: s.Identity.ServerID, ReleaseVersion: candidate.Payload.Version, SourceRevision: candidate.Payload.SourceRevision, Artifact: artifact, Grant: grant, Name: o.Name}
 		raw, _ := json.Marshal(document)
 		if _, e = s.sshProtected(ctx, credentials.Ref{Owner: r.ID, ID: r.ID, Purpose: credentials.WorkerSSH}, raw); e != nil {

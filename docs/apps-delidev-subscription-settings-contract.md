@@ -277,7 +277,12 @@ Account and sends one existing QUOTA request through the retained observation
 controller, capturing its validated account ID, bigint revision, connection and
 credential generation before that read completes. The machine selector remains
 omitted. A synchronous activation lock plus the existing read/mutation guards
-prevent overlaps. No standalone Refresh quota button remains.
+prevent overlaps. The explicit refresh owner also blocks new authentication
+and logout actions until both quota and Account reads settle, including a
+definitive quota refusal or a read-only status refresh. Synchronous lifecycle
+callbacks recheck the same activation lock. Ordinary background polling,
+dismissal and exact original uncertain retries retain their existing ownership.
+No standalone Refresh quota button remains.
 
 System 50, validated current account/capability reads and the original
 lifecycle/recovery/removal, native lease, quota/reset-credit phase and uncertain

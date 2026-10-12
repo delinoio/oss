@@ -77,6 +77,7 @@ Repositories use required remote URLs with optional Local folder connections und
 - `apps/delidev`: desktop presentation and native host.
 - `apps/delidev-mobile`: separate HTTPS iOS/Android client, device-only platform state and target-bound internal beta candidates (both by default, explicit iOS-only supported); follow the [mobile contract](apps-delidev-mobile-contract.md).
 - `cmds/delidev-cli`: Go CLI, server, Worker, storage and native adapters.
+- `cmds/delidev-cli/internal/tailscale`: bounded installed-client observations and the original foreground access child under the [connections contract](cmds-delidev-connections-contract.md#tailscale-connections).
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
