@@ -2,7 +2,10 @@
 import type { Transport } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { Resource, StartupGroupTiming } from "@delinoio/delidev-api-client";
+import type {
+  Resource,
+  StartupGroupTiming,
+} from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
 import { retainedTurnTiming } from "./turn-timing";
 import { startupWorkerCurrent } from "./session-startup-operations";
@@ -30,7 +33,9 @@ interface Group {
 }
 const uuid = (value: unknown) =>
   typeof value === "string" &&
-  /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+  /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
+    value,
+  );
 
 /** Exact original attempt only; entity, turn and job timestamps are never backfill. */
 export function startupTimingGroups(session?: Resource): {
@@ -64,7 +69,8 @@ export function startupTimingGroups(session?: Resource): {
       attempt.job_id !== job ||
       t.executionId !== execution ||
       (native && (!uuid(execution) || attempt.execution_id !== execution))
-    ) return;
+    )
+      return;
     const timing = retainedTurnTiming({
       accepted_at: t.startedAt,
       ...(t.finishedAt ? { terminal_at: t.finishedAt } : {}),
@@ -139,16 +145,18 @@ export function useStartupTimes(
       if (!group || group.end !== undefined || clock.accepted < group.start)
         continue;
       const elapsed =
-        clock.accepted - group.start +
+        clock.accepted -
+        group.start +
         Math.max(0, performance.now() - observation.clockReceivedAt);
       if (!Number.isFinite(elapsed) || elapsed > Number.MAX_SAFE_INTEGER)
         continue;
       const prior = frames.current[key];
       frames.current[key] = {
         owner: group.owner,
-        elapsed: prior?.owner === group.owner
-          ? Math.max(prior.elapsed, elapsed)
-          : elapsed,
+        elapsed:
+          prior?.owner === group.owner
+            ? Math.max(prior.elapsed, elapsed)
+            : elapsed,
       };
       hasRunning = true;
     }
@@ -156,7 +164,8 @@ export function useStartupTimes(
     if (!hasRunning) return;
     let previous = performance.now();
     const timer = setInterval(() => {
-      const now = performance.now(), delta = now - previous;
+      const now = performance.now(),
+        delta = now - previous;
       previous = now;
       if (!current()) {
         clearInterval(timer);
@@ -165,13 +174,15 @@ export function useStartupTimes(
       }
       if (Number.isFinite(delta) && delta >= 0) {
         for (const key of ["workspace", "agent"] as const) {
-          const group = groups[key], frame = frames.current[key];
+          const group = groups[key],
+            frame = frames.current[key];
           if (
             group &&
             group.end === undefined &&
             frame?.owner === group.owner &&
             frame.elapsed + delta <= Number.MAX_SAFE_INTEGER
-          ) frame.elapsed += delta;
+          )
+            frame.elapsed += delta;
         }
       }
       redraw((v) => v + 1);
@@ -190,20 +201,20 @@ export function useStartupTimes(
   ]);
   function display(key: "workspace" | "agent"): StartupTime | undefined {
     const group = groups[key];
-    if (
-      !group ||
-      connection.current.owner !== connectionOwner
-    ) return;
-    if (group.end !== undefined) return {
-      seconds: Math.floor((group.end - group.start) / 1000),
-      running: false,
-      unconfirmed: false,
-    };
-    const frame = frames.current[key], confirmed = current();
+    if (!group || connection.current.owner !== connectionOwner) return;
+    if (group.end !== undefined)
+      return {
+        seconds: Math.floor((group.end - group.start) / 1000),
+        running: false,
+        unconfirmed: false,
+      };
+    const frame = frames.current[key],
+      confirmed = current();
     return {
-      seconds: frame?.owner === group.owner
-        ? Math.floor(frame.elapsed / 1000)
-        : undefined,
+      seconds:
+        frame?.owner === group.owner
+          ? Math.floor(frame.elapsed / 1000)
+          : undefined,
       running: confirmed && frame?.owner === group.owner,
       unconfirmed: !confirmed,
     };

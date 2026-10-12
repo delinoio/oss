@@ -102,14 +102,18 @@ export function RetainedStartupTimes({ timing }: { timing: StartupTimes }) {
       {(["workspace", "agent"] as const).map((key) =>
         timing[key]?.seconds !== undefined ? (
           <p key={key}>
-            {copy(key === "workspace"
-              ? "session-progress.workspace"
-              : "session-progress.agent")} {" "}
-            <Timing time={{
-              ...timing[key]!,
-              running: false,
-              unconfirmed: timing[key]!.running || timing[key]!.unconfirmed,
-            }} />
+            {copy(
+              key === "workspace"
+                ? "session-progress.workspace"
+                : "session-progress.agent",
+            )}{" "}
+            <Timing
+              time={{
+                ...timing[key]!,
+                running: false,
+                unconfirmed: timing[key]!.running || timing[key]!.unconfirmed,
+              }}
+            />
           </p>
         ) : null,
       )}
