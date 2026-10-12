@@ -46,6 +46,24 @@ func reviewProtectedBundle(raw []byte) ([]string, error) {
 	return []string{bundle.Tokens.ID, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.Account}, nil
 }
 
+func nativeReviewMayIgnoreMetadata(event codex.Event, threadID, turnID domain.ID) bool {
+	if event.Kind != codex.MetadataEvent {
+		return false
+	}
+	if event.Safety != nil {
+		return event.Safety.MatchesPassiveEvent(event, threadID, turnID)
+	}
+	if event.ThreadID != "" && event.ThreadID != threadID || event.TurnID != "" && event.TurnID != turnID {
+		return false
+	}
+	switch event.Metadata {
+	case codex.NativeReviewItemPending, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.SkillsChangedDiscarded, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.WindowsSandboxSetupDiscarded, codex.WindowsSandboxWarningDiscarded:
+		return true
+	default:
+		return false
+	}
+}
+
 func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	c := config.execution
 	var input domain.NativeCodeReviewInput
@@ -331,21 +349,10 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				return err
 			}
 			if event.Kind == codex.MetadataEvent {
-				if event.Safety != nil {
-					if !event.Safety.MatchesPassiveEvent(event, thread.Thread.ID, turn.TurnID) {
-						return publicationUncertain()
-					}
-					continue
-				}
-				if event.ThreadID != "" && event.ThreadID != thread.Thread.ID || event.TurnID != "" && event.TurnID != turn.TurnID {
-					return publicationUncertain()
-				}
-				switch event.Metadata {
-				case codex.NativeReviewItemPending, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.SkillsChangedDiscarded, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved:
-					continue
-				default:
+				if !nativeReviewMayIgnoreMetadata(event, thread.Thread.ID, turn.TurnID) {
 					return domain.NativeCodeReviewUnavailable()
 				}
+				continue
 			}
 			if !event.Correlated || event.Late || event.ThreadID != thread.Thread.ID || event.TurnID != "" && event.TurnID != turn.TurnID {
 				return publicationUncertain()
