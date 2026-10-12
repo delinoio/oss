@@ -526,6 +526,157 @@ it("renders validated ordinary coordinates and keeps unsupported patches inert",
   ).toEqual(["1", "", "", "1"]);
 });
 
+type ContextLine = {
+  old?: number;
+  new?: number;
+  text: string;
+  newline: boolean;
+};
+
+function patchFixture(
+  patch: string,
+  files: { kind: "text" | "non-line"; lines: ContextLine[] }[],
+) {
+  const f = fixture(),
+    original = f.read.getMockImplementation()!;
+  f.read.mockImplementation(async (request) => {
+    const r = await original(request),
+      v = JSON.parse(new TextDecoder().decode(r.documentJson));
+    if (v.diff) v.diff.patch = patch;
+    return { documentJson: encode(v) };
+  });
+  f.readContext.mockImplementation(async (request) => {
+    const r = await f.read(request),
+      v = JSON.parse(new TextDecoder().decode(r.documentJson));
+    return {
+      documentJson: encode({
+        diff: v.diff,
+        files: files.map((file) => ({
+          path: "file.txt",
+          kind: file.kind,
+          digest: "c".repeat(64),
+          lines: file.lines.map((line) => ({ ...line, hunk: 1 })),
+        })),
+      }),
+    };
+  });
+  return f;
+}
+
+const textPatch = (header: string, body: string) =>
+  `diff --git a/file.txt b/file.txt\n${header}index abcdef0..abcdef1\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n${body}`;
+const rawPatch = (view: { container: HTMLElement }) =>
+  view.container.querySelector("pre")?.textContent;
+// The pending-context fallback also renders the raw patch, so wait for the
+// context read to resolve and the query result to commit before asserting.
+async function contextSettled(read: {
+  mock: { results: { value: unknown }[] };
+}) {
+  await waitFor(() => expect(read.mock.results.length).toBeGreaterThan(0));
+  await Promise.allSettled(read.mock.results.map((r) => r.value));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+const NO_NEWLINE = "\\ No newline at end of file\n";
+
+it.each([
+  ["old mode 100644\nnew mode 100755\n"],
+  ["old mode 100755\nnew mode 100644\n"],
+])("keeps mode facts visible for a text edit with %j", async (header) => {
+  const patch = textPatch(header, "-old\n+new\n");
+  const f = patchFixture(patch, [
+    {
+      kind: "text",
+      lines: [
+        { old: 1, text: "old", newline: true },
+        { new: 1, text: "new", newline: true },
+      ],
+    },
+  ]);
+  const view = render(<f.View />);
+  await contextSettled(f.readContext);
+  expect(rawPatch(view)).toBe(patch);
+  expect(screen.queryByRole("table", { name: "file.txt" })).toBeNull();
+});
+
+it("keeps a newline-only change distinguishable in the exact patch", async () => {
+  const patch = textPatch("", `-same\n+same\n${NO_NEWLINE}`);
+  const f = patchFixture(patch, [
+    {
+      kind: "text",
+      lines: [
+        { old: 1, text: "same", newline: true },
+        { new: 1, text: "same", newline: false },
+      ],
+    },
+  ]);
+  const view = render(<f.View />);
+  await contextSettled(f.readContext);
+  expect(rawPatch(view)).toBe(patch);
+  expect(rawPatch(view)).toContain(NO_NEWLINE.trim());
+  expect(screen.queryByRole("table", { name: "file.txt" })).toBeNull();
+});
+
+it("keeps missing final newlines on both sides and context in the exact patch", async () => {
+  const bothSides = textPatch("", `-old\n${NO_NEWLINE}+new\n${NO_NEWLINE}`);
+  const f = patchFixture(bothSides, [
+    {
+      kind: "text",
+      lines: [
+        { old: 1, text: "old", newline: false },
+        { new: 1, text: "new", newline: false },
+      ],
+    },
+  ]);
+  const first = render(<f.View />);
+  await contextSettled(f.readContext);
+  expect(rawPatch(first)).toBe(bothSides);
+  first.unmount();
+  const context = textPatch("", ` kept\n${NO_NEWLINE}`);
+  const g = patchFixture(context, [
+    {
+      kind: "text",
+      lines: [{ old: 1, new: 1, text: "kept", newline: false }],
+    },
+  ]);
+  const second = render(<g.View />);
+  await contextSettled(g.readContext);
+  expect(rawPatch(second)).toBe(context);
+  expect(screen.queryByRole("table", { name: "file.txt" })).toBeNull();
+});
+
+it("keeps structured coordinates for text edits without mode changes or missing newlines", async () => {
+  const patch = textPatch("new file mode 100644\n", "-old\n+new\n");
+  const f = patchFixture(patch, [
+    {
+      kind: "text",
+      lines: [
+        { old: 1, text: "old", newline: true },
+        { new: 1, text: "new", newline: true },
+      ],
+    },
+  ]);
+  const view = render(<f.View />);
+  await screen.findByRole("table", { name: "file.txt" });
+  expect(rawPatch(view)).toBeUndefined();
+});
+
+it("keeps the exact fallback for mode-only, non-line and failed context", async () => {
+  const modeOnly =
+    "diff --git a/file.txt b/file.txt\nold mode 100644\nnew mode 100755\n";
+  const f = patchFixture(modeOnly, [{ kind: "non-line", lines: [] }]);
+  const view = render(<f.View />);
+  await contextSettled(f.readContext);
+  expect(rawPatch(view)).toBe(modeOnly);
+  view.unmount();
+  f.readContext.mockClear();
+  f.readContext.mockImplementation(async () => {
+    throw new ConnectError("failed", Code.Unavailable);
+  });
+  const failed = render(<f.View />);
+  await contextSettled(f.readContext);
+  expect(rawPatch(failed)).toBe(modeOnly);
+});
+
 type RefChoice = { name: string; available?: boolean; configured?: boolean };
 
 function inventoryFixture(names: RefChoice[], defaultName?: string) {

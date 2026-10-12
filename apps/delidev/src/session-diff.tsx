@@ -17,7 +17,7 @@ import {
   type BaseReference,
   type Diff,
 } from "./session-diff-model";
-import { readReviewContext } from "./local-review-model";
+import { readReviewContext, type ReviewFile } from "./local-review-model";
 import { workspaceReadOptions } from "./session-files";
 import { Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -679,6 +679,19 @@ export function RepositoryDiff({
   );
 }
 
+// Mode headers and missing-final-newline markers are not part of the line table.
+// Fall back to the exact patch when the table would silently omit either fact.
+const MODE_CHANGE_HEADER = /^(?:old|new) mode /m;
+function hasUnrepresentedPatchFacts(
+  patch: string,
+  files: ReviewFile[],
+): boolean {
+  return (
+    MODE_CHANGE_HEADER.test(patch) ||
+    files.some((file) => file.lines.some((line) => !line.newline))
+  );
+}
+
 function StructuredDiff({
   sessionId,
   diff,
@@ -707,7 +720,8 @@ function StructuredDiff({
   if (
     !context.data ||
     context.error ||
-    context.data.files.some((file) => file.kind === "non-line")
+    context.data.files.some((file) => file.kind === "non-line") ||
+    hasUnrepresentedPatchFacts(diff.patch, context.data.files)
   )
     return <pre tabIndex={0}>{diff.patch}</pre>;
   return (
