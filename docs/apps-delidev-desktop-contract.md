@@ -3181,7 +3181,14 @@ save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.
 Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
-immutable; duplication creates a separate editable identity.
+immutable; duplication creates a separate editable identity. Each palette row has
+its own localized Duplicate action beside its selector. The action resolves that
+row's selected bundled or custom family independently of theme mode and clones
+its original name and complete light/dark maps into the existing editor with a
+fresh UUID-v7 identity. Opening or cancelling performs no preference write.
+Explicit Save adds only the new custom identity and preserves both selected
+references. Retain custom-library row actions, the 32-theme limit, revision and
+recovery guards, modal focus restoration and narrow wrapping.
 
 Titanium, Nord, Dracula and Solarized each provide complete light/dark semantic
 maps in the shared bundled JSON. Their surfaces, text, borders, links, focus,
