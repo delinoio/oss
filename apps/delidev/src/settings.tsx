@@ -1,7 +1,3 @@
-import {
-  ServerPresentationKind,
-  type ServerPresentation,
-} from "./server-presentation";
 // SPDX-License-Identifier: Apache-2.0
 import {
   useProductLabels,
@@ -1920,7 +1916,6 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 }
 
 interface SettingsProps {
-  serverPresentation?: ServerPresentation;
   openUsage?: (entry: UsageEntry) => void;
   readLocalWorker?: ReadLocalWorkerProof;
   chooseRepositoryFolder?: ChooseRepositoryFolder;
@@ -2166,7 +2161,6 @@ function SettingsVisit({
 }
 
 function SettingsWorkspace({
-  serverPresentation,
   openUsage,
   connectionSettings,
   visible = true,
@@ -2750,17 +2744,6 @@ function SettingsWorkspace({
                       </p>
                     ) : isPreferenceCategory ? (
                       <div>
-                        {isHarnesses ? (
-                          <p>
-                            {copy("harness-settings.connectedServer", {
-                              name:
-                                serverPresentation?.kind ===
-                                ServerPresentationKind.Saved
-                                  ? serverPresentation.name
-                                  : copy("harness-settings.localServer"),
-                            })}
-                          </p>
-                        ) : null}
                         <p>
                           {copy(
                             isHarnesses

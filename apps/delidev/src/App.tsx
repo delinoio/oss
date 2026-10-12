@@ -794,7 +794,6 @@ function Shell({
                         openSettings={openSettings}
                       />
                       <Settings
-                        serverPresentation={serverPresentation}
                         openUsage={openAccountUsage}
                         readLocalWorker={readLocalWorker}
                         connectionSettings={connectionSettings}
