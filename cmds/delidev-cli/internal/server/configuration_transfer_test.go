@@ -332,6 +332,76 @@ func TestConfigurationImportPreviewReadOnlyAtomicRemappingAndReplay(t *testing.T
 		t.Fatal("Worker allowed", err)
 	}
 }
+
+func TestConfigurationImportVersionFourPreviewUsesConvertedAgent(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	selection.Bundle.Version = 4
+	var sourceAgent domain.Agent
+	for i := range selection.Bundle.Entries {
+		entry := &selection.Bundle.Entries[i]
+		if entry.Kind != domain.AgentKind {
+			continue
+		}
+		if err := domain.Decode(entry.Document, &sourceAgent); err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := domain.Decode(entry.Document, &fields); err != nil {
+			t.Fatal(err)
+		}
+		delete(fields, "harness_settings")
+		fields["effort"] = json.RawMessage(`"high"`)
+		fields["options"] = json.RawMessage(`{"permission":"workspace-write"}`)
+		var routes []map[string]json.RawMessage
+		if err := domain.Decode(fields["routes"], &routes); err != nil {
+			t.Fatal(err)
+		}
+		for _, route := range routes {
+			delete(route, "model_selection")
+		}
+		fields["routes"], _ = json.Marshal(routes)
+		entry.Document, _ = json.Marshal(fields)
+	}
+	if sourceAgent.Name == "" {
+		t.Fatal("fixture did not include an Agent")
+	}
+
+	preview := transferPreview(t, s, selection)
+	var parsed domain.ConfigurationImportPreview
+	if err := domain.Decode(preview, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	var imported domain.Agent
+	var importedFound bool
+	for _, change := range parsed.Plan.Changes {
+		if change.Kind == domain.AgentKind {
+			if err := domain.Decode(change.After, &imported); err != nil {
+				t.Fatal(err)
+			}
+			importedFound = true
+			break
+		}
+	}
+	if !importedFound || imported.HarnessSettings == nil || imported.HarnessSettings.Version != 1 {
+		t.Fatalf("legacy Agent was not normalized in the reviewed plan: %#v", imported)
+	}
+	if imported.HarnessSettings.Effort.Mode != domain.HarnessOverride || imported.HarnessSettings.Effort.Value == nil || *imported.HarnessSettings.Effort.Value != "high" {
+		t.Fatalf("legacy effort was not retained as an explicit override: %#v", imported.HarnessSettings.Effort)
+	}
+	if len(imported.Routes) != 1 || imported.Routes[0].ModelSelection == nil || imported.Routes[0].ModelSelection.Mode != domain.HarnessOverride || imported.Routes[0].ModelSelection.Value == nil || *imported.Routes[0].ModelSelection.Value != "fixture" {
+		t.Fatalf("legacy route model was not retained as an explicit override: %#v", imported.Routes)
+	}
+	if imported.Routes[0].Model.ProviderID == sourceAgent.Routes[0].Model.ProviderID || imported.Routes[0].Accounts[0].ID == sourceAgent.Routes[0].Accounts[0].ID || imported.Templates[0] == sourceAgent.Templates[0] {
+		t.Fatal("converted Agent references were not remapped")
+	}
+	for _, entry := range selection.Bundle.Entries {
+		if entry.Kind == domain.AgentKind && bytes.Contains(entry.Document, []byte(`"harness_settings"`)) {
+			t.Fatal("preview rewrote the caller's version-4 Agent document")
+		}
+	}
+}
+
 func TestConfigurationImportSettingsConflictAndStalePreviewPreserveEverything(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	settingsID := domain.NewID()

@@ -434,7 +434,10 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		}
 		return nil
 	}
-	for _, entry := range bundle.Entries {
+	for _, bundledEntry := range bundle.Entries {
+		// Version-4 Agents are normalized in-memory in the first pass. Use that
+		// converted document for remapping without changing the caller's bundle.
+		entry := source[bundledEntry.ID]
 		value, err := portableValue(entry.Kind, entry.Document, true)
 		if err != nil {
 			return plan, err
