@@ -111,13 +111,19 @@ test("retains omitted and explicit-null namespace metadata as inert output", () 
       text: "inert",
     };
     expect(functionOutput(value)?.namespace_present).toBe(namespace_present);
-    const { container, unmount } = render(<NativeFunctionOutput content={value} />);
+    const { container, unmount } = render(
+      <NativeFunctionOutput content={value} />,
+    );
     expect(screen.getByText("tool")).toBeTruthy();
     expect(
       container.querySelectorAll("a,img,audio,video,button,input,iframe"),
     ).toHaveLength(0);
     unmount();
   }
-  expect(functionOutput({ ...content, namespace_present: false })).toBeUndefined();
-  expect(functionOutput({ ...content, namespace_present: "false" })).toBeUndefined();
+  expect(
+    functionOutput({ ...content, namespace_present: false }),
+  ).toBeUndefined();
+  expect(
+    functionOutput({ ...content, namespace_present: "false" }),
+  ).toBeUndefined();
 });
