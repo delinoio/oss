@@ -42,6 +42,15 @@ func (s *Service) SetAutomaticResetCreditConsent(ctx context.Context, req *conne
 		if err := subscriptionActorValid(tx, actor); err != nil {
 			return nil, err
 		}
+		if episode := a.Subscription.AutomaticCreditEpisode; episode != nil && episode.ServerProof != nil {
+			credit := a.Subscription.ServerCredit
+			alreadySent := credit != nil && credit.SendClaimed && credit.Automatic != nil && reflect.DeepEqual(credit.Automatic, episode.ServerProof)
+			if !alreadySent {
+				// A consent change revokes an admitted but unsent frozen proof,
+				// including a stale refresh still carrying that episode.
+				episode.ServerProof = nil
+			}
+		}
 		a.Subscription.AutomaticCreditConsent = nil
 		if input.Enabled {
 			a.Subscription.AutomaticCreditConsent = &domain.AutomaticResetCreditConsent{Actor: actor, ConnectionID: input.Connection, Generation: input.Generation, ConfirmedAt: tx.ObservationTime()}
