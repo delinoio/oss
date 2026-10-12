@@ -102,6 +102,49 @@ func TestSessionDeletionSharedFencePersistsNewObligationBeforeWorkerProof(t *tes
 	}
 }
 
+func TestSessionDeletionSharedFenceRejectsOrphanedProofForNewObligation(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	first, second := works[0], works[1]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	marker := deletionMarker(first)
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: first.Identity(), Digest: first.Digest(), ReportID: domain.NewID(), Phase: sessionDeletionMarkerPublished}}
+	markerPath := sessionDeletionPath(config.Root, first.SessionID)
+	if err := writeDeletionMarker(markerPath, marker); err != nil {
+		t.Fatal(err)
+	}
+	markerBefore, err := security.ReadPrivate(markerPath, domain.MaxSessionDeletionBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := workspace.SessionDeletionProofPaths(config.Root, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": second.Identity(), "digest": second.Digest(), "removed": false}); err != nil {
+		t.Fatal(err)
+	}
+	orphanBefore, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := loadSessionDeletionProof(config.Root, second); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("new obligation adopted an orphaned keyed workspace proof", err)
+	}
+	if _, err := os.Lstat(paths.Worker); !os.IsNotExist(err) {
+		t.Fatal("orphaned workspace proof created Worker progress", err)
+	}
+	markerAfter, err := security.ReadPrivate(markerPath, domain.MaxSessionDeletionBytes)
+	if err != nil || string(markerAfter) != string(markerBefore) {
+		t.Fatal("orphan rejection changed the shared fence", err)
+	}
+	orphanAfter, err := security.ReadPrivate(paths.Workspace, 1<<20)
+	if err != nil || string(orphanAfter) != string(orphanBefore) {
+		t.Fatal("orphan rejection changed the keyed workspace proof", err)
+	}
+}
+
 func TestSessionDeletionFreshAdmissionRejectsOrphanedWorkspaceProof(t *testing.T) {
 	config, works := failedDeletionObligations(t)
 	work := works[0]

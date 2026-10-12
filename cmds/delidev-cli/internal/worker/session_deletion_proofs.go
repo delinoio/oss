@@ -210,6 +210,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 				if obligation.Phase == sessionDeletionMarkerPublished {
 					return pending()
 				}
+				if workspace.RequireNoKeyedDeletionWorkspaceProof(root, w) != nil {
+					return pending()
+				}
 				// A new device obligation in an existing session fence must be
 				// durable before its keyed Worker proof. Otherwise a crash can
 				// leave a proof whose report identity is absent from the fence.
