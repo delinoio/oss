@@ -324,6 +324,23 @@ manifest, and whose jobs forbid an absent workspace, adopts that removal only wh
 the evidence matches its exact server, session and machine; missing, unreadable or
 foreign evidence keeps it pending. The evidence never grants deletion authority.
 
+The Worker binds generic managed-copy removal to the objects that ownership
+validation observed. Once the job/process/journal validation finishes, it captures
+the identity of every inventoried managed path (device/inode and file type, plus
+size and modification time for regular files) or records proven absence, before
+workspace retirement. `security.RemoveOwnedTreeIdentity` compares the path and the
+walk root against that identity before traversal and unlinks nothing on mismatch:
+a renamed-and-replaced process directory, a same-content foreign journal or file,
+and a copy restored at a path that was proven absent stay intact, keep cleanup
+pending and are never acknowledged. Unchanged originals delete, an original that
+already vanished counts as removed, and proven absence stays absent. The Worker's
+own process-owner maintenance locks (`processes/<id>.recovery.lock`) are created
+during workspace retirement, so they alone are captured at removal time and only as
+empty private regular files. The captured identity lives for one attempt; a later
+retry re-validates and captures again and does not carry a prior attempt's baseline
+across restarts. `security.RemoveOwnedTree` remains for callers without an earlier
+validated identity.
+
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked
 worktree; dirty/untracked owned worktree files are included. Original Local

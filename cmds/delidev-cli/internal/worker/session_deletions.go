@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -238,6 +239,13 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 	}
+	// Ownership validation is complete. Bind every managed path to the object (or
+	// proven absence) observed now, so removal never adopts a later replacement.
+	validated, e := captureSessionCopyIdentities(ctx, root, w)
+	if e != nil {
+		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
+		return proof, domain.SessionDeletionPending()
+	}
 	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: root, Logger: config.Logger}
 	for _, copy := range w.Copies {
 		if copy.UnpublishedChildProcessID != "" {
@@ -289,6 +297,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 					return domain.SessionDeletionPending()
 				}
 			}
+			if sessionDeletionBeforeRemovalHook != nil {
+				sessionDeletionBeforeRemovalHook()
+			}
 			paths, e := sessionDeletionCopyPaths(ctx, root, w)
 			if e != nil {
 				return e
@@ -300,7 +311,13 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 					}
 					continue
 				}
-				if e := removeSessionCopy(ctx, root, path); e != nil {
+				// A path missing from the validated inventory was proven absent.
+				identity, e := sessionCopyIdentity(root, path, validated)
+				if e == nil {
+					e = removeSessionCopy(ctx, root, path, identity)
+				}
+				if e != nil {
+					config.Logger.WarnContext(ctx, "session_deletion_copy_removal_pending", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 					return e
 				}
 			}
@@ -444,9 +461,56 @@ func sessionDeletionUpgradable(proof sessionDeletionProof, w domain.SessionDelet
 	return proof.Digest == legacy.Digest()
 }
 
+// sessionDeletionBeforeRemovalHook runs after ownership validation and identity
+// capture, immediately before managed copies are removed. Tests use it to
+// install replacements deterministically; it is nil in production.
+var sessionDeletionBeforeRemovalHook func()
+
+// captureSessionCopyIdentities records the identity of every inventoried
+// managed path (or proven absence) once ownership validation has finished.
+func captureSessionCopyIdentities(ctx context.Context, root string, w domain.SessionDeletionWork) (map[string]security.PathIdentity, error) {
+	paths, e := sessionDeletionCopyPaths(ctx, root, w)
+	if e != nil {
+		return nil, e
+	}
+	identities := make(map[string]security.PathIdentity, len(paths))
+	for _, path := range paths {
+		if e := ctx.Err(); e != nil {
+			return nil, domain.SafeError(e)
+		}
+		identity, e := security.CapturePathIdentity(path)
+		if e != nil {
+			return nil, e
+		}
+		identities[path] = identity
+	}
+	return identities, nil
+}
+
+// sessionCopyIdentity returns the identity that bounds removal of path. Process
+// owner maintenance locks are the one exception to proven absence: the Worker's
+// own owner reconciliation creates them while the workspace is retired, after
+// validation. They are adopted only when they are empty private regular files,
+// so a foreign object or directory at that name still stays pending.
+func sessionCopyIdentity(root, path string, validated map[string]security.PathIdentity) (security.PathIdentity, error) {
+	identity := validated[path]
+	if identity.Present() || filepath.Dir(path) != filepath.Join(root, "processes") || !strings.HasSuffix(path, ".recovery.lock") {
+		return identity, nil
+	}
+	info, e := os.Lstat(path)
+	if errors.Is(e, os.ErrNotExist) {
+		return identity, nil
+	}
+	if e != nil || !info.Mode().IsRegular() || info.Size() != 0 || security.RegularPrivate(path) != nil {
+		return identity, domain.SessionDeletionPending()
+	}
+	return security.CapturePathIdentity(path)
+}
+
 // Workspace cleanup already validated original storage namespace ownership.
 // Reappearance cannot give the generic copy remover new traversal authority.
-func removeSessionCopy(ctx context.Context, root, path string) error {
+// The validated identity is the only object the generic remover may delete.
+func removeSessionCopy(ctx context.Context, root, path string, validated security.PathIdentity) error {
 	parent := filepath.Dir(path)
 	name := filepath.Base(path)
 	canonicalFinalClaim := parent == filepath.Join(root, "storage-removal-root-claims") && len(name) == 41 && name[36:] == ".json" && domain.ID(name[:36]).Validate() == nil
@@ -467,14 +531,14 @@ func removeSessionCopy(ctx context.Context, root, path string) error {
 		}
 		return nil
 	}
-	return removeSessionTree(ctx, root, path)
+	return removeSessionTree(ctx, root, path, validated)
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each
 // operation observes cancellation and the explicit entry bound; original Local
 // checkouts and shared browser/account profiles never enter this path list.
-func removeSessionTree(ctx context.Context, root, path string) error {
-	return security.RemoveOwnedTree(ctx, root, path)
+func removeSessionTree(ctx context.Context, root, path string, validated security.PathIdentity) error {
+	return security.RemoveOwnedTreeIdentity(ctx, root, path, validated)
 }
 
 // Removal and completed-proof replay share one inventory, including dynamic
