@@ -801,11 +801,14 @@ it("shows the complete grouped navigation once and keeps its selected category i
     name: "Settings categories",
   });
   const labels = [
+    "Codex CLI",
     "AI Subscription",
     "AI API Keys",
     "API Providers",
     "Agent Workers",
     "Instructions",
+    "MCP",
+    "Skills",
     "Project defaults",
     "Projects",
     "Repositories",
@@ -822,11 +825,14 @@ it("shows the complete grouped navigation once and keeps its selected category i
     "App information",
   ];
   const values = [
+    "codex-cli",
     "subscription-accounts",
     "api-accounts",
     "providers",
     "agent-workers",
     "instructions",
+    "mcp",
+    "skills",
     "project-defaults",
     "projects",
     "repositories",
@@ -847,7 +853,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
       navigation.querySelectorAll(".settings-nav-group h2"),
       (heading) => heading.textContent,
     ),
-  ).toEqual(["AI", "Coding", "Device management", "System"]);
+  ).toEqual(["Harnesses", "AI", "Coding", "Device management", "System"]);
   expect(
     within(navigation)
       .getAllByRole("button")

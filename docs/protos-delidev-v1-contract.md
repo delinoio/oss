@@ -1583,3 +1583,17 @@ NativeAction resources and public receipt revisions remain separate from the
 Worker's private once-only send fence. Native IDs never select product terminals
 or operating-system processes. Declarations and generated bindings preserve
 unrelated allocations and do not establish native/account/platform acceptance.
+
+## Managed skill packages
+
+System capability 104 and Worker capability 65 negotiate managed skill package
+operations independently from native discovery. System capability 105 and Worker
+capability 66 negotiate the managed native skill adapter. Management support
+alone does not establish native execution support. `SkillService` adds bounded
+package inventory, explicit mutation, original-request receipt and revision-bound
+package inspection. Package content remains Worker-owned; resource documents
+carry references and presence-aware selections rather than package bytes.
+Mutation receipts distinguish pending, succeeded, recovery required and failed
+outcomes without granting authority to retry a new request or change an accepted
+session's configuration. Existing explicit skill selection keeps its wire
+identities and omission semantics.

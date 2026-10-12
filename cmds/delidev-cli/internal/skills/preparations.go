@@ -349,6 +349,20 @@ func (m Manager) plannedPreparation(ctx context.Context, scope domain.SkillReadR
 		if selected == nil || selected.Entry.ContentRevision != selection.ContentRevision {
 			return nil, saved, unavailable()
 		}
+		// A cached managed entry must still belong to this new generation. The
+		// server resolves current enablement before preparation; accepted session
+		// continuations instead carry their original immutable package inventory.
+		if selected.ManagedPackageID != "" {
+			eligible := false
+			for _, p := range scope.ManagedPackages {
+				if p.ID == selected.ManagedPackageID && p.Enabled && p.ContentRevision == selected.Entry.ContentRevision && p.WorkerDeviceID == scope.WorkerDeviceID {
+					eligible = true
+				}
+			}
+			if !eligible {
+				return nil, saved, unavailable()
+			}
+		}
 		disabled, err := m.disabled()
 		if err != nil || disabled[selected.Path] {
 			return nil, saved, unavailable()

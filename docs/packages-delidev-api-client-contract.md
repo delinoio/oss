@@ -548,3 +548,14 @@ The closed native-background action variant keeps exact original session,
 execution, inventory sequence, item/process and actor identities. Reads grant no
 send authority. Native acknowledgments remain separate from inventory absence,
 command exit and owned-process cleanup. No product terminal resource is adopted.
+
+## Managed skill client boundary
+
+`SkillQuery` exposes the management list, mutation, original receipt inspection and
+read-only view alongside composer `ListSkills`. Management uses closed versioned
+Worker documents and exact uint64 revisions. `SkillMutationState` preserves pending,
+succeeded, recovery-required and failed outcomes. The desktop retains original
+mutation messages; response loss permits inspection without replacement mutation.
+Safe package projection and read-only text have separate bounded decoders.
+Presence-aware Agent managed selections preserve old-client omission and explicit
+clear. Imported references require explicit Worker/package rebinding.

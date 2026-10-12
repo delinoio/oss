@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Historical configurations omit harness provenance and retain their original
 // default semantics. Native observations cannot rewrite an accepted snapshot.
 type ExecutionConfiguration struct {
+	ManagedSkills     []ManagedSkillPackage      `json:"managed_skills,omitempty"`
 	HarnessProvenance *HarnessSettingsProvenance `json:"harness_provenance,omitempty"`
 	BranchPrefix      *BranchPrefixSelection     `json:"branch_prefix,omitempty"`
 	MCPDefinitions    []MCPDefinition            `json:"mcp_definitions,omitempty"`
@@ -125,6 +126,16 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if len(c.ManagedSkills) > MaxSelectedSkills {
+		return ManagedSkillUnavailable()
+	}
+	seenSkills := map[ID]bool{}
+	for _, p := range c.ManagedSkills {
+		if p.Validate() != nil || seenSkills[p.ID] {
+			return ManagedSkillUnavailable()
+		}
+		seenSkills[p.ID] = true
+	}
 	if c.HarnessProvenance != nil {
 		if err := c.HarnessProvenance.Validate(c); err != nil {
 			return err

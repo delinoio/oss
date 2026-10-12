@@ -130,6 +130,14 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 				scope.AgentRevision = session.InitialExecution.Configuration.AgentRevision
 			}
 		}
+		if e := resolveManagedSkillScope(tx, &scope); e != nil {
+			return e
+		}
+		// Preserve the legacy Worker request profile when no managed package is
+		// selected. Old closed decoders cannot receive new zero-authority fields.
+		if len(scope.ManagedPackages) > 0 {
+			scope.ManagedServerID = s.Identity.ServerID
+		}
 		input, manifest, e = skillScope(tx, scope)
 		return e
 	})
@@ -208,8 +216,20 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 				revision = session.InitialExecution.Configuration.AgentRevision
 			}
 		}
+		if len(scope.ManagedPackages) > 0 {
+			_, machine, err := activeMachine(tx, scope.MachineID)
+			if err != nil {
+				return err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedNativeSkillsV1) {
+				return skillUnavailable()
+			}
+		}
 		if revision != scope.AgentRevision {
 			return skillUnavailable()
+		}
+		if e := checkManagedSkillScope(tx, &scope); e != nil {
+			return e
 		}
 		freshInput, freshManifest, e := skillScope(tx, scope)
 		if e != nil {
@@ -317,6 +337,9 @@ func acceptSkillScope(tx *store.Tx, scope *domain.SkillReadRequest) error {
 	if scope == nil {
 		return nil
 	}
+	if err := checkManagedSkillScope(tx, scope); err != nil {
+		return err
+	}
 	if _, _, err := skillScope(tx, *scope); err != nil {
 		return err
 	}
@@ -344,6 +367,44 @@ func acceptSkillScope(tx *store.Tx, scope *domain.SkillReadRequest) error {
 	}
 	worker, err := store.Decode[domain.Device](device)
 	if err != nil || worker.Revoked || worker.MachineID != scope.MachineID || worker.Type != domain.WorkerDevice {
+		return skillUnavailable()
+	}
+	return nil
+}
+
+// Resolve every original preparation, including cached explicit selections.
+// Established executions keep their accepted packages across catalog changes.
+func resolveManagedSkillScope(tx *store.Tx, scope *domain.SkillReadRequest) error {
+	if scope.SessionID != "" {
+		_, session, err := sessionRecord(tx, scope.SessionID)
+		if err != nil {
+			return err
+		}
+		if session.InitialExecution != nil {
+			scope.ManagedPackages = session.InitialExecution.Configuration.ManagedSkills
+			return nil
+		}
+	}
+	row, err := tx.Get(domain.AgentKind, scope.AgentID)
+	if err != nil {
+		return err
+	}
+	agent, err := store.Decode[domain.Agent](row)
+	if err != nil {
+		return err
+	}
+	scope.ManagedPackages, err = tx.ResolveManagedSkillGeneration(agent.ManagedSkills, scope.MachineID, agent.Harness)
+	return err
+}
+
+func checkManagedSkillScope(tx *store.Tx, scope *domain.SkillReadRequest) error {
+	fresh := *scope
+	if err := resolveManagedSkillScope(tx, &fresh); err != nil {
+		return err
+	}
+	before, _ := json.Marshal(scope.ManagedPackages)
+	after, _ := json.Marshal(fresh.ManagedPackages)
+	if !bytes.Equal(before, after) {
 		return skillUnavailable()
 	}
 	return nil

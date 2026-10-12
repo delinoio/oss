@@ -151,6 +151,9 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 			}
 		}
 		if agent, ok := value.(*domain.Agent); ok {
+			if err := preserveManagedSkillSelections(tx, id, input.ExpectedRevision, agent); err != nil {
+				return nil, err
+			}
 			if err := preserveMCPSelections(tx, id, input.ExpectedRevision, agent); err != nil {
 				return nil, err
 			}

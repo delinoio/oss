@@ -8,6 +8,7 @@ import {
   ConfigurationNameJobFailure,
   isConfigurationNameConflict,
 } from "./configuration-name-conflict";
+import { ManagedSkillsSettings } from "./managed-skills-settings";
 import { MCPSettings } from "./mcp-settings";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
@@ -1604,6 +1605,7 @@ export enum SettingsEntryDestination {
   GitProfiles = "git-profiles",
 }
 enum SettingsArea {
+  Skills,
   MCP,
   Network,
   Configuration,
@@ -1724,6 +1726,15 @@ export const settingsCategories: Record<
     },
     kind: EntityKind.AGENT,
     area: SettingsArea.Configuration,
+  },
+  [SettingsCategory.Skills]: {
+    get label() {
+      return copy("managed-skills.title");
+    },
+    get description() {
+      return copy("managed-skills.scope");
+    },
+    area: SettingsArea.Skills,
   },
   [SettingsCategory.MCP]: {
     get label() {
@@ -1868,6 +1879,7 @@ export const settingsGroups: {
       SettingsCategory.AgentWorkers,
       SettingsCategory.Instructions,
       SettingsCategory.MCP,
+      SettingsCategory.Skills,
     ],
   },
   {
@@ -1920,6 +1932,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
     "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.AgentWorkers]:
     "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
+  [SettingsCategory.Skills]: "M5 4h14v16H5zM8 8h8M8 12h8M8 16h5",
   [SettingsCategory.MCP]: "M4 7h16M4 12h16M4 17h16",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
@@ -2877,6 +2890,9 @@ function SettingsWorkspace({
                 </div>
               ) : null}
               <div className="settings-panels">
+                {area === SettingsArea.Skills ? (
+                  <ManagedSkillsSettings active={visible} />
+                ) : null}
                 {area === SettingsArea.MCP ? (
                   <MCPSettings active={visible} />
                 ) : null}

@@ -327,6 +327,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_HARNESS_DEFAULTS_V1) {
 				profile += "\x00harness-defaults-v1"
 			}
+			for _, capability := range []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_NATIVE_SKILLS_V1} {
+				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, capability) {
+					profile += "\x00" + capability.String()
+				}
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1) {
 				profile += "\x00mcp-management-v1"
 			}
@@ -461,6 +466,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if shellExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1)
+			}
+			for _, capability := range []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_NATIVE_SKILLS_V1} {
+				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, capability) {
+					capabilities = append(capabilities, capability)
+				}
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1)

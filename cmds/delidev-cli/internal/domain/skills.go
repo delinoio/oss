@@ -56,6 +56,8 @@ type SkillPreparationProof struct {
 }
 
 type SkillReadRequest struct {
+	ManagedServerID  ID                     `json:"managed_server_id,omitempty"`
+	ManagedPackages  []ManagedSkillPackage  `json:"managed_packages,omitempty"`
 	Action           SkillReadAction        `json:"action,omitempty"`
 	Preparation      *SkillPreparationProof `json:"preparation,omitempty"`
 	ProjectID        ID                     `json:"project_id,omitempty"`

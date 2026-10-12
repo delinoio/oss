@@ -1135,3 +1135,31 @@ The server creates a durable authenticated receipt before routing a metadata con
 Controls exist only during the original active native execution. Join admitted controls at the ordinary native terminal boundary and preserve the existing root terminal publication, child-agent lifetime, joined process cleanup, continuation checkpoint and queue dispatch. Long-lived native background commands cannot keep an otherwise completed session running. After completion, disconnect, revocation, replacement or restore, expose retained status with `owner_lost`; refuse new control or cold-resume adoption. Retained status checks current grant availability without changing the original receipt. Restore quarantines queued actions as canceled and claimed actions as uncertain. Session deletion retains the existing original process/workspace cleanup obligations.
 
 CLI: `session native-background status --id <session>` reads retained status; add `--action <action>` for a retained receipt. `list`, `terminate` and `clean` require `--id`, `--revision`, `--execution` and `--inventory-sequence`; terminate also requires `--item` and `--process`. Mutations return their receipt and perform bounded read-only waiting by default; `--wait=false` returns immediately. The public Connect client exports the same typed operations. These fixtures and source checks do not establish real account/native/platform acceptance or product PTY survival.
+
+## Managed skill generations
+
+Agent `managed_skills` is a presence-aware selection list independent of input-level
+`skills`. An omitted field preserves saved selections; an explicit empty list clears
+them. Each selection names its original Worker and immutable imported package.
+Portable references require explicit rebinding before execution.
+
+First execution resolution captures selected enabled packages into the immutable
+execution configuration. Disabled packages are omitted from future generations.
+Existing accepted configuration, continuation, history, ordinary Fork and read-only
+Sidechat retain their original package content revision. Every native runtime gets
+an independent verified copy. Current source or catalog changes cannot rewrite it.
+
+Managed packages are available through the explicit composer inventory as well as
+Codex automatic discovery. An explicit selection still produces a structured native
+skill input and independent accepted snapshot; a typed literal token remains text.
+Only the actual native package's invocation policy controls implicit invocation.
+Existing explicit-only package policy, accepted-input proofs and dependent cleanup
+remain authoritative. Unsupported harness adapters refuse execution without prompt
+emulation.
+
+New preparation resolves current managed selections even when the request contains
+cached explicit bindings. Before publication, the original observation and final
+acceptance transaction repeat the complete managed generation comparison. A cached
+entry from a disabled or unselected package cannot enter a new generation. Already
+accepted session configurations and prepared snapshots retain their original
+package content and policy.

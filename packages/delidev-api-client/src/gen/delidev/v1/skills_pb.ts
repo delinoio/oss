@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/skills.proto.
  */
 export const file_delidev_v1_skills: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpZGV2L3YxL3NraWxscy5wcm90bxIKZGVsaWRldi52MSJsCg5Ta2lsbFNlbGVjdGlvbhIUCgxpbnZlbnRvcnlfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgDIAEoCRIYChB3b3JrZXJfZGV2aWNlX2lkGAQgASgJIkQKElNraWxsU2VsZWN0aW9uTGlzdBIuCgpzZWxlY3Rpb25zGAEgAygLMhouZGVsaWRldi52MS5Ta2lsbFNlbGVjdGlvbiKPAQoKU2tpbGxFbnRyeRItCglzZWxlY3Rpb24YASABKAsyGi5kZWxpZGV2LnYxLlNraWxsU2VsZWN0aW9uEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSLwoKcHJvdmVuYW5jZRgEIAEoDjIbLmRlbGlkZXYudjEuU2tpbGxQcm92ZW5hbmNlImEKEUxpc3RTa2lsbHNSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRISCgpwcm9qZWN0X2lkGAQgASgJIjwKEkxpc3RTa2lsbHNSZXNwb25zZRImCgZza2lsbHMYASADKAsyFi5kZWxpZGV2LnYxLlNraWxsRW50cnkqbAoPU2tpbGxQcm92ZW5hbmNlEiAKHFNLSUxMX1BST1ZFTkFOQ0VfVU5TUEVDSUZJRUQQABIZChVTS0lMTF9QUk9WRU5BTkNFX1VTRVIQARIcChhTS0lMTF9QUk9WRU5BTkNFX1BST0pFQ1QQAjJbCgxTa2lsbFNlcnZpY2USSwoKTGlzdFNraWxscxIdLmRlbGlkZXYudjEuTGlzdFNraWxsc1JlcXVlc3QaHi5kZWxpZGV2LnYxLkxpc3RTa2lsbHNSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM");
+  fileDesc("ChdkZWxpZGV2L3YxL3NraWxscy5wcm90bxIKZGVsaWRldi52MSJsCg5Ta2lsbFNlbGVjdGlvbhIUCgxpbnZlbnRvcnlfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgDIAEoCRIYChB3b3JrZXJfZGV2aWNlX2lkGAQgASgJIkQKElNraWxsU2VsZWN0aW9uTGlzdBIuCgpzZWxlY3Rpb25zGAEgAygLMhouZGVsaWRldi52MS5Ta2lsbFNlbGVjdGlvbiKPAQoKU2tpbGxFbnRyeRItCglzZWxlY3Rpb24YASABKAsyGi5kZWxpZGV2LnYxLlNraWxsU2VsZWN0aW9uEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSLwoKcHJvdmVuYW5jZRgEIAEoDjIbLmRlbGlkZXYudjEuU2tpbGxQcm92ZW5hbmNlImEKEUxpc3RTa2lsbHNSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRISCgpwcm9qZWN0X2lkGAQgASgJIjwKEkxpc3RTa2lsbHNSZXNwb25zZRImCgZza2lsbHMYASADKAsyFi5kZWxpZGV2LnYxLlNraWxsRW50cnkiLgoYTGlzdE1hbmFnZWRTa2lsbHNSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkiTAoZTGlzdE1hbmFnZWRTa2lsbHNSZXNwb25zZRIYChB3b3JrZXJfZGV2aWNlX2lkGAEgASgJEhUKDXBhY2thZ2VzX2pzb24YAiABKAwiWgoZTXV0YXRlTWFuYWdlZFNraWxsUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSFQoNZG9jdW1lbnRfanNvbhgDIAEoDCJ0ChpNdXRhdGVNYW5hZ2VkU2tpbGxSZXNwb25zZRISCgpyZXF1ZXN0X2lkGAEgASgJEi0KBXN0YXRlGAIgASgOMh4uZGVsaWRldi52MS5Ta2lsbE11dGF0aW9uU3RhdGUSEwoLcmVzdWx0X2pzb24YAyABKAwiSAoeR2V0TWFuYWdlZFNraWxsTXV0YXRpb25SZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCSJ5Ch9HZXRNYW5hZ2VkU2tpbGxNdXRhdGlvblJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSLQoFc3RhdGUYAiABKA4yHi5kZWxpZGV2LnYxLlNraWxsTXV0YXRpb25TdGF0ZRITCgtyZXN1bHRfanNvbhgDIAEoDCJcChdWaWV3TWFuYWdlZFNraWxsUmVxdWVzdBISCgptYWNoaW5lX2lkGAEgASgJEhIKCnBhY2thZ2VfaWQYAiABKAkSGQoRZXhwZWN0ZWRfcmV2aXNpb24YAyABKAQieQoYVmlld01hbmFnZWRTa2lsbFJlc3BvbnNlEhgKEHdvcmtlcl9kZXZpY2VfaWQYASABKAkSFAoMcGFja2FnZV9qc29uGAIgASgMEhYKDnNraWxsX21hcmtkb3duGAMgASgMEhUKDW1hbmlmZXN0X2pzb24YBCABKAwqbAoPU2tpbGxQcm92ZW5hbmNlEiAKHFNLSUxMX1BST1ZFTkFOQ0VfVU5TUEVDSUZJRUQQABIZChVTS0lMTF9QUk9WRU5BTkNFX1VTRVIQARIcChhTS0lMTF9QUk9WRU5BTkNFX1BST0pFQ1QQAirNAQoSU2tpbGxNdXRhdGlvblN0YXRlEiQKIFNLSUxMX01VVEFUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASIAocU0tJTExfTVVUQVRJT05fU1RBVEVfUEVORElORxABEiIKHlNLSUxMX01VVEFUSU9OX1NUQVRFX1NVQ0NFRURFRBACEioKJlNLSUxMX01VVEFUSU9OX1NUQVRFX1JFQ09WRVJZX1JFUVVJUkVEEAMSHwobU0tJTExfTVVUQVRJT05fU1RBVEVfRkFJTEVEEAQy9QMKDFNraWxsU2VydmljZRJLCgpMaXN0U2tpbGxzEh0uZGVsaWRldi52MS5MaXN0U2tpbGxzUmVxdWVzdBoeLmRlbGlkZXYudjEuTGlzdFNraWxsc1Jlc3BvbnNlEmAKEUxpc3RNYW5hZ2VkU2tpbGxzEiQuZGVsaWRldi52MS5MaXN0TWFuYWdlZFNraWxsc1JlcXVlc3QaJS5kZWxpZGV2LnYxLkxpc3RNYW5hZ2VkU2tpbGxzUmVzcG9uc2USYwoSTXV0YXRlTWFuYWdlZFNraWxsEiUuZGVsaWRldi52MS5NdXRhdGVNYW5hZ2VkU2tpbGxSZXF1ZXN0GiYuZGVsaWRldi52MS5NdXRhdGVNYW5hZ2VkU2tpbGxSZXNwb25zZRJyChdHZXRNYW5hZ2VkU2tpbGxNdXRhdGlvbhIqLmRlbGlkZXYudjEuR2V0TWFuYWdlZFNraWxsTXV0YXRpb25SZXF1ZXN0GisuZGVsaWRldi52MS5HZXRNYW5hZ2VkU2tpbGxNdXRhdGlvblJlc3BvbnNlEl0KEFZpZXdNYW5hZ2VkU2tpbGwSIy5kZWxpZGV2LnYxLlZpZXdNYW5hZ2VkU2tpbGxSZXF1ZXN0GiQuZGVsaWRldi52MS5WaWV3TWFuYWdlZFNraWxsUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z");
 
 /**
  * @generated from message delidev.v1.SkillSelection
@@ -147,6 +147,207 @@ export const ListSkillsResponseSchema: GenMessage<ListSkillsResponse> = /*@__PUR
   messageDesc(file_delidev_v1_skills, 4);
 
 /**
+ * @generated from message delidev.v1.ListManagedSkillsRequest
+ */
+export type ListManagedSkillsRequest = Message<"delidev.v1.ListManagedSkillsRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+};
+
+/**
+ * Describes the message delidev.v1.ListManagedSkillsRequest.
+ * Use `create(ListManagedSkillsRequestSchema)` to create a new message.
+ */
+export const ListManagedSkillsRequestSchema: GenMessage<ListManagedSkillsRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 5);
+
+/**
+ * @generated from message delidev.v1.ListManagedSkillsResponse
+ */
+export type ListManagedSkillsResponse = Message<"delidev.v1.ListManagedSkillsResponse"> & {
+  /**
+   * @generated from field: string worker_device_id = 1;
+   */
+  workerDeviceId: string;
+
+  /**
+   * @generated from field: bytes packages_json = 2;
+   */
+  packagesJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.ListManagedSkillsResponse.
+ * Use `create(ListManagedSkillsResponseSchema)` to create a new message.
+ */
+export const ListManagedSkillsResponseSchema: GenMessage<ListManagedSkillsResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 6);
+
+/**
+ * @generated from message delidev.v1.MutateManagedSkillRequest
+ */
+export type MutateManagedSkillRequest = Message<"delidev.v1.MutateManagedSkillRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bytes document_json = 3;
+   */
+  documentJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.MutateManagedSkillRequest.
+ * Use `create(MutateManagedSkillRequestSchema)` to create a new message.
+ */
+export const MutateManagedSkillRequestSchema: GenMessage<MutateManagedSkillRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 7);
+
+/**
+ * @generated from message delidev.v1.MutateManagedSkillResponse
+ */
+export type MutateManagedSkillResponse = Message<"delidev.v1.MutateManagedSkillResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.SkillMutationState state = 2;
+   */
+  state: SkillMutationState;
+
+  /**
+   * @generated from field: bytes result_json = 3;
+   */
+  resultJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.MutateManagedSkillResponse.
+ * Use `create(MutateManagedSkillResponseSchema)` to create a new message.
+ */
+export const MutateManagedSkillResponseSchema: GenMessage<MutateManagedSkillResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 8);
+
+/**
+ * @generated from message delidev.v1.GetManagedSkillMutationRequest
+ */
+export type GetManagedSkillMutationRequest = Message<"delidev.v1.GetManagedSkillMutationRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetManagedSkillMutationRequest.
+ * Use `create(GetManagedSkillMutationRequestSchema)` to create a new message.
+ */
+export const GetManagedSkillMutationRequestSchema: GenMessage<GetManagedSkillMutationRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 9);
+
+/**
+ * @generated from message delidev.v1.GetManagedSkillMutationResponse
+ */
+export type GetManagedSkillMutationResponse = Message<"delidev.v1.GetManagedSkillMutationResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.SkillMutationState state = 2;
+   */
+  state: SkillMutationState;
+
+  /**
+   * @generated from field: bytes result_json = 3;
+   */
+  resultJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.GetManagedSkillMutationResponse.
+ * Use `create(GetManagedSkillMutationResponseSchema)` to create a new message.
+ */
+export const GetManagedSkillMutationResponseSchema: GenMessage<GetManagedSkillMutationResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 10);
+
+/**
+ * @generated from message delidev.v1.ViewManagedSkillRequest
+ */
+export type ViewManagedSkillRequest = Message<"delidev.v1.ViewManagedSkillRequest"> & {
+  /**
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string package_id = 2;
+   */
+  packageId: string;
+
+  /**
+   * @generated from field: uint64 expected_revision = 3;
+   */
+  expectedRevision: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.ViewManagedSkillRequest.
+ * Use `create(ViewManagedSkillRequestSchema)` to create a new message.
+ */
+export const ViewManagedSkillRequestSchema: GenMessage<ViewManagedSkillRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 11);
+
+/**
+ * @generated from message delidev.v1.ViewManagedSkillResponse
+ */
+export type ViewManagedSkillResponse = Message<"delidev.v1.ViewManagedSkillResponse"> & {
+  /**
+   * @generated from field: string worker_device_id = 1;
+   */
+  workerDeviceId: string;
+
+  /**
+   * @generated from field: bytes package_json = 2;
+   */
+  packageJson: Uint8Array;
+
+  /**
+   * @generated from field: bytes skill_markdown = 3;
+   */
+  skillMarkdown: Uint8Array;
+
+  /**
+   * @generated from field: bytes manifest_json = 4;
+   */
+  manifestJson: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.ViewManagedSkillResponse.
+ * Use `create(ViewManagedSkillResponseSchema)` to create a new message.
+ */
+export const ViewManagedSkillResponseSchema: GenMessage<ViewManagedSkillResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 12);
+
+/**
  * @generated from enum delidev.v1.SkillProvenance
  */
 export enum SkillProvenance {
@@ -173,6 +374,44 @@ export const SkillProvenanceSchema: GenEnum<SkillProvenance> = /*@__PURE__*/
   enumDesc(file_delidev_v1_skills, 0);
 
 /**
+ * Management receipts preserve the original mutation and Worker ownership.
+ *
+ * @generated from enum delidev.v1.SkillMutationState
+ */
+export enum SkillMutationState {
+  /**
+   * @generated from enum value: SKILL_MUTATION_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SKILL_MUTATION_STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: SKILL_MUTATION_STATE_SUCCEEDED = 2;
+   */
+  SUCCEEDED = 2,
+
+  /**
+   * @generated from enum value: SKILL_MUTATION_STATE_RECOVERY_REQUIRED = 3;
+   */
+  RECOVERY_REQUIRED = 3,
+
+  /**
+   * @generated from enum value: SKILL_MUTATION_STATE_FAILED = 4;
+   */
+  FAILED = 4,
+}
+
+/**
+ * Describes the enum delidev.v1.SkillMutationState.
+ */
+export const SkillMutationStateSchema: GenEnum<SkillMutationState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_skills, 1);
+
+/**
  * Inventory is keyless and belongs to the selected authenticated Runner.
  *
  * @generated from service delidev.v1.SkillService
@@ -185,6 +424,38 @@ export const SkillService: GenService<{
     methodKind: "unary";
     input: typeof ListSkillsRequestSchema;
     output: typeof ListSkillsResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.ListManagedSkills
+   */
+  listManagedSkills: {
+    methodKind: "unary";
+    input: typeof ListManagedSkillsRequestSchema;
+    output: typeof ListManagedSkillsResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.MutateManagedSkill
+   */
+  mutateManagedSkill: {
+    methodKind: "unary";
+    input: typeof MutateManagedSkillRequestSchema;
+    output: typeof MutateManagedSkillResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.GetManagedSkillMutation
+   */
+  getManagedSkillMutation: {
+    methodKind: "unary";
+    input: typeof GetManagedSkillMutationRequestSchema;
+    output: typeof GetManagedSkillMutationResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.SkillService.ViewManagedSkill
+   */
+  viewManagedSkill: {
+    methodKind: "unary";
+    input: typeof ViewManagedSkillRequestSchema;
+    output: typeof ViewManagedSkillResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delidev_v1_skills, 0);

@@ -288,23 +288,27 @@ type AgentSourceRoute struct {
 }
 
 type Agent struct {
-	MCP                     *MCPSelectionList       `json:"mcp,omitempty"`
-	SelectedModelSetting    *HarnessSetting[string] `json:"-"`
-	HarnessSettings         *HarnessSettings        `json:"harness_settings,omitempty"`
-	ReconfigurationRequired bool                    `json:"reconfiguration_required,omitempty"`
-	Name                    string                  `json:"name"`
-	Harness                 Harness                 `json:"harness"`
-	ModelID                 ID                      `json:"-"`
-	Model                   *InlineModel            `json:"-"`
-	Effort                  string                  `json:"effort,omitempty"`
-	Accounts                []WeightedAccount       `json:"accounts,omitempty"`
-	Routes                  []AgentSourceRoute      `json:"routes,omitempty"`
-	Routing                 *RoutingPolicy          `json:"routing,omitempty"`
-	Templates               []ID                    `json:"templates"`
-	Options                 AgentOptions            `json:"options"`
+	ManagedSkills           *ManagedSkillSelectionList `json:"managed_skills,omitempty"`
+	MCP                     *MCPSelectionList          `json:"mcp,omitempty"`
+	SelectedModelSetting    *HarnessSetting[string]    `json:"-"`
+	HarnessSettings         *HarnessSettings           `json:"harness_settings,omitempty"`
+	ReconfigurationRequired bool                       `json:"reconfiguration_required,omitempty"`
+	Name                    string                     `json:"name"`
+	Harness                 Harness                    `json:"harness"`
+	ModelID                 ID                         `json:"-"`
+	Model                   *InlineModel               `json:"-"`
+	Effort                  string                     `json:"effort,omitempty"`
+	Accounts                []WeightedAccount          `json:"accounts,omitempty"`
+	Routes                  []AgentSourceRoute         `json:"routes,omitempty"`
+	Routing                 *RoutingPolicy             `json:"routing,omitempty"`
+	Templates               []ID                       `json:"templates"`
+	Options                 AgentOptions               `json:"options"`
 }
 
 func (a Agent) Validate() error {
+	if err := ValidateManagedSkillSelections(a.ManagedSkills); err != nil {
+		return err
+	}
 	if err := ValidateMCPSelections(a.MCP); err != nil {
 		return err
 	}
@@ -851,7 +855,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != MCPManagementV1 && capability != CodexNativeShellV1 && capability != CodexWebSearchV1 && capability != CodexNativeBackgroundTerminalsV1 && capability != CodexQuotaBlockV1 && capability != InlineModelExecutionV1 && capability != HarnessDefaultsV1 && capability != NamedWorkspaceDirectoriesV1 && capability != SessionStartupProgressV1 && capability != NativeImageGenerationV1 && capability != CodexSessionRevertV1 && capability != SidechatQuestionRetryV1 && capability != ManagedCodexForkV1 && capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1 && capability != SubscriptionPaidCreditsV1) || seenCapabilities[capability] {
+		if (capability != MCPManagementV1 && capability != CodexNativeShellV1 && capability != CodexWebSearchV1 && capability != CodexNativeBackgroundTerminalsV1 && capability != ManagedSkillManagementV1 && capability != ManagedNativeSkillsV1 && capability != CodexQuotaBlockV1 && capability != InlineModelExecutionV1 && capability != HarnessDefaultsV1 && capability != NamedWorkspaceDirectoriesV1 && capability != SessionStartupProgressV1 && capability != NativeImageGenerationV1 && capability != CodexSessionRevertV1 && capability != SidechatQuestionRetryV1 && capability != ManagedCodexForkV1 && capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1 && capability != SubscriptionPaidCreditsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

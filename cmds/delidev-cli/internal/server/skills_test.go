@@ -11,6 +11,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -220,4 +221,45 @@ func TestSkillAcceptanceBindsOriginalRequestAndRejectsFieldUnawareEdit(t *testin
 		t.Fatal("new edit lost package or retired ownership")
 	}
 
+}
+
+func TestManagedSkillScopeRechecksCatalogForCachedExplicitSelections(t *testing.T) {
+	f := newFirstDispatchFixture(t)
+	ctx := context.Background()
+	definition := domain.ManagedSkillPackage{ID: domain.NewID(), WorkerDeviceID: f.workerDevice, Revision: 1, ContentRevision: strings.Repeat("ab", 32), Name: "Fixture", Description: "fixture", Provenance: "worker-import", Enabled: true, Support: []domain.MCPHarnessSupport{{Harness: domain.Codex, Profile: "codex-extra-roots-v1"}}}
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.managed-catalog", nil, func(tx *store.Tx) (any, error) {
+		if err := tx.ManagedSkillAcceptResult(domain.ManagedSkillResult{RequestID: domain.NewID(), WorkerDeviceID: f.workerDevice, State: domain.MCPSucceeded, Packages: []domain.ManagedSkillPackage{definition}}); err != nil {
+			return nil, err
+		}
+		row, err := tx.Get(domain.AgentKind, domain.ID(f.agent.Id))
+		if err != nil {
+			return nil, err
+		}
+		agent, err := store.Decode[domain.Agent](row)
+		if err != nil {
+			return nil, err
+		}
+		agent.ManagedSkills = &domain.ManagedSkillSelectionList{Selections: []domain.ManagedSkillSelection{{PackageID: definition.ID, WorkerDeviceID: f.workerDevice}}}
+		return tx.Put(domain.AgentKind, row.ID, row.Revision, "", "", agent)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := domain.SkillReadRequest{MachineID: domain.ID(f.machine.Id), AgentID: domain.ID(f.agent.Id), Selections: []domain.SkillBinding{{SkillID: domain.NewID()}}}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return resolveManagedSkillScope(tx, &scope) }); err != nil || len(scope.ManagedPackages) != 1 {
+		t.Fatal("explicit bindings bypassed managed resolution", scope, err)
+	}
+	definition.Enabled, definition.Revision = false, 2
+	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.disable-managed", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.ManagedSkillAcceptResult(domain.ManagedSkillResult{RequestID: domain.NewID(), WorkerDeviceID: f.workerDevice, State: domain.MCPSucceeded, Packages: []domain.ManagedSkillPackage{definition}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return checkManagedSkillScope(tx, &scope) }); err == nil {
+		t.Fatal("changed catalog passed final admission")
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return resolveManagedSkillScope(tx, &scope) }); err != nil || len(scope.ManagedPackages) != 0 {
+		t.Fatal("disabled selection remained eligible", scope, err)
+	}
 }

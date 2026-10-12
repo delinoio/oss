@@ -478,3 +478,11 @@ owns management negotiation. Native execution eligibility remains separate and
 requires independently verified adapter support.
 
 Original native background terminals use desktop Commands and CLI/Connect controls on the original active Codex Worker only. Retained item/process references, action receipts and bounded output follow the [harness](cmds-delidev-harness-contract.md#original-native-background-terminals), [session](cmds-delidev-sessions-contract.md#original-native-background-terminals) and [terminal](cmds-delidev-terminals-contract.md#original-native-background-terminals) contracts. Ordinary execution completion and independent product terminal lifetimes remain unchanged; completed or lost owners expose retained status without cold-resume adoption.
+
+Worker-owned skill packages follow the [catalog](cmds-delidev-catalog-contract.md#worker-owned-managed-skill-packages),
+[managed generation](cmds-delidev-sessions-contract.md#managed-skill-generations) and
+[Skills Settings](apps-delidev-desktop-contract.md#skills-settings-and-agent-selections)
+contracts. Explicit import leaves Worker source directories untouched. Managed
+selections and existing explicit composer bindings keep separate ownership;
+accepted execution, history and dependent copies retain immutable package digests.
+Native discovery support remains independently negotiated for each adapter.

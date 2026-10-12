@@ -70,6 +70,12 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	}
 	switch v := value.(type) {
 	case *domain.Agent:
+		if v.ManagedSkills != nil {
+			for i := range v.ManagedSkills.Selections {
+				v.ManagedSkills.Selections[i].WorkerDeviceID = ""
+				v.ManagedSkills.Selections[i].Unresolved = true
+			}
+		}
 		if v.HarnessSettings == nil {
 			return nil, domain.Fail(domain.Unsupported, "Portable Agents require current typed harness selectors.", "Export current live configuration using the version-7 bundle shape.")
 		}

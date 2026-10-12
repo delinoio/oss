@@ -112,6 +112,14 @@ export const settingsSearchTargets: Partial<
       "harness-settings.claudePermission",
     ),
   ],
+
+  [Category.Skills]: [
+    target(
+      SettingsSearchTarget.Category,
+      "managed-skills.title",
+      "managed-skills.scope",
+    ),
+  ],
   [Category.CodexCli]: [
     target(
       SettingsSearchTarget.Codex,
