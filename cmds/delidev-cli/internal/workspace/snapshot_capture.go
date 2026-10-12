@@ -54,7 +54,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	}
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
-			if path == string(repo.ID)+"/.git" || strings.HasPrefix(path, string(repo.ID)+"/.git/") {
+			if path == RepositoryDirectory(repo.ID, repo.DirectoryName)+"/.git" || strings.HasPrefix(path, RepositoryDirectory(repo.ID, repo.DirectoryName)+"/.git/") {
 				return true
 			}
 		}
@@ -64,7 +64,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	// payload. Git config can add core.worktree/core.bare in two copied files;
 	// 256 bytes per repository bounds those additions without touching sources.
 	budget := snapshotCopyBudget{bytes: MaxSnapshotBytes - maxSnapshotManifest - 256*uint64(len(r.Manifest.Repositories)), entries: MaxSnapshotEntries, privatePathLimit: snapshotPrivatePathLimit(m.Root)}
-	copied, err := walkSnapshotBudget(ctx, root, filepath.Join(staging, "workspace"), skip, MaxSnapshotEntries, &budget)
+	copied, err := walkSnapshotBudgetMapped(ctx, root, filepath.Join(staging, "workspace"), skip, MaxSnapshotEntries, &budget, snapshotRootMap(r.Manifest, false))
 	if err != nil {
 		return empty, err
 	}
@@ -475,7 +475,7 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	root := filepath.Join(m.Root, "workspaces", string(r.Preparation.SessionID))
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
-			if path == string(repo.ID)+"/.git" || strings.HasPrefix(path, string(repo.ID)+"/.git/") {
+			if path == RepositoryDirectory(repo.ID, repo.DirectoryName)+"/.git" || strings.HasPrefix(path, RepositoryDirectory(repo.ID, repo.DirectoryName)+"/.git/") {
 				return true
 			}
 		}

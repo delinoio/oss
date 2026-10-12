@@ -43,7 +43,7 @@ func terminalFixtureForAccount(t *testing.T, f *accountFixture) (*accountFixture
 	if domain.Decode(job.DocumentJson, &value) != nil || domain.Decode(value.Input, &input) != nil {
 		t.Fatal("invalid preparation")
 	}
-	manager := workspace.Manager{Root: t.TempDir() + "/worker"}
+	manager := workspace.Manager{NamedDirectories: true, Root: t.TempDir() + "/worker"}
 	manifest, err := manager.Prepare(ctx, input)
 	if err != nil {
 		t.Fatal(err)
