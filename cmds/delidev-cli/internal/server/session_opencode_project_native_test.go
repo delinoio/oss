@@ -116,6 +116,7 @@ func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind d
 	var repositories []domain.ID
 	for index := range count {
 		checkout := filepath.Join(root, fmt.Sprintf("checkout-%d", index))
+		remoteURL := fmt.Sprintf("https://github.com/fixture/repo-%d.git", index)
 		if err := os.Mkdir(checkout, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +128,7 @@ func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind d
 		if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("Original project fixture.\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		commands := [][]string{{"init", "-q", "--initial-branch=main"}, {"config", "core.hooksPath", filepath.Join(root, "no-hooks")}, {"add", "tracked.txt"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Private project fixture"}}
+		commands := [][]string{{"init", "-q", "--initial-branch=main"}, {"config", "core.hooksPath", filepath.Join(root, "no-hooks")}, {"remote", "add", "origin", remoteURL}, {"add", "tracked.txt"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Private project fixture"}}
 		if profile == openCodeUnbornProject || profile == openCodeFirstCommitProject {
 			if kind != domain.Local {
 				t.Fatal("unborn fixture must use authenticated Local")
@@ -145,7 +146,7 @@ func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind d
 		// Only repository metadata is a fixture; preparation and session APIs run normally.
 		repository := domain.NewID()
 		_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.project-repository", nil, func(tx *store.Tx) (any, error) {
-			return tx.Put(domain.RepositoryKind, repository, 0, "", "", domain.Repository{RemoteURL: fmt.Sprintf("https://github.com/fixture/repo-%d.git", index), Name: fmt.Sprintf("Private project fixture repository %d", index+1), Checkouts: []domain.Checkout{{MachineID: f.selection.MachineID, Path: checkout}}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}, AutoFetch: false})
+			return tx.Put(domain.RepositoryKind, repository, 0, "", "", domain.Repository{RemoteURL: remoteURL, Name: fmt.Sprintf("Private project fixture repository %d", index+1), Checkouts: []domain.Checkout{{MachineID: f.selection.MachineID, Path: checkout}}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}, AutoFetch: false})
 		})
 		if err != nil {
 			t.Fatal(err)

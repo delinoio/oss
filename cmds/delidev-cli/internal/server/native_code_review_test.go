@@ -56,10 +56,17 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 			if err != nil || !repeated.Msg.Replayed || repeated.Msg.Review.Job.Id != accepted.Msg.Review.Job.Id {
 				t.Fatal("creation receipt changed original review", err)
 			}
-			var job domain.Job
+			jobRecord, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(accepted.Msg.Review.Job.Id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := store.Decode[domain.Job](jobRecord)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var input domain.NativeCodeReviewInput
-			if domain.DecodeNativeCodeReviewJob(accepted.Msg.Review.Job.DocumentJson, &job) != nil || domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil {
-				t.Fatal("invalid native review assignment")
+			if job.Type != domain.NativeCodeReviewJob || domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil {
+				t.Fatal("stored native review assignment is invalid")
 			}
 			claimed, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.claim-review", nil, func(tx *store.Tx) (any, error) {
 				row, err := tx.Get(domain.JobKind, domain.ID(accepted.Msg.Review.Job.Id))
