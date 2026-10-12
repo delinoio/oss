@@ -272,11 +272,7 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
-  const view = (
-    value = "Original draft",
-    active = true,
-    embedded = false,
-  ) => (
+  const view = (value = "Original draft", active = true, embedded = false) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
