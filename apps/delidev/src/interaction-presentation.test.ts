@@ -109,7 +109,9 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
     { delivery: { state: "transmitted", sequence: 2 ** 53 } },
     { delivery: { state: "transmitted" } },
     { acceptance: undefined },
-    { acceptance: { evidence: "native-opencode-question-reply", sequence: 11 } },
+    {
+      acceptance: { evidence: "native-opencode-question-reply", sequence: 11 },
+    },
     { acceptance: { evidence: "native-question-output", sequence: "11" } },
     { acceptance: { evidence: "native-question-output", sequence: 10 } },
     { acceptance: { evidence: "native-question-output", sequence: 9 } },
@@ -129,9 +131,7 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
   const missingInput = { ...acceptedResponse } as Record<string, unknown>;
   delete missingInput.input;
   for (const response of [missingCreatedAt, missingInput]) {
-    const projection = interactionProjection(
-      row({ ...accepted, response }),
-    );
+    const projection = interactionProjection(row({ ...accepted, response }));
     expect(projection.presentation).toBe(InteractionPresentation.Pending);
     expect(projection.unavailable).toBe(true);
   }
@@ -139,9 +139,9 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
   expect(complete.presentation).toBe(InteractionPresentation.Retired);
   expect(complete.unavailable).toBe(false);
   expect(displayedInteraction(complete, new Set())).toBe(false);
-  expect(
-    displayedInteraction(complete, new Set([complete.mutationKey])),
-  ).toBe(true);
+  expect(displayedInteraction(complete, new Set([complete.mutationKey]))).toBe(
+    true,
+  );
   expect(
     interactionProjection(
       row(withResponse({ delivery: { state: "uncertain", sequence: 0 } })),
