@@ -14,8 +14,9 @@ import (
 )
 
 type integrationCheck struct {
-	cancel context.CancelFunc
-	done   chan struct{}
+	background bool
+	cancel     context.CancelFunc
+	done       chan struct{}
 }
 
 // Called under the gate. Completion closes before map cleanup takes the gate,

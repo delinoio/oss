@@ -15,6 +15,7 @@ type graphQLRead uint8
 
 const (
 	graphQLCI graphQLRead = iota + 1
+	graphQLCommits
 	graphQLReviews
 	graphQLConversation
 	graphQLThreads
@@ -24,6 +25,8 @@ const (
 
 func graphQLDocument(operation graphQLRead) (string, string) {
 	switch operation {
+	case graphQLCommits:
+		return prCommitsGraphQL, "DeliDevPRCommits"
 	case graphQLCI:
 		return ciGraphQL, "DeliDevRequiredCI"
 	case graphQLWorkflowSuites:

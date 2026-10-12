@@ -137,19 +137,23 @@ try {
             .count(),
           0,
         );
-        await page.locator(".pr-list-card").first().waitFor();
+        await page.locator(".pr-workspace-row").first().waitFor();
         assert.equal(
           await page.evaluate(() => window.__prSidebarFixture.github),
           1,
           `${context}: automatic initial read`,
         );
-        assert.equal(await page.locator(".pr-list-card").count(), 4, context);
+        assert.equal(
+          await page.locator(".pr-workspace-row").count(),
+          4,
+          context,
+        );
         const geometry = await page
           .locator(".pull-requests-page")
           .evaluate((node) => {
             const style = getComputedStyle(node),
               header = node.querySelector(".pr-list-header"),
-              cards = [...node.querySelectorAll(".pr-list-card")];
+              cards = [...node.querySelectorAll(".pr-workspace-row")];
             return {
               width: node.getBoundingClientRect().width,
               padding: style.paddingLeft,
@@ -157,7 +161,7 @@ try {
               overflow: node.scrollWidth > node.clientWidth + 1,
               cards: cards.map((card) => {
                 const s = getComputedStyle(card),
-                  title = card.querySelector("h3"),
+                  title = card.querySelector(".pr-row-title"),
                   action = card.querySelector("button");
                 return {
                   radius: s.borderRadius,
@@ -178,8 +182,7 @@ try {
             };
           });
         assert(
-          geometry.width <= 1120 &&
-            geometry.margin === "0px" &&
+          geometry.margin === "0px" &&
             geometry.padding === (width < 760 ? "16px" : "32px") &&
             !geometry.overflow,
           `${context}: ${JSON.stringify(geometry)}`,
@@ -187,12 +190,7 @@ try {
         assert(
           geometry.cards.every(
             (card) =>
-              card.radius === "12px" &&
-              card.padding === "20px" &&
-              card.title === "16px" &&
-              card.titleFull &&
-              !card.overflow &&
-              card.actionHeight >= 40,
+              card.titleFull && !card.overflow && card.actionHeight >= 40,
           ),
           context,
         );
@@ -225,17 +223,15 @@ try {
           (count) => window.__prSidebarFixture.github === count + 1,
           before,
         );
-        assert(
-          await page
-            .locator(".pr-list-applied")
-            .first()
-            .textContent()
-            .then((value) =>
-              value.includes(language === "ko" ? "닫힘" : "Closed"),
-            ),
+        assert.equal(
+          await page.locator(".pr-workspace-row").count(),
+          4,
           context,
         );
-        const read = page.locator(".pr-list-card").first().getByRole("button");
+        const read = page
+          .locator(".pr-workspace-row")
+          .first()
+          .getByRole("button");
         await read.focus();
         await read.press("Enter");
         await page
@@ -245,9 +241,61 @@ try {
           })
           .waitFor();
         assert.equal(
-          await page.locator(".pr-list-card").count(),
+          await page.locator(".pr-workspace-row").count(),
+          4,
+          `${context}: retained list owner`,
+        );
+        const detailReads = await page.evaluate(
+          () => window.__prSidebarFixture.github,
+        );
+        for (const tab of [
+          "Diff",
+          language === "ko" ? "리뷰" : "Reviews",
+          language === "ko" ? "커밋" : "Commits",
+          language === "ko" ? "설명" : "Description",
+        ])
+          await page.getByRole("tab", { name: tab, exact: true }).click();
+        assert.equal(
+          await page.locator(".pr-workspace-row").count(),
+          4,
+          `${context}: tabs retain list`,
+        );
+        assert.equal(
+          await page.locator(".pr-workspace-detail .actions button").count(),
           0,
-          `${context}: detail uses the original renderer`,
+          `${context}: no technical action grid`,
+        );
+        await page
+          .getByRole("tab", {
+            name: language === "ko" ? "커밋" : "Commits",
+            exact: true,
+          })
+          .click();
+        await page.locator(".pr-commit").waitFor();
+        assert(
+          await page
+            .locator(".pr-commit .pr-counts")
+            .textContent()
+            .then((value) => value.includes("+8") && value.includes("−3")),
+          context,
+        );
+        assert(
+          await page
+            .locator(".pr-workspace-detail header .pr-counts")
+            .textContent()
+            .then((value) => value.includes("+24") && value.includes("−8")),
+          context,
+        );
+        const layout = await page.locator(".pr-workspace").evaluate((node) => ({
+          wide: node.dataset.wide,
+          width: node.getBoundingClientRect().width,
+          columns: getComputedStyle(node).gridTemplateColumns,
+          listScroll: node.querySelector(".pr-workspace-list").scrollTop,
+        }));
+        assert.equal(
+          layout.wide === "true",
+          layout.width >= 900,
+          `${context}: available body breakpoint`,
         );
         await page
           .getByRole("button", {
@@ -255,7 +303,7 @@ try {
             exact: true,
           })
           .click();
-        await page.locator(".pr-list-card").first().waitFor();
+        await page.locator(".pr-workspace-row").first().waitFor();
         const more = page.locator(
           '[data-continuation="' +
             (language === "ko" ? "GitHub 조회 결과" : "GitHub query results") +
@@ -273,7 +321,7 @@ try {
             .waitFor();
         }
         assert.equal(
-          await page.locator(".pr-list-card").count(),
+          await page.locator(".pr-workspace-row").count(),
           4,
           `${context}: empty append retains accepted cards`,
         );
@@ -388,7 +436,7 @@ try {
   assert.deepEqual(failures, []);
   console.log(
     JSON.stringify({
-      operation: "pr-list-cards-browser",
+      operation: "pr-workspace-browser",
       source,
       checks,
       result: "passed",

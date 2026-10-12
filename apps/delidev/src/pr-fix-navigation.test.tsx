@@ -1,6 +1,9 @@
+import { useState } from "react";
+import { OpenPRProblemHistory } from "./pr-problems";
 import { create, type MessageShape } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -35,12 +38,6 @@ vi.setConfig({ testTimeout: 15000 });
 type FixRequest = MessageShape<
   typeof PullRequestFixQuery.requestPullRequestFix.input
 >;
-
-// These full-shell navigation fixtures can exceed Vitest's default on a
-// shared CI worker under concurrent frontend/build load. Keep the larger
-// deadline local to this file so product and unrelated test deadlines remain
-// unchanged.
-vi.setConfig({ testTimeout: 15000 });
 
 function fixture() {
   const repositoryId = newRequestId(),
@@ -300,6 +297,30 @@ function fixture() {
       requestPullRequestFix: fix,
     });
   });
+  // Seed an existing shared history surface in the fixture. The ordinary PR
+  // workspace deliberately has no problem-history or new Fix entry point.
+  let showHistory: (value: boolean) => void = () => {};
+  function FixtureApp() {
+    const [visible, setVisible] = useState(false);
+    showHistory = setVisible;
+    return (
+      <App
+        transport={transport}
+        localServer={
+          visible ? (
+            <OpenPRProblemHistory
+              selection={{
+                repositoryId,
+                remoteRepositoryId: "37",
+                pullRequestId: "53",
+                number: "17",
+              }}
+            />
+          ) : undefined
+        }
+      />
+    );
+  }
   const start = async () => {
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
     fireEvent.click(
@@ -310,7 +331,10 @@ function fixture() {
     expect(
       screen.queryByRole("button", { name: "Load pull requests" }),
     ).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /#17 Original fixture PR/ }),
+    );
+    act(() => showHistory(true));
     fireEvent.click(
       await screen.findByRole("button", { name: "Show retained PR problems" }),
     );
@@ -328,13 +352,16 @@ function fixture() {
     fireEvent.click(screen.getByRole("button", { name: "Start fix" }));
     await waitFor(() => expect(fix).toHaveBeenCalledOnce());
   };
-  const leave = () =>
+  const leave = () => {
+    act(() => showHistory(false));
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  };
   const back = () =>
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   const pending = () =>
     within(screen.getByRole("region", { name: "Pending PR actions" }));
   return {
+    FixtureApp,
     transport,
     query,
     fix,
@@ -363,7 +390,7 @@ it("keeps original Fix recovery available before the automatic return read", asy
   f.fix.mockRejectedValueOnce(
     new ConnectError("Lost receipt", Code.Unavailable),
   );
-  render(<App transport={f.transport} />);
+  render(<f.FixtureApp />);
   await f.start();
   await f
     .pending()
@@ -425,7 +452,7 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])(
     f.fix.mockRejectedValueOnce(
       new ConnectError("Lost receipt", Code.Unavailable),
     );
-    render(<App transport={f.transport} />);
+    render(<f.FixtureApp />);
     await f.start();
     await f
       .pending()
@@ -493,7 +520,7 @@ it.each([
           complete = resolve;
         }),
     );
-    render(<App transport={f.transport} />);
+    render(<f.FixtureApp />);
     await f.start();
     f.leave();
     const invalid = (request: FixRequest) => {
@@ -583,7 +610,7 @@ it("clears a valid late receipt after leaving the row without replaying it", asy
         complete = resolve;
       }),
   );
-  render(<App transport={f.transport} />);
+  render(<f.FixtureApp />);
   await f.start();
   f.leave();
   complete(f.receipt(f.fix.mock.calls[0][0]));
@@ -609,7 +636,7 @@ it.each([
     .mockRejectedValueOnce(
       new ConnectError("Replay unavailable to the current client", code),
     );
-  render(<App transport={f.transport} />);
+  render(<f.FixtureApp />);
   await f.start();
   await f
     .pending()
