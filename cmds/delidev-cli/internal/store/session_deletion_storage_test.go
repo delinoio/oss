@@ -3,7 +3,10 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,20 +17,25 @@ import (
 func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 	s, _ := openTest(t)
 	owner := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
-	server, machine, device, instance, snapshot := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	server, machine, device, storageDevice, instance, snapshot := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
 	if err := s.BindIdentity(owner, server); err != nil {
 		t.Fatal(err)
 	}
 	sr, _, _ := deletionSession(t, s, "stored")
 	prepare := workspace.PrepareRequest{SessionID: sr.ID, MachineID: machine, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
 	storageID := domain.NewID()
-	operation := workspace.StorageRequest{Version: 1, OperationID: storageID, Action: workspace.StorageCreate, SnapshotID: snapshot, PreviousState: domain.WorkspacePresent, Preparation: prepare}
+	prepareRaw, _ := json.Marshal(prepare)
+	prepareDigest := sha256.Sum256(prepareRaw)
+	operation := workspace.StorageRequest{Version: 1, OperationID: storageID, Action: workspace.StorageCreate, SnapshotID: snapshot, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: workspace.Manifest{Version: 1, SessionID: sr.ID, MachineID: machine, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(prepareDigest[:]), PrimaryPath: "/home/worker/workspaces/" + string(sr.ID) + "/chat", Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}}
 	raw, _ := json.Marshal(operation)
 	_, err := s.Mutate(owner, domain.NewID(), "fixture.storage", nil, func(tx *Tx) (any, error) {
 		if _, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "Worker", OS: "linux", Architecture: "amd64"}); err != nil {
 			return nil, err
 		}
-		if _, err := tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Worker", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); err != nil {
+		if _, err := tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Preparation worker", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.DeviceKind, storageDevice, 0, "", "", domain.Device{Name: "Storage worker", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); err != nil {
 			return nil, err
 		}
 		if err := tx.SetWorkerInstance(machine, instance, time.Now().UTC()); err != nil {
@@ -45,6 +53,9 @@ func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 				return nil, err
 			}
 			body.State, body.InstanceID, body.AssignedDeviceID = domain.JobClaimed, instance, device
+			if job.kind == domain.WorkspaceStorageJob {
+				body.AssignedDeviceID = storageDevice
+			}
 			if _, err := tx.PutJob(job.id, record.Revision, sr.ID, "", body); err != nil {
 				return nil, err
 			}
@@ -55,10 +66,18 @@ func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	deletion, _, err := s.DeleteSession(owner, domain.NewID(), sr.ID, server, sr.Revision)
-	if err != nil || len(deletion.Workers) != 1 {
+	if err != nil || len(deletion.Workers) != 2 {
 		t.Fatal(err, deletion)
 	}
-	work := deletion.Workers[0].Work
+	var work domain.SessionDeletionWork
+	for _, worker := range deletion.Workers {
+		if worker.Work.DeviceID == storageDevice {
+			work = worker.Work
+		}
+	}
+	if work.DeviceID != storageDevice {
+		t.Fatal("storage owner's cleanup plan is missing")
+	}
 	if err := work.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +90,20 @@ func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 	if !matched {
 		t.Fatal("interrupted storage lost reserved snapshot identity")
 	}
+	if !slices.Contains(work.PreparationDigests, operation.Manifest.InputDigest) {
+		t.Fatal("storage owner did not retain the authenticated preparation digest")
+	}
 	retained, err := s.GetSessionDeletion(owner, sr.ID)
-	if err != nil || retained.Workers[0].Work.Digest() != work.Digest() {
+	if err != nil {
 		t.Fatal("external deletion plan lost storage ownership", err)
+	}
+	var retainedStorageWork domain.SessionDeletionWork
+	for _, worker := range retained.Workers {
+		if worker.Work.DeviceID == storageDevice {
+			retainedStorageWork = worker.Work
+		}
+	}
+	if retainedStorageWork.Digest() != work.Digest() {
+		t.Fatal("external deletion plan lost storage digest ownership")
 	}
 }

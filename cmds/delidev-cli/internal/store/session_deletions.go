@@ -1001,10 +1001,16 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 		}
 		if j.Type == domain.WorkspaceStorageJob {
 			var input workspace.StorageRequest
-			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
+			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.Validate() != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID || input.Preparation.MachineID != original.MachineID {
 				return v, domain.SessionDeletionPending()
 			}
 			copy.SnapshotID = input.SnapshotID
+			// A storage operation can be owned by a different device than the
+			// preparation that produced its snapshot. Retain the request's validated
+			// preparation digest on this storage owner's cleanup plan as well.
+			if !slices.Contains(w.PreparationDigests, input.Manifest.InputDigest) {
+				w.PreparationDigests = append(w.PreparationDigests, input.Manifest.InputDigest)
+			}
 		}
 		if j.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
