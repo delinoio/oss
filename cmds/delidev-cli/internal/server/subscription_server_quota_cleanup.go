@@ -78,7 +78,7 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 				return err
 			}
 			owner.Operation.CleanupConfirmed = true
-			if err = s.retireServerQuotaReference(bounded, owner.Account, owner.Operation); err != nil {
+			if err = s.retireServerQuotaReference(bounded, owner.Account, owner.Operation, false); err != nil {
 				return err
 			}
 			_, err = s.Store.Mutate(bounded, domain.NewID(), "subscription.server.quota.reconciled", owner, func(tx *store.Tx) (any, error) {
@@ -133,7 +133,7 @@ func reconcileServerQuotaRuntime(ctx context.Context, root string, o domain.Serv
 
 // Caller holds account serialization. Native cleanup and the exact retained
 // operation authorize only retirement of its obsolete captured reference.
-func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, original domain.ServerQuotaOperation) error {
+func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, original domain.ServerQuotaOperation, retainForAutomaticCredit bool) error {
 	var current domain.ID
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, a, err := subscriptionAccount(tx, id, 0)
@@ -146,6 +146,9 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 			return subscriptionDenied()
 		}
 		current = st.Generation
+		if retainForAutomaticCredit && (original.AutomaticEpisodeID == "" || !quotaGenerationBound(st, original, s.subscriptionServerEpoch())) {
+			return subscriptionDenied()
+		}
 		if current != original.Generation && (current.Validate() != nil || st.Lease != nil && st.Lease.Generation == original.Generation || st.ServerCredit != nil && st.ServerCredit.Active() && st.ServerCredit.Generation == original.Generation || st.Observation != nil && st.Observation.Active() && st.Observation.Generation == original.Generation || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) && st.ServerOperation.Generation == original.Generation) {
 			return subscriptionDenied()
 		}
@@ -153,6 +156,9 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 	})
 	if err != nil || !original.AccessOnly || current == original.Generation {
 		return err
+	}
+	if retainForAutomaticCredit && original.AutomaticEpisodeID != "" {
+		return nil
 	}
 	vault, err := s.secrets()
 	if err != nil {

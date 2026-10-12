@@ -404,10 +404,13 @@ func frozenAutomaticCreditValid(st *domain.SubscriptionState, proof domain.Serve
 	if c != nil {
 		return *c == proof.Consent && st.Generation == proof.Consent.Generation
 	}
-	// The original Worker may finish after automatic admission. Its durable
-	// finish clears standing consent and rotates the generation, while the
-	// matching episode and operation retain the one already-frozen claim.
-	return e.OperationID != "" && st.Generation.Validate() == nil && st.Generation != proof.Consent.Generation && st.Lease == nil && st.Pending == nil && st.OwnerMachineID == proof.MachineID
+	// The original Worker may finish after an automatic credit was admitted, or
+	// while its one frozen stale-inventory refresh is running. Finish clears
+	// standing consent and rotates the generation; the exact retained operation
+	// and episode continue to carry the original claim through credit admission.
+	refresh := st.ServerQuota
+	refreshBound := e.RefreshOperationID != "" && refresh != nil && refresh.ID == e.RefreshOperationID && refresh.AutomaticEpisodeID == e.ID && refresh.ConnectionID == proof.Consent.ConnectionID && refresh.Generation == proof.Consent.Generation && (refresh.Phase == domain.SubscriptionObservationQueued || refresh.Phase == domain.SubscriptionObservationSending || refresh.Phase == domain.SubscriptionObservationSucceeded)
+	return (e.OperationID != "" || refreshBound) && st.Generation.Validate() == nil && st.Generation != proof.Consent.Generation && st.Lease == nil && st.Pending == nil && st.OwnerMachineID == proof.MachineID
 }
 
 // Capture the reference under the same short serialization used by Execute Finish.

@@ -164,6 +164,52 @@ func TestAutomaticCreditStaleRefreshOnceAndRecoveredRedelivery(t *testing.T) {
 	}
 }
 
+func TestAutomaticCreditFrozenRefreshSurvivesOriginalWorkerFinish(t *testing.T) {
+	f, block := automaticCreditFixture(t, true, true)
+	_, before := f.record()
+	lease := before.Subscription.Lease
+	originalGeneration := lease.Generation
+	oldBundle, err := f.secrets.Get(creditContext(), credentials.Ref{Owner: f.input.AccountID, ID: originalGeneration, Purpose: credentials.AccountLogin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(oldBundle)
+	admitFixture(t, f, &block, "")
+	_, admitted := f.record()
+	quotaOperation := *admitted.Subscription.ServerQuota
+
+	now := time.Now().UTC()
+	quota := &serverQuotaFixture{observed: domain.SubscriptionQuotaObservation{
+		ObservedAt: now,
+		Windows:    []domain.SubscriptionQuotaWindow{{ID: "codex:primary"}},
+		Credits:    &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: now, AvailableCount: 2},
+	}}
+	quota.duringRead = func() {
+		if _, err := f.finish(&pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)}, oldBundle, true, false, true); err != nil {
+			t.Fatal("finish original Worker execution during frozen refresh", err)
+		}
+		// Finish creates the replacement generation; verify consent was cleared.
+		_, current := f.record()
+		if current.Subscription.Generation == originalGeneration || current.Subscription.AutomaticCreditConsent != nil {
+			t.Fatal("fixture did not rotate and clear consent")
+		}
+	}
+	f.service.quotaOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
+		return quotaNativeFixture{quota}, nil
+	}
+	f.service.runServerQuota(creditContext(), f.input.AccountID)
+	_, after := f.record()
+	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSucceeded || after.Subscription.AutomaticCreditEpisode.OperationID == "" || after.Subscription.ServerCredit == nil || after.Subscription.ServerCredit.Generation != originalGeneration {
+		t.Fatal("frozen refresh did not finish and admit the original credit proof", after.Subscription)
+	}
+	if after.Subscription.ServerQuota.ID != quotaOperation.ID || after.Subscription.ServerQuota.AutomaticEpisodeID != after.Subscription.AutomaticCreditEpisode.ID {
+		t.Fatal("refresh ownership changed")
+	}
+	if _, err := f.secrets.Get(creditContext(), credentials.Ref{Owner: f.input.AccountID, ID: originalGeneration, Purpose: credentials.AccountLogin}); err != nil {
+		t.Fatal("captured credential was retired before the admitted credit used it", err)
+	}
+}
+
 func TestAutomaticCreditRateLimitNeedsSubscriptionExhaustion(t *testing.T) {
 	f, b := automaticCreditFixture(t, true, false)
 	b.Reason = domain.CodexRateLimitExceeded

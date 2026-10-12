@@ -138,7 +138,17 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 		a.ConfirmedExhausted = true
 	}
 	episode := st.AutomaticCreditEpisode
-	if episode == nil || episode.OperationID != "" || episode.ServerProof == nil || episode.ServerProof.Epoch != s.subscriptionServerEpoch() || !frozenAutomaticCreditValid(st, *episode.ServerProof) || !quotaAccountReady(*a) || episode.Generation != st.Generation || consent.ConnectionID != a.Connection.ID || subscriptionActorValid(tx, consent.Actor) != nil || st.Pending != nil || st.ServerObservationActive() || st.Observation != nil && st.Observation.Active() {
+	refreshCompleted := episode != nil && episode.RefreshOperationID != "" && completed == episode.RefreshOperationID && st.ServerQuota != nil && st.ServerQuota.ID == completed && st.ServerQuota.Phase == domain.SubscriptionObservationSucceeded
+	if consent == nil && refreshCompleted && episode.ServerProof != nil {
+		// Worker Finish may rotate the live generation and clear standing consent
+		// while this already-admitted automatic refresh still owns its frozen proof.
+		consent = &episode.ServerProof.Consent
+	}
+	generationCurrent := episode != nil && episode.Generation == st.Generation
+	if refreshCompleted && st.Generation.Validate() == nil {
+		generationCurrent = true
+	}
+	if episode == nil || episode.OperationID != "" || episode.ServerProof == nil || episode.ServerProof.Epoch != s.subscriptionServerEpoch() || !frozenAutomaticCreditValid(st, *episode.ServerProof) || !quotaAccountReady(*a) || !generationCurrent || consent == nil || consent.ConnectionID != a.Connection.ID || subscriptionActorValid(tx, consent.Actor) != nil || st.Pending != nil || st.ServerObservationActive() || st.Observation != nil && st.Observation.Active() {
 		return nil
 	}
 	if episode.RefreshOperationID != "" && (completed != episode.RefreshOperationID || st.ServerQuota == nil || st.ServerQuota.ID != completed || st.ServerQuota.Phase != domain.SubscriptionObservationSucceeded) {
@@ -163,7 +173,7 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 	}
 	operation := domain.NewID()
 	episode.OperationID = operation
-	input := domain.SubscriptionObservationOperation{ID: operation, Actor: consent.Actor, ConnectionID: a.Connection.ID, Generation: st.Generation, RequestedAt: now, CreditID: credit, NextCredit: credit == "", CreditsObservationID: st.ResetCredits.ObservationID}
+	input := domain.SubscriptionObservationOperation{ID: operation, Actor: consent.Actor, ConnectionID: a.Connection.ID, Generation: episode.Generation, RequestedAt: now, CreditID: credit, NextCredit: credit == "", CreditsObservationID: st.ResetCredits.ObservationID}
 	op := newServerCredit(*a, input, s.subscriptionServerEpoch())
 	proof := *episode.ServerProof
 	op.Automatic = &proof

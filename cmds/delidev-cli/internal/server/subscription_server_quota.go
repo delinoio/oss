@@ -160,7 +160,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 		}
 		o := st.ServerQuota
 		original = *o
-		if !o.AccessOnly || !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil || !automaticQuotaBinding(st, *o, s.subscriptionServerEpoch()) {
+		if !o.AccessOnly || !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || !quotaGenerationBound(st, *o, s.subscriptionServerEpoch()) || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil || !automaticQuotaBinding(st, *o, s.subscriptionServerEpoch()) {
 			if o.AccessOnly {
 				// This rejected queued claim opened no native owner. Keep its
 				// reference fence through the same checked finish path.
@@ -240,7 +240,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 				}
 				raw, _ := json.Marshal(struct{ Account, User string }{identity.Account, identity.User})
 				defer clear(raw)
-				if a.Subscription.IdentityCommitment != s.accountCommitment(s.Identity.ServerID, raw) || a.Subscription.Generation != original.Generation || a.Connection.ID != original.ConnectionID || subscriptionActorValid(tx, original.Actor) != nil {
+				if a.Subscription.IdentityCommitment != s.accountCommitment(s.Identity.ServerID, raw) || !quotaGenerationBound(a.Subscription, original, s.subscriptionServerEpoch()) || a.Connection.ID != original.ConnectionID || subscriptionActorValid(tx, original.Actor) != nil {
 					return subscriptionDenied()
 				}
 				return nil
@@ -337,7 +337,11 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 	if _, replayed, err := s.Store.Replay(ctx, original.FinishID, "subscription.server.quota.finish", input); err != nil || replayed {
 		return err
 	}
-	if err := s.retireServerQuotaReference(ctx, id, original); err != nil {
+	retainForAutomaticCredit := false
+	if code == "" && original.AutomaticEpisodeID != "" && observed.Credits != nil {
+		_, retainForAutomaticCredit = domain.SelectAutomaticResetCredit(observed.Credits, time.Now().UTC())
+	}
+	if err := s.retireServerQuotaReference(ctx, id, original, retainForAutomaticCredit); err != nil {
 		return err
 	}
 	_, err = s.Store.Mutate(ctx, original.FinishID, "subscription.server.quota.finish", input, func(tx *store.Tx) (any, error) {
@@ -350,7 +354,7 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		if o == nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.Actor != original.Actor || o.AccessOnly != original.AccessOnly || o.Phase != domain.SubscriptionObservationSending || !o.CleanupConfirmed {
 			return nil, subscriptionDenied()
 		}
-		authorized := quotaAccountReady(a) && st.Pending == nil && (st.Lease == nil || st.Lease.Action == domain.SubscriptionExecute) && st.Generation == original.Generation && a.Connection.ID == original.ConnectionID && subscriptionActorValid(tx, original.Actor) == nil && automaticQuotaBinding(st, original, s.subscriptionServerEpoch())
+		authorized := quotaAccountReady(a) && st.Pending == nil && (st.Lease == nil || st.Lease.Action == domain.SubscriptionExecute) && quotaGenerationBound(st, original, s.subscriptionServerEpoch()) && a.Connection.ID == original.ConnectionID && subscriptionActorValid(tx, original.Actor) == nil && automaticQuotaBinding(st, original, s.subscriptionServerEpoch())
 		if !authorized {
 			code = domain.Canceled
 		}
@@ -506,7 +510,7 @@ func (s *Service) checkQuotaBinding(ctx context.Context, id domain.ID, o domain.
 			return err
 		}
 		st := a.Subscription
-		if !quotaAccountReady(a) || st.Pending != nil || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerQuota == nil || st.ServerQuota.ID != o.ID || st.ServerQuota.Epoch != o.Epoch || st.ServerQuota.Phase != domain.SubscriptionObservationSending || st.ServerQuota.Actor != o.Actor || subscriptionActorValid(tx, o.Actor) != nil || !automaticQuotaBinding(st, o, s.subscriptionServerEpoch()) {
+		if !quotaAccountReady(a) || st.Pending != nil || !quotaGenerationBound(st, o, s.subscriptionServerEpoch()) || a.Connection.ID != o.ConnectionID || st.ServerQuota == nil || st.ServerQuota.ID != o.ID || st.ServerQuota.Epoch != o.Epoch || st.ServerQuota.Phase != domain.SubscriptionObservationSending || st.ServerQuota.Actor != o.Actor || subscriptionActorValid(tx, o.Actor) != nil || !automaticQuotaBinding(st, o, s.subscriptionServerEpoch()) {
 			return subscriptionDenied()
 		}
 		return nil
@@ -519,4 +523,13 @@ func automaticQuotaBinding(st *domain.SubscriptionState, o domain.ServerQuotaOpe
 	}
 	e := st.AutomaticCreditEpisode
 	return e != nil && e.ID == o.AutomaticEpisodeID && e.RefreshOperationID == o.ID && e.ServerProof != nil && e.ServerProof.Epoch == epoch && e.Generation == o.Generation && frozenAutomaticCreditValid(st, *e.ServerProof)
+}
+
+func quotaGenerationBound(st *domain.SubscriptionState, o domain.ServerQuotaOperation, epoch domain.ID) bool {
+	if st.Generation == o.Generation {
+		return true
+	}
+	// The only allowed rotation is the original Execute Finish settling while
+	// the exact frozen automatic refresh is already owned by this operation.
+	return o.AutomaticEpisodeID != "" && automaticQuotaBinding(st, o, epoch) && st.Generation.Validate() == nil && st.Lease == nil && st.Pending == nil
 }
