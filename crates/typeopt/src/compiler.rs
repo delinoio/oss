@@ -680,7 +680,7 @@ impl crate::pipeline::Backend for Backend<'_> {
             // by the recheck after each round and rolled back there.
             return Ok(crate::pipeline::Emitted {
                 size: text.len(),
-                imports: crate::pipeline::static_imports(text),
+                imports: crate::pipeline::bundle_static_imports(text),
             });
         }
         if is_js_name(file) {

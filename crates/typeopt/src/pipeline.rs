@@ -81,6 +81,51 @@ pub fn static_imports(code: &str) -> Vec<String> {
     imports
 }
 
+/// Static module specifiers of bundler output in source order, independent
+/// of line layout: every `from"…"` and side-effect `import"…"` at a token
+/// boundary, with optional whitespace before the quote. Minified chunks put
+/// many import statements on one line, which [`static_imports`] does not
+/// scan. Dynamic `import(…)` and members such as `Array.from(…)` do not
+/// match. A string that merely contains such text can add a specifier; that
+/// is conservative, because the gate rejects a bundle whose specifiers are
+/// not a subsequence of the previous ones.
+pub fn bundle_static_imports(code: &str) -> Vec<String> {
+    let bytes = code.as_bytes();
+    let identifier = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b >= 0x80;
+    let mut imports = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let keyword = if code[at..].starts_with("from") {
+            4
+        } else if code[at..].starts_with("import") {
+            6
+        } else {
+            at += 1;
+            continue;
+        };
+        let start = at;
+        at += keyword;
+        if start > 0 && (identifier(bytes[start - 1]) || bytes[start - 1] == b'.') {
+            continue;
+        }
+        let mut quote_at = at;
+        while quote_at < bytes.len() && bytes[quote_at].is_ascii_whitespace() {
+            quote_at += 1;
+        }
+        let Some(&quote) = bytes.get(quote_at) else {
+            break;
+        };
+        if quote != b'"' && quote != b'\'' {
+            continue;
+        }
+        if let Some(end) = code[quote_at + 1..].find(quote as char) {
+            imports.push(code[quote_at + 1..quote_at + 1 + end].to_owned());
+            at = quote_at + 1 + end + 1;
+        }
+    }
+    imports
+}
+
 /// End of the statement that starts `code`: one past the first `;` outside a
 /// string literal, so a `;` inside a module specifier does not cut it short.
 fn statement_end(code: &str) -> usize {
@@ -1019,6 +1064,15 @@ mod tests {
         assert_eq!(outcome.texts["a.ts"], "ab");
         assert_eq!(outcome.bundles.len(), 1);
         assert_eq!(outcome.bundles[0].pass, PassId::EnumRuntimeReduction);
+    }
+
+    #[test]
+    fn bundle_static_imports_scan_minified_lines() {
+        let code = r#"import{a as b}from"./a.js";import"./side.js";import * as c from './c.js';export{d}from"./d.js";export*from"./e.js";const f=import("./lazy.js"),g=Array.from("xy"),h=x.from("no"),i=frommer;"#;
+        assert_eq!(
+            bundle_static_imports(code),
+            ["./a.js", "./side.js", "./c.js", "./d.js", "./e.js"]
+        );
     }
 
     #[test]

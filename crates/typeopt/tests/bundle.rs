@@ -325,6 +325,27 @@ fn optimizes_standalone_mjs_chunks() {
     );
 }
 
+/// Minified chunks put several imports on one line; module initialization
+/// of every imported chunk must survive optimization.
+#[test]
+fn keeps_initialization_of_every_import_on_a_minified_line() {
+    run(&[
+        (
+            "index.js",
+            r#"import{a as x}from"./a.js";import{b as y}from"./b.js";import"./c.js";function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing,x(),typeof y);"#,
+        ),
+        (
+            "a.js",
+            r#"console.log("init a");function a(){return 1}export{a};"#,
+        ),
+        (
+            "b.js",
+            r#"console.log("init b");function b(){return 2}export{b};"#,
+        ),
+        ("c.js", r#"console.log("init c");"#),
+    ]);
+}
+
 #[test]
 fn never_publishes_typescript_only_syntax() {
     let (temp, _) = run(&[(
