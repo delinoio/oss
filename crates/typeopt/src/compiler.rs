@@ -278,7 +278,13 @@ impl Project {
                  published: {outside}"
             );
         }
-        let (imported, unlinked, edges, computed_import) = project.bundle_imported();
+        let BundleImports {
+            imported,
+            unlinked,
+            edges,
+            computed: computed_import,
+            bare,
+        } = project.bundle_imported();
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
         // ESM statements; classic scripts stay unchanged boundaries.
@@ -287,7 +293,16 @@ impl Project {
             classic,
             imported: from_html,
             all_public,
+            import_map,
         } = html_scripts(dir)?;
+        // Without an import map, a package specifier would load a module
+        // outside the bundle: the program is not closed.
+        if let Some(specifier) = bare.filter(|_| !import_map) {
+            bail!(
+                "a bundle chunk imports a module outside the bundle directory (package specifier \
+                 {specifier:?}); bundle mode needs a self-contained bundle"
+            );
+        }
         let all_public = all_public || computed_import;
         if all_public {
             tracing::info!(
@@ -358,13 +373,15 @@ impl Project {
             .collect()
     }
 
-    /// An application module of the program that lies outside `dir`.
+    /// A program file outside `dir` other than the bundled standard
+    /// libraries: a chunk import resolved to a sibling file, a package or a
+    /// declaration elsewhere. The bundle is not a closed program then.
     fn application_file_outside(&self, dir: &std::path::Path) -> Option<String> {
         let _scope = enter_program(Some(self.version));
         source_files()
             .into_iter()
-            .filter(|&file| is_application(file))
             .map(|file| source_file_info(file).file_name.clone())
+            .filter(|name| !name.starts_with("bundled:"))
             .find(|name| !std::path::Path::new(name).starts_with(dir))
     }
 
@@ -372,14 +389,13 @@ impl Project {
     /// declaration or a literal dynamic `import()`, and the subset that is
     /// imported through a specifier with a query, fragment or `%` escape.
     /// The compiler cannot link such a specifier to the chunk, so those
-    /// chunks are public: what the importer reads stays unseen. Also returns
-    /// the import edges between chunks and whether some chunk has a computed
-    /// `import(…)`.
-    fn bundle_imported(&self) -> (Paths, Paths, BTreeMap<String, Paths>, bool) {
+    /// chunks are public: what the importer reads stays unseen.
+    fn bundle_imported(&self) -> BundleImports {
         let _scope = enter_program(Some(self.version));
         let (mut imported, mut public) = (Paths::new(), Paths::new());
         let mut edges = BTreeMap::<String, Paths>::new();
         let mut computed = false;
+        let mut bare = None;
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -417,6 +433,10 @@ impl Project {
                 }
                 let text = specifier.text();
                 if !(text.starts_with("./") || text.starts_with("../")) {
+                    // A package specifier names a module outside the bundle.
+                    if !text.starts_with('/') && !text.contains(':') && bare.is_none() {
+                        bare = Some(text.to_owned());
+                    }
                     continue;
                 }
                 // URL semantics: queries and fragments do not name files.
@@ -434,7 +454,13 @@ impl Project {
                 }
             }
         }
-        (imported, public, edges, computed)
+        BundleImports {
+            imported,
+            unlinked: public,
+            edges,
+            computed,
+            bare,
+        }
     }
 
     /// Checks the original program and records the analysis snapshot.
@@ -935,6 +961,22 @@ struct HtmlScripts {
     /// A page has an import map or an inline import this scan cannot
     /// resolve: every chunk is a public entry.
     all_public: bool,
+    /// A page has an import map, which can resolve package specifiers.
+    import_map: bool,
+}
+
+/// How the chunks of a bundle import each other.
+struct BundleImports {
+    /// Chunks that another chunk imports.
+    imported: Paths,
+    /// Chunks imported through specifiers the compiler cannot link.
+    unlinked: Paths,
+    /// Import edges between chunks.
+    edges: BTreeMap<String, Paths>,
+    /// Some chunk has a computed `import(…)`.
+    computed: bool,
+    /// A package specifier some chunk imports.
+    bare: Option<String>,
 }
 
 /// JavaScript MIME type essences, which make a `<script>` a classic script
@@ -1048,6 +1090,7 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                 // An import map can map any specifier to any chunk.
                 if kind.as_deref() == Some("importmap") {
                     found.all_public = true;
+                    found.import_map = true;
                     continue;
                 }
                 let module = kind.as_deref() == Some("module");

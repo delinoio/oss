@@ -1397,12 +1397,25 @@ fn applies_base_urls_only_to_later_scripts() {
     assert_eq!(out(temp.path(), "shared.js"), shared);
 }
 
-/// A chunk that imports a module outside the bundle cannot be published.
+/// A chunk that imports a module outside the bundle cannot be published,
+/// whether a sibling file or a package resolved from node_modules.
 #[test]
 fn rejects_imports_outside_the_bundle() {
     let temp = bundle(&[("index.js", r#"import"../outside.js";console.log(1);"#)]);
     fs::write(temp.path().join("outside.js"), "console.log(0);export{};").unwrap();
     let output = run_typeopt(temp.path(), &[]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
+    let package = bundle(&[("index.js", r#"import{x}from"pkg";console.log(x);"#)]);
+    let module = package.path().join("node_modules/pkg");
+    fs::create_dir_all(&module).unwrap();
+    fs::write(
+        module.join("package.json"),
+        r#"{"name":"pkg","type":"module","main":"index.js"}"#,
+    )
+    .unwrap();
+    fs::write(module.join("index.js"), "export const x=1;").unwrap();
+    let output = run_typeopt(package.path(), &[]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the bundle directory"));
 }
