@@ -138,6 +138,13 @@ func recoverDirectorySettlement(ctx context.Context, config Config, resource *pb
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.AccountID != j.Account || request.MachineId != string(c.Credential.MachineID) {
 		return nil, false, domain.DirectoryUncertain()
 	}
+	var p codexDirectoryCheckpoint
+	if request.CleanupConfirmed && request.Succeeded {
+		ready, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", resource.Id, "directory-ready.json"), maxDirectoryCheckpointBytes)
+		if err != nil || domain.DecodeWithLimit(ready, &p, maxDirectoryCheckpointBytes) != nil || p.validateClaims(config.Root) != nil || !bytes.Equal(ready, mustDirectoryJSON(p)) || p.Ownership.ServerID != c.Credential.ServerID || p.Ownership.DeviceID != c.Credential.DeviceID || p.Ownership.InstanceID != instance || p.Ownership.JobID != domain.ID(resource.Id) || p.Ownership.Revision != resource.Revision || p.Ownership.AssignmentDigest != executionInputDigest(resource.DocumentJson) || !sameDirectoryValue(p.Input, input) {
+			return nil, false, domain.DirectoryUncertain()
+		}
+	}
 	client, closeRPC, err := subscriptionRPC(ctx, config, c.Credential)
 	if err != nil {
 		return nil, false, err
@@ -151,11 +158,6 @@ func recoverDirectorySettlement(ctx context.Context, config Config, resource *pb
 	// cleanup record and successful original receipt can promote a generation.
 	if !request.CleanupConfirmed || !request.Succeeded {
 		return nil, false, nil
-	}
-	ready, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", resource.Id, "directory-ready.json"), maxDirectoryCheckpointBytes)
-	var p codexDirectoryCheckpoint
-	if err != nil || domain.DecodeWithLimit(ready, &p, maxDirectoryCheckpointBytes) != nil || p.validateClaims(config.Root) != nil || !bytes.Equal(ready, mustDirectoryJSON(p)) || p.Ownership.ServerID != c.Credential.ServerID || p.Ownership.DeviceID != c.Credential.DeviceID || p.Ownership.InstanceID != instance || p.Ownership.JobID != domain.ID(resource.Id) || p.Ownership.Revision != resource.Revision || p.Ownership.AssignmentDigest != executionInputDigest(resource.DocumentJson) || !sameDirectoryValue(p.Input, input) {
-		return nil, false, domain.DirectoryUncertain()
 	}
 	ref, err := retainDirectoryCheckpoint(config.Root, p)
 	if err != nil {

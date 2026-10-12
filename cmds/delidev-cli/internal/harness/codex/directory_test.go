@@ -206,9 +206,17 @@ func (f *threadFixture) handleDirectory(id json.RawMessage, method string, raw j
 	}
 	switch method {
 	case "thread/goal/get":
+		if f.mode == "thread-directory-pending-goal" {
+			write(id, map[string]any{"goal": map[string]any{"id": "pending"}})
+			return true
+		}
 		write(id, map[string]any{"goal": nil})
 		return true
 	case "thread/queue/list":
+		if f.mode == "thread-directory-pending-queue" {
+			write(id, map[string]any{"data": []any{map[string]any{"id": "queued"}}, "nextCursor": nil})
+			return true
+		}
 		write(id, map[string]any{"data": []any{}, "nextCursor": nil})
 		return true
 	case "thread/backgroundTerminals/list":
@@ -218,6 +226,10 @@ func (f *threadFixture) handleDirectory(id json.RawMessage, method string, raw j
 		}
 		if domain.Decode(raw, &params) != nil || params.ThreadID.Validate() != nil || f.thread != nil && params.ThreadID != f.thread["id"] || params.Limit != 1 {
 			os.Exit(74)
+		}
+		if f.mode == "thread-directory-pending-background" {
+			write(id, map[string]any{"data": []any{map[string]any{"itemId": "live"}}, "nextCursor": nil})
+			return true
 		}
 		write(id, map[string]any{"data": []any{}, "nextCursor": nil})
 		return true
@@ -330,5 +342,26 @@ func TestDirectoryConfigurationLayerChangeDuringResumeIsRefused(t *testing.T) {
 	}
 	if err := directoryConfigSourcesBefore(layer(map[string]any{"type": "unknown"}, map[string]any{}), after); err == nil {
 		t.Fatal("unknown layer accepted")
+	}
+}
+
+func TestDirectoryRejectsUnsettledNativeWorkBeforeClaim(t *testing.T) {
+	for _, mode := range []string{"thread-directory-pending-goal", "thread-directory-pending-queue", "thread-directory-pending-background"} {
+		t.Run(mode, func(t *testing.T) {
+			_, _, source, _ := continuationFixture(t, "ok")
+			root := source.Effective.Cwd
+			nested := filepath.Join(root, "nested")
+			if err := os.Mkdir(nested, 0700); err != nil {
+				t.Fatal(err)
+			}
+			source.Effective.WorkspaceRoots = []string{root}
+			source.Effective.Sandbox.WritableRoots = []string{root}
+			settings := ThreadSettings{Model: source.Effective.Model, Provider: source.Effective.Provider, Effort: *source.Effective.Effort, Cwd: nested, WorkspaceRoots: []string{root}, Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite, ApprovalPolicy: string(source.Effective.ApprovalPolicy), ServiceTier: *source.Effective.ServiceTier}}
+			client, _ := openThreadFixture(t, mode)
+			claims := 0
+			if _, err := client.ResumeDirectory(context.Background(), domain.NewID(), source, settings, func(DirectoryIntent) error { claims++; return nil }); err == nil || claims != 0 {
+				t.Fatal("unsettled native work reached directory claim", err, claims)
+			}
+		})
 	}
 }

@@ -44,7 +44,7 @@ func directoryCheckpointFixture(t *testing.T) (string, Credential, codexDirector
 	selected.Effective.Cwd = nested
 	selected.Effective.WorkspaceRoots = []string{f.root}
 	inputRaw, _ := json.Marshal(input)
-	owner := directoryOwnership{ServerID: domain.NewID(), DeviceID: domain.NewID(), JobID: domain.NewID(), InstanceID: domain.NewID(), Revision: 2, AssignmentDigest: strings.Repeat("a", 64), InputDigest: executionInputDigest(inputRaw)}
+	owner := directoryOwnership{ServerID: domain.NewID(), DeviceID: domain.NewID(), JobID: domain.NewID(), InstanceID: domain.NewID(), Revision: 2, AssignmentDigest: executionInputDigest(mustDirectoryJSON(domain.Job{Type: domain.ChangeSessionDirectoryJob, Input: inputRaw})), InputDigest: executionInputDigest(inputRaw)}
 	registration := directoryRegistration{Ownership: owner, RequestID: domain.NewID(), CredentialDigest: strings.Repeat("b", 64)}
 	registrationRaw, _ := json.Marshal(registration)
 	intent := directoryNativeIntent{Ownership: owner, GenerationID: input.GenerationID, RegistrationDigest: executionInputDigest(registrationRaw), Native: codex.DirectoryIntent{RequestID: input.RequestID, Source: source.Native, Destination: nested, WorkspaceRoots: []string{f.root}}}

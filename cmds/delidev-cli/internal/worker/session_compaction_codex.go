@@ -201,7 +201,24 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		}
 		settings = directoryThreadSettings(source.Native.Effective, directorySelection.Path(), manifest.WorkspaceRoots(), instructions, i.Assignment.Configuration.Options)
 	}
-	if codex.ValidateThreadSettings(settings) != nil {
+	if directoryGeneration == nil && i.Restore.ForkDirectory != nil {
+		directorySelection, err = lease.SelectDirectory(i.Restore.ForkDirectory.RepositoryID, i.Restore.ForkDirectory.RelativePath)
+		if err != nil {
+			return nil, err
+		}
+		defer directorySelection.Close()
+		if directorySelection.Path() != source.Native.Effective.Cwd {
+			return nil, domain.DirectoryUncertain()
+		}
+		settings = directoryThreadSettings(source.Native.Effective, directorySelection.Path(), manifest.WorkspaceRoots(), instructions, i.Assignment.Configuration.Options)
+	}
+	var settingsErr error
+	if directoryGeneration != nil || i.Restore.ForkDirectory != nil {
+		settingsErr = codex.ValidateDirectoryThreadSettings(source.Native, settings)
+	} else {
+		settingsErr = codex.ValidateThreadSettings(settings)
+	}
+	if settingsErr != nil {
 		return nil, domain.CompactionUncertain()
 	}
 	var managed *managedSubscriptionLease

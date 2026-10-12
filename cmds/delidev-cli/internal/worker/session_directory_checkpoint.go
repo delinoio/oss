@@ -158,14 +158,16 @@ func retainDirectoryCheckpoint(root string, p codexDirectoryCheckpoint) (domain.
 	if err != nil {
 		return empty, err
 	}
-	if existing, err := security.ReadPrivate(path, maxDirectoryCheckpointBytes); err == nil {
-		if !bytes.Equal(existing, raw) {
+	existing := false
+	if retained, err := security.ReadPrivate(path, maxDirectoryCheckpointBytes); err == nil {
+		existing = true
+		if !bytes.Equal(retained, raw) {
 			return empty, domain.DirectoryUncertain()
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return empty, domain.DirectoryUncertain()
 	}
-	if security.WriteAtomic(path, raw) != nil {
+	if !existing && security.WriteAtomic(path, raw) != nil {
 		return empty, domain.DirectoryUncertain()
 	}
 	ref := domain.SessionDirectoryRef{GenerationID: p.Input.GenerationID, JobID: p.Ownership.JobID, RequestID: p.Input.RequestID, ExecutionID: p.Input.Assignment.ExecutionID, RepositoryID: p.Input.RepositoryID, RelativePath: p.Input.RelativePath, CheckpointDigest: executionInputDigest(raw)}

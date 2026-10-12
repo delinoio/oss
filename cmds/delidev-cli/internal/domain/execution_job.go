@@ -93,7 +93,7 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
-	if i.ForkDirectory != nil && (i.ForkDirectory.Validate() != nil || i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "") {
+	if i.ForkDirectory != nil && (i.ForkDirectory.Validate() != nil || i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "" || i.Fork == nil && i.Continuation == nil) {
 		return DirectoryUncertain()
 	}
 	if i.Directory != nil && (i.Directory.Validate() != nil || i.Configuration.Harness != Codex || i.Continuation == nil || i.Fork != nil || i.Retry != nil || i.SidechatRetry != nil || i.Configuration.SidechatPolicy != "") {

@@ -98,3 +98,61 @@ func TestDirectoryDeletionIncludesOnlyOriginalSettledLeaseReceipts(t *testing.T)
 		t.Fatal("foreign instance adopted")
 	}
 }
+
+func TestDirectorySettlementRecoveryPromotesOnlyOriginalReadyGeneration(t *testing.T) {
+	root, credential, p, expected := directoryCheckpointFixture(t)
+	_, f, network := managedLaneFixture(t, connect.NewError(connect.CodeUnavailable, nil))
+	credential.Endpoint, credential.MachineID = network.Endpoint, p.Input.Assignment.MachineID
+	client, closeRPC, err := subscriptionRPC(context.Background(), Config{Root: root}, credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeRPC()
+	if err := security.PrivateDir(filepath.Join(root, "managed-auth")); err != nil {
+		t.Fatal(err)
+	}
+	leaseID, generation := domain.NewID(), domain.NewID()
+	j := managedSubscriptionJournal{Version: 1, Lease: leaseID, Account: p.Input.Assignment.AccountID, Operation: p.Ownership.JobID, Instance: p.Ownership.InstanceID, Finish: domain.NewID(), Generation: generation, LeaseRevision: 3, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE, State: managedClaimed}
+	path := filepath.Join(root, "managed-auth", string(leaseID)+".json")
+	if err := writeJSON(path, j); err != nil {
+		t.Fatal(err)
+	}
+	ready := mustDirectoryJSON(p)
+	if err := security.WriteAtomic(filepath.Join(root, "jobs", string(p.Ownership.JobID), "directory-ready.json"), ready); err != nil {
+		t.Fatal(err)
+	}
+	lease := &managedSubscriptionLease{client: client, credential: credential, instance: j.Instance, account: j.Account, finishID: j.Finish, journalPath: path, journal: j, response: &pb.TakeSubscriptionResponse{LeaseId: string(j.Lease), GenerationId: string(j.Generation), LeaseRevision: j.LeaseRevision}}
+	if lease.finishDirectory([]byte("fixture-bundle"), true, true) == nil {
+		t.Fatal("lost settlement reply expected")
+	}
+	first := <-f.finished
+	f.finishError = nil
+	job := domain.Job{Type: domain.ChangeSessionDirectoryJob, Input: mustDirectoryJSON(p.Input)}
+	resource := &pb.Resource{Id: string(p.Ownership.JobID), Revision: p.Ownership.Revision, DocumentJson: mustDirectoryJSON(job)}
+	config := Config{Root: root, execution: &PublicationConfig{Credential: credential}}
+	output, recovered, err := recoverDirectorySettlement(context.Background(), config, resource, p.Ownership.InstanceID, job)
+	if err != nil || !recovered {
+		t.Fatal("exact protected recovery", err, recovered)
+	}
+	second := <-f.finished
+	if !proto.Equal(first, second) {
+		t.Fatal("recovery reconstructed original settlement")
+	}
+	var result domain.SessionDirectoryResult
+	if domain.Decode(output, &result) != nil || result.Validate() != nil || result.Checkpoint != expected {
+		t.Fatal("recovery replaced generation identity")
+	}
+	after, err := os.ReadFile(filepath.Join(root, "jobs", string(p.Ownership.JobID), "directory-ready.json"))
+	if err != nil || !bytes.Equal(ready, after) {
+		t.Fatal("ready record changed")
+	}
+	resource.Revision++
+	if _, _, err := recoverDirectorySettlement(context.Background(), config, resource, p.Ownership.InstanceID, job); err == nil {
+		t.Fatal("foreign revision promoted generation")
+	}
+	select {
+	case <-f.finished:
+		t.Fatal("foreign revision replayed settlement")
+	default:
+	}
+}

@@ -78,6 +78,9 @@ func (r ExecutionCheckpointRef) validate() error {
 }
 
 func (r ExecutionCheckpointRef) validateForHarness(harness domain.Harness) error {
+	if r.ForkDirectory != nil && (harness != domain.Codex || r.ForkDirectory.Validate() != nil) {
+		return executionCheckpointUncertain()
+	}
 	if r.Directory != nil && (harness != domain.Codex || r.Directory.Validate() != nil) {
 		return executionCheckpointUncertain()
 	}
