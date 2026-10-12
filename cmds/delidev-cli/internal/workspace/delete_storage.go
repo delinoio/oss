@@ -20,7 +20,16 @@ import (
 // Paths derive exclusively from the immutable deletion plan, including snapshots
 // reserved before native work. Missing output cannot hide an interrupted copy.
 func SessionStorageCopyPaths(root string, w domain.SessionDeletionWork) []string {
-	paths := []string{filepath.Join(root, "workspace-restores", string(w.SessionID)+".json"), filepath.Join(root, "workspace-read-processes-v2", string(w.SessionID))}
+	return SessionStorageCopyPathsForOwner(root, w, true)
+}
+
+// SessionStorageCopyPathsForOwner limits session-scoped evidence to one
+// deterministic Worker obligation while retaining each copy's job-scoped paths.
+func SessionStorageCopyPathsForOwner(root string, w domain.SessionDeletionWork, includeSession bool) []string {
+	paths := []string{}
+	if includeSession {
+		paths = append(paths, filepath.Join(root, "workspace-restores", string(w.SessionID)+".json"), filepath.Join(root, "workspace-read-processes-v2", string(w.SessionID)))
+	}
 	seen := map[domain.ID]bool{}
 	for _, copy := range w.Copies {
 		if copy.Type != domain.WorkspaceStorageJob {
@@ -134,6 +143,12 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 // target-bound names carry original operation authority. Legacy unowned names
 // remain protected and block completion rather than silently leaking content.
 func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
+	return SessionStorageRemnantPathsForOwner(ctx, root, w, true)
+}
+
+// SessionStorageRemnantPathsForOwner observes session-scoped temporary restore
+// writes only for the selected cleanup owner; job-scoped writes remain per-copy.
+func SessionStorageRemnantPathsForOwner(ctx context.Context, root string, w domain.SessionDeletionWork, includeSession bool) ([]string, error) {
 	paths := []string{}
 	jobs := map[domain.ID]bool{}
 	for _, copy := range w.Copies {
@@ -142,6 +157,9 @@ func SessionStorageRemnantPaths(ctx context.Context, root string, w domain.Sessi
 		}
 	}
 	for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {
+		if directory == "workspace-restores" && !includeSession {
+			continue
+		}
 		path := filepath.Join(root, directory)
 		if err := security.CheckPrivateDir(path); errors.Is(err, os.ErrNotExist) {
 			continue

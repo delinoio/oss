@@ -390,9 +390,12 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 	if len(w.Copies) == 0 && w.Fork == nil {
 		return paths, nil
 	}
-	paths = append(paths, filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock"))
-	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
-	remnants, err := workspace.SessionStorageRemnantPaths(ctx, root, w)
+	sharedCleanupOwner := w.SharedCleanupOwnerDeviceID == "" || w.SharedCleanupOwnerDeviceID == w.DeviceID
+	if sharedCleanupOwner {
+		paths = append(paths, filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock"))
+	}
+	paths = append(paths, workspace.SessionStorageCopyPathsForOwner(root, w, sharedCleanupOwner)...)
+	remnants, err := workspace.SessionStorageRemnantPathsForOwner(ctx, root, w, sharedCleanupOwner)
 	if err != nil {
 		return nil, err
 	}

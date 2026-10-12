@@ -1097,5 +1097,22 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	if e != nil {
 		return v, e
 	}
+	sharedCleanupOwners := map[domain.ID]domain.ID{}
+	for _, worker := range v.Workers {
+		work := worker.Work
+		if len(work.Copies) == 0 && work.Fork == nil {
+			continue
+		}
+		owner := sharedCleanupOwners[work.MachineID]
+		if owner == "" || string(work.DeviceID) < string(owner) {
+			sharedCleanupOwners[work.MachineID] = work.DeviceID
+		}
+	}
+	for i := range v.Workers {
+		work := &v.Workers[i].Work
+		if owner := sharedCleanupOwners[work.MachineID]; owner != "" && (len(work.Copies) != 0 || work.Fork != nil) {
+			work.SharedCleanupOwnerDeviceID = owner
+		}
+	}
 	return v, v.validate()
 }

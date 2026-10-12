@@ -92,6 +92,49 @@ func TestSessionDeletionIndependentOriginalDevicesRetainDistinctReceipts(t *test
 	}
 }
 
+func TestSessionDeletionSharedCopiesHaveOneDeterministicOwner(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	owner := works[0].DeviceID
+	if string(works[1].DeviceID) < string(owner) {
+		owner = works[1].DeviceID
+	}
+	for i := range works {
+		works[i].SharedCleanupOwnerDeviceID = owner
+	}
+	shared := filepath.Join(config.Root, "execution-history", string(works[0].SessionID))
+	if err := os.MkdirAll(shared, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(shared, "original")
+	if err := os.WriteFile(marker, []byte("owned"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ownerIndex := 0
+	if works[1].DeviceID == owner {
+		ownerIndex = 1
+	}
+	otherIndex := 1 - ownerIndex
+
+	if _, err := deleteSessionCopies(context.Background(), config, works[ownerIndex]); err != nil {
+		t.Fatal("shared-path owner could not finish", err)
+	}
+	if _, err := os.Lstat(shared); !os.IsNotExist(err) {
+		t.Fatal("shared-path owner did not remove the original path", err)
+	}
+	if err := os.MkdirAll(shared, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("restored"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), config, works[otherIndex]); err != nil {
+		t.Fatal("non-owner cleanup failed", err)
+	}
+	if content, err := os.ReadFile(marker); err != nil || string(content) != "restored" {
+		t.Fatal("non-owner removed a restored shared path", err)
+	}
+}
+
 func TestSessionDeletionLegacyExactStagesAndInterruptedPairs(t *testing.T) {
 	for _, stage := range []string{"untouched", "started", "complete", "missing-started-workspace", "missing-complete-workspace", "equal-pair", "changed-pair", "foreign-digest", "foreign-receipt", "missing-fence"} {
 		t.Run(stage, func(t *testing.T) {

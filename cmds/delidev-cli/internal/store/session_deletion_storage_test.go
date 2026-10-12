@@ -69,6 +69,15 @@ func TestSessionDeletionPinsOriginalStorageReservation(t *testing.T) {
 	if err != nil || len(deletion.Workers) != 2 {
 		t.Fatal(err, deletion)
 	}
+	sharedOwner := device
+	if string(storageDevice) < string(sharedOwner) {
+		sharedOwner = storageDevice
+	}
+	for _, worker := range deletion.Workers {
+		if worker.Work.SharedCleanupOwnerDeviceID != sharedOwner {
+			t.Fatalf("shared session cleanup owner is not deterministic: %+v", worker.Work)
+		}
+	}
 	var work domain.SessionDeletionWork
 	for _, worker := range deletion.Workers {
 		if worker.Work.DeviceID == storageDevice {
