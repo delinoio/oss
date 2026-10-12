@@ -228,6 +228,10 @@ func TestSessionDeletionLegacyCompletedReceiptAndInterruptedRetirement(t *testin
 			}
 			paths, _ := workspace.SessionDeletionProofPaths(config.Root, work)
 			if stage == "legacy-complete" {
+				legacyWorkspacePath := filepath.Join(config.Root, "session-deletions", string(work.SessionID)+"-workspace.json")
+				if err := writeJSON(legacyWorkspacePath, map[string]any{"version": 1, "digest": work.Digest(), "removed": true}); err != nil {
+					t.Fatal(err)
+				}
 				legacy := original
 				legacy.Version = 1
 				legacy.Identity = domain.SessionDeletionIdentity{}
