@@ -76,9 +76,25 @@ func TestBackupRestoreProcessCrash(t *testing.T) {
 			s, root, ctx, in, _ := restoreFixture(t)
 			later := domain.NewID()
 			create(t, s, later, "preserved until replacement")
-			in.ExpectedRevision, _ = s.RestoreRevision(ctx)
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// A real request observes state only after startup has completed its
+			// current-schema document upgrades. Finish that startup before freezing
+			// the revision, then keep the accepted child request immutable.
+			reopened, err := Open(ctx, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s = reopened
+			in.ExpectedRevision, err = s.RestoreRevision(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
 			request := domain.NewID()
-			s.Close()
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
 			raw, _ := json.Marshal(struct {
 				Root, Boundary string
 				Request        domain.ID
@@ -91,7 +107,7 @@ func TestBackupRestoreProcessCrash(t *testing.T) {
 			if !errors.As(err, &exit) || exit.ExitCode() != 89 {
 				t.Fatal("unexpected child outcome", err, string(output))
 			}
-			reopened, err := Open(ctx, root)
+			reopened, err = Open(ctx, root)
 			if err != nil {
 				t.Fatal(err)
 			}
