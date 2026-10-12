@@ -33,7 +33,7 @@ func TestHarnessUpgradeIsAtomicIdempotentAndLeavesHistoricalBytes(t *testing.T) 
 		}
 		// Historical bytes are independent recovery evidence; the live document
 		// upgrade must neither decode nor rewrite this retained session fixture.
-		_, err := tx.tx.ExecContext(ctx, "INSERT INTO entities(id,kind,revision,session_id,project_id,body,created_at,updated_at) VALUES(?,'session',1,'','',?,1,1)", historyID, history)
+		_, err := tx.tx.ExecContext(ctx, "INSERT INTO entities(id,kind,revision,session_id,project_id,body,created_at,updated_at) VALUES(?,'session',1,'','',?,1,1)", historyID, []byte(history))
 		return nil, err
 	})
 	if err != nil {
