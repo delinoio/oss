@@ -1,0 +1,52 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.tailscale-devices,
+.tailscale-access {
+  min-width: 0;
+}
+.tailscale-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.tailscale-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.tailscale-list > li > div {
+  min-width: 0;
+}
+.tailscale-list p,
+.tailscale-identity {
+  overflow-wrap: anywhere;
+}
+.tailscale-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tailscale-actions button,
+.tailscale-devices button,
+.tailscale-access button {
+  min-height: 40px;
+}
+.tailscale-code {
+  display: block;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.15em;
+  margin: 16px 0;
+}
+@media (max-width: 600px) {
+  .tailscale-list > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .tailscale-actions {
+    width: 100%;
+  }
+}
