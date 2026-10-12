@@ -14459,6 +14459,13 @@
       "newDeclaration": true
     },
     {
+      "issue": 2560,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1",
+      "number": 53
+    },
+    {
       "issue": 2972,
       "kind": "message",
       "declaration": "Resource",

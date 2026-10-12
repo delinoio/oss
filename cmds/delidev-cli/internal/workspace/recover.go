@@ -99,6 +99,9 @@ func ValidateRecoveryResult(input RecoveryRequest, result RecoveryResult, worker
 // against its private execution journal. completedClean is permitted only for a
 // durable terminal failure/cancellation that already confirmed native cleanup.
 func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedClean bool) (RecoveryResult, error) {
+	if err := m.requireNamedDirectories(input.Preparation); err != nil {
+		return RecoveryResult{}, err
+	}
 	result := RecoveryResult{JobID: input.JobID, InputDigest: preparationDigest(input.Preparation)}
 	if err := input.Validate(); err != nil {
 		return result, err
@@ -282,7 +285,7 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 				return ResultUncertain()
 			}
 		}
-		if repo.ID != expected.ID || repo.Source != registration {
+		if repo.DirectoryName != expected.DirectoryName || repo.ID != expected.ID || repo.Source != registration {
 			return ResultUncertain()
 		}
 		if input.Type == domain.Local {
@@ -291,7 +294,7 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 			if !validLocalRepository(repo) || repo.Base != expected.Base {
 				return ResultUncertain()
 			}
-		} else if repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
+		} else if repo.Path != ownedRepositoryPath(root, repo.ID, repo.DirectoryName) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository && manifest.PrimaryPath == repo.Path {
@@ -335,6 +338,9 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 }
 
 func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input PrepareRequest, manifest Manifest, validation readyValidation, owner domain.ID) (string, error) {
+	if err := m.requireNamedDirectories(input); err != nil {
+		return "", err
+	}
 	if validation != preparationIdentity && validation != continuationIdentity {
 		return "", ResultUncertain()
 	}

@@ -129,6 +129,9 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 // Only admission uses the short file-read deadline; native lifetime is owned by
 // its admitted Worker job, never by a disposable read request.
 func (m *Manager) observeWorkspaceOwned(ctx, operation context.Context, request ReadRequest, repositoryID domain.ID, verifyAfter bool, observe func(context.Context, Git, Manifest, *os.Root, string) error) (returned error) {
+	if err := m.requireNamedDirectories(request.Preparation); err != nil {
+		return err
+	}
 	if security.CheckPrivateDir(m.Root) != nil || m.initialize() != nil {
 		return ResultUncertain()
 	}
@@ -178,7 +181,7 @@ func (m *Manager) observeWorkspaceOwned(ctx, operation context.Context, request 
 	}
 	// Continuation identity allows commits and dirty files without requiring a
 	// closed native claim. This observation grants no execution/recovery rights.
-	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger}
+	inspection := &Manager{Root: m.Root, Git: m.Git, Logger: m.Logger, NamedDirectories: m.NamedDirectories}
 	inspection.Git.readOnly = true
 	inspection.Git.ProcessRoot = m.readProcessRoot(request.Preparation.SessionID)
 	if len(retained.Repositories) > 0 {
