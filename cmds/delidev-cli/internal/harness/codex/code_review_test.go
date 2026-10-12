@@ -149,6 +149,7 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 		t.Run(string(kind), func(t *testing.T) {
 			c, capture := openThreadFixture(t, "thread-native-review-ready")
 			settings := threadSettings(t)
+			settings.Cwd = c.codeReviewRoot
 			settings.WorkspaceRoots = []string{settings.Cwd}
 			settings.Options = domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "never", ServiceTier: "fast"}
 			if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
@@ -197,6 +198,7 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 	}
 	c, capture := openThreadFixture(t, "thread-native-review-loss")
 	settings := threadSettings(t)
+	settings.Cwd = c.codeReviewRoot
 	settings.WorkspaceRoots = []string{settings.Cwd}
 	settings.Options = domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "never", ServiceTier: "fast"}
 	if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
@@ -230,6 +232,7 @@ func TestDedicatedReviewRejectsIncompatibleAuthorityBeforeLaunch(t *testing.T) {
 	for _, kind := range []string{"original", "sidechat", "image-generation", "revert", "fork", "skills", "images", "model-observer", "probe"} {
 		t.Run(kind, func(t *testing.T) {
 			config := Config{CodeReviewModel: "original-selected-model", Mode: ThreadProtocol}
+			config.Process.Cwd = t.TempDir()
 			switch kind {
 			case "sidechat":
 				config.Sidechat = ReadOnlySidechatV1
@@ -262,6 +265,7 @@ func TestDedicatedReviewRejectsIncompatibleAuthorityBeforeLaunch(t *testing.T) {
 func TestDedicatedReviewRestrictsNativeRootsToSelectedRepository(t *testing.T) {
 	c, capture := openThreadFixture(t, "thread-native-review-ready")
 	settings := threadSettings(t)
+	settings.Cwd = c.codeReviewRoot
 	settings.Options = domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "never", ServiceTier: "fast"}
 	unselected, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -291,5 +295,26 @@ func TestDedicatedReviewRestrictsNativeRootsToSelectedRepository(t *testing.T) {
 	}
 	if started != 1 {
 		t.Fatal("invalid root selection launched a native thread")
+	}
+}
+
+func TestDedicatedReviewRequiresNativeActiveRestrictedProfile(t *testing.T) {
+	for _, mode := range []string{"thread-native-review-wrong-profile", "thread-native-review-inherited-profile"} {
+		t.Run(mode, func(t *testing.T) {
+			c, capture := openThreadFixture(t, mode)
+			settings := threadSettings(t)
+			settings.Cwd = c.codeReviewRoot
+			settings.WorkspaceRoots = []string{c.codeReviewRoot}
+			settings.Options = domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "never", ServiceTier: "fast"}
+			if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err == nil {
+				t.Fatal("native thread without the exact restricted profile was accepted")
+			}
+			if c.thread == "" || c.problem == nil || len(requestsOf(t, capture, "review/start")) != 0 {
+				t.Fatal("unknown native profile did not retain uncertain thread identity and block review")
+			}
+			if _, err := c.StartCodeReview(context.Background(), domain.NewID(), codeReviewClientFixture(t).codeReview.selection); err == nil {
+				t.Fatal("review sent after active profile verification failed")
+			}
+		})
 	}
 }

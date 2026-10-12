@@ -134,6 +134,7 @@ type threadParams struct {
 	ApprovalPolicy             ApprovalPolicy `json:"approvalPolicy,omitempty"`
 	ApprovalsReviewer          string         `json:"approvalsReviewer"`
 	Sandbox                    string         `json:"sandbox,omitempty"`
+	Permissions                string         `json:"permissions,omitempty"`
 	ServiceTier                string         `json:"serviceTier,omitempty"`
 	Config                     map[string]any `json:"config,omitempty"`
 	ExcludeTurns               *bool          `json:"excludeTurns,omitempty"`
@@ -297,7 +298,7 @@ func (c *Client) acquireControl(ctx context.Context) error {
 func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, settings ThreadSettings, method threadMethod) (result ThreadResult, returned error) {
 	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result.RequestID = requestID
-	if c.codeReviewModel != "" && (method != startThread || len(settings.WorkspaceRoots) != 1 || settings.WorkspaceRoots[0] != settings.Cwd) {
+	if c.codeReviewModel != "" && (method != startThread || !nativePathEqual(settings.Cwd, c.codeReviewRoot) || len(settings.WorkspaceRoots) != 1 || !nativePathEqual(settings.WorkspaceRoots[0], c.codeReviewRoot)) {
 		// The review freezes only one proven repository. Unselected session
 		// roots and inherited native roots have no review-input authority.
 		return result, domain.NativeCodeReviewUnavailable()
@@ -315,6 +316,13 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	params, err := settings.params()
 	if err != nil {
 		return result, err
+	}
+	if c.codeReviewModel != "" {
+		// ThreadStartParams cannot combine a named permission profile with its
+		// legacy SandboxMode. Select the verified repository-scoped profile
+		// explicitly, and omit the full-disk legacy read-only mode.
+		params.Sandbox = ""
+		params.Permissions = nativeReviewPermissionProfile
 	}
 	if err := c.acquireControl(ctx); err != nil {
 		return result, err
@@ -385,6 +393,18 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 			c.thread = threadID
 		}
 		return result, problem
+	}
+	if c.codeReviewModel != "" && !activeNativeReviewProfile(response.Result) {
+		var identity struct {
+			Thread struct {
+				ID domain.ID `json:"id"`
+			} `json:"thread"`
+		}
+		if json.Unmarshal(response.Result, &identity) == nil && identity.Thread.ID.Validate() == nil {
+			c.thread = identity.Thread.ID
+		}
+		c.problem = threadUncertain()
+		return result, domain.NativeCodeReviewUnavailable()
 	}
 	thread, effective, err := decodeBoundThreadProfile(response.Result, settings, threadID, method, c.version, c.revertHistory)
 	result.Thread, result.Effective = thread, effective

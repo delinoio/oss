@@ -4,6 +4,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -41,6 +42,11 @@ func configureCodeReview(config *Config) error {
 	if config.Mode != ThreadProtocol || domain.Text(config.CodeReviewModel, "original review model", 256, true) != nil || config.Sidechat != "" || config.EnableImageGeneration || config.RevertHistory || config.ManagedForkHistory || config.SkillsRoot != "" || config.ImageRoot != "" || config.ModelObservation {
 		return domain.NativeCodeReviewUnavailable()
 	}
+	root, err := filepath.EvalSymlinks(config.Process.Cwd)
+	if err != nil || !filepath.IsAbs(root) {
+		return domain.NativeCodeReviewUnavailable()
+	}
+	config.Process.Cwd = root
 	// Reuse the existing closed private restriction profile. This is not a
 	// Sidechat/Fork operation or a grant of its product capabilities.
 	config.Sidechat = ReadOnlySidechatV1
@@ -68,7 +74,7 @@ func (c *Client) StartCodeReview(ctx context.Context, action domain.ID, selectio
 		return result, err
 	}
 	defer func() { <-c.control }()
-	if c.eligibleTurnLocked(false) != nil || c.codeReview != nil || c.execution.active != "" || len(c.execution.turns) != 0 || len(c.execution.inputs) != 0 || c.codeReviewModel != c.execution.settings.Model || !sidechatEffective(c.execution.settings) {
+	if c.problem != nil || c.execution == nil || c.eligibleTurnLocked(false) != nil || c.codeReview != nil || c.execution.active != "" || len(c.execution.turns) != 0 || len(c.execution.inputs) != 0 || c.codeReviewModel != c.execution.settings.Model || !sidechatEffective(c.execution.settings) {
 		return result, domain.NativeCodeReviewUnavailable()
 	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
