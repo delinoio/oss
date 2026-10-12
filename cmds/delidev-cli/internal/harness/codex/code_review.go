@@ -35,6 +35,18 @@ type codeReviewAttempt struct {
 	terminal  bool
 }
 
+// Codex reports raw response observations on the child model turn, while the
+// acknowledged review turn remains the owner of the review operation. Only
+// those raw observations may use this correlation; lifecycle events retain
+// their exact acknowledged turn identity.
+func (c *Client) normalizeCodeReviewChildTurn(turn domain.ID) domain.ID {
+	a := c.codeReview
+	if a != nil && a.turn.Validate() == nil && a.childTurn != "" && turn == a.childTurn {
+		return a.turn
+	}
+	return turn
+}
+
 func configureCodeReview(config *Config) error {
 	if config.CodeReviewModel == "" {
 		return nil

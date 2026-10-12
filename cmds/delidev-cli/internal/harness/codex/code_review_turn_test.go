@@ -40,6 +40,16 @@ func TestNativeReviewCorrelatesAlternateChildTurnWithoutReplacingAcknowledgment(
 		t.Fatal("alternate child tool event was not correlated to the review assignment")
 	}
 
+	usage := notify("rawResponse/completed", map[string]any{"threadId": c.thread, "turnId": b, "responseId": "child-response"})
+	if usage.TurnID != a || !usage.Correlated || usage.ResponseUsage == nil || c.codeReview.turn != a || c.execution.active != a {
+		t.Fatal("alternate child response usage was not normalized to the acknowledged review turn")
+	}
+
+	rawItem := notify("rawResponseItem/completed", map[string]any{"threadId": c.thread, "turnId": b, "item": map[string]any{"type": "message"}})
+	if rawItem.TurnID != a || !rawItem.Correlated || rawItem.Metadata != RawSupplementDiscarded || c.codeReview.turn != a || c.execution.active != a {
+		t.Fatal("alternate child raw item was not normalized to the acknowledged review turn")
+	}
+
 	item := map[string]any{"type": "enteredReviewMode", "id": "entry", "review": "current changes"}
 	entered := notify("item/started", map[string]any{"threadId": c.thread, "turnId": a, "item": item, "startedAtMs": int64(1)})
 	if entered.TurnID != a || entered.Metadata != NativeReviewItemPending {
