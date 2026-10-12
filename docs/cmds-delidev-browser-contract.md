@@ -174,8 +174,8 @@ retention before requesting asynchronous closure. The close callback releases th
 child handle without erasing its typed failure, so state polling still offers Retry.
 When a shared-profile tab operation replaces multiple children, every affected
 window receives a creation attempt even if another attempt fails. Each failure
-is retained against its exact view; the initiating command returns the first
-failure after attempting all replacements.
+is retained against its exact view; the initiating command returns its own
+window's result after attempting all replacements, independent of peer failures.
 Children whose selected tab identity is unchanged remain intact when closing a
 background tab or selecting the current tab, preserving in-page state, navigation
 history, pending creation and exact retained failure. Changing selection or closing

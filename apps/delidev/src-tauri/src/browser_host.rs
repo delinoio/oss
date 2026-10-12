@@ -947,19 +947,24 @@ impl BrowserHost {
             }
         }
         let mut requests = replacement.requests;
+        let initiating_window = request.window.clone();
         requests.push(request);
         match context {
-            Ok(Some(context)) => self.recreate_children(&record.id, &requests, |request| {
-                create_child(
-                    self,
-                    app,
-                    record.id.clone(),
-                    request.clone(),
-                    context.clone(),
-                )
-            })?,
+            Ok(Some(context)) => {
+                self.recreate_children(&record.id, &requests, &initiating_window, |request| {
+                    create_child(
+                        self,
+                        app,
+                        record.id.clone(),
+                        request.clone(),
+                        context.clone(),
+                    )
+                })?
+            }
             Ok(None) => {}
-            Err(code) => self.recreate_children(&record.id, &requests, |_| Err(code))?,
+            Err(code) => {
+                self.recreate_children(&record.id, &requests, &initiating_window, |_| Err(code))?
+            }
         }
         tracing::info!(operation = "browser_view", state = "opening");
         Ok(result)
@@ -1543,9 +1548,14 @@ impl BrowserHost {
                         host.close_browser(1);
                     }
                 }
-                self.recreate_children(profile, &replacement.requests, |request| {
-                    create_child(self, app, profile.into(), request.clone(), context.clone())
-                })?;
+                self.recreate_children(
+                    profile,
+                    &replacement.requests,
+                    window.label(),
+                    |request| {
+                        create_child(self, app, profile.into(), request.clone(), context.clone())
+                    },
+                )?;
                 state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
             }
         }
@@ -1794,18 +1804,21 @@ impl BrowserHost {
         &self,
         profile: &str,
         requests: &[ViewRequest],
+        initiating_window: &str,
         mut create_child: impl FnMut(&ViewRequest) -> Result<()>,
     ) -> Result<()> {
-        let mut first_failure = None;
+        let mut initiating_result = None;
         // Every shared user has already lost its old child. One failed creation
         // cannot prevent later users from receiving a child or an exact
-        // failure.
+        // failure. Only the initiating window's result determines whether its
+        // open/control operation succeeded; peer failures stay on those views.
         for request in requests {
-            if let Err(code) = self.creation_completed(profile, request, create_child(request)) {
-                first_failure.get_or_insert(code);
+            let result = self.creation_completed(profile, request, create_child(request));
+            if request.window == initiating_window {
+                initiating_result = Some(result);
             }
         }
-        first_failure.map_or(Ok(()), Err)
+        initiating_result.unwrap_or(Err(NativeFailure::InvalidEvidence))
     }
 
     fn creation_completed(
@@ -4788,7 +4801,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         }
         let mut attempted = Vec::new();
         assert_eq!(
-            host.recreate_children(&record.id, &requests, |request| {
+            host.recreate_children(&record.id, &requests, "third", |request| {
                 assert!(host.state.try_lock().is_ok());
                 attempted.push(request.window.clone());
                 match request.window.as_str() {
@@ -4797,7 +4810,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
                     _ => Ok(()),
                 }
             }),
-            Err(NativeFailure::SidecarFailed)
+            Ok(())
         );
         assert_eq!(attempted, ["fixture", "second", "third"]);
         assert!(matches!(
@@ -4809,6 +4822,19 @@ exec /bin/cat "$2/desktop-client/pending.json"
             Err(NativeFailure::Busy)
         ));
         assert!(host.status("third", &record.id, &identities[2]).is_ok());
+        attempted.clear();
+        assert_eq!(
+            host.recreate_children(&record.id, &requests, "fixture", |request| {
+                attempted.push(request.window.clone());
+                match request.window.as_str() {
+                    "fixture" => Err(NativeFailure::SidecarFailed),
+                    "second" => Err(NativeFailure::Busy),
+                    _ => Ok(()),
+                }
+            }),
+            Err(NativeFailure::SidecarFailed)
+        );
+        assert_eq!(attempted, ["fixture", "second", "third"]);
     }
 
     #[test]
