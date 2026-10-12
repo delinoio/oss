@@ -1754,7 +1754,10 @@ it.each(["missing", "foreign", "equal", "older", "unsafe", "problem"])(
       ...completion({ id: repository.id, revision: "2" }),
       revision: 3n,
     });
-    value.resources[0] = create(ResourceSchema, { ...repository, revision: 2n });
+    value.resources[0] = create(ResourceSchema, {
+      ...repository,
+      revision: 2n,
+    });
     fireEvent.click(retry);
     expect(await screen.findByText("Repository saved.")).toBeTruthy();
     expect(saved).toHaveBeenCalledTimes(1);
@@ -1897,9 +1900,9 @@ it.each(["failed", "missing", "foreign", "kind", "schema", "zero", "older"])(
       </StrictMode>,
     );
     await submitRepositorySave();
-    expect(
-      read.mock.calls.filter(([id]) => id === repository.id),
-    ).toHaveLength(0);
+    expect(read.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(
+      0,
+    );
     value.resources[1] = completion({ id: repository.id, revision: "3" });
     await act(async () => {
       await value.client.invalidateQueries();
@@ -1922,7 +1925,8 @@ it.each(["failed", "missing", "foreign", "kind", "schema", "zero", "older"])(
       .getQueryCache()
       .getAll()
       .find((query) => {
-        const key = query.queryKey[1] as { input?: { id?: string } } | undefined;
+        const key = query.queryKey[1] as
+          { input?: { id?: string } } | undefined;
         return key?.input?.id === repository.id;
       });
     expect(cached).toBeTruthy();
