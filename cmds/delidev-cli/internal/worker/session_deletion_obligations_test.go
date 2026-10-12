@@ -308,11 +308,19 @@ func TestSessionDeletionLegacyCompletedReceiptAndInterruptedRetirement(t *testin
 				legacy := original
 				legacy.Version = 1
 				legacy.Identity = domain.SessionDeletionIdentity{}
+				legacy.AdmissionDigest = ""
 				legacy.WorkspaceRetired = false
 				if err := writeJSON(sessionDeletionPath(config.Root, work.SessionID), legacy); err != nil {
 					t.Fatal(err)
 				}
+				legacyWorkspacePath := filepath.Join(config.Root, "session-deletions", string(work.SessionID)+"-workspace.json")
+				if err := writeJSON(legacyWorkspacePath, map[string]any{"version": 1, "digest": work.Digest(), "removed": true}); err != nil {
+					t.Fatal(err)
+				}
 				if err := os.Remove(paths.Worker); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(sessionRemovalAdmissionPath(paths.Worker)); err != nil {
 					t.Fatal(err)
 				}
 			} else {
