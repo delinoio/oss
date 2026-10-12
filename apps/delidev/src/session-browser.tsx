@@ -99,6 +99,15 @@ interface TabbedBrowser {
     title: string;
     label?: string;
   }) => void;
+  /** Refreshes an existing shared Page descriptor without selecting or reordering it. */
+  refreshPage?: (page: {
+    profile: string;
+    id: string;
+    title: string;
+    label?: string;
+  }) => void;
+  /** Removes the shared Page descriptor after the native close was acknowledged. */
+  closePage?: (page: { profile: string; id: string }) => void;
 }
 export interface BrowserLayoutControls {
   wide: boolean;
@@ -178,6 +187,8 @@ export function SessionBrowser({
   active = true,
   selectedPage,
   openPage,
+  refreshPage,
+  closePage,
 }: {
   session: Resource;
   accountId: string;
@@ -211,6 +222,8 @@ export function SessionBrowser({
       active={active}
       selectedPage={selectedPage}
       openPage={openPage}
+      refreshPage={refreshPage}
+      closePage={closePage}
     />
   );
 }
@@ -222,6 +235,8 @@ function NativeSessionBrowser({
   active = true,
   selectedPage,
   openPage,
+  refreshPage,
+  closePage,
 }: {
   session: Resource;
   accountId: string;
@@ -256,6 +271,12 @@ function NativeSessionBrowser({
   const tabsStore = useSessionTabsStore();
   const activeRef = useRef(active);
   activeRef.current = active;
+  // Effects and native continuations observe the latest descriptor callbacks.
+  const pageSync = useRef({ refreshPage, closePage });
+  pageSync.current = { refreshPage, closePage };
+  // The last shared-selection reconciliation sent natively, so a failed
+  // SelectTab is never retried without a new selection or native state.
+  const reconciled = useRef("");
   const capabilities = useQuery(
     BrowserQuery.getBrowserCapabilities,
     {},
@@ -450,6 +471,15 @@ function NativeSessionBrowser({
               if (!disposed && presentation.current === viewId) {
                 setState(changed);
                 if (
+                  pending.action === BrowserAction.CloseTab &&
+                  pending.tabId &&
+                  !changed.tabs.tabs.some((tab) => tab.id === pending.tabId)
+                )
+                  pageSync.current.closePage?.({
+                    profile: profileId,
+                    id: pending.tabId,
+                  });
+                if (
                   openPage &&
                   [BrowserAction.NewTab, BrowserAction.SelectTab].includes(
                     pending.action,
@@ -601,6 +631,14 @@ function NativeSessionBrowser({
       );
       if (alive.current) {
         setState(result);
+        // Only an acknowledged close that no longer lists the exact page removes
+        // its shared descriptor; failures and uncertain results keep it.
+        if (
+          action === BrowserAction.CloseTab &&
+          tabId &&
+          !result.tabs.tabs.some((tab) => tab.id === tabId)
+        )
+          pageSync.current.closePage?.({ profile: profileId, id: tabId });
         if (
           openPage &&
           [
@@ -637,10 +675,31 @@ function NativeSessionBrowser({
       !state ||
       state.tabs.selected === selectedPage.id ||
       !state.tabs.tabs.some((tab) => tab.id === selectedPage.id)
-    )
+    ) {
+      if (state && selectedPage && state.tabs.selected === selectedPage.id)
+        reconciled.current = "";
       return;
+    }
+    // A busy action drops SelectTab; busy is a dependency so the current shared
+    // selection is reconciled once when the action settles.
+    if (busy) return;
+    const attempt = `${profileId}:${selectedPage.id}:${state.tabs.selected}`;
+    if (reconciled.current === attempt) return;
+    reconciled.current = attempt;
     void control(BrowserAction.SelectTab, selectedPage.id);
-  }, [active, selectedPage?.id, profileId, state?.tabs.selected]);
+  }, [active, selectedPage?.id, profileId, state?.tabs.selected, busy]);
+  useEffect(() => {
+    // Shared labels follow the latest observed URL of owned pages only; the
+    // store ignores unknown pages and unchanged labels.
+    if (!profileId || !state) return;
+    for (const tab of state.tabs.tabs)
+      pageSync.current.refreshPage?.({
+        profile: profileId,
+        id: tab.id,
+        title: browserTabTitle(tab.url),
+        label: tab.url,
+      });
+  }, [state, profileId]);
   useEffect(() => {
     if (!profileId || !openPage) return;
     let disposed = false;

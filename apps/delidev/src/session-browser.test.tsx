@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { StrictMode } from "react";
+import { StrictMode, type ComponentProps } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -105,7 +105,7 @@ function fixture() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  function View() {
+  function View(extra: Partial<ComponentProps<typeof SessionBrowser>> = {}) {
     return (
       <TransportProvider transport={transport}>
         <QueryClientProvider client={client}>
@@ -114,6 +114,7 @@ function fixture() {
               session={session}
               accountId={accountId}
               close={() => {}}
+              {...extra}
             />
           </MutationIntents>
         </QueryClientProvider>
@@ -741,3 +742,207 @@ it("fences a retained Browser under the maximized upper inert region through exa
     view.unmount();
   }
 });
+
+// Shared-tab reconciliation fixtures: three native pages A (selected), B and C.
+function pagesFixture() {
+  const f = fixture();
+  const b = newRequestId(),
+    c = newRequestId();
+  const tabs = [
+    { id: f.tabId, url: "https://fixture.test/a" },
+    { id: b, url: "https://fixture.test/b" },
+    { id: c, url: "https://fixture.test/c" },
+  ];
+  const state = (selected: string, list = tabs) => ({
+    tabs: { tabs: list, selected },
+    removal_pending: false,
+  });
+  const page = (id: string) => ({
+    profile: f.profileId,
+    id,
+    title: id,
+    label: id,
+  });
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  return { ...f, a: f.tabId, b, c, tabs, state, page, selects };
+}
+it("reconciles only the latest shared selection once after a busy action settles", async () => {
+  const f = pagesFixture();
+  let release!: () => void;
+  native.mockImplementation(async (operation, args) => {
+    if (operation === "control_browser" && args.action === "reload")
+      await new Promise<void>((resolve) => (release = resolve));
+    if (operation === "control_browser" && args.action === "select-tab")
+      return f.state(args.tabId);
+    return f.state(f.a);
+  });
+  const openPage = vi.fn();
+  const view = render(
+    <f.View openPage={openPage} selectedPage={f.page(f.a)} />,
+  );
+  await open();
+  await screen.findByRole("button", { name: "https://fixture.test/c" });
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.b)} />);
+  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.c)} />);
+  expect(f.selects()).toHaveLength(0);
+  await act(async () => release());
+  await waitFor(() => expect(f.selects()).toHaveLength(1));
+  expect(f.selects()[0][1]).toMatchObject({ tabId: f.c });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.selects()).toHaveLength(1);
+});
+it("does not send a stale reconciliation after the view became inactive or the page already matches", async () => {
+  const f = pagesFixture();
+  let release!: () => void;
+  native.mockImplementation(async (operation, args) => {
+    if (operation === "control_browser" && args.action === "reload")
+      await new Promise<void>((resolve) => (release = resolve));
+    return f.state(f.a);
+  });
+  const openPage = vi.fn();
+  const view = render(
+    <f.View openPage={openPage} selectedPage={f.page(f.a)} />,
+  );
+  await open();
+  await screen.findByRole("button", { name: "https://fixture.test/c" });
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  view.rerender(
+    <f.View openPage={openPage} selectedPage={f.page(f.b)} active={false} />,
+  );
+  await act(async () => release());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.selects()).toHaveLength(0);
+  // Nearest counterexample: selecting the already visible page sends nothing.
+  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.a)} />);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.selects()).toHaveLength(0);
+});
+it("does not retry a failed reconciliation without a new selection", async () => {
+  const f = pagesFixture();
+  native.mockImplementation(async (operation, args) => {
+    if (operation === "control_browser" && args.action === "select-tab")
+      throw new Error("rejected");
+    return f.state(f.a);
+  });
+  const openPage = vi.fn();
+  const view = render(
+    <f.View openPage={openPage} selectedPage={f.page(f.a)} />,
+  );
+  await open();
+  await screen.findByRole("button", { name: "https://fixture.test/c" });
+  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.b)} />);
+  await waitFor(() => expect(f.selects()).toHaveLength(1));
+  await screen.findByRole("alert");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.selects()).toHaveLength(1);
+});
+it("refreshes owned shared labels from observed URLs without selecting or navigating", async () => {
+  const f = pagesFixture();
+  const moved = f.tabs.map((tab) =>
+    tab.id === f.a ? { ...tab, url: "https://redirect.test/landed" } : tab,
+  );
+  native.mockImplementation(async (operation, args) => {
+    if (operation === "control_browser" && args.action === "back")
+      return f.state(f.a, moved);
+    return f.state(f.a);
+  });
+  const openPage = vi.fn(),
+    refreshPage = vi.fn();
+  render(
+    <f.View
+      openPage={openPage}
+      refreshPage={refreshPage}
+      selectedPage={f.page(f.a)}
+    />,
+  );
+  await open();
+  await screen.findByRole("button", { name: "https://fixture.test/c" });
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  await waitFor(() =>
+    expect(refreshPage).toHaveBeenCalledWith({
+      profile: f.profileId,
+      id: f.a,
+      title: "redirect.test/landed",
+      label: "https://redirect.test/landed",
+    }),
+  );
+  expect(
+    refreshPage.mock.calls.every(([page]) => page.profile === f.profileId),
+  ).toBe(true);
+  expect(f.selects()).toHaveLength(0);
+  const sent = native.mock.calls.filter(
+    ([operation, args]) =>
+      operation === "control_browser" &&
+      !["resize", "hide", "back"].includes(args.action),
+  );
+  expect(sent).toHaveLength(0);
+});
+it("removes only the exact shared descriptor after an acknowledged close", async () => {
+  const f = pagesFixture();
+  native.mockImplementation(async (operation, args) => {
+    if (operation === "control_browser" && args.action === "close-tab")
+      return f.state(
+        f.a,
+        f.tabs.filter((tab) => tab.id !== args.tabId),
+      );
+    return f.state(f.a);
+  });
+  const closePage = vi.fn();
+  render(
+    <f.View
+      openPage={vi.fn()}
+      closePage={closePage}
+      selectedPage={f.page(f.a)}
+    />,
+  );
+  await open();
+  await screen.findByRole("button", { name: "https://fixture.test/c" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close tab https://fixture.test/b" }),
+  );
+  await waitFor(() => expect(closePage).toHaveBeenCalledTimes(1));
+  expect(closePage).toHaveBeenCalledWith({ profile: f.profileId, id: f.b });
+});
+it.each(["rejected", "unacknowledged"])(
+  "keeps the shared descriptor when the native close is %s",
+  async (outcome) => {
+    const f = pagesFixture();
+    native.mockImplementation(async (operation, args) => {
+      if (operation === "control_browser" && args.action === "close-tab") {
+        if (outcome === "rejected") throw new Error("rejected");
+        return f.state(f.a);
+      }
+      return f.state(f.a);
+    });
+    const closePage = vi.fn();
+    render(
+      <f.View
+        openPage={vi.fn()}
+        closePage={closePage}
+        selectedPage={f.page(f.a)}
+      />,
+    );
+    await open();
+    await screen.findByRole("button", { name: "https://fixture.test/c" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close tab https://fixture.test/b" }),
+    );
+    await waitFor(() =>
+      expect(
+        native.mock.calls.some(
+          ([operation, args]) =>
+            operation === "control_browser" && args.action === "close-tab",
+        ),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(closePage).not.toHaveBeenCalled();
+  },
+);

@@ -134,3 +134,64 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
   expect(store.snapshot("session").tabs).toHaveLength(1);
   expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+describe("shared Page descriptors follow native browser pages", () => {
+  const page = (profile: string, id: string, title = id, label = title) => ({
+    kind: SessionTabKind.Page as const,
+    profile,
+    id,
+    title,
+    label,
+  });
+  const setup = () => {
+    const store = new SessionTabsStore();
+    store.open("s", { kind: SessionTabKind.Browser });
+    store.open("s", page("p1", "a"));
+    store.open("s", page("p1", "b"));
+    store.open("s", page("p2", "a"));
+    store.select("s", sessionTabKey(page("p1", "a")));
+    return store;
+  };
+  it("updates only the exact owned label without changing order or selection", () => {
+    const store = setup();
+    const before = store.snapshot("s");
+    store.updatePage("s", {
+      profile: "p1",
+      id: "b",
+      title: "moved.test/next",
+      label: "https://moved.test/next",
+    });
+    const after = store.snapshot("s");
+    expect(after.selected).toBe(before.selected);
+    expect(after.tabs.map(sessionTabKey)).toEqual(
+      before.tabs.map(sessionTabKey),
+    );
+    expect(after.tabs[3]).toMatchObject({
+      title: "moved.test/next",
+      label: "https://moved.test/next",
+    });
+    expect(after.tabs[2]).toEqual(before.tabs[2]);
+    expect(after.tabs[4]).toEqual(before.tabs[4]);
+  });
+  it("ignores unknown pages and publishes nothing for unchanged labels", () => {
+    const store = setup();
+    const before = store.snapshot("s");
+    store.updatePage("s", { profile: "p3", id: "a", title: "x", label: "x" });
+    store.updatePage("s", { profile: "p1", id: "zzz", title: "x", label: "x" });
+    store.updatePage("s", { profile: "p1", id: "a", title: "a", label: "a" });
+    expect(store.snapshot("s")).toBe(before);
+  });
+  it("closes exactly one acknowledged page and falls back to a valid selection", () => {
+    const store = setup();
+    store.closePage("s", "p1", "a");
+    const keys = store.snapshot("s").tabs.map(sessionTabKey);
+    expect(keys).toEqual([
+      SessionTabKind.Conversation,
+      SessionTabKind.Browser,
+      sessionTabKey(page("p1", "b")),
+      sessionTabKey(page("p2", "a")),
+    ]);
+    expect(keys).toContain(store.snapshot("s").selected);
+    store.closePage("s", "p9", "a");
+    expect(store.snapshot("s").tabs).toHaveLength(4);
+  });
+});
