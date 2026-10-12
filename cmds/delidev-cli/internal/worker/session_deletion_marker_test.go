@@ -70,6 +70,38 @@ func TestSessionDeletionInitialFenceRecoversExactReportID(t *testing.T) {
 	}
 }
 
+func TestSessionDeletionSharedFencePersistsNewObligationBeforeWorkerProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	first, second := works[0], works[1]
+	if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	marker := deletionMarker(first)
+	marker.Obligations = []sessionDeletionMarkerObligation{{Identity: first.Identity(), Digest: first.Digest(), ReportID: domain.NewID(), Phase: sessionDeletionMarkerPublished}}
+	if err := writeDeletionMarker(sessionDeletionPath(config.Root, first.SessionID), marker); err != nil {
+		t.Fatal(err)
+	}
+	proof, _, lock, err := loadSessionDeletionProof(config.Root, second)
+	if err != nil {
+		t.Fatal("new device obligation was not admitted", err)
+	}
+	defer lock.Close()
+	var published sessionDeletionMarker
+	raw, err := security.ReadPrivate(sessionDeletionPath(config.Root, second.SessionID), domain.MaxSessionDeletionBytes)
+	if err != nil || domain.Decode(raw, &published) != nil || len(published.Obligations) != 2 {
+		t.Fatal("shared fence did not retain both original device obligations", err)
+	}
+	var found bool
+	for _, obligation := range published.Obligations {
+		if obligation.Identity == second.Identity() {
+			found = obligation.Phase == sessionDeletionMarkerPublished && obligation.ReportID == proof.ReportID
+		}
+	}
+	if !found {
+		t.Fatal("new Worker proof was not bound to its durable marker entry")
+	}
+}
+
 func TestSessionDeletionFreshAdmissionRejectsOrphanedWorkspaceProof(t *testing.T) {
 	config, works := failedDeletionObligations(t)
 	work := works[0]
