@@ -20,10 +20,11 @@ import (
 type imageGenerationAttachFixture struct {
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	sync.Mutex
-	serverID domain.ID
-	cancel   context.CancelFunc
-	support  []bool
-	requests []*pb.AttachWorkerRequest
+	serverID   domain.ID
+	cancel     context.CancelFunc
+	support    []bool
+	capability pb.WorkerCapability
+	requests   []*pb.AttachWorkerRequest
 }
 
 func (f *imageGenerationAttachFixture) AttachWorker(_ context.Context, req *connect.Request[pb.AttachWorkerRequest]) (*connect.Response[pb.AttachWorkerResponse], error) {
@@ -39,16 +40,15 @@ func (f *imageGenerationAttachFixture) AttachWorker(_ context.Context, req *conn
 		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
 	}
 	f.requests = append(f.requests, req.Msg)
-	image := pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1
 	// The compatibility peer rejects the new enum before negotiation. The new
 	// peer admits it only after its own original response advertised support.
-	if slices.Contains(req.Msg.Capabilities, image) && (index%2 == 0 || !f.support[index-1]) {
+	if slices.Contains(req.Msg.Capabilities, f.capability) && (index%2 == 0 || !f.support[index-1]) {
 		f.cancel()
 		return nil, connect.NewError(connect.CodeInvalidArgument, nil)
 	}
 	response := &pb.AttachWorkerResponse{ServerId: string(f.serverID)}
 	if f.support[index] {
-		response.SupportedWorkerCapabilities = []pb.WorkerCapability{image}
+		response.SupportedWorkerCapabilities = []pb.WorkerCapability{f.capability}
 	}
 	if index+1 == len(f.support) {
 		f.cancel()
@@ -61,7 +61,15 @@ func (f *imageGenerationAttachFixture) WatchWork(context.Context, *connect.Reque
 }
 
 func TestNativeImageGenerationAttachmentNegotiatesBeforeAdvertisingAndPreservesReconnect(t *testing.T) {
-	image := pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1
+	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1)
+}
+
+func TestDynamicToolsAttachmentRenegotiatesProfileWhenSupportChanges(t *testing.T) {
+	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1)
+}
+
+func assertCapabilityAttachmentRenegotiatesProfile(t *testing.T, capability pb.WorkerCapability) {
+	t.Helper()
 	for _, tc := range []struct {
 		name        string
 		support     []bool
@@ -75,7 +83,7 @@ func TestNativeImageGenerationAttachmentNegotiatesBeforeAdvertisingAndPreservesR
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			fixture := &imageGenerationAttachFixture{serverID: domain.NewID(), cancel: cancel, support: tc.support}
+			fixture := &imageGenerationAttachFixture{serverID: domain.NewID(), cancel: cancel, support: tc.support, capability: capability}
 			_, handler := delidevv1connect.NewWorkerServiceHandler(fixture)
 			server := httptest.NewServer(handler)
 			defer server.Close()
@@ -89,11 +97,11 @@ func TestNativeImageGenerationAttachmentNegotiatesBeforeAdvertisingAndPreservesR
 				t.Fatal("strict peer rejected attachment before negotiated reconnect")
 			}
 			first, negotiated, reattach, renegotiated := fixture.requests[0], fixture.requests[1], fixture.requests[2], fixture.requests[3]
-			if slices.Contains(first.Capabilities, image) || slices.Contains(reattach.Capabilities, image) {
-				t.Fatal("compatibility attachment advertised unnegotiated image generation")
+			if slices.Contains(first.Capabilities, capability) || slices.Contains(reattach.Capabilities, capability) {
+				t.Fatal("compatibility attachment advertised unnegotiated capability")
 			}
-			if slices.Contains(negotiated.Capabilities, image) != tc.support[0] || slices.Contains(renegotiated.Capabilities, image) != tc.support[2] {
-				t.Fatal("image generation advertisement did not follow the original server response")
+			if slices.Contains(negotiated.Capabilities, capability) != tc.support[0] || slices.Contains(renegotiated.Capabilities, capability) != tc.support[2] {
+				t.Fatal("capability advertisement did not follow the original server response")
 			}
 			if first.RequestId != reattach.RequestId || (negotiated.RequestId == renegotiated.RequestId) != tc.sameRequest {
 				t.Fatal("reconnect lost its original request identity or negotiated support profile")

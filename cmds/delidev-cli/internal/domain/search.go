@@ -108,6 +108,11 @@ func (m ExecutionMessage) SearchText() string {
 			parts = append(parts, streams[key].String())
 		}
 	}
+	if m.DynamicTool != nil && m.DynamicTool.Snapshot != nil && m.DynamicTool.Snapshot.Content != nil {
+		for _, part := range *m.DynamicTool.Snapshot.Content {
+			add(part.Text)
+		}
+	}
 	if m.Progress != nil {
 		add(m.Progress.Diff)
 		if m.Progress.Plan != nil {

@@ -515,3 +515,11 @@ mismatched causes are not typed causes; untyped transport messages never prove
 exhaustion. Existing versioned ErrorDetail, safe message/guidance and correlation
 validation remain unchanged. No generated protocol field or compatibility
 allocation is added; older documents and clients keep their generic fallback.
+
+## Original Codex dynamic tools
+
+Generated System 102 and Worker 63 declarations retain existing service paths.
+Typed event JSON keeps original item status, nullable success/duration, inert
+text/media commitments and independent reply/resolution metadata. Native wire
+request numbers remain decimal strings across JavaScript readers. These facts
+grant no dispatch, media retrieval, reply retry or continuation authority.

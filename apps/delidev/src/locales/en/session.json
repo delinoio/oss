@@ -171,5 +171,17 @@
   "session.budgetTitle": "Session budget reached",
   "session.recoveryTitle": "Recovery required",
   "session.recoveryRegion": "Session recovery",
-  "session.problemCause": "Cause"
+  "session.problemCause": "Cause",
+  "session.dynamicTool": "Dynamic tool",
+  "session.dynamicUnavailable": "Dynamic tool observation is unavailable.",
+  "session.dynamicReplyDelivery": "Reply delivery",
+  "session.dynamicNativeRequest": "Native request",
+  "session.dynamicNativeSuccess": "Native success",
+  "session.dynamicTransmitted": "Transmitted",
+  "session.dynamicUncertain": "Uncertain",
+  "session.dynamicNotSent": "Not sent",
+  "session.dynamicOpen": "Open",
+  "session.dynamicResolved": "Resolved",
+  "session.dynamicImageReference": "Image reference",
+  "session.dynamicAudioReference": "Audio reference"
 }

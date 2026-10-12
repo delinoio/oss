@@ -3,6 +3,7 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `cmds/delidev-cli/internal/harness/codex/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+- Admit `dynamicToolCall` items and `item/tool/call` requests only through the closed decoder in `dynamic_tool.go`: keep arguments and media locators in protected history, answer an owned root request at most once with the fixed unavailable response after the Worker persists its send intent, never dispatch a tool, never resend after an uncertain attempt, and keep Sidechat, title and model-observation profiles without a responder.
 
 ## Owning contracts
 

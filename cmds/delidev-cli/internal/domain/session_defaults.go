@@ -103,35 +103,45 @@ func validateBranchPrefixJSON(raw json.RawMessage) error {
 	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' || bytes.Equal(raw, []byte("null")) {
 		return invalid()
 	}
+	if err := ValidateJSONUnicodeEscapes(raw); err != nil {
+		return invalid()
+	}
+	return nil
+}
+
+// ValidateJSONUnicodeEscapes rejects malformed escaped UTF-16 surrogate pairs
+// before encoding/json can replace them. Callers still validate JSON shape and
+// their own domain bounds after this lexical check.
+func ValidateJSONUnicodeEscapes(raw []byte) error {
 	for i := 0; i < len(raw); i++ {
 		if raw[i] != '\\' {
 			continue
 		}
 		i++
 		if i >= len(raw) {
-			return invalid()
+			return Fail(InvalidArgument, "Invalid JSON Unicode escape.", "Preserve valid UTF-8 and paired Unicode surrogate escapes.")
 		}
 		if raw[i] != 'u' {
 			continue
 		}
 		if i+4 >= len(raw) {
-			return invalid()
+			return Fail(InvalidArgument, "Invalid JSON Unicode escape.", "Preserve valid UTF-8 and paired Unicode surrogate escapes.")
 		}
 		code, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
 		if err != nil {
-			return invalid()
+			return Fail(InvalidArgument, "Invalid JSON Unicode escape.", "Preserve valid UTF-8 and paired Unicode surrogate escapes.")
 		}
 		i += 4
 		if code >= 0xdc00 && code <= 0xdfff {
-			return invalid()
+			return Fail(InvalidArgument, "Invalid JSON Unicode escape.", "Preserve valid UTF-8 and paired Unicode surrogate escapes.")
 		}
 		if code >= 0xd800 && code <= 0xdbff {
 			if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
-				return invalid()
+				return Fail(InvalidArgument, "Invalid JSON Unicode escape.", "Preserve valid UTF-8 and paired Unicode surrogate escapes.")
 			}
 			low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
 			if err != nil || low < 0xdc00 || low > 0xdfff {
-				return invalid()
+				return Fail(InvalidArgument, "Invalid JSON Unicode escape.", "Preserve valid UTF-8 and paired Unicode surrogate escapes.")
 			}
 			i += 6
 		}

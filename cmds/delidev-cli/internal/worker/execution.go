@@ -365,7 +365,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := codex.Config{EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	nativeConfig := codex.Config{DynamicTools: input.NativeDynamicTools, EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -507,12 +507,22 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	readContext, publicationContext := ctx, nativeCtx
 	stopping := false
 	var parentTerminal *codex.Event
+	terminalPublished := false
+	var dynamicDrainCancel context.CancelFunc
+	var dynamicDrainParent context.Context
+	dynamicDrainExpired := false
+	var handled bool
 	for {
 		if ctx.Err() != nil && !stopping {
 			if err := nativeCtx.Err(); err != nil {
 				return nil, domain.SafeError(err)
 			}
 			stopping = true
+			if dynamicDrainCancel != nil {
+				dynamicDrainCancel()
+				dynamicDrainCancel = nil
+				dynamicDrainParent = nil
+			}
 			bounded, cancel := context.WithTimeout(nativeCtx, 15*time.Second)
 			defer cancel()
 			readContext, publicationContext = bounded, bounded
@@ -536,6 +546,21 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		event, err := client.NextEvent(readContext)
 		if err != nil {
+			if (stopping || dynamicDrainCancel != nil) && nativeCtx.Err() == nil && errors.Is(err, context.DeadlineExceeded) && parentTerminal != nil && terminalPublished && parentTerminal.Turn != nil && (parentTerminal.Turn.Status == codex.TurnFailed || parentTerminal.Turn.Status == codex.TurnInterrupted) {
+				// Failed terminals remain failures; after their bounded drain, close
+				// the native scope when descendants are closed even if a tool stays unsettled.
+				_, childrenClosed := mapper.childState()
+				if !childrenClosed {
+					return nil, err
+				}
+				if dynamicDrainCancel != nil {
+					dynamicDrainCancel()
+					dynamicDrainCancel = nil
+					dynamicDrainParent = nil
+				}
+				dynamicDrainExpired = true
+				goto terminalCleanup
+			}
 			if !stopping && ctx.Err() != nil && nativeCtx.Err() == nil {
 				continue
 			}
@@ -560,7 +585,26 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			event = activity
 		}
-		handled, err := mapper.PublishCore(publicationContext, event)
+		if event.Kind == codex.TurnCompletedEvent {
+			terminal := event
+			parentTerminal = &terminal
+			if !mapper.dynamicToolsSettled() {
+				if dynamicDrainCancel == nil {
+					dynamicDrainParent = readContext
+					var drainContext context.Context
+					drainContext, dynamicDrainCancel = context.WithTimeout(dynamicDrainParent, 15*time.Second)
+					defer dynamicDrainCancel()
+					readContext = drainContext
+				}
+				// Successful completion needs settled dynamic evidence. Failed and
+				// interrupted outcomes are publishable with their original unsettled
+				// evidence, so publish those before continuing the bounded drain.
+				if event.Turn != nil && event.Turn.Status == codex.TurnCompleted {
+					continue
+				}
+			}
+		}
+		handled, err = mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			logger.WarnContext(publicationContext, "native_execution_publication_failed", "event_kind", event.Kind, "correlated", event.Correlated, "late", event.Late, "code", domain.SafeError(err).Code)
 			return nil, err
@@ -569,18 +613,45 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "extension_stage", event.ExtensionStage, "correlated", event.Correlated, "late", event.Late)
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
-		if event.Kind == codex.TurnCompletedEvent {
-			copy := event
-			parentTerminal = &copy
+		if event.Kind == codex.DynamicToolEvent && event.DynamicTool != nil && event.DynamicTool.Stage == domain.DynamicRequested {
+			if err := mapper.deliverDynamicUnavailable(ctx, publicationContext, event, client); err != nil {
+				return nil, err
+			}
 		}
+		if event.Kind == codex.TurnCompletedEvent {
+			terminalPublished = true
+		}
+		if parentTerminal != nil && mapper.dynamicToolsSettled() {
+			if dynamicDrainCancel != nil {
+				dynamicDrainCancel()
+				dynamicDrainCancel = nil
+				readContext = dynamicDrainParent
+				dynamicDrainParent = nil
+			}
+			if !terminalPublished {
+				handled, err := mapper.PublishCore(publicationContext, *parentTerminal)
+				if err != nil || !handled {
+					if err == nil {
+						err = publicationUncertain()
+					}
+					return nil, err
+				}
+				terminalPublished = true
+			}
+		}
+	terminalCleanup:
 		hasChildren, childrenClosed := mapper.childState()
-		if parentTerminal == nil || !childrenClosed {
+		if parentTerminal == nil || !terminalPublished || !childrenClosed || (!mapper.dynamicToolsSettled() && !dynamicDrainExpired) {
 			continue
 		}
 
 		event = *parentTerminal
+		cleanupContext := ctx
+		if stopping || dynamicDrainExpired {
+			cleanupContext = nativeCtx
+		}
 		if managed != nil && config.quotaBlockSupported && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
-			managed.publishQuotaBlock(ctx, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})
+			managed.publishQuotaBlock(cleanupContext, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})
 		}
 		// Fence and join original observations before native credential capture and
 		// terminal cleanup, including an admitted operation with a lost publication.
@@ -592,7 +663,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		// Read native identity and final credentials while its wire is still
 		// open; the defer only reads on earlier exits and never retries this read.
 		var contextProof *codex.ContinuationContextCheckpoint
-		if !hasChildren {
+		// Unresolved tool history cannot prove continuation. The observed failed
+		// or interrupted root still joins its independent original cleanup.
+		if !hasChildren && mapper.dynamicToolsSettled() {
 			bindings, err := mapper.completionInputs()
 			if err != nil {
 				return nil, err
@@ -606,7 +679,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 				copy(nativeInputs[n].PromptDigest[:], bytes)
 			}
-			proofs, proofErr := client.SkillInputProofs(ctx)
+			proofs, proofErr := client.SkillInputProofs(cleanupContext)
 			if proofErr != nil {
 				return nil, proofErr
 			}
@@ -619,7 +692,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 			original := codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
-			contextProof, err = client.RetainContinuationContext(ctx, original)
+			contextProof, err = client.RetainContinuationContext(cleanupContext, original)
 			if err != nil {
 				return nil, err
 			}
@@ -666,7 +739,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}
-		if hasChildren {
+		if hasChildren || !mapper.dynamicToolsSettled() {
 			return json.Marshal(completion)
 		}
 		// Preserve exact native continuation evidence before the operation

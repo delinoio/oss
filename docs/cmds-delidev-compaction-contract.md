@@ -597,3 +597,13 @@ Preserve each original ordered output and all protected reference and encrypted
 bytes in the original private history and digest. Public inert projections
 never reconstruct history, change checkpoint authority, resend input or
 authorize media retrieval.
+
+## Original Codex dynamic-tool history
+
+Complete continuation and context history validate dynamic items through the
+same closed lifecycle decoder as live observation. Preserve original arguments,
+ordered camelCase output variants, nullable success/duration and media locators
+inside protected native history and its digest. Public commitments and inert
+text cannot reconstruct or rewrite that history. Pending original request
+resolution or uncertain reply delivery blocks operations that require settled
+native proof; history reads never create another reply or dispatch.
