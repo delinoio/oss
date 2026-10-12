@@ -127,6 +127,7 @@ const (
 	UsageEvent                    EventKind = "usage"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
+	FunctionOutputEvent           EventKind = "function-output"
 	ToolStartedEvent              EventKind = "tool-started"
 	ToolCompletedEvent            EventKind = "tool-completed"
 	ToolOutputEvent               EventKind = "tool-output"
@@ -170,43 +171,45 @@ type Message struct {
 }
 
 type Event struct {
-	NativeError      *NativeErrorObservation `json:"-"`
-	CodeReview       *CodeReviewObservation
-	Safety           *ModelSafetyObservation `json:"-"`
-	AutoReview       *domain.AutoReviewObservation
-	ImageGeneration  *ImageGeneration `json:"-"`
-	Compaction       *CompactionObservation
-	AgentThreadID    domain.ID
-	Subagents        []domain.SubagentObservation
-	Kind             EventKind
-	ThreadID         domain.ID
-	TurnID           domain.ID
-	Turn             *Turn
-	Status           *ThreadStatus
-	Message          *Message
-	TextDelta        string
-	ItemID           string
-	RequestID        domain.ID
-	InputID          domain.ID
-	Action           TurnAction
-	Problem          *domain.Error
-	Late             bool
-	Correlated       bool
-	EmittedAtMS      *int64
-	Metadata         MetadataKind
-	Usage            *domain.NativeTokenUsage
-	ResponseUsage    *domain.NativeResponseUsage
-	Notice           domain.NativeNotice
-	ToolOutputKind   ToolKind
-	Tool             *Tool
-	ToolInput        *ToolInput
-	Artifact         *Artifact
-	ArtifactDelta    *ArtifactDelta
-	Plan             *PlanUpdate
-	Diff             *string
-	Interaction      *Interaction
-	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	FunctionOutput      *domain.FunctionOutput
+	FunctionOutputStage domain.FunctionOutputStage
+	NativeError         *NativeErrorObservation `json:"-"`
+	CodeReview          *CodeReviewObservation
+	Safety              *ModelSafetyObservation `json:"-"`
+	AutoReview          *domain.AutoReviewObservation
+	ImageGeneration     *ImageGeneration `json:"-"`
+	Compaction          *CompactionObservation
+	AgentThreadID       domain.ID
+	Subagents           []domain.SubagentObservation
+	Kind                EventKind
+	ThreadID            domain.ID
+	TurnID              domain.ID
+	Turn                *Turn
+	Status              *ThreadStatus
+	Message             *Message
+	TextDelta           string
+	ItemID              string
+	RequestID           domain.ID
+	InputID             domain.ID
+	Action              TurnAction
+	Problem             *domain.Error
+	Late                bool
+	Correlated          bool
+	EmittedAtMS         *int64
+	Metadata            MetadataKind
+	Usage               *domain.NativeTokenUsage
+	ResponseUsage       *domain.NativeResponseUsage
+	Notice              domain.NativeNotice
+	ToolOutputKind      ToolKind
+	Tool                *Tool
+	ToolInput           *ToolInput
+	Artifact            *Artifact
+	ArtifactDelta       *ArtifactDelta
+	Plan                *PlanUpdate
+	Diff                *string
+	Interaction         *Interaction
+	InteractionState    *InteractionStatus
+	Steer               *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -279,7 +282,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	if native.Kind == nativewire.ServerRequest && native.Method == "currentTime/read" {
 		event, err = c.replyCurrentTimeLocked(ctx, native)
 	} else {
-		event, err = c.observeEventLocked(native)
+		event, err = c.observeEventContextLocked(ctx, native)
 	}
 	if err != nil {
 		if c.problem == nil {
@@ -336,6 +339,10 @@ func privateNative(event nativewire.Event) Event {
 	return Event{Kind: NativeExtensionEvent, Native: &event, ExtensionStage: validationStage(event.Method)}
 }
 func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
+	return c.observeEventContextLocked(context.Background(), native)
+}
+
+func (c *Client) observeEventContextLocked(ctx context.Context, native nativewire.Event) (Event, error) {
 	if native.Kind == nativewire.LateResponse {
 		return c.observeLateTurnLocked(native)
 	}
@@ -510,7 +517,7 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	case "turn/plan/updated", "turn/diff/updated", "item/plan/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta":
 		return c.observeArtifactUpdateLocked(native)
 	case "item/started", "item/completed":
-		return c.observeMessageLocked(native)
+		return c.observeMessageLocked(ctx, native)
 	case "thread/tokenUsage/updated":
 		return c.observeUsageLocked(native)
 	case "item/commandExecution/outputDelta", "item/fileChange/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
@@ -596,7 +603,7 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 	delete(c.execution.pending, id)
 	return event, nil
 }
-func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
+func (c *Client) observeMessageLocked(ctx context.Context, native nativewire.Event) (Event, error) {
 	var params struct {
 		ThreadID      domain.ID       `json:"threadId"`
 		TurnID        domain.ID       `json:"turnId"`
@@ -628,6 +635,49 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "functionCallOutput":
+		// Restricted Sidechat and review-owned child turns keep results private;
+		// their history is not this execution's retained turn history.
+		if a := c.codeReview; c.sidechat != "" || a != nil && a.childTurn != "" && params.TurnID == a.childTurn {
+			return privateNative(native), nil
+		}
+		id, _, err := decodeFunctionOutput(params.Item)
+		if err != nil {
+			return Event{}, err
+		}
+		if c.execution == nil {
+			return Event{}, incompatible()
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known {
+			if c.problem == nil {
+				return Event{}, incompatible()
+			}
+			return privateNative(native), nil
+		}
+		item := params.Item
+		if c.wire != nil {
+			item, err = c.functionOutputHistoryItemLocked(ctx, params.TurnID, id, params.Item)
+			if err != nil {
+				return Event{}, err
+			}
+		}
+		id, output, err := decodeFunctionOutput(item)
+		if err != nil {
+			return Event{}, err
+		}
+		stage := domain.FunctionOutputStarted
+		if native.Method == "item/completed" {
+			stage = domain.FunctionOutputCompleted
+		}
+		if err := c.retainFunctionOutput(params.Item, id, params.TurnID, stage); err != nil {
+			return Event{}, err
+		}
+		// Log only closed shape facts; text, locators and ciphertext stay private.
+		if c.logger != nil {
+			c.logger.DebugContext(ctx, "Codex function output observed", "owner_id", c.ownerID, "turn_id", params.TurnID, "item_id", id, "stage", stage, "structured", output.Structured, "content_count", len(output.Content))
+		}
+		return Event{Kind: FunctionOutputEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: id, Correlated: true, Late: turn.Turn.Status.terminal(), FunctionOutput: output, FunctionOutputStage: stage}, nil
 	case "enteredReviewMode", "exitedReviewMode":
 		return c.observeCodeReviewLocked(native, params.ThreadID, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "imageGeneration":

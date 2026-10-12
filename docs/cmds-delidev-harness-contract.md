@@ -2683,3 +2683,47 @@ Stop, Archive and account disconnection fence new Ready admission and inference.
 Managed Codex Thread initialization retains the private original process-bound helper proof under the [subscription cleanup contract](cmds-delidev-subscription-contract.md#original-managed-codex-execution-helpers). Pin the canonical home, retained native directory identities, canonical verified executable identity and prelaunch bounded directory inventory before launch. Capture and validate the exact original Unix `apply_patch`, `applypatch` and `codex-execve-wrapper` aliases after initialized startup and before thread input admission. This proof is private, in memory and unavailable to historical runtime recovery, other execution owners or public RPCs. Windows regular batch scripts and other aliases grant no removal authority.
 
 Closure returns original process-join and helper-retirement results independently. Only a joined original native tree permits retirement through retained no-follow parent operations. Changed/foreign entries, missing startup proof and failed removal/synchronization remain recovery-required. Native destructor absence requires its unchanged retained original parent; basename lookup at cleanup cannot adopt entries. Preserve unrelated native files, lock files and history. The Worker must still run final original authentication comparison/removal and the complete unchanged bounded raw/encoded-credential scan after process join if helper retirement fails. Helper cleanup cannot settle native execution, input, history or credential ownership alone. Accepted-input native failures remain failed with once-only reporting and no replay even when both cleanup owners succeed. No capability, public protocol, migration or automatic historical-account recovery is introduced.
+
+## Codex native function outputs
+
+The original root execution accepts the closed `functionCallOutput` item with
+original item id, name, nullable namespace, and either a string output or an
+ordered array of `input_text`, `input_image`, `input_audio` and
+`encrypted_content`. One bounded strict decoder validates live observations and
+complete retained history (continuation, context inspection, compaction,
+paginated Revert, ordinary and managed Fork). The app-server normalizes an
+omitted namespace and an explicit null to the same value, so the contract
+treats them as one `null` namespace. Image references preserve the `image_url`
+or `file_id` alternative and the optional closed detail; conflicting
+alternatives, null detail, unknown fields, duplicate keys, malformed Unicode
+escapes and oversized documents require recovery. The public projection is
+bounded to 512 KiB; private locator and ciphertext bytes may use the whole
+admitted native frame because they never enter that projection.
+
+The app-server removes `input_image` and `input_audio` entries from
+`item/started` and `item/completed` notifications. When the client owns a
+native session, it reads the latest full turn from the owning thread, requires
+the exact item id to appear once, and accepts it only if every remaining
+notification entry matches the authoritative item in order (an empty remainder
+equals an omitted one). Mismatch or an unreadable history requires recovery.
+Results owned by restricted Sidechat or a native code-review child turn stay
+private native extensions.
+
+Public `function-output-observed` events require separately negotiated
+`CODEX_FUNCTION_OUTPUTS_V1`. They carry inert text, reference kind/detail and
+encrypted-content presence only. Locator values and opaque encrypted bytes stay
+in the original protected native history and its digest, and logs record only
+shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
+result observation. A Worker whose server did not negotiate the capability
+keeps the observation private and the original turn continues.
+
+An original item start/completion retains one ToolMessage and immutable
+thread/turn/item identity. A completed-only item creates one completed result
+observation without an invented start. Changed original content, duplicate
+completion, foreign ownership and uncertain receipts preserve recovery. Exact
+durable receipt replay retains the same message and sequence. Result completion
+grants no dispatch, approval, tool success, input acceptance, turn result or
+cleanup authority. Existing command and file-change outputs are unchanged.
+Desktop clients that have no dedicated presentation render the retained message
+as a generic tool message without any result content. Fixture coverage does not
+prove real native, account or platform acceptance.

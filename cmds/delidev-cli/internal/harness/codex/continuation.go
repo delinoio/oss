@@ -266,6 +266,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 				return Turn{}, nil, err
 			}
 		}
+		if identity.Type == "functionCallOutput" {
+			if _, _, err := decodeFunctionOutput(rawItem); err != nil {
+				return Turn{}, nil, incompatible()
+			}
+		}
 		if identity.Type != "userMessage" {
 			continue
 		}
