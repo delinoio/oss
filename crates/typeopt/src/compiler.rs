@@ -78,9 +78,10 @@ pub struct Project {
     size_options: CompilerOptions,
     /// Owns the synthetic configuration of a bundle-mode program.
     _bundle_config: Option<tempfile::TempDir>,
-    /// Bundle mode: semantic diagnostic codes of each original chunk. A chunk
-    /// can opt into checking with `// @ts-check`, and its unchecked types may
-    /// be wrong, so only diagnostics that an edit adds count as failures.
+    /// Bundle mode: semantic diagnostic identities of each original chunk. A
+    /// chunk can opt into checking with `// @ts-check`, and its unchecked
+    /// types may be wrong, so only diagnostics that an edit adds count as
+    /// failures.
     semantic_baseline: std::cell::RefCell<BTreeMap<String, Vec<String>>>,
 }
 
@@ -405,7 +406,7 @@ impl Project {
             if crate::app::bundle_mode() {
                 self.semantic_baseline.borrow_mut().insert(
                     source_file_info(file).file_name.clone(),
-                    diagnostic_codes(&get_semantic_diagnostics(file)),
+                    diagnostic_identities(&get_semantic_diagnostics(file)),
                 );
             } else {
                 check_diagnostics(&get_semantic_diagnostics(file))?;
@@ -700,7 +701,7 @@ impl crate::pipeline::Backend for Backend<'_> {
                     if !get_syntactic_diagnostics(file).is_empty()
                         || adds_diagnostics(
                             before,
-                            &diagnostic_codes(&get_semantic_diagnostics(file)),
+                            &diagnostic_identities(&get_semantic_diagnostics(file)),
                         )
                     {
                         failing.push(name);
@@ -1033,14 +1034,36 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
     Ok(found)
 }
 
-/// Sorted diagnostic codes with their message templates' arguments omitted.
-fn diagnostic_codes(diagnostics: &[Diagnostic]) -> Vec<String> {
-    let mut codes: Vec<String> = diagnostics.iter().map(|d| d.code.to_string()).collect();
-    codes.sort();
-    codes
+/// Sorted identities of diagnostics: code, message with its arguments and
+/// the source text at the diagnostic. Positions move with every edit, so
+/// they are not part of the identity; a new diagnostic that reuses an old
+/// code at different code still differs.
+fn diagnostic_identities(diagnostics: &[Diagnostic]) -> Vec<String> {
+    let mut identities: Vec<String> = diagnostics
+        .iter()
+        .map(|d| {
+            let snippet = if d.file.is_some() {
+                let text = source_file_text(d.file);
+                let (pos, end) = (d.loc().pos() as usize, d.loc().end() as usize);
+                text.get(pos.min(text.len())..end.min(text.len()))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned()
+            } else {
+                String::new()
+            };
+            format!(
+                "{}\0{}\0{snippet}",
+                d.code,
+                d.localize(&ts_goport::locale::DEFAULT)
+            )
+        })
+        .collect();
+    identities.sort();
+    identities
 }
 
-/// Whether `after` has a diagnostic code more often than `before`.
+/// Whether `after` has a diagnostic identity more often than `before`.
 fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
     let mut remaining = before.to_vec();
     after
