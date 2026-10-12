@@ -569,7 +569,9 @@ const rawPatch = (view: { container: HTMLElement }) =>
   view.container.querySelector("pre")?.textContent;
 // The pending-context fallback also renders the raw patch, so wait for the
 // context read to resolve and the query result to commit before asserting.
-async function contextSettled(read: { mock: { results: { value: unknown }[] } }) {
+async function contextSettled(read: {
+  mock: { results: { value: unknown }[] };
+}) {
   await waitFor(() => expect(read.mock.results.length).toBeGreaterThan(0));
   await Promise.allSettled(read.mock.results.map((r) => r.value));
   await new Promise((resolve) => setTimeout(resolve, 50));
