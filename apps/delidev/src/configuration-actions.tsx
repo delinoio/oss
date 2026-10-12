@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -12,7 +16,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName } from "./documents";
+import { document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import {
@@ -70,6 +74,7 @@ function ConfigurationDeletionRequest({
   deleted,
   close,
 }: DeletionProps & { active: boolean }) {
+  const productLabel = useProductLabels();
   useLocale();
   const closeTask = close;
   const isApiEntry =
@@ -99,7 +104,7 @@ function ConfigurationDeletionRequest({
       {isApiEntry ? (
         <header className="api-entry-heading">
           <h2>{copy("configuration-actions.deleteEntry_e570cd")}</h2>
-          <p>{resourceName(initial)}</p>
+          <p>{productResourceName(productLabel, initial)}</p>
           <p className="api-entry-scope">
             {copy("configuration-actions.savedOnTheSelectedServer_93dbee")}
           </p>
@@ -108,7 +113,9 @@ function ConfigurationDeletionRequest({
         <h3>
           <LocalizedText
             id="configuration-actions.delete_cac286"
-            components={{ s0: <>{resourceName(initial)}</> }}
+            components={{
+              s0: <>{productResourceName(productLabel, initial)}</>,
+            }}
           />
         </h3>
       )}

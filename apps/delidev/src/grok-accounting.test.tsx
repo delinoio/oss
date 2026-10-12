@@ -80,7 +80,9 @@ it("shows distinct exact Grok totals in summary, day, model and session views wi
   ).toBeTruthy();
   const tables = screen.getAllByRole("table");
   expect(tables).toHaveLength(3);
-  expect(within(tables[0]).getByText("original-account")).toBeTruthy();
+  expect(
+    within(tables[0]).getAllByText("Original account").length,
+  ).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: "Original session" }));
   expect(open).toHaveBeenCalledWith("original-session");
 });
@@ -168,7 +170,7 @@ it("shows both localized endpoints of a clipped daily interval with an exclusive
   expect(within(daily).getByText("(exclusive)")).toBeTruthy();
 });
 
-it("retains original project IDs beside duplicate and renamed project labels", () => {
+it("uses duplicate project labels without exposing original project IDs", () => {
   const totals = {
     accounting: [
       {
@@ -203,15 +205,22 @@ it("retains original project IDs beside duplicate and renamed project labels", (
   const table = screen.getByRole("table", {
     name: "Grok inputs by original session, account and model",
   });
-  expect(within(table).getAllByText("Shared project label")).toHaveLength(2);
+  expect(within(table).getAllByText("Shared project label · 1")).toHaveLength(
+    2,
+  );
+  expect(within(table).getAllByText("Shared project label · 2")).toHaveLength(
+    2,
+  );
   for (const project of projects)
-    expect(within(table).getByText(project)).toBeTruthy();
+    expect(table.textContent).not.toContain(project);
   data.groups[0].projectName = "Renamed project";
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
-  expect(within(table).getByText("Renamed project")).toBeTruthy();
-  expect(within(table).getByText("Shared project label")).toBeTruthy();
+  expect(within(table).getAllByText("Renamed project")).toHaveLength(2);
+  expect(within(table).getAllByText("Shared project label · 2")).toHaveLength(
+    2,
+  );
   for (const project of projects)
-    expect(within(table).getByText(project)).toBeTruthy();
+    expect(table.textContent).not.toContain(project);
 });
 
 it.each(["duplicate", "unknown"])(

@@ -92,12 +92,14 @@ it("copies only validated debugging metadata without another check", async () =>
   await waitFor(() =>
     expect(screen.getByRole("status").textContent).toContain("copied"),
   );
+  expect(writeText.mock.calls[0][0]).not.toContain(failure.correlation_id);
+  expect(screen.queryByText(failure.correlation_id as string)).toBeNull();
+  expect(failure.correlation_id).toBe((value.startup as Document).job_id);
   expect(JSON.parse(writeText.mock.calls[0][0])).toEqual({
     phase: 1,
     harness: "codex",
     native_version: "0.150.9",
     problem_code: "not_found",
-    correlation_id: failure.correlation_id,
     input_delivery: 1,
     cleanup: 1,
   });

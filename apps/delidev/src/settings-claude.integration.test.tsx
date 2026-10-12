@@ -142,6 +142,20 @@ it("persists native Claude permission selection through the desktop and real Go 
       )?.textContent,
     ).toBe("Claude API account"),
   );
+  await waitFor(() => {
+    const accountRead = client
+      .getQueryCache()
+      .getAll()
+      .find((query) => {
+        const descriptor = query.queryKey[1] as
+          { methodName?: string; input?: { id?: string } } | undefined;
+        return (
+          descriptor?.methodName === "GetResource" &&
+          descriptor.input?.id === account.id
+        );
+      });
+    expect(accountRead?.state.status).toBe("success");
+  });
   await next();
   fireEvent.focus(await screen.findByRole("combobox", { name: /^Model for / }));
   fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), {

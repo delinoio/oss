@@ -100,7 +100,8 @@ it("renders exact HTTP provenance and zero latency while absent observations rem
   expect(screen.getByText("resp_original")).toBeTruthy();
   expect(screen.getByText("high")).toBeTruthy();
   expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(2);
-  expect(screen.getByText(f.row.accountId)).toBeTruthy();
+  expect(screen.queryByText(f.row.accountId)).toBeNull();
+  expect(screen.getByText("Account unavailable · 1")).toBeTruthy();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
   expect(document.activeElement).toBe(
     screen.getByLabelText("Execution ID (optional)"),
@@ -497,4 +498,17 @@ it("retains independent native review diagnostic purpose without borrowing conve
   expect(validateDiagnosticPage(page, f.session, f.execution)).toBe(page);
   page.records[0]!.purpose = "foreign-review";
   expect(() => validateDiagnosticPage(page, f.session, f.execution)).toThrow();
+});
+
+it("keeps externally observed UUID-shaped request/response IDs even when they match a local identity", async () => {
+  const f = fixture();
+  const external = "0195c9c0-7b13-7000-8000-000000000099";
+  f.row.nativeRequestId = f.row.id;
+  f.row.providerRequestId = external;
+  f.row.nativeResponseId = external;
+  render(<f.View />);
+  await screen.findByText("0 ms");
+  expect(screen.getByText(f.row.id)).toBeTruthy();
+  expect(screen.getAllByText(external)).toHaveLength(2);
+  expect(f.read).toHaveBeenCalledTimes(1);
 });

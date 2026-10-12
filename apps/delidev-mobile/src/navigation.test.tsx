@@ -68,7 +68,10 @@ vi.mock("./connection", async () => {
 });
 afterEach(cleanup);
 
-function fixture(pending?: Pending) {
+function fixture(
+  pending?: Pending,
+  identityData: Record<string, unknown> = {},
+) {
   const state = new ProtectedState({
     read: async () => null,
     write: async () => {},
@@ -101,6 +104,7 @@ function fixture(pending?: Pending) {
       name: "Original conversation",
       archive: "active",
       recovery: "none",
+      ...identityData,
     }),
   });
   const sessionReads: string[] = [];
@@ -235,6 +239,24 @@ it("does not carry conversation selection or drafts into a replacement profile",
   expect((screen.getByLabelText(en.prompt) as HTMLTextAreaElement).value).toBe(
     "",
   );
+  expect(f.perform).not.toHaveBeenCalled();
+  expect(f.retry).not.toHaveBeenCalled();
+});
+
+it("presents unavailable Runner and Agent labels while preserving original conversation requests", async () => {
+  const runner = "0195c9c0-7b13-7000-8000-000000000001";
+  const agent = "0195c9c0-7b13-7000-8000-000000000002";
+  const f = fixture(undefined, { machine_id: runner, agent_id: agent });
+  await openConversation();
+  expect(document.body.textContent).toContain(en.runnerUnavailable);
+  expect(document.body.textContent).toContain(en.agentUnavailable);
+  expect(document.body.textContent).not.toContain(runner);
+  expect(document.body.textContent).not.toContain(agent);
+  for (const element of document.querySelectorAll("[aria-label], [title]")) {
+    expect(element.getAttribute("aria-label") ?? "").not.toContain(runner);
+    expect(element.getAttribute("title") ?? "").not.toContain(agent);
+  }
+  expect(f.sessionReads).toContain("original-session");
   expect(f.perform).not.toHaveBeenCalled();
   expect(f.retry).not.toHaveBeenCalled();
 });

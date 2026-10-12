@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTransport } from "@connectrpc/connect-query";
@@ -14,7 +15,12 @@ type Movement = {
   authority: object;
 };
 export function RepositorySecondaryID({ id }: { id: string }) {
-  return <code className="project-repository-secondary-id">{id}</code>;
+  const productLabel = useProductLabels();
+  return (
+    <code className="project-repository-secondary-id">
+      {productLabel(PresentationKind.Repository, id)}
+    </code>
+  );
 }
 /** Preview order belongs to this view; only an explicit commit changes the draft. */
 export function ProjectRepositoryOrder({
@@ -30,6 +36,7 @@ export function ProjectRepositoryOrder({
   change: (ids: string[]) => void;
   editable?: boolean;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const transport = useTransport(),
     opening = useSettingsOpening();
@@ -164,6 +171,8 @@ export function ProjectRepositoryOrder({
     };
   }, [opening, transport]);
   const shown = preview ?? ids;
+  for (const [id, name] of names)
+    productLabel(PresentationKind.Repository, id, name);
   return (
     <>
       <ol
@@ -199,7 +208,7 @@ export function ProjectRepositoryOrder({
                   disabled={!active || ids.length < 2}
                   aria-label={copy("project-order.handle", {
                     position: index + 1,
-                    name: name || copy("project-creation.nameUnavailable"),
+                    name: productLabel(PresentationKind.Repository, id, name),
                   })}
                   aria-pressed={movement.current?.id === id}
                   onKeyDown={(event) => {

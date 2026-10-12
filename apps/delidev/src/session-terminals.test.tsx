@@ -239,7 +239,7 @@ it("focuses the attached terminal input and sends exact UTF-8 and native resize 
     </QueryClientProvider>,
   );
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
     const input = await screen.findByRole("textbox", {
       name: "Terminal input",
     });
@@ -344,7 +344,7 @@ it("attaches to the accepted creation beyond the first full history page", async
     </QueryClientProvider>,
   );
   try {
-    await screen.findByRole("tab", { name: /Terminal 50/ });
+    await screen.findByRole("tab", { name: /Terminal · 50/ });
     await waitFor(() =>
       expect(
         (
@@ -540,7 +540,7 @@ it("keeps terminal input enabled while one control is pending and never steals f
     </QueryClientProvider>,
   );
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
     const input = (await screen.findByRole("textbox", {
       name: "Terminal input",
     })) as HTMLTextAreaElement;
@@ -633,7 +633,7 @@ it("preserves the explicitly attached terminal and its draft after its history p
       </QueryClientProvider>
     </TransportProvider>,
   );
-  fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+  fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
   await screen.findByText("Original attached output");
   const input = screen.getByRole("textbox", { name: "Terminal input" });
   fireEvent.change(input, { target: { value: "Retained terminal draft" } });
@@ -641,9 +641,11 @@ it("preserves the explicitly attached terminal and its draft after its history p
     fireEvent.click(
       screen.getByRole("button", { name: "Load more Terminal history pages" }),
     );
-    await screen.findByRole("tab", { name: new RegExp(`Terminal ${index}`) });
+    await screen.findByRole("tab", {
+      name: new RegExp(`Terminal · ${index}`),
+    });
   }
-  expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: /Terminal · 1/ })).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Terminal input" })).toBe(input);
   expect(input).toHaveProperty("value", "Retained terminal draft");
   expect(watch).toHaveBeenCalledTimes(1);
@@ -765,7 +767,7 @@ it("retains exact uncertain input across dock hiding and never closes or creates
     </QueryClientProvider>
   );
   const view = render(fixture(true));
-  fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+  fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
   const input = await screen.findByRole("textbox", { name: "Terminal input" });
   await waitFor(() => expect(input).toHaveProperty("disabled", false));
   fireEvent.change(input, { target: { value: "€original" } });
@@ -838,8 +840,8 @@ it("keeps every existing terminal picker keyboard reachable in the single-pane w
       </TransportProvider>
     </QueryClientProvider>,
   );
-  const first = await screen.findByRole("button", { name: /Terminal 1/ }),
-    second = screen.getByRole("button", { name: /Terminal 2/ });
+  const first = await screen.findByRole("button", { name: /Terminal · 1/ }),
+    second = screen.getByRole("button", { name: /Terminal · 2/ });
   expect(first.tabIndex).toBe(0);
   expect(second.tabIndex).toBe(0);
   first.focus();
@@ -1149,7 +1151,7 @@ it("reopens the last content-tab selection instead of the first inventory termin
     </QueryClientProvider>,
   );
   try {
-    await screen.findByRole("button", { name: /Terminal 2/ });
+    await screen.findByRole("button", { name: /Terminal · 2/ });
     fireEvent.click(
       screen.getByRole("button", { name: "Select second content tab" }),
     );
@@ -1532,7 +1534,7 @@ it("selects only the atomically admitted replacement after a listed terminal ret
     </QueryClientProvider>,
   );
   try {
-    await screen.findByRole("button", { name: /Terminal 1/ });
+    await screen.findByRole("button", { name: /Terminal · 1/ });
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
     expect(opened).not.toHaveBeenCalledWith(stale.id);

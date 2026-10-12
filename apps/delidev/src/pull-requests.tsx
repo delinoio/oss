@@ -1,4 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  PresentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { useSidebarPaneVisible } from "./sidebar-context";
+import {
+  RepositoryDetailsPresentation,
+  useRepositoryDetailsPopup,
+} from "./repository-details-popup";
 import {
   DisclosureButton,
   DisclosureContent,
@@ -21,7 +31,7 @@ import {
   type Resource,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, text } from "./documents";
 import {
   ItemKind,
   ItemState,
@@ -77,35 +87,46 @@ function RepositoryNavigationRow({
   row,
   selected,
   expanded,
+  active,
+  label,
   choose,
   toggleDetails,
 }: {
   row: Resource;
   selected: boolean;
   expanded: boolean;
+  active: boolean;
+  label: string;
   choose: () => void;
   toggleDetails: () => void;
 }) {
   useLocale();
   const detailsId = useId();
-  const name = resourceName(row);
+  const name = label;
   const config = document(row);
   const owner = text(config.github_owner),
     repository = text(config.github_name);
   const detailsLabel = copy("pull-requests.repositoryDetails", {
     name,
-    id: row.id,
   });
+  const { trigger, popup, presentation, reveal } = useRepositoryDetailsPopup({
+    expanded,
+    active,
+    contentKey: `${detailsLabel}\0${owner}\0${repository}`,
+  });
+  const failed =
+    presentation === RepositoryDetailsPresentation.Unavailable ||
+    presentation === RepositoryDetailsPresentation.Failed;
+  const failureId = `${detailsId}-failure`;
+  const visible =
+    expanded && active && presentation === RepositoryDetailsPresentation.Open;
   return (
     <div className="pr-repository-item">
       <div className="pr-repository-heading" data-selected={selected}>
         <button
           type="button"
           className="sidebar-repository-row"
-          aria-label={copy("pull-requests.repositoryId_cfd937", {
-            v0: name,
-            v1: row.id,
-          })}
+          aria-label={name}
           aria-pressed={selected}
           onClick={choose}
         >
@@ -124,23 +145,33 @@ function RepositoryNavigationRow({
           <span className="sidebar-repository-info">{name}</span>
         </button>
         <DisclosureButton
+          ref={trigger}
           density={DisclosureDensity.Compact}
           type="button"
           className="pr-repository-details-toggle"
           aria-label={detailsLabel}
-          aria-expanded={expanded}
+          aria-expanded={visible}
+          aria-describedby={failed ? failureId : undefined}
+          title={
+            failed
+              ? copy("pull-requests.repositoryDetailsUnavailable")
+              : undefined
+          }
           aria-controls={detailsId}
-          onClick={toggleDetails}
+          onClick={() => (expanded && !visible ? reveal() : toggleDetails())}
         >
           <span className="sidebar-sr-only">{detailsLabel}</span>
         </DisclosureButton>
       </div>
       <DisclosureContent
         id={detailsId}
+        ref={popup}
+        popover="manual"
+        tabIndex={0}
         className="pr-repository-details"
         role="region"
         aria-label={detailsLabel}
-        hidden={!expanded}
+        hidden={!visible}
       >
         <dl>
           <dt>{copy("pull-requests.githubRepository")}</dt>
@@ -149,10 +180,13 @@ function RepositoryNavigationRow({
               ? `${owner}/${repository}`
               : copy("pull-requests.repositoryNotConfigured")}
           </dd>
-          <dt>{copy("pull-requests.repositoryIdentifier")}</dt>
-          <dd>{row.id}</dd>
         </dl>
       </DisclosureContent>
+      {failed ? (
+        <span id={failureId} className="sidebar-sr-only" role="status">
+          {copy("pull-requests.repositoryDetailsUnavailable")}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -164,6 +198,7 @@ function PendingDismissal({
   intent: RetainedMutationIntent;
   id: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const mutation = useRetainedMutation(
     intent.key,
@@ -174,7 +209,9 @@ function PendingDismissal({
       <strong>
         <LocalizedText
           id="pull-requests.problemDismissal_9c312b"
-          components={{ s0: <>{id}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Resource, id)}</>,
+          }}
         />
       </strong>
       <p>
@@ -200,6 +237,7 @@ function PendingCollection({
   repositoryId: string;
   number: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const mutation = useRetainedMutation(
     intent.key,
@@ -210,7 +248,10 @@ function PendingCollection({
       <strong>
         <LocalizedText
           id="pull-requests.problemCollectionRepositoryPr_233e06"
-          components={{ s0: <>{repositoryId}</>, s1: <>{number}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Repository, repositoryId)}</>,
+            s1: <>{number}</>,
+          }}
         />
       </strong>
       <p>
@@ -236,6 +277,7 @@ function PendingAllowance({
   repositoryId: string;
   pullRequestId: string;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const workflow = usePRWorkflow();
   const mutation = useRetainedMutation(
@@ -251,7 +293,10 @@ function PendingAllowance({
       <strong>
         <LocalizedText
           id="pull-requests.attemptAllowanceRepositoryPr_510835"
-          components={{ s0: <>{repositoryId}</>, s1: <>{pullRequestId}</> }}
+          components={{
+            s0: <>{productLabel(PresentationKind.Repository, repositoryId)}</>,
+            s1: <>{pullRequestId}</>,
+          }}
         />
       </strong>
       <p>
@@ -415,12 +460,18 @@ export function PullRequests({
   active: boolean;
   openSettings: (destination?: SettingsNavigationEntry) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
   const [expandedRepositoryId, setExpandedRepositoryId] = useState("");
   const [state, setState] = useState(ItemState.Open);
   const stateGroupId = useId();
+  // Assign exact-ID presentation numbers once in this connection-owned view.
+  // Removed rows never donate their numbers to later catalog entries.
+  const repositoryNames = useRef(
+    new Map<string, { number: number; name: string }>(),
+  );
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [composing, setComposing] = useState(false);
@@ -434,6 +485,25 @@ export function PullRequests({
     EntityKind.REPOSITORY,
     navigationActive,
   );
+  for (const row of repositories.data?.resources ?? []) {
+    const known = repositoryNames.current.get(row.id);
+    repositoryNames.current.set(row.id, {
+      number: known?.number ?? repositoryNames.current.size + 1,
+      name: productResourceName(productLabel, row),
+    });
+  }
+  const nameCounts = new Map<string, number>();
+  for (const { name } of repositoryNames.current.values())
+    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+  const repositoryLabel = (row: Resource) => {
+    const observed = repositoryNames.current.get(row.id)!;
+    return (nameCounts.get(observed.name) ?? 0) > 1
+      ? copy("pull-requests.repositoryNumberedName", {
+          name: observed.name,
+          number: observed.number,
+        })
+      : observed.name;
+  };
   const selectedQuery = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.REPOSITORY, id: repositoryId },
@@ -634,6 +704,8 @@ export function PullRequests({
               row={row}
               selected={repositoryId === row.id}
               expanded={expandedRepositoryId === row.id}
+              active={navigationActive}
+              label={repositoryLabel(row)}
               choose={() => chooseRepository(row)}
               toggleDetails={() =>
                 setExpandedRepositoryId((current) =>
@@ -801,7 +873,9 @@ export function PullRequests({
               <header className="pr-list-header">
                 <div>
                   <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
-                  {selected ? <p>{resourceName(selected)}</p> : null}
+                  {selected ? (
+                    <p>{productResourceName(productLabel, selected)}</p>
+                  ) : null}
                 </div>
               </header>
             ) : (

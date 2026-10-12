@@ -1,3 +1,10 @@
+import {
+  useProductLabels,
+  PresentationKind,
+  identityFallback,
+  presentationKind,
+  productResourceName,
+} from "./product-identity-labels";
 import { useSessionActive } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 import {
@@ -23,7 +30,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { JobState, OperationStatus } from "./jobs";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { useRetainedMutation } from "./mutation";
@@ -43,6 +50,14 @@ const sourceHarness = (resource: Resource) =>
   text(
     object(object(document(resource).initial_execution).configuration).harness,
   );
+const sourceMutationName = (resource: Resource) => {
+  const data = document(resource);
+  return typeof data.name === "string"
+    ? data.name
+    : typeof data.alias === "string"
+      ? data.alias
+      : identityFallback(presentationKind(resource.kind));
+};
 const settled = (resource: Resource) => {
   const data = document(resource),
     execution = object(data.execution),
@@ -276,6 +291,7 @@ export function SessionForkProvider({
   openSidechat?: (parent: string, child: Resource) => void;
   readLocalWorker?: ReadLocalWorkerProof;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const tabs = useSessionTabsStore();
   const [direct, setDirect] = useState<DirectSidechat>();
@@ -407,7 +423,7 @@ export function SessionForkProvider({
       setSource(resource);
       setPurpose(requestedPurpose);
       setName(
-        `${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(
+        `${sourceMutationName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(
           0,
           256,
         ),
@@ -421,7 +437,7 @@ export function SessionForkProvider({
       const value: DirectSidechat = {
         requestId: newRequestId(),
         parent: resource.id,
-        name: `${resourceName(resource)} Sidechat`.slice(0, 256),
+        name: `${sourceMutationName(resource)} Sidechat`.slice(0, 256),
         text: "",
         start: 0,
         end: 0,
@@ -593,7 +609,7 @@ export function SessionForkProvider({
       {
         kind: SessionTabKind.Sidechat,
         id: child.id,
-        name: resourceName(child),
+        name: productResourceName(productLabel, child),
       },
       {
         text: original.text,
@@ -674,7 +690,7 @@ export function SessionForkProvider({
                 <LocalizedText
                   id="session-fork.createAnIndependentConversationFromAt_76ffeb"
                   components={{
-                    s0: <>{resourceName(source)}</>,
+                    s0: <>{productResourceName(productLabel, source)}</>,
                     s1: (
                       <>
                         {sourceHarness(source) === "opencode"
@@ -694,7 +710,7 @@ export function SessionForkProvider({
               <LocalizedText
                 id="session-fork.sourceTurn_0471be"
                 components={{
-                  s0: <>{source.id}</>,
+                  s0: <>{productLabel(PresentationKind.Session, source.id)}</>,
                   s1: (
                     <>
                       {text(object(document(source).execution).native_turn_id)}

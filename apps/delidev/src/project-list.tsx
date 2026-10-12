@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
+import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
 } from "./settings-action";
-import {
-  DisclosureButton,
-  DisclosureContent,
-  DisclosureDensity,
-  Disclosure,
-  DisclosureSummary,
-} from "./disclosure";
+import { DisclosureButton, DisclosureDensity } from "./disclosure";
 import { useId, useState } from "react";
 import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, text } from "./documents";
 import { copy, useLocale } from "./localization";
 import { Failure } from "./ui";
 import {
@@ -67,9 +65,10 @@ function ProjectRow({
   edit: (row: Resource) => void;
   remove: (row: Resource) => void;
 }) {
+  const productLabel = useProductLabels();
   const [expanded, setExpanded] = useState(false);
   const repositoriesId = useId();
-  const name = resourceName(row),
+  const name = productResourceName(productLabel, row),
     ids = projectRepositoryIds(row),
     primary = text(document(row).primary_repository);
   const singleton = ids.length === 1;
@@ -174,24 +173,6 @@ function ProjectRow({
           )}
         </DisclosureButton>
       ) : null}
-      <Disclosure
-        density={DisclosureDensity.Settings}
-        className="project-original-details"
-      >
-        <DisclosureSummary>{copy("settings.projectDetails")}</DisclosureSummary>
-        <dl>
-          <dt>{copy("settings.projectOriginalID")}</dt>
-          <dd>{row.id}</dd>
-          <dt>{copy("settings.projectRepositoryOriginalIDs")}</dt>
-          <dd>
-            <ol>
-              {ids.map((id, index) => (
-                <li key={`${id}:${index}`}>{id}</li>
-              ))}
-            </ol>
-          </dd>
-        </dl>
-      </Disclosure>
     </article>
   );
 }

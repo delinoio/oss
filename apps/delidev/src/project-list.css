@@ -71,11 +71,6 @@
 .project-show-repositories {
   margin: 8px 0;
 }
-.settings-projects .project-original-details {
-  border: 0;
-  padding: 0;
-  border-radius: 0;
-}
 .settings-projects
   .project-row[data-single-repository]
   .project-repository-rows {
@@ -86,33 +81,6 @@
   .project-repository-rows
   > li {
   padding: 0;
-}
-.project-original-details {
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-.project-original-details summary {
-  cursor: pointer;
-  width: fit-content;
-  padding: 10px 0;
-  min-height: 40px;
-  box-sizing: border-box;
-}
-.project-original-details summary:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 3px;
-  border-radius: 8px;
-}
-.project-original-details dl {
-  margin: 8px 0;
-}
-.project-original-details dd {
-  margin: 4px 0 12px;
-  overflow-wrap: anywhere;
-}
-.project-original-details ol {
-  padding-left: 20px;
 }
 @media (max-width: 1099px) {
   .project-row-heading {

@@ -261,7 +261,7 @@ it("opens the exact sidebar project and retains its draft through a resource ref
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: `Project actions · Original project · ${projectId}`,
+      name: "Project actions · Original project",
     }),
   );
   expect(get).not.toHaveBeenCalled();

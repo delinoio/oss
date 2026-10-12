@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import {
   PaidCredits,
   PaidCreditState,
@@ -7,7 +12,6 @@ import { OpenCodeGoAccount, OpenCodeGoManagement } from "./opencode-go-account";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
-// SPDX-License-Identifier: Apache-2.0
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -51,7 +55,7 @@ import {
 } from "./subscription-quota";
 import { useSubscriptionLogin } from "./subscription-login";
 import { serviceAccount } from "./subscription-resource";
-import { document, items, object, resourceName, text } from "./documents";
+import { document, items, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, InlineRemediation, Problem } from "./ui";
 import { SubscriptionBrand } from "./subscription-catalog";
@@ -98,6 +102,7 @@ function NativeManagedSubscriptionAccount({
   active: boolean;
   close: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const closeTask = useCloseSettingsTask(close);
   const initialResource = "kind" in initial ? initial : undefined;
@@ -308,10 +313,10 @@ function NativeManagedSubscriptionAccount({
     <section
       className="subscription-account-create"
       aria-label={copy("subscription-accounts.manageSubscription_5ac1d0", {
-        v0: resourceName(current),
+        v0: productResourceName(productLabel, current),
       })}
     >
-      <h2>{resourceName(current)}</h2>
+      <h2>{productResourceName(productLabel, current)}</h2>
       <p>
         {subscriptionServiceNames[service]} ·{" "}
         {connected
@@ -323,7 +328,7 @@ function NativeManagedSubscriptionAccount({
           {copy("claude-subscription.ownerRunner", {
             runner:
               owner.data?.resource?.id === ownerMachine
-                ? resourceName(owner.data.resource)
+                ? productResourceName(productLabel, owner.data.resource)
                 : copy("claude-subscription.originalRunner"),
           })}
         </p>
@@ -430,7 +435,11 @@ function NativeManagedSubscriptionAccount({
             <p>
               <LocalizedText
                 id="subscription-accounts.logOutActiveExecutionsAreCanceled_dc5bf0"
-                components={{ s0: <>{resourceName(logoutConfirmation)}</> }}
+                components={{
+                  s0: (
+                    <>{productResourceName(productLabel, logoutConfirmation)}</>
+                  ),
+                }}
               />
             </p>
             {current.revision !== logoutConfirmation.revision ? (
@@ -590,6 +599,7 @@ export function SubscriptionAccounts({
   deleteAccount: (resource: Resource) => void;
   onWorkflowReadyChange?: (active: boolean) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const content = useRef<HTMLDivElement>(null),
     root = useScrollRoot(content);
@@ -746,7 +756,7 @@ export function SubscriptionAccounts({
         return {
           id: row.id,
           revision: row.revision,
-          alias: resourceName(row),
+          alias: productResourceName(productLabel, row),
           providerName: subscriptionServiceNames[service],
           brand: service as unknown as SubscriptionBrand,
           connection: data.removal

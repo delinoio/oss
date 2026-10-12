@@ -20,6 +20,7 @@ export enum ShortcutId {
   SessionTab8 = "session-tab-8",
   SessionTab9 = "session-tab-9",
   SessionCloseTab = "session-close-tab",
+  OpenTerminals = "open-terminals",
   Help = "help",
   NewSession = "new-session",
   SessionFocus = "session-focus",
@@ -53,6 +54,9 @@ export const globalShortcutBindings = {
   [ShortcutId.OpenSettings]: [{ key: ",", primary: true }],
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
+} as const;
+export const sessionShortcutBindings = {
+  [ShortcutId.OpenTerminals]: [{ key: "`", primary: true }],
 } as const;
 export interface ShortcutBinding {
   key: string;

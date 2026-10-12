@@ -6,6 +6,8 @@ mutation authority. See the [shared desktop pagination contract](apps-delidev-de
 
 Files uses the original Worker-owned read-only observation boundary with a desktop lazy tree, one serial read owner and disposable preview. Per-directory metadata stays in the open scope; cancellation fences late publication, and only complete parent ranges prove absence. Back preserves the conversation/composer and restores accepted navigation while discarding bytes. Follow the [desktop](apps-delidev-desktop-contract.md#session-file-explorer) and [Files](cmds-delidev-files-contract.md) contracts; no protocol, native change or migration is added.
 
+The desktop-owned shared pure identity presentation at `apps/delidev/src/product-identity.ts` is consumed by desktop and mobile. Product labels omit internal UUIDs across generated visible, expanded, accessible and Copy surfaces while exact original authority and user/native/external content remain unchanged. Follow the [product identity presentation](apps-delidev-desktop-contract.md#product-identity-presentation), [mobile](apps-delidev-mobile-contract.md#product-identity-presentation), diagnostics, localization and widget contracts.
+
 ## Key-preserving format amendment
 
 After main reservation the originating change, ProviderInventory capability 9 owns connected API
@@ -90,7 +92,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 Named Home projects provide a New session shortcut beside their collapse control under the [chat-first creation contract](apps-delidev-desktop-contract.md#chat-first-session-creation). It selects the original project once in the mounted creation draft, preserves message/mode/budget/Options and shares existing project-selection locks without creating a session on navigation.
 The separately retained [Pull request workspace](apps-delidev-desktop-contract.md#pull-request-workspace-presentation) adds scoped stack context, lazy read-only tabs, provider change counts and sanitized server-owned avatars through independently negotiated IntegrationService reads. List and search bytes, pending PR actions and shared backend inspection remain independently owned.
 
-The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Validated repository selection loads page one automatically; state/page-size changes apply immediately and valid trimmed search applies after a 300 ms IME-aware debounce; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
+The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free native floating Details disclosures for configured GitHub identity, and native segmented state choices. Internal UUIDs remain authority keys; user-facing labels use original names and stable presentation numbers for equal names. Validated repository selection loads page one automatically; state/page-size changes apply immediately and valid trimmed search applies after a 300 ms IME-aware debounce; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
 
 ## Domain Contract Documents
 

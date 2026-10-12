@@ -248,8 +248,10 @@ it("displays the complete original handled-push audit without offering another a
   await screen.findByText(/Local handling: Handled after verified push/);
   const audit = screen.getByText(/Verified push:/);
   expect(audit.textContent).toContain(handling.pushed_head);
-  expect(audit.textContent).toContain(`attempt ${handling.attempt_id}`);
-  expect(audit.textContent).toContain(`execution ${handling.execution_id}`);
+  expect(audit.textContent).toContain("Attempt");
+  expect(audit.textContent).toContain("Execution");
+  expect(audit.textContent).not.toContain(handling.attempt_id);
+  expect(audit.textContent).not.toContain(handling.execution_id);
   expect(audit.textContent).toContain("handled at ");
   expect(audit.querySelector("time")?.dateTime).toBe(handling.at);
   expect(
@@ -509,7 +511,7 @@ it("retains an original conflict transition while showing current unknown mergea
     name: "Merge conflict · feature → main",
   });
   expect(screen.getByText(/Latest mergeability: unknown/)).toBeTruthy();
-  expect(screen.getByText(conflict.transition_id)).toBeTruthy();
+  expect(screen.queryByText(conflict.transition_id)).toBeNull();
   expect(
     screen.getByRole("button", { name: "Dismiss this content version" }),
   ).toBeTruthy();

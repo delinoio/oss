@@ -550,7 +550,7 @@ it("reuses stale row evidence through dialog reopen and disposes Details on cate
   const dialog = screen.getByRole("dialog", { name: "Details" });
   expect(within(dialog).getByText(/Showing stale usage/)).toBeTruthy();
   expect(within(dialog).getByText("USD 12.48")).toBeTruthy();
-  expect(within(dialog).getByText(f.id)).toBeTruthy();
+  expect(within(dialog).queryByText(f.id)).toBeNull();
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Close Details" }),
   );
@@ -570,7 +570,7 @@ it("keeps unknown schemas read-only while allowing their full Details identity",
   f.row.schemaVersion = 4;
   render(f.view());
   const opener = screen.getByRole("button", {
-    name: "More actions for Unnamed",
+    name: "More actions for Account unavailable · 1",
   });
   fireEvent.click(opener);
   expect(
@@ -589,8 +589,8 @@ it("keeps unknown schemas read-only while allowing their full Details identity",
   );
   fireEvent.click(screen.getByRole("button", { name: "Details" }));
   expect(
-    within(screen.getByRole("dialog", { name: "Details" })).getByText(f.id),
-  ).toBeTruthy();
+    within(screen.getByRole("dialog", { name: "Details" })).queryByText(f.id),
+  ).toBeNull();
   expect(f.read).not.toHaveBeenCalled();
 });
 

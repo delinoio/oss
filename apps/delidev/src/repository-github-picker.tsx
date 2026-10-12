@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productResourceName,
+} from "./product-identity-labels";
 import { ScrollPicker } from "./scroll-picker";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -13,7 +18,6 @@ import {
   useGitHubScrollRoot,
   visiblePageIds,
 } from "./github-scroll";
-// SPDX-License-Identifier: Apache-2.0
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -38,12 +42,7 @@ import {
   ResourceQuery,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import {
-  document as resourceDocument,
-  object,
-  resourceName,
-  text,
-} from "./documents";
+import { document as resourceDocument, object, text } from "./documents";
 import { DialogSurface, Problem } from "./ui";
 import { copy, useLocale } from "./localization";
 import {
@@ -306,6 +305,7 @@ export function RepositoryGitHubPicker({
   disabled: boolean;
   choose: (selection: GitHubCloneSelection, url: string) => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const opener = useRef<HTMLButtonElement>(null),
     taskVisible = useSettingsTaskVisible();
@@ -464,9 +464,11 @@ export function RepositoryGitHubPicker({
             placeholder={copy("repository-github.chooseProfile")}
             options={available.map((row) => ({
               id: row.id,
-              label: resourceName(row),
+              label: productResourceName(productLabel, row),
             }))}
-            selectedLabel={profile ? resourceName(profile) : undefined}
+            selectedLabel={
+              profile ? productResourceName(productLabel, profile) : undefined
+            }
           />
           <div className="actions">
             <SettingsActionButton

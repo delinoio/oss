@@ -163,7 +163,7 @@ function fixture(count = 1, initialExited = false, offPage = false) {
 it("dismisses matching newer watch metadata and hides the final dock exactly once without process operations", async () => {
   const test = fixture();
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
     await screen.findByRole("textbox", { name: "Terminal input" });
     test.exit();
     await waitFor(() => expect(screen.queryByRole("tab")).toBeNull());
@@ -184,7 +184,7 @@ it.each([0, 1])(
     try {
       fireEvent.click(
         await screen.findByRole("tab", {
-          name: new RegExp(`Terminal ${at + 1}`),
+          name: new RegExp(`Terminal · ${at + 1}`),
         }),
       );
       await screen.findByRole("textbox", { name: "Terminal input" });
@@ -205,7 +205,7 @@ it.each([0, 1])(
 it("inactive inventory exit preserves selection and focus", async () => {
   const test = fixture(3);
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 2/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 2/ }));
     const input = await screen.findByRole("textbox", {
       name: "Terminal input",
     });
@@ -241,7 +241,7 @@ it.each([false, true])(
   async (error) => {
     const test = fixture();
     try {
-      fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+      fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
       await screen.findByRole("textbox", { name: "Terminal input" });
       test.end(error);
       await screen.findByRole("button", { name: "Reattach original terminal" });
@@ -263,7 +263,7 @@ it.each([
   async (change) => {
     const test = fixture();
     try {
-      fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+      fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
       await screen.findByRole("textbox", { name: "Terminal input" });
       test.exit(0, change);
       await waitFor(() =>
@@ -285,7 +285,7 @@ it("verified exit retains exact uncertain input recovery until the original rece
     new ConnectError("fixture acknowledgment lost", Code.Unavailable),
   );
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
     const input = await screen.findByRole("textbox", {
       name: "Terminal input",
     });
@@ -328,7 +328,7 @@ it("an explicit ID outside the inventory dismisses only after its own exit witho
   const test = fixture(1, false, true);
   try {
     await screen.findByRole("textbox", { name: "Terminal input" });
-    await screen.findByRole("tab", { name: /Terminal 1/ });
+    await screen.findByRole("tab", { name: /Terminal · 1/ });
     expect(test.getResource).toHaveBeenCalledTimes(1);
     expect(test.close).not.toHaveBeenCalled();
     test.exit();
@@ -352,7 +352,7 @@ it("a late original creation acknowledgment cannot replace presentation after ve
   );
   test.createTerminal.mockImplementation(() => receipt);
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
     await screen.findByRole("textbox", { name: "Terminal input" });
     fireEvent.click(screen.getByRole("button", { name: "Create terminal" }));
     await waitFor(() => expect(test.createTerminal).toHaveBeenCalledTimes(1));

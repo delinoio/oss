@@ -719,7 +719,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Delete Owned project · ${projects.resources[0].id}`,
+      name: `Delete Owned project`,
     }),
   );
   fireEvent.click(

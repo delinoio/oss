@@ -418,7 +418,8 @@ it("keeps independent Worker stop targeting its original generation after client
   const panel = await screen.findByRole("region", {
     name: "Retained Worker for Saved server",
   });
-  await within(panel).findByText(`Execution machine: ${machine}`);
+  await within(panel).findByText(/^Execution machine: Runner unavailable/);
+  expect(panel.textContent).not.toContain(machine);
   expect(
     within(panel).queryByRole("button", { name: "Register this computer" }),
   ).toBeNull();

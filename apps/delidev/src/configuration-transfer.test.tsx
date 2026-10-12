@@ -836,7 +836,7 @@ it("retains sanitized typed export guidance and clears it for the next export ge
   expect(screen.getByText(message)).toBeTruthy();
   expect(screen.getByText(guidance)).toBeTruthy();
   expect(screen.getByText("resource_exhausted")).toBeTruthy();
-  expect(screen.getByText(new RegExp(reference))).toBeTruthy();
+  expect(screen.queryByText(new RegExp(reference))).toBeNull();
   let finish!: (result: { documentJson: Uint8Array }) => void;
   value.exported.mockImplementationOnce(
     () =>

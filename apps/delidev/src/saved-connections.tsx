@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -201,6 +202,7 @@ export function SavedConnections({
   advancedTarget?: HTMLElement;
   refreshKey?: number;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const readGeneration = useRef(0);
   const [adding, setAdding] = useState(false);
@@ -507,7 +509,16 @@ export function SavedConnections({
                   <p>
                     <LocalizedText
                       id="saved-connections.server_90ff00"
-                      components={{ s0: <>{profile.server_id}</> }}
+                      components={{
+                        s0: (
+                          <>
+                            {productLabel(
+                              PresentationKind.Server,
+                              profile.server_id,
+                            )}
+                          </>
+                        ),
+                      }}
                     />
                   </p>
                   <p>
@@ -804,7 +815,16 @@ export function SavedConnections({
             <p>
               <LocalizedText
                 id="saved-connections.expectedServer_4ed0bf"
-                components={{ s0: <>{text(preview.server_id)}</> }}
+                components={{
+                  s0: (
+                    <>
+                      {productLabel(
+                        PresentationKind.Server,
+                        text(preview.server_id),
+                      )}
+                    </>
+                  ),
+                }}
               />
             </p>
           ) : null}

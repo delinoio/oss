@@ -1,3 +1,4 @@
+import { ProductIdentityProvider } from "./product-identity-labels";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
@@ -95,7 +96,9 @@ function fixture(rows: Resource[] = []) {
   const view = (children: React.ReactNode, currentTransport = transport) => (
     <StrictMode>
       <TransportProvider transport={currentTransport}>
-        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        <QueryClientProvider client={client}>
+          <ProductIdentityProvider>{children}</ProductIdentityProvider>
+        </QueryClientProvider>
       </TransportProvider>
     </StrictMode>
   );
@@ -215,7 +218,7 @@ it("renders the approved uncertain/loading hierarchy without duplicate guidance 
     ),
   ).toHaveLength(1);
   expect(
-    screen.getByText(`Execution machine: ${current.machine_id}`),
+    screen.getByText(/^Execution machine: Runner unavailable · \d+$/),
   ).toBeTruthy();
   const inventory = screen.getByRole("region", {
     name: "Saved runner devices",
@@ -272,9 +275,9 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
       inventory.querySelectorAll("article h3"),
       (node) => node.textContent,
     ),
-  ).toEqual(["Zulu", "Alpha", "Unnamed"]);
+  ).toEqual(["Zulu", "Alpha", "Runner unavailable · 3"]);
   for (const row of rows)
-    expect(within(inventory).getByText(row.id)).toBeTruthy();
+    expect(within(inventory).queryByText(row.id)).toBeNull();
   expect(
     (
       within(inventory).getAllByRole("button", {
@@ -332,7 +335,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])(
       "Loading runner devices...",
     );
     await act(async () => pending.reject(problem.error));
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    expect((await screen.findByRole("alert")).textContent).not.toContain(
       problem.correlationId,
     );
     expect(screen.queryByText(/No saved entries/)).toBeNull();
@@ -366,7 +369,7 @@ it.each([false, true])(
     expect(
       screen.getByText(empty ? "No saved entries." : "Retained machine"),
     ).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain(
+    expect(screen.getByRole("alert").textContent).not.toContain(
       problem.correlationId,
     );
     expect(control.mock.calls).toHaveLength(calls);
@@ -504,11 +507,11 @@ it.each(["navigation", "Escape then navigation"])(
       screen.getByRole("heading", { level: 1, name: "AI Subscription" }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
-    await screen.findByText(`Execution machine: ${replacement.machine_id}`);
+    await screen.findByText(/^Execution machine: Runner unavailable · \d+$/);
     const calls = control.mock.calls.length;
     await act(async () => pending.resolve(status(LocalWorkerState.Uncertain)));
     expect(
-      screen.getByText(`Execution machine: ${replacement.machine_id}`),
+      screen.getByText(/^Execution machine: Runner unavailable · \d+$/),
     ).toBeTruthy();
     expect(control.mock.calls).toHaveLength(calls);
   },

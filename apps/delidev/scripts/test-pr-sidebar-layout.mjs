@@ -89,7 +89,6 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", (error) => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const id = "0195c9c0-7b13-7000-8000-000000000001";
   const enter = async (language) => {
     await page
       .getByRole("button", {
@@ -113,9 +112,7 @@ try {
       return {
         overflow: node.scrollWidth > node.clientWidth,
         outside: [
-          ...node.querySelectorAll(
-            "button, input:not([type=radio]), select, .pr-repository-details",
-          ),
+          ...node.querySelectorAll("button, input:not([type=radio]), select"),
         ]
           .filter((item) => item.getClientRects().length)
           .some((item) => {
@@ -231,6 +228,87 @@ try {
       context,
     );
   };
+  const stableLayout = async (pane) =>
+    pane.evaluate((node) => {
+      const rectangle = (element) => {
+        const rect = element.getBoundingClientRect();
+        return [rect.x, rect.y, rect.width, rect.height];
+      };
+      const scroll = [];
+      for (let owner = node; owner; owner = owner.parentElement) {
+        if (
+          owner.scrollHeight > owner.clientHeight ||
+          /(auto|scroll)/.test(getComputedStyle(owner).overflowY)
+        )
+          scroll.push([
+            owner.scrollHeight,
+            owner.clientHeight,
+            owner.scrollTop,
+          ]);
+      }
+      return {
+        rectangles: [
+          ...node.querySelectorAll(
+            ".pr-repository-heading, .sidebar-query-options, .pr-state-field, label, select, .pr-repository-settings",
+          ),
+        ].map(rectangle),
+        scroll,
+      };
+    });
+  const unchanged = (before, after, context) => {
+    assert.equal(after.rectangles.length, before.rectangles.length, context);
+    before.rectangles.forEach((rect, index) =>
+      rect.forEach((value, axis) =>
+        assert(
+          Math.abs(value - after.rectangles[index][axis]) <= 1,
+          `${context}: sibling ${index}/${axis}`,
+        ),
+      ),
+    );
+    assert.deepEqual(
+      after.scroll,
+      before.scroll,
+      `${context}: sidebar scroll metrics`,
+    );
+  };
+  const popupLayout = async (region, context) => {
+    const geometry = await region.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        native: node.matches(":popover-open"),
+        fixed: getComputedStyle(node).position === "fixed",
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scrollable:
+          node.scrollHeight <= node.clientHeight ||
+          getComputedStyle(node).overflowY === "auto",
+        text: node.textContent,
+      };
+    });
+    assert(
+      geometry.native &&
+        geometry.fixed &&
+        geometry.scrollable &&
+        geometry.left >= 7 &&
+        geometry.right <= geometry.width - 7 &&
+        geometry.top >= 7 &&
+        geometry.bottom <= geometry.height - 7,
+      `${context}: ${JSON.stringify(geometry)}`,
+    );
+    assert(
+      !geometry.text.includes("0195c9c0-7b13-7000-8000-"),
+      `${context}: no internal UUID`,
+    );
+    assert.equal(
+      await page.locator(".pr-repository-details:popover-open").count(),
+      1,
+      context,
+    );
+  };
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
       for (const [width, height] of [
@@ -245,10 +323,7 @@ try {
         await page.goto(`${origin}/?theme=${theme}&language=${language}`);
         const pane = await enter(language);
         const row = pane.getByRole("button", {
-          name:
-            language === "ko"
-              ? `oss. 저장소 ID: ${id}`
-              : `oss. Repository ID: ${id}`,
+          name: "oss",
           exact: true,
         });
         await row.waitFor();
@@ -286,15 +361,13 @@ try {
           });
         }
         const details = pane.getByRole("button", {
-          name:
-            language === "ko"
-              ? `oss 상세. 저장소 ID: ${id}`
-              : `Details for oss. Repository ID: ${id}`,
+          name: language === "ko" ? "oss 상세" : "Details for oss",
           exact: true,
         });
         await details.hover();
         await assertLayout(pane, `${language}/${theme}/${width}: hover`);
         await details.focus();
+        const beforeDetails = await stableLayout(pane);
         await details.press("Enter");
         await pane
           .getByRole("region", {
@@ -304,7 +377,45 @@ try {
           .waitFor();
         assert.equal(await row.getAttribute("aria-pressed"), "false");
         await assertLayout(pane, `${language}/${theme}/${width}: details`);
+        await popupLayout(
+          pane.locator(".pr-repository-details:popover-open"),
+          `${language}/${theme}/${width}: details`,
+        );
+        unchanged(beforeDetails, await stableLayout(pane), "opening details");
+        await details.press("Escape");
+        assert.equal(await details.getAttribute("aria-expanded"), "false");
+        assert(
+          await details.evaluate((node) => document.activeElement === node),
+          "Escape restores original opener",
+        );
+        assert(
+          await pane.isVisible(),
+          "First Escape keeps the compact drawer open",
+        );
+        unchanged(
+          beforeDetails,
+          await stableLayout(pane),
+          "Escape closes details",
+        );
         await details.press("Space");
+        await popupLayout(
+          pane.locator(".pr-repository-details:popover-open"),
+          "Space reopens original details",
+        );
+        const second = pane.locator(".pr-repository-details-toggle").nth(1);
+        // Native focus may scroll an offscreen opener before activation. Measure
+        // popup effects after that ordinary scroll, not against the prior row.
+        await second.focus();
+        const beforeSwitch = await stableLayout(pane);
+        await second.click();
+        assert.equal(await details.getAttribute("aria-expanded"), "false");
+        await popupLayout(
+          pane.locator(".pr-repository-details:popover-open"),
+          "switch exact repository",
+        );
+        unchanged(beforeSwitch, await stableLayout(pane), "switching details");
+        await second.click();
+        unchanged(beforeSwitch, await stableLayout(pane), "closing details");
         await row.click();
         const open = pane.getByRole("radio", {
           name: language === "ko" ? "열림" : "Open",
@@ -327,12 +438,21 @@ try {
           theme === "light" ? "rgb(255, 255, 255)" : "rgb(27, 33, 43)",
         );
         await assertLayout(pane, `${language}/${theme}/${width}: selected`);
+        await details.focus();
+        const selectedBefore = await stableLayout(pane);
         await details.click();
+        unchanged(
+          selectedBefore,
+          await stableLayout(pane),
+          "selected controls opening details",
+        );
         const detailsRegion = pane.getByRole("region", {
           name: await details.getAttribute("aria-label"),
           exact: true,
         });
         for (const activation of ["mouse", "Enter", "Space"]) {
+          await refresh.focus();
+          const beforeOutside = await stableLayout(pane);
           const beforeRefresh = await page.evaluate(
             () => window.__prSidebarCatalogReads,
           );
@@ -354,10 +474,22 @@ try {
             "Refresh retains selection",
           );
           assert(await closed.isChecked(), "Refresh retains filter state");
-          assert(
-            await detailsRegion.isVisible(),
-            "Refresh retains Details expansion",
+          assert.equal(
+            await details.getAttribute("aria-expanded"),
+            "false",
+            "Outside Refresh activation dismisses visible details",
           );
+          assert(
+            await refresh.evaluate((node) => document.activeElement === node),
+            "Outside activation retains clicked focus",
+          );
+          unchanged(
+            beforeOutside,
+            await stableLayout(pane),
+            "outside activation preserves sidebar geometry",
+          );
+          await details.click();
+          await popupLayout(detailsRegion, "same original details reopens");
         }
         await refresh.blur();
         await page.mouse.move(0, 0);
@@ -370,6 +502,12 @@ try {
             ),
           });
         if (width < 760) {
+          await details.focus();
+          await page.keyboard.press("Escape");
+          assert(
+            await pane.isVisible(),
+            "Details Escape preserves compact drawer",
+          );
           await page.keyboard.press("Escape");
           assert.equal(
             await pane.isVisible(),
@@ -392,14 +530,21 @@ try {
     const last = pane.locator(".sidebar-repository-row").last();
     await last.click();
     const details = pane.locator(".pr-repository-details-toggle").last();
-    await details.click();
     // Fixture-only long title proves that localization can wrap beside the fixed action.
     await pane.locator(".pr-sidebar-title h2").evaluate((node) => {
       node.textContent = node.textContent.repeat(8);
     });
+    await details.scrollIntoViewIfNeeded();
+    const longBefore = await stableLayout(pane);
+    await details.click();
     await assertLayout(
       pane,
       `${language}: long name/details at effective 200%`,
+    );
+    unchanged(
+      longBefore,
+      await stableLayout(pane),
+      "long metadata popup preserves layout",
     );
     assert.equal(
       await pane
@@ -410,7 +555,11 @@ try {
         .locator("dd")
         .last()
         .textContent(),
-      "0195c9c0-7b13-7000-8000-000000000003",
+      "long-owner-".repeat(8) + "/" + "long-repository-name-".repeat(18),
+    );
+    await popupLayout(
+      pane.locator(".pr-repository-details:popover-open"),
+      `${language}: long metadata scroll containment`,
     );
     checks++;
   }

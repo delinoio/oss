@@ -1,5 +1,17 @@
 # DeliDev mobile client contract
 
+## Product identity presentation
+
+Follow the desktop [product identity contract](apps-delidev-desktop-contract.md#product-identity-presentation).
+Mobile uses the shared pure typed registry within the existing connection/view
+boundary and observes only already-authorized cached resource metadata. Project,
+session, account, agent and Runner references use original names or localized
+kind-specific unavailable labels and lifetime-stable numbers. Connection details
+and diagnostic product Copy use the original profile name instead of profile/server
+UUIDs. Original authority, receipt JSON, immutable retries and user/native question,
+approval, message, tool and terminal bytes remain unchanged. Presentation starts no
+new read, write, notification, native operation or inference.
+
 ## Scope
 
 `apps/delidev-mobile` owns the separate iOS and Android remote client in the feature. Its identity is `io.delino.delidev.mobile`, and its display name is

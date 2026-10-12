@@ -1,11 +1,8 @@
-import { createPortal } from "react-dom";
-import {
-  SessionActivityProvider,
-  useSessionActive,
-  useSessionQuery as useQuery,
-} from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
-import { Disclosure, DisclosureSummary } from "./disclosure";
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
+import { createPortal } from "react-dom";
+import { useSessionActive } from "./session-activity";
+
 import { Timestamp } from "./timestamp-display";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -119,6 +116,7 @@ function PendingUnlink({
   associationId: string;
   refreshed: () => void;
 }) {
+  const productLabel = useProductLabels();
   const remove = usePRUnlink(sessionId, associationId, refreshed);
   const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
   const valid =
@@ -128,9 +126,12 @@ function PendingUnlink({
     original.mutation.expectedRevision > 0n &&
     original.mutation.expectedRevision < 1n << 63n;
   return (
-    <article aria-label={`Pending PR unlink ${associationId}`}>
+    <article
+      aria-label={productLabel(PresentationKind.Resource, associationId)}
+    >
       <p>
-        {copy("session-pull-requests.inline.60c1498ca3")} {associationId}
+        {copy("session-pull-requests.inline.60c1498ca3")}{" "}
+        {productLabel(PresentationKind.Resource, associationId)}
       </p>
       <p role="status">
         {remove.busy
@@ -266,6 +267,7 @@ function LinkRow({
   refreshed: () => void;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const productLabel = useProductLabels();
   const article = useRef<HTMLElement>(null);
   const rowVisible = useRowVisible(article, root, active);
   const remove = usePRUnlink(sessionId, row.id, refreshed);
@@ -318,7 +320,16 @@ function LinkRow({
               <p>
                 <LocalizedText
                   id="session-pull-requests.configuredRepository_6aa131"
-                  components={{ s0: <>{text(value.repository_id)}</> }}
+                  components={{
+                    s0: (
+                      <>
+                        {productLabel(
+                          PresentationKind.Repository,
+                          text(value.repository_id),
+                        )}
+                      </>
+                    ),
+                  }}
                 />
               </p>
               <p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p>

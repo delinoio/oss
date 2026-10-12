@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 export const en = {
+  projectUnavailable: "Project unavailable",
+  sessionUnavailable: "Session unavailable",
+  agentUnavailable: "Agent unavailable",
+  runnerUnavailable: "Runner unavailable",
+  accountUnavailable: "Account unavailable",
+  resourceUnavailable: "Resource unavailable",
+
   readIncomplete:
     "The list is incomplete. Retry the read or refresh; current targets must be verified before acting.",
   moreAvailable: "More items remain. Load the next page to see them.",
@@ -169,6 +176,13 @@ export const en = {
     "Original pairing is retained. Retry it without generating another credential.",
 } as const;
 export const ko: Record<keyof typeof en, string> = {
+  projectUnavailable: "프로젝트 정보 없음",
+  sessionUnavailable: "세션 정보 없음",
+  agentUnavailable: "에이전트 정보 없음",
+  runnerUnavailable: "Runner 정보 없음",
+  accountUnavailable: "계정 정보 없음",
+  resourceUnavailable: "리소스 정보 없음",
+
   readIncomplete:
     "목록이 완전하지 않습니다. 읽기를 재시도하거나 새로 고침하세요. 동작 전에 현재 대상을 확인해야 합니다.",
   moreAvailable: "항목이 더 있습니다. 다음 페이지를 불러오세요.",

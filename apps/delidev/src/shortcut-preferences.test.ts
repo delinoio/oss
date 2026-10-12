@@ -13,6 +13,7 @@ import {
 } from "./shortcut-preferences";
 import {
   globalShortcutBindings,
+  sessionShortcutBindings,
   ShortcutId,
   ShortcutInput,
   ShortcutPlatform,
@@ -314,4 +315,25 @@ it("keeps Open Settings fixed and rejects comma capture without changing editabl
         platform,
       ),
     ).toBeUndefined();
+});
+
+it("keeps Open terminals fixed in the read-only Session catalog without expanding editable preferences", () => {
+  const action = readOnlyShortcutCatalog.find(
+    (item) => item.id === ShortcutId.OpenTerminals,
+  );
+  expect(action).toMatchObject({
+    label: "shortcuts.openTerminals",
+    scopes: [Surface.Sessions],
+    input: ShortcutInput.Allow,
+  });
+  expect(action?.defaults).toBe(
+    sessionShortcutBindings[ShortcutId.OpenTerminals],
+  );
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(() =>
+    parseShortcutOverrides({
+      [ShortcutId.OpenTerminals]: { state: ShortcutOverrideState.Disabled },
+    }),
+  ).toThrow();
+  expect(validShortcutChord({ key: "`", shift: false })).toBe(false);
 });

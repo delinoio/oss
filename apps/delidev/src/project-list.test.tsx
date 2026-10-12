@@ -240,9 +240,10 @@ it("shows first three ordered repositories, inert full URLs, explicit primary an
   expect(screen.getByText("5 repositories")).toBeTruthy();
   expect(screen.queryByText("Repository 3")).toBeNull();
   expect(screen.queryByText("Primary")).toBeNull();
-  const disclosure = mounted.container.querySelector("details")!;
-  expect(disclosure.open).toBe(false);
-  expect(within(disclosure).getByText(saved.id)).toBeTruthy();
+  expect(
+    mounted.container.querySelector(".project-original-details"),
+  ).toBeNull();
+  expect(screen.queryByText(saved.id)).toBeNull();
   expect(screen.queryByRole("link")).toBeNull();
   const show = screen.getByRole("button", { name: "Show all repositories" });
   show.focus();
@@ -466,7 +467,7 @@ it.each(["window", "refresh", "reconnect"])(
   },
 );
 
-it("compacts only exact matching-name singleton metadata while retaining inert source bytes and identities", () => {
+it("compacts exact matching-name metadata while retaining original action identities", () => {
   const row = repository("Project", "git@example.org:team/Project.git"),
     saved = project([row]);
   const edit = vi.fn(),
@@ -484,10 +485,11 @@ it("compacts only exact matching-name singleton metadata while retaining inert s
   expect(screen.queryByText("Primary")).toBeNull();
   expect(screen.getByText("git@example.org:team/Project.git")).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
-  const details = mounted.container.querySelector("details")!;
-  expect(details.open).toBe(false);
-  expect(within(details).getByText(saved.id)).toBeTruthy();
-  expect(within(details).getByText(row.id)).toBeTruthy();
+  expect(
+    mounted.container.querySelector(".project-original-details"),
+  ).toBeNull();
+  expect(screen.queryByText(saved.id)).toBeNull();
+  expect(screen.queryByText(row.id)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Edit Project" }));
   fireEvent.click(screen.getByRole("button", { name: "Delete Project" }));
   expect(edit).toHaveBeenCalledWith(saved);
@@ -579,10 +581,7 @@ it.each([0, 2, 3])(
     expect(
       mounted.container.querySelectorAll(".project-repository-rows > li"),
     ).toHaveLength(count);
-    for (const row of rows)
-      expect(
-        within(mounted.container.querySelector("details")!).getByText(row.id),
-      ).toBeTruthy();
+    for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
   },
 );
 
@@ -605,13 +604,11 @@ it("preserves disabled schema actions and unreadable original singleton referenc
   );
   expect(screen.getAllByRole("button")[0]!.hasAttribute("disabled")).toBe(true);
   expect(screen.getAllByRole("button")[1]!.hasAttribute("disabled")).toBe(true);
-  expect(
-    within(mounted.container.querySelector("details")!).getByText(saved.id),
-  ).toBeTruthy();
+  expect(screen.queryByText(saved.id)).toBeNull();
   expect(screen.getByText("0 repositories")).toBeTruthy();
 });
 
-it("keeps unreadable saved references in supported project details", () => {
+it("keeps unavailable repository guidance without exposing unreadable reference keys", () => {
   const saved = {
     ...project([]),
     documentJson: encode({
@@ -634,11 +631,7 @@ it("keeps unreadable saved references in supported project details", () => {
       remove={() => {}}
     />,
   );
-  expect(
-    within(mounted.container.querySelector("details")!).getByText(
-      "unreadable-original-reference",
-    ),
-  ).toBeTruthy();
+  expect(screen.queryByText("unreadable-original-reference")).toBeNull();
   expect(screen.getByText("Repository details unavailable")).toBeTruthy();
   expect(screen.queryByText("1 repository")).toBeNull();
 });

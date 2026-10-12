@@ -214,7 +214,6 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
     harness: failure.harness,
     native_version: failure.native_version ?? "",
     problem_code: failure.problem_code,
-    correlation_id: failure.correlation_id,
     input_delivery: failure.input_delivery,
     cleanup: failure.cleanup,
   };
@@ -230,8 +229,7 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
         </dd>
         <dt>{copy("session.startupCode")}</dt>
         <dd>{text(failure.problem_code)}</dd>
-        <dt>{copy("session.startupReference")}</dt>
-        <dd>{text(failure.correlation_id)}</dd>
+
         <dt>{copy("session.startupInputDelivery")}</dt>
         <dd>{delivery[Number(failure.input_delivery)]}</dd>
         <dt>{copy("session.startupCleanup")}</dt>

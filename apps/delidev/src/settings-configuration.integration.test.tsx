@@ -168,6 +168,20 @@ it("configures a real Go server through the settings forms and explicitly valida
       )?.textContent,
     ).toBe("Owned keyless account"),
   );
+  await waitFor(() => {
+    const accountRead = client
+      .getQueryCache()
+      .getAll()
+      .find((query) => {
+        const descriptor = query.queryKey[1] as
+          { methodName?: string; input?: { id?: string } } | undefined;
+        return (
+          descriptor?.methodName === "GetResource" &&
+          descriptor.input?.id === accounts.resources[0].id
+        );
+      });
+    expect(accountRead?.state.status).toBe("success");
+  });
   // The source reports its independent account proof after the row renders.
   await next();
   const model = await screen.findByRole("combobox", { name: /^Model for / });

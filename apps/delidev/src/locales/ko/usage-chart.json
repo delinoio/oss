@@ -38,7 +38,7 @@
   "usage-chart.otherModels_1b8bc2": "다른 모델",
   "usage-chart.measuredModelGroupsNoMonetaryRollup_3a25fa": "측정된 모델 그룹 {{v0}}개 · 금액 합산 없음",
   "usage-chart.subscriptionService_67a163": "구독 서비스 {{v0}}",
-  "usage-chart.apiProvider_f01871": "API {{v0}} · 제공자 {{v1}}",
+  "usage-chart.apiProvider_f01871": "API 공급자 {{v0}}",
   "usage-chart.model_be9a1a": " {{v0}} · 모델 {{v1}}",
   "usage-chart.tokens_a59f00": "토큰 <s0/>개 · <s1/>",
   "usage-chart.focusTheChartToInspectRanked_30453a": "차트에 포커스를 두고 순위 그룹을 확인하세요. 위·아래 키로 행을 이동합니다. 데이터 보기에서도 전체 ID와 정확한 값을 확인할 수 있습니다.",

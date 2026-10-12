@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import {
   DisclosureButton,
   DisclosureContent,
@@ -510,6 +511,7 @@ function ModelViewData({
   id: string;
   open: boolean;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   return (
     <DisclosureContent
@@ -548,7 +550,11 @@ function ModelViewData({
               <td>
                 {model.subscriptionService
                   ? subscriptionServiceLabel(model.subscriptionService)
-                  : model.providerId}
+                  : productLabel(
+                      PresentationKind.Provider,
+                      model.providerId,
+                      model.providerName,
+                    )}
               </td>
               <td>
                 {model.subscriptionService
@@ -584,6 +590,7 @@ function ModelViewData({
 }
 
 export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
+  const productLabel = useProductLabels();
   useLocale();
   const [selected, setSelected] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -733,8 +740,16 @@ export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
                             ),
                           })
                         : copy("usage-chart.apiProvider_f01871", {
-                            v0: row.providerName || row.providerId,
-                            v1: row.providerId,
+                            v0: productLabel(
+                              PresentationKind.Provider,
+                              row.providerId,
+                              row.providerName,
+                            ),
+                            v1: productLabel(
+                              PresentationKind.Provider,
+                              row.providerId,
+                              row.providerName,
+                            ),
                           }),
                       v1: row.modelId,
                     })}
@@ -782,7 +797,10 @@ export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
                                 ),
                               })
                             : copy("usage-chart.provider_7a7f6c", {
-                                v0: selectedRow.providerId,
+                                v0: productLabel(
+                                  PresentationKind.Provider,
+                                  selectedRow.providerId,
+                                ),
                               }),
                           v1: selectedRow.modelId,
                         })}

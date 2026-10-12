@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  useProductLabels,
+  productDiagnostic,
+  productResourceName,
+} from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { SettingsTaskDismissButton } from "./settings-task";
@@ -23,7 +28,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
-import { document, resourceName } from "./documents";
+import { document } from "./documents";
 import { accountPreferencesDocument } from "./account-preferences";
 import { accountRemovalMutation } from "./account-removal";
 import { useAccountDeletionCompletion } from "./account-deletion";
@@ -169,6 +174,7 @@ export function ApiAccountDeletion({
   deleted: () => void;
   close: () => void;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const transport = useTransport(),
     opening = useSettingsOpening();
@@ -458,7 +464,7 @@ export function ApiAccountDeletion({
     <section className="api-entry-workflow account-deletion">
       <h3>
         {copy("account-deletion.delete_a19801", {
-          v0: resourceName(confirmed),
+          v0: productResourceName(productLabel, confirmed),
         })}
       </h3>
       {view.stage === Stage.Confirmation ? (
@@ -502,8 +508,18 @@ export function ApiAccountDeletion({
           {view.failure ? (
             <div className="problem" role="alert">
               <strong>{copy("ui.requestFailed")}</strong>
-              <p>{view.failure.message}</p>
-              <p>{view.failure.guidance}</p>
+              <p>
+                {productDiagnostic(
+                  view.failure.message,
+                  copy("product-identity.hidden"),
+                )}
+              </p>
+              <p>
+                {productDiagnostic(
+                  view.failure.guidance,
+                  copy("product-identity.hidden"),
+                )}
+              </p>
               <p>{copy("account-connection.inline.deletion")}</p>
               <Disclosure density={DisclosureDensity.Settings}>
                 <DisclosureSummary>
@@ -511,13 +527,6 @@ export function ApiAccountDeletion({
                 </DisclosureSummary>
                 <code>{view.failure.code}</code>
               </Disclosure>
-              {view.failure.correlationId ? (
-                <small>
-                  {copy("ui.reference_0eac07", {
-                    v0: view.failure.correlationId,
-                  })}
-                </small>
-              ) : null}
             </div>
           ) : null}
           <p className="settings-scope">

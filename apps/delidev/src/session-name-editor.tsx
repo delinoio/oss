@@ -17,8 +17,9 @@ import {
   ResourceQuery,
   SessionQuery,
   newRequestId,
+  decodeResourceDocument,
 } from "@delinoio/delidev-api-client";
-import { resourceName } from "./documents";
+
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { copy, useLocale } from "./localization";
 import { DialogSurface, InlineRemediation, Problem } from "./ui";
@@ -122,8 +123,13 @@ function SessionNameController({
         (request.mutation?.expectedRevision ?? 0n),
   );
   useEffect(() => {
-    if (visible && readable && !draft && !rename.busy && !rename.uncertain)
-      setDraft({ value: resourceName(current), revision: current.revision });
+    if (visible && readable && !draft && !rename.busy && !rename.uncertain) {
+      const name = decodeResourceDocument(current)?.name;
+      setDraft({
+        value: typeof name === "string" ? name : "",
+        revision: current.revision,
+      });
+    }
   }, [visible, readable, current, draft, rename.busy, rename.uncertain]);
   useLayoutEffect(() => {
     if (!visible) return;

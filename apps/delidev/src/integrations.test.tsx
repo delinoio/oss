@@ -349,7 +349,7 @@ it("shows an initial sanitized failure and explicit retry without an empty-succe
       .getByRole("button", { name: "New GitHub profile" })
       .hasAttribute("disabled"),
   ).toBe(false);
-  expect(screen.getByRole("alert").textContent).toContain(reference);
+  expect(screen.getByRole("alert").textContent).not.toContain(reference);
   fireEvent.click(
     screen.getByRole("button", { name: "Refresh GitHub profiles" }),
   );
@@ -529,12 +529,12 @@ it("keeps unknown schema observations explicit and their original action guards 
   await screen.findAllByText("Unsupported profile version");
   expect(
     screen
-      .getByRole("button", { name: "Manage Unnamed" })
+      .getByRole("button", { name: /^Manage Integration unavailable/ })
       .hasAttribute("disabled"),
   ).toBe(true);
   expect(
     screen
-      .getByRole("button", { name: "Rename Unnamed" })
+      .getByRole("button", { name: /^Rename Integration unavailable/ })
       .hasAttribute("disabled"),
   ).toBe(true);
 });
@@ -716,7 +716,7 @@ it("pins a paged profile Rename action to its original identity without observin
   const f = fixture();
   render(<SettingsActionScope>{f.view()}</SettingsActionScope>);
   const rename = await screen.findByRole("button", {
-    name: `Rename Work · ${f.profile.id}`,
+    name: `Rename Work`,
   });
   expect(rename.getAttribute("data-settings-action-presentation")).toBe("icon");
   const reads = f.list.mock.calls.length;

@@ -1,3 +1,4 @@
+import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { createPortal } from "react-dom";
 import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -112,6 +113,7 @@ export function NativeUsage({
   session: Resource;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const productLabel = useProductLabels();
   useLocale();
   const data = document(session);
   const configuration = object(object(data.initial_execution).configuration);
@@ -173,12 +175,22 @@ export function NativeUsage({
                 <section>
                   <h3>{copy("session-name.executionReferences")}</h3>
                   <p>
-                    {id} · {retained?.revision.toString()}
+                    {productLabel(PresentationKind.Observation, id)} ·{" "}
+                    {retained?.revision.toString()}
                   </p>
                   <p>
                     <LocalizedText
                       id="native-usage.recordedExecution_2fdcd7"
-                      components={{ s0: <>{text(record.execution_id)}</> }}
+                      components={{
+                        s0: (
+                          <>
+                            {productLabel(
+                              PresentationKind.Execution,
+                              text(record.execution_id),
+                            )}
+                          </>
+                        ),
+                      }}
                     />
                   </p>
                 </section>,
