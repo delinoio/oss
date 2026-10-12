@@ -66,12 +66,16 @@ mod app {
     }
     /// Whether a bundle chunk is an unchecked boundary: excluded by the
     /// operator, or not known to be an ES module (a classic script shares
-    /// its top-level bindings with other scripts).
+    /// its top-level bindings with other scripts). `.mjs` files, chunks with
+    /// ESM statements and chunks that a chunk or an HTML module script loads
+    /// are ES modules.
     pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
         BUNDLE_EXCLUDE
             .get()
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
-            || !(esm_statements || BUNDLE_MODULES.get().is_some_and(|m| m.contains(path)))
+            || !(esm_statements
+                || path.ends_with(".mjs")
+                || BUNDLE_MODULES.get().is_some_and(|m| m.contains(path)))
     }
     pub(crate) fn check_cancelled() -> Result<()> {
         ensure!(!CANCELLED.load(Ordering::Relaxed), "operation cancelled");

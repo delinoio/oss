@@ -303,6 +303,28 @@ fn keeps_chunks_with_eval_unchanged() {
     assert!(saved(&report) > 0, "{report:#}");
 }
 
+/// A standalone `.mjs` chunk is an ES module even without imports or exports.
+#[test]
+fn optimizes_standalone_mjs_chunks() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"const u=new URL("./worker.mjs",import.meta.url);console.log(u.pathname.endsWith("worker.mjs"));"#,
+        ),
+        (
+            "worker.mjs",
+            r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    let worker = out(temp.path(), "worker.mjs");
+    assert!(!worker.contains("verticalSpacing"), "{worker}");
+    assert_eq!(
+        node(&temp.path().join("dist/worker.mjs")).stdout,
+        node(&temp.path().join("out/worker.mjs")).stdout
+    );
+}
+
 #[test]
 fn never_publishes_typescript_only_syntax() {
     let (temp, _) = run(&[(
