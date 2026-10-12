@@ -51,11 +51,11 @@ type Client struct {
 	codeReviewRoot       string
 	codeReview           *codeReviewAttempt
 	reviewProtected      security.ProtectedJSON
-	safety               modelSafetyLedger
-	managedForkHistory   bool
 	asyncMessages        bool
+	safety               modelSafetyLedger
 	currentTimeClock     func() time.Time
 	currentTimeClaims    map[currentTimeRequestKey]struct{}
+	managedForkHistory   bool
 	quotaUsed            atomic.Bool
 	skillsRoot           string
 	imageRoot            string
