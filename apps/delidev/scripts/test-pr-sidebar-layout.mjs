@@ -338,12 +338,16 @@ try {
         await details.press("Space");
         await popupLayout(pane.locator(".pr-repository-details:popover-open"), "Space reopens original details");
         const second = pane.locator(".pr-repository-details-toggle").nth(1);
+        // Native focus may scroll an offscreen opener before activation. Measure
+        // popup effects after that ordinary scroll, not against the prior row.
+        await second.focus();
+        const beforeSwitch = await stableLayout(pane);
         await second.click();
         assert.equal(await details.getAttribute("aria-expanded"), "false");
         await popupLayout(pane.locator(".pr-repository-details:popover-open"), "switch exact repository");
-        unchanged(beforeDetails, await stableLayout(pane), "switching details");
+        unchanged(beforeSwitch, await stableLayout(pane), "switching details");
         await second.click();
-        unchanged(beforeDetails, await stableLayout(pane), "closing details");
+        unchanged(beforeSwitch, await stableLayout(pane), "closing details");
         await row.click();
         const open = pane.getByRole("radio", {
           name: language === "ko" ? "열림" : "Open",
@@ -366,6 +370,7 @@ try {
           theme === "light" ? "rgb(255, 255, 255)" : "rgb(27, 33, 43)",
         );
         await assertLayout(pane, `${language}/${theme}/${width}: selected`);
+        await details.focus();
         const selectedBefore = await stableLayout(pane);
         await details.click();
         unchanged(selectedBefore, await stableLayout(pane), "selected controls opening details");
