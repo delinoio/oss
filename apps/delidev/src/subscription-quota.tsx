@@ -149,6 +149,10 @@ export function SubscriptionQuotaControls({
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2,
     ) === true;
+  const workerCreditsSupported =
+    status.data?.capabilities.includes(
+      SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
+    ) === true;
   const creditsSupported = serverCreditsSupported;
   const data = document(current),
     state = object(data.subscription),
@@ -313,9 +317,8 @@ export function SubscriptionQuotaControls({
           generationId: generation,
         })
     : undefined;
-  const creditReady =
+  const creditOwnerReady =
     active &&
-    creditLaneAvailable &&
     serviceAccount(current) &&
     data.subscription_service === "chatgpt" &&
     data.health === "ready" &&
@@ -325,6 +328,12 @@ export function SubscriptionQuotaControls({
     !state.pending &&
     !data.removal &&
     !busy;
+  const creditReady = creditOwnerReady && creditLaneAvailable;
+  const reconcileCreditReady =
+    creditOwnerReady &&
+    (reconcilingServer
+      ? serverCreditReady
+      : workerCreditsSupported && serverCreditAvailable(state, true));
   const count = text(inventory.available_count);
   const countValid =
     /^(?:0|[1-9][0-9]{0,18})$/.test(count) &&
@@ -974,8 +983,7 @@ export function SubscriptionQuotaControls({
                   icon={SettingsActionIcon.Retry}
                   type="button"
                   disabled={
-                    !creditReady ||
-                    !creditsSupported ||
+                    !reconcileCreditReady ||
                     (reconcilingServer &&
                       serverCredit.cleanup_confirmed !== true)
                   }

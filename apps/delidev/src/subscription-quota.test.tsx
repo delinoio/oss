@@ -545,6 +545,34 @@ it.each([false, true])(
   },
 );
 
+it("keeps historical Worker credit reconciliation available without server credit V2", async () => {
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    false,
+    true,
+    "",
+    false,
+    "",
+    false,
+    true,
+  );
+  render(<value.Harness />);
+  const reconcile = await screen.findByRole("button", {
+    name: "Check original operation result",
+  });
+  await waitFor(() =>
+    expect((reconcile as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(reconcile);
+  await waitFor(() => expect(value.reconcile).toHaveBeenCalledTimes(1));
+  expect(value.reconcile.mock.calls[0][0]).toMatchObject({
+    connectionId: value.connection,
+    generationId: value.generation,
+  });
+});
+
 it("reconciles a retained server credit with its captured generation after Execute Finish", async () => {
   const capturedGeneration = newRequestId();
   const value = fixture(
