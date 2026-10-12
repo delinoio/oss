@@ -2552,7 +2552,9 @@ it("opens the shared Open tool dialog from primary+T, keeps the draft and select
   const view = render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
   try {
     const composer = await screen.findByRole("textbox", { name: "Message" });
-    await waitFor(() => expect(composer).toHaveProperty("value", "Original draft"));
+    await waitFor(() =>
+      expect(composer).toHaveProperty("value", "Original draft"),
+    );
     composer.focus();
     fireEvent.keyDown(composer, { key: "t", code: "KeyT", ctrlKey: true });
     const dialog = screen.getByRole("dialog", { name: "Open tool" });

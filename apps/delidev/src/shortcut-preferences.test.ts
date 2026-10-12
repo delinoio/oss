@@ -378,7 +378,10 @@ it.each(editableShortcutCatalog.map((action) => action.id))(
       "shortcuts.toolSuppressed",
     );
     expect(customizationBindings(ShortcutId.OpenTool, overrides)).toEqual([]);
-    const [effective] = effectiveShortcutDefinitions([toolDefinition], overrides);
+    const [effective] = effectiveShortcutDefinitions(
+      [toolDefinition],
+      overrides,
+    );
     expect(effective).toMatchObject({
       bindings: [],
       enabled: false,
@@ -419,7 +422,9 @@ it("restores OpenTool immediately and ignores disabled, Shift+T and other-key ov
     ).toBeUndefined();
   }
   const suppressed = { [ShortcutId.Help]: unshiftedT };
-  expect(effectiveShortcutDefinitions([toolDefinition], suppressed)[0]).toMatchObject({
+  expect(
+    effectiveShortcutDefinitions([toolDefinition], suppressed)[0],
+  ).toMatchObject({
     bindings: [],
   });
   expect(effectiveShortcutDefinitions([toolDefinition], {})[0]).toEqual(

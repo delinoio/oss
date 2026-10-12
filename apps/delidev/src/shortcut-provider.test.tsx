@@ -841,9 +841,7 @@ it("marks the inactive default Open tool shortcut in Help while a committed cust
   fireEvent.keyDown(opener, { key: "t", code: "KeyT", ctrlKey: true });
   expect(run).not.toHaveBeenCalled();
   fireEvent.click(opener);
-  const row = within(
-    screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
-  )
+  const row = within(screen.getByRole("dialog", { name: "Keyboard shortcuts" }))
     .getByText("Open tool")
     .closest("div")!;
   expect(within(row).getByText("Disabled")).toBeTruthy();

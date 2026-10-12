@@ -77,9 +77,9 @@ it("opens at the first enabled row and owns arrows, Home/End, Tab, Escape and ba
   expect(dialog().open).toBe(true);
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(
-    screen.getByRole("dialog", { name: "Open tool" }).contains(
-      screen.getByRole("menu", { name: "Open tool" }),
-    ),
+    screen
+      .getByRole("dialog", { name: "Open tool" })
+      .contains(screen.getByRole("menu", { name: "Open tool" })),
   ).toBe(true);
   const entries = screen.getAllByRole("menuitem");
   expect(document.activeElement).toBe(entries[1]);
@@ -152,11 +152,26 @@ it.each([
       "metaKey" in modifier ? { ctrlKey: true } : { metaKey: true };
     fireEvent.keyDown(draft, { key: "t", code: "KeyT", ...wrongModifier });
     expect(dialog().open).toBe(false);
-    fireEvent.keyDown(draft, { key: "t", code: "KeyT", ...modifier, shiftKey: true });
+    fireEvent.keyDown(draft, {
+      key: "t",
+      code: "KeyT",
+      ...modifier,
+      shiftKey: true,
+    });
     expect(dialog().open).toBe(false);
-    fireEvent.keyDown(draft, { key: "t", code: "KeyT", ...modifier, altKey: true });
+    fireEvent.keyDown(draft, {
+      key: "t",
+      code: "KeyT",
+      ...modifier,
+      altKey: true,
+    });
     expect(dialog().open).toBe(false);
-    fireEvent.keyDown(draft, { key: "t", code: "KeyT", ...modifier, repeat: true });
+    fireEvent.keyDown(draft, {
+      key: "t",
+      code: "KeyT",
+      ...modifier,
+      repeat: true,
+    });
     expect(dialog().open).toBe(false);
     const event = new KeyboardEvent("keydown", {
       key: "t",
@@ -177,7 +192,11 @@ it.each([
     expect((draft as HTMLTextAreaElement).value).toBe("keep me");
     expect(selected).not.toHaveBeenCalled();
     // Repeating the chord while the modal is visible does not open another.
-    fireEvent.keyDown(document.activeElement!, { key: "t", code: "KeyT", ...modifier });
+    fireEvent.keyDown(document.activeElement!, {
+      key: "t",
+      code: "KeyT",
+      ...modifier,
+    });
     expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
     // Dismissal restores the composer opener.
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });

@@ -344,7 +344,9 @@ export function ShortcutSettings() {
                     <div key={action.id}>
                       <dt>
                         {copy(action.label)}
-                        {suppression ? <small>{copy(suppression)}</small> : null}
+                        {suppression ? (
+                          <small>{copy(suppression)}</small>
+                        ) : null}
                       </dt>
                       <dd>
                         <ShortcutKeycaps
