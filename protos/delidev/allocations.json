@@ -13450,7 +13450,7 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
       "number": 54,
-"issue": 2678,
+      "issue": 2678,
       "kind": "enum",
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
