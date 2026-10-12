@@ -32,6 +32,17 @@ export type ComparisonDescriptor = {
   base_ref?: BaseReference;
 };
 
+function comparisonOriginKey(value: ComparisonDescriptor) {
+  return JSON.stringify([
+    value.repository,
+    value.comparison,
+    value.path,
+    value.base_ref?.type,
+    value.base_ref?.name,
+    value.base_ref?.remote,
+  ]);
+}
+
 export function SessionDiff({
   sessionId,
   worktree,
@@ -64,21 +75,45 @@ export function SessionDiff({
     workspaceReadOptions,
   );
   const [repository, setRepository] = useState<string>();
+  // A repository selection stays pending until that repository's own branch
+  // base is negotiated, so no base-less branch tab is ever opened. It belongs
+  // to the descriptor that was selected when the repository changed and stops
+  // applying as soon as another tab (including the one it opens) is selected.
+  const [pendingSelection, setPendingSelection] = useState<{
+    repository: string;
+    origin: string;
+  }>();
   const [acceptedDeletionId, setAcceptedDeletionId] = useState<string>();
   const available = roots.data?.roots.filter((root) => root.repository_id);
+  const origin = selected ? comparisonOriginKey(selected) : "";
+  const pending =
+    openComparison && pendingSelection?.origin === origin
+      ? pendingSelection
+      : undefined;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   const selectedRepository =
+    pending?.repository ??
     selected?.repository ??
     repository ??
     available?.find((root) => root.primary)?.repository_id ??
     available?.[0]?.repository_id;
   const chooseRepository = (value: string) => {
     setRepository(value);
-    if (openComparison)
-      openComparison({
-        repository: value,
-        comparison: Comparison.Branch,
-        path: selected?.path ?? ".",
-      });
+    if (!openComparison) return;
+    // Re-selecting the repository that owns the selected tab keeps that tab.
+    setPendingSelection(
+      value === selected?.repository
+        ? undefined
+        : { repository: value, origin },
+    );
+  };
+  // Only the still-pending selection of the current owner may open its tab.
+  const openNegotiated = (value: ComparisonDescriptor) => {
+    const current = pendingRef.current;
+    if (!openComparison || !current || current.repository !== value.repository)
+      return;
+    openComparison(value);
   };
   return (
     <aside
@@ -105,8 +140,13 @@ export function SessionDiff({
           key={selectedRepository}
           sessionId={sessionId}
           repository={selectedRepository}
-          initial={selected}
+          initial={
+            pending
+              ? { comparison: Comparison.Branch, path: selected?.path ?? "." }
+              : selected
+          }
           openComparison={openComparison}
+          onNegotiated={pending ? openNegotiated : undefined}
           worktree={worktree}
           acceptedDeletionId={acceptedDeletionId}
           close={close}
@@ -154,6 +194,7 @@ export function RepositoryDiff({
   acceptedDeletionId,
   initial,
   openComparison,
+  onNegotiated,
   close,
   repositoryControl,
 }: {
@@ -163,6 +204,13 @@ export function RepositoryDiff({
   acceptedDeletionId?: string;
   initial?: Omit<ComparisonDescriptor, "repository">;
   openComparison?: (value: ComparisonDescriptor) => void;
+  /**
+   * Set while a repository selection awaits its own negotiated base. Called at
+   * most once per base with the exact typed descriptor of the displayed branch
+   * request, and never while negotiation is pending, failed, unsupported or
+   * without an available base.
+   */
+  onNegotiated?: (value: ComparisonDescriptor) => void;
   close?: () => void;
   repositoryControl?: ReactNode;
 }) {
@@ -223,6 +271,25 @@ export function RepositoryDiff({
     ),
   );
   const enabled = comparison !== Comparison.Branch || supportedBase;
+  const announced = useRef<string | undefined>(undefined);
+  const negotiatedKey =
+    onNegotiated &&
+    comparison === Comparison.Branch &&
+    supportedBase &&
+    chosenBase
+      ? [repository, path, referenceKey(chosenBase)].join("\u0000")
+      : undefined;
+  useEffect(() => {
+    if (!negotiatedKey || !onNegotiated || !chosenBase) return;
+    if (announced.current === negotiatedKey) return;
+    announced.current = negotiatedKey;
+    onNegotiated({
+      repository,
+      comparison: Comparison.Branch,
+      path,
+      base_ref: chosenBase,
+    });
+  }, [negotiatedKey]);
   // A failed explicit options refresh keeps the previous inventory (and any
   // diff derived from it) only as a stale observation.
   const optionsStale =

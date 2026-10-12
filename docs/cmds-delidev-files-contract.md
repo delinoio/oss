@@ -129,7 +129,13 @@ Pending desktop deletion status and explicit retry belong to the displayed Sessi
 Files is the shared-tab explorer entry. Selecting a regular file opens/selects
 the exact repository/path descriptor; Diff controls open exact repository,
 comparison-kind, typed branch base and path descriptors. Revisions remain observations, not tab
-identity. Only active previews read bytes; departure cancels publication and
+identity. Changing the Diff repository keeps the retained path and holds the selection
+pending: the branch descriptor is opened only after the new repository's own
+`git-diff-options` negotiation yields an available base (its default, or an explicitly chosen
+available base), and it carries that exact typed base. Pending, failed, unsupported or
+missing-default negotiation opens no base-less branch tab and sends no branch/base read; a
+late result for a replaced repository, left presentation or replaced connection opens no tab.
+Working-tree, staged and creation descriptors stay base-free. Only active previews read bytes; departure cancels publication and
 discards content through the existing read owner. Presentation Close changes no
 workspace, repository, Worker or local-review mutation ownership.
 File activation moves focus to the visible shared preview heading without scrolling

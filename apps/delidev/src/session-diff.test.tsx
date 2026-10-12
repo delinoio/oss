@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRouterTransport, ConnectError, Code } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionDiff } from "./session-diff";
+import { SessionTabKind, SessionTabsStore, sessionTabKey } from "./session-tabs";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 
 function fixture(worktree = true) {
@@ -373,11 +374,17 @@ it("automatically observes the Diff entry and opens explicit base-aware descript
   fireEvent.change(screen.getByLabelText("Diff repository"), {
     target: { value: f.other },
   });
-  expect(open).toHaveBeenLastCalledWith({
-    repository: f.other,
-    comparison: "branch",
-    path: ".",
-  });
+  // The repository switch opens its descriptor only after that repository's
+  // own base is negotiated, and always with the exact typed base.
+  await waitFor(() =>
+    expect(open).toHaveBeenLastCalledWith({
+      repository: f.other,
+      comparison: "branch",
+      path: ".",
+      base_ref: { type: "local-branch", name: "main" },
+    }),
+  );
+  expect(open).toHaveBeenCalledTimes(2);
 });
 
 it("negotiates options before branch fields and preserves legacy comparisons on old peers", async () => {
@@ -699,4 +706,303 @@ it("keeps working-tree Refresh as a direct diff read without options", async () 
   refreshDiff();
   await waitFor(() => expect(operations()).toHaveLength(before + 1));
   expect(operations().at(-1)).toBe("git-diff:working-tree:");
+});
+
+function tabsFixture(options: {
+  third?: boolean;
+  options?: (repository: string, original: () => Promise<{ documentJson: Uint8Array }>) => Promise<{ documentJson: Uint8Array }>;
+} = {}) {
+  const f = fixture(),
+    store = new SessionTabsStore(),
+    third = newRequestId(),
+    original = f.read.getMockImplementation()!;
+  f.read.mockImplementation(async (request) => {
+    const q = JSON.parse(new TextDecoder().decode(request.queryJson));
+    if (q.operation === "roots" && options.third) {
+      const r = await original(request),
+        value = JSON.parse(new TextDecoder().decode(r.documentJson));
+      value.roots.push({ repository_id: third, name: "Third", primary: false });
+      return { documentJson: encode(value) };
+    }
+    if (q.operation === "git-diff-options" && options.options)
+      return options.options(q.repository_id, () => original(request));
+    return original(request);
+  });
+  const comparisons = () =>
+    store
+      .snapshot(f.sessionId)
+      .tabs.filter((tab) => tab.kind === SessionTabKind.Comparison);
+  function Harness() {
+    const snapshot = useSyncExternalStore(store.subscribe, () =>
+      store.snapshot(f.sessionId),
+    );
+    const [open, setOpen] = useState(true);
+    const tab = snapshot.tabs.find((t) => sessionTabKey(t) === snapshot.selected);
+    return (
+      <TransportProvider transport={f.transport}>
+        <QueryClientProvider client={f.client}>
+          <MutationIntents>
+            <button onClick={() => setOpen(false)}>Leave Diff</button>
+            {open ? (
+              <SessionDiff
+                sessionId={f.sessionId}
+                worktree
+                close={() => setOpen(false)}
+                selected={
+                  tab?.kind === SessionTabKind.Comparison ? tab : undefined
+                }
+                openComparison={(value) =>
+                  store.open(f.sessionId, {
+                    kind: SessionTabKind.Comparison,
+                    ...value,
+                  })
+                }
+              />
+            ) : null}
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  }
+  return { ...f, store, third, comparisons, Harness };
+}
+
+const branchReads = (read: { mock: { calls: unknown[][] } }) =>
+  read.mock.calls
+    .map(
+      ([request]) =>
+        JSON.parse(
+          new TextDecoder().decode((request as { queryJson: Uint8Array }).queryJson),
+        ) as Record<string, unknown>,
+    )
+    .filter((q) => q.operation === "git-diff" && q.comparison === "branch");
+
+it("opens the repository-switch tab with the negotiated base and reuses it when that base is selected again", async () => {
+  const f = tabsFixture();
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  expect(f.comparisons()).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  const key = f.store.snapshot(f.sessionId).selected;
+  expect(f.comparisons()[0]).toEqual({
+    kind: SessionTabKind.Comparison,
+    repository: f.other,
+    comparison: "branch",
+    path: ".",
+    base_ref: { type: "local-branch", name: "main" },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(branchReads(f.read).at(-1)).toMatchObject({
+    repository_id: f.other,
+    base_ref: { type: "local-branch", name: "main" },
+  });
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: JSON.stringify(["local-branch", "main", undefined]) },
+  });
+  expect(f.comparisons()).toHaveLength(1);
+  expect(f.store.snapshot(f.sessionId).selected).toBe(key);
+  // Switching away and back reuses the exact descriptors.
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.primary },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(2));
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(f.store.snapshot(f.sessionId).selected).toBe(key));
+  expect(f.comparisons()).toHaveLength(2);
+});
+
+it("preserves the retained path and takes the base from the new repository, not the previous one", async () => {
+  const f = tabsFixture({
+    options: async (repository, original) => {
+      const r = await original(),
+        value = JSON.parse(new TextDecoder().decode(r.documentJson));
+      if (repository === f0.other) {
+        value.diff_options.choices = [
+          {
+            reference: { type: "remote-branch", name: "trunk", remote: "origin" },
+            available: true,
+            configured: false,
+          },
+        ];
+        value.diff_options.default = {
+          type: "remote-branch",
+          name: "trunk",
+          remote: "origin",
+        };
+      }
+      return { documentJson: encode(value) };
+    },
+  });
+  const f0 = f;
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
+  fireEvent.change(screen.getByLabelText("Relative diff path"), {
+    target: { value: "src" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(2));
+  expect(f.comparisons()[1]).toMatchObject({
+    repository: f.other,
+    path: "src",
+    base_ref: { type: "remote-branch", name: "trunk", remote: "origin" },
+  });
+  // A different typed base for the same repository/path is a distinct tab.
+  expect(f.comparisons()[0]).toMatchObject({
+    repository: f.primary,
+    base_ref: { type: "local-branch", name: "main" },
+  });
+});
+
+it("ignores a late negotiation result for a replaced repository", async () => {
+  let release: () => void = () => {},
+    requested = false;
+  const f = tabsFixture({
+    third: true,
+    options: async (repository, original) => {
+      if (repository === f0.other) {
+        requested = true;
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return original();
+    },
+  });
+  const f0 = f;
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(requested).toBe(true));
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.third },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  expect(f.comparisons()[0]).toMatchObject({ repository: f.third });
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.comparisons()).toHaveLength(1);
+  expect(
+    f.comparisons().some((tab) => tab.repository === f.other),
+  ).toBe(false);
+});
+
+it("opens no tab when the Diff presentation is left before negotiation completes", async () => {
+  let release: () => void = () => {},
+    requested = false;
+  const f = tabsFixture({
+    options: async (repository, original) => {
+      if (repository === f0.other) {
+        requested = true;
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return original();
+    },
+  });
+  const f0 = f;
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(requested).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Leave Diff" }));
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(f.comparisons()).toHaveLength(0);
+});
+
+it.each(["unsupported", "failed", "missing-default"])(
+  "opens no base-less branch tab and reads no branch for %s negotiation",
+  async (mode) => {
+    const f = tabsFixture({
+      options: async (repository, original) => {
+        if (repository !== f0.other) return original();
+        if (mode === "unsupported")
+          throw new ConnectError("old", Code.InvalidArgument);
+        if (mode === "failed")
+          throw new ConnectError("down", Code.Unavailable);
+        return f0.reply({
+          diff_options: {
+            version: 1,
+            repository_id: repository,
+            choices: [
+              {
+                reference: { type: "local-branch", name: "other" },
+                available: true,
+                configured: false,
+              },
+            ],
+          },
+        });
+      },
+    });
+    const f0 = f;
+    render(<f.Harness />);
+    await screen.findByText("+<script>doNotRun()</script>");
+    const reads = f.read.mock.calls.length;
+    fireEvent.change(screen.getByLabelText("Diff repository"), {
+      target: { value: f.other },
+    });
+    await waitFor(() =>
+      expect(
+        f.read.mock.calls
+          .slice(reads)
+          .some(
+            ([request]) =>
+              JSON.parse(new TextDecoder().decode(request.queryJson))
+                .operation === "git-diff-options",
+          ),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(f.comparisons()).toHaveLength(0);
+    expect(
+      branchReads(f.read)
+        .slice(1)
+        .filter((q) => q.repository_id === f.other),
+    ).toHaveLength(0);
+    if (mode === "missing-default") {
+      fireEvent.change(screen.getByLabelText("Base"), {
+        target: {
+          value: JSON.stringify(["local-branch", "other", undefined]),
+        },
+      });
+      await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+      expect(f.comparisons()[0]).toEqual({
+        kind: SessionTabKind.Comparison,
+        repository: f.other,
+        comparison: "branch",
+        path: ".",
+        base_ref: { type: "local-branch", name: "other" },
+      });
+    }
+  },
+);
+
+it("keeps working-tree, staged and creation descriptors base-free", async () => {
+  const f = tabsFixture();
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  for (const comparison of ["working-tree", "staged", "creation"]) {
+    fireEvent.change(screen.getByLabelText("Comparison"), {
+      target: { value: comparison },
+    });
+    await waitFor(() =>
+      expect(
+        f.comparisons().some((tab) => tab.comparison === comparison),
+      ).toBe(true),
+    );
+  }
+  expect(f.comparisons()).toHaveLength(3);
+  for (const tab of f.comparisons()) expect(tab.base_ref).toBeUndefined();
 });
