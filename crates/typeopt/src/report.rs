@@ -62,6 +62,11 @@ pub struct Size {
     pub before: usize,
     pub after: usize,
     pub saved: isize,
+    /// Stage 2: code bytes of original chunks published next to their renamed
+    /// optimized copies because encoded or boundary references still name
+    /// them. They are not part of `after`, which describes the optimized
+    /// chunk graph. Always 0 in stage 1.
+    pub retained: usize,
 }
 
 #[derive(Serialize, Default)]
@@ -238,6 +243,7 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
             before: outcome.size_before,
             after: outcome.size_after,
             saved: outcome.size_before as isize - outcome.size_after as isize,
+            retained: 0,
         },
         pass_summary: summary,
         transformations,

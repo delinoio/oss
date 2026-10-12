@@ -339,6 +339,25 @@ impl Project {
         Ok(project)
     }
 
+    /// Bundle chunks that stay unchanged unchecked boundaries: excluded,
+    /// classic scripts and chunks with `eval`, `with` or `importScripts`.
+    /// Publication leaves them byte-for-byte unchanged.
+    pub fn bundle_boundaries(&self) -> Paths {
+        let _scope = enter_program(Some(self.version));
+        source_files()
+            .into_iter()
+            .filter(|&file| is_application(file))
+            .filter_map(|file| {
+                let name = source_file_info(file).file_name.clone();
+                let mut nodes = Vec::new();
+                collect(file, &mut nodes);
+                let esm = has_esm_statements(file) || uses_import_meta(&nodes);
+                (crate::app::bundle_boundary(&name, esm) || uses_eval_or_with(&nodes))
+                    .then_some(name)
+            })
+            .collect()
+    }
+
     /// An application module of the program that lies outside `dir`.
     fn application_file_outside(&self, dir: &std::path::Path) -> Option<String> {
         let _scope = enter_program(Some(self.version));
@@ -901,7 +920,7 @@ fn bundle_chunks(dir: &std::path::Path) -> Result<Vec<String>> {
     Ok(out)
 }
 
-type Paths = std::collections::BTreeSet<String>;
+pub(crate) type Paths = std::collections::BTreeSet<String>;
 
 /// Bundle files that HTML pages reach, as canonical paths.
 #[derive(Default)]

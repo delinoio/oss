@@ -295,10 +295,26 @@ mod app {
             renamed = report.renamed_properties,
             "bundle analysis complete"
         );
-        let staged = args
+        // Check mode stages into a temporary directory as well, so it reports
+        // the same size and publication blockers as output mode.
+        let boundaries = compiler.bundle_boundaries();
+        let scratch = tempfile::tempdir().context("cannot create a check staging directory")?;
+        let destination = args
             .out_dir
-            .map(|destination| bundle::stage(&dir, &destination, &snapshot, &outcome, &analyzed))
-            .transpose()?;
+            .clone()
+            .unwrap_or_else(|| scratch.path().join("out"));
+        let staged = bundle::stage(
+            &dir,
+            &destination,
+            &snapshot,
+            &outcome,
+            &analyzed,
+            &boundaries,
+        )?;
+        // Original chunks kept for encoded or boundary references are
+        // published next to the optimized graph; the report discloses them.
+        report.size.retained = staged.retained_bytes;
+        let staged = args.out_dir.is_some().then_some(staged);
         report.measure(started);
         // The report is part of the result: publish only after it was
         // delivered, so a closed or full standard output leaves no output.

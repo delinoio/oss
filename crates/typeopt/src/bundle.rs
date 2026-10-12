@@ -401,6 +401,62 @@ pub(crate) fn decode_js_string(raw: &str) -> Option<String> {
     Some(out)
 }
 
+/// Text with JavaScript (`\u0041`, `\u{41}`, `\x41`) and CSS (`\41 `,
+/// `\-`) backslash escapes decoded where they form a character; other text
+/// stays as it is. Used only to find file names spelled with escapes.
+fn decode_backslash_escapes_lossy(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('\\') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at + 1..];
+        let hex_run = |s: &str, max: usize| {
+            s.char_indices()
+                .take(max)
+                .take_while(|(_, c)| c.is_ascii_hexdigit())
+                .last()
+                .map_or(0, |(i, c)| i + c.len_utf8())
+        };
+        let decoded = if let Some(braced) = rest.strip_prefix("u{") {
+            braced.find('}').and_then(|end| {
+                u32::from_str_radix(&braced[..end], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+                    .map(|c| (c, 2 + end + 1))
+            })
+        } else if let Some(unit) = rest.strip_prefix('u').filter(|u| hex_run(u, 4) == 4) {
+            u32::from_str_radix(&unit[..4], 16)
+                .ok()
+                .and_then(char::from_u32)
+                .map(|c| (c, 5))
+        } else if let Some(byte) = rest.strip_prefix('x').filter(|x| hex_run(x, 2) == 2) {
+            u32::from_str_radix(&byte[..2], 16)
+                .ok()
+                .and_then(char::from_u32)
+                .map(|c| (c, 3))
+        } else if hex_run(rest, 6) > 0 {
+            // CSS: up to six hex digits and one optional whitespace.
+            let len = hex_run(rest, 6);
+            let space = usize::from(rest[len..].starts_with([' ', '\t', '\n']));
+            u32::from_str_radix(&rest[..len], 16)
+                .ok()
+                .and_then(char::from_u32)
+                .map(|c| (c, len + space))
+        } else {
+            rest.chars().next().map(|c| (c, c.len_utf8()))
+        };
+        match decoded {
+            Some((c, len)) => {
+                out.push(c);
+                rest = &rest[len..];
+            }
+            None => out.push('\\'),
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Dynamic `import(…)` calls in script text.
 pub(crate) struct DynamicImports {
     /// Specifiers of `import("…")` calls with a string literal argument.
@@ -694,6 +750,7 @@ fn update_chunk_map(
     original: &str,
     text: &str,
     chain: &[Vec<Edit>],
+    original_maps: &mut BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<Option<bool>> {
     let location = match chunk_map(root, target, text) {
         None => return Ok(None),
@@ -711,6 +768,11 @@ fn update_chunk_map(
             return Ok(Some(false));
         }
     };
+    if let ChunkMap::File(path) = &location
+        && let Ok(bytes) = std::fs::read(path)
+    {
+        original_maps.entry(path.clone()).or_insert(bytes);
+    }
     let decoded = match &location {
         ChunkMap::Inline(url) => sourcemap::decode_data_url(url).map_err(anyhow::Error::from),
         ChunkMap::File(path) => std::fs::read(path)
@@ -883,11 +945,20 @@ fn rewrite(text: &str, renamed: &BTreeMap<String, String>) -> String {
 /// kept its name could otherwise meet a stale copy of a chunk it depends on.
 /// A new hash covers the final content of the file and of every renamed file
 /// it reaches, so a change in a dependency always renames its importers.
+/// What rehashing did: how many names changed and how many code bytes the
+/// retained original chunks add to the output.
+struct Rehashed {
+    renamed: usize,
+    retained_bytes: usize,
+}
+
 fn rehash(
     root: &Path,
     edited: &BTreeSet<PathBuf>,
     originals: &BTreeMap<PathBuf, String>,
-) -> Result<usize> {
+    original_maps: &BTreeMap<PathBuf, Vec<u8>>,
+    frozen: &BTreeSet<PathBuf>,
+) -> Result<Rehashed> {
     use sha2::{Digest, Sha256};
     let mut files = Vec::new();
     files_under(root, &mut files)?;
@@ -925,6 +996,9 @@ fn rehash(
             .collect();
         referenced.insert(name.clone(), targets);
     }
+    // Boundary chunks stay byte-for-byte unchanged: never renamed or
+    // rewritten. They keep the original files they reference (below).
+    let frozen_names: BTreeSet<String> = frozen.iter().map(|p| base(p)).collect();
     // The rename set: edited hashed chunks and, transitively, hashed files
     // that reference a renamed file.
     let mut renaming: BTreeSet<String> = edited
@@ -936,7 +1010,9 @@ fn rehash(
         let more: Vec<String> = referenced
             .iter()
             .filter(|(name, targets)| {
-                !renaming.contains(*name) && targets.iter().any(|t| renaming.contains(t))
+                !renaming.contains(*name)
+                    && !frozen_names.contains(*name)
+                    && targets.iter().any(|t| renaming.contains(t))
             })
             .map(|(name, _)| name.clone())
             .collect();
@@ -946,7 +1022,10 @@ fn rehash(
         renaming.extend(more);
     }
     if renaming.is_empty() {
-        return Ok(0);
+        return Ok(Rehashed {
+            renamed: 0,
+            retained_bytes: 0,
+        });
     }
     // Content digests with references to renamed files reduced to their
     // logical names, so the digest does not depend on the new hashes.
@@ -1034,13 +1113,25 @@ fn rehash(
         counts
     };
     let mut retained = BTreeSet::<String>::new();
+    // Boundary chunks keep referencing the original names.
+    for path in frozen {
+        if let Some(text) = texts.get(path) {
+            for name in renamed.keys() {
+                if !references(text, name).is_empty() {
+                    retained.insert(name.clone());
+                }
+            }
+        }
+    }
     for text in texts.values() {
-        if !text.contains('%') && !text.contains('&') {
+        if !text.contains('%') && !text.contains('&') && !text.contains('\\') {
             continue;
         }
         // Each reference decodes on its own: an unknown entity elsewhere in
-        // the text must not hide an encoded file name.
-        let unescaped = decode_references_lossy(text);
+        // the text must not hide an encoded file name. JavaScript and CSS
+        // escapes (`\u002d`, `\x2d`, `\2d `, `\-`) count as well.
+        let unescaped = decode_backslash_escapes_lossy(text);
+        let unescaped = decode_references_lossy(&unescaped);
         let unescaped = crate::compiler::percent_decode(&unescaped);
         if unescaped == *text {
             continue;
@@ -1076,9 +1167,47 @@ fn rehash(
     }
     for (file, text) in &texts {
         crate::app::check_cancelled()?;
+        if frozen.contains(file) {
+            continue;
+        }
         let updated = rewrite(text, &renamed);
         if &updated != text {
             std::fs::write(file, updated).context("cannot rewrite a chunk reference")?;
+        }
+    }
+    // A retained original keeps its original map: the adjacent map moves
+    // with the renamed chunk, so the original goes back to the old path; a
+    // map elsewhere that was composed for the optimized chunk no longer
+    // describes the original, which then drops its map comment.
+    let original_map = |path: &PathBuf| -> Option<Vec<u8>> {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        original_maps
+            .get(&canonical)
+            .cloned()
+            .or_else(|| std::fs::read(path).ok())
+    };
+    let mut restore = Vec::<(PathBuf, Vec<u8>)>::new();
+    let mut retained_bytes = 0usize;
+    for old in &retained {
+        for path in hashed.get(old).into_iter().flatten() {
+            let mut text = original_text(path);
+            let adjacent = path.with_file_name(format!("{old}.map"));
+            if let Some(map) = original_map(&adjacent).filter(|_| adjacent.exists()) {
+                restore.push((adjacent, map));
+            } else if let Some(MapRef::Local(ChunkMap::File(map))) = chunk_map(root, path, &text)
+                && original_maps.contains_key(&map)
+                && let Some(comment) = map_reference(&text)
+            {
+                let (start, end) = (comment.start, comment.end);
+                text = format!("{}{}", &text[..start], &text[end..]);
+            }
+            if path
+                .extension()
+                .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs")
+            {
+                retained_bytes += chunk_code_len(&text);
+            }
+            restore.push((path.clone(), text.into_bytes()));
         }
     }
     for file in &files {
@@ -1087,14 +1216,15 @@ fn rehash(
             Some(stem) => (stem.to_owned(), ".map"),
             None => (name.clone(), ""),
         };
-        if let Some(new) = renamed.get(&stem) {
+        if let Some(new) = renamed.get(&stem)
+            && !frozen.contains(file)
+        {
             std::fs::rename(file, file.with_file_name(format!("{new}{suffix}")))
                 .context("cannot rename a rehashed chunk")?;
-            if retained.contains(&stem) && suffix.is_empty() {
-                std::fs::write(file, original_text(file))
-                    .context("cannot retain an encoded-referenced chunk")?;
-            }
         }
+    }
+    for (path, bytes) in restore {
+        std::fs::write(&path, bytes).context("cannot retain an original chunk")?;
     }
     if !retained.is_empty() {
         tracing::warn!(
@@ -1102,7 +1232,10 @@ fn rehash(
             "kept original chunks that encoded references still name"
         );
     }
-    Ok(renamed.len())
+    Ok(Rehashed {
+        renamed: renamed.len(),
+        retained_bytes,
+    })
 }
 
 /// Rejects bundles that bundle mode cannot publish faithfully, before
@@ -1173,6 +1306,9 @@ pub struct Staged {
     _staging: tempfile::TempDir,
     root: PathBuf,
     destination: PathBuf,
+    /// Code bytes of original chunks kept next to renamed ones; they are
+    /// part of the published output.
+    pub retained_bytes: usize,
 }
 
 impl Staged {
@@ -1193,6 +1329,7 @@ pub fn stage(
     snapshot: &Snapshot,
     outcome: &Outcome,
     analyzed: &Fingerprint,
+    boundaries: &BTreeSet<String>,
 ) -> Result<Staged> {
     ensure!(
         std::fs::symlink_metadata(destination)
@@ -1231,6 +1368,8 @@ pub fn stage(
     let mut edited = BTreeSet::new();
     // Analyzed texts of edited chunks, for chunks that rehashing retains.
     let mut originals = BTreeMap::new();
+    // Original bytes of map files that composition changes or removes.
+    let mut original_maps = BTreeMap::new();
     let (mut maps, mut dropped) = (0usize, 0usize);
     for (name, text) in &outcome.texts {
         crate::app::check_cancelled()?;
@@ -1246,28 +1385,39 @@ pub fn stage(
         edited.insert(target.clone());
         originals.insert(target.clone(), original.clone());
         let chain = outcome.chains.get(name).map_or(&[][..], Vec::as_slice);
-        match update_chunk_map(&root, &target, original, text, chain)? {
+        match update_chunk_map(&root, &target, original, text, chain, &mut original_maps)? {
             Some(true) => maps += 1,
             Some(false) => dropped += 1,
             None => {}
         }
     }
+    // Boundary chunks, as staged paths.
+    let frozen: BTreeSet<PathBuf> = boundaries
+        .iter()
+        .filter_map(|path| Path::new(path).strip_prefix(source).ok())
+        .map(|relative| root.join(relative))
+        .collect();
     let rehashed = if crate::app::keep_chunk_names() {
-        0
+        Rehashed {
+            renamed: 0,
+            retained_bytes: 0,
+        }
     } else {
-        rehash(&root, &edited, &originals)?
+        rehash(&root, &edited, &originals, &original_maps, &frozen)?
     };
     tracing::info!(
         edited = edited.len(),
         maps,
         dropped_maps = dropped,
-        rehashed,
+        rehashed = rehashed.renamed,
+        retained_bytes = rehashed.retained_bytes,
         "bundle chunks written"
     );
     Ok(Staged {
         _staging: staging,
         root,
         destination: destination.to_path_buf(),
+        retained_bytes: rehashed.retained_bytes,
     })
 }
 
@@ -1389,6 +1539,18 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         // Another host's file with the same name keeps its URL.
         let external = r#"src="https://cdn.example/index-DnKDBunT.js" u='//cdn.example/x/index-DnKDBunT.js' l="/assets/index-DnKDBunT.js""#;
         assert_eq!(references(external, name).len(), 1);
+    }
+
+    #[test]
+    fn decodes_backslash_escapes_for_name_detection() {
+        assert_eq!(
+            super::decode_backslash_escapes_lossy(r#""./settings\u002dBBBBBBBB.js""#),
+            r#""./settings-BBBBBBBB.js""#
+        );
+        assert_eq!(
+            super::decode_backslash_escapes_lossy(r"url(lib\-A.js) url(lib\2d A.js) \x2d"),
+            "url(lib-A.js) url(lib-A.js) -"
+        );
     }
 
     #[test]

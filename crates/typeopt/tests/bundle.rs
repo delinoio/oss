@@ -885,6 +885,91 @@ fn retains_chunks_that_encoded_references_name() {
     );
 }
 
+/// Boundary chunks stay byte-for-byte unchanged: a classic chunk that
+/// references an edited chunk keeps the old name, whose original is kept.
+#[test]
+fn keeps_boundary_chunks_and_their_original_dependencies() {
+    let legacy = r#"var settingsUrl="./settings-BBBBBBBB.js";var legacyState={counter:0};"#;
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script src="/assets/legacy-EEEE1111.js"></script><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    );
+    chunks.push(("assets/legacy-EEEE1111.js", legacy));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let assets = listing(&temp.path().join("out/assets"));
+    assert_eq!(out(temp.path(), "assets/legacy-EEEE1111.js"), legacy);
+    assert_eq!(
+        out(temp.path(), "assets/settings-BBBBBBBB.js"),
+        fs::read_to_string(temp.path().join("dist/assets/settings-BBBBBBBB.js")).unwrap()
+    );
+    assert!(
+        assets
+            .iter()
+            .any(|a| a.starts_with("settings-") && !a.contains("BBBBBBBB"))
+    );
+}
+
+/// JavaScript escapes in a reference also keep the original, with its map.
+#[test]
+fn retains_escaped_references_with_their_maps() {
+    let mut map = Vec::new();
+    let mut builder = sourcemap::SourceMapBuilder::new(Some("settings-BBBBBBBB.js"));
+    builder.add(0, 0, 0, 0, Some("src/settings.ts"), None, false);
+    builder.into_sourcemap().to_writer(&mut map).unwrap();
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks.push((
+        "assets/loader.js",
+        r#"export const settingsUrl="./settings\u002dBBBBBBBB.js";"#,
+    ));
+    chunks.push((
+        "assets/settings-BBBBBBBB.js.map",
+        std::str::from_utf8(&map).unwrap(),
+    ));
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    let original = |p: &str| fs::read(temp.path().join("dist/assets").join(p)).unwrap();
+    let published = |p: &str| fs::read(temp.path().join("out/assets").join(p)).unwrap();
+    assert_eq!(
+        published("settings-BBBBBBBB.js"),
+        original("settings-BBBBBBBB.js")
+    );
+    assert_eq!(
+        published("settings-BBBBBBBB.js.map"),
+        original("settings-BBBBBBBB.js.map")
+    );
+}
+
+/// Check mode stages as well, so it reports retained code like output mode.
+#[test]
+fn check_mode_reports_the_published_size() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<script type="module" src="/assets/index&#45;AAAAAAAA.js"></script>"#,
+    );
+    let output = bundle(&chunks);
+    let published = optimize(output.path(), &[]);
+    let check = bundle(&chunks);
+    let checked = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+        .current_dir(check.path())
+        .args(["--bundle", "dist", "--check"])
+        .output()
+        .unwrap();
+    assert!(
+        checked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    let checked: Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert_eq!(checked["size"], published["size"]);
+    assert!(
+        published["size"]["retained"].as_u64().unwrap() > 0,
+        "{published:#}"
+    );
+}
+
 #[test]
 fn keeps_chunk_names_on_request() {
     let temp = bundle(&HASHED);
