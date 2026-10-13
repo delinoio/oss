@@ -624,6 +624,58 @@ fn drops_remote_map_references_of_edited_chunks() {
     assert!(!missing.contains("sourceMappingURL"), "{missing}");
 }
 
+#[test]
+fn drops_directives_of_malformed_local_maps_of_edited_chunks() {
+    let code = r#"function make(n){return{verticalSpacing:n,horizontalSpacing:n}}const s=make(1);console.log(s.verticalSpacing+s.horizontalSpacing);"#;
+    let unsupported = r#"{"version":3,"sections":[]}"#;
+    let chunks = [
+        (
+            "index.js",
+            r#"import"./explicit.js";import"./hidden.js";import"./unsupported.js";"#,
+        ),
+        (
+            "explicit.js",
+            &format!("{code}\n//# sourceMappingURL=explicit.js.map"),
+        ),
+        ("explicit.js.map", "{bad"),
+        (
+            "unsupported.js",
+            &format!("{code}\n/*# sourceMappingURL=maps/unsupported.map */"),
+        ),
+        ("maps/unsupported.map", unsupported),
+        // A hidden adjacent map has no directive to remove or add.
+        ("hidden.js", &format!("{code}\n")),
+        ("hidden.js.map", "{bad"),
+    ];
+    let temp = bundle(&chunks);
+    optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    for chunk in ["explicit.js", "unsupported.js", "hidden.js"] {
+        let text = out(temp.path(), chunk);
+        assert!(
+            !text.contains("verticalSpacing"),
+            "{chunk} must be optimized"
+        );
+        assert!(!text.contains("sourceMappingURL"), "{chunk}: {text}");
+    }
+    let published = temp.path().join("out");
+    assert!(!published.join("explicit.js.map").exists());
+    assert!(!published.join("maps/unsupported.map").exists());
+    assert!(!published.join("hidden.js.map").exists());
+    // The input directory is never modified.
+    let dist = temp.path().join("dist");
+    for (name, content) in &chunks[1..] {
+        if name.ends_with(".map") {
+            assert_eq!(fs::read_to_string(dist.join(name)).unwrap(), *content);
+        }
+    }
+    assert!(
+        fs::read_to_string(dist.join("explicit.js"))
+            .unwrap()
+            .contains("sourceMappingURL=explicit.js.map")
+    );
+}
+
 fn listing(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
