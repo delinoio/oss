@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useLayoutEffect, useRef, useState } from "react";
+import { settleEnclosingEntrances } from "./entrance-motion";
 
 export enum RepositoryDetailsPresentation {
   Closed = "closed",
@@ -216,6 +217,9 @@ export function useRepositoryDetailsPopup({
         maxHeight: `${geometry.maxHeight / scale}px`,
       });
     };
+    // The opener can sit beneath an in-flight page entrance; settle it so the
+    // first placement measures the untransformed row.
+    settleEnclosingEntrances(opener);
     position();
     if (retired) return;
     setPresentation(RepositoryDetailsPresentation.Open);
