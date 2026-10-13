@@ -46,7 +46,9 @@ const mount = (family: Family, question: Question) => {
   render(
     <RequestResponse
       resource={
-        { documentJson: documentBytes(documentFor(family, question)) } as Resource
+        {
+          documentJson: documentBytes(documentFor(family, question)),
+        } as Resource
       }
       enabled
       copy={en}

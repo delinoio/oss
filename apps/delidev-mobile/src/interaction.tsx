@@ -136,8 +136,7 @@ export function RequestResponse({
     if (unanswered[key]) return [];
     const picked = answers[key] ?? [],
       typed = customAllowed(family, q) ? (extra[key] ?? "") : "";
-    if (singleChoice(family, q))
-      return typed ? [typed] : picked.slice(0, 1);
+    if (singleChoice(family, q)) return typed ? [typed] : picked.slice(0, 1);
     return [...picked, ...(typed ? [typed] : [])];
   };
   const response = () => {
