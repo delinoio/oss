@@ -93,14 +93,31 @@ func validGrantCode(value string) bool {
 // the immutable grant at <owner>/pairing-codes/<request_id>.json must agree
 // with the saved server, endpoint and pairing identity. It only reads files and
 // never contacts a listener, so callers can run it before any network request.
-// Missing, foreign, revoked or edited evidence yields RecoveryRequired.
+// Missing, foreign, revoked or edited evidence yields RecoveryRequired, and so
+// does evidence that exists but cannot be read safely (oversized, unsafe
+// permissions, symlinked or unreadable), so the result isolates the follow
+// boundary from raw storage errors.
 func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint string, pairingID domain.ID) error {
+	return verifyOriginalPairing(owner, root, serverID, endpoint, pairingID, unreadableEvidence)
+}
+
+// VerifyOriginalPairingPreservingStorageErrors applies the same proof as
+// VerifyOriginalPairing but returns an unreadable journal, grant directory or
+// grant file's own storage error (for example permission_denied for unsafe
+// permissions) unchanged. Desktop registration inspection and recovery use it
+// so a repairable permission problem keeps its documented remediation instead of
+// being reported as damaged recovery evidence.
+func VerifyOriginalPairingPreservingStorageErrors(owner, root string, serverID domain.ID, endpoint string, pairingID domain.ID) error {
+	return verifyOriginalPairing(owner, root, serverID, endpoint, pairingID, func(_ string, err error) error { return err })
+}
+
+func verifyOriginalPairing(owner, root string, serverID domain.ID, endpoint string, pairingID domain.ID, unreadable func(phase string, err error) error) error {
 	raw, err := security.ReadPrivate(filepath.Join(root, pairingJournalName), 4096)
 	if errors.Is(err, os.ErrNotExist) {
 		return recoveryRequired()
 	}
 	if err != nil {
-		return unreadableEvidence("journal", err)
+		return unreadable("journal", err)
 	}
 	var attempt localPairingRecord
 	if domain.Decode(raw, &attempt) != nil || attempt.RequestID.Validate() != nil || serverID.Validate() != nil || pairingID.Validate() != nil || attempt.ServerID != serverID || attempt.Endpoint != endpoint {
@@ -111,7 +128,7 @@ func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint stri
 		if errors.Is(err, os.ErrNotExist) {
 			return recoveryRequired()
 		}
-		return unreadableEvidence("grant-directory", err)
+		return unreadable("grant-directory", err)
 	}
 	raw, err = security.ReadPrivate(filepath.Join(grants, string(attempt.RequestID)+".json"), maxGrantBytes)
 	defer clear(raw)
@@ -119,7 +136,7 @@ func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint stri
 		return recoveryRequired()
 	}
 	if err != nil {
-		return unreadableEvidence("grant", err)
+		return unreadable("grant", err)
 	}
 	var grant retainedGrant
 	if domain.Decode(raw, &grant) != nil || grant.Version != grantVersion || !validGrantCode(grant.Code) || grant.PairingID.Validate() != nil || grant.ServerID.Validate() != nil {

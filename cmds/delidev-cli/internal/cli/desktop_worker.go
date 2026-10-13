@@ -76,7 +76,9 @@ func verifyDesktopWorkerGrant(o options, root string, saved worker.Credential) e
 	if !local || owner != o.dataDir {
 		return recoveryRequired()
 	}
-	if err := verifyOriginalDesktopPairing(owner, root, saved); err != nil {
+	// The Worker boundary reports unreadable evidence as the isolating recovery
+	// result; desktop client recovery keeps storage errors instead.
+	if err := desktopruntime.VerifyOriginalPairing(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID); err != nil {
 		slog.Warn("desktop_worker_registration", "phase", "original-pairing", "code", domain.SafeError(err).Code)
 		return err
 	}

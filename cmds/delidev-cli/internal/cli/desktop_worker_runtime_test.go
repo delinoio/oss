@@ -4,6 +4,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -475,5 +477,41 @@ func TestDesktopWorkerUnreadablePairingJournalRequiresRecovery(t *testing.T) {
 	restore()
 	if _, err := desktopWorkerExecutable(context.Background(), o, []string{"--mode", "ensure", "--client-id", string(clientCredential.DeviceID)}); err != nil {
 		t.Fatal("restored journal no longer follows", domain.SafeError(err).Code)
+	}
+}
+
+// Desktop registration recovery shares the original-pairing proof with the
+// Worker boundary, but only the Worker boundary normalizes unreadable evidence.
+// Unsafe grant permissions stay permission_denied for recovery so the documented
+// 0700/0600 remediation remains reachable.
+func TestDesktopRecoveryPreservesPermissionDeniedForUnsafeGrantEvidence(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are unavailable")
+	}
+	owner := filepath.Join(t.TempDir(), "owner")
+	root := filepath.Join(owner, "worker")
+	grants := filepath.Join(owner, "pairing-codes")
+	for _, dir := range []string{owner, root, grants} {
+		if err := security.PrivateDir(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := worker.Credential{Endpoint: "http://127.0.0.1:41000", ServerID: domain.NewID(), PairingID: domain.NewID()}
+	request := domain.NewID()
+	writeDesktopWorkerFixture(t, filepath.Join(root, "local-pairing.json"), map[string]any{"request_id": request, "server_id": saved.ServerID, "endpoint": saved.Endpoint})
+	code := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	grantPath := filepath.Join(grants, string(request)+".json")
+	writeDesktopWorkerFixture(t, grantPath, map[string]any{"version": 1, "pairing_id": saved.PairingID, "server_id": saved.ServerID, "endpoint": saved.Endpoint, "code": code})
+	if err := verifyOriginalDesktopPairing(owner, root, saved); err != nil {
+		t.Fatal("intact evidence was rejected", err)
+	}
+	if err := os.Chmod(grantPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyOriginalDesktopPairing(owner, root, saved); err == nil || domain.SafeError(err).Code != domain.PermissionDenied {
+		t.Fatalf("recovery did not keep permission_denied: %v", err)
+	}
+	if err := desktopruntime.VerifyOriginalPairing(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatalf("Worker boundary did not normalize unsafe evidence: %v", err)
 	}
 }

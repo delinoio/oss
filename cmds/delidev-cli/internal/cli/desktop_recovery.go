@@ -107,7 +107,10 @@ func verifyOriginalDesktopCredential(owner, digest string) error {
 }
 
 func verifyOriginalDesktopPairing(owner, root string, saved worker.Credential) error {
-	return desktopruntime.VerifyOriginalPairing(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID)
+	// Desktop registration inspection and recovery keep the storage error of
+	// unreadable evidence, so unsafe permissions stay permission_denied and
+	// offer their documented remediation instead of reading as damaged evidence.
+	return desktopruntime.VerifyOriginalPairingPreservingStorageErrors(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID)
 }
 
 func recoveryRequired() error {
