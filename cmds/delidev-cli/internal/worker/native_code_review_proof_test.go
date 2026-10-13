@@ -69,7 +69,7 @@ func TestSettleNativeReviewOutcomeLogsOneClassificationPerOutcome(t *testing.T) 
 		t.Run(name, func(t *testing.T) {
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewTextHandler(&logs, nil))
-			output, returned := settleNativeReviewOutcome(context.Background(), logger, action, nil, tc.failure, tc.sent, tc.completed, tc.joined)
+			output, returned := settleNativeReviewOutcome(context.Background(), logger, t.TempDir(), action, nil, tc.failure, tc.sent, tc.completed, tc.joined)
 			if tc.wantProof != (len(output) != 0 && returned == nil) {
 				t.Fatalf("unexpected settlement: output=%q returned=%v", output, returned)
 			}

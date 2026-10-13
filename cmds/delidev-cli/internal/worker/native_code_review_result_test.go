@@ -273,3 +273,91 @@ func TestNativeReviewRecoveryLeavesNonReviewAndFinishedJournalsUnchanged(t *test
 		}
 	})
 }
+
+func (f *nativeReviewRecoveryFixture) retainStale(t *testing.T, raw []byte) {
+	t.Helper()
+	if err := security.WriteAtomic(filepath.Join(f.root, "jobs", string(f.id), nativeReviewStaleProofFile), raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeReviewRecoverySettlesRetainedStaleProofWithoutReexecution(t *testing.T) {
+	f := newNativeReviewRecoveryFixture(t)
+	// The proof is persisted by the same settlement the live Worker uses.
+	jobRoot := filepath.Join(f.root, "jobs", string(f.id))
+	drift := domain.Fail(domain.Conflict, "The original review target changed.", "Refresh the selected target.")
+	raw, returned := settleNativeReviewOutcome(context.Background(), slog.New(slog.DiscardHandler), jobRoot, f.input.ActionID, nil, drift, true, true, true)
+	if returned != nil || len(raw) == 0 {
+		t.Fatalf("stale settlement was not produced: %v", returned)
+	}
+	recovered := f.run(t)
+	if recovered.Problem != nil || !bytes.Equal(recovered.Output, raw) || recovered.State != journalFinished || recovered.ReportID != f.original.ReportID {
+		t.Fatalf("retained stale proof did not settle: %+v", recovered)
+	}
+	var stale domain.NativeCodeReviewStaleProof
+	if domain.Decode(recovered.Output, &stale) != nil || stale.Validate() != nil || stale.ActionID != f.input.ActionID {
+		t.Fatal("recovery did not return the retained stale proof")
+	}
+	replay := f.run(t)
+	if replay.Problem != nil || !bytes.Equal(replay.Output, raw) || replay.ReportID != f.original.ReportID {
+		t.Fatalf("finished stale recovery changed on replay: %+v", replay)
+	}
+}
+
+func TestNativeReviewRecoveryKeepsRecoveryRequiredForUnverifiableStaleProof(t *testing.T) {
+	stale := func(f *nativeReviewRecoveryFixture, mutate func(*domain.NativeCodeReviewStaleProof)) []byte {
+		proof := domain.NativeCodeReviewStaleProof{Version: 1, ActionID: f.input.ActionID, Stale: true, CleanupVerified: true}
+		mutate(&proof)
+		raw, _ := json.Marshal(proof)
+		return raw
+	}
+	for name, build := range map[string]func(*nativeReviewRecoveryFixture) []byte{
+		"malformed": func(*nativeReviewRecoveryFixture) []byte { return []byte(`{"version":1,`) },
+		"non-canonical": func(f *nativeReviewRecoveryFixture) []byte {
+			raw, _ := json.MarshalIndent(stale(f, func(*domain.NativeCodeReviewStaleProof) {}), "", " ")
+			return raw
+		},
+		"action mismatch": func(f *nativeReviewRecoveryFixture) []byte {
+			return stale(f, func(p *domain.NativeCodeReviewStaleProof) { p.ActionID = domain.NewID() })
+		},
+		"cleanup unverified": func(f *nativeReviewRecoveryFixture) []byte {
+			return stale(f, func(p *domain.NativeCodeReviewStaleProof) { p.CleanupVerified = false })
+		},
+		"not stale": func(f *nativeReviewRecoveryFixture) []byte {
+			return stale(f, func(p *domain.NativeCodeReviewStaleProof) { p.Stale = false })
+		},
+		"no-send proof": func(f *nativeReviewRecoveryFixture) []byte {
+			raw, _ := nativeReviewNoSendProof(f.input.ActionID)
+			return raw
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newNativeReviewRecoveryFixture(t)
+			f.retainStale(t, build(f))
+			recovered := f.run(t)
+			if recovered.Problem == nil || recovered.Problem.Code != domain.RecoveryRequired || len(recovered.Output) != 0 {
+				t.Fatalf("unverifiable stale evidence fabricated success: %+v", recovered)
+			}
+		})
+	}
+}
+
+func TestSettleNativeReviewOutcomeRetainsStaleProofBeforeReturningIt(t *testing.T) {
+	action := domain.NewID()
+	drift := domain.Fail(domain.Conflict, "The original review target changed.", "Refresh the selected target.")
+	root := filepath.Join(t.TempDir(), "job")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	output, returned := settleNativeReviewOutcome(context.Background(), slog.New(slog.DiscardHandler), root, action, nil, drift, true, true, true)
+	retained, err := os.ReadFile(filepath.Join(root, nativeReviewStaleProofFile))
+	if err != nil || returned != nil || !bytes.Equal(retained, output) {
+		t.Fatalf("stale proof was returned without durable retention: %v %v", err, returned)
+	}
+	// An unretainable proof must not be returned; the uncertain problem stands.
+	missing := filepath.Join(t.TempDir(), "absent", "job")
+	output, returned = settleNativeReviewOutcome(context.Background(), slog.New(slog.DiscardHandler), missing, action, nil, drift, true, true, true)
+	if len(output) != 0 || returned == nil {
+		t.Fatalf("unretained stale proof escaped: %q %v", output, returned)
+	}
+}

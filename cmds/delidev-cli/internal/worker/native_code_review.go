@@ -65,6 +65,13 @@ func nativeReviewMayIgnoreMetadata(event codex.Event, threadID, turnID domain.ID
 	}
 }
 
+// Durable per-job evidence files. Exactly one of them can exist for a review
+// because a stale proof is written only when no completed result was finalized.
+const (
+	nativeReviewResultFile     = "review-result.json"
+	nativeReviewStaleProofFile = "review-stale-proof.json"
+)
+
 type nativeReviewProofKind int
 
 const (
@@ -103,9 +110,18 @@ func nativeReviewTerminalProof(action domain.ID, failure error, nativeSent, revi
 // cleanup, never first as unconfirmed. Any other failure, including a verified
 // no-send rejection, keeps its unconfirmed diagnostic before a proof replaces
 // the problem. It runs after every cleanup defer so it sees the final error.
-func settleNativeReviewOutcome(ctx context.Context, logger *slog.Logger, action domain.ID, output json.RawMessage, returned error, nativeSent, reviewCompleted, cleanupJoined bool) (json.RawMessage, error) {
+// A stale proof is durably retained in review-stale-proof.json before it is
+// returned, so a crash before the generic journal is finished can still be
+// settled by recoverNativeReviewResult. When retention fails the proof is not
+// used and the original uncertain problem stands.
+func settleNativeReviewOutcome(ctx context.Context, logger *slog.Logger, jobRoot string, action domain.ID, output json.RawMessage, returned error, nativeSent, reviewCompleted, cleanupJoined bool) (json.RawMessage, error) {
 	proof, kind, ok := nativeReviewTerminalProof(action, returned, nativeSent, reviewCompleted, cleanupJoined)
 	if ok && kind == nativeReviewStaleProofKind {
+		if err := security.WriteAtomic(filepath.Join(jobRoot, nativeReviewStaleProofFile), proof); err != nil {
+			logger.WarnContext(ctx, "native_code_review_stale_proof_unretained", "code", domain.SafeError(err).Code)
+			logger.WarnContext(ctx, "native_code_review_unconfirmed", "code", domain.SafeError(returned).Code)
+			return output, returned
+		}
 		logger.WarnContext(ctx, "native_code_review_stale_cleanup_verified", "cleanup_verified", true)
 		return proof, nil
 	}
@@ -137,7 +153,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 	// cleanup defer, sees the final joined state and makes the one terminal
 	// classification and log decision for the outcome.
 	defer func() {
-		output, returned = settleNativeReviewOutcome(ctx, logger, input.ActionID, output, returned, nativeSent, reviewCompleted, nativeJoined && workspaceJoined && authJoined)
+		output, returned = settleNativeReviewOutcome(ctx, logger, filepath.Join(config.Root, "jobs", string(owner)), input.ActionID, output, returned, nativeSent, reviewCompleted, nativeJoined && workspaceJoined && authJoined)
 	}()
 	var prep workspace.PrepareRequest
 	var manifest workspace.Manifest
@@ -526,7 +542,7 @@ func finalizeNativeReviewResult(ctx context.Context, logger *slog.Logger, jobRoo
 		logger.WarnContext(ctx, "native_code_review_result_too_large", "findings", len(result.Findings), "responses", len(result.UsageRecords), "encoded_bytes", len(output), "limit_bytes", domain.MaxWorkerJobOutputBytes)
 		return nil, domain.NativeCodeReviewResultTooLarge()
 	}
-	if security.WriteAtomic(filepath.Join(jobRoot, "review-result.json"), output) != nil {
+	if security.WriteAtomic(filepath.Join(jobRoot, nativeReviewResultFile), output) != nil {
 		return nil, publicationUncertain()
 	}
 	logger.InfoContext(ctx, "native_code_review_completed", "findings", len(result.Findings), "responses", len(result.UsageRecords), "cleanup_verified", true)
@@ -549,10 +565,15 @@ func recoverNativeReviewResult(ctx context.Context, config Config, resource *pb.
 		return nil, false
 	}
 	logger = logger.With("job_id", resource.Id, "action_id", input.ActionID, "session_id", input.Source.SessionID)
-	path := filepath.Join(config.Root, "jobs", resource.Id, "review-result.json")
+	path := filepath.Join(config.Root, "jobs", resource.Id, nativeReviewResultFile)
 	raw, err := security.ReadPrivate(path, domain.MaxWorkerJobOutputBytes)
 	if err != nil {
-		logger.InfoContext(ctx, "native_code_review_recovery_unavailable", "reason", "result_unreadable", "missing", errors.Is(err, os.ErrNotExist))
+		if errors.Is(err, os.ErrNotExist) {
+			// A stale settlement never finalizes a result, so its retained proof is
+			// the only completion evidence a crashed Worker can have left.
+			return recoverNativeReviewStaleProof(ctx, logger, filepath.Join(config.Root, "jobs", resource.Id, nativeReviewStaleProofFile), input)
+		}
+		logger.InfoContext(ctx, "native_code_review_recovery_unavailable", "reason", "result_unreadable", "missing", false)
 		return nil, false
 	}
 	var result domain.NativeCodeReviewResult
@@ -577,5 +598,32 @@ func recoverNativeReviewResult(ctx context.Context, config Config, resource *pb.
 		}
 	}
 	logger.InfoContext(ctx, "native_code_review_recovered", "findings", len(result.Findings), "responses", len(result.UsageRecords), "cleanup_verified", true)
+	return json.RawMessage(raw), true
+}
+
+// recoverNativeReviewStaleProof reuses a retained stale-cleanup proof only when
+// its exact bytes are the canonical encoding of a valid proof for this action.
+// It reads local evidence only and never starts or re-sends a native review.
+func recoverNativeReviewStaleProof(ctx context.Context, logger *slog.Logger, path string, input domain.NativeCodeReviewInput) (json.RawMessage, bool) {
+	raw, err := security.ReadPrivate(path, domain.MaxWorkerJobOutputBytes)
+	if err != nil {
+		logger.InfoContext(ctx, "native_code_review_recovery_unavailable", "reason", "result_unreadable", "missing", errors.Is(err, os.ErrNotExist))
+		return nil, false
+	}
+	var proof domain.NativeCodeReviewStaleProof
+	if domain.DecodeWithLimit(raw, &proof, domain.MaxWorkerJobOutputBytes) != nil || proof.Validate() != nil {
+		logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "stale_proof_invalid")
+		return nil, false
+	}
+	canonical, err := json.Marshal(proof)
+	if err != nil || !bytes.Equal(canonical, raw) {
+		logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "stale_proof_not_canonical")
+		return nil, false
+	}
+	if proof.ActionID != input.ActionID {
+		logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "stale_proof_not_bound_to_assignment")
+		return nil, false
+	}
+	logger.WarnContext(ctx, "native_code_review_stale_cleanup_recovered", "cleanup_verified", true)
 	return json.RawMessage(raw), true
 }
