@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useCallback, useEffect, useState, type RefCallback } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefCallback,
+} from "react";
 import "./entrance-motion.css";
 
 // Stable identifiers shared with entrance-motion.css.
@@ -46,8 +53,11 @@ export function settleEnclosingEntrances(host: Element | null): void {
 /**
  * Owns one explicit activation's entrance. A new `activation` key starts the
  * motion once; every later render, refetch, edit or preference re-enable keeps
- * it settled. Turning motion off mid-flight clears the attribute immediately,
- * so re-enabling never replays the current activation. No exit motion exists.
+ * it settled. A new key while the previous entrance is still running restarts
+ * the CSS animation, because an unchanged declaration would otherwise continue
+ * the old timeline. Turning motion off mid-flight clears the attribute
+ * immediately, so re-enabling never replays the current activation. No exit
+ * motion exists.
  */
 export function useEntranceActivation(
   activation: string,
@@ -95,9 +105,23 @@ export function useEntranceActivation(
       window.clearTimeout(timer);
     };
   }, [active, settle]);
+  const surface = useRef<HTMLElement | null>(null);
+  const started = useRef(activation);
+  useLayoutEffect(() => {
+    if (started.current === activation) return;
+    started.current = activation;
+    const node = surface.current;
+    if (!active || !node) return;
+    // Re-declare the attribute with a style flush between, so the browser
+    // starts a fresh animation instead of continuing the previous timeline.
+    node.removeAttribute("data-entrance");
+    void node.getBoundingClientRect();
+    node.setAttribute("data-entrance", motion);
+  }, [activation, active, motion]);
   const attach = useCallback<RefCallback<HTMLElement>>(
     (node) => {
       if (!node) return;
+      surface.current = node;
       const finished = (event: Event) => {
         // Descendant spinners and unrelated animations bubble here.
         if (
@@ -112,6 +136,7 @@ export function useEntranceActivation(
       node.addEventListener("animationcancel", finished);
       node.addEventListener(ENTRANCE_SETTLE_EVENT, settleNow);
       return () => {
+        if (surface.current === node) surface.current = null;
         node.removeEventListener("animationend", finished);
         node.removeEventListener("animationcancel", finished);
         node.removeEventListener(ENTRANCE_SETTLE_EVENT, settleNow);

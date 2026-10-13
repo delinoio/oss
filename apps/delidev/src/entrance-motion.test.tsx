@@ -169,6 +169,42 @@ it("replays only for a new explicit activation, even before the old one finishes
   expect(entering()).toBeNull();
 });
 
+function trackDeclaration(node: Element) {
+  const writes: string[] = [];
+  const remove = node.removeAttribute.bind(node);
+  const set = node.setAttribute.bind(node);
+  node.removeAttribute = (name: string) => {
+    if (name === "data-entrance") writes.push("remove");
+    remove(name);
+  };
+  node.setAttribute = (name: string, value: string) => {
+    if (name === "data-entrance") writes.push(`set:${value}`);
+    set(name, value);
+  };
+  return writes;
+}
+
+it("restarts the CSS animation when a new activation arrives mid-flight", () => {
+  render(<Harness />);
+  const node = surface();
+  const writes = trackDeclaration(node);
+  fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  // An unchanged declaration would continue the old timeline; the attribute is
+  // reset and re-declared so the browser starts a fresh 160ms animation.
+  expect(writes).toEqual(["remove", "set:y4"]);
+  expect(entering()).toBe("y4");
+  expect(surface()).toBe(node);
+});
+
+it("does not restart for renders or edits inside one activation", () => {
+  render(<Harness />);
+  const writes = trackDeclaration(surface());
+  fireEvent.change(screen.getByLabelText("Draft"), {
+    target: { value: "typed while entering" },
+  });
+  expect(writes).toEqual([]);
+});
+
 it("is replay-safe under Strict Mode", () => {
   render(
     <StrictMode>
