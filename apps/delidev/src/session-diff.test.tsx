@@ -2131,13 +2131,16 @@ it("keeps an invalidated explicit base unavailable across tabbed comparison swit
     target: { value: baseValue("main") },
   });
   await screen.findByRole("region", { name: "Git comparison" });
-  expect(
-    (branchReads(f.read).at(-1)?.base_ref as { name: string }).name,
-  ).toBe("main");
+  expect((branchReads(f.read).at(-1)?.base_ref as { name: string }).name).toBe(
+    "main",
+  );
 });
 
 it("omits the raw Git reference from the base invalidation diagnostic", async () => {
-  const setup = inventoryFixture([{ name: "main" }, { name: "secret-ref" }], "main");
+  const setup = inventoryFixture(
+    [{ name: "main" }, { name: "secret-ref" }],
+    "main",
+  );
   const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
   try {
     const { f, state, operations } = setup;
