@@ -458,8 +458,9 @@ proof. A prompt that selected skills with a missing, unreadable, unbound or zero
 proof fails before the claim and native send with the safe uncertain failure and
 settles only through the existing no-claim/no-send cleanup proof. Removed,
 changed or reordered observed skills reject through the harness comparison
-before the claim. A text-only prompt keeps the zero digest. No migration or new
-allocation is required.
+before the claim. A text-only prompt keeps the zero digest. Worker capability
+`CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64` is newly allocated for this proof;
+no database migration is required.
 
 The original resolved native process resumes the same private history with its
 original settings. The closed 0.162.0 response profile uses `thread/revert` with
