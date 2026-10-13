@@ -2,7 +2,6 @@
 package domain
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"math"
 )
@@ -43,8 +42,7 @@ func (t NativeCodeReviewTarget) Validate() error {
 			return NativeCodeReviewUnavailable()
 		}
 	case ReviewCommit:
-		raw, err := hex.DecodeString(t.Reference)
-		if err != nil || len(raw) != 20 || hex.EncodeToString(raw) != t.Reference || t.Instructions != "" {
+		if !reviewObjectID(t.Reference) || t.Instructions != "" {
 			return NativeCodeReviewUnavailable()
 		}
 	case ReviewCustom:
@@ -72,7 +70,8 @@ func (s NativeCodeReviewSelection) Validate() error {
 		return NativeCodeReviewUnavailable()
 	}
 	if s.Target.Kind == ReviewBaseBranch {
-		if !reviewObjectID(s.BaseCommit) {
+		// Both commits come from one repository, so they share its object format.
+		if !reviewObjectID(s.BaseCommit) || len(s.BaseCommit) != len(s.HeadCommit) {
 			return NativeCodeReviewUnavailable()
 		}
 	} else if s.BaseCommit != "" {
@@ -80,10 +79,10 @@ func (s NativeCodeReviewSelection) Validate() error {
 	}
 	return nil
 }
-func reviewObjectID(s string) bool {
-	raw, err := hex.DecodeString(s)
-	return err == nil && len(raw) == 20 && hex.EncodeToString(raw) == s
-}
+
+// reviewObjectID accepts only canonical lowercase Git object names in either
+// repository object format (SHA-1: 40 hex characters, SHA-256: 64).
+func reviewObjectID(s string) bool { return gitObjectID(s) }
 
 type NativeCodeReviewFinding struct {
 	Title      string  `json:"title"`

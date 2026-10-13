@@ -101,3 +101,63 @@ func TestNativeReviewCommitAndBaseTargetsKeepExactCommit(t *testing.T) {
 		})
 	}
 }
+
+// Native review accepts every target kind in both Git object formats and
+// forwards the repository's full-width HEAD object name to the callback.
+func TestNativeReviewSupportsSHA1AndSHA256ObjectFormats(t *testing.T) {
+	for _, format := range []struct {
+		name  string
+		width int
+	}{{"sha1", 40}, {"sha256", 64}} {
+		for _, kind := range []domain.NativeCodeReviewTargetKind{domain.ReviewUncommitted, domain.ReviewBaseBranch, domain.ReviewCommit, domain.ReviewCustom} {
+			t.Run(format.name+"/"+string(kind), func(t *testing.T) {
+				m := manager(t)
+				source, err := filepath.EvalSymlinks(repositoryWithObjectFormat(t, format.name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				input, _ := requestFor(source)
+				manifest, err := m.Prepare(context.Background(), input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				lease, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer lease.Close()
+				request := diffRequest(input, manifest, domain.DiffWorkingTree, ".")
+				observed, err := m.ReadWorkspace(context.Background(), request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				head := gitTest(t, manifest.PrimaryPath, "rev-parse", "HEAD")
+				if len(head) != format.width {
+					t.Fatalf("fixture object format mismatch: %d", len(head))
+				}
+				target := domain.NativeCodeReviewTarget{Kind: kind, RepositoryID: input.PrimaryRepository, DiffRevision: observed.Diff.Revision}
+				switch kind {
+				case domain.ReviewBaseBranch:
+					target.Reference = "HEAD"
+				case domain.ReviewCommit:
+					target.Reference = head
+				case domain.ReviewCustom:
+					target.Instructions = "Review the selected changes."
+				}
+				reached := false
+				if err = m.WithNativeCodeReview(context.Background(), request, target, func(ctx context.Context, path string, selection domain.NativeCodeReviewSelection) error {
+					reached = true
+					if selection.HeadCommit != head || len(selection.HeadCommit) != format.width || selection.Validate() != nil {
+						t.Fatal("selection did not keep the exact repository object name")
+					}
+					if kind == domain.ReviewBaseBranch && selection.BaseCommit != head {
+						t.Fatal("base commit changed")
+					}
+					return nil
+				}); err != nil || !reached {
+					t.Fatal("native review capture failed", err)
+				}
+			})
+		}
+	}
+}

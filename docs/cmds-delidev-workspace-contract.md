@@ -636,6 +636,8 @@ Repository saves check server-wide same-kind name uniqueness at admission and af
 
 Dedicated review holds one joined read-only observation of the original prepared workspace and selected repository. Its bounded admission/capture verifies manifest, continuation identity, working-tree diff revision, exact HEAD/reference commit and tracked/untracked content digest. The native operation retains its own joined lifetime; ordinary read deadlines do not detach it. Recheck the same complete selection after native completion and cleanup. Drift prevents result publication. No workspace claim, predecessor advance, file write, clone, checkout adoption or original Local deletion authority is added.
 
+Native review selections carry Git object names in the repository's own object format: canonical lowercase hex of exactly 40 characters (SHA-1) or 64 characters (SHA-256). `head_commit`, `base_commit` and a commit-target `reference` share this rule; a base-branch selection requires both commits to use the same width. Uppercase, non-hex, odd-length or other-length names are rejected. The 64-character lowercase hex `diff_revision`, `content_digest` and rollout digests are SHA-256 integrity digests, independent of the repository object format, and stay exact.
+
 Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged.
 
 ## Workspace preparation group timing
