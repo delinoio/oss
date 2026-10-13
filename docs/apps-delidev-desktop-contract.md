@@ -325,8 +325,10 @@ dispose the presentation without restoring focus into hidden content. Connection
 departure includes losing connection readiness while the Session and connection
 identity stay unchanged: App passes `connectionReady` through `SessionView` to
 `SessionToolMenu`, an open dialog closes immediately so recovery content is no
-longer blocked, and the trigger and the OpenTool shortcut stay inert while the
-connection is unavailable. Restoring readiness never reopens the dialog; only an
+longer blocked, focus moves to the Session heading (the recovery control)
+instead of the native modal-close restoration to the unavailable opener, and
+the trigger and the OpenTool shortcut stay inert while the connection is
+unavailable. Restoring readiness never reopens the dialog; only an
 explicit user action does. Session drafts and pending operations are untouched.
 
 Read-only shortcut defaults yield to existing editable chords through one shared
