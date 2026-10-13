@@ -30,6 +30,8 @@
   "updates.retryTheSameUpdateCheck_919af6": "같은 업데이트 확인 다시 시도",
   "updates.originalUpdateId_51ae1b": "원래 업데이트 ID",
   "updates.inspectOriginalUpdate_3b2c2e": "원래 업데이트 확인",
+  "updates.rootUnavailable": "이 빌드에서는 서명된 업데이트를 사용할 수 없습니다.",
+  "updates.rootUnavailableHelp": "이 DeliDev 빌드에는 프로덕션 업데이트 서명 키가 없어 서명된 업데이트를 확인할 수 없습니다. 설치된 버전은 그대로 유지됩니다.",
   "updates.unchecked": "아직 업데이트를 확인하지 않았습니다.",
   "updates.checking": "업데이트를 확인하는 중입니다…",
   "updates.current": "새로운 서명된 업데이트가 없습니다.",

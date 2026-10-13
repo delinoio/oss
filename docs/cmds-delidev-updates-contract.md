@@ -89,6 +89,8 @@ Private bounded candidates retain the original signed manifest and downloaded di
 
 The compiled DeliDev Ed25519 public declaration is the only manifest authority. An unset or non-production declaration blocks real downloads/installation and release signing; test-only roots cannot activate production. Networking has no ambient proxy, account token, cookie or credentials. Exact GitHub release URLs and bounded HTTPS release-asset redirects are checked independently; cross-project tags, unknown targets, duplicate fields, malformed signatures, stale versions and digest/length mismatch fail before execution. Signing private keys never enter repository, RPC or logs.
 
+`SystemService.GetStatus` reports `production_root_ready` (`optional bool`, field 9) from the single `updates.ProductionReady()` verifier check, so readiness has explicit presence: an absent field is a legacy server, never readiness. It is independent of the `SIGNED_UPDATES_V1` protocol capability, which stays advertised, and grants no signing, download or installation authority. While the compiled root is unset or non-production the value is present and false. Clients use it only to avoid starting a fresh desktop `CheckUpdate` that would deterministically fail; original-ID `GetUpdate` reads (which carry their own `production_root_ready`), retained candidates and uncertain requests are unaffected.
+
 ## Logging
 
 Structured logs contain original operation IDs, typed phase/error code, target and public version only. Exclude credentials, host paths, raw SSH output, native content and signing material.
