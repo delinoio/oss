@@ -343,6 +343,7 @@ impl Project {
         entries.sort();
         entries.dedup();
         project.entries = entries;
+        let html_classic = classic.clone();
         let mut classic = classic;
         classic.extend(worker_scripts);
         crate::app::set_bundle_modules(modules, classic);
@@ -359,7 +360,7 @@ impl Project {
             .cloned()
             .collect();
         let frozen = boundary_closure(&boundaries, &edges);
-        log_frozen_chunks(&frozen, &scripts, &from_html);
+        log_frozen_chunks(&frozen, &scripts, &html_classic, &from_html);
         crate::app::set_bundle_frozen(frozen);
         tracing::info!(
             chunks = chunks.len(),
@@ -1184,8 +1185,14 @@ pub(crate) fn boundary_closure(
 
 /// Logs which boundary chunk freezes how many chunks. A boundary that a page
 /// loads as a script keeps everything it imports out of optimization, which
-/// is worth a warning.
-fn log_frozen_chunks(frozen: &BTreeMap<String, String>, scripts: &Paths, from_html: &Paths) {
+/// is worth a warning, whether the page loads it as a module script, as a
+/// classic script or through an inline script.
+fn log_frozen_chunks(
+    frozen: &BTreeMap<String, String>,
+    scripts: &Paths,
+    classic_scripts: &Paths,
+    from_html: &Paths,
+) {
     let mut per_boundary = BTreeMap::<&str, usize>::new();
     for boundary in frozen.values() {
         *per_boundary.entry(boundary.as_str()).or_default() += 1;
@@ -1196,7 +1203,10 @@ fn log_frozen_chunks(frozen: &BTreeMap<String, String>, scripts: &Paths, from_ht
             chunks,
             "chunks that a boundary chunk can import stay unchanged"
         );
-        if scripts.contains(boundary) || from_html.contains(boundary) {
+        if scripts.contains(boundary)
+            || classic_scripts.contains(boundary)
+            || from_html.contains(boundary)
+        {
             tracing::warn!(
                 boundary,
                 chunks,

@@ -2203,3 +2203,50 @@ fn credits_the_first_boundary_through_nested_boundaries() {
         fs::read(temp.path().join("dist/assets/plain-CCCCCCCC.js")).unwrap()
     );
 }
+
+/// A classic `<script src>` with a literal dynamic import is a boundary that a
+/// page loads: the chunks it imports stay unchanged and the log warns.
+#[test]
+fn warns_when_a_classic_html_script_freezes_chunks() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script src="/assets/app-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/app-AAAAAAAA.js",
+            r#"import("./lazy-BBBBBBBB.js").then(m=>console.log(m.v()));"#,
+        ),
+        (
+            "assets/lazy-BBBBBBBB.js",
+            r#"function v(){return"lazy"}function unusedLazyHelper(n){return n.toString(36).repeat(4)}export{v,unusedLazyHelper};"#,
+        ),
+    ]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized")
+            && stderr.contains("app-AAAAAAAA.js"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("lazy-BBBBBBBB.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("app-AAAAAAAA.js")
+    );
+}
