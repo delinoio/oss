@@ -33,6 +33,11 @@ func Kind(kind pb.EntityKind) (domain.Kind, error) {
 	if !result.Valid() || result == domain.ModelKind {
 		return "", domain.Fail(domain.InvalidArgument, "Unknown entity kind.", "Use a supported versioned kind.")
 	}
+	if result == domain.ManagedMCPKind {
+		// The retained record holds credential references and pending request
+		// metadata. Only the dedicated service may project it safely.
+		return "", domain.Fail(domain.InvalidArgument, "This resource is available only through its dedicated service.", "Use the managed MCP service.")
+	}
 	return result, nil
 }
 func WireKind(kind domain.Kind) pb.EntityKind {
