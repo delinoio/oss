@@ -345,7 +345,18 @@ follows the committed map) and the Files entry badge/ARIA share the effective
 platform binding. The Files row in the Open tool dialog shows a decorative
 muted shortcut hint (Command+E or Ctrl+E) that wraps inside the original row
 geometry; the hint and its `aria-keyshortcuts` are omitted while suppressed, and
-English/Korean Help and Settings explain the suppression. Owned Help closes
+English/Korean Help and Settings explain the suppression. The preference
+controller exposes an initial-read readiness flag that is false only while the
+first read of the current bridge is unsettled and defaults to true outside a
+provider. While it is false the empty startup overrides are not a committed map:
+every `readOnlyShortcutSuppression` policy ID (Files primary+E and the same-race
+Open tool primary+T) has no bindings, is disabled with the localized
+`shortcuts.preferencesPending` reason, runs no callback and advertises no hint or
+`aria-keyshortcuts`, consistently in dispatch, Help and the read-only Settings
+catalog. Editable defaults are never gated. After the read settles, success,
+read failure and the unavailable fallback use the committed-map rules above; later
+refreshes and saves keep the last accepted bindings and never re-enter the gate.
+Owned Help closes
 before the callback and retains destination focus. Existing terminal, native
 Browser, capture, modal, handled-event, repeat, IME, modifier and hidden/inert
 fences remain. Opening Files adds no execution, recovery, RPC, migration or
@@ -489,7 +500,7 @@ and follow the [heartbeat projection contract](protos-delidev-v1-contract.md#mac
 
 ## Model request Diagnostics panel
 
-The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
+The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Validate catalog and builtin reviewer identity independently: an unspecified attribution requires the exact catalog `model` (bounded `nativeId`, provider/subscription match, no deprecated `modelId`); the closed `CODEX_REVIEWER` attribution requires no `model`, no `modelId`, no subscription service, the Codex harness and the proxy-HTTP source and renders the canonical reviewer model `gpt-5.6-luna`; any other attribution value or malformed catalog record rejects the whole page, so a valid reviewer record never blanks adjacent catalog records. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
 
 ## Session Diagnostics spacing
 
@@ -1403,7 +1414,24 @@ Original authenticated inventory or stream resources dismiss a terminal only
 when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
 Connection-memory revision fences and original-ID tombstones prevent stale
 history restoration or reopening from reviving dismissed tabs. Pending or
-uncertain original controls retain their recovery presentation. An inactive exit
+uncertain original controls retain their recovery presentation; only a missing
+or null `pending` field means no operation, so an empty object, scalar or array
+`pending` value stays unsettled and never dismisses. The same presence rule
+gates replacement creation (an inventory row with present `pending` keeps
+original cleanup unconfirmed) and terminal input or resize dispatch. Each original ID
+retains one compact fingerprint (no document bytes) of its latest accepted
+revision; an equal-revision observation whose state, cleanup proof or pending
+evidence differs is contradictory and rejected without tombstoning (logging only a
+content-free `revision-contradiction` diagnostic with the original terminal ID
+and revision), while an
+identical replay (including a deferred exit observed again after its control
+settles) is accepted once without requiring a newer revision. Fingerprinting
+walks the evidence with an explicit work list rather than recursion, so
+arbitrarily deep nesting never overflows the call stack and every distinct
+document, including deeply nested ones, keeps its own evidence-specific
+fingerprint. A deeply nested state or cleanup proof is not exact exited and
+verified evidence, and a deeply nested pending value is present, so such a
+document never dismisses. An inactive exit
 preserves selection/focus; a selected exit chooses its nearest remaining left
 terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no
@@ -1463,8 +1491,10 @@ render, search, selection, announcements and window queries, recreates both
 native screens and parser state on the same core, and retains dimensions and
 attachment focus. Disabled input suppresses keyboard, IME, paste, mouse, focus
 reports and parser replies while selection and copy remain usable. The Ghostty
-patch discards fragmented OSC 52 writes and queries before parsing and silences
-the raw WASM log import. OSC 8 remains inert, and title, working-directory and
+patch discards fragmented OSC 52 writes and queries before parsing, ends the
+discard on BEL, ESC `\`, standalone C1 ST, CAN, SUB or any other ESC-introduced
+sequence (which is then parsed normally; repeated ESC bytes collapse to the newest
+pending ESC so no orphan ESC reaches the parser), and silences the raw WASM log import. OSC 8 remains inert, and title, working-directory and
 shell-integration callbacks stay disconnected. Diagnostics contain only stable
 stage/category values.
 
@@ -3549,16 +3579,21 @@ Settings opts categories in through `entranceCategories` in `settings.tsx`; the 
 
 #### Settings category and task entrance
 
-Desktop only. `entranceCategories` in `settings.tsx` maps each opted-in `SettingsCategory` to an `EntranceTarget` (`entrance-motion.ts`). Every opted-in surface uses the shared 160ms `translateY(4px)` Y4 primitive and the replay-safe rules above. The activation is the category opening (`selection.key`) and, for tasks, one mounted task window. Opted-in categories: Appearance, Keyboard shortcuts, Server preferences, Paired devices, Notifications, Import / Export, Backups, AI API Keys, AI Subscription (target `Surface`) and Connections, App information (target `Heading`).
+Desktop only. `entranceCategories` in `settings.tsx` maps each opted-in `SettingsCategory` to an `EntranceTarget` (`entrance-motion.ts`). Every opted-in surface uses the shared 160ms `translateY(4px)` Y4 primitive and the replay-safe rules above. The activation is the category opening (`selection.key`) and, for tasks, one mounted task window. Opted-in categories: Appearance, Keyboard shortcuts, Server preferences, Paired devices, Notifications, Import / Export, Backups, Agent Workers, AI API Keys, AI Subscription, API Providers, Instructions, Project defaults, Projects (target `Surface`) and Connections, App information (target `Heading`).
 
 - `Surface` moves the category content column, which holds the heading and body. `SettingsTaskWindow` also plays one entrance for every Settings task opened inside any opted-in category, through `SettingsTaskEntranceContext` provided by `SettingsWorkspace`. The task entrance moves only the task `header`, never the native task `<dialog>` host or its body: a transform would make the dialog the containing block of fixed descendants (for example portaled tooltips) and the contract above excludes native positioning hosts. Tasks outside an opted-in category never animate. Opening, editing, saving, cancelling, refresh, polling, pagination, async progress, errors, permission changes and job or history updates never restart it, dismissal is immediate with no exit animation, and focus return, dismissal, disposal and request ownership never wait for it.
 - `Heading` moves only the static `.settings-category-heading`; tasks always move only their own task heading. Connections and App information contain persistent portal hosts, native controllers and update or connection callbacks; no ancestor of those hosts receives a transform, and their controllers, original version evidence, pending update checks, connect, re-pair and retry requests keep their identity. `Modal` takes `headingEntrance` for desktop-owned Connections tasks (Saved server add, rename and removal presentation, Tailscale enable and device selection, and local re-registration). It plays one entrance on the dialog `header` and never on the dialog. The owner supplies `presentationRequest` for retained tasks: a Modal that mounts visible is one presentation, and afterwards only a changed request that becomes visible (a user action that opens the task, Continue after a dismissal, or a new Add generation) adds one. Visibility changes without a new request, such as a Connections host slot appearing or the page becoming active again, stay immediate. Incoming Tailscale approval prompts and slot-driven Saved servers presentation never animate.
 - Import / Export (`configuration-transfer.tsx`) additionally animates the Map fieldset and the Review preview section once when the user explicitly requests that stage (Load configuration document, Preview configuration changes). `requestedStage` records only that request and is cleared by edits, invalidation and stage arrival. The Map activation is an explicit Load request counter, not the `loaded` visibility: loading again while a document is already mapped replaces it in one event batch and still plays one entrance (the shared hook restarts a running animation for the new key). Stage changes that are derived from asynchronous results (apply progress, uncertain-request recovery, import result) stay immediate. Exact transfer bytes, mappings, original request IDs and protected state are untouched.
+- Agent Workers animates the category and both owned task windows (Worker wizard create and edit, and Preview routing), each once per opened window through the `Surface` rules above. Inside the Worker wizard (`agent-worker-source-wizard.tsx`) the static step `h3` heading additionally plays one entrance per user-selected step change: harness confirmation, Next, Back and Change harness. `stepRequests` counts only those handlers and is the activation key through `selectStep`; the first step shown when the task opens and automatic routing through `fail()` (validation failures that return the user to Harness, Accounts, Model or Configure) never animate. The entrance moves only the heading, never the form, fieldset, step sections, model combobox popup or scroll-picker popovers. Model refresh, endpoint or subscription discovery, account inspection, typing, polling, refetch and pagination never replay it and never advance a step. Chosen sources, permission settings, exact model IDs, request counts and the original uncertain save request are untouched. `agent-worker-wizard.test.tsx` and `settings.test.tsx` cover this with synthetic fixtures.
 - Keyboard shortcuts animates the category only. Key capture, shortcut dispatch, typing and validation never restart it. The category has no separate task dialog at present, and any future owned task must opt in with its own contract text.
 - Paired devices animates the category, the pairing task and the revocation confirmation. Disclosures such as Details stay instantaneous. Pairing codes, device credentials and confirmed-revocation state are not read or logged by the motion.
 - AI API Keys (`SettingsCategory.ApiAccounts`) animates the category and every owned task window: Add account, Manage connection (format and details) and Edit preferences. `AccountSettings` renders its own heading, so `Surface` moves the content column that holds it. Each opened task window plays one entrance on its task header only; stage advance inside the wizard (provider choice, key entry), typing, format selection, validation requests and replies, retries, status or health changes, inventory refetches and pagination never restart it. The key, format and source drafts, the original save and connection requests and their request identities, and the clear-on-dismiss credential lifecycle are untouched, and the secret input, its mask and its value are never inside an animated element or read, logged or stored by the motion. A new Add account window opens with an empty key and plays a fresh entrance. `settings-credential-motion.test.tsx` covers this with a synthetic credential and a held connection reply; it grants no account or native acceptance.
 - AI Subscription (`SettingsCategory.SubscriptionAccounts`) is the default Settings landing category, so opening Settings plays its category entrance once like any other category opening. It animates the category and every owned task window: the Connect subscription and Claude login window, the Manage subscription window and OpenCode Go windows. Step navigation does not open another window, so the logout confirmation is a step of its Manage window and never replays the window entrance. Failed-login cleanup is an inline status disclosure, not a task window, and never animates. A hidden retained Claude login mounts a new window (and one entrance) only when the user explicitly chooses View original operation; login responses, progress polling, native OAuth callbacks, refetches and spinners never open, restore or replay a window, and Escape hides or disposes the task immediately with the existing native OAuth Dispose. The exact paid-credit balance overlay is a fixed positioning host: it settles any in-flight enclosing entrance through `settleEnclosingEntrances` before placing and measures its anchor again once the untransformed layout commits. See `apps-delidev-subscription-settings-contract.md#settings-entrance-motion`. `settings-subscription-motion.test.tsx` covers this with synthetic fixtures; it grants no native or account acceptance.
-- Animation Off (`data-animation=false`) and OS reduced motion prevent the motion and clear an in-flight entrance immediately, and re-enabling never replays the current visit. `settings-motion.test.tsx` and `settings-entrance.test.tsx` cover this with synthetic fixtures; they grant no native or account acceptance.
+- API Providers animates the category and the custom-provider editor window (one header entrance per opened window). An identical or held provider refresh, retry, activation switch or editor close never replays the category entrance, accepted provider rows keep their positions, and the motion starts no inventory read, automatic endpoint discovery or switch. Focus returns to the opener without waiting for the motion.
+- Instructions animates the category, the instruction editor and the deletion confirmation, each window once. Typing, saved or failed state, refetch and dismissal never restart it, and the exact instruction content and original save and delete revisions are untouched.
+- Project defaults animates the category only, on explicit opening. The singleton revision, read and create guards, inherited, default and unknown values, the draft lifecycle (a draft is still discarded on category departure) and the disclosure groups are unchanged: expanding a disclosure has instant geometry and never replays the entrance or reads policy. A return to the category is a new explicit opening and plays once.
+- Projects animates the category and the New Project, edit and delete windows, each once per opened window. Switching an editor tab (General, Access, Repositories), authoring a draft, saving, retrying and opener fallback never restart it. No project is created or deleted on animation completion, and the tooltip portal and the Scroll picker popups stay outside the transformed header.
+- Animation Off (`data-animation=false`) and OS reduced motion prevent the motion and clear an in-flight entrance immediately, and re-enabling never replays the current visit. `settings-motion.test.tsx`, `settings-entrance.test.tsx` and `settings-configuration-entrance.test.tsx` (API Providers, Instructions, Project defaults, Projects) cover this with synthetic fixtures; they grant no native or account acceptance.
 
 #### Conversation entrance motion
 

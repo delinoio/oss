@@ -236,6 +236,16 @@ func (s *Service) nativeReviewProjection(ctx context.Context, session, jobID dom
 	return value, err
 }
 
+// nativeReviewStaleProof recognizes the typed stale-cleanup proof for this
+// exact review action. A bare Conflict problem is not such a proof.
+func nativeReviewStaleProof(problem *domain.Error, raw []byte, input domain.NativeCodeReviewInput) ([]byte, bool) {
+	var stale domain.NativeCodeReviewStaleProof
+	if problem != nil || domain.Decode(raw, &stale) != nil || stale.Validate() != nil || stale.ActionID != input.ActionID {
+		return nil, false
+	}
+	return raw, true
+}
+
 func finishNativeCodeReview(tx *store.Tx, row store.Record, job domain.Job, revision uint64, raw []byte, problem *domain.Error) (any, error) {
 	if row.Revision != revision {
 		return nil, continuationConflict()
@@ -256,6 +266,17 @@ func finishNativeCodeReview(tx *store.Tx, row store.Record, job domain.Job, revi
 		job.Output = append(json.RawMessage(nil), raw...)
 		job.State = domain.JobFailed
 		job.Problem = domain.Fail(domain.Unsupported, "The original native review was rejected before sending.", "Its original no-send and cleanup proofs are verified; refresh the selected target or native profile before a new explicit review.")
+	} else if stale, isStale := nativeReviewStaleProof(problem, raw, input); isStale {
+		// The single original send completed and every owner joined, but the
+		// selected target drifted afterwards. The stale terminal state keeps the
+		// Conflict problem so findings are never current, and the retained proof
+		// is the verified cleanup evidence that may settle a pending Archive.
+		if !found || progress.State != domain.NativeReviewExited {
+			return nil, domain.NativeCodeReviewUnavailable()
+		}
+		job.Output = append(json.RawMessage(nil), stale...)
+		job.State = domain.JobFailed
+		job.Problem = domain.Fail(domain.Conflict, "The original review target changed.", "Keep the original findings as stale evidence; explicitly refresh the selected target before another review.")
 	} else if problem == nil {
 		var output domain.NativeCodeReviewResult
 		if !found || progress.State != domain.NativeReviewExited || domain.Decode(raw, &output) != nil || output.Validate() != nil || output.ActionID != input.ActionID || output.Selection != progress.Selection || output.ThreadID != progress.ThreadID || output.TurnID != progress.TurnID || output.EnteredItemID != progress.EnteredItemID || output.ExitedItemID != progress.ExitedItemID {

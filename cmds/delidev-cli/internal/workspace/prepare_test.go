@@ -24,10 +24,14 @@ func gitTest(t *testing.T, root string, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
-func repository(t *testing.T) string {
+func repository(t *testing.T) string { return repositoryWithObjectFormat(t, "sha1") }
+
+// repositoryWithObjectFormat creates a committed fixture in the given Git
+// object format ("sha1" or "sha256").
+func repositoryWithObjectFormat(t *testing.T, format string) string {
 	t.Helper()
 	root := t.TempDir()
-	gitTest(t, root, "init", "-b", "main")
+	gitTest(t, root, "init", "--object-format="+format, "-b", "main")
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("base\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
