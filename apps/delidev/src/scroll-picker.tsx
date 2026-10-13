@@ -13,6 +13,7 @@ import {
   ScrollContinuation,
   type ScrollContinuationQuery,
 } from "./scroll-continuation";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import "./scroll-picker.css";
 import {
   pickerOverlayGeometry,
@@ -170,6 +171,10 @@ export function ScrollPicker({
       });
       return true;
     };
+    // A top-layer picker never sits beneath an animated page. Settle the
+    // enclosing entrance first; the observer below measures again when the
+    // entrance attribute clears and the untransformed layout commits.
+    settleEnclosingEntrances(popup);
     if (!position()) return;
     popup.showPopover?.();
     position();
@@ -181,7 +186,7 @@ export function ScrollPicker({
     )
       lifetime.observe(owner, {
         attributes: true,
-        attributeFilter: ["open", "inert", "hidden", "disabled"],
+        attributeFilter: ["open", "inert", "hidden", "disabled", "data-entrance"],
       });
     const observer =
       typeof ResizeObserver === "undefined"

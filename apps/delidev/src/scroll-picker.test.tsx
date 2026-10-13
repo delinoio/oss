@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { useEntranceActivation } from "./entrance-motion";
 import { ScrollPicker } from "./scroll-picker";
 
 const query = () => ({
@@ -179,4 +180,27 @@ it("blocks queued selection when the original owner becomes inert before renderi
   view.container.querySelector("section")!.setAttribute("inert", "");
   fireEvent.click(option);
   expect(change).not.toHaveBeenCalled();
+});
+
+it("settles an enclosing page entrance before opening the picker popup", () => {
+  function Page() {
+    const entrance = useEntranceActivation("page:1");
+    return (
+      <section data-testid="page" {...entrance}>
+        <ScrollPicker
+          options={options}
+          label="Runner"
+          value="a"
+          change={vi.fn()}
+          query={query()}
+          active
+        />
+      </section>
+    );
+  }
+  render(<Page />);
+  expect(screen.getByTestId("page").getAttribute("data-entrance")).toBe("y4");
+  fireEvent.click(screen.getByRole("combobox", { name: "Runner" }));
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(screen.getByTestId("page").hasAttribute("data-entrance")).toBe(false);
 });
