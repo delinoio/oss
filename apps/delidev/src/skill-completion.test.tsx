@@ -27,6 +27,13 @@ import {
   useSkillCompletion,
   type SkillTokenBinding,
 } from "./skill-completion";
+import {
+  AppearanceProvider,
+  Theme,
+  type AppearanceBridge,
+  type AppearanceSnapshot,
+} from "./appearance";
+import { defaultPreferences } from "./appearance-preferences";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(),
@@ -2042,4 +2049,91 @@ it("bounds painted explicit spans and leaves duplicate, stale or ambiguous bindi
   );
   expect(invalid.container.querySelector(".skill-token-selected")).toBeNull();
   expect(f.read).not.toHaveBeenCalled();
+});
+it("realigns mirror typography when the composer appearance changes, including notifications from another window", async () => {
+  const style = document.createElement("style");
+  style.textContent = `
+    textarea { font-size: 12px; line-height: 18px; }
+    [data-composer-size="14"] textarea { font-size: 14px; line-height: 21px; }
+    [data-composer-size="18"] textarea { font-size: 18px; line-height: 27px; }
+  `;
+  document.head.append(style);
+  let snapshot: AppearanceSnapshot = {
+    revision: 1,
+    theme: Theme.Light,
+    problem: null,
+    preferences: defaultPreferences(),
+  };
+  const listeners = new Set<(value: unknown) => void>();
+  const bridge: AppearanceBridge = {
+    read: vi.fn(async () => snapshot),
+    update: vi.fn(async () => snapshot),
+    subscribe: vi.fn(async (changed) => {
+      listeners.add(changed);
+      return () => {
+        listeners.delete(changed);
+      };
+    }),
+  };
+  const publish = (next: AppearanceSnapshot) =>
+    act(() => {
+      snapshot = next;
+      listeners.forEach((changed) => changed(next));
+    });
+  try {
+    const f = fixture();
+    const view = render(
+      <AppearanceProvider bridge={bridge}>{f.view()}</AppearanceProvider>,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, {
+      target: { value: "keep $draft", selectionStart: 11 },
+    });
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".skill-token-unavailable"),
+      ).toHaveLength(1),
+    );
+    await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(document.documentElement.dataset.composerSize).toBe("0"),
+    );
+    input.setSelectionRange(2, 8);
+    const mirror = () =>
+      view.container.querySelector<HTMLElement>(".skill-text-overlay > div")!;
+    expect(mirror().style.fontSize).toBe("12px");
+    expect(mirror().style.lineHeight).toBe("18px");
+    const spy = vi.spyOn(window, "getComputedStyle");
+    // Another window changes only the composer size.
+    publish({
+      ...snapshot,
+      revision: 2,
+      preferences: { ...defaultPreferences(), composer_size: 14 },
+    });
+    await waitFor(() => expect(mirror().style.fontSize).toBe("14px"));
+    expect(mirror().style.lineHeight).toBe("21px");
+    expect(screen.getByRole("textbox")).toBe(input);
+    expect(input.value).toBe("keep $draft");
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 8]);
+    // A change that leaves the composer typography unchanged does not realign.
+    spy.mockClear();
+    publish({ ...snapshot, revision: 3, theme: Theme.Dark });
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe(Theme.Dark),
+    );
+    expect(spy).not.toHaveBeenCalled();
+    publish({
+      ...snapshot,
+      revision: 4,
+      preferences: { ...defaultPreferences(), composer_size: 18 },
+    });
+    await waitFor(() => expect(mirror().style.fontSize).toBe("18px"));
+    expect(mirror().style.lineHeight).toBe("27px");
+    expect(input.value).toBe("keep $draft");
+    spy.mockRestore();
+  } finally {
+    style.remove();
+    delete document.documentElement.dataset.composerSize;
+    delete document.documentElement.dataset.theme;
+  }
 });

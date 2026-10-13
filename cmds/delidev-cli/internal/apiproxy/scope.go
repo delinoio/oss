@@ -167,8 +167,13 @@ type Lease struct {
 	Release            func()
 	AuthorizeReference func(context.Context, ReferenceKind, string) error
 	ObserveReference   func(context.Context, ReferenceKind, string) error
-	BeforeSubmit       func(context.Context, Operation) error
-	PublishDiagnostic  func(context.Context, domain.RequestDiagnostic) error
+	// AuthorizeItemReference, when set, is called for each Responses
+	// `item_reference` input item and may reject the request. A nil callback
+	// keeps the ordinary behavior, which only classifies the request as
+	// account-bound history.
+	AuthorizeItemReference func(context.Context) error
+	BeforeSubmit           func(context.Context, Operation) error
+	PublishDiagnostic      func(context.Context, domain.RequestDiagnostic) error
 	// ObserveResponseUsage receives only a completed original HTTP response
 	// after reflection guards. It is enabled exclusively for manual Codex
 	// actions whose resumed native profile has no raw-response notifications.

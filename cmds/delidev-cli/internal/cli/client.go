@@ -160,7 +160,9 @@ func connectClient(o options, input io.Reader) (client, error) {
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),
 		installation:  delidevv1connect.NewInstallationServiceClient(httpClient, endpoint, opts...),
 		system:        delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...),
-		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...),
+		// Snapshots may carry typed large Job documents, so only this service
+		// accepts the larger response ceiling.
+		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, connect.WithReadMaxBytes(domain.MaxLargeJobSnapshotBytes), connect.WithSendMaxBytes(2<<20)),
 		search:        delidevv1connect.NewSearchServiceClient(httpClient, endpoint, opts...),
 		usage:         delidevv1connect.NewUsageServiceClient(httpClient, endpoint, opts...),
 		configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...),

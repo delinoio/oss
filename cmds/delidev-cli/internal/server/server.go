@@ -117,6 +117,11 @@ type Service struct {
 	// Set only by isolated tests: runs after the account deletion replay check
 	// misses and before failed-subscription cleanup is admitted or observed.
 	afterAccountDeleteReplay func(context.Context)
+	// Test hooks bounding the failed-login deletion completion race: one after a
+	// deletion releases the account gate and before its cleanup run, one before
+	// the per-account runner acquires the gate.
+	afterFailedSubscriptionDeleteObserve func(context.Context)
+	beforeFailedCleanupAccountGate       func(context.Context, domain.ID)
 	// Set before stream admission in isolated tests; production uses 100 ms.
 	terminalWatchInterval         time.Duration
 	terminalOutputs               map[domain.ID]*terminalOutputRing

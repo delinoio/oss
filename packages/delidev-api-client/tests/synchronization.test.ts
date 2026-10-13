@@ -510,3 +510,84 @@ it.each([false, true])(
     ).toBe(overflow);
   },
 );
+
+const largeJobDocument = (type: string, input: object, bytes: number) => {
+  const prefix = JSON.stringify({ type, input });
+  // Trailing whitespace keeps the document valid JSON at the exact byte size.
+  return new TextEncoder().encode(prefix + " ".repeat(bytes - prefix.length));
+};
+
+it.each([
+  ["compact-session", {}],
+  ["workspace-storage", { action: "recover" }],
+])(
+  "accepts the 8 MiB typed %s snapshot with the desktop document budget",
+  async (type, input) => {
+    const job = (bytes: number) => ({
+      ...resource(),
+      kind: EntityKind.JOB,
+      id: newRequestId(),
+      documentJson: largeJobDocument(type, input, bytes),
+    });
+    // 3.5 MiB and exactly 4 MiB documents exceed the former 4 MiB aggregate
+    // default together but fit the 8 MiB budget that session.tsx passes.
+    const jobs = [job(3.5 * (1 << 20)), job(4 << 20)];
+    const abort = new AbortController();
+    const client = createClient(
+      ResourceService,
+      createRouterTransport((router) =>
+        router.service(ResourceService, {
+          getSnapshot: () => ({ resources: jobs, cursor: "typed-large-jobs" }),
+          async *watchEvents() {
+            abort.abort();
+          },
+        }),
+      ),
+    );
+    const updates: SyncUpdate[] = [];
+    for await (const update of synchronizeResources(
+      client,
+      { kind: EntityKind.JOB },
+      { signal: abort.signal, maxDocumentBytes: 8 << 20 },
+    ))
+      updates.push(update);
+    const snapshots = updates.filter((u) => u.kind === SyncKind.Snapshot);
+    expect(snapshots).toHaveLength(1);
+    // Compare identities and sizes; deep-equating multi-MiB buffers is slow.
+    expect(
+      snapshots[0].resources.map((r) => [r.id, r.documentJson.byteLength]),
+    ).toEqual(jobs.map((j) => [j.id, j.documentJson.byteLength]));
+  },
+  30000,
+);
+
+it.each([
+  ["compact-session", {}],
+  ["workspace-storage", { action: "recover" }],
+])("rejects a %s Job document one byte above 4 MiB", async (type, input) => {
+  const job = {
+    ...resource(),
+    kind: EntityKind.JOB,
+    documentJson: largeJobDocument(type, input, (4 << 20) + 1),
+  };
+  const abort = new AbortController();
+  const client = createClient(
+    ResourceService,
+    createRouterTransport((router) =>
+      router.service(ResourceService, {
+        getSnapshot: () => ({ resources: [job], cursor: "oversize-job" }),
+        async *watchEvents() {
+          abort.abort();
+        },
+      }),
+    ),
+  );
+  const updates: SyncUpdate[] = [];
+  for await (const update of synchronizeResources(
+    client,
+    { kind: EntityKind.JOB },
+    { signal: abort.signal, maxDocumentBytes: 8 << 20 },
+  ))
+    updates.push(update);
+  expect(updates.some((u) => u.kind === SyncKind.Snapshot)).toBe(false);
+});

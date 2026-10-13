@@ -22,6 +22,7 @@ import {
   type GitHubQuery,
 } from "./github-query-model";
 import { LocalizedText, copy, useLocale } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import "./pr-list-cards.css";
 
 function PRRefreshButton({
@@ -61,6 +62,8 @@ function PRRefreshButton({
     };
   }, [visible]);
   const reveal = (button: HTMLButtonElement) => {
+    // Measure the untransformed button, not one inside an in-flight page entrance.
+    settleEnclosingEntrances(button);
     const rect = button.getBoundingClientRect(),
       zoom = Number(getComputedStyle(document.body).zoom) || 1;
     const width = window.innerWidth / zoom;

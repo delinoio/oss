@@ -40,7 +40,7 @@ func runFailedCleanup(t *testing.T, f *subscriptionFixture, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.service.runFailedSubscriptionCleanup(failedLoginContext(), r); err != nil {
+	if _, err := f.service.runFailedSubscriptionCleanup(failedLoginContext(), r); err != nil {
 		t.Fatal(err)
 	}
 }

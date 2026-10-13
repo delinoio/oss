@@ -500,6 +500,88 @@ it("gates initial reads and polling on advertised terminal support", async () =>
   }
 });
 
+it.each([
+  { pending: undefined, dispatched: true },
+  { pending: {}, dispatched: false },
+])(
+  "dispatches input for a running terminal only without present pending metadata (%j)",
+  async ({ pending, dispatched }) => {
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 7n,
+      documentJson: encode({ archive: "active" }),
+    });
+    const terminal = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.TERMINAL,
+      sessionId: session.id,
+      schemaVersion: 1,
+      revision: 4n,
+      documentJson: encode({ state: "running", pending }),
+    });
+    const controlTerminal = vi.fn(async () => ({ terminal }));
+    let releaseStream = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseStream = resolve;
+    });
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [terminal] }),
+      });
+      router.service(TerminalService, {
+        controlTerminal,
+        watchTerminalOutput: async function* () {
+          yield {
+            epoch: newRequestId(),
+            sequence: 0n,
+            heartbeat: true,
+            terminal,
+          };
+          await held;
+        },
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <SessionTerminals session={session} close={() => {}} />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+      const input = (await screen.findByRole("textbox", {
+        name: "Terminal input",
+      })) as HTMLTextAreaElement;
+      await waitFor(() => expect(document.activeElement).toBe(input));
+      fireEvent.change(input, { target: { value: "fixture line" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      if (dispatched)
+        await waitFor(() => expect(controlTerminal).toHaveBeenCalled());
+      else {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(controlTerminal).not.toHaveBeenCalled();
+      }
+    } finally {
+      view.unmount();
+      releaseStream();
+      client.clear();
+    }
+  },
+);
+
 it("keeps terminal input enabled while one control is pending and never steals focus on acknowledgment", async () => {
   const session = create(ResourceSchema, {
     id: newRequestId(),
@@ -885,7 +967,7 @@ it("keeps every existing terminal picker keyboard reachable in the single-pane w
   client.clear();
 });
 
-it.each(["empty", "later-page", "uncertain", "read-error"])(
+it.each(["empty", "later-page", "uncertain", "read-error", "empty-pending"])(
   "resolves explicit opening once under Strict Mode (%s)",
   async (scenario) => {
     const session = create(ResourceSchema, {
@@ -895,14 +977,14 @@ it.each(["empty", "later-page", "uncertain", "read-error"])(
       revision: 7n,
       documentJson: encode({ archive: "active" }),
     });
-    const row = (state: string, cleanup = false) =>
+    const row = (state: string, cleanup = false, pending?: object) =>
       create(ResourceSchema, {
         id: newRequestId(),
         sessionId: session.id,
         kind: EntityKind.TERMINAL,
         schemaVersion: 1,
         revision: 2n,
-        documentJson: encode({ state, cleanup_verified: cleanup }),
+        documentJson: encode({ state, cleanup_verified: cleanup, pending }),
       });
     const terminal = row("running"),
       history = Array.from({ length: 50 }, () => row("closed", true));
@@ -925,7 +1007,14 @@ it.each(["empty", "later-page", "uncertain", "read-error"])(
               ? { resources: [terminal] }
               : { resources: history, nextPageToken: "next" };
           return {
-            resources: scenario === "uncertain" ? [row("uncertain")] : [],
+            resources:
+              scenario === "uncertain"
+                ? [row("uncertain")]
+                : scenario === "empty-pending"
+                  ? // Verified closed, but present-yet-empty pending metadata is
+                    // unsettled original-operation evidence.
+                    [row("closed", true, {})]
+                  : [],
           };
         },
       });

@@ -4831,3 +4831,53 @@ it("reveals a hidden invalid Project branch prefix through complete-document Sav
   await waitFor(() => expect(document.activeElement).toBe(prefix));
   expect(f.save).not.toHaveBeenCalled();
 });
+
+// Issue 3183: Agent Workers category and owned task windows play one Y4
+// entrance each, and a task's step heading is not animated by its opening.
+it("plays one entrance for the Agent Workers category and for each owned task window", async () => {
+  const entranceSettled = (node: Element) => {
+    const event = new Event("animationend", { bubbles: true });
+    Object.defineProperty(event, "animationName", { value: "entrance-y4" });
+    act(() => {
+      node.dispatchEvent(event);
+    });
+  };
+  const agent = resource(EntityKind.AGENT, { name: "Entrance Agent" });
+  const value = fixture([agent]);
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  const column = document.querySelector<HTMLElement>(
+    ".settings-content-column > div",
+  )!;
+  expect(column.getAttribute("data-entrance")).toBe("y4");
+  await screen.findByRole("heading", { name: "Entrance Agent" });
+  // Reads and list updates never replay the category entrance.
+  entranceSettled(column);
+  await act(async () => {
+    await value.client.invalidateQueries();
+  });
+  expect(column.getAttribute("data-entrance")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Preview routing for Entrance Agent" }),
+  );
+  let header = document.querySelector<HTMLElement>(".settings-task-header")!;
+  expect(header.getAttribute("data-entrance")).toBe("y4");
+  expect(
+    document
+      .querySelector("dialog.settings-task-dialog")!
+      .hasAttribute("data-entrance"),
+  ).toBe(false);
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Edit Entrance Agent" }));
+  header = document.querySelector<HTMLElement>(".settings-task-header")!;
+  expect(header.getAttribute("data-entrance")).toBe("y4");
+  // Opening the wizard task does not animate the step heading.
+  const step = await screen.findByRole("heading", {
+    name: "Harness",
+    level: 3,
+  });
+  expect(step.getAttribute("data-entrance")).toBeNull();
+  expect(column.getAttribute("data-entrance")).toBeNull();
+});

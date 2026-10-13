@@ -110,9 +110,7 @@ func (a *executionStartupAttempt) report(ctx context.Context, name string, o dom
 	if err := security.PrivateDir(directory); err != nil {
 		return publicationUncertain()
 	}
-	if err := writeJSON(filepath.Join(directory, "startup-"+name+".json"), struct {
-		Request []byte `json:"request"`
-	}{raw}); err != nil {
+	if err := writeJSON(startupReportPath(a.config.Root, a.job, name), startupReportJournal{Request: raw}); err != nil {
 		return publicationUncertain()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -123,6 +121,11 @@ func (a *executionStartupAttempt) report(ctx context.Context, name string, o dom
 	}
 	if response == nil || response.Msg == nil || !proto.Equal(response.Msg.Observation, request.Observation) {
 		return publicationUncertain()
+	}
+	// Persist acceptance apart from the exact request. A missing acknowledgement
+	// only repeats an idempotent receipt replay; it never authorizes input.
+	if err := security.WriteAtomic(startupReportAckPath(a.config.Root, a.job, name), startupReportDigest(raw)); err != nil && a.config.Logger != nil {
+		a.config.Logger.Warn("execution_startup_report_ack_not_persisted", "job_id", a.job, "name", name, "code", domain.SafeError(err).Code)
 	}
 	return nil
 }

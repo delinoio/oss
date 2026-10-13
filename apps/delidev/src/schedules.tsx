@@ -33,6 +33,11 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   EntityKind,
@@ -1225,6 +1230,21 @@ export function Schedules({
     [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
   const [projectId, setProjectId] = useState("");
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
+  // One page-root entrance serves every explicit entry, so only one 4px
+  // transform is ever active. Destination activation, New schedule, selecting a
+  // schedule and opening an original notification occurrence each advance the
+  // key; recurrence edits, occurrence and job updates, saves, close, refetch and
+  // polling do not. Nothing waits for the motion and Run is never triggered by it.
+  const [entries, setEntries] = useState({ count: 0, generation: "" });
+  const occurrenceGeneration = notificationOccurrence?.generation ?? "";
+  if (occurrenceGeneration && occurrenceGeneration !== entries.generation)
+    setEntries({ count: entries.count + 1, generation: occurrenceGeneration });
+  const destinationActivations = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `schedules:${destinationActivations}:${entries.count}`,
+    active,
+    EntranceMotion.Y4,
+  );
   const closeDrawer = useCloseSidebarDrawer();
   const reviewingNotification = Boolean(notificationOccurrence);
   // The notification occurrence destination is exclusive, so the sidebar
@@ -1306,11 +1326,14 @@ export function Schedules({
   }, [reviewingNotification]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
+    if (row.id !== selected?.id)
+      setEntries((current) => ({ ...current, count: current.count + 1 }));
     setSelected(row);
     closeDrawer();
   };
   const newSchedule = () => {
     if (locked) return;
+    setEntries((current) => ({ ...current, count: current.count + 1 }));
     setSelected(undefined);
     setEditing({ key: newRequestId() });
     closeDrawer();
@@ -1452,7 +1475,7 @@ export function Schedules({
           />
         </div>
       </SidebarSurface>
-      <div hidden={!active} className="page schedule-page">
+      <div hidden={!active} className="page schedule-page" {...pageEntrance}>
         {notificationOccurrence ? (
           <section
             key={notificationOccurrence.generation}

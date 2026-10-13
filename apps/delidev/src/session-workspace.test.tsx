@@ -43,6 +43,7 @@ import {
 } from "./session-tabs";
 import { SessionView } from "./session";
 import { ShortcutProvider } from "./shortcut-provider";
+import { sourceModelKey } from "./source-model-key-fixture";
 import {
   ShortcutPreferenceProvider,
   type ShortcutPreferenceBridge,
@@ -545,9 +546,20 @@ it("orders principal Info summaries and keeps technical snapshots out of healthy
       id: newRequestId(),
       configuration: {
         agent_id: newRequestId(),
+        agent_revision: 1,
+        model_key: sourceModelKey({
+          subscription_service: "chatgpt",
+          native_id: "saved-model",
+        }),
+        subscription_service: "chatgpt",
+        model_revision: 1,
         native_model: "saved-model",
         effort: "high",
         harness: "codex",
+        options: {},
+        accounts: [],
+        routing: "priority",
+        templates: [],
         instructions: "Original applied instructions",
       },
     },

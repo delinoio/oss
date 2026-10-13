@@ -728,3 +728,25 @@ it("shows the read-only Open Files default and explains custom primary+E priorit
   );
   expect(f.state().overrides).toEqual({});
 });
+
+it("shows Open Files and Open tool as pending in the read-only catalog until the initial read settles", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  let resolve: (value: unknown) => void = () => {};
+  f.bridge.read = vi.fn(() => new Promise((done) => (resolve = done)));
+  render(<Owner bridge={f.bridge} />);
+  await screen.findByRole("region", { name: "Shortcut catalog" });
+  for (const label of ["Open Files", "Open tool"]) {
+    const entry = screen.getByText(label).closest("div")!;
+    expect(within(entry).getByText("Disabled")).toBeTruthy();
+    expect(within(entry).getByText(/finish loading/)).toBeTruthy();
+    expect(within(entry).queryByText(/Ctrl \+ [ET]/)).toBeNull();
+  }
+  await act(async () => resolve({ revision: 1, overrides: {}, problem: null }));
+  const files = screen.getByText("Open Files").closest("div")!;
+  expect(within(files).getByText("Ctrl + E")).toBeTruthy();
+  expect(within(files).queryByText(/finish loading/)).toBeNull();
+  expect(
+    within(screen.getByText("Open tool").closest("div")!).getByText("Ctrl + T"),
+  ).toBeTruthy();
+});
