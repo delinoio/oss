@@ -48,7 +48,8 @@ operation ID, revision, native generation and optional saved-connection ID. The
 directory is owner-only and never repaired or created outside an existing
 `desktop-updates` scope, which is validated (a real directory without symlink
 ancestors) before the store directory is created; files are written owner-only through a fsynced
-temporary file and atomic rename, bounded to 4 KiB, and an existing record for
+temporary file and published with a no-replace hard link (a destination created
+after the preceding read is reread and accepted only when identical), bounded to 4 KiB, and an existing record for
 the same operation is never replaced with different content. The record is
 retired only after the offline `native-outcome` response echoes the recorded
 phase for the same identities, and only when the stored bytes still equal the

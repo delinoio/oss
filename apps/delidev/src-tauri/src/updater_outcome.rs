@@ -214,7 +214,16 @@ impl OutcomeStore {
             Some(_) => return Err(NativeFailure::InvalidEvidence),
             None => {}
         }
+        self.publish(record)
+    }
+
+    /// Publishes a fully written, fsynced temporary file under the final name
+    /// with a no-replace primitive. A hard link fails atomically when the
+    /// destination exists, so a record created after the preceding read is
+    /// never overwritten; it is reread and accepted only when identical.
+    fn publish(&self, record: &OutcomeRecord) -> Result<()> {
         let bytes = serde_json::to_vec(record).map_err(|_| NativeFailure::InvalidEvidence)?;
+        let destination = self.path(&record.operation_id);
         let temporary = self.dir.join(format!(
             ".{}.{}.tmp",
             record.operation_id,
@@ -232,16 +241,25 @@ impl OutcomeStore {
             file.write_all(&bytes)?;
             file.sync_all()?;
             drop(file);
-            fs::rename(&temporary, self.path(&record.operation_id))?;
-            #[cfg(unix)]
-            File::open(&self.dir)?.sync_all()?;
-            Ok(())
+            fs::hard_link(&temporary, &destination)
         })();
-        if written.is_err() {
-            let _ = fs::remove_file(&temporary);
-            return Err(NativeFailure::StorageUnavailable);
+        let _ = fs::remove_file(&temporary);
+        match written {
+            Ok(()) => {
+                #[cfg(unix)]
+                File::open(&self.dir)
+                    .and_then(|d| d.sync_all())
+                    .map_err(|_| NativeFailure::StorageUnavailable)?;
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                match self.read(&record.operation_id)? {
+                    Some(existing) if existing == *record => Ok(()),
+                    _ => Err(NativeFailure::InvalidEvidence),
+                }
+            }
+            Err(_) => Err(NativeFailure::StorageUnavailable),
         }
-        Ok(())
     }
 
     /// Loads the one entry keyed by `operation_id` without enumerating the
@@ -380,6 +398,40 @@ mod tests {
             Err(NativeFailure::InvalidEvidence)
         ));
         assert_eq!(store.scan().unwrap(), vec![StoredEntry::Record(first)]);
+    }
+
+    #[test]
+    fn publication_never_replaces_a_record_created_after_the_read() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        let first = record(Phase::Installed);
+        store.persist(&first).unwrap();
+        store.persist(&record(Phase::Failed)).unwrap();
+        let path = root
+            .join(STORE_DIRECTORY)
+            .join(format!("{}.json", first.operation_id));
+        let before = fs::read(&path).unwrap();
+        // Skipping the preceding read models a writer that won the race.
+        let mut conflicting = first.clone();
+        conflicting.phase = Phase::Failed;
+        assert!(matches!(
+            store.publish(&conflicting),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        store.publish(&first).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let leftovers = fs::read_dir(root.join(STORE_DIRECTORY))
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with('.')
+            })
+            .count();
+        assert_eq!(leftovers, 0, "temporary files are always removed");
     }
 
     #[test]
