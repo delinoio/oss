@@ -1743,6 +1743,15 @@ export function SessionView({
         readDocument(row).closure === "open"
       );
     }) || requestsOpen;
+  // A read failure stays sticky until the read settles with neither a pending
+  // nor an in-flight read and no error. An explicit Retry or Reload clears the
+  // error as soon as it starts, so the retained empty snapshot must not look
+  // like a healthy empty tray while recovery is still pending (including a
+  // stalled read). A healthy background Refresh never sets this flag.
+  const requestsFailed = useRef(false);
+  if (interactions.error) requestsFailed.current = true;
+  else if (!interactions.isPending && !interactions.loading)
+    requestsFailed.current = false;
   const confirmedEmptyRequests = completeEmptyInteractionTray({
     loaded: Boolean(interactions.data),
     loading: Boolean(
@@ -1751,6 +1760,7 @@ export function SessionView({
       interactions.loading !== ReadStage.Reload,
     ),
     failed:
+      requestsFailed.current ||
       Boolean(interactions.error || live.error) ||
       live.state !== ConnectionState.Live,
     continuation: Boolean(interactions.nextPageToken),
