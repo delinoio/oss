@@ -160,6 +160,8 @@ function editorFixture() {
   return bridge;
 }
 const dialog = () => document.querySelector<HTMLDialogElement>("dialog")!;
+// The entrance lives on the inner block, never on the native modal host.
+const editorSurface = () => dialog().firstElementChild as HTMLElement;
 
 it("animates the custom theme editor once per explicit opening and keeps its draft", async () => {
   render(view(<Settings />, editorFixture()));
@@ -169,12 +171,18 @@ it("animates the custom theme editor once per explicit opening and keeps its dra
     name: /Edit custom theme/,
   });
   fireEvent.click(edit);
-  const editor = dialog();
+  const host = dialog();
+  const editor = editorSurface();
   expect(editor.getAttribute("data-entrance")).toBe("y4");
+  // The native modal host and its geometry stay unanimated.
+  expect(host.hasAttribute("data-entrance")).toBe(false);
+  expect(editor.parentElement).toBe(host);
+  expect(editor.querySelector("h2")).not.toBeNull();
   const name = screen.getByRole("textbox", { name: "Theme name" });
   // Focus is never held for the animation, and edits never replay it.
   fireEvent.change(name, { target: { value: "Edited while entering" } });
-  expect(dialog()).toBe(editor);
+  expect(dialog()).toBe(host);
+  expect(editorSurface()).toBe(editor);
   expect(editor.getAttribute("data-entrance")).toBe("y4");
   dispatch(editor);
   expect(editor.getAttribute("data-entrance")).toBeNull();
@@ -187,7 +195,7 @@ it("animates the custom theme editor once per explicit opening and keeps its dra
   fireEvent.click(
     await screen.findByRole("button", { name: /Edit custom theme/ }),
   );
-  expect(dialog().getAttribute("data-entrance")).toBe("y4");
+  expect(editorSurface().getAttribute("data-entrance")).toBe("y4");
 });
 
 it("settles the custom theme editor when Animation turns Off mid-flight", async () => {
@@ -197,7 +205,8 @@ it("settles the custom theme editor when Animation turns Off mid-flight", async 
   fireEvent.click(
     await screen.findByRole("button", { name: /Edit custom theme/ }),
   );
-  const editor = dialog();
+  const host = dialog();
+  const editor = editorSurface();
   const name = screen.getByRole("textbox", { name: "Theme name" });
   expect(editor.getAttribute("data-entrance")).toBe("y4");
   await act(async () => {
@@ -210,6 +219,7 @@ it("settles the custom theme editor when Animation turns Off mid-flight", async 
     await Promise.resolve();
   });
   expect(editor.getAttribute("data-entrance")).toBeNull();
-  expect(dialog()).toBe(editor);
+  expect(dialog()).toBe(host);
+  expect(editorSurface()).toBe(editor);
   expect(screen.getByRole("textbox", { name: "Theme name" })).toBe(name);
 });

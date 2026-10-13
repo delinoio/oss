@@ -4,7 +4,6 @@ import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
 import type { EntranceProps } from "./entrance-motion";
 import {
-  useCallback,
   useLayoutEffect,
   useId,
   useRef,
@@ -156,18 +155,6 @@ export function Modal({
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const attachEntrance = entrance?.ref;
-  const surface = useCallback(
-    (node: HTMLDialogElement | null) => {
-      ref.current = node;
-      const detach = attachEntrance?.(node);
-      return () => {
-        ref.current = null;
-        detach?.();
-      };
-    },
-    [attachEntrance],
-  );
   useLayoutEffect(() => {
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
@@ -179,10 +166,26 @@ export function Modal({
       if (opener?.isConnected) opener.focus();
     };
   }, [visible, initialFocus, focusClose]);
+  const content = (
+    <>
+      <header>
+        <h2 id={id}>{title}</h2>
+        <SettingsActionButton
+          icon={SettingsActionIcon.Cancel}
+          ref={closeButton}
+          type="button"
+          onClick={close}
+          aria-label={copy("ui.close_0fbe2a", { v0: title })}
+        >
+          {copy("ui.close_7d9eb7")}
+        </SettingsActionButton>
+      </header>
+      {children}
+    </>
+  );
   return (
     <DialogSurface
-      ref={surface}
-      data-entrance={entrance?.["data-entrance"]}
+      ref={ref}
       className={className}
       aria-labelledby={id}
       onCancel={(event) => {
@@ -217,19 +220,14 @@ export function Modal({
         }
       }}
     >
-      <header>
-        <h2 id={id}>{title}</h2>
-        <SettingsActionButton
-          icon={SettingsActionIcon.Cancel}
-          ref={closeButton}
-          type="button"
-          onClick={close}
-          aria-label={copy("ui.close_0fbe2a", { v0: title })}
-        >
-          {copy("ui.close_7d9eb7")}
-        </SettingsActionButton>
-      </header>
-      {children}
+      {entrance ? (
+        // The native modal host stays untouched; only this inner block moves.
+        <div ref={entrance.ref} data-entrance={entrance["data-entrance"]}>
+          {content}
+        </div>
+      ) : (
+        content
+      )}
     </DialogSurface>
   );
 }
