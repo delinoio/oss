@@ -31,11 +31,21 @@ type credentialBody struct {
 }
 
 func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType ...string) *credentialBody {
+	return newExpectedCredentialBody(body, c, false, contentType...)
+}
+
+// A caller that asked for JSON will parse the body as JSON whatever media type
+// the proxy or server labels it with. expectJSON keeps JSON escape decoding for
+// such a body when the response label would otherwise make it opaque.
+func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, expectJSON bool, contentType ...string) *credentialBody {
 	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
 	if len(contentType) > 0 {
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
 		if err == nil && mediaType != "" {
 			g.jsonGuard.framing = credentialFramingForMediaType(mediaType)
+			if g.jsonGuard.framing == credentialOpaque && expectJSON {
+				g.jsonGuard.framing = credentialOrdinary
+			}
 		}
 	}
 	for _, value := range []string{c.Username, c.Password, c.Username + ":" + c.Password} {
@@ -97,6 +107,21 @@ func credentialFramingForMediaType(mediaType string) credentialFraming {
 	default:
 		return credentialOpaque
 	}
+}
+
+// Report whether the request's Accept header asks for a JSON media type.
+// Wildcards do not count: only an explicit JSON request makes the caller's
+// parser JSON-based.
+func credentialRequestExpectsJSON(accept []string) bool {
+	for _, header := range accept {
+		for _, part := range strings.Split(header, ",") {
+			mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(part))
+			if err == nil && credentialJSONMediaType(strings.ToLower(mediaType)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func credentialJSONMediaType(mediaType string) bool {

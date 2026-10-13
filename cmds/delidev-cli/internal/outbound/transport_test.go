@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -299,5 +300,58 @@ func TestNetworkProxyTrailersStayPrivateAfterEOF(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNetworkProxyJSONRequestsDecodeEscapesDespiteOpaqueResponseLabel(t *testing.T) {
+	escaped := func(value string) string {
+		var out strings.Builder
+		for _, r := range value {
+			out.WriteString(fmt.Sprintf(`\u%04x`, r))
+		}
+		return out.String()
+	}
+	wire := `{"data":[{"id":"` + escaped(outboundtest.Password) + `"}]}`
+	for _, tc := range []struct {
+		name, accept, contentType string
+		rejected                  bool
+	}{
+		{"json request with sniffed text", "application/json", "", true},
+		{"json request with labeled text", "application/json", "text/plain", true},
+		{"vendor json request with labeled text", "application/vnd.github+json, text/plain;q=0.5", "text/plain", true},
+		{"diff request with labeled text", "application/vnd.github.diff", "text/plain", false},
+		{"wildcard request with labeled text", "*/*", "text/plain", false},
+		{"request without accept", "", "text/plain", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.contentType != "" {
+					w.Header().Set("Content-Type", tc.contentType)
+				}
+				io.WriteString(w, wire)
+			}))
+			defer origin.Close()
+			fixture := outboundtest.Connect(t, outboundtest.Address(origin.URL), false)
+			client := &http.Client{Transport: &outbound.Transport{Base: &http.Transport{DialContext: outbound.DirectDial}, Resolve: fixture.Resolve}}
+			request, err := http.NewRequest(http.MethodGet, "http://provider.invalid/data", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.accept != "" {
+				request.Header.Set("Accept", tc.accept)
+			}
+			response, err := client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			raw, err := io.ReadAll(response.Body)
+			if tc.rejected && (err == nil || strings.Contains(string(raw), "data")) {
+				t.Fatal("escaped reflection reached a JSON-expecting caller", err)
+			}
+			if !tc.rejected && (err != nil || string(raw) != wire) {
+				t.Fatal("opaque response body changed", err)
+			}
+		})
 	}
 }
