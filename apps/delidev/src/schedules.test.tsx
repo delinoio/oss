@@ -319,6 +319,37 @@ it("keeps the editing draft hidden and inert during notification review and rest
   expect(value.save).not.toHaveBeenCalled();
 });
 
+it("restores focus to the retained workspace control after notification review", async () => {
+  const value = fixture(),
+    clear = vi.fn();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  prompt.focus();
+  expect(globalThis.document.activeElement).toBe(prompt);
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={clear}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  // Browsers drop focus from a hidden inert subtree; the keyboard user then
+  // activates Back, which unmounts together with the review.
+  prompt.blur();
+  const back = screen.getByRole("button", { name: "Back to schedules" });
+  back.focus();
+  expect(globalThis.document.activeElement).toBe(back);
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  expect(globalThis.document.activeElement).toBe(prompt);
+});
+
 it("hides selected schedule details without writes during notification review and restores the same instance", async () => {
   const value = fixture();
   const rendered = render(value.view(<Schedules active open={() => {}} />));

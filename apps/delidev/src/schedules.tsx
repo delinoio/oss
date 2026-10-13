@@ -26,7 +26,13 @@ import {
   copy,
   useLocale,
 } from "./localization";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   EntityKind,
@@ -1208,6 +1214,31 @@ export function Schedules({
   // interactions and list reads stop together with the hidden workspace.
   const locked = protectedWorkflow || Boolean(editing) || reviewingNotification;
   const workspaceActive = active && !reviewingNotification;
+  // Hiding the inert workspace blurs its focused control and the review's Back
+  // button unmounts on return, so remember the control and restore it then.
+  const workspace = useRef<HTMLDivElement>(null);
+  const wasReviewing = useRef(false);
+  const focusBeforeReview = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (reviewingNotification === wasReviewing.current) return;
+    wasReviewing.current = reviewingNotification;
+    if (reviewingNotification) {
+      const focused = globalThis.document.activeElement;
+      focusBeforeReview.current =
+        focused instanceof HTMLElement && workspace.current?.contains(focused)
+          ? focused
+          : null;
+      return;
+    }
+    const target = focusBeforeReview.current;
+    focusBeforeReview.current = null;
+    const current = globalThis.document.activeElement;
+    if (
+      target?.isConnected &&
+      (!current || current === globalThis.document.body || !current.isConnected)
+    )
+      target.focus({ preventScroll: true });
+  }, [reviewingNotification]);
   const request = useCallback(
     (token: string) => ({
       projectId,
@@ -1414,6 +1445,7 @@ export function Schedules({
             workspace stays mounted (draft, focus and request identity) but is
             hidden, inert and inactive until the user explicitly returns. */}
         <div
+          ref={workspace}
           hidden={Boolean(notificationOccurrence)}
           inert={Boolean(notificationOccurrence)}
           className="schedule-workspace"
