@@ -49,20 +49,37 @@ type ServerOptions struct {
 }
 
 // CaptureServerOptions resolves new relative TLS references in the original
-// installing/server process, never later in a native user manager's cwd. It
-// preserves references only; it neither reads nor copies credential bytes.
+// installing/server process, never later in a native user manager's cwd. The
+// original cwd is resolved to its physical path once, so retargeting a symlink
+// spelling (for example PWD) cannot change the stored references. Absolute
+// references are preserved unchanged. It preserves references only; it neither
+// reads nor copies credential bytes.
 func CaptureServerOptions(options ServerOptions) (ServerOptions, error) {
+	var physicalCwd string
 	for _, path := range []*string{&options.TLSCertificate, &options.TLSKey} {
 		if *path == "" || filepath.IsAbs(*path) {
 			continue
 		}
-		absolute, err := filepath.Abs(*path)
-		if err != nil {
-			return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
+		if physicalCwd == "" {
+			resolved, err := physicalWorkingDirectory()
+			if err != nil {
+				return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
+			}
+			physicalCwd = resolved
 		}
-		*path = absolute
+		*path = filepath.Join(physicalCwd, *path)
 	}
 	return options, nil
+}
+
+// physicalWorkingDirectory returns the current directory with every symlink
+// resolved. os.Getwd may return a symlink spelling taken from PWD.
+func physicalWorkingDirectory() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(cwd)
 }
 
 func (options ServerOptions) requireAbsoluteTLS() error {

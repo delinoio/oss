@@ -173,7 +173,7 @@ Record implementation status and validation results in pull requests, issues and
 
 - Protected `AccountLogin` read failures omit private subscription generation/reference IDs from vault logs, including Doctor reads through an existing vault. Preserve safe operation/owner/purpose/error classification and independent API original-reference diagnostics; do not change exact reads or native/mutation ownership. Follow the credential and diagnostics contracts.
 
-- New server-service TLS references are captured as absolute paths in the original CLI/server startup cwd. Historical relative specs cannot Start/run; preserve inspect/Stop/Remove and original receipts for explicit reinstall, never reinterpret or copy credential files. Follow the current-user service contract; no migration.
+- New server-service TLS references are captured as absolute paths in the original CLI/server startup cwd resolved to its physical path; an unresolvable cwd fails before spec publication. Historical relative specs cannot Start/run; preserve inspect/Stop/Remove and original receipts for explicit reinstall, never reinterpret or copy credential files. Follow the current-user service contract; no migration.
 
 - Native generated images in the feature follow the image-input contract. Record System 61/Worker 35 with complete activation, preserve actual managed OpenAI provider/auth proof, original call order and usage limits, metadata-only server references and durable original Worker byte ownership. No custom generation bridge, backend-ID/usage fabrication or migration; independent Fork owners and unpublished output intents survive cleanup until their original ownership is settled.
 
