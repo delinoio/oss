@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -10,6 +11,12 @@ import {
 } from "@delinoio/delidev-api-client";
 import { i18n } from "./localization";
 import { NativeAccounting, nativeMeasure } from "./native-accounting";
+import {
+  PresentationKind,
+  ProductIdentityProvider,
+  useProductLabels,
+} from "./product-identity-labels";
+import { modelPresentationId } from "./usage-prices";
 
 afterEach(async () => {
   cleanup();
@@ -274,4 +281,62 @@ it("keeps the generic provider fallback for empty provider rows without a servic
   });
   render(<NativeAccounting data={data} open={vi.fn()} />);
   expect(screen.queryByText("OpenCode Go")).toBeNull();
+});
+
+it("reuses source-scoped model identities observed by the Usage summary without conflating sources", () => {
+  const providerId = "11111111-1111-4111-8111-111111111111";
+  const data = create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    nativeAccounting: [
+      { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
+      {
+        totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 2 },
+        groups: [
+          { sessionId: "s1", providerId, model: { nativeId: "shared-exact" } },
+          {
+            sessionId: "s2",
+            subscriptionService: SubscriptionServiceIdentity.CHATGPT,
+            model: { nativeId: "shared-exact" },
+          },
+        ],
+        models: [
+          { providerId, model: { nativeId: "shared-exact" } },
+          {
+            subscriptionService: SubscriptionServiceIdentity.CHATGPT,
+            model: { nativeId: "shared-exact" },
+          },
+        ],
+      },
+    ],
+  });
+  // The Usage summary registers the response-observed name under the same
+  // provider-scoped presentation identity before native rows render.
+  function View() {
+    const productLabel = useProductLabels();
+    productLabel(
+      PresentationKind.Model,
+      modelPresentationId(
+        "shared-exact",
+        providerId,
+        SubscriptionServiceIdentity.UNSPECIFIED,
+      ),
+      "Shared model",
+    );
+    return <NativeAccounting data={data} open={vi.fn()} />;
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ProductIdentityProvider>
+        <View />
+      </ProductIdentityProvider>
+    </QueryClientProvider>,
+  );
+  expect(screen.getAllByRole("button", { name: "Shared model" })).toHaveLength(
+    2,
+  );
+  // The same native ID under a different subscription source stays a separate
+  // identity and does not inherit the other source's name.
+  expect(
+    screen.getAllByRole("button", { name: /^Model unavailable \u00b7 \d+$/ }),
+  ).toHaveLength(2);
 });
