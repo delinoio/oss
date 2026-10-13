@@ -116,9 +116,10 @@ it.each([
     );
     expect(region.textContent).not.toContain("Authentication required");
     expect(
-      (screen.getByRole("textbox", { name: "메시지" }) as
-        | HTMLTextAreaElement
-        | HTMLInputElement).value,
+      (
+        screen.getByRole("textbox", { name: "메시지" }) as
+          HTMLTextAreaElement | HTMLInputElement
+      ).value,
     ).toBe("Unsent draft");
   },
   15000,
@@ -179,8 +180,8 @@ it.each([
 ])(
   "maps code %s and cause %s to %s with a connection fallback",
   (code, cause, title) => {
-    expect(
-      sessionProblemTitle(code, cause, "Connection unavailable"),
-    ).toBe(title);
+    expect(sessionProblemTitle(code, cause, "Connection unavailable")).toBe(
+      title,
+    );
   },
 );
