@@ -274,3 +274,22 @@ it("never transforms the header scroll root, only its inner wrapper", async () =
   ])
     expect(rule).toMatch(new RegExp(`${property}:\\s*inherit`, "u"));
 });
+
+it("settles the header entrance when the Session actions popup opens", async () => {
+  render(fixture().view());
+  await screen.findByRole("textbox", { name: "Message" });
+  // The transformed wrapper would cap the popup's z-index beneath the later
+  // navigation siblings, so the opening settles it without waiting for motion.
+  expect(header().getAttribute("data-entrance")).toBe("y2");
+  const trigger = screen.getByRole("button", { name: "Session actions" });
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  const menu = screen.getByRole("group", { name: "Session actions" });
+  expect(menu.hidden).toBe(false);
+  expect(header().contains(menu)).toBe(true);
+  // Closing and reopening never replays the settled activation.
+  fireEvent.click(trigger);
+  fireEvent.click(trigger);
+  expect(header().getAttribute("data-entrance")).toBeNull();
+});
