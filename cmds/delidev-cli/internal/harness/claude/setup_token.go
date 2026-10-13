@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -57,6 +58,24 @@ func setupTokenProblem() *domain.Error {
 	return domain.Fail(domain.Unsupported, "The Claude setup-token output is unsupported.", "Keep the original operation; do not substitute another authentication flow or resend the approval code.")
 }
 
+// setupTokenNoopOpeners are the absolute paths of executables that ignore their
+// argument and exit successfully. Only Unix-like hosts provide them.
+var setupTokenNoopOpeners = []string{"/usr/bin/true", "/bin/true"}
+
+// setupTokenBrowserBlocker returns a verified no-op browser opener. Windows has
+// no equivalent executable that the native child is known to honor through
+// BROWSER, so it and any host without a regular executable candidate fail closed.
+func setupTokenBrowserBlocker(goos string, candidates []string) (string, error) {
+	if goos != "windows" {
+		for _, candidate := range candidates {
+			if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+				return candidate, nil
+			}
+		}
+	}
+	return "", domain.Fail(domain.Unsupported, "This server cannot prevent the Claude login from opening a browser.", "Run Claude account login on a Linux or macOS server host.")
+}
+
 func setupTokenEnvironment(config SetupTokenConfig) ([]string, error) {
 	env, err := authEnvironment(AuthConfig{Process: config.Process, Version: config.Version, Home: config.Home})
 	if err != nil {
@@ -76,12 +95,13 @@ func setupTokenEnvironment(config SetupTokenConfig) ([]string, error) {
 	result = append(result, "TERM=xterm-256color")
 	// The server host owns no user browser. This blocks the native auto-open of
 	// the callback variant; the trusted desktop binding opens the original URL.
-	for _, candidate := range []string{"/usr/bin/true", "/bin/true"} {
-		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
-			result = append(result, "BROWSER="+candidate)
-			break
-		}
+	// A host without a verified no-op opener fails closed instead of letting the
+	// child open the server user's normal browser.
+	opener, err := setupTokenBrowserBlocker(runtime.GOOS, setupTokenNoopOpeners)
+	if err != nil {
+		return nil, err
 	}
+	result = append(result, "BROWSER="+opener)
 	return result, nil
 }
 

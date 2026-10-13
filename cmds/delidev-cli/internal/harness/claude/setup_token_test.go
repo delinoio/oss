@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -175,7 +176,17 @@ func TestSetupTokenScreenParserAcceptsOneDistinctEmission(t *testing.T) {
 	}
 }
 
+// setupTokenFixture skips on Windows, where the adapter deliberately fails
+// closed because no verified no-op browser opener exists.
 func setupTokenFixture(t *testing.T, mode string) SetupTokenConfig {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("setup-token fails closed on Windows without a verified browser blocker")
+	}
+	return setupTokenFixtureConfig(t, mode)
+}
+
+func setupTokenFixtureConfig(t *testing.T, mode string) SetupTokenConfig {
 	t.Helper()
 	config, _ := fixtureConfig(t, "setup-token-"+mode)
 	config.Process.Env = append(config.Process.Env, "ANTHROPIC_API_KEY=foreign-fixture", "ANTHROPIC_AUTH_TOKEN=foreign-fixture", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture", "HTTPS_PROXY=http://foreign.invalid", "CI=1")
@@ -306,9 +317,51 @@ func TestSetupTokenFailureModesNeverReleaseAToken(t *testing.T) {
 	}
 }
 
+func TestSetupTokenBrowserBlockerFailsClosedWithoutVerifiedNoopOpener(t *testing.T) {
+	executable := filepath.Join(t.TempDir(), "noop")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	plain := filepath.Join(t.TempDir(), "plain")
+	if err := os.WriteFile(plain, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing")
+	for _, tc := range []struct {
+		name       string
+		goos       string
+		candidates []string
+		want       string
+	}{
+		{"unix executable", "linux", []string{missing, executable}, executable},
+		{"unix without candidate", "linux", []string{missing}, ""},
+		{"unix non-executable file", "darwin", []string{plain}, ""},
+		{"windows never trusts a candidate", "windows", []string{executable}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := setupTokenBrowserBlocker(tc.goos, tc.candidates)
+			if tc.want != "" {
+				if err != nil || got != tc.want {
+					t.Fatalf("blocker = %q, %v", got, err)
+				}
+				return
+			}
+			if got != "" || domain.SafeError(err).Code != domain.Unsupported {
+				t.Fatalf("a host without a verified opener did not fail closed: %q %v", got, err)
+			}
+		})
+	}
+}
+
 func TestSetupTokenEnvironmentIsolation(t *testing.T) {
-	config := setupTokenFixture(t, "success")
+	config := setupTokenFixtureConfig(t, "success")
 	env, err := setupTokenEnvironment(config)
+	if runtime.GOOS == "windows" {
+		if domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatal("Windows must fail closed instead of launching the server user's browser")
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,6 +377,9 @@ func TestSetupTokenEnvironmentIsolation(t *testing.T) {
 		if _, present := values[key]; present {
 			t.Fatalf("%s reached the setup-token child", key)
 		}
+	}
+	if values["BROWSER"] == "" {
+		t.Fatal("the child can open the server user's browser")
 	}
 	if values["TERM"] != "xterm-256color" || values["CLAUDE_CONFIG_DIR"] != config.Home || values["CLAUDE_SECURESTORAGE_CONFIG_DIR"] != config.Home || values["HOME"] != filepath.Dir(config.Home) {
 		t.Fatal("setup-token runtime ownership is not private")
