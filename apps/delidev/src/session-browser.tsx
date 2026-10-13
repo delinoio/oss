@@ -182,12 +182,16 @@ function pageInventory(
     const listed = value.state.tabs.tabs.some(
       (page) => page.id === receipt.page_id,
     );
+    // The original receipt is validated independently of the current profile
+    // availability. A removal-pending inventory is deliberately empty, so a
+    // completed Create is not required to be listed there.
     if (
       receipt.failure !== null ||
       !receipt.metadata_committed ||
       !receipt.native_cleanup_complete ||
-      value.state.removal_pending ||
-      (operation.action === PageAction.Close ? listed : !listed)
+      (operation.action === PageAction.Close
+        ? listed
+        : !listed && !value.state.removal_pending)
     )
       throw new Error("Browser operation proof is invalid.");
   }
@@ -508,13 +512,15 @@ function NativeSessionBrowser({
     );
   const observeInventory = (value: PageInventory, profile: string) => {
     setState(value.state);
-    if (!value.state.removal_pending)
-      tabsStore.reconcilePages(
-        session.id,
-        profile,
-        pageDescriptors(profile, value.state),
-        ownedPages(),
-      );
+    // A removal-pending inventory is authoritative and empty, so it drops this
+    // profile's stale Page descriptors like any other inventory. Reconciliation
+    // is store-only and never sends a native mutation.
+    tabsStore.reconcilePages(
+      session.id,
+      profile,
+      pageDescriptors(profile, value.state),
+      ownedPages(),
+    );
   };
   const finishOperation = () => {
     operationRef.current = undefined;

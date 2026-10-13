@@ -143,6 +143,13 @@ has one of four actions:
   It never repeats metadata mutation; it retries only the directory fsync that
   followed a successful replacement and the idempotent native child
   reconciliation.
+  The original receipt is validated against the original operation (identity,
+  committed metadata, complete native cleanup, no failure) independently of the
+  current profile availability: a completed receipt observed while the profile is
+  removal-pending is still accepted. A Close proof requires the page to be
+  absent; a Create proof requires the page to be listed only while the profile is
+  available, because a removal-pending inventory is deliberately empty. Such a
+  Create settles without restoring a descriptor or sending a second Create.
 
 Every reply carries `{state, receipt}`. A receipt separates committed metadata
 from incomplete native cleanup (`phase` accepted, cleanup-pending, completed or
@@ -177,7 +184,10 @@ Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,
 refresh labels from observed URLs, and drop descriptors the inventory no longer
 lists) without selecting a page or taking ownership of another window's
-operation. Existing local `tabs.json` storage remains compatible; no business RPC,
+operation. A removal-pending (empty) inventory is authoritative: it drops this
+profile's Page descriptors the same way, without any native mutation, while a
+page owned by an in-flight original Close keeps its descriptor until that proof
+settles. Existing local `tabs.json` storage remains compatible; no business RPC,
 protocol allocation, SQLite migration, dependency or browser-engine change is
 added.
 
