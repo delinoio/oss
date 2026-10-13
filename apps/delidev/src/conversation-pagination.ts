@@ -1,3 +1,4 @@
+import type { SubagentHarness } from "./subagent-record";
 import { useSessionActive } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
 import { conversationProjection } from "./tool-turn-projection";
@@ -48,6 +49,7 @@ export function useConversationPages(
   validate?: (rows: Resource[]) => void,
   interval?: number,
   accepted?: (rows: readonly Resource[]) => void,
+  safeRow?: (row: Resource) => { harness?: SubagentHarness },
 ) {
   // The callback is read through a ref so a changing closure never replaces
   // the reader, which would suspend and restart the chain.
@@ -78,7 +80,7 @@ export function useConversationPages(
         rows: rows.map((row) =>
           kind === EntityKind.MESSAGE
             ? conversationProjection(row, sessionId)
-            : { id: row.id, revision: row.revision },
+            : { id: row.id, revision: row.revision, ...safeRow?.(row) },
         ),
         payload: rows,
         nextPageToken,
@@ -86,7 +88,7 @@ export function useConversationPages(
         accepted: () => acceptedRef.current?.(rows),
       };
     },
-    [kind, sessionId, pageSize, validate],
+    [kind, sessionId, pageSize, validate, safeRow],
   );
   const resources = useCallback(
     (response: { resources: Resource[]; nextPageToken: string }) =>
