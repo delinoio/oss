@@ -169,7 +169,12 @@ await runAdapter(async (request) => {
   if (request.configFile) {
     try {
       const loaded = await vite.loadConfigFromFile(
-        { command: "build", mode: "production", isSsrBuild: false, isPreview: false },
+        {
+          command: "build",
+          mode: "production",
+          isSsrBuild: false,
+          isPreview: false,
+        },
         request.configFile,
         request.projectRoot,
         "silent",
@@ -186,30 +191,32 @@ await runAdapter(async (request) => {
 
   progress("building", `Running vite build with Vite ${vite.version}`);
   try {
-    await vite.build(vite.mergeConfig(userConfig, {
-      root: request.projectRoot,
-      configFile: false,
-      mode: "production",
-      logLevel: "warn",
-      clearScreen: false,
-      customLogger: {
-        ...vite.createLogger("warn"),
-        warn(message) {
-          state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+    await vite.build(
+      vite.mergeConfig(userConfig, {
+        root: request.projectRoot,
+        configFile: false,
+        mode: "production",
+        logLevel: "warn",
+        clearScreen: false,
+        customLogger: {
+          ...vite.createLogger("warn"),
+          warn(message) {
+            state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+          },
+          warnOnce(message) {
+            state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+          },
         },
-        warnOnce(message) {
-          state.warnings.push(stripAnsi(String(message)).slice(0, 2000));
+        build: {
+          outDir,
+          emptyOutDir: true,
+          sourcemap: true,
+          write: true,
+          watch: null,
         },
-      },
-      build: {
-        outDir,
-        emptyOutDir: true,
-        sourcemap: true,
-        write: true,
-        watch: null,
-      },
-      plugins: [collectorPlugin(state)],
-    }));
+        plugins: [collectorPlugin(state)],
+      }),
+    );
   } catch (error) {
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
