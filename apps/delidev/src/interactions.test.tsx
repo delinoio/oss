@@ -10,7 +10,7 @@ import {
   ResourceSchema,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { Interaction } from "./interactions";
+import { Interaction, advancesInteraction } from "./interactions";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
@@ -315,4 +315,34 @@ it("keeps the original receipt retry accessible after closure without an answer 
   expect(value.questions.mock.calls[1][0]).toEqual(
     value.questions.mock.calls[0][0],
   );
+});
+
+it("accepts only a same-interaction result that advances the retained revision", () => {
+  const expected = {
+    id: newRequestId(),
+    sessionId: newRequestId(),
+    kind: EntityKind.INTERACTION,
+    revision: 9n,
+  };
+  const result = (overrides: Partial<typeof expected> = {}) =>
+    create(ResourceSchema, {
+      ...expected,
+      schemaVersion: 1,
+      revision: 10n,
+      documentJson: encode({}),
+      ...overrides,
+    });
+  expect(advancesInteraction(result(), expected)).toBe(true);
+  expect(advancesInteraction(undefined, expected)).toBe(false);
+  expect(advancesInteraction(result({ revision: 9n }), expected)).toBe(false);
+  expect(advancesInteraction(result({ revision: 8n }), expected)).toBe(false);
+  expect(advancesInteraction(result({ id: newRequestId() }), expected)).toBe(
+    false,
+  );
+  expect(
+    advancesInteraction(result({ sessionId: newRequestId() }), expected),
+  ).toBe(false);
+  expect(
+    advancesInteraction(result({ kind: EntityKind.MESSAGE }), expected),
+  ).toBe(false);
 });

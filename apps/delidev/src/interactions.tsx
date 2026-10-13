@@ -77,6 +77,24 @@ function own<T>(record: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
+/**
+ * Shared acceptance check for an answer RPC result: it must name the same
+ * interaction in the same session and kind, and advance the retained revision.
+ * Presentation callers clear recovered drafts only after this passes.
+ */
+export function advancesInteraction(
+  result: Resource | undefined,
+  expected: Pick<Resource, "id" | "sessionId" | "kind" | "revision">,
+): result is Resource {
+  return (
+    result !== undefined &&
+    result.id === expected.id &&
+    result.sessionId === expected.sessionId &&
+    result.kind === expected.kind &&
+    result.revision > expected.revision
+  );
+}
+
 export function Interaction({
   resource,
   refresh,
@@ -110,13 +128,7 @@ export function Interaction({
       : resource;
   const data = document(current);
   const changed = (result?: Resource) => {
-    if (
-      result &&
-      result.id === resource.id &&
-      result.sessionId === resource.sessionId &&
-      result.kind === resource.kind &&
-      result.revision > resource.revision
-    ) {
+    if (advancesInteraction(result, resource)) {
       setAccepted(result);
       observe?.(result);
       clearDraft?.();

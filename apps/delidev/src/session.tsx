@@ -174,7 +174,11 @@ import {
   SessionNoticeSeverity,
 } from "./session-presentation";
 import "./session.css";
-import { Interaction, PendingInteractionReceipt } from "./interactions";
+import {
+  Interaction,
+  PendingInteractionReceipt,
+  advancesInteraction,
+} from "./interactions";
 import {
   InteractionPresentationStore,
   InteractionPresentation,
@@ -1587,6 +1591,19 @@ export function SessionView({
       projection={projection}
       accepted={(result) => {
         if (result) observeResponse(result);
+        // A recovered answer retires only its own edit draft, and only when
+        // the returned interaction matches this request and advances the
+        // retained projection, as the resident Interaction path requires.
+        if (
+          advancesInteraction(result, {
+            id: requestId,
+            sessionId: id,
+            kind: EntityKind.INTERACTION,
+            revision: projection.revision,
+          }) &&
+          supportsResourceSchema(result)
+        )
+          requestDrafts.save(requestId);
         void interactions.refresh();
       }}
     />
