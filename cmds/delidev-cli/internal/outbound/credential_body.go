@@ -94,10 +94,12 @@ func credentialFramingForMediaType(mediaType string) credentialFraming {
 
 func credentialJSONMediaType(mediaType string) bool {
 	switch mediaType {
-	case "application/json", "text/json", "application/x-ndjson", "application/jsonl", "application/x-jsonlines":
+	case "application/json", "text/json", "application/x-ndjson", "application/jsonl", "application/x-jsonlines", "application/json-seq":
 		return true
 	}
-	return strings.HasSuffix(mediaType, "+json")
+	// RFC 7464 JSON text sequences use application/json-seq and +json-seq. Their
+	// RS-separated texts are ordinary JSON strings for escape decoding.
+	return strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+json-seq")
 }
 
 // Headers are complete independent values; response reads also carry the last

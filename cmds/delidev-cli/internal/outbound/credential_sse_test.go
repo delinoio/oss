@@ -402,3 +402,25 @@ func TestCredentialOpaqueMediaTypesKeepShortTokenBounds(t *testing.T) {
 	}
 	guard.Close()
 }
+
+func TestCredentialJSONTextSequenceMediaTypesRejectEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	for _, mediaType := range []string{"application/json-seq", "application/json-seq; charset=utf-8", "Application/JSON-Seq", "application/vnd.fixture+json-seq"} {
+		wire := "\x1e{\"value\":\"\\u0066ixture-password\"}\n\x1e{\"value\":\"safe\"}\n"
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") || guard.jsonGuard.framing != credentialOrdinary {
+				t.Fatal("JSON text sequence accepted escaped reflection", mediaType)
+			}
+			guard.Close()
+		}
+		safe := "\x1e{\"value\":\"safe\"}\n"
+		guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, mediaType)
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("JSON text sequence changed safe bytes", mediaType, err)
+		}
+		guard.Close()
+	}
+}
