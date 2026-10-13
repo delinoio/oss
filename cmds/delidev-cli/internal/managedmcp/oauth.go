@@ -147,6 +147,21 @@ func (m Manager) oauth(ctx context.Context, c *catalog, q domain.ManagedMCPReque
 	defer response.Body.Close()
 	b, e := io.ReadAll(io.LimitReader(response.Body, 65537))
 	defer clear(b)
+	if e == nil && definitiveTokenRejection(response.StatusCode, b) {
+		// The authorization server answered that it did not issue a token, so the
+		// exchange has a known outcome. Settle the attempt and release its verifier
+		// so the user can begin again; a cleanup failure keeps recovery instead.
+		if e = m.Secrets.Delete(ctx, ref); e != nil {
+			a.State = domain.MCPOperationRecovery
+			c.Attempts[q.AttemptID] = a
+			_ = save()
+			return result, e
+		}
+		a.State = domain.MCPOperationRejected
+		c.Attempts[q.AttemptID] = a
+		result.Operation.State = domain.MCPOperationRejected
+		return result, nil
+	}
 	var token struct {
 		AccessToken  string `json:"access_token"`
 		TokenType    string `json:"token_type"`
@@ -202,4 +217,23 @@ func validateCallback(raw string, d domain.ManagedMCPDefinition, a oauthAttempt)
 		return domain.Fail(domain.PermissionDenied, "The MCP callback is invalid.", "Keep the original authentication attempt and callback state.")
 	}
 	return nil
+}
+
+// definitiveTokenRejection recognizes an RFC 6749 error response. A transport
+// failure, server error or unparseable body stays ambiguous and keeps recovery.
+func definitiveTokenRejection(status int, body []byte) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnauthorized || len(body) > 65536 {
+		return false
+	}
+	var rejection struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &rejection) != nil {
+		return false
+	}
+	switch rejection.Error {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope":
+		return true
+	}
+	return false
 }

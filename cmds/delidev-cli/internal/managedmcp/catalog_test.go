@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -403,4 +404,83 @@ func TestManagedMCPOAuthRejectsOversizedComposedAuthorizationURL(t *testing.T) {
 	edited.Name = "Edited after rejected begin"
 	edit.Definition = &edited
 	must(t, m, edit)
+}
+
+func TestManagedMCPDefinitiveTokenRejectionSettlesTheAttempt(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status  int
+		body    string
+		settled bool
+	}{
+		"invalid-grant":      {http.StatusBadRequest, `{"error":"invalid_grant"}`, true},
+		"invalid-client":     {http.StatusUnauthorized, `{"error":"invalid_client","error_description":"x"}`, true},
+		"server-error":       {http.StatusInternalServerError, `{"error":"invalid_grant"}`, false},
+		"unknown-error-code": {http.StatusBadRequest, `{"error":"something_else"}`, false},
+		"unparseable":        {http.StatusBadRequest, `not json`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, q, d := fixture(t)
+			d.Transport = domain.MCPStreamableHTTP
+			d.Command = ""
+			d.Cwd = ""
+			d.Endpoint = "https://fixture.test/mcp"
+			d.Authentication = domain.MCPOAuthAuthentication
+			d.OAuth = &domain.MCPOAuthProfile{ClientID: "public", AuthorizationURL: "https://fixture.test/auth", TokenURL: "https://fixture.test/token", RedirectURI: "http://localhost/callback"}
+			q.Definition = &d
+			must(t, m, q)
+			attempt := domain.NewID()
+			now := time.Now().UTC()
+			m.Now = func() time.Time { return now }
+			state := sha256.Sum256([]byte("original-state"))
+			path := filepath.Join(m.Root, "managed-mcp", string(m.ServerID), string(m.WorkerDeviceID), "catalog.json")
+			raw, _ := os.ReadFile(path)
+			var c catalog
+			if json.Unmarshal(raw, &c) != nil {
+				t.Fatal("bad fixture catalog")
+			}
+			c.Attempts[attempt] = oauthAttempt{ActorID: q.ActorID, DefinitionID: d.ID, Revision: 1, State: domain.MCPOperationAwaiting, ExpiresAt: now.Add(time.Minute), StateDigest: hex.EncodeToString(state[:])}
+			raw, _ = json.Marshal(c)
+			if os.WriteFile(path, raw, 0600) != nil {
+				t.Fatal("fixture write")
+			}
+			secret, _ := json.Marshal(oauthPrivate{Verifier: strings.Repeat("x", 43)})
+			m.Secrets.Put(context.Background(), credentials.Ref{Owner: d.ID, ID: attempt, Purpose: credentials.ManagedMCP}, secret)
+			complete := q
+			complete.Definition = nil
+			complete.DefinitionID = d.ID
+			complete.RequestID = domain.NewID()
+			complete.ExpectedRevision = 1
+			complete.AttemptID = attempt
+			complete.Action = domain.MCPOAuthComplete
+			complete.CallbackURL = "http://localhost/callback?state=original-state&code=private-code"
+			m.HTTP = &http.Client{Transport: fixtureTransport(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			})}
+			result, err := m.Execute(context.Background(), complete)
+			edit := q
+			edit.RequestID = domain.NewID()
+			edit.ExpectedRevision = 1
+			edited := d
+			edited.Revision = 2
+			edited.Name = "Edited after the attempt"
+			edit.Definition = &edited
+			if tc.settled {
+				if err != nil || result.Operation.State != domain.MCPOperationRejected {
+					t.Fatalf("a definitive rejection was not settled: %v %+v", err, result.Operation)
+				}
+				if len(m.Secrets.(*fixtureSecrets).values) != 0 {
+					t.Fatal("the rejected attempt kept its verifier")
+				}
+				// The definition is not frozen: it can be edited and authorized again.
+				must(t, m, edit)
+				return
+			}
+			if err == nil {
+				t.Fatal("an ambiguous response claimed a settled outcome")
+			}
+			if _, err := m.Execute(context.Background(), edit); err == nil {
+				t.Fatal("an ambiguous exchange released its recovery fence")
+			}
+		})
+	}
 }
