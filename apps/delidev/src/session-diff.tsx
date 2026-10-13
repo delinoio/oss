@@ -239,6 +239,8 @@ export function RepositoryDiff({
   const [menu, setMenu] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null),
     pathInput = useRef<HTMLInputElement>(null);
+  const transport = useTransport(),
+    queryClient = useQueryClient();
   const optionsInput = {
     sessionId,
     queryJson: encode({
@@ -306,10 +308,28 @@ export function RepositoryDiff({
   // The explicit refresh reads through a disposable query, so its failure is
   // recorded here, bound to the session and repository that issued it.
   const optionsOwner = [sessionId, repository].join("\u0000");
+  // The failure also remembers the accepted options query's update position,
+  // so any later accepted response (the explicit refresh, or an active-query
+  // refetch such as a reconnect invalidation) ends the stale observation.
   const [refreshFailure, setRefreshFailure] = useState<
-    { owner: string; failure: ClientFailure; code: Code } | undefined
+    | {
+        owner: string;
+        failure: ClientFailure;
+        code: Code;
+        updateCount: number;
+        updatedAt: number;
+      }
+    | undefined
   >();
-  const refreshFailed = refreshFailure?.owner === optionsOwner;
+  const optionsState = queryClient.getQueryState(
+    createQueryOptions(SessionQuery.readSessionWorkspace, optionsInput, {
+      transport,
+    }).queryKey,
+  );
+  const refreshFailed =
+    refreshFailure?.owner === optionsOwner &&
+    (optionsState?.dataUpdateCount ?? 0) <= refreshFailure.updateCount &&
+    (optionsState?.dataUpdatedAt ?? 0) <= refreshFailure.updatedAt;
   const optionsStale =
     comparison === Comparison.Branch &&
     Boolean(options.data) &&
@@ -333,8 +353,6 @@ export function RepositoryDiff({
     observedScope.current = scope;
     scopeGeneration.current += 1;
   }
-  const transport = useTransport(),
-    queryClient = useQueryClient();
   const cancelRefresh = () => {
     const key = activeRefresh.current;
     if (!key) return;
@@ -451,10 +469,13 @@ export function RepositoryDiff({
           operation: "git-diff-options",
           classification: failure.code,
         });
+        const state = queryClient.getQueryState(accepted.queryKey);
         setRefreshFailure({
           owner: optionsOwner,
           failure,
           code: ConnectError.from(error).code,
+          updateCount: state?.dataUpdateCount ?? 0,
+          updatedAt: state?.dataUpdatedAt ?? 0,
         });
       }
     } finally {

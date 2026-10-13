@@ -1402,6 +1402,35 @@ it("presents the current explicit refresh failure over an older options query fa
   expect(screen.getByText(/This comparison is unavailable\./)).toBeTruthy();
 });
 
+it("clears the stale marker when a reconnect invalidation accepts a fresh options response after a failed refresh", async () => {
+  const { f, state } = inventoryFixture([{ name: "main" }], "main");
+  const stale =
+    "Refresh failed. The previous observation is stale and shown below.";
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(stale);
+  expect(addReviewComment().disabled).toBe(true);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  // App.tsx invalidates the active queries after a reconnect; the accepted
+  // options query is refetched without any explicit Refresh.
+  state.choices = [{ name: "main" }, { name: "next" }];
+  await act(async () => {
+    await f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await waitFor(() => expect(screen.queryByText(stale)).toBeNull());
+  expect(screen.getByRole("option", { name: "next" })).toBeTruthy();
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);
