@@ -12,6 +12,11 @@ UUIDs. Original authority, receipt JSON, immutable retries and user/native quest
 approval, message, tool and terminal bytes remain unchanged. Presentation starts no
 new read, write, notification, native operation or inference.
 
+Mobile imports `apps/delidev/src/product-identity.ts` by relative path, so
+`apps/delidev-mobile/turbo.json` declares it as an explicit input of the `build`,
+`build:frontend` and `typecheck` tasks (repeating the root task inputs because Turbo
+replaces inherited arrays). Declare any new cross-package source import the same way.
+
 ## Scope
 
 `apps/delidev-mobile` owns the separate iOS and Android remote client in the feature. Its identity is `io.delino.delidev.mobile`, and its display name is
