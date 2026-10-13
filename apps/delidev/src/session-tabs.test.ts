@@ -378,18 +378,14 @@ describe("shared Page descriptors follow native browser pages", () => {
       const retainedBefore = store.snapshot("retained");
       store.closePageEverywhere("p1", "x");
       for (const id of ["active", "inactive", "retained"])
-        expect(keysOf(store, id)).not.toContain(
-          sessionTabKey(page("p1", "x")),
-        );
+        expect(keysOf(store, id)).not.toContain(sessionTabKey(page("p1", "x")));
       expect(store.snapshot("active").selected).toBe(
         sessionTabKey(page("p1", "w")),
       );
       expect(store.snapshot("inactive").selected).toBe(
         SessionTabKind.Conversation,
       );
-      expect(store.snapshot("retained").selected).toBe(
-        retainedBefore.selected,
-      );
+      expect(store.snapshot("retained").selected).toBe(retainedBefore.selected);
       expect(keysOf(store, "retained")).toEqual([
         SessionTabKind.Conversation,
         sessionTabKey(page("p2", "x")),

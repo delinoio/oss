@@ -918,7 +918,9 @@ it("retains the descriptor in every session while a close fails or stays unconfi
   expect(store.snapshot(retained)).toBe(before);
   // Confirmation by observation finally removes it everywhere.
   f.model.settleOnObserve = true;
-  fireEvent.click(within(pending).getByRole("button", { name: "Check status" }));
+  fireEvent.click(
+    within(pending).getByRole("button", { name: "Check status" }),
+  );
   await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
   expect(retainedKeys(store)).toEqual([SessionTabKind.Conversation]);
 });
