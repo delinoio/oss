@@ -1384,7 +1384,7 @@ closed context-job version 4 and exact observation-only recovery version 2; no
 new job kind or database migration is allocated. Capabilities grant only the
 implemented product operation, never native/account/platform acceptance.
 
-Worker `CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64` (recorded for issue 2279)
+Worker `CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64`
 negotiates the optional `execution_id` and `checkpoint_digest` fields of the
 frozen Revert target. An older Worker strictly rejects those fields, so the
 server freezes them only for a skilled target that an earlier execution accepted
