@@ -416,7 +416,10 @@ function NativeSessionBrowser({
   }>();
   // Re-runs the read-only initial inventory after a failed read.
   const [inventoryRetry, setInventoryRetry] = useState(0);
-  const profileTokens = useRef(new Set<string>());
+  // Every settled profile page of the current walk, keyed by its request token.
+  const profileWalk = useRef(
+    new Map<string, { matches: BrowserProfile[]; next: string }>(),
+  );
   const needsPresentation = useRef(false);
   needsPresentation.current = Boolean(
     selectedPage &&
@@ -482,18 +485,20 @@ function NativeSessionBrowser({
       const matching = profiles.data.profiles.filter(
         (profile) => profile.accountId === accountId,
       );
+      // Pages are keyed by their request token, so re-processing the same
+      // settled page is idempotent. The first page has the empty token.
+      const next = profiles.data.nextPageToken;
+      profileWalk.current.set(profilePage, { matches: matching, next });
       if (matching.length > 1)
         throw new Error("Browser profile proof is unavailable.");
       if (matching.length) setProfileId(browserProfile(matching[0], accountId));
-      else if (profiles.data.nextPageToken) {
-        if (
-          profileTokens.current.has(profiles.data.nextPageToken) ||
-          profileTokens.current.size >= 64
-        )
+      else if (next) {
+        // The walk is bounded to 64 pages, so a token returned by page 64 or
+        // a repeated token is invalid proof.
+        if (profileWalk.current.has(next) || profileWalk.current.size >= 64)
           throw new Error("Browser profile proof is unavailable.");
-        profileTokens.current.add(profiles.data.nextPageToken);
         setProof(undefined);
-        setProfilePage(profiles.data.nextPageToken);
+        setProfilePage(next);
       } else {
         // This account has no retained profile, so no page descriptor of an
         // earlier account's profile can remain in the workspace.
@@ -530,7 +535,7 @@ function NativeSessionBrowser({
     console.info("delidev.browser_profiles", { phase: "discovery_retry" });
     setFailure(undefined);
     setProof(undefined);
-    profileTokens.current.clear();
+    profileWalk.current.clear();
     if (profilePage) setProfilePage("");
     else void profiles.refetch();
   };

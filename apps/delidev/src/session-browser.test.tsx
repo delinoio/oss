@@ -1396,3 +1396,41 @@ it("does not require a nonexistent profile's inventory and sends nothing on open
   expect(f.register).toHaveBeenCalledTimes(1);
   expect(pageCalls("create")).toHaveLength(1);
 });
+
+it("rejects absence once a token follows the 64th profile page", async () => {
+  const f = fixture({ registered: false });
+  setList(f, async ({ pageToken }) => ({
+    profiles: [],
+    nextPageToken: `page-${Number(pageToken.slice(5) || "0") + 1}`,
+  }));
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/bounded");
+  await within(dialog).findByRole(
+    "button",
+    { name: "Retry profile read" },
+    { timeout: 5000 },
+  );
+  // Page 64 returned a token, so page 65 is never requested.
+  expect(f.list).toHaveBeenCalledTimes(64);
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+}, 15000);
+
+it("accepts a terminal 64th profile page as confirmed absence", async () => {
+  const f = fixture({ registered: false });
+  setList(f, async ({ pageToken }) => {
+    const index = Number(pageToken.slice(5) || "0") + 1;
+    return { profiles: [], nextPageToken: index < 64 ? `page-${index}` : "" };
+  });
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/last");
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false), {
+    timeout: 5000,
+  });
+  expect(f.list).toHaveBeenCalledTimes(64);
+}, 15000);

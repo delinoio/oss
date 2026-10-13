@@ -101,8 +101,8 @@ page.
 Admission follows the read-only enumeration state. Open page stays disabled, and
 submission returns without sending anything, while the `ListBrowserProfiles`
 walk is loading, paginating (a next page token is outstanding), failed or
-invalid (a read error, more than one matching profile, a repeated token or more
-than 64 pages). Only a profile found on any reached page or a confirmed absence
+invalid (a read error, more than one matching profile, a repeated token or a
+next page token returned by page 64). Only a profile found on any reached page or a confirmed absence
 (a settled read with no matching profile and no next page token) can admit a new
 page; absence permits exactly one registration at explicit submission. A found
 profile additionally needs one successfully observed current-profile inventory,
