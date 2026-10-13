@@ -151,6 +151,18 @@ revision and saved scope, and then classifies:
 - An unreadable, busy or failed inspection keeps the intent across Quit and
   restart.
 
+A retained begin intent also fences its own request. While the exact intent
+for a server, operation, revision, generation and saved scope is retained,
+native never submits `native-begin` for it again, because the earlier
+runtime request may still land and a retry would race it. A retry instead
+re-reads the original journal through the same classification above, so a late
+acceptance recovers settlement-only ownership, a terminal phase or foreign
+generation retires the intent, and an unproven Prepared journal reports Busy
+with the intent retained. The fence is the retained record itself, so it
+survives the retained worker completing, Quit and restart, and it lifts only
+when reconciliation retires the intent. An unreadable or conflicting record
+for the exact request rejects the begin without sending it.
+
 The launch pass and each original-scope `native-inspect` reconcile retained
 intents after retained outcomes. An exact retained outcome record for the same
 operation always settles first, and an intent never writes an inferred Uncertain

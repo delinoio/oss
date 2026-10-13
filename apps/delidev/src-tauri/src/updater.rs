@@ -566,6 +566,31 @@ impl Connector {
             Err(code) => return BeginOutcome::Rejected(code),
         };
         let store = self.intent_store();
+        // An intent for this exact request that is still retained means an
+        // earlier native-begin was canceled or lost and has not been
+        // reconciled. Its resident runtime request may still land, so the
+        // request must not be submitted a second time: a retry would race the
+        // original. Re-inspect the original journal instead; the begin stays
+        // fenced until that proof resolves the retained intent.
+        match store.find(&intent) {
+            Ok(None) => {}
+            Ok(Some(StoredEntry::Record(existing))) if existing == intent => {
+                tracing::warn!(
+                    operation = "desktop_update_begin_intent",
+                    state = "fenced-by-retained-intent",
+                    id = %intent.operation_id
+                );
+                return self.resolve_lost_begin(
+                    &store,
+                    intent,
+                    expected,
+                    revision,
+                    NativeFailure::Busy,
+                );
+            }
+            Ok(Some(_)) => return BeginOutcome::Rejected(NativeFailure::InvalidEvidence),
+            Err(code) => return BeginOutcome::Rejected(code),
+        }
         // Fail closed: a begin whose identity cannot be retained is never
         // submitted.
         if let Err(code) = store.persist(&intent) {
@@ -604,8 +629,20 @@ impl Connector {
             id = %intent.operation_id,
             ?cause
         );
-        // The resident runtime that carried the request may still be alive in
-        // this process, so a Prepared journal cannot yet prove non-acceptance.
+        self.resolve_lost_begin(&store, intent, expected, revision, cause)
+    }
+
+    // Classifies a begin whose acceptance is unknown. The resident runtime
+    // that carried the request may still be alive in this process, so a
+    // Prepared journal cannot yet prove non-acceptance.
+    fn resolve_lost_begin(
+        &self,
+        store: &OutcomeStore,
+        intent: OutcomeRecord,
+        expected: Option<&SavedConnection>,
+        revision: u64,
+        cause: NativeFailure,
+    ) -> BeginOutcome {
         match self.prove_begin(&intent, false) {
             BeginProof::Installing(prepared) => {
                 tracing::warn!(
@@ -626,11 +663,11 @@ impl Connector {
                 }
             }
             BeginProof::Terminal(phase) => {
-                self.retire_intent(&store, &intent, "already-settled");
+                self.retire_intent(store, &intent, "already-settled");
                 BeginOutcome::Settled { phase, cause }
             }
             BeginProof::NotAccepted => {
-                self.retire_intent(&store, &intent, "not-accepted");
+                self.retire_intent(store, &intent, "not-accepted");
                 BeginOutcome::Rejected(cause)
             }
             BeginProof::Unproven(code) => {
@@ -2691,6 +2728,82 @@ else:
         assert_eq!(launch(&restarted(&f)).settled, 1);
         assert!(f.intents().is_empty());
         f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn a_retry_never_resubmits_begin_while_the_original_intent_is_unresolved() {
+        let f = Fixture::new("prepared", true);
+        f.mode("reject");
+        assert!(matches!(f.begin(), BeginOutcome::Unresolved(_)));
+        assert_eq!(f.begins(), 1);
+        // The original request may still land, so every retry stays fenced and
+        // only re-reads the journal.
+        for _ in 0..2 {
+            assert!(matches!(
+                f.begin(),
+                BeginOutcome::Unresolved(NativeFailure::Busy)
+            ));
+        }
+        assert_eq!(f.begins(), 1, "native-begin is never submitted again");
+        assert_eq!(f.calls(), "iii");
+        assert_eq!(f.intents().len(), 1);
+        assert_eq!(f.journal()["phase"], "prepared");
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn a_fenced_retry_recovers_ownership_when_the_original_begin_lands_late() {
+        let f = Fixture::new("prepared", true);
+        f.mode("reject");
+        assert!(matches!(f.begin(), BeginOutcome::Unresolved(_)));
+        // The original request was accepted after the first inspection.
+        f.set_journal("installing", &f.generation.clone());
+        let BeginOutcome::Recovered {
+            installation,
+            cause,
+        } = f.begin()
+        else {
+            panic!("the retained intent must recover the late acceptance");
+        };
+        assert_eq!(cause, NativeFailure::Busy);
+        assert!(installation.is_settlement_only());
+        assert_eq!(f.begins(), 1, "the retry never races the original begin");
+        installation.settle(&f.connector, Phase::Uncertain).unwrap();
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert!(f.intents().is_empty());
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn a_retry_after_the_intent_is_resolved_is_admitted_again() {
+        let f = Fixture::new("prepared", true);
+        f.mode("reject");
+        assert!(matches!(f.begin(), BeginOutcome::Unresolved(_)));
+        // A later process proves the runtime exited and retires the intent.
+        assert_eq!(launch(&restarted(&f)).settled, 1);
+        assert!(f.intents().is_empty());
+        f.mode("accept");
+        assert!(matches!(f.begin(), BeginOutcome::Accepted(_)));
+        assert_eq!(f.begins(), 2);
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_retained_intent_for_the_request_rejects_the_begin() {
+        let f = Fixture::new("prepared", true);
+        let intent = f.intent();
+        f.connector.intent_store().persist(&intent).unwrap();
+        let path = f
+            .root
+            .join(crate::updater_outcome::INTENT_DIRECTORY)
+            .join(format!("{}.{}.json", f.id, f.generation));
+        fs::write(&path, b"{").unwrap();
+        assert!(matches!(
+            f.begin(),
+            BeginOutcome::Rejected(NativeFailure::InvalidEvidence)
+        ));
+        assert_eq!((f.begins(), f.calls().as_str()), (0, ""));
+        assert_eq!(fs::read(&path).unwrap(), b"{");
     }
 
     #[test]

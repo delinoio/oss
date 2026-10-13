@@ -366,6 +366,12 @@ impl OutcomeStore {
         })
     }
 
+    /// Loads the entry stored under exactly the name `record` would be
+    /// published as. `Ok(None)` means no such record is retained.
+    pub fn find(&self, record: &OutcomeRecord) -> Result<Option<StoredEntry>> {
+        self.load(&record.stem())
+    }
+
     /// Collects every retained entry. This buffers the whole listing, so it is
     /// only for tests and diagnostics; production passes stream through
     /// [`OutcomeStore::for_each`].
