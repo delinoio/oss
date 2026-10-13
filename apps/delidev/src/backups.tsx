@@ -51,7 +51,9 @@ import {
 } from "./scroll-pagination-query";
 import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
+import "./tab-strip.css";
 import "./backups.css";
+import { revealTabItem } from "./tab-strip";
 
 const maxTrackedJobs = 20;
 enum HistoryTab {
@@ -610,7 +612,7 @@ export function Backups({ active }: { active: boolean }) {
           </SettingsActionButton>
         </header>
         <div
-          className="backups-tabs"
+          className="tab-strip backups-tabs"
           role="tablist"
           aria-label={copy("backups.backupOperationHistory_8f9f32")}
         >
@@ -622,11 +624,15 @@ export function Backups({ active }: { active: boolean }) {
                 else tabButtons.current.delete(tab);
               }}
               role="tab"
+              className={`tab-item tab-label${historyTab === tab ? " is-selected" : ""}`}
               id={`${panelId}-tab-${tab}`}
               aria-controls={`${panelId}-panel-${tab}`}
               aria-selected={historyTab === tab}
               tabIndex={focusedTab === tab ? 0 : -1}
-              onFocus={() => setFocusedTab(tab)}
+              onFocus={(event) => {
+                setFocusedTab(tab);
+                revealTabItem(event.currentTarget);
+              }}
               onKeyDown={(event) => moveTabFocus(event, tab)}
               onClick={() => {
                 setFocusedTab(tab);

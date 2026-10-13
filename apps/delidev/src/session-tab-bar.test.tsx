@@ -115,3 +115,77 @@ it("renders the New browser page button after the tab items, outside the tablist
     screen.getByRole("tab", { name: "https://example.test/" }),
   ).toBeTruthy();
 });
+
+it("renders each tab as a flat item with a label button and a separate sibling close button", () => {
+  const select = vi.fn(),
+    close = vi.fn();
+  const longPath = `${"nested/".repeat(20)}very-long-file-name.ts`;
+  render(
+    <SessionTabBar
+      id="original"
+      tabs={[
+        { kind: SessionTabKind.Conversation },
+        { kind: SessionTabKind.Files },
+        {
+          kind: SessionTabKind.File,
+          repository: "repository",
+          path: longPath,
+        },
+      ]}
+      selected={SessionTabKind.Conversation}
+      select={select}
+      close={close}
+    />,
+  );
+  const strip = screen.getByRole("tablist");
+  expect(strip.classList.contains("tab-strip")).toBe(true);
+  const tabs = screen.getAllByRole("tab");
+  const items = tabs.map((tab) => tab.parentElement!);
+  for (const item of items) {
+    expect(item.classList.contains("tab-item")).toBe(true);
+    expect(item.getAttribute("role")).toBe("presentation");
+  }
+  expect(items.map((item) => item.classList.contains("is-selected"))).toEqual([
+    true,
+    false,
+    false,
+  ]);
+  for (const tab of tabs) expect(tab.classList.contains("tab-label")).toBe(true);
+  // Conversation stays first and noncloseable; the others own a sibling close.
+  expect(items[0].querySelectorAll(".tab-close")).toHaveLength(0);
+  for (const item of items.slice(1)) {
+    const buttons = item.querySelectorAll("button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[1].classList.contains("tab-close")).toBe(true);
+    expect(buttons[0].contains(buttons[1])).toBe(false);
+    expect(buttons[1].textContent).toBe("×");
+  }
+  // Dynamic labels truncate visually while the complete title and accessible
+  // name remain available.
+  expect(items[2].classList.contains("tab-item-dynamic")).toBe(true);
+  expect(tabs[2].getAttribute("title")).toBe(longPath);
+  expect(tabs[2].getAttribute("aria-label")).toContain(longPath);
+  expect(tabs[2].textContent).toBe(longPath);
+});
+
+it("closing an inactive tab never selects it", () => {
+  const select = vi.fn(),
+    close = vi.fn();
+  render(
+    <SessionTabBar
+      id="original"
+      tabs={[
+        { kind: SessionTabKind.Conversation },
+        { kind: SessionTabKind.Files },
+        { kind: SessionTabKind.Diagnostics },
+      ]}
+      selected={SessionTabKind.Diagnostics}
+      select={select}
+      close={close}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Close Files/ }));
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(close).toHaveBeenCalledWith("files");
+  expect(select).not.toHaveBeenCalled();
+});

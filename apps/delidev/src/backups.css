@@ -39,7 +39,7 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.backups-settings button:hover:enabled {
+.backups-settings button:where(:not(.tab-item)):hover:enabled {
   background: var(--background);
 }
 .backups-settings button[disabled] {
@@ -254,26 +254,9 @@
 .backups-history {
   margin-top: 32px;
 }
+/* Tab geometry, baseline, selection and focus come from tab-strip.css. */
 .backups-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin: 16px 0;
-  border-bottom: 1px solid var(--border);
-}
-.backups-tabs button {
-  margin-bottom: -1px;
-  padding-inline: 8px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  color: var(--muted);
-  background: transparent;
-}
-.backups-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--link);
-  color: var(--link);
-  font-weight: 600;
 }
 .backups-history-heading {
   display: flex;

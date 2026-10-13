@@ -9,7 +9,9 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { copy, useLocale } from "./localization";
+import "./tab-strip.css";
 import "./project-edit-tabs.css";
+import { revealTabItem } from "./tab-strip";
 export enum ProjectEditTab {
   General = "general",
   Repositories = "repositories",
@@ -77,12 +79,15 @@ export function ProjectEditTabs({
     node?.addEventListener("project-reveal-invalid", reveal);
     return () => node?.removeEventListener("project-reveal-invalid", reveal);
   }, []);
+  useLayoutEffect(() => {
+    revealTabItem(tabs.current.get(selected));
+  }, [selected]);
   return (
     <div className="project-edit-tabs" ref={root}>
       <div
         role="tablist"
         aria-label={copy("configuration-fields.projectEdit.tabs")}
-        className="project-edit-tablist"
+        className="tab-strip project-edit-tablist"
       >
         {order.map((tab) => (
           <button
@@ -93,11 +98,13 @@ export function ProjectEditTabs({
             }}
             type="button"
             role="tab"
+            className={`tab-item tab-label${selected === tab ? " is-selected" : ""}`}
             id={`${id}-${tab}-tab`}
             aria-controls={`${id}-${tab}-panel`}
             aria-selected={selected === tab}
             tabIndex={selected === tab ? 0 : -1}
             onClick={() => setSelected(tab)}
+            onFocus={(event) => revealTabItem(event.currentTarget)}
             onKeyDown={(event) => {
               const index = order.indexOf(tab),
                 next =

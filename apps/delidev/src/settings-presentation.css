@@ -84,7 +84,7 @@
 .settings-content[aria-label]
   .settings-content-column
   :is(
-    button,
+    button:where(:not(.tab-item, .tab-label, .tab-close)),
     input:not([type="checkbox"]):not([type="radio"]),
     select,
     textarea,
@@ -97,7 +97,7 @@
 .settings-content[aria-label]
   .settings-content-column
   :is(
-    button,
+    button:where(:not(.tab-item, .tab-label, .tab-close)),
     input:not([type="checkbox"]):not([type="radio"]),
     select,
     summary
@@ -115,7 +115,9 @@
 .settings-content[aria-label] .settings-content-column label.checkbox {
   min-height: 40px;
 }
-.settings-content[aria-label] .settings-content-column button {
+.settings-content[aria-label]
+  .settings-content-column
+  button:where(:not(.tab-item, .tab-label, .tab-close)) {
   border-color: var(--control-border);
 }
 .settings-content[aria-label]
