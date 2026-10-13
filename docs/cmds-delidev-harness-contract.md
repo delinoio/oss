@@ -2779,3 +2779,7 @@ for a negotiated root Codex Worker. Legacy and restricted assignments grant no
 live dynamic responder. A failed/interrupted root with unresolved tool evidence
 can retain its terminal and verified cleanup in a version-1 completion; it cannot
 produce a continuation checkpoint or later input authority.
+
+## Managed MCP management boundary
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) adds configuration and explicit authentication only. Management does not weaken the existing empty native MCP inventory checks. Supported-harness observations remain empty until the owning adapter independently validates managed MCP. Execution selection requires enabled, authenticated and verified original Worker definitions; existing adapters fail closed before launching a managed inventory. Future adapters consume immutable execution copies and must retain original generation/cleanup ownership.

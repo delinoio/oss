@@ -471,3 +471,7 @@ Fork preserve protected native history; restricted auxiliary profiles retain
 separate history and response boundaries. The desktop uses the original tool
 disclosure with independent reply and request rows. No backend, registry,
 automatic replay or storage migration is introduced.
+
+## Worker-owned managed MCP
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns `cmds/delidev-cli/internal/managedmcp`, the typed management service and desktop MCP Settings. Worker definitions/secrets, bounded server metadata, additive Agent selections and immutable execution generations remain distinct authorities. Management and explicit OAuth never advertise native runtime acceptance.

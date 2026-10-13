@@ -1552,3 +1552,11 @@ for a negotiated root Codex Worker. Legacy and restricted assignments grant no
 live dynamic responder. A failed/interrupted root with unresolved tool evidence
 can retain its terminal and verified cleanup in a version-1 completion; it cannot
 produce a continuation checkpoint or later input authority.
+
+## Managed MCP management service
+
+The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns `ManagedMCPService`, its closed transport/authentication/operation enums, System capability 97, Worker capability 59 and Entity kind 36. Generated Go/Connect and TypeScript/Connect Query bindings change together with the allocation catalog. Management negotiation does not grant native execution MCP authority. Authentication values are write-only transport input; response definitions include bounded safe metadata and authentication state only.
+
+`ListManagedMcpResponse.operations` field 2 owns bounded original-client pending/awaiting recovery metadata. Category disposal cannot authorize replay; list discovery and original-operation reads disclose no credentials and grant no runtime support.
+
+`GetManagedMcpOperationRequest.definition_id` field 3 binds original absence proofs to their exact definition and authenticated original Worker. A read cannot replace that identity or create generic no-receipt authority.

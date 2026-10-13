@@ -16,6 +16,11 @@ export function retireCompatibility() {
     root,
     "packages/delidev-api-client/src/gen/delidev/v1",
   );
+  // protoc-gen-es appends a blank EOF line. Normalize the new managed service
+  // module so generation stays reproducible without changing legacy outputs.
+  const managedService = resolve(directory, "managed_mcp_pb.ts");
+  const managedSource = readFileSync(managedService, "utf8");
+  writeFileSync(managedService, managedSource.replace(/\n+$/, "\n"));
   for (const filename of readdirSync(directory)) {
     if (
       filename === "delidev_pb.ts" ||

@@ -528,3 +528,7 @@ Typed event JSON keeps original item status, nullable success/duration, inert
 text/media commitments and independent reply/resolution metadata. Native wire
 request numbers remain decimal strings across JavaScript readers. These facts
 grant no dispatch, media retrieval, reply retry or continuation authority.
+
+## Managed MCP clients
+
+The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns typed Worker-scoped management, write-only credential inputs and original-operation reads. Export `ManagedMCPQuery` with the generated service/message/enum bindings. Management capability does not grant runtime MCP authority. Retained uncertain mutations can be acknowledged only through the original read response and verifier; the desktop does not resend authentication exchanges automatically.

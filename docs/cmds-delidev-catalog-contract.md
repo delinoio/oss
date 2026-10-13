@@ -759,3 +759,7 @@ independent spend-control and freshness rules. Failures preserve routing state,
 code, message, guidance, exit code and transport semantics. Per-source metadata
 never turns a later selected outer result into an exhaustion failure.
 This cause grants no fallback, quota recovery, account or execution authority.
+
+## Managed MCP selection metadata
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns Worker metadata and Agent bindings. Agent managed selections are optional and additive: omitted legacy updates preserve current bindings, while explicit empty selections clear them. Pending, deleted, foreign and disabled references fail admission. Management capability is separate from per-harness native eligibility.

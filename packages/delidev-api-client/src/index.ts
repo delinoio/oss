@@ -67,3 +67,5 @@ export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService
 
 export * from "./gen/delidev/v1/tailscale_pb.js";
 export * as TailscaleQuery from "./gen/delidev/v1/tailscale-TailscaleService_connectquery.js";
+export * from "./gen/delidev/v1/managed_mcp_pb.js";
+export * as ManagedMCPQuery from "./gen/delidev/v1/managed_mcp-ManagedMCPService_connectquery.js";

@@ -36,11 +36,12 @@ const (
 	WorkerSSH           Purpose = "worker-ssh"
 	WorkerNetworkKey    Purpose = "worker-network-key"
 	WorkerNetworkConfig Purpose = "worker-network-config"
+	ManagedMCP          Purpose = "managed-mcp"
 )
 
 func (p Purpose) valid() bool {
 	switch p {
-	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
+	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig, ManagedMCP:
 		return true
 	default:
 		return false
