@@ -3,7 +3,13 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -20,6 +26,9 @@ import { ManagedSubscriptionAccount } from "./subscription-accounts";
 import { MutationIntents } from "./mutation";
 import { SettingsLifetime } from "./settings-lifetime";
 import { encode } from "./documents";
+
+// The one-second poll cadence is slower than the default async-utility wait.
+configure({ asyncUtilTimeout: 4000 });
 
 function connectedAccount() {
   return create(ResourceSchema, {

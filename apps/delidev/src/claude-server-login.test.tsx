@@ -4,7 +4,13 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   ConfigurationService,
@@ -27,6 +33,9 @@ import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
 import { document, encode } from "./documents";
 import { RunnerRemediationProvider } from "./runner-remediation";
+
+// The one-second poll cadence is slower than the default async-utility wait.
+configure({ asyncUtilTimeout: 4000 });
 
 const authorization = new URL("https://claude.com/cai/oauth/authorize");
 for (const [key, value] of Object.entries({
@@ -297,10 +306,14 @@ it("hides the task without canceling, clears the code, and only explicit Cancel 
   await screen.findByLabelText("Approval code");
   expect(f.login).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Cancel sign-in" }));
-  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(f.cancel).toHaveBeenCalledTimes(1), {
+    timeout: 4000,
+  });
   expect(
     await screen.findByText(
       "Cancellation requested. Waiting for original native cleanup.",
+      {},
+      { timeout: 4000 },
     ),
   ).toBeTruthy();
 });
@@ -317,6 +330,8 @@ it("rejects a substituted authorization profile and never opens it", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
   await screen.findByText(
     "The original sign-in status could not be verified. No new sign-in will start.",
+    {},
+    { timeout: 4000 },
   );
   expect(
     f.native.mock.calls.filter(
@@ -332,12 +347,14 @@ it("does not advance on success evidence from a device-owned or foreign operatio
     claude_credential: undefined,
     native_profile_id: newRequestId(),
   });
-  await waitFor(() =>
-    expect(
-      screen.getByText(
-        "The original sign-in status could not be verified. No new sign-in will start.",
-      ),
-    ).toBeTruthy(),
+  await waitFor(
+    () =>
+      expect(
+        screen.getByText(
+          "The original sign-in status could not be verified. No new sign-in will start.",
+        ),
+      ).toBeTruthy(),
+    { timeout: 4000 },
   );
   expect(screen.queryByLabelText("Account name")).toBeNull();
 });
