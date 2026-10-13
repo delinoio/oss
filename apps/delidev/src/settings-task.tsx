@@ -22,6 +22,7 @@ import {
   SettingsDialogFocus,
   SettingsDialogSize,
   SettingsTaskContext,
+  SettingsTaskEntranceContext,
   useSettingsTaskDismiss,
   type SettingsTaskPresentation,
 } from "./settings-task-context";
@@ -30,6 +31,7 @@ import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
 import { MutationIntents } from "./mutation";
 import "./settings-task.css";
 import { DialogSurface } from "./ui";
+import { useEntranceActivation } from "./entrance-motion";
 import { copy, useLocale } from "./localization";
 
 export {
@@ -291,6 +293,19 @@ function SettingsTaskWindow({
   const categoryContent = useRef(
     document.querySelector<HTMLElement>(".settings-content"),
   );
+  // One mounted task window is one explicit opening. Only tasks opened inside a
+  // category that opted in play the entrance; it never gates focus or dismissal.
+  // The entrance moves the task header only: a transform on the native dialog
+  // would make it the containing block of fixed descendants such as portaled
+  // tooltips, so the dialog host and its body never receive the attribute.
+  const entranceTarget = useContext(SettingsTaskEntranceContext);
+  const entrance = useEntranceActivation(id, entranceTarget !== undefined);
+  const dialogRef = useCallback((node: HTMLDialogElement | null) => {
+    dialog.current = node;
+    return () => {
+      if (dialog.current === node) dialog.current = null;
+    };
+  }, []);
   const [actions, setActions] = useState<HTMLDivElement | null>(null);
   const [presentation, setPresentation] = useState<SettingsTaskPresentation>();
   const [activeStep, setActiveStep] = useState<string>();
@@ -501,7 +516,7 @@ function SettingsTaskWindow({
         ? createPortal(
             <>
               <DialogSurface
-                ref={dialog}
+                ref={dialogRef}
                 onKeyDown={(event) => {
                   containTab(event);
                   if (ancestorDialogs.length) event.stopPropagation();
@@ -516,7 +531,11 @@ function SettingsTaskWindow({
                   dismiss();
                 }}
               >
-                <header className="settings-task-header">
+                <header
+                  className="settings-task-header"
+                  ref={entrance.ref}
+                  data-entrance={entrance["data-entrance"]}
+                >
                   <div>
                     <h2 ref={heading} tabIndex={-1} id={`${id}-title`}>
                       {current.title}

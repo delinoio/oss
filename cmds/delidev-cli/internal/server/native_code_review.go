@@ -318,12 +318,16 @@ func (s *Service) PublishNativeCodeReview(ctx context.Context, req *connect.Requ
 	}
 	state := rpc.NativeReviewState(req.Msg.State)
 	var reportedUsage *domain.NativeResponseUsage
+	var usageObservedAt time.Time
 	if req.Msg.Usage != nil {
 		u, usageErr := rpc.NativeReviewUsage(req.Msg.Usage)
 		if usageErr != nil {
 			return nil, rpc.Error(usageErr, corr)
 		}
 		reportedUsage = &u
+		if usageObservedAt, usageErr = rpc.NativeReviewUsageObservedAt(req.Msg.Usage); usageErr != nil {
+			return nil, rpc.Error(usageErr, corr)
+		}
 	}
 	identity := struct {
 		Job, Machine, Instance domain.ID
@@ -378,7 +382,7 @@ func (s *Service) PublishNativeCodeReview(ctx context.Context, req *connect.Requ
 			if !found || (previous.State != domain.NativeReviewEntered && previous.State != domain.NativeReviewExited) || identity.State != previous.State || identity.Selection != previous.Selection || identity.Thread != previous.ThreadID || identity.Turn != previous.TurnID || identity.Item != "" {
 				return nil, domain.NativeCodeReviewUnavailable()
 			}
-			usage := domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, Purpose: domain.NativeCodeReviewUsage, SessionID: row.SessionID, ProjectID: row.ProjectID, ExecutionID: input.ActionID, AccountID: input.Source.AccountID, ConnectionID: input.Source.ConnectionID, ProviderID: input.Source.Configuration.ProviderID, SubscriptionService: input.Source.Configuration.SubscriptionService, ModelID: input.Source.Configuration.ModelID, Harness: domain.Codex, Version: identity.Usage.NativeVersion, ThreadID: string(identity.Thread), TurnID: string(identity.Turn), Sequence: identity.Usage.Sequence, Usage: *reportedUsage}
+			usage := domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, Purpose: domain.NativeCodeReviewUsage, SessionID: row.SessionID, ProjectID: row.ProjectID, ExecutionID: input.ActionID, AccountID: input.Source.AccountID, ConnectionID: input.Source.ConnectionID, ProviderID: input.Source.Configuration.ProviderID, SubscriptionService: input.Source.Configuration.SubscriptionService, ModelID: input.Source.Configuration.ModelID, Harness: domain.Codex, Version: identity.Usage.NativeVersion, ThreadID: string(identity.Thread), TurnID: string(identity.Turn), Sequence: identity.Usage.Sequence, Usage: *reportedUsage, ObservedAt: usageObservedAt}
 			if _, _, err := tx.PutNativeCodeReviewUsage(row.ID, domain.NewID(), usage); err != nil {
 				return nil, err
 			}

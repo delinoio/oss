@@ -540,4 +540,9 @@ message NativeCodeReviewResponseUsage {
   bool unspecified_native_cost = 9;
   uint64 sequence = 10;
   string native_version = 11;
+  // Worker clock instant (Unix milliseconds) at which the original response was
+  // observed. The server prices the receipt with the version eligible at this
+  // instant, so a delayed first publication cannot reprice it. Zero means an
+  // older Worker did not report it and the first-commit time applies.
+  int64 observed_at_unix_ms = 12;
 }

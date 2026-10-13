@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { newRequestId } from "@delinoio/delidev-api-client";
+import { useEntranceActivation } from "./entrance-motion";
 import { Modal } from "./ui";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useAppearance } from "./appearance";
@@ -30,7 +31,7 @@ import {
 } from "./appearance-preferences";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 const label = (key: string) => copy(`appearance.v2.${key}` as MessageKey);
-function ColorPreview({ draft }: { draft: ThemeFile }) {
+export function ColorPreview({ draft }: { draft: ThemeFile }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (
@@ -85,6 +86,9 @@ function ThemeEditor({
   const [draft, setDraft] = useState(initial),
     [error, setError] = useState(false),
     [submitted, setSubmitted] = useState(false);
+  // One explicit editor opening owns one entrance; drafts, saves and refetches
+  // never restart it, and it never delays focus or dismissal.
+  const entrance = useEntranceActivation(initial.id);
   const changed = snapshot.revision !== revision;
   useEffect(() => {
     if (
@@ -98,7 +102,7 @@ function ThemeEditor({
       close();
   }, [submitted, snapshot, draft, revision, close]);
   return (
-    <Modal title={label("editTheme")} close={close}>
+    <Modal title={label("editTheme")} close={close} entrance={entrance}>
       <form
         onSubmit={(event) => {
           event.preventDefault();

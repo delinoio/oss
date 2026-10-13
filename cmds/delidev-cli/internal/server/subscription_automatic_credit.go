@@ -134,18 +134,86 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 	if episode == nil || episode.OperationID != "" || st.Lease == nil || st.Lease.ID != episode.LeaseID || st.Lease.Action != domain.SubscriptionExecute || st.Lease.Epoch != s.subscriptionServerEpoch() || episode.Generation != st.Generation || consent == nil || consent.Generation != st.Generation || consent.ConnectionID != a.Connection.ID || subscriptionActorValid(tx, consent.Actor) != nil || st.Pending != nil || st.ServerObservationActive() || st.Observation != nil && st.Observation.Active() {
 		return nil
 	}
-	if episode.RefreshOperationID != "" && (completed != episode.RefreshOperationID || st.Observation == nil || st.Observation.Phase != domain.SubscriptionObservationSucceeded) {
+	// A historical Worker-owned refresh keeps its original lane. Every episode
+	// admitted from now on freezes a server-owned System 101 claim instead.
+	if episode.RefreshOperationID != "" && episode.ServerProof == nil {
+		return s.admitLegacyWorkerCredit(tx, a, consent, completed)
+	}
+	if episode.RefreshOperationID != "" {
+		return nil
+	}
+	return s.admitServerAutomaticCredit(tx, a, consent, now)
+}
+
+// admitServerAutomaticCredit atomically freezes the original failed Execute
+// proof and reserves the protected generation for server ownership. It queues
+// exactly one server operation for the episode: a stale-inventory quota read, or
+// the selected credit. Worker 52 only publishes the marker; it receives no
+// consumption observation and cannot adopt the claim.
+func (s *Service) admitServerAutomaticCredit(tx *store.Tx, a *domain.Account, consent *domain.AutomaticResetCreditConsent, now time.Time) error {
+	st := a.Subscription
+	episode := st.AutomaticCreditEpisode
+	proof := domain.ServerAutomaticCreditProof{EpisodeID: episode.ID, Epoch: s.subscriptionServerEpoch(), LeaseID: st.Lease.ID, OperationID: st.Lease.OperationID, MachineID: st.Lease.MachineID, DeviceID: st.Lease.DeviceID, InstanceID: st.Lease.InstanceID, LeaseRevision: st.Lease.Revision, Consent: *consent, Block: domain.SubscriptionQuotaBlock{SessionID: episode.SessionID, ExecutionID: episode.ExecutionID, NativeThreadID: episode.NativeThreadID, NativeTurnID: episode.NativeTurnID, Reason: episode.Block}}
+	if proof.Validate() != nil {
+		return nil
+	}
+	credit, available := domain.SelectAutomaticResetCredit(st.ResetCredits, now)
+	operation := domain.NewID()
+	if !available {
+		stale := st.ResetCredits == nil || st.ResetCredits.ObservedAt.After(now) || now.Sub(st.ResetCredits.ObservedAt) > 5*time.Minute
+		if !stale {
+			return nil
+		}
+		episode.RefreshOperationID, episode.ServerProof = operation, &proof
+		st.ServerQuota = &domain.ServerQuotaOperation{AccessOnly: true, AutomaticEpisodeID: episode.ID, ID: operation, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), ConnectionID: a.Connection.ID, Generation: st.Generation, Actor: consent.Actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: now}
+		s.logger.InfoContext(context.Background(), "automatic_credit_server_refresh_admitted", "episode_id", episode.ID, "operation_id", operation)
+		return nil
+	}
+	episode.OperationID, episode.ServerProof = operation, &proof
+	st.ServerCredit = s.newAutomaticServerCredit(a, proof, operation, credit, now)
+	s.logger.InfoContext(context.Background(), "automatic_credit_server_admitted", "episode_id", episode.ID, "operation_id", operation)
+	return nil
+}
+
+func (s *Service) newAutomaticServerCredit(a *domain.Account, proof domain.ServerAutomaticCreditProof, operation domain.ID, credit string, now time.Time) *domain.ServerCreditOperation {
+	return &domain.ServerCreditOperation{AccessOnly: true, Automatic: &proof, ID: operation, Epoch: proof.Epoch, AttemptID: domain.NewID(), AttemptEpoch: proof.Epoch, FinishID: domain.NewID(), ConnectionID: proof.Consent.ConnectionID, Generation: proof.Consent.Generation, Actor: proof.Consent.Actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: now, CreditID: credit, NextCredit: credit == "", CreditsObservationID: a.Subscription.ResetCredits.ObservationID}
+}
+
+// admitAutomaticCreditAfterRefresh runs in the same transaction that settles the
+// episode's one frozen server quota read. The frozen proof, not the live Execute
+// state, authorizes the single consumption; zero, stale, missing or recovered
+// inventory admits nothing.
+func (s *Service) admitAutomaticCreditAfterRefresh(tx *store.Tx, a *domain.Account, refresh domain.ID) {
+	st := a.Subscription
+	now := tx.ObservationTime()
+	episode := st.AutomaticCreditEpisode
+	if episode == nil || episode.ServerProof == nil || episode.RefreshOperationID != refresh || episode.OperationID != "" || !quotaAccountReady(*a) || st.Pending != nil || st.ServerObservationActive() || st.Observation != nil && st.Observation.Active() {
+		return
+	}
+	proof := *episode.ServerProof
+	if !automaticEpisodeAuthority(st, episode, proof, proof.Consent.Generation) || a.Connection.ID != proof.Consent.ConnectionID || subscriptionActorValid(tx, proof.Consent.Actor) != nil {
+		return
+	}
+	credit, available := domain.SelectAutomaticResetCredit(st.ResetCredits, now)
+	if !available {
+		return
+	}
+	episode.OperationID = domain.NewID()
+	st.ServerCredit = s.newAutomaticServerCredit(a, proof, episode.OperationID, credit, now)
+	s.logger.InfoContext(context.Background(), "automatic_credit_server_admitted", "episode_id", episode.ID, "operation_id", episode.OperationID)
+}
+
+// admitLegacyWorkerCredit continues an episode whose stale-inventory refresh was
+// accepted as a Worker observation before the server-owned lane existed.
+func (s *Service) admitLegacyWorkerCredit(tx *store.Tx, a *domain.Account, consent *domain.AutomaticResetCreditConsent, completed domain.ID) error {
+	st := a.Subscription
+	now := tx.ObservationTime()
+	episode := st.AutomaticCreditEpisode
+	if completed != episode.RefreshOperationID || st.Observation == nil || st.Observation.Phase != domain.SubscriptionObservationSucceeded {
 		return nil
 	}
 	credit, available := domain.SelectAutomaticResetCredit(st.ResetCredits, now)
 	if !available {
-		stale := st.ResetCredits == nil || st.ResetCredits.ObservedAt.After(now) || now.Sub(st.ResetCredits.ObservedAt) > 5*time.Minute
-		if !stale || episode.RefreshOperationID != "" {
-			return nil
-		}
-		operation := domain.NewID()
-		episode.RefreshOperationID = operation
-		st.Observation = &domain.SubscriptionObservationOperation{ID: operation, Action: domain.SubscriptionQuota, MachineID: st.Lease.MachineID, Actor: consent.Actor, ConnectionID: a.Connection.ID, Generation: st.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: now, AutomaticEpisodeID: episode.ID, AutomaticLeaseID: st.Lease.ID, AutomaticBlock: &domain.SubscriptionQuotaBlock{SessionID: episode.SessionID, ExecutionID: episode.ExecutionID, NativeThreadID: episode.NativeThreadID, NativeTurnID: episode.NativeTurnID, Reason: episode.Block}}
 		return nil
 	}
 	operation := domain.NewID()
