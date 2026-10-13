@@ -87,12 +87,15 @@ export class DiffBaseTrust {
   forget(owner: string, descriptor: string) {
     this.owners.get(owner)?.departed.delete(descriptor);
   }
-  /** Carries a descriptor's dropped base to the base-free descriptor it becomes. */
+  /**
+   * Shares a descriptor's dropped base with the base-free descriptor it opens.
+   * The source tab stays retained, so its own record is kept; a record that the
+   * destination already owns is never overwritten.
+   */
   move(owner: string, from: string, to: string) {
     const trust = this.owners.get(owner),
       reference = trust?.departed.get(from);
-    if (!trust || !reference || from === to) return;
-    trust.departed.delete(from);
+    if (!trust || !reference || from === to || trust.departed.has(to)) return;
     trust.departed.set(to, reference);
   }
   /** The base dropped by `descriptor`, while it is still invalidated. */
