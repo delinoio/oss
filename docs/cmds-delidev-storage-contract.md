@@ -347,9 +347,11 @@ attempt persists `removal_started`. A retry skips validation, so it restores tha
 inventory and re-binds each record to the object now at its path instead of
 capturing a fresh baseline: a replacement, or a copy restored where absence was
 proven, stays pending on every later attempt, and the original vanishing counts as
-removed. A proof from an earlier release that started removal without a retained
-inventory has no baseline to restore, so its retry captures afresh with the
-authority that release granted. `security.RemoveOwnedTree` remains for callers without an earlier
+removed. A proof records `identity_inventory` when it starts removal, and a retry of such a
+proof whose inventory file is missing or unreadable fails closed (pending) instead
+of recapturing. Only a started proof without that marker, written by an earlier
+release that never retained an inventory, has no baseline to restore, so its retry
+captures afresh with the authority that release granted. `security.RemoveOwnedTree` remains for callers without an earlier
 validated identity.
 
 A captured identity (`security.PathIdentity`) is read from an open handle, never

@@ -26,7 +26,10 @@ type sessionDeletionProof struct {
 	Digest         string    `json:"digest"`
 	ReportID       domain.ID `json:"report_id"`
 	RemovalStarted bool      `json:"removal_started"`
-	Complete       bool      `json:"complete"`
+	// IdentityInventory marks a proof whose removal start retained an identity
+	// inventory. A started proof without it was written by an earlier release.
+	IdentityInventory bool `json:"identity_inventory,omitempty"`
+	Complete          bool `json:"complete"`
 }
 
 // sessionDeletionPath is the session-level admission tombstone. Its existence
@@ -166,7 +169,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// the path with this capture, so an object swapped in during or after
 	// validation is never adopted. A started attempt reuses the identities
 	// persisted before its first removal instead of capturing a fresh baseline.
-	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, proof.RemovalStarted)
+	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, proof.RemovalStarted, proof.IdentityInventory)
 	if e != nil {
 		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 		return proof, domain.SessionDeletionPending()
@@ -183,6 +186,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return err
 		}
 		proof.RemovalStarted = true
+		proof.IdentityInventory = true
 		return writeJSON(path, proof)
 	}
 	allowAbsentWorkspace := w.Fork == nil
@@ -525,13 +529,19 @@ func sessionIdentityPath(root string, w domain.SessionDeletionWork) string {
 // prepareSessionCopyIdentities returns the identity of every inventoried managed
 // path. A started attempt restores the identities persisted before its first
 // removal and re-binds them to the objects now present; a mismatch is pending,
-// so a retry never gains authority over a replacement. A proof written before
-// identities were retained has no baseline to restore and captures afresh, with
-// the authority that earlier releases granted.
-func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, started bool) (map[string]security.PathIdentity, error) {
+// so a retry never gains authority over a replacement. A proof that recorded an
+// inventory (inventoried) and has lost it fails closed. Only a started proof
+// written by an earlier release, which never recorded one, captures afresh with
+// the authority that release granted.
+func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, started, inventoried bool) (map[string]security.PathIdentity, error) {
 	identities := map[string]security.PathIdentity{}
 	if started {
 		raw, e := security.ReadPrivate(sessionIdentityPath(root, w), maxSessionIdentityBytes)
+		if e != nil && inventoried {
+			// The inventory was retained before removal started and is gone or
+			// unreadable. Recapturing would adopt whatever replaced the originals.
+			return nil, domain.SessionDeletionPending()
+		}
 		if e == nil {
 			var file sessionIdentityFile
 			if domain.DecodeBounded(raw, &file, maxSessionIdentityBytes) != nil || file.Version != 1 || file.Digest != w.Digest() {

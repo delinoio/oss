@@ -286,3 +286,30 @@ func TestSessionDeletionRetryDoesNotAdoptSessionLock(t *testing.T) {
 		t.Fatal("retry adopted and removed a foreign session lock", err)
 	}
 }
+
+// A proof that recorded an identity inventory fails closed when it is lost;
+// only a started proof from an earlier release (no recorded inventory) recaptures.
+func TestSessionDeletionRetryFailsClosedWithoutRetainedInventory(t *testing.T) {
+	c, w, original := pendThenPersist(t)
+	proofPath := sessionDeletionObligationPath(c.Root, w, ".json")
+	if saved := readDeletionProof(t, proofPath); !saved.RemovalStarted || !saved.IdentityInventory {
+		t.Fatal("new proof did not record its inventory", saved)
+	}
+	if err := os.Remove(sessionIdentityPath(c.Root, w)); err != nil {
+		t.Fatal(err)
+	}
+	expectPendingDeletion(t, c, w)
+	if b, err := os.ReadFile(filepath.Join(original, "sentinel")); err != nil || string(b) != "foreign sentinel" {
+		t.Fatal("retry recaptured a lost inventory and removed the replacement", err)
+	}
+	// An earlier release's started proof never recorded an inventory.
+	saved := readDeletionProof(t, proofPath)
+	saved.IdentityInventory = false
+	if err := writeJSON(proofPath, saved); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal("legacy started proof did not keep its previous behavior", proof, err)
+	}
+}
