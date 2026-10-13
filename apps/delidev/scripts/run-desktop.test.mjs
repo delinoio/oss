@@ -800,11 +800,13 @@ for (const target of ["stdout", "stderr"]) {
     assert.equal(sink.listenerCount("error"), 1);
     input.write("first\n");
     otherInput.end("healthy\n");
-    await drain();
+    const drained = drain();
+    await new Promise((resolve) => sink.once("close", resolve));
     // Later input is discarded: the failed sink receives no further writes and
     // the child pipe is still consumed.
     input.write("second\n");
     input.end("third");
+    await drained;
     await new Promise((resolve) => setTimeout(resolve, 30));
     assert.deepEqual(writes, ["first\n"]);
     assert.deepEqual(incomplete, ["output-write-failed"]);
@@ -899,13 +901,63 @@ test("a source read error after a sink failure is owned and keeps the classifica
     incomplete: (code) => incomplete.push(code),
   })({ stdout: input, stderr: null });
   input.write("early\n");
-  await drain();
-  assert.deepEqual(incomplete, ["output-write-failed"]);
+  const drained = drain();
+  await new Promise((resolve) => setTimeout(resolve, 20));
   // The pipe is still being discarded; its late failure must not be uncaught.
   input.destroy(new Error("/private/late-stream-error"));
+  await drained;
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(writes, ["early\n"]);
   assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
+test("a failed sink closes a discarded pipe that a descendant keeps open", async () => {
+  const input = new PassThrough();
+  const writes = [];
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: failingSink(writes),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.write("early\n");
+  // The input never ends, like a pipe inherited by a surviving descendant.
+  await drain();
+  assert.equal(input.destroyed, true);
+  assert.deepEqual(writes, ["early\n"]);
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
+test("a failed sink does not delay completion when the pipe closes first", async () => {
+  const input = new PassThrough();
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: failingSink([]),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.write("early\n");
+  setTimeout(() => input.end(), 10);
+  await drain();
+  assert.equal(input.readableEnded, true);
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
+test("a failed sink pipe is closed when another stream times out", async () => {
+  const failed = new PassThrough();
+  const held = new PassThrough();
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: failingSink([]),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: failed, stderr: held });
+  failed.write("early\n");
+  held.write("partial");
+  await drain();
+  assert.equal(failed.destroyed, true);
+  assert.equal(held.destroyed, true);
+  assert.deepEqual(incomplete, ["output-drain-timeout", "output-write-failed"]);
 });
 
 test("a sink error before input end is classified without an unhandled error", async () => {
