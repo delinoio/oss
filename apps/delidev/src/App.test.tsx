@@ -4576,6 +4576,76 @@ it("aborts the pending Search read when Search is left, superseded or unmounted"
   info.mockRestore();
 });
 
+const submitSearch = (term: string) => {
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  fireEvent.change(input, { target: { value: term } });
+  fireEvent.submit(input.closest("form")!);
+};
+
+it("cancels a pending Search opening when a new search replaces the results", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  value.readHook.current = async (request, readSignal) => {
+    if (request.id !== child.id) return;
+    signal = readSignal;
+    await gate;
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  submitSearch("another term");
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  // The late result of the previous search neither navigates nor reports.
+  expect(sidechatTabs()).toHaveLength(0);
+  expect(
+    screen.getByRole("textbox", { name: "Search conversations" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  info.mockRestore();
+});
+
+it("clears an unavailable Search opening alert when a new search replaces the results", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  value.readHook.current = async (request) => {
+    if (request.id === child.id)
+      throw new ConnectError("Read unavailable", Code.Unavailable);
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  expect((await screen.findByRole("alert")).textContent).toMatch(
+    /could not be opened/,
+  );
+  submitSearch("another term");
+  await waitFor(() => expect(value.searches).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("alert")).toBeNull();
+  warn.mockRestore();
+});
+
 it("discards a pending Search read after another target is opened", async () => {
   const info = vi.spyOn(console, "info").mockImplementation(() => {});
   const value = fixture([], [], [], false, true);

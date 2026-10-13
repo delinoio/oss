@@ -87,10 +87,14 @@ export function Search({
   active,
   open,
   opening,
+  submitted,
 }: {
   active: boolean;
   open: (id: string) => void;
   opening?: { id: string; status: SearchOpenStatus };
+  // Called when a submission replaces the result set, so an opening started
+  // from the previous results cannot navigate or report on unrelated rows.
+  submitted?: () => void;
 }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -246,6 +250,7 @@ export function Search({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!draft.query.trim()) return;
+    submitted?.();
     const next = { ...draft, query: draft.query.trim() };
     if (JSON.stringify(query) === JSON.stringify(next)) result.reload();
     else setQuery(next);

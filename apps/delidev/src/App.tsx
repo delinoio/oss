@@ -219,6 +219,12 @@ function Shell({
     supersedeSearchOpening();
     setSearchOpening(undefined);
   }, [surface]);
+  // A new search replaces the result set, so an opening chosen from the
+  // previous results is cancelled and its pending or unavailable status cleared.
+  const resetSearchOpening = () => {
+    supersedeSearchOpening();
+    setSearchOpening(undefined);
+  };
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
     useState(0);
@@ -850,6 +856,7 @@ function Shell({
                         active={surface === Surface.Search}
                         open={openSearchResult}
                         opening={searchOpening}
+                        submitted={resetSearchOpening}
                       />
                       <div
                         className="inbox-container"
