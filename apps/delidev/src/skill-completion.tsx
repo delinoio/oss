@@ -48,6 +48,14 @@ export enum SkillAvailability {
   Unavailable = "unavailable",
   Unknown = "unknown",
 }
+// Presentation identity of an inventory row, excluding per-read opaque IDs.
+function skillFingerprint(entry: SkillEntry): string {
+  return JSON.stringify([
+    entry.name,
+    entry.provenance,
+    entry.selection!.contentRevision,
+  ]);
+}
 export function skillRanges(value: string): SkillToken[] {
   return [...value.matchAll(/(?:^|\s)\$([^\s$]+)(?=$|\s)/gu)].map((match) => ({
     start: match.index! + match[0].length - match[1]!.length - 1,
@@ -250,21 +258,29 @@ export function useSkillCompletion({
       entry.selection && entry.name.toLocaleLowerCase().startsWith(prefix),
   );
   if (visible && inventoryKnown) {
-    const ids = new Set(inventory.map((entry) => entry.selection!.skillId));
-    retained.current.entries = [
-      ...live,
-      ...retained.current.entries.filter(
-        (entry) => !ids.has(entry.selection!.skillId),
-      ),
-    ].slice(0, 256);
+    // SkillIDs and InventoryIDs are minted per read, so reconcile retained rows
+    // by a presentation-only fingerprint and match equal fingerprints by count.
+    // Acceptance still uses only the current opaque selection.
+    const remaining = new Map<string, number>();
+    for (const entry of inventory) {
+      const key = skillFingerprint(entry);
+      remaining.set(key, (remaining.get(key) ?? 0) + 1);
+    }
+    const unmatched = retained.current.entries.filter((entry) => {
+      const key = skillFingerprint(entry),
+        count = remaining.get(key) ?? 0;
+      if (count <= 0) return true;
+      remaining.set(key, count - 1);
+      return false;
+    });
+    retained.current.entries = [...live, ...unmatched].slice(0, 256);
   }
+  const liveEntries = new Set<SkillEntry>(inventory);
   const candidates = (inventoryKnown ? retained.current.entries : [])
     .filter((entry) => entry.name.toLocaleLowerCase().startsWith(prefix))
     .map((entry) => ({
       ...entry,
-      availability: inventory.some(
-        (current) => current.selection!.skillId === entry.selection!.skillId,
-      )
+      availability: liveEntries.has(entry)
         ? SkillAvailability.Available
         : SkillAvailability.Unavailable,
     }))
@@ -273,6 +289,8 @@ export function useSkillCompletion({
         Number(b.name.toLocaleLowerCase() === prefix) -
           Number(a.name.toLocaleLowerCase() === prefix) ||
         a.name.localeCompare(b.name) ||
+        Number(b.availability === SkillAvailability.Available) -
+          Number(a.availability === SkillAvailability.Available) ||
         a.selection!.skillId.localeCompare(b.selection!.skillId),
     );
   const enabledIndices = candidates.flatMap((entry, index) =>
@@ -422,6 +440,9 @@ export function useSkillCompletion({
     if (
       candidates.length &&
       ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(event.key) &&
+      // Plain Tab is intercepted only when an enabled row can be accepted;
+      // otherwise it keeps native focus navigation.
+      !(event.key === "Tab" && validIndex < 0) &&
       !event.shiftKey &&
       !event.metaKey &&
       !event.ctrlKey
@@ -564,7 +585,7 @@ export function useSkillCompletion({
           <ul role="listbox" id={id} aria-label={copy("skills.available")}>
             {candidates.map((entry, index) => (
               <li
-                key={entry.selection!.skillId}
+                key={`${entry.selection!.inventoryId}:${entry.selection!.skillId}`}
                 id={`${id}-${index}`}
                 role="option"
                 aria-selected={index === validIndex}

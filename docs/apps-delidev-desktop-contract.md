@@ -5148,8 +5148,21 @@ count and its status, so late results cannot announce for another owner. Preserv
 native focus, drafts, selections and the existing pending/uncertain locks.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
+Each complete refresh mints new inventory and skill IDs, so reconcile retained rows
+by a presentation-only fingerprint of exact name, provenance and content revision,
+excluding both IDs. Keep every fresh live row first, consume one current fingerprint
+count per equivalent previous row and drop that old row, and retain only unmatched
+previous rows as unavailable. Equal fingerprints match by count, so an unchanged
+skill never gains an unavailable duplicate, a changed-content skill keeps its
+old-content row unavailable beside the available new row until dismissal, and a
+two-to-one disappearance retains exactly one unavailable row. Acceptance always uses
+the current opaque selection, never the fingerprint.
 Unavailable rows retain original names, descriptions and provenance, show localized
-status and are disabled for mouse, Enter and Tab; arrows skip them. Restored live
+status and are disabled for mouse, Enter and Tab; arrows skip them. Plain Tab is
+intercepted only while an enabled row can be accepted; with only unavailable rows
+it is neither default-prevented nor propagation-stopped and keeps native focus
+navigation, leaving the draft, panel and bindings unchanged. Enter, arrows,
+Shift+Tab, modifier chords and IME handling are unchanged. Restored live
 entries use fresh inventory selections. Neither presentation nor Prompt history
 creates, restores or repairs opaque binding authority. All four placements share
 these rules and existing stale-binding, pending and uncertain request guards.
