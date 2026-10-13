@@ -246,11 +246,7 @@ const deferred = <T,>() => {
   });
   return { promise, resolve };
 };
-const exporter = (
-  ref: ImageAttachment,
-  sessionId: string,
-  number: number,
-) => (
+const exporter = (ref: ImageAttachment, sessionId: string, number: number) => (
   <GeneratedImageExport
     bytes={new Uint8Array([1, 2, 3])}
     reference={ref}

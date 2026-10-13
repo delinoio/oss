@@ -73,7 +73,10 @@ export function GeneratedImageExport({
   useLocale();
   const key = `${sessionId}:${reference.id}:${reference.sha256}`;
   const state = useSyncExternalStore(
-    useCallback((listener: () => void) => subscribeOperation(key, listener), [key]),
+    useCallback(
+      (listener: () => void) => subscribeOperation(key, listener),
+      [key],
+    ),
     () => operations.get(key)?.outcome,
     () => operations.get(key)?.outcome,
   );
