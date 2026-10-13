@@ -188,6 +188,13 @@ func TestCredentialRequestExpectsJSONIgnoresZeroQualityRanges(t *testing.T) {
 		{[]string{"application/json;q=0, application/vnd.fixture+json"}, true},
 		{[]string{"application/json;q=0", "application/x-ndjson;q=0.5"}, true},
 		{[]string{"*/*;q=1", "text/plain"}, false},
+		// Quoted parameter values may contain commas without splitting the range.
+		{[]string{`application/ld+json;profile="https://example/a,b"`}, true},
+		{[]string{`text/plain, application/ld+json;profile="a,b", */*`}, true},
+		{[]string{`application/json;q=0;profile="a,b"`}, false},
+		{[]string{`application/json;profile="a\",b"`}, true},
+		// A comma inside a quoted value never exposes a JSON range.
+		{[]string{`text/plain;x="a,application/json"`}, false},
 		{nil, false},
 	} {
 		if got := credentialRequestExpectsJSON(tc.accept); got != tc.want {

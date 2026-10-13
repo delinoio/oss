@@ -142,7 +142,7 @@ func credentialFramingForMediaType(mediaType string) credentialFraming {
 // (RFC 9110), so it does not make the caller expect JSON either.
 func credentialRequestExpectsJSON(accept []string) bool {
 	for _, header := range accept {
-		for _, part := range strings.Split(header, ",") {
+		for _, part := range splitQuotedHeaderList(header) {
 			mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(part))
 			if err != nil || !credentialJSONMediaType(strings.ToLower(mediaType)) {
 				continue
@@ -154,6 +154,27 @@ func credentialRequestExpectsJSON(accept []string) bool {
 		}
 	}
 	return false
+}
+
+// Split an HTTP list field value on commas that are outside quoted strings.
+// Parameter values may be quoted strings containing commas (RFC 9110 section
+// 5.6.4), so a raw comma split would break one valid member into fragments.
+// Backslash escapes inside a quoted string are honored.
+func splitQuotedHeaderList(header string) []string {
+	var parts []string
+	start, quoted := 0, false
+	for i := 0; i < len(header); i++ {
+		switch c := header[i]; {
+		case quoted && c == '\\':
+			i++
+		case c == '"':
+			quoted = !quoted
+		case c == ',' && !quoted:
+			parts = append(parts, header[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, header[start:])
 }
 
 // Report whether a lower-case media type is an RFC 7464 JSON text sequence.
