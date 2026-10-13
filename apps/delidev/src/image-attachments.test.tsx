@@ -16,8 +16,14 @@ import { imageDigest } from "./image-input";
 import * as appearance from "./appearance";
 import { defaultPreferences } from "./appearance-preferences";
 import { Theme, type AppearanceBridge } from "./appearance";
+const bridge = vi.hoisted(() => ({ tauri: true }));
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => bridge.tauri,
+  invoke: vi.fn(),
+}));
 const bytes = new Uint8Array([1, 2, 3]);
 beforeEach(() => {
+  bridge.tauri = true;
   vi.stubGlobal("crypto", webcrypto);
   const BaseURL = URL;
   vi.stubGlobal(
@@ -640,4 +646,38 @@ it("draft images follow the same readiness rule", async () => {
   expect(screen.queryByRole("img")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Reveal image 1" }));
   expect(screen.getByRole("img", { name: "Image 1" })).toBeTruthy();
+});
+it("never offers generated-image export for non-exportable retained user images", async () => {
+  const read = vi.fn(async () => ({
+    data: bytes,
+    sha256: await imageDigest(bytes),
+    complete: true,
+  }));
+  const transport = createRouterTransport((router) =>
+    router.service(AttachmentService, { readAttachment: read }),
+  );
+  const value = [
+    {
+      id: newRequestId(),
+      machine_id: newRequestId(),
+      media_type: "image/png",
+      byte_length: bytes.length,
+      sha256: await imageDigest(bytes),
+    },
+  ];
+  for (const tauri of [true, false]) {
+    bridge.tauri = tauri;
+    const mounted = render(
+      <TransportProvider transport={transport}>
+        <RetainedImages value={value} sessionId={newRequestId()} />
+      </TransportProvider>,
+    );
+    await screen.findByRole("img");
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Export original/ }),
+    ).toBeNull();
+    expect(mounted.container.querySelector("[download]")).toBeNull();
+    mounted.unmount();
+  }
 });

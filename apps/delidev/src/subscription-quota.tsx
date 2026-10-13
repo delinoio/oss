@@ -33,7 +33,6 @@ import {
   SettingsTaskDialog,
   SettingsTaskActions,
   SettingsDialogFocus,
-  SettingsDialogSize,
 } from "./settings-task";
 
 interface CreditConfirmation {
@@ -106,6 +105,41 @@ export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
     !["queued", "sending", "uncertain"].includes(text(observation.phase)) &&
     !["queued", "sending", "uncertain"].includes(text(serverQuota.phase)) &&
     !["queued", "sending", "uncertain"].includes(text(serverCredit.phase))
+  );
+}
+
+/** Last successful quota observation and failed-refresh wording from saved
+ * evidence. Shared by the connected controls and the disconnected read-only
+ * view so both show the same timestamp and never invent one. */
+function LastQuotaObservation({ state }: { state: Record<string, unknown> }) {
+  useLocale();
+  return (
+    <p>
+      <LocalizedText
+        id="subscription-quota.lastSuccessfulObservation_836238"
+        components={{
+          s0: (
+            <>
+              <Timestamp
+                value={text(state.quota_observed_at)}
+                fallback={copy("subscription-quota.extra.ca1844969742")}
+              />
+            </>
+          ),
+          s1: (
+            <>
+              {state.quota_state === "failed"
+                ? copy(
+                    "subscription-quota.theLatestRefreshFailedTheLast_78f81e",
+                  )
+                : copy(
+                    "subscription-quota.quotaIsObservedByTheOriginal_16d486",
+                  )}
+            </>
+          ),
+        }}
+      />
+    </p>
   );
 }
 
@@ -285,6 +319,15 @@ export function SubscriptionQuotaControls({
     busyChanged(busy);
     return () => busyChanged(false);
   }, [busy, busyChanged]);
+  // A confirmation opened while connected must not outlive the connection: the
+  // disconnected presentation is read-only and the confirmation would otherwise
+  // reappear if the account reconnected. The owner keeps `visible` true while a
+  // request is in flight, so the actual account connection is checked too.
+  const accountConnected = connection !== "";
+  const confirmationAllowed = visible && accountConnected;
+  useEffect(() => {
+    if (!confirmationAllowed) setConsentConfirmation(undefined);
+  }, [confirmationAllowed]);
   const originalActive =
     ["queued", "sending", "uncertain"].includes(text(observation.phase)) ||
     ["queued", "sending", "uncertain"].includes(
@@ -517,11 +560,10 @@ export function SubscriptionQuotaControls({
     setConsentConfirmation(undefined);
     queueMicrotask(() => consentOpener.current?.focus());
   };
-  if (consentConfirmation)
+  if (consentConfirmation && confirmationAllowed)
     return (
       <SettingsTaskDialog
         title={copy("subscription-quota.automaticConfirmTitle")}
-        size={SettingsDialogSize.Form}
         focus={SettingsDialogFocus.Heading}
         close={closeConsent}
         onDismiss={() => setConsentConfirmation(undefined)}
@@ -588,7 +630,43 @@ export function SubscriptionQuotaControls({
         ) : null}
       </SettingsTaskDialog>
     );
-  if (!visible) return <>{footer?.()}</>;
+  if (!visible) {
+    // A disconnected account keeps only read-only retained evidence and the
+    // status footer. No interactive quota, credit or preference control is
+    // admitted here; the guards above stay the only source of eligibility.
+    // Independent retained operations keep independent failure evidence, so
+    // every present error is shown rather than the first one only. A local
+    // preference failure never reached a mutation, so it is retained separately.
+    // The shared status failure stays with its owner, which renders it once.
+    const retainedErrors = [
+      consent.error,
+      observe.error,
+      reconcile.error,
+      preferences.error,
+    ].filter(Boolean);
+    // Current capability only gates new requests; saved historical evidence
+    // stays visible even when the connected server lacks quota support.
+    const savedObservation =
+      text(state.quota_observed_at) !== "" || state.quota_state === "failed";
+    return (
+      <>
+        {savedObservation ? <LastQuotaObservation state={state} /> : null}
+        {retainedErrors.length > 0 || preferenceProblem ? (
+          <section
+            className="reset-credit-results"
+            aria-label={copy("subscription-quota.resultsTitle")}
+          >
+            <h4>{copy("subscription-quota.resultsTitle")}</h4>
+            {retainedErrors.map((error, index) => (
+              <Problem key={index} error={error} />
+            ))}
+            {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
+          </section>
+        ) : null}
+        {footer?.()}
+      </>
+    );
+  }
   return (
     <>
       <section
@@ -603,32 +681,7 @@ export function SubscriptionQuotaControls({
           </p>
         ) : (
           <>
-            <p>
-              <LocalizedText
-                id="subscription-quota.lastSuccessfulObservation_836238"
-                components={{
-                  s0: (
-                    <>
-                      <Timestamp
-                        value={text(state.quota_observed_at)}
-                        fallback={copy("subscription-quota.extra.ca1844969742")}
-                      />
-                    </>
-                  ),
-                  s1: (
-                    <>
-                      {state.quota_state === "failed"
-                        ? copy(
-                            "subscription-quota.theLatestRefreshFailedTheLast_78f81e",
-                          )
-                        : copy(
-                            "subscription-quota.quotaIsObservedByTheOriginal_16d486",
-                          )}
-                    </>
-                  ),
-                }}
-              />
-            </p>
+            <LastQuotaObservation state={state} />
           </>
         )}
         {quotaSupported && !serverSupported ? (

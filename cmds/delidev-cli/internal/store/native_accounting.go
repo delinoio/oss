@@ -125,6 +125,30 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 	if f.GeneralChat {
 		where += " AND project_id=''"
 	}
+	if f.SubscriptionService != "" {
+		// Service identity lives only in the immutable source body (no column,
+		// no migration). Exclude valid other-service rows before the read bound so
+		// they cannot consume limits meant for the selected inventory, but never
+		// exclude a row that is not provably a valid excluded unit: a selected Go
+		// row whose JSON lost or changed its service or discriminator must still
+		// reach Decode/Validate and fail closed. The service string alone cannot
+		// prove exclusion, so it is paired with the trusted provider_id column:
+		// valid API rows (OpenCode and Claude) carry a Provider and no service, and
+		// valid Go rows carry the Go service and no Provider. This mirrors
+		// Attribution(): an OpenCode record wins, otherwise the Claude observation.
+		// Unparseable bodies are always kept for the Go-side corruption check. IS
+		// keeps the predicate two-valued so an absent service never yields NULL.
+		where += ` AND CASE WHEN NOT json_valid(body) THEN 1
+			ELSE (CASE WHEN json_type(body,'$.opencode')='object' THEN json_extract(body,'$.opencode.subscription_service') ELSE json_extract(body,'$.observation.subscription_service') END) IS ?
+			OR NOT (
+				(json_type(body,'$.opencode')='object' OR (json_type(body,'$.opencode') IS NULL AND json_type(body,'$.observation')='object'))
+				AND (
+					((CASE WHEN json_type(body,'$.opencode')='object' THEN json_type(body,'$.opencode.subscription_service') ELSE json_type(body,'$.observation.subscription_service') END) IS NULL AND provider_id<>'')
+					OR ((CASE WHEN json_type(body,'$.opencode')='object' THEN json_extract(body,'$.opencode.subscription_service') ELSE json_extract(body,'$.observation.subscription_service') END) IS ? AND provider_id='')
+				)
+			) END`
+		args = append(args, f.SubscriptionService, domain.SubscriptionOpenCodeGo)
+	}
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT id,source_id,session_id,project_id,execution_id,input_id,account_id,provider_id,model_key,body,estimate,COALESCE(pricing_id,''),created_at FROM native_accounting WHERE kind=? AND `+where+` ORDER BY created_at,id LIMIT ?`, append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return v, storageError(err)
@@ -197,11 +221,12 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		if string(left) != string(right) {
 			return domain.NativeAccountingSummary{}, corrupt()
 		}
-		// Service identity stays in the immutable source body. Validate the row
-		// and historical estimate before filtering; no migration or Provider
-		// substitute is needed to read service-bound accounting.
+		// The SQL predicate keeps every row that is not provably a valid excluded
+		// unit. Rows are validated before aggregation, so a kept row whose validated
+		// identity is another service (or whose JSON identity was corrupted) fails
+		// closed instead of being silently dropped.
 		if f.SubscriptionService != "" && a.SubscriptionService != f.SubscriptionService {
-			continue
+			return domain.NativeAccountingSummary{}, corrupt()
 		}
 		v.Totals.Add(u, e)
 		key := string(u.SessionID) + ":" + string(a.AccountID) + ":" + string(a.ProviderID) + ":" + string(a.SubscriptionService) + ":" + string(a.ModelID)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,11 +12,23 @@ import {
   readLifetimeUsage,
   sessionCreatedAt,
   type LifetimeMeasure,
+  type LifetimeUsage,
 } from "./session-lifetime-usage-model";
 import { document as readDocument, object, text } from "./documents";
 import { copy, useLocale } from "./localization";
 import { useSessionActive } from "./session-activity";
 import { Timestamp } from "./timestamp-display";
+
+// The last complete collection is carried across response-usage generations
+// only for one exact owner: the same Session identity, creation time and
+// authenticated transport. Any owner change drops it so totals never cross
+// Sessions or connections.
+type RetainedUsage = {
+  sessionId: string;
+  createdAt: string | undefined;
+  transport: unknown;
+  data: LifetimeUsage;
+};
 
 export function SessionLifetimeUsage({
   session,
@@ -30,6 +42,10 @@ export function SessionLifetimeUsage({
   const transport = useTransport();
   const client = useQueryClient();
   const createdAt = sessionCreatedAt(session);
+  // The millisecond bound above floors fractional seconds, so ownership and
+  // the query identity use the exact validated RFC 3339 creation timestamp.
+  const createdAtExact =
+    createdAt === undefined ? undefined : session.createdAt;
   const responseUsageId = text(
     object(readDocument(session).execution).latest_response_usage_id,
   );
@@ -50,10 +66,10 @@ export function SessionLifetimeUsage({
   const key = useMemo(
     () => [
       ...base.queryKey,
-      { sessionLifetimeCreatedAt: createdAt?.toString() ?? "unavailable" },
+      { sessionLifetimeCreatedAt: createdAtExact ?? "unavailable" },
       { latestResponseUsageId: responseUsageId },
     ],
-    [base, createdAt, responseUsageId],
+    [base, createdAtExact, responseUsageId],
   );
   const result = useQuery({
     queryKey: key,
@@ -77,6 +93,28 @@ export function SessionLifetimeUsage({
     refetchOnWindowFocus: false,
     refetchOnReconnect: "always",
   });
+  const retained = useRef<RetainedUsage | undefined>(undefined);
+  const ownedByCurrent = (value: RetainedUsage | undefined) =>
+    value !== undefined &&
+    value.sessionId === session.id &&
+    value.createdAt === createdAtExact &&
+    value.transport === transport;
+  // Publish only a complete result of the current generation. A replacement
+  // read replaces the whole collection at once, and a delayed result from an
+  // older generation has no observer here, so it can never write.
+  useEffect(() => {
+    if (!ownedByCurrent(retained.current)) retained.current = undefined;
+    if (result.data)
+      retained.current = {
+        sessionId: session.id,
+        createdAt: createdAtExact,
+        transport,
+        data: result.data,
+      };
+  }, [result.data, session.id, createdAtExact, transport]);
+  const displayed =
+    result.data ??
+    (ownedByCurrent(retained.current) ? retained.current?.data : undefined);
   useEffect(() => {
     if (!active) void client.cancelQueries({ queryKey: key, exact: true });
     return () => {
@@ -95,11 +133,11 @@ export function SessionLifetimeUsage({
       >
         <span>
           <span className="session-info-chip">{copy("session.usageIn")}</span>{" "}
-          <span>{format(result.data?.input)}</span>
+          <span>{format(displayed?.input)}</span>
         </span>
         <span>
           <span className="session-info-chip">{copy("session.usageOut")}</span>{" "}
-          <span>{format(result.data?.output)}</span>
+          <span>{format(displayed?.output)}</span>
         </span>
       </div>
       <p>{copy("session.usageIncompleteCoverage")}</p>
@@ -109,7 +147,7 @@ export function SessionLifetimeUsage({
         <p role="status">{copy("session.usageReading")}</p>
       ) : result.error ? (
         <p role="status">
-          {copy(result.data ? "session.usageStale" : "session.usageReadFailed")}
+          {copy(displayed ? "session.usageStale" : "session.usageReadFailed")}
         </p>
       ) : null}
       {createdAt !== undefined && result.error ? (
@@ -126,7 +164,7 @@ export function SessionLifetimeUsage({
               <h3>{copy("session.lifetimeUsage")}</h3>
               <p>{copy("session.usageIndependentRanges")}</p>
               {result.error ? <p>{copy("session.usageReadFailed")}</p> : null}
-              {result.data?.ranges.map((range) => (
+              {displayed?.ranges.map((range) => (
                 <div key={range.fromUnixMs.toString()}>
                   <p>
                     <Timestamp

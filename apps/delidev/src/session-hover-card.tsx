@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { settleEnclosingEntrances } from "./entrance-motion";
 
 interface HoverTarget {
   anchor: RefObject<HTMLButtonElement | null>;
@@ -234,6 +235,9 @@ export function SessionHoverCard({
   useLayoutEffect(() => {
     const node = card.current;
     if (!node || !anchor) return;
+    // The anchor can sit beneath an in-flight page entrance; settle it first so
+    // the card measures an untransformed row (the attribute clears synchronously).
+    settleEnclosingEntrances(anchor);
     // The manual top layer escapes drawer/list overflow without making the
     // tooltip a modal or moving focus. Its DOM stays inside the owning modal.
     if (supportsPopover) {

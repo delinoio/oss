@@ -4078,6 +4078,141 @@ it(
 );
 
 it.each([
+  { collapsed: false, label: "Expanded" },
+  { collapsed: true, label: "Collapsed" },
+])(
+  "moves focus from the closed compact opener to visible navigation when widening ($label)",
+  async ({ collapsed }) => {
+    const resize = viewport();
+    const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
+    const update = vi.spyOn(bridge, "update");
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitForSidebarRead(readStarted);
+    const pane = document.querySelector<HTMLDialogElement>(
+      ".sidebar-pane-dialog",
+    )!;
+    if (collapsed) {
+      fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+      await waitFor(() =>
+        expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+      );
+      await waitFor(() => expect(pane.hidden).toBe(true));
+    }
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    const writes = update.mock.calls.length;
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    if (collapsed)
+      expect(focused.classList.contains("sidebar-rail-button")).toBe(true);
+    expect(update.mock.calls.length).toBe(writes);
+    expect(document.querySelector(".app.sidebar-collapsed") !== null).toBe(
+      collapsed,
+    );
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "moves focus from the closed compact opener to the selected session row when widening",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    const row = await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    });
+    fireEvent.click(row);
+    await screen.findByRole("heading", { name: "Retained session" });
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.classList.contains("sidebar-session-row")).toBe(true);
+    expect(focused.getAttribute("aria-current")).toBe("true");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "skips the hidden retained session row when widening from compact on Settings",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /General Chat Retained session/,
+      }),
+    );
+    await screen.findByRole("heading", { name: "Retained session" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const retained = document.querySelector<HTMLElement>(
+      ".sidebar-session-row[aria-current='true']",
+    );
+    expect(retained?.closest("[hidden]")).not.toBeNull();
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused).not.toBe(retained);
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "keeps focus and selection on a composer input across both breakpoint directions",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+    const input = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "First message",
+    });
+    fireEvent.change(input, { target: { value: "draft message" } });
+    input.focus();
+    input.setSelectionRange(2, 7);
+    act(() => resize(true));
+    expect(document.activeElement).toBe(input);
+    act(() => resize(false));
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 7]);
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it.each([
   ["MacIntel", false],
   ["Win32", false],
   ["Linux x86_64", false],

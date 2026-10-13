@@ -77,7 +77,7 @@ func reviewWithObservation[T any](t *testing.T, f *localReviewFixture, invoke fu
 	if err := domain.Decode(f.reader.Msg().RequestJson, &read); err != nil {
 		t.Fatal(err)
 	}
-	if read.Query.RepositoryID != f.diff.RepositoryID || read.Query.Comparison != f.diff.Comparison || read.Query.Path != f.diff.Path {
+	if read.Query.RepositoryID != f.diff.RepositoryID || read.Query.Comparison != f.diff.Comparison || read.Query.Path != f.diff.Path || read.Query.BaseRef != f.diff.BaseRef {
 		t.Fatal("unexpected comparison")
 	}
 	if beforeReport != nil {
@@ -100,7 +100,7 @@ func reviewWithObservation[T any](t *testing.T, f *localReviewFixture, invoke fu
 
 func createLocalReviewFixtureComment(t *testing.T, f *localReviewFixture) *pb.Resource {
 	t.Helper()
-	v := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: f.diff.RepositoryID, Path: f.diff.Path, Comparison: f.diff.Comparison}, DiffRevision: f.diff.Revision, Selection: domain.ReviewSelection{Path: "file.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "Preserved original request"}
+	v := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: f.diff.RepositoryID, Path: f.diff.Path, Comparison: f.diff.Comparison, BaseRef: f.diff.BaseRef}, DiffRevision: f.diff.Revision, Selection: domain.ReviewSelection{Path: "file.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "Preserved original request"}
 	raw, _ := json.Marshal(v)
 	r, err := reviewWithObservation(t, f, func() (*connect.Response[pb.CreateLocalReviewCommentResponse], error) {
 		return sessionClient(f.f.accountFixture).CreateLocalReviewComment(f.ctx, ownerRequest(f.f.identity, &pb.CreateLocalReviewCommentRequest{RequestId: string(domain.NewID()), SessionId: f.f.change.Session.Id, DocumentJson: raw}))
@@ -281,5 +281,54 @@ func TestLocalReviewCapacityDoesNotPreventCommentRemoval(t *testing.T) {
 	}
 	if err := f.f.service.Store.Read(f.ctx, func(tx *store.Tx) error { return tx.CheckReviewCapacity(session) }); err != nil {
 		t.Fatal("deletion did not release review capacity", err)
+	}
+}
+
+// useBranchObservation replaces the fixture's creation observation with an
+// ordinary branch comparison against base, retaining the same patch bytes.
+func useBranchObservation(f *localReviewFixture, base domain.Reference) {
+	d := f.diff
+	d.Comparison, d.BaseRef = domain.DiffBranch, base
+	d.BaseObject = d.HeadCommit
+	d.BaseCommit, d.MergeBase = d.HeadCommit, d.HeadCommit
+	d.Revision = d.Digest()
+	f.diff = d
+}
+
+func TestLocalReviewCommentOnBranchObservationKeepsBaseAndConflictsOnRevision(t *testing.T) {
+	for name, base := range map[string]domain.Reference{
+		"local branch":  {Type: domain.LocalBranch, Name: "main"},
+		"remote branch": {Type: domain.RemoteBranch, Remote: "origin", Name: "main"},
+		"commit":        {Type: domain.CommitReference, Name: "0123456789abcdef0123456789abcdef01234567"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newLocalReviewFixture(t)
+			useBranchObservation(f, base)
+			comment := createLocalReviewFixtureComment(t, f)
+			var value domain.LocalReview
+			if err := domain.Decode(comment.DocumentJson, &value); err != nil {
+				t.Fatal(err)
+			}
+			anchor := value.Comment.Anchor
+			files, err := f.diff.ReviewFiles()
+			if err != nil || len(files) != 1 {
+				t.Fatal(files, err)
+			}
+			if anchor.Comparison != domain.DiffBranch || anchor.BaseRef != base || anchor.DiffRevision != f.diff.Revision || anchor.FileDigest != files[0].Digest || anchor.Context != "new\n" {
+				t.Fatal("branch anchor lost its exact base or digests", anchor)
+			}
+			// A changed observation must conflict instead of re-anchoring.
+			original := f.diff
+			stale := original
+			stale.Revision = domain.WorkspaceDiff{}.Digest()
+			v := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: original.RepositoryID, Path: original.Path, Comparison: original.Comparison, BaseRef: original.BaseRef}, DiffRevision: stale.Revision, Selection: domain.ReviewSelection{Path: "file.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "stale"}
+			raw, _ := json.Marshal(v)
+			_, err = reviewWithObservation(t, f, func() (*connect.Response[pb.CreateLocalReviewCommentResponse], error) {
+				return sessionClient(f.f.accountFixture).CreateLocalReviewComment(f.ctx, ownerRequest(f.f.identity, &pb.CreateLocalReviewCommentRequest{RequestId: string(domain.NewID()), SessionId: f.f.change.Session.Id, DocumentJson: raw}))
+			}, nil)
+			if connect.CodeOf(err) != connect.CodeAborted {
+				t.Fatal("changed branch revision did not conflict", err)
+			}
+		})
 	}
 }

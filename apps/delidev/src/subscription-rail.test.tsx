@@ -131,6 +131,7 @@ function mount(
     | Promise<{ resources: Resource[]; nextPageToken?: string }>,
   capable = true,
   paidCapable: boolean | (() => boolean) = false,
+  stopping: boolean | (() => boolean) = false,
 ) {
   const requests = vi.fn(read),
     manage = vi.fn(),
@@ -138,6 +139,7 @@ function mount(
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
       getStatus: () => ({
+        stopping: typeof stopping === "function" ? stopping() : stopping,
         capabilities: capable
           ? [
               SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
@@ -1238,6 +1240,169 @@ it("retains credit values and timestamps across failed and deferred reads until 
   expect(
     within(popup).queryByText(/Refresh failed; retained observation/),
   ).toBeNull();
+});
+const paidTimes = (popup: HTMLElement) =>
+  [...popup.querySelectorAll(".subscription-paid-observation time")].map((n) =>
+    n.getAttribute("datetime"),
+  );
+const refreshStatus = (f: { client: QueryClient }) =>
+  act(async () => {
+    await f.client.invalidateQueries({
+      predicate: (q) => JSON.stringify(q.queryKey).includes("GetStatus"),
+    });
+  });
+describe("paid credits while saved reads are paused", () => {
+  it("keeps accepted credits without a failure label while the server is stopping", async () => {
+    let stopping = false;
+    const f = mount(
+      () => ({ resources: [withCredits()] }),
+      true,
+      true,
+      () => stopping,
+    );
+    const { popup } = await openPersonal();
+    const times = paidTimes(popup);
+    expect(times).not.toHaveLength(0);
+    stopping = true;
+    await refreshStatus(f);
+    await waitFor(() =>
+      expect(
+        within(popup)
+          .getByRole("button", { name: "Recheck saved quota evidence" })
+          .hasAttribute("disabled"),
+      ).toBe(true),
+    );
+    expect(
+      within(popup).queryByText(/Refresh failed; retained observation/),
+    ).toBeNull();
+    expect(within(popup).getByText("60,961.11")).toBeTruthy();
+    expect(paidTimes(popup)).toEqual(times);
+    // Pausing never admits another saved read.
+    expect(f.requests).toHaveBeenCalledOnce();
+  });
+  it("keeps accepted credits without a failure label while the document is hidden", async () => {
+    const f = mount(() => ({ resources: [withCredits()] }), true, true);
+    const { popup } = await openPersonal();
+    const times = paidTimes(popup);
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() =>
+      expect(
+        within(popup)
+          .getByRole("button", { name: "Recheck saved quota evidence" })
+          .hasAttribute("disabled"),
+      ).toBe(true),
+    );
+    expect(
+      within(popup).queryByText(/Refresh failed; retained observation/),
+    ).toBeNull();
+    expect(within(popup).getByText("60,961.11")).toBeTruthy();
+    expect(paidTimes(popup)).toEqual(times);
+    expect(f.requests).toHaveBeenCalledOnce();
+    visibility.mockRestore();
+  });
+  it.each([
+    { name: "the server is stopping", pause: "stopping" },
+    { name: "the document is hidden", pause: "hidden" },
+  ])(
+    "keeps ageing retained credits to stale while $name",
+    async ({ pause }) => {
+      let stopping = false;
+      const f = mount(
+        () => ({ resources: [withCredits()] }),
+        true,
+        true,
+        () => stopping,
+      );
+      const { popup } = await openPersonal();
+      const paidStatus = () =>
+        popup.querySelector(".subscription-paid-observation")?.textContent ??
+        "";
+      expect(paidStatus()).toMatch(/^Observed/);
+      const visibility = vi.spyOn(document, "visibilityState", "get");
+      if (pause === "stopping") {
+        stopping = true;
+        await refreshStatus(f);
+      } else {
+        visibility.mockReturnValue("hidden");
+        fireEvent(document, new Event("visibilitychange"));
+      }
+      await waitFor(() =>
+        expect(
+          within(popup)
+            .getByRole("button", { name: "Recheck saved quota evidence" })
+            .hasAttribute("disabled"),
+        ).toBe(true),
+      );
+      // Only the wall clock advances; no saved read is admitted by the pause.
+      const real = Date.now.bind(Date);
+      const clock = vi
+        .spyOn(Date, "now")
+        .mockImplementation(() => real() + 301000);
+      await waitFor(() => expect(paidStatus()).toMatch(/^Stale observation/), {
+        timeout: 3000,
+      });
+      expect(
+        within(popup).queryByText(/Refresh failed; retained observation/),
+      ).toBeNull();
+      expect(f.requests).toHaveBeenCalledOnce();
+      clock.mockRestore();
+      visibility.mockRestore();
+    },
+  );
+  it("keeps the failure label for a real saved-read failure through a later pause", async () => {
+    let failed = false;
+    let stopping = false;
+    const f = mount(
+      () => {
+        if (failed) throw new ConnectError("read failed", Code.Unavailable);
+        return { resources: [withCredits()] };
+      },
+      true,
+      true,
+      () => stopping,
+    );
+    const { popup } = await openPersonal();
+    const times = paidTimes(popup);
+    failed = true;
+    fireEvent.click(
+      within(popup).getByRole("button", {
+        name: "Recheck saved quota evidence",
+      }),
+    );
+    await within(popup).findByText(/Refresh failed; retained observation/);
+    stopping = true;
+    await refreshStatus(f);
+    expect(
+      within(popup).getByText(/Refresh failed; retained observation/),
+    ).toBeTruthy();
+    expect(within(popup).getByText("60,961.11")).toBeTruthy();
+    expect(paidTimes(popup)).toEqual(times);
+  });
+  it("keeps the unsupported state distinct while paused", async () => {
+    let supported = true;
+    let stopping = false;
+    const f = mount(
+      () => ({ resources: [withCredits()] }),
+      true,
+      () => supported,
+      () => stopping,
+    );
+    const { popup } = await openPersonal();
+    supported = false;
+    stopping = true;
+    await refreshStatus(f);
+    await within(popup).findByText(
+      "Unavailable. Update the server and original Runner Device.",
+    );
+    expect(
+      within(popup).queryByText(/Refresh failed; retained observation/),
+    ).toBeNull();
+    expect(within(popup).queryByText("60,961.11")).toBeNull();
+    expect(f.requests).toHaveBeenCalledOnce();
+  });
 });
 it.each([now - 300001, now + 60000])(
   "marks stale/future paid observation independently of fresh quota",

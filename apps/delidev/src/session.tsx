@@ -227,7 +227,11 @@ import {
 } from "./queue";
 import { StartupRejection } from "./startup-rejection";
 
-function useSessionStream(id: string, active: boolean) {
+function useSessionStream(
+  id: string,
+  active: boolean,
+  presentation: InteractionPresentationStore,
+) {
   const transport = useTransport();
   const [resources, setResources] = useState<ReadonlyMap<string, Resource>>(
     new Map(),
@@ -306,6 +310,11 @@ function useSessionStream(id: string, active: boolean) {
           );
         } else if (change.kind === SyncKind.Remove) {
           known.delete(change.id);
+          // Only confirmed interaction removals reach the durable fence, and it
+          // must exist before any following Snapshot clears the stream-scoped
+          // tombstones below.
+          if (change.entityKind === EntityKind.INTERACTION)
+            presentation.remove(change.id);
           setNewMessageIds((current) =>
             current.filter((id) => id !== change.id),
           );
@@ -339,7 +348,7 @@ function useSessionStream(id: string, active: boolean) {
       }
     });
     return () => controller.abort();
-  }, [id, transport, restart, active, readOwner]);
+  }, [id, transport, restart, active, readOwner, presentation]);
   return {
     currentSnapshot: snapshotOwner === readOwner,
     resources,
@@ -929,12 +938,18 @@ export function SessionView({
     active && (embedded || tabs.tab.kind === SessionTabKind.Conversation);
   // Session metadata owns account and native presentation authority even when
   // a resource pane hides the conversation. Only transcript reads pause there.
+  // The presentation store outlives stream snapshots and receives authoritative
+  // interaction removals from the stream before any following Snapshot.
+  const [interactionPresentation] = useState(
+    () => new InteractionPresentationStore(),
+  );
   const live = useSessionStream(
     id,
     active &&
       ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
         tabs.tab.kind,
       ),
+    interactionPresentation,
   );
   const submissions = useSessionSubmissions();
   const [submissionError, setSubmissionError] = useState<unknown>();
@@ -1101,9 +1116,6 @@ export function SessionView({
     useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
-  const [interactionPresentation] = useState(
-    () => new InteractionPresentationStore(),
-  );
   const [responseResources, setResponseResources] = useState<
     ReadonlyMap<string, Resource>
   >(new Map());
@@ -1663,10 +1675,15 @@ export function SessionView({
     target?.scrollIntoView?.({ block: "nearest" });
     setRevealSubmission(undefined);
   }, [revealSubmission, active]);
+  // Stream-scoped removals plus the durable fence that survives Snapshots.
+  const removedInteractions = new Set([
+    ...live.removed,
+    ...interactionPresentation.removed(),
+  ]);
   const requests = interactionRows(
     interactions.data?.resources ?? [],
     latestInteractions,
-    live.removed,
+    removedInteractions,
     live.newInteractionIds,
     id,
     !!interactions.data && !interactions.data.nextPageToken,
@@ -1691,7 +1708,7 @@ export function SessionView({
   const missingQuestionReceipts = selectMissingQuestionReceipts(
     interactionPresentation.entries(),
     new Set(requests.map((row) => row.id)),
-    live.removed,
+    removedInteractions,
     pendingQuestionKeys,
   );
   // Receipts render at their original reached page and row position, including
@@ -2733,7 +2750,7 @@ export function SessionView({
                                   ? interactionRows(
                                       payload,
                                       latestInteractions,
-                                      live.removed,
+                                      removedInteractions,
                                       [],
                                       id,
                                       false,

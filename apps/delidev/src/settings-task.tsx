@@ -328,7 +328,10 @@ function SettingsTaskWindow({
     },
     [],
   );
-  const current = presentation ?? { title, subtitle, size, focus };
+  // A nested step that omits its size inherits the enclosing window size.
+  const current = presentation
+    ? { ...presentation, size: presentation.size ?? size }
+    : { title, subtitle, size, focus };
   const dismissWithClose = useCallback(
     (idleClose?: () => void, _force = false) => {
       if (closeRequested.current) return;

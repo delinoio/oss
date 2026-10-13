@@ -24,6 +24,11 @@ import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
+import {
   EntityKind,
   IntegrationQuery,
   PullRequestFixQuery,
@@ -462,6 +467,15 @@ export function PullRequests({
 }) {
   const productLabel = useProductLabels();
   useLocale();
+  // Explicit destination activation (first entry, or returning to this retained
+  // page) owns one 160ms Y4 entrance on the page content. Repository and state
+  // changes, typing, refresh and reads never restart it, and nothing waits for it.
+  const destinationActivations = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `pull-requests:${destinationActivations}`,
+    active,
+    EntranceMotion.Y4,
+  );
   const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
   const [expandedRepositoryId, setExpandedRepositoryId] = useState("");
@@ -866,6 +880,7 @@ export function PullRequests({
         hidden={!active}
         className="page pull-requests-page"
         data-list-layout={listLayout}
+        {...pageEntrance}
       >
         {!cardsCurrent ? (
           <>

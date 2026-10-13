@@ -48,7 +48,11 @@ func (s *Service) ListRequestDiagnostics(ctx context.Context, req *connect.Reque
 			return err
 		}
 		for _, v := range values {
-			row := &pb.RequestDiagnostic{Id: string(v.ID), Revision: v.Revision, SessionId: string(v.SessionID), ExecutionId: string(v.ExecutionID), AccountId: string(v.AccountID), ConnectionId: string(v.ConnectionID), ProviderId: string(v.ProviderID), SubscriptionService: rpc.WireSubscriptionService(v.SubscriptionService), Model: wireModelKey(v.ModelID), Source: pb.RequestDiagnosticSource(v.Source), Operation: pb.RequestDiagnosticOperation(v.Operation), State: pb.RequestDiagnosticState(v.State), Purpose: string(v.Purpose), Harness: string(v.Harness), InputId: string(v.InputID), PublicationRequestId: string(v.PublicationRequestID), CorrelationId: string(v.CorrelationID), NativeRequestId: v.NativeRequestID, NativeResponseId: v.NativeResponseID, ProviderRequestId: v.ProviderRequestID, NativeThreadId: v.NativeThreadID, NativeTurnId: v.NativeTurnID, RequestedEffort: v.RequestedEffort, RequestedServiceTier: v.RequestedServiceTier, EffectiveEffort: v.EffectiveEffort, EffectiveServiceTier: v.EffectiveServiceTier, ObservedAt: v.ObservedAt.Format(time.RFC3339Nano), DurationMs: v.DurationMS, HttpAttempted: v.HTTPAttempted, HttpStatus: v.HTTPStatus, ErrorCode: string(v.ErrorCode)}
+			attribution, err := wireDiagnosticAttribution(v.Attribution)
+			if err != nil {
+				return err
+			}
+			row := &pb.RequestDiagnostic{Id: string(v.ID), Revision: v.Revision, SessionId: string(v.SessionID), ExecutionId: string(v.ExecutionID), AccountId: string(v.AccountID), ConnectionId: string(v.ConnectionID), ProviderId: string(v.ProviderID), SubscriptionService: rpc.WireSubscriptionService(v.SubscriptionService), Model: wireModelKey(v.ModelID), Attribution: attribution, Source: pb.RequestDiagnosticSource(v.Source), Operation: pb.RequestDiagnosticOperation(v.Operation), State: pb.RequestDiagnosticState(v.State), Purpose: string(v.Purpose), Harness: string(v.Harness), InputId: string(v.InputID), PublicationRequestId: string(v.PublicationRequestID), CorrelationId: string(v.CorrelationID), NativeRequestId: v.NativeRequestID, NativeResponseId: v.NativeResponseID, ProviderRequestId: v.ProviderRequestID, NativeThreadId: v.NativeThreadID, NativeTurnId: v.NativeTurnID, RequestedEffort: v.RequestedEffort, RequestedServiceTier: v.RequestedServiceTier, EffectiveEffort: v.EffectiveEffort, EffectiveServiceTier: v.EffectiveServiceTier, ObservedAt: v.ObservedAt.Format(time.RFC3339Nano), DurationMs: v.DurationMS, HttpAttempted: v.HTTPAttempted, HttpStatus: v.HTTPStatus, ErrorCode: string(v.ErrorCode)}
 			if v.FinishedAt != nil {
 				finished := v.FinishedAt.Format(time.RFC3339Nano)
 				row.FinishedAt = &finished
@@ -67,6 +71,18 @@ func (s *Service) ListRequestDiagnostics(ctx context.Context, req *connect.Reque
 	response := connect.NewResponse(result)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// A builtin attribution is carried as a closed enum with no catalog model: the
+// reviewer never borrows a catalog model key, so Model stays unset for it.
+func wireDiagnosticAttribution(value domain.ModelAttribution) (pb.RequestDiagnosticAttribution, error) {
+	switch value {
+	case "":
+		return pb.RequestDiagnosticAttribution_REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED, nil
+	case domain.BuiltinReviewerAttribution:
+		return pb.RequestDiagnosticAttribution_REQUEST_DIAGNOSTIC_ATTRIBUTION_CODEX_REVIEWER, nil
+	}
+	return pb.RequestDiagnosticAttribution_REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED, domain.Fail(domain.Internal, "Stored request diagnostic attribution is not supported.", "Retain the original observation; no catalog model was substituted.")
 }
 
 // This projection shares the original validated native event transaction. It

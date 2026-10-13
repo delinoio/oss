@@ -2929,6 +2929,10 @@ dialog nav {
   overflow-wrap: anywhere;
 }
 .sidebar-pull-requests .pr-state-choice > input:checked + span {
+  /* Only the selected segment background animates; themes.css suppresses it for
+     Animation Off and reduced motion. Unchecked segments, including their
+     hover surface, change instantly. */
+  transition: background-color 120ms ease-out;
   background: var(--surface);
   color: var(--selected-text);
   font-weight: 600;
@@ -4519,6 +4523,8 @@ dialog nav {
 .is-home .sidebar-session-row[aria-current="true"] {
   background: var(--selected-background);
   color: var(--selected-text);
+  /* Inset ring keeps the cue visible without changing row geometry. */
+  box-shadow: inset 0 0 0 1px var(--selected-border);
 }
 .is-home .sidebar-empty,
 .is-home .sidebar-query-state,

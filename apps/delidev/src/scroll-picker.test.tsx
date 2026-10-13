@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { useEntranceActivation } from "./entrance-motion";
 import { ScrollPicker } from "./scroll-picker";
 
 const query = () => ({
@@ -178,5 +179,55 @@ it("blocks queued selection when the original owner becomes inert before renderi
   const option = screen.getAllByRole("option", { name: "Equal name" })[1]!;
   view.container.querySelector("section")!.setAttribute("inert", "");
   fireEvent.click(option);
+  expect(change).not.toHaveBeenCalled();
+});
+
+it("settles an enclosing page entrance before opening the picker popup", () => {
+  function Page() {
+    const entrance = useEntranceActivation("page:1");
+    return (
+      <section data-testid="page" {...entrance}>
+        <ScrollPicker
+          options={options}
+          label="Runner"
+          value="a"
+          change={vi.fn()}
+          query={query()}
+          active
+        />
+      </section>
+    );
+  }
+  render(<Page />);
+  expect(screen.getByTestId("page").getAttribute("data-entrance")).toBe("y4");
+  fireEvent.click(screen.getByRole("combobox", { name: "Runner" }));
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(screen.getByTestId("page").hasAttribute("data-entrance")).toBe(false);
+});
+
+it("moves the highlight with the keyboard without changing the accepted value", () => {
+  const change = vi.fn();
+  render(
+    <ScrollPicker
+      options={options}
+      label="Runner"
+      value="a"
+      change={change}
+      query={query()}
+      active
+    />,
+  );
+  const trigger = screen.getByRole("combobox", { name: "Runner" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const [first, , last] = screen.getAllByRole("option");
+  expect(first.getAttribute("aria-selected")).toBe("true");
+  expect(first.getAttribute("data-highlighted")).toBe("true");
+  fireEvent.keyDown(trigger, { key: "End" });
+  // The cue hooks move with the highlight; aria-selected keeps the accepted value.
+  expect(first.getAttribute("data-highlighted")).toBe("false");
+  expect(last.getAttribute("data-highlighted")).toBe("true");
+  expect(first.getAttribute("aria-selected")).toBe("true");
+  expect(last.getAttribute("aria-selected")).toBe("false");
   expect(change).not.toHaveBeenCalled();
 });

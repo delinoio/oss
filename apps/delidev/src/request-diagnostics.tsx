@@ -22,6 +22,7 @@ import {
   RequestDiagnosticSource as Source,
   RequestDiagnosticState as State,
   RequestDiagnosticOperation as Operation,
+  RequestDiagnosticAttribution as Attribution,
   SessionQuery,
   SystemCapability,
   SystemQuery,
@@ -68,6 +69,9 @@ const errors = new Set([
   "unavailable",
   "internal",
 ]);
+// Canonical native model of the builtin Codex approval reviewer. It is a fixed
+// identity, never a catalog model, so it is displayed without a catalog lookup.
+const codexReviewerNativeModel = "gpt-5.6-luna";
 const opaqueId =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:req[_-]|resp_|msg_|chatcmpl-)[a-zA-Z0-9_-]+)$/;
 const harnesses = new Set(["codex", "claude-code", "opencode", "grok-build"]);
@@ -131,15 +135,28 @@ export function validateDiagnosticPage(
       value.revision > 9223372036854775807n
     )
       invalid();
-    if (
-      !value.model ||
-      !value.model.nativeId ||
-      new TextEncoder().encode(value.model.nativeId).length > 256 ||
-      value.model.providerId !== value.providerId ||
-      value.model.subscriptionService !== value.subscriptionService ||
-      value.modelId
-    )
-      invalid();
+    // Catalog and builtin reviewer identity are validated independently. A
+    // builtin attribution never carries or borrows a catalog model.
+    if (value.attribution === Attribution.UNSPECIFIED) {
+      if (
+        !value.model ||
+        !value.model.nativeId ||
+        new TextEncoder().encode(value.model.nativeId).length > 256 ||
+        value.model.providerId !== value.providerId ||
+        value.model.subscriptionService !== value.subscriptionService ||
+        value.modelId
+      )
+        invalid();
+    } else if (value.attribution === Attribution.CODEX_REVIEWER) {
+      if (
+        value.model ||
+        value.modelId ||
+        value.subscriptionService ||
+        value.harness !== "codex" ||
+        value.source !== Source.PROXY_HTTP
+      )
+        invalid();
+    } else invalid();
     const service = subscriptionServiceFromWire(value.subscriptionService);
     if (
       value.subscriptionService
@@ -291,7 +308,11 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
             : productLabel(PresentationKind.Provider, value.providerId)}
         </dd>
         <dt>{copy("request-diagnostics.model_5e2c61")}</dt>
-        <dd>{value.model?.nativeId}</dd>
+        <dd>
+          {value.attribution === Attribution.CODEX_REVIEWER
+            ? codexReviewerNativeModel
+            : value.model?.nativeId}
+        </dd>
         <dt>{copy("request-diagnostics.purpose_d4e883")}</dt>
         <dd>{value.purpose}</dd>
         <dt>{copy("request-diagnostics.observed_64fa8a")}</dt>

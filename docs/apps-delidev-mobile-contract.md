@@ -12,6 +12,11 @@ UUIDs. Original authority, receipt JSON, immutable retries and user/native quest
 approval, message, tool and terminal bytes remain unchanged. Presentation starts no
 new read, write, notification, native operation or inference.
 
+Mobile imports `apps/delidev/src/product-identity.ts` by relative path, so
+`apps/delidev-mobile/turbo.json` declares it as an explicit input of the `build`,
+`build:frontend` and `typecheck` tasks (repeating the root task inputs because Turbo
+replaces inherited arrays).
+
 ## Scope
 
 `apps/delidev-mobile` owns the separate iOS and Android remote client in the feature. Its identity is `io.delino.delidev.mobile`, and its display name is
@@ -110,6 +115,13 @@ Existing pending records need no migration because the ID is derived from the
 retained request, not its stored target. Stop and Resume require current
 observations and confirmation.
 Question and approval responses retain the original interaction revision.
+Question controls follow the original request family: ordinary questions show
+custom text only when `other` is true or no options are offered, native OpenCode
+questions allow custom text unless `custom` is false and render radios (one
+entry per row, option and custom text replace each other) unless `multiple` is
+true, and Claude and Grok questions keep checkbox options with custom text.
+Submitted rows and the missing-answer check use the same eligibility, so a row
+never carries custom text the family disallows.
 Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before
 showing response controls; notification delivery never changes read state.

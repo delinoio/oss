@@ -19,6 +19,7 @@ import {
   type SkillEntry,
   type SkillSelection,
 } from "@delinoio/delidev-api-client";
+import { useAppearancePreferences } from "./appearance";
 import { copy, useLocale } from "./localization";
 import {
   skillCompletionAnchorUsable,
@@ -814,6 +815,11 @@ function SkillText({
     ...ranges.map((range) => ({ ...range, selected: false })),
     ...selected.map((range) => ({ ...range, selected: true })),
   ].sort((a, b) => a.start - b.start);
+  // The appearance provider writes the composer typography data attributes in
+  // its own layout effect, which runs after this child's layout effects.
+  const { composer_size, composer_layout, density } =
+    useAppearancePreferences();
+  const realign = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     const input = textarea.current,
       viewport = frame.current,
@@ -855,6 +861,7 @@ function SkillText({
       text.style.transform = `translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;
     };
     align();
+    realign.current = align;
     const observer =
       typeof ResizeObserver === "undefined"
         ? undefined
@@ -863,11 +870,17 @@ function SkillText({
     input.addEventListener("scroll", align);
     window.addEventListener("resize", align);
     return () => {
+      if (realign.current === align) realign.current = null;
       observer?.disconnect();
       input.removeEventListener("scroll", align);
       window.removeEventListener("resize", align);
     };
   }, [textarea, value, painted.length]);
+  // Passive effects run after every layout effect of the commit, including the
+  // provider's, so the recomputed style already reflects the new preference.
+  useEffect(() => {
+    realign.current?.();
+  }, [composer_size, composer_layout, density]);
   let end = 0;
   const segments = painted.map((range) => {
     const preceding = value.slice(end, range.start);
