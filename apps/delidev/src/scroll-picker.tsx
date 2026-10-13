@@ -186,7 +186,13 @@ export function ScrollPicker({
     )
       lifetime.observe(owner, {
         attributes: true,
-        attributeFilter: ["open", "inert", "hidden", "disabled", "data-entrance"],
+        attributeFilter: [
+          "open",
+          "inert",
+          "hidden",
+          "disabled",
+          "data-entrance",
+        ],
       });
     const observer =
       typeof ResizeObserver === "undefined"
