@@ -1175,8 +1175,13 @@
   min-height: 0;
   max-height: none;
 }
+/* A selected Sidechat owns the whole conversation region: the retained
+   Conversation body is hidden, so the pane fills the region width without
+   a blank sibling or horizontal overflow at narrow and reflow widths. */
 .session-sidechat-pane {
+  width: 100%;
   height: 100%;
+  min-width: 0;
 }
 .session-sidechat-pane .session-workspace {
   height: 100%;
