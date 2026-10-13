@@ -205,7 +205,11 @@ test("rspack adapter detects per-entry library builds", () => {
     "rspack.config.mjs",
     `export default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: { main: { import: "./src/esm/value.js", library: { type: "commonjs2" } } } };\n`,
   );
-  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  const { status, collection } = runAdapter(
+    "rspack",
+    "rspack-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.libraryBuild, true);

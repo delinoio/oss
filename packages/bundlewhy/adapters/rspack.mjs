@@ -147,7 +147,10 @@ function libraryBuild(config) {
   if (entry && typeof entry === "object" && !Array.isArray(entry)) {
     return Object.values(entry).some(
       (description) =>
-        description && typeof description === "object" && !Array.isArray(description) && Boolean(description.library),
+        description &&
+        typeof description === "object" &&
+        !Array.isArray(description) &&
+        Boolean(description.library),
     );
   }
   return false;
