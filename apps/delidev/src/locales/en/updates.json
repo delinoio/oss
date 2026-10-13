@@ -30,6 +30,8 @@
   "updates.retryTheSameUpdateCheck_919af6": "Retry the same update check",
   "updates.originalUpdateId_51ae1b": "Original update ID",
   "updates.inspectOriginalUpdate_3b2c2e": "Inspect original update",
+  "updates.rootUnavailable": "Signed updates are unavailable in this build.",
+  "updates.rootUnavailableHelp": "This DeliDev build has no production update-signing key, so it cannot check for signed updates. Your installed version is unchanged.",
   "updates.unchecked": "Updates have not been checked yet.",
   "updates.checking": "Checking for updates…",
   "updates.current": "No newer signed update was found.",
