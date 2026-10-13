@@ -5876,7 +5876,12 @@ their original recovery controls. Rejected toggles are never queued.
 Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
 primary+B. Drawer opening/closing never saves the wide preference. On return to
 wide layout, reapply the committed choice, retire any modal drawer and use the
-same current/first rail fallback when collapsed. Search initial focus cannot
+same current/first rail fallback when collapsed. When the closed compact opener
+owns focus as the viewport widens (ownership is captured from the breakpoint
+event, before CSS hides the opener), move focus to the `aria-current` pane item
+when the pane is visible, else to the current/first rail button; focus on any
+other control, including composer selection and caret, is never touched and the
+reflow never writes the sidebar preference. Search initial focus cannot
 target a hidden pane; explicit Search focus may request the original
 pane opening and waits for the current committed opening to settle. Fence pending
 Search focus by its presentation generation and active destination; cancellation,
