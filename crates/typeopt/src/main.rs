@@ -72,6 +72,18 @@ mod app {
     /// Bundle chunks that an HTML page loads as a classic script.
     static BUNDLE_CLASSIC: std::sync::OnceLock<std::collections::BTreeSet<String>> =
         std::sync::OnceLock::new();
+    /// Bundle chunks that a boundary chunk can import, each with the boundary
+    /// chunk that reaches it. They stay unchanged and keep their names.
+    static BUNDLE_FROZEN: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
+        std::sync::OnceLock::new();
+    pub(crate) fn set_bundle_frozen(frozen: std::collections::BTreeMap<String, String>) {
+        let _ = BUNDLE_FROZEN.set(frozen);
+    }
+    /// Chunks frozen because a boundary chunk can import them, with the
+    /// causing boundary chunk, in path order.
+    pub(crate) fn bundle_frozen() -> impl Iterator<Item = (&'static String, &'static String)> {
+        BUNDLE_FROZEN.get().into_iter().flatten()
+    }
     pub(crate) fn set_bundle_modules(
         modules: std::collections::BTreeSet<String>,
         classic: std::collections::BTreeSet<String>,
@@ -83,9 +95,13 @@ mod app {
     /// operator, or not known to be an ES module (a classic script shares
     /// its top-level bindings with other scripts). `.mjs` files, chunks with
     /// ESM statements and chunks that a chunk or an HTML module script loads
-    /// are ES modules.
+    /// are ES modules. A chunk that a boundary chunk can import is a boundary
+    /// as well: the boundary keeps importing its original name.
     pub(crate) fn bundle_boundary(path: &str, esm_statements: bool) -> bool {
-        BUNDLE_EXCLUDE
+        BUNDLE_FROZEN
+            .get()
+            .is_some_and(|frozen| frozen.contains_key(path))
+            || BUNDLE_EXCLUDE
             .get()
             .is_some_and(|patterns| patterns.iter().any(|p| path.contains(p.as_str())))
             // A chunk that any page loads as a classic script shares its

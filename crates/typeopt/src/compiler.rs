@@ -328,6 +328,8 @@ impl Project {
             computed: computed_import,
             bare,
             worker_scripts,
+            non_esm,
+            eval_or_with,
         } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
@@ -388,9 +390,25 @@ impl Project {
         entries.sort();
         entries.dedup();
         project.entries = entries;
+        let html_classic = classic.clone();
         let mut classic = classic;
         classic.extend(worker_scripts);
         crate::app::set_bundle_modules(modules, classic);
+        // Boundary chunks stay byte-for-byte unchanged and keep importing the
+        // original names of what they reach. Whatever a boundary chunk can
+        // import must therefore keep its name and content too: a renamed copy
+        // would be evaluated next to the original, with a second module state.
+        let boundaries: Paths = chunks
+            .iter()
+            .filter(|chunk| {
+                crate::app::bundle_boundary(chunk, !non_esm.contains(*chunk))
+                    || eval_or_with.contains(*chunk)
+            })
+            .cloned()
+            .collect();
+        let reach = boundary_reach(&chunks, &boundaries, &edges);
+        log_frozen_chunks(&reach, &scripts, &html_classic, &from_html);
+        crate::app::set_bundle_frozen(first_boundary_credit(&reach));
         tracing::info!(
             chunks = chunks.len(),
             entries = project.entries.len(),
@@ -458,6 +476,7 @@ impl Project {
         let mut bare = None;
         let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
         let mut non_esm = Paths::new();
+        let mut eval_or_with = Paths::new();
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -471,6 +490,9 @@ impl Project {
             collect(file, &mut nodes);
             if !has_esm_statements(file) && !uses_import_meta(&nodes) {
                 non_esm.insert(name.clone());
+            }
+            if uses_eval_or_with(&nodes) {
+                eval_or_with.insert(name.clone());
             }
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
@@ -568,8 +590,9 @@ impl Project {
         // A computed `importScripts` target can be any chunk that a classic
         // script can parse: every chunk without ESM syntax.
         if worker_computed {
-            worker_scripts.extend(non_esm);
+            worker_scripts.extend(non_esm.iter().cloned());
         }
+        let (non_esm_all, eval_or_with_all) = (non_esm, eval_or_with);
         BundleImports {
             imported,
             unlinked: public,
@@ -577,6 +600,8 @@ impl Project {
             computed,
             bare,
             worker_scripts,
+            non_esm: non_esm_all,
+            eval_or_with: eval_or_with_all,
         }
     }
 
@@ -1307,6 +1332,126 @@ struct BundleImports {
     bare: Option<String>,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,
+    /// Chunks without ESM statements or `import.meta`.
+    non_esm: Paths,
+    /// Chunks that use direct `eval`, `with` or `importScripts`.
+    eval_or_with: Paths,
+}
+
+/// Chunks that a boundary chunk can import, statically or through a literal
+/// dynamic `import()`, directly or through other chunks, each with the first
+/// boundary chunk in path order that reaches it. Boundary chunks themselves
+/// and imported files that are not in `chunks` (JSON or CSS assets) are not
+/// part of the result. A reference names only the file name, so a
+/// chunk that shares its file name with a frozen chunk (in another directory)
+/// is frozen with it: rehashing keeps a frozen name for every file that
+/// carries it, and an edited copy under the old content hash would let
+/// immutable caches serve stale code.
+#[cfg(test)]
+fn boundary_closure(
+    chunks: &[String],
+    boundaries: &Paths,
+    edges: &BTreeMap<String, Paths>,
+) -> BTreeMap<String, String> {
+    first_boundary_credit(&boundary_reach(chunks, boundaries, edges))
+}
+
+/// Credits every chunk to the first boundary chunk in path order that reaches
+/// it.
+fn first_boundary_credit(reach: &BTreeMap<String, Paths>) -> BTreeMap<String, String> {
+    let mut frozen = BTreeMap::<String, String>::new();
+    for (boundary, chunks) in reach {
+        for chunk in chunks {
+            frozen
+                .entry(chunk.clone())
+                .or_insert_with(|| boundary.clone());
+        }
+    }
+    frozen
+}
+
+/// For every boundary chunk that reaches at least one chunk, the chunks it
+/// freezes (see `boundary_closure`), counting chunks that an earlier boundary
+/// reaches as well.
+fn boundary_reach(
+    chunks: &[String],
+    boundaries: &Paths,
+    edges: &BTreeMap<String, Paths>,
+) -> BTreeMap<String, Paths> {
+    // Edges also reach existing assets that are not JavaScript chunks (JSON,
+    // CSS): those never take part in staging, so they cannot be frozen.
+    let known: Paths = chunks.iter().cloned().collect();
+    let mut by_name = BTreeMap::<&std::ffi::OsStr, Vec<&String>>::new();
+    for chunk in chunks {
+        if let Some(name) = std::path::Path::new(chunk).file_name() {
+            by_name.entry(name).or_default().push(chunk);
+        }
+    }
+    let mut reach = BTreeMap::<String, Paths>::new();
+    for boundary in boundaries {
+        // Traversal passes through other boundary chunks: what a nested
+        // boundary imports is reachable from this one as well.
+        let mut frozen = Paths::new();
+        let mut visited = Paths::from([boundary.clone()]);
+        let mut pending = vec![boundary.clone()];
+        while let Some(chunk) = pending.pop() {
+            let mut reached: Vec<String> =
+                edges.get(&chunk).into_iter().flatten().cloned().collect();
+            while let Some(target) = reached.pop() {
+                if !visited.insert(target.clone()) {
+                    continue;
+                }
+                if known.contains(&target) && !boundaries.contains(&target) {
+                    frozen.insert(target.clone());
+                    let name = std::path::Path::new(&target).file_name();
+                    reached.extend(
+                        name.and_then(|name| by_name.get(name))
+                            .into_iter()
+                            .flatten()
+                            .map(|sibling| (*sibling).clone()),
+                    );
+                }
+                pending.push(target);
+            }
+        }
+        if !frozen.is_empty() {
+            reach.insert(boundary.clone(), frozen);
+        }
+    }
+    reach
+}
+
+/// Logs which boundary chunk freezes how many chunks. A boundary that a page
+/// loads as a script keeps everything it imports out of optimization, which
+/// is worth a warning, whether the page loads it as a module script, as a
+/// classic script or through an inline script. Every boundary is checked on
+/// its own reach: a chunk that an earlier boundary reaches as well is
+/// credited to that boundary in the report, but the page-loaded boundary
+/// still keeps it out of optimization.
+fn log_frozen_chunks(
+    reach: &BTreeMap<String, Paths>,
+    scripts: &Paths,
+    classic_scripts: &Paths,
+    from_html: &Paths,
+) {
+    for (boundary, reached) in reach {
+        let chunks = reached.len();
+        tracing::info!(
+            boundary = boundary.as_str(),
+            chunks,
+            "chunks that a boundary chunk can import stay unchanged"
+        );
+        if scripts.contains(boundary)
+            || classic_scripts.contains(boundary)
+            || from_html.contains(boundary)
+        {
+            tracing::warn!(
+                boundary = boundary.as_str(),
+                chunks,
+                "an unchanged HTML entry chunk imports chunks that therefore cannot be optimized"
+            );
+        }
+    }
 }
 
 /// JavaScript MIME type essences, which make a `<script>` a classic script
@@ -1933,6 +2078,134 @@ fn token_start(node: Node) -> usize {
         get_source_file_of_node(node).raw().as_source_file_p(),
         false,
     ) as usize
+}
+
+#[cfg(test)]
+mod boundary_closure_tests {
+    use std::collections::BTreeMap;
+
+    use super::{Paths, boundary_closure, boundary_reach};
+
+    fn graph(edges: &[(&str, &[&str])]) -> BTreeMap<String, Paths> {
+        edges
+            .iter()
+            .map(|(from, to)| {
+                (
+                    (*from).to_owned(),
+                    to.iter().map(|t| (*t).to_owned()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// Every chunk that the graph mentions.
+    fn chunks(edges: &BTreeMap<String, Paths>) -> Vec<String> {
+        let all: Paths = edges
+            .iter()
+            .flat_map(|(from, to)| std::iter::once(from).chain(to))
+            .cloned()
+            .collect();
+        all.into_iter().collect()
+    }
+
+    #[test]
+    fn closure_follows_edges_transitively_and_names_the_first_boundary() {
+        let edges = graph(&[
+            ("a", &["x", "b2"]),
+            ("b", &["y"]),
+            ("x", &["z"]),
+            ("y", &["z", "w"]),
+            ("z", &["x"]),
+            ("free", &["w2"]),
+        ]);
+        let boundaries: Paths = ["a", "b", "b2"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        // Boundaries are not part of the closure; `z` is reached first through
+        // `a`, and chunks no boundary reaches stay editable.
+        assert_eq!(frozen, [("w", "b"), ("x", "a"), ("y", "b"), ("z", "a")]);
+    }
+
+    #[test]
+    fn closure_continues_through_nested_boundaries() {
+        // `a` imports the boundary `b`, which imports `x`: the first boundary
+        // in path order, `a`, reaches `x`, and `b` is not a frozen chunk.
+        let edges = graph(&[("a", &["b"]), ("b", &["x", "a"]), ("x", &["y"])]);
+        let boundaries: Paths = ["a", "b"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(frozen, [("x", "a"), ("y", "a")]);
+    }
+
+    #[test]
+    fn closure_skips_imported_files_that_are_not_chunks() {
+        // `a` imports a JSON asset and a stylesheet next to the chunk `x`: only
+        // JavaScript chunks can be frozen, because staging never sees assets.
+        let edges = graph(&[("a", &["data-H.json", "style-H.css", "x"])]);
+        let boundaries: Paths = ["a"].map(String::from).into_iter().collect();
+        let chunks: Vec<String> = ["a", "x"].map(String::from).into();
+        let frozen = boundary_closure(&chunks, &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(frozen, [("x", "a")]);
+    }
+
+    #[test]
+    fn reach_keeps_a_later_boundary_that_shares_chunks_with_an_earlier_one() {
+        // `a` (not loaded by a page) and `page` (loaded by a page) both reach
+        // `x`: the closure credits `x` to `a` only, but the reach of `page`
+        // still names it, so the HTML-entry warning is not skipped.
+        let edges = graph(&[("a", &["x"]), ("page", &["x", "y"])]);
+        let boundaries: Paths = ["a", "page"].map(String::from).into_iter().collect();
+        let chunks = chunks(&edges);
+        let closure = boundary_closure(&chunks, &boundaries, &edges);
+        let closure: Vec<_> = closure
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(closure, [("x", "a"), ("y", "page")]);
+        let reach = boundary_reach(&chunks, &boundaries, &edges);
+        let reach: Vec<_> = reach
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.iter().map(String::as_str).collect::<Vec<_>>()))
+            .collect();
+        assert_eq!(reach, [("a", vec!["x"]), ("page", vec!["x", "y"])]);
+    }
+
+    #[test]
+    fn closure_freezes_chunks_that_share_a_file_name_with_a_frozen_chunk() {
+        // `a` imports `dir1/x-H.js`; `dir2/x-H.js` shares its file name and is
+        // imported only by an editable chunk, and `dir2/y.js` is what that
+        // sibling imports. The sibling and its imports are frozen with it,
+        // while chunks with other names stay editable.
+        let edges = graph(&[
+            ("a", &["dir1/x-H.js"]),
+            ("free", &["dir2/x-H.js", "dir2/other.js"]),
+            ("dir2/x-H.js", &["dir2/y.js"]),
+        ]);
+        let boundaries: Paths = ["a"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(
+            frozen,
+            [
+                ("dir1/x-H.js", "a"),
+                ("dir2/x-H.js", "a"),
+                ("dir2/y.js", "a")
+            ]
+        );
+    }
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]

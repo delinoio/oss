@@ -3,6 +3,7 @@ package domain
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"math"
 )
 
@@ -158,6 +159,27 @@ type NativeCodeReviewResult struct {
 	CleanupVerified bool                      `json:"cleanup_verified"`
 }
 
+// NativeCodeReviewResultTooLarge reports a completed review whose encoded
+// result cannot be carried by the generic Worker job output document. The
+// original review remains retained; the result is never truncated.
+func NativeCodeReviewResultTooLarge() *Error {
+	return Fail(ResourceExhausted, "The completed native review result exceeds the supported output size.", "Retain the original review and its recorded usage; do not truncate findings or retry the native review.")
+}
+
+// EncodedWithinOutputLimit applies the Worker job output ceiling to the exact
+// JSON bytes that would be written and reported, so escaped characters count at
+// their encoded size and usage records are included.
+func (r NativeCodeReviewResult) EncodedWithinOutputLimit() error {
+	encoded, err := json.Marshal(r)
+	if err != nil {
+		return NativeCodeReviewUnavailable()
+	}
+	if len(encoded) > MaxWorkerJobOutputBytes {
+		return NativeCodeReviewResultTooLarge()
+	}
+	return nil
+}
+
 func (r NativeCodeReviewResult) Validate() error {
 	if r.Version != 1 || r.ActionID.Validate() != nil || r.Selection.Validate() != nil || r.ThreadID.Validate(Codex, NativeThreadIdentity) != nil || r.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(r.EnteredItemID, "entered review item", 256, true) != nil || Text(r.ExitedItemID, "exited review item", 256, true) != nil || r.EnteredItemID == r.ExitedItemID || r.Findings == nil || len(r.Findings) > 64 || Text(r.Explanation, "native review explanation", 8192, false) != nil || (r.Correctness != "patch is correct" && r.Correctness != "patch is incorrect") || math.IsNaN(r.Confidence) || math.IsInf(r.Confidence, 0) || r.Confidence < 0 || r.Confidence > 1 || !reviewDigest(r.RolloutDigest) || !r.CleanupVerified {
 		return NativeCodeReviewUnavailable()
@@ -175,7 +197,7 @@ func (r NativeCodeReviewResult) Validate() error {
 			return NativeCodeReviewUnavailable()
 		}
 	}
-	return nil
+	return r.EncodedWithinOutputLimit()
 }
 
 // Operational stages never become execution or recovery authority.

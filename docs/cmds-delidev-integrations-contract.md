@@ -76,7 +76,7 @@ Fine-grained profiles require `selected-repositories` and use the fixed DeliDev 
 
 `integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]` prints the validated form and guidance; `--open` additionally dispatches it on the invoking computer. `github pr|issue open --repository-id ID --number N` makes the ordinary fresh, fully validated selected-profile detail query before local presentation. These commands never open a remote server's browser. Opening is OS infrastructure; business authorization remains in the shared Connect reads.
 
-Desktop form opening refetches the revision-bound form only after an explicit click, verifies the exact response and canonical URL, and suppresses late actions after panel closure/inactivation/replacement. No form query retries automatically. Registered Local product windows (`main`/`local-*`) and independently profile/server-bound Saved windows (`server-*`) may invoke the narrow `open_github` command. Local calls retain exact native Local role/instance admission, trusted-document checks and original authority rechecks; Saved calls retain their independent binding. The native host passes bounded untrusted URL bytes to its credential-free Go sidecar through stdin; only Go-validated destinations become OS arguments. There is no arbitrary opener, shell command, browser credential access, renderer navigation, new CSP authority or returned token.
+Desktop form opening refetches the revision-bound form only after an explicit click, verifies the exact response and canonical URL, and suppresses late actions after panel closure/inactivation/replacement. No form query retries automatically. Registered Local product windows (`main`/`local-*`) and independently profile/server-bound Saved windows (`server-*`) may invoke the narrow `open_github` command. Local calls retain exact native Local role/instance admission, trusted-document checks and original authority rechecks; Saved calls retain their independent binding. The native host passes bounded untrusted URL bytes to its credential-free Go sidecar through stdin; only Go-validated destinations become OS arguments. With the system-default general browser destination the sidecar's `presentation open-github` launches the destination as before. When the device-local general destination selects an installed browser, the host asks the sidecar for validation only (`presentation validate-github --url-stdin`, which launches nothing and returns `{"validated":true}`) and then launches exactly that browser natively with one argv URL value, reporting `browser-unavailable`, `browser-launch-failed` or `storage-unavailable` without fallback, retry or a second launch. The standalone CLI never reads the desktop preference and keeps its default-browser behavior. See [Browser destinations for external links](apps-delidev-desktop-contract.md#browser-destinations-for-external-links). There is no arbitrary opener, shell command, browser credential access, renderer navigation, new CSP authority or returned token.
 
 The shared presentation validator accepts only exact HTTPS `github.com` official form URLs with closed prefills, or canonical owner/repository PR/issue addresses with positive uint64 decimal numbers. Userinfo, explicit ports, fragments, path escapes/normalization, unexpected query parameters, duplicate parameters, write-permission additions and external/file schemes fail before OS dispatch. macOS uses `/usr/bin/open`, Linux `/usr/bin/xdg-open` and Windows a short-lived clean-environment helper with STA `ShellExecuteW`; no command shell interprets the URL. Launchers receive only bounded OS/session environment, never inherited provider/PAT variables, arbitrary browser commands or caller output pipes. Each launch is joined with a ten-second deadline. A timeout or failure remains uncertain and is never automatically retried. A successful acknowledgment means only OS dispatch, not a rendered page, authenticated browser, created token or API access. Platform runtime acceptance is recorded separately from unit tests and cross-compilation.
 
@@ -618,7 +618,40 @@ The desktop remote-image CSP is unchanged.
 The shared per-profile read owner serializes foreground reads and bounded queued
 background work while retaining eight active global inspections. Foreground
 selection/tab work displaces and joins a running enrichment owner and precedes
-queued background work. Interrupted enrichment requires explicit retry. Original
-post-read authorization, repository revision, profile generation, cancellation,
-response limits and safe structured logs remain authoritative. Fixtures and CI
-builds do not establish real-account or packaged native acceptance.
+queued background work. Original post-read authorization, repository revision,
+profile generation, cancellation, response limits and safe structured logs remain
+authoritative. Fixtures and CI builds do not establish real-account or packaged
+native acceptance.
+
+`GetPullRequestWorkspace` keeps its original RPC pending and automatically resumes
+a workspace read that foreground work displaced. Only scheduler displacement sets
+the internal typed cancellation cause `errForegroundPreempted`; it is never set by
+parent cancellation, shutdown, profile cleanup, deadlines or provider failures,
+and avatar/commit/detail reads are never resumed. The interrupted attempt first
+finishes completely (token cleared, completion signal closed). The foreground
+read then runs and releases the profile before the resumed attempt is admitted
+behind every pending same-profile foreground read, so exactly one read owns the
+profile at a time. Each resumed attempt reauthorizes the original actor and
+verifies the original repository revision, profile and token generation before
+reading; any change, revocation, shutdown, parent cancellation, provider
+failure, malformed observation or exhausted limit terminates the request without
+replay or stale publication. A resumed attempt restarts the complete observation
+from the original seeds; partial graph and avatar observations of interrupted
+attempts are discarded and never merged, and only the final fresh observation is
+published.
+
+Limits are shared by all attempts of one request: the 35-second queue bound
+applies to first admission, the 35-second active deadline is frozen at first
+activation (resumed queue waits and attempts end by it and by the caller deadline),
+the adapter's 30-second deadline is frozen at the first provider attempt, and one
+cumulative 40-provider-read budget (three initial reads per attempt plus page
+reads, including those of interrupted attempts) covers the request. An attempt
+that cannot afford its initial reads fails with `resource_exhausted` instead of
+starting. The 64-queued-per-profile, eight-global-active, one-active-per-profile
+and 100-node/depth-20 graph limits are unchanged; a resumed attempt that meets
+one of them terminates the request. No public RPC, schema, capability or
+persistent data is added. Content-free structured logs record
+`repository_integration_read_preempted`, `pull_request_workspace_requeued`,
+`pull_request_workspace_resumed` and `pull_request_workspace_finished`, each with
+the original `correlation_id` and `attempt_count` (the final log also carries
+`outcome` and `error_code`).

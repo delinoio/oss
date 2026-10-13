@@ -207,7 +207,7 @@
   "settings.appInformation.license": "License",
   "settings.appInformation.notices": "Open-source notices",
   "settings.appInformation.sourceNotices": "These links show current repository source notices. They are not a complete inventory of the installed package.",
-  "settings.appInformation.opening": "Opening in your default browser…",
+  "settings.appInformation.opening": "Opening in your browser…",
   "settings.appInformation.openError": "The link could not be opened. Try again explicitly.",
   "settings.appInformation.navigate": "Open App information",
   "settings.productResourceRevision": "{{v0}} · revision {{v1}}"

@@ -5,6 +5,7 @@ use tauri_runtime_cef::{CefRuntime, WebviewCefExt};
 mod appearance_host;
 mod badge_host;
 mod browser_host;
+mod browser_preferences_host;
 mod date_format_host;
 mod notification_host;
 mod oauth_host;
@@ -54,6 +55,10 @@ impl Drop for DesktopLifetime {
 }
 
 use appearance_host::{read_appearance, update_appearance};
+use browser_preferences_host::{
+    open_external_url, read_browser_inventory, read_browser_preferences, reset_browser_preferences,
+    update_browser_preferences,
+};
 use date_format_host::{read_date_format, update_date_format};
 use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
@@ -311,6 +316,7 @@ async fn open_github(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browsers: tauri::State<'_, Arc<delidev_desktop::browser_preferences::BrowserStore>>,
     url: String,
 ) -> Result<(), NativeFailure> {
     let response_window = window.clone();
@@ -322,9 +328,11 @@ async fn open_github(
             saved_binding(&window, &windows)?;
         }
         let connector = Arc::clone(connector.inner());
-        let result = tauri::async_runtime::spawn_blocking(move || connector.open_github(&url))
-            .await
-            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let browsers = Arc::clone(browsers.inner());
+        let result =
+            tauri::async_runtime::spawn_blocking(move || connector.open_github(&browsers, &url))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)?;
         if let Err(code) = result {
             tracing::warn!(operation = "github_open", ?code);
         }
@@ -341,6 +349,7 @@ async fn open_provider_guidance(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browsers: tauri::State<'_, Arc<delidev_desktop::browser_preferences::BrowserStore>>,
     preset: String,
     action: delidev_desktop::provider_guidance::GuidanceAction,
 ) -> Result<(), NativeFailure> {
@@ -356,8 +365,9 @@ async fn open_provider_guidance(
         // Capture authority on the native loop; dispatch runs on a bounded
         // worker.
         let connector = Arc::clone(connector.inner());
+        let browsers = Arc::clone(browsers.inner());
         let result = tauri::async_runtime::spawn_blocking(move || {
-            connector.open_provider_guidance(&preset, action)
+            connector.open_provider_guidance(&browsers, &preset, action)
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?;
@@ -382,6 +392,7 @@ async fn open_app_information_link(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
+    browsers: tauri::State<'_, Arc<delidev_desktop::browser_preferences::BrowserStore>>,
     action: delidev_desktop::app_information::AppInformationLink,
 ) -> Result<(), NativeFailure> {
     let response_window = window.clone();
@@ -396,8 +407,9 @@ async fn open_app_information_link(
         // Capture authority on the native loop; dispatch runs on a bounded
         // worker.
         let connector = Arc::clone(connector.inner());
+        let browsers = Arc::clone(browsers.inner());
         let result = tauri::async_runtime::spawn_blocking(move || {
-            connector.open_app_information_link(action)
+            connector.open_app_information_link(&browsers, action)
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?;
@@ -2174,6 +2186,11 @@ fn run() -> Result<(), NativeFailure> {
                 export_generated_image,
                 read_generated_image_export,
                 read_appearance,
+                read_browser_preferences,
+                update_browser_preferences,
+                reset_browser_preferences,
+                read_browser_inventory,
+                open_external_url,
                 read_shortcut_preferences,
                 update_shortcut_preferences,
                 read_sidebar_preference,
@@ -2367,6 +2384,9 @@ fn run() -> Result<(), NativeFailure> {
             ));
             app.manage(Arc::new(
                 delidev_desktop::shortcut_preferences::ShortcutStore::new(config_dir.clone()),
+            ));
+            app.manage(Arc::new(
+                delidev_desktop::browser_preferences::BrowserStore::new(config_dir.clone()),
             ));
             app.manage(Arc::new(
                 delidev_desktop::sidebar_preference::SidebarStore::new(config_dir.clone()),

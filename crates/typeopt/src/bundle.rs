@@ -1154,11 +1154,19 @@ fn rehash(
         counts
     };
     let mut retained = BTreeSet::<String>::new();
-    // Boundary chunks keep referencing the original names.
+    // Everything a boundary chunk can import is frozen with it, so a boundary
+    // chunk names a renamed chunk only through something that is not an
+    // import (a string, for example): it keeps referencing the original name.
     for path in frozen {
         if let Some(text) = texts.get(path) {
             for name in renamed.keys() {
                 if !references(text, name).is_empty() {
+                    tracing::warn!(
+                        boundary = %path.display(),
+                        chunk = name.as_str(),
+                        "a boundary chunk names a renamed chunk without importing it; the original \
+                         is kept"
+                    );
                     retained.insert(name.clone());
                 }
             }
