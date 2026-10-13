@@ -1115,7 +1115,7 @@ deletion enforcement, historical quarantine, bounds and recovery evidence limits
 
 System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, `USER_SERVICES_V1 = 3`, `NATIVE_ACCOUNTING_V1 = 4`, `STOPPED_CODEX_ACCOUNT_SWITCH_V1 = 5`, `SERVER_OUTBOUND_PROXY_V1 = 6`, `MANAGED_BACKUP_RESTORE_V1 = 7`, `PERMANENT_SESSION_DELETION_V1 = 9`, `WORKSPACE_STORAGE_V1 = 11` and `CODEX_SESSION_FORK_V1 = 13`. Managed restore, native accounting, workspace storage and same-account Codex Fork use their original reserved numbers. `GetStatus` advertises each implemented capability independently. Preserve these distinct meanings and regenerate both language bindings from the schema.
 
-`GetStatusResponse.production_root_ready = 9` is a presence-bearing `optional bool` recorded in `protos/delidev/allocations.json`. The server sets it from `updates.ProductionReady()` on every status response (false while the repository trust root is unset); omission identifies a legacy server. It does not replace or alter the `SIGNED_UPDATES_V1` capability, and both the Go and TypeScript generated clients regenerate it through the existing buf workflow.
+`GetStatusResponse.production_root_ready = 9` is a presence-bearing `optional bool` recorded in `protos/delidev/allocations.json` as a reservation owned by issue 3069, not in the immutable baseline. The server sets it from `updates.ProductionReady()` on every status response (false while the repository trust root is unset); omission identifies a legacy server. It does not replace or alter the `SIGNED_UPDATES_V1` capability, and both the Go and TypeScript generated clients regenerate it through the existing buf workflow.
 
 ## Authenticated development-server forwarding
 

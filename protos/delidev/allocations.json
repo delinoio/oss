@@ -135,8 +135,7 @@
         "listener": 5,
         "started_at": 6,
         "stopping": 7,
-        "capabilities": 8,
-        "production_root_ready": 9
+        "capabilities": 8
       }
     },
     "SystemCapability": {
@@ -14707,6 +14706,13 @@
       "member": "png",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 3069,
+      "kind": "message",
+      "declaration": "GetStatusResponse",
+      "member": "production_root_ready",
+      "number": 9
     }
   ],
   "rpcReservations": [
