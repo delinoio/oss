@@ -44,7 +44,8 @@ export function SessionLifetimeUsage({
   const createdAt = sessionCreatedAt(session);
   // The millisecond bound above floors fractional seconds, so ownership and
   // the query identity use the exact validated RFC 3339 creation timestamp.
-  const createdAtExact = createdAt === undefined ? undefined : session.createdAt;
+  const createdAtExact =
+    createdAt === undefined ? undefined : session.createdAt;
   const responseUsageId = text(
     object(readDocument(session).execution).latest_response_usage_id,
   );
