@@ -324,6 +324,9 @@ func TestNetworkProxyJSONRequestsDecodeEscapesDespiteOpaqueResponseLabel(t *test
 		{"stream request with labeled event stream", "text/event-stream", "text/event-stream", false},
 		{"diff request with labeled text", "application/vnd.github.diff", "text/plain", false},
 		{"wildcard request with labeled text", "*/*", "text/plain", false},
+		{"zero quality json range with labeled text", "text/plain, application/json;q=0", "text/plain", false},
+		{"zero quality vendor json range with labeled text", "text/plain, application/vnd.github+json; q=0.0", "text/plain", false},
+		{"nonzero quality json range with labeled text", "text/plain, application/json;q=0.001", "text/plain", true},
 		{"request without accept", "", "text/plain", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

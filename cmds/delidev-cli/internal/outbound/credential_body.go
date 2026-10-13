@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"mime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -137,14 +138,19 @@ func credentialFramingForMediaType(mediaType string) credentialFraming {
 
 // Report whether the request's Accept header asks for a JSON media type.
 // Wildcards do not count: only an explicit JSON request makes the caller's
-// parser JSON-based.
+// parser JSON-based. A range with quality zero is explicitly not acceptable
+// (RFC 9110), so it does not make the caller expect JSON either.
 func credentialRequestExpectsJSON(accept []string) bool {
 	for _, header := range accept {
 		for _, part := range strings.Split(header, ",") {
-			mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(part))
-			if err == nil && credentialJSONMediaType(strings.ToLower(mediaType)) {
-				return true
+			mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+			if err != nil || !credentialJSONMediaType(strings.ToLower(mediaType)) {
+				continue
 			}
+			if quality, err := strconv.ParseFloat(strings.TrimSpace(params["q"]), 64); err == nil && quality <= 0 {
+				continue
+			}
+			return true
 		}
 	}
 	return false
