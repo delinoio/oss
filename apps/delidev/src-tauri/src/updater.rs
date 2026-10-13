@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed native installation infrastructure. Go independently owns signed
 //! release verification, immutable download and the durable once-only journal.
+use std::ops::ControlFlow;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::{thread, time::Instant};
 
@@ -374,29 +375,10 @@ impl Connector {
     ) -> ReconcileReport {
         let store = self.outcome_store();
         let mut report = ReconcileReport::default();
-        // An exact original-scope inspection reads only its own operation's
-        // record, so unrelated unreadable evidence cannot starve it.
-        let scanned = match scope {
-            ReconcileScope::Launch => store.scan(),
-            ReconcileScope::Original { id, .. } => {
-                store.load(id).map(|entry| entry.into_iter().collect())
-            }
-        };
-        let entries = match scanned {
-            Ok(entries) => entries,
-            Err(code) => {
-                tracing::warn!(
-                    operation = "desktop_update_reconcile",
-                    state = "scan-failed",
-                    ?code
-                );
-                return report;
-            }
-        };
-        for entry in entries {
+        let mut visit = |entry: StoredEntry| {
             if stopping() {
                 tracing::info!(operation = "desktop_update_reconcile", state = "stopped");
-                break;
+                return ControlFlow::Break(());
             }
             match entry {
                 StoredEntry::Unreadable(name) => {
@@ -413,7 +395,7 @@ impl Connector {
                     let phase = record.phase;
                     let Ok(token) = SettlementToken::from_record(record) else {
                         report.retained += 1;
-                        continue;
+                        return ControlFlow::Continue(());
                     };
                     match token.settle(self) {
                         Ok(_) => match store.retire(token.record()) {
@@ -449,6 +431,26 @@ impl Connector {
                     }
                 }
             }
+            ControlFlow::Continue(())
+        };
+        // The launch scope walks every page, so retained records that stay
+        // unresolved never hide later ones. An exact original-scope inspection
+        // reads only its own operation's record, so unrelated evidence cannot
+        // starve it either.
+        let walked = match scope {
+            ReconcileScope::Launch => store.for_each(&mut visit),
+            ReconcileScope::Original { id, .. } => store.load(id).map(|entry| {
+                if let Some(entry) = entry {
+                    let _ = visit(entry);
+                }
+            }),
+        };
+        if let Err(code) = walked {
+            tracing::warn!(
+                operation = "desktop_update_reconcile",
+                state = "scan-failed",
+                ?code
+            );
         }
         report
     }
@@ -1765,6 +1767,50 @@ print(json.dumps({'version': 1, 'result': descriptor}))
         for path in corrupt {
             assert_eq!(fs::read(path).unwrap(), b"{not json");
         }
+    }
+
+    #[test]
+    fn repeatedly_rejected_records_never_starve_later_launch_replay() {
+        let fixture = Fixture::new(None, Some("installing"));
+        let record = fixture.record(Phase::Installed);
+        fixture.store().persist(&record).unwrap();
+        // More syntactically valid records than a page, all sorting before the
+        // valid one, whose journals Go rejects on every launch.
+        let rejected: Vec<OutcomeRecord> = (0..40)
+            .map(|index| {
+                let id = format!("00000000-0000-7000-8000-{index:012}");
+                let rejected =
+                    OutcomeRecord::outcome(&id, &id, 7, &id, None, Phase::Failed).unwrap();
+                fixture.store().persist(&rejected).unwrap();
+                rejected
+            })
+            .collect();
+        for launch in 0..2 {
+            let report = fixture.launch();
+            if launch == 0 {
+                assert_eq!(
+                    (report.settled, report.retained),
+                    (1, rejected.len()),
+                    "launch {launch}"
+                );
+                assert_eq!(fixture.journal()["phase"], "installed");
+                assert!(!fixture.marker(&fixture.id).exists());
+            } else {
+                assert_eq!(
+                    (report.settled, report.retained),
+                    (0, rejected.len()),
+                    "launch {launch}"
+                );
+            }
+            // Rejected evidence is retained untouched on every pass.
+            for stored in &rejected {
+                assert_eq!(
+                    fixture.store().load(&stored.operation_id).unwrap(),
+                    Some(StoredEntry::Record(stored.clone()))
+                );
+            }
+        }
+        assert_eq!(fixture.calls(), 2 * rejected.len() + 1);
     }
 
     #[test]

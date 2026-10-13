@@ -6,6 +6,8 @@
 //! needed to repeat an idempotent offline `native-outcome` write. They never
 //! grant installation authority, and an unreadable or foreign record is kept
 //! rather than deleted or trusted.
+use std::ops::ControlFlow;
+
 use super::{
     updater::{Phase, no_symlink_ancestors},
     *,
@@ -93,6 +95,14 @@ pub enum StoredEntry {
     /// Corrupt, oversized, foreign-named or otherwise unparsable evidence.
     /// The optional name is logged only when it is itself a canonical ID.
     Unreadable(Option<String>),
+}
+
+/// One bounded page of a store listing.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ScanPage {
+    pub entries: Vec<StoredEntry>,
+    /// Cursor for the following page, or `None` when the listing ended.
+    pub next: Option<String>,
 }
 
 pub struct OutcomeStore {
@@ -295,44 +305,81 @@ impl OutcomeStore {
         })
     }
 
-    /// Lists retained entries in stable order. At most `MAX_ENTRIES` readable
-    /// records are returned, so a bounded pass always reaches them even behind
-    /// any number of corrupt, misnamed or otherwise unreadable entries; those
-    /// are reported without consuming the bound and are never deleted.
-    /// Temporary files from an interrupted write are ignored and never trusted.
+    /// Lists the first page of retained entries in stable order. See
+    /// [`OutcomeStore::scan_page`]; callers that must reach every record walk
+    /// the pages with [`OutcomeStore::for_each`].
     pub fn scan(&self) -> Result<Vec<StoredEntry>> {
+        Ok(self.scan_page(None)?.entries)
+    }
+
+    /// Lists one page of retained entries in stable name order, starting after
+    /// the name `after`. At most `MAX_ENTRIES` readable records are returned
+    /// per page, so a bounded pass always reaches them even behind any number
+    /// of corrupt, misnamed or otherwise unreadable entries; those are
+    /// reported without consuming the bound and are never deleted. When more
+    /// readable records follow, `next` is the cursor for the following page, so
+    /// walking the cursor visits every entry exactly once and records that stay
+    /// unresolved can never starve a later one.
+    /// Temporary files from an interrupted write are ignored and never trusted.
+    pub fn scan_page(&self, after: Option<&str>) -> Result<ScanPage> {
         if !self.check_dir(false)? {
-            return Ok(Vec::new());
+            return Ok(ScanPage::default());
         }
         let mut names: Vec<String> = fs::read_dir(&self.dir)
             .map_err(|_| NativeFailure::StorageUnavailable)?
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .filter(|name| !name.starts_with('.'))
+            .filter(|name| after.is_none_or(|cursor| name.as_str() > cursor))
             .collect();
         names.sort();
-        let mut entries = Vec::new();
+        let mut page = ScanPage::default();
         let mut records = 0;
+        let mut examined = after.map(str::to_owned);
         for name in names {
             let stem = name.strip_suffix(".json").unwrap_or("");
             if canonical_id(stem).is_err() {
-                entries.push(StoredEntry::Unreadable(None));
+                page.entries.push(StoredEntry::Unreadable(None));
+                examined = Some(name);
                 continue;
             }
             match self.read(stem) {
                 Ok(Some(record)) => {
                     if records == MAX_ENTRIES {
+                        page.next = examined;
                         break;
                     }
                     records += 1;
-                    entries.push(StoredEntry::Record(record));
+                    page.entries.push(StoredEntry::Record(record));
                 }
                 // A file that disappeared after listing is not evidence.
                 Ok(None) => {}
-                Err(_) => entries.push(StoredEntry::Unreadable(Some(stem.to_owned()))),
+                Err(_) => page
+                    .entries
+                    .push(StoredEntry::Unreadable(Some(stem.to_owned()))),
+            }
+            examined = Some(name);
+        }
+        Ok(page)
+    }
+
+    /// Visits every retained entry page by page until `visit` breaks. Each
+    /// page is bounded, and the cursor only moves forward, so retained entries
+    /// that stay unresolved never hide later ones and the walk always ends.
+    pub fn for_each(&self, mut visit: impl FnMut(StoredEntry) -> ControlFlow<()>) -> Result<()> {
+        let mut after: Option<String> = None;
+        loop {
+            let page = self.scan_page(after.as_deref())?;
+            for entry in page.entries {
+                if visit(entry).is_break() {
+                    return Ok(());
+                }
+            }
+            match page.next {
+                Some(next) => after = Some(next),
+                None => return Ok(()),
             }
         }
-        Ok(entries)
     }
 
     /// Removes the record only when the stored bytes are exactly the bytes
@@ -709,6 +756,67 @@ mod tests {
             fs::read_dir(&directory).unwrap().count(),
             2 * MAX_ENTRIES + 9
         );
+    }
+
+    #[test]
+    fn pages_visit_every_entry_exactly_once_behind_retained_prefixes() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        let directory = root.join(STORE_DIRECTORY);
+        // Unreadable names interleave with more readable records than a page.
+        let total = 2 * MAX_ENTRIES + 5;
+        let mut expected = Vec::new();
+        for index in 0..total {
+            let id = format!("00000000-0000-7000-8000-{index:012}");
+            let stored = OutcomeRecord::outcome(&id, &id, 3, &id, None, Phase::Failed).unwrap();
+            store.persist(&stored).unwrap();
+            expected.push(stored);
+            if index % 7 == 0 {
+                fs::write(directory.join(format!("{id}-corrupt.json")), b"{").unwrap();
+            }
+        }
+        let first = store.scan_page(None).unwrap();
+        let records = first
+            .entries
+            .iter()
+            .filter(|entry| matches!(entry, StoredEntry::Record(_)))
+            .count();
+        assert_eq!(records, MAX_ENTRIES);
+        assert!(first.next.is_some());
+        let mut seen = Vec::new();
+        let mut unreadable = 0;
+        store
+            .for_each(|entry| {
+                match entry {
+                    StoredEntry::Record(record) => seen.push(record),
+                    StoredEntry::Unreadable(_) => unreadable += 1,
+                }
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        assert_eq!(seen, expected, "every record in name order, once");
+        assert_eq!(unreadable, (0..total).step_by(7).count());
+        // Following the cursor ends: the final page reports no further cursor.
+        let mut after = None;
+        let mut pages = 0;
+        loop {
+            let page = store.scan_page(after.as_deref()).unwrap();
+            pages += 1;
+            match page.next {
+                Some(next) => after = Some(next),
+                None => break,
+            }
+        }
+        assert_eq!(pages, 3);
+        // Stopping between records ends the walk.
+        let mut visited = 0;
+        store
+            .for_each(|_| {
+                visited += 1;
+                ControlFlow::Break(())
+            })
+            .unwrap();
+        assert_eq!(visited, 1);
     }
 
     #[test]
