@@ -1165,9 +1165,10 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
     }
     /// Whether an attribute whose raw value has an undecodable character
     /// reference can hold code: an event handler, or a value that reads as a
-    /// `javascript:` URL once references and URL-stripped characters (ASCII
-    /// whitespace and control characters) are dropped from its scheme and
-    /// that sits in an attribute where a browser runs such a URL.
+    /// `javascript:` URL once undecodable references and the characters the
+    /// URL parser removes (leading C0 controls and spaces, TAB, LF and CR
+    /// anywhere) are dropped, and that sits in an attribute where a browser
+    /// runs such a URL.
     fn may_run_code(tag: &str, attribute: &str, raw: &str) -> bool {
         if attribute.starts_with("on") {
             return true;
@@ -1199,11 +1200,16 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                     .is_some()
                 {}
                 chars.next_if_eq(&';');
-            } else if !c.is_ascii_control() && c != ' ' {
+            } else if !matches!(c, '\t' | '\n' | '\r') {
                 stripped.push(c.to_ascii_lowercase());
             }
         }
-        stripped.starts_with("javascript:")
+        // The URL parser trims leading C0 controls and spaces, and removes
+        // only TAB, LF and CR from the rest of the value, so an internal
+        // space or other control keeps the text from being a scheme.
+        stripped
+            .trim_start_matches(|c: char| c <= ' ')
+            .starts_with("javascript:")
     }
     fn walk(root: &std::path::Path, dir: &std::path::Path, found: &mut HtmlScripts) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {

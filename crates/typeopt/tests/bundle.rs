@@ -1592,6 +1592,36 @@ fn keeps_exports_when_a_handler_has_an_undecodable_reference() {
     }
 }
 
+/// An internal space or control character other than TAB, LF and CR keeps a
+/// value from being a `javascript:` URL, so it does not broaden the public
+/// entries; leading spaces and controls are still trimmed by the browser.
+#[test]
+fn preserves_internal_spaces_when_detecting_javascript_urls() {
+    for html in [
+        r#"<a href="java script:&Tab;"></a>"#,
+        r#"<a href="java&Tab; script:import('./lib.js')"></a>"#,
+        r#"<a href="java&#1;script:&Tab;"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            !out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+    for html in [
+        r#"<a href="  javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="&#1; javascript&Tab;:void 0"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
 /// A fully decoded handler keeps precise import discovery.
 #[test]
 fn decodes_handlers_with_known_references_precisely() {
