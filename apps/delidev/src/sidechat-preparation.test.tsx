@@ -612,7 +612,11 @@ it.each(["parent-id", "empty-id"])(
     fireEvent.select(input);
     f.setResult({
       job: f.job("succeeded"),
-      session: f.child(f.sourceId, true, mode === "parent-id" ? f.sourceId : ""),
+      session: f.child(
+        f.sourceId,
+        true,
+        mode === "parent-id" ? f.sourceId : "",
+      ),
     });
     await act(async () => {
       await f.client.invalidateQueries();
@@ -629,7 +633,9 @@ it.each(["parent-id", "empty-id"])(
       snapshot.tabs.filter((tab) => tab.kind === SessionTabKind.Sidechat),
     ).toEqual([]);
     expect(
-      snapshot.tabs.filter((tab) => tab.kind === SessionTabKind.PendingSidechat),
+      snapshot.tabs.filter(
+        (tab) => tab.kind === SessionTabKind.PendingSidechat,
+      ),
     ).toHaveLength(1);
     expect(input).toHaveProperty("value", "My original question");
     expect(
@@ -690,8 +696,8 @@ async function retainedInA() {
     .snapshot(f.sourceId)
     .tabs.find((tab) => tab.kind === SessionTabKind.PendingSidechat)!;
   const callbacks: FrameRequestCallback[] = [];
-  vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
-    (callback) => callbacks.push(callback),
+  vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) =>
+    callbacks.push(callback),
   );
   const openFromB = () =>
     fireEvent.click(

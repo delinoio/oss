@@ -360,23 +360,26 @@ describe("terminal presentation numbers", () => {
     it.each([
       ["empty", ""],
       ["parent", "parent"],
-    ])("rejects a published %s child id without mutating ownership", (_, id) => {
-      const store = new SessionTabsStore();
-      pending(store);
-      const before = store.snapshot("parent");
-      expect(
-        store.publishSidechat(
-          "parent",
-          "request",
-          { kind: SessionTabKind.Sidechat, id, name: "Bad" },
-          draft,
-        ),
-      ).toBe(false);
-      expect(store.snapshot("parent")).toBe(before);
-      expect(store.sidechats("parent")).toEqual([]);
-      expect(store.parent(id)).toBeUndefined();
-      expect(store.childDraft(id)).toBeUndefined();
-    });
+    ])(
+      "rejects a published %s child id without mutating ownership",
+      (_, id) => {
+        const store = new SessionTabsStore();
+        pending(store);
+        const before = store.snapshot("parent");
+        expect(
+          store.publishSidechat(
+            "parent",
+            "request",
+            { kind: SessionTabKind.Sidechat, id, name: "Bad" },
+            draft,
+          ),
+        ).toBe(false);
+        expect(store.snapshot("parent")).toBe(before);
+        expect(store.sidechats("parent")).toEqual([]);
+        expect(store.parent(id)).toBeUndefined();
+        expect(store.childDraft(id)).toBeUndefined();
+      },
+    );
     it("publishes a distinct nonempty child once in place", () => {
       const store = new SessionTabsStore();
       pending(store);
