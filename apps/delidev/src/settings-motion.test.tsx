@@ -78,7 +78,7 @@ it.each([
   category(name);
   expect(column()).toBe(node);
   expect(column().getAttribute("data-entrance")).toBeNull();
-  category("Instructions");
+  category("Repositories");
   expect(column().getAttribute("data-entrance")).toBeNull();
   category(name);
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -104,7 +104,7 @@ it.each(["App information", "Connections"])(
     expect(title.contains(panels)).toBe(false);
     dispatch(title);
     expect(title.getAttribute("data-entrance")).toBeNull();
-    category("Instructions");
+    category("Repositories");
     expect(heading().getAttribute("data-entrance")).toBeNull();
     category(name);
     expect(heading().getAttribute("data-entrance")).toBe("y4");
