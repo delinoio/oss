@@ -55,11 +55,11 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
             .iter()
             .filter_map(|entry| entry.strip_prefix(SIDE_EFFECT_PREFIX))
             .collect();
-        let status = if statements.is_empty() {
-            EvidenceStatus::Inferred
-        } else {
-            EvidenceStatus::Confirmed
-        };
+        // Inclusion with no used exports alone does not show that a side
+        // effect blocked removal; require Rspack's own side-effect bailout.
+        if statements.is_empty() {
+            continue;
+        }
         let (line, column) = statements
             .first()
             .and_then(|text| parse_statement_location(text))
@@ -81,34 +81,17 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 format!("Statement with side effects at {statement}"),
             ));
         }
-        if statements.is_empty() {
-            evidence.push(Evidence::new(
-                "bundlewhy analysis",
-                EvidenceStatus::Inferred,
-                "Rspack kept the module without reporting the statement that has side effects.",
-            ));
-        }
-        let side_effect_detail = if statements.is_empty() {
-            format!(
-                "Not reported by Rspack; package sideEffects: {}",
-                module
-                    .package_side_effects
-                    .as_deref()
-                    .unwrap_or("not declared")
-            )
-        } else {
-            format!(
-                "Rspack found {} statement(s) with side effects; package sideEffects: {}",
-                statements.len(),
-                module
-                    .package_side_effects
-                    .as_deref()
-                    .unwrap_or("not declared")
-            )
-        };
+        let side_effect_detail = format!(
+            "Rspack found {} statement(s) with side effects; package sideEffects: {}",
+            statements.len(),
+            module
+                .package_side_effects
+                .as_deref()
+                .unwrap_or("not declared")
+        );
         drafts.push(DiagnosticDraft {
             rule: RuleId::RspackSideEffectRetained,
-            status,
+            status: EvidenceStatus::Confirmed,
             title: format!("{display} is kept only for its side effects"),
             summary: "No export of this module is used, but Rspack keeps the module because \
                       evaluating it has side effects. Unused-module removal does not apply."
@@ -121,11 +104,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
                 ),
                 Condition::new(
                     "The module has no side effects or is declared side-effect free",
-                    if statements.is_empty() {
-                        ConditionOutcome::Unknown
-                    } else {
-                        ConditionOutcome::Unmet
-                    },
+                    ConditionOutcome::Unmet,
                     side_effect_detail,
                 ),
                 Condition::new(

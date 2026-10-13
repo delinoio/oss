@@ -452,8 +452,13 @@ fn declared_names(source: &str) -> Vec<String> {
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     let pattern = Regex::new(r"(^|[^.\w$])eval\s*\(").expect("static regex");
-    let found = pattern.find(source)?;
-    let start = found.start() + found.as_str().find("eval")?;
+    // `eval(` inside strings, templates, comments or regular expressions is
+    // not a call.
+    let ignored = non_code_ranges(source);
+    let start = pattern.find_iter(source).find_map(|found| {
+        let start = found.start() + found.as_str().find("eval")?;
+        (!in_ranges(&ignored, start)).then_some(start)
+    })?;
     let line = source[..start].matches('\n').count();
     let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
     Some((u32::try_from(line).ok()?, u32::try_from(column).ok()?))
@@ -616,6 +621,12 @@ y=/process.env.F/.test(z),process.env.G"#;
             Some((1, 9))
         );
         assert_eq!(direct_eval_line("obj.eval(x); evaluate(y);"), None);
+        assert_eq!(
+            direct_eval_line(
+                "const a = \"eval(x)\"; // eval(y)\n/* eval(z) */ b = `eval(t)`; c = /eval(r)/;"
+            ),
+            None
+        );
     }
 
     #[test]

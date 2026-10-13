@@ -81,6 +81,7 @@ impl ErrorCode {
             "BW_CONFIG_AMBIGUOUS" => Self::ConfigAmbiguous,
             "BW_COLLECTION_FAILED" => Self::CollectionFailed,
             "BW_ENGINE_VERSION_UNSUPPORTED" => Self::EngineVersionUnsupported,
+            "BW_UNSUPPORTED_BUILD" => Self::UnsupportedBuild,
             _ => Self::BuildFailed,
         }
     }

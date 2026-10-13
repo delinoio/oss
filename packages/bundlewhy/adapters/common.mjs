@@ -23,7 +23,12 @@ export const AdapterErrorCode = Object.freeze({
   BuildFailed: "BW_BUILD_FAILED",
   CollectionFailed: "BW_COLLECTION_FAILED",
   EngineVersionUnsupported: "BW_ENGINE_VERSION_UNSUPPORTED",
+  UnsupportedBuild: "BW_UNSUPPORTED_BUILD",
 });
+
+/** Prefix of protocol frames; project output on stdout never carries it. */
+export const FRAME_PREFIX = "BUNDLEWHY-FRAME";
+let protocolToken = "";
 
 export class AdapterError extends Error {
   constructor(code, message, recovery) {
@@ -33,8 +38,13 @@ export class AdapterError extends Error {
   }
 }
 
+/**
+ * Writes one protocol frame. Frames carry the per-run token from the request
+ * so that JSON printed by project configuration or plugins cannot impersonate
+ * adapter events.
+ */
 export function emit(event) {
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  process.stdout.write(`${FRAME_PREFIX} ${protocolToken} ${JSON.stringify(event)}\n`);
 }
 
 export function progress(stage, message) {
@@ -176,9 +186,13 @@ export async function runAdapter(main) {
   const started = Date.now();
   try {
     const request = readRequest();
+    protocolToken = String(request.protocolToken ?? "");
     await main(request);
     emit({ event: "done", durationMs: Date.now() - started });
   } catch (error) {
+    // Also report on stderr: before the request is read no token is known and
+    // the frame below cannot be authenticated.
+    process.stderr.write(`bundlewhy adapter error: ${String(error?.message ?? error).slice(0, 4000)}\n`);
     const code =
       error instanceof AdapterError ? error.code : AdapterErrorCode.BuildFailed;
     const recovery =

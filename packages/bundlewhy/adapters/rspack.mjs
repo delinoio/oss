@@ -284,7 +284,13 @@ await runAdapter(async (request) => {
 
   const config = await loadConfig(request, rspackModule);
   const minimizer = describeMinimizer(rspackModule, config);
-  const target = summarizeValue(config.target ?? "web");
+  const rawTarget = config.target ?? "web";
+  // Inspect every raw target entry; the summary below is for display only.
+  const targets = (Array.isArray(rawTarget) ? rawTarget : [rawTarget]).map((entry) =>
+    typeof entry === "string" ? entry : "",
+  );
+  const nodeTarget = targets.some((entry) => /(^|[^a-z])(node|async-node|electron-main|electron-preload|nwjs|node-webkit)/.test(entry));
+  const target = Array.isArray(rawTarget) ? rawTarget.map((entry) => summarizeValue(entry)).join(", ") : summarizeValue(rawTarget);
   const overrides = [
     "mode=production",
     `output.path=${path.basename(request.buildDir)} (bundlewhy run directory)`,
@@ -361,7 +367,7 @@ await runAdapter(async (request) => {
       "original devtool": summarizeValue(config.devtool),
     },
     libraryBuild: Boolean(config.output?.library),
-    ssrBuild: /node|electron-main/.test(target),
+    ssrBuild: nodeTarget,
     buildDir: request.buildDir,
     logs: [],
     ...normalized,

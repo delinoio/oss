@@ -89,13 +89,18 @@ fn coverage(
                     CoverageState::NotApplicable,
                     "Minification is disabled, so names are not mangled.".to_owned(),
                 ),
-                OptimizationCategory::NameMangling if !collection.default_minifier => (
-                    CoverageState::Unavailable,
-                    format!(
-                        "Detectors are verified only for the default minifier; this build uses {}.",
-                        collection.minifier
-                    ),
-                ),
+                OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
+                    if !collection.default_minifier =>
+                {
+                    (
+                        CoverageState::Unavailable,
+                        format!(
+                            "Detectors are verified only for the default minifier; this build \
+                             uses {}.",
+                            collection.minifier
+                        ),
+                    )
+                }
                 // Both categories scan generated chunk text; a chunk that
                 // could not be read leaves part of the output unscanned.
                 OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling

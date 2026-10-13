@@ -169,11 +169,15 @@ impl<'a> Context<'a> {
     pub fn dependency_paths(&self, id: &str) -> Vec<DependencyPath> {
         let mut paths = Vec::new();
         let mut queue: VecDeque<Vec<&str>> = VecDeque::from([vec![id]]);
-        let mut seen: HashSet<&str> = HashSet::from([id]);
+        // Cycles are checked per candidate path so that distinct importer
+        // chains reaching the same entry are all kept. The expansion budget
+        // bounds work on large, highly connected graphs.
+        let mut expansions = 0usize;
         while let Some(path) = queue.pop_front() {
-            if paths.len() >= 3 || path.len() > 32 {
+            if paths.len() >= 3 || path.len() > 32 || expansions >= 20_000 {
                 break;
             }
+            expansions += 1;
             let last = *path.last().unwrap_or(&id);
             let Some(module) = self.modules.get(last) else {
                 continue;
@@ -196,7 +200,7 @@ impl<'a> Context<'a> {
                 continue;
             }
             for importer in importers {
-                if seen.insert(importer) {
+                if !path.contains(&importer) {
                     let mut next = path.clone();
                     next.push(importer);
                     queue.push_back(next);
@@ -413,4 +417,53 @@ pub fn rules_by_category(bundler: &str) -> BTreeMap<OptimizationCategory, Vec<Ru
         map.entry(rule.category()).or_default().push(*rule);
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collect::{CollectedModule, Collection};
+
+    fn module(id: &str, importers: &[&str], entry: bool) -> CollectedModule {
+        CollectedModule {
+            id: id.to_owned(),
+            name: Some(id.to_owned()),
+            is_entry: entry,
+            importers: importers.iter().map(|value| (*value).to_owned()).collect(),
+            included: true,
+            ..CollectedModule::default()
+        }
+    }
+
+    #[test]
+    fn dependency_paths_keep_every_shortest_branch_and_skip_dynamic_edges() {
+        let mut target = module("m", &["a", "b"], false);
+        target.dynamic_importers = vec!["lazy".to_owned()];
+        let collection = Collection {
+            modules: vec![
+                module("entry", &[], true),
+                module("a", &["entry"], false),
+                module("b", &["entry"], false),
+                module("lazy", &["entry"], false),
+                target,
+            ],
+            ..Collection::default()
+        };
+        let context = Context::new(
+            &collection,
+            PathBuf::from("/project"),
+            "project".to_owned(),
+            Vec::new(),
+            SourceStore::new(false),
+        );
+        let paths: Vec<Vec<String>> = context
+            .dependency_paths("m")
+            .into_iter()
+            .map(|path| path.modules)
+            .collect();
+        assert_eq!(
+            paths,
+            vec![vec!["entry", "a", "m"], vec!["entry", "b", "m"]]
+        );
+    }
 }

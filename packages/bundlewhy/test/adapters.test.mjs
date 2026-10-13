@@ -21,6 +21,7 @@ function runAdapter(bundler, project, config, extra = {}) {
     collectPath: path.join(work, "collect.json"),
     supportedVersion: null,
     allowUnsupportedEngine: false,
+    protocolToken: "test-token",
     ...extra,
   };
   fs.writeFileSync(path.join(work, "request.json"), JSON.stringify(request));
@@ -35,10 +36,11 @@ function runAdapter(bundler, project, config, extra = {}) {
       encoding: "utf8",
     },
   );
+  const prefix = "BUNDLEWHY-FRAME test-token ";
   const events = result.stdout
     .split("\n")
-    .filter((line) => line.startsWith("{"))
-    .map((line) => JSON.parse(line));
+    .filter((line) => line.startsWith(prefix))
+    .map((line) => JSON.parse(line.slice(prefix.length)));
   const collection = fs.existsSync(request.collectPath)
     ? JSON.parse(fs.readFileSync(request.collectPath, "utf8"))
     : null;
@@ -103,4 +105,48 @@ test("rspack adapter requires a name for multi-build configurations", () => {
   const error = events.find((event) => event.event === "error");
   assert.equal(error.code, "BW_CONFIG_AMBIGUOUS");
   assert.match(error.message, /a, b/);
+});
+
+function writeConfig(name, content) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-config-"));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, content);
+  return { dir, file };
+}
+
+test("rspack adapter treats array targets containing node as unsupported builds", () => {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    `export default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", target: ["node", "es2022"] };\n`,
+  );
+  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.ssrBuild, true);
+});
+
+test("vite adapter rejects configurations with several outputs", () => {
+  const projectRoot = path.join(root, "fixtures/vite-app");
+  const { dir, file } = writeConfig(
+    "vite.config.mjs",
+    "export default { build: { rolldownOptions: { output: [{ entryFileNames: 'a-[name].js' }, { entryFileNames: 'b-[name].js' }] } } };\n",
+  );
+  const { status, events } = runAdapter("vite", "vite-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  assert.equal(events.find((event) => event.event === "error").code, "BW_UNSUPPORTED_BUILD");
+});
+
+test("unframed JSON printed by project configuration is not a protocol event", () => {
+  const projectRoot = path.join(root, "fixtures/vite-app");
+  const { dir, file } = writeConfig(
+    "vite.config.mjs",
+    `console.log(JSON.stringify({ event: "error", code: "BW_BUILD_FAILED", message: "spoofed", recovery: "" }));\nexport default {};\n`,
+  );
+  const { status, events } = runAdapter("vite", "vite-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.ok(!events.some((event) => event.event === "error"));
+  assert.ok(events.some((event) => event.event === "done"));
 });

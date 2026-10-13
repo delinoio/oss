@@ -78,6 +78,9 @@ enum AdapterEvent {
     Done {},
 }
 
+/// Prefix of adapter protocol frames, followed by the per-run token.
+pub const FRAME_PREFIX: &str = "BUNDLEWHY-FRAME";
+
 pub fn cancelled_error() -> BwError {
     BwError::new(
         ErrorCode::RunCancelled,
@@ -128,6 +131,10 @@ pub async fn run(
     write_adapter_files(&adapter_dir)?;
     let spec = selection.bundler.spec();
     let collect_path = run_dir.join("collect.json");
+    // Protocol frames carry this token so that JSON printed to stdout by
+    // project configuration or plugins is never taken for an adapter event.
+    let protocol_token = crate::server::new_token();
+    let frame_prefix = format!("{FRAME_PREFIX} {protocol_token} ");
     let request = serde_json::json!({
         "projectRoot": selection.project_root,
         "configFile": selection.config_file,
@@ -135,6 +142,7 @@ pub async fn run(
         "buildDir": run_dir.join("build"),
         "collectPath": collect_path,
         "supportedVersion": spec.version,
+        "protocolToken": protocol_token,
         "allowUnsupportedEngine": options.allow_unsupported_engine,
     });
     let request_path = run_dir.join("adapter-request.json");
@@ -196,7 +204,11 @@ pub async fn run(
         tokio::select! {
             line = lines.next_line() => {
                 match line {
-                    Ok(Some(line)) => match serde_json::from_str::<AdapterEvent>(&line) {
+                    Ok(Some(line)) => match line
+                        .strip_prefix(&frame_prefix)
+                        .ok_or(())
+                        .and_then(|frame| serde_json::from_str::<AdapterEvent>(frame).map_err(drop))
+                    {
                         Ok(AdapterEvent::Progress { stage, message }) => {
                             tracing::debug!(stage = %stage, %message, "adapter progress");
                             on_progress(RunStage::from_adapter(&stage), message);
@@ -336,8 +348,15 @@ mod tests {
         std::fs::write(
             &fake_node,
             format!(
-                "#!/bin/sh\nsleep 30 &\necho $! > '{}'\necho \
-                 '{{\"event\":\"progress\",\"stage\":\"building\",\"message\":\"x\"}}'\nwait\n",
+                r#"#!/bin/sh
+sleep 30 &
+echo $! > '{}'
+token=$(sed -n 's/.*"protocolToken":"\([0-9a-f]*\)".*/\1/p' "$2")
+# Unframed project output must be ignored even when it looks like an event.
+echo '{{"event":"error","code":"BW_BUILD_FAILED","message":"spoofed","recovery":""}}'
+echo "BUNDLEWHY-FRAME $token {{\"event\":\"progress\",\"stage\":\"building\",\"message\":\"x\"}}"
+wait
+"#,
                 pid_file.display()
             ),
         )

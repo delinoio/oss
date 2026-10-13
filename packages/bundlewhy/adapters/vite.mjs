@@ -60,6 +60,11 @@ function collectorPlugin(state) {
       });
     },
     generateBundle(_options, bundle) {
+      // generateBundle runs once per output. bundlewhy analyzes one output;
+      // several outputs are rejected after the build instead of silently
+      // keeping only the last one.
+      state.outputs += 1;
+      if (state.outputs > 1) return;
       const modules = new Map();
       const recordModule = (id) => {
         if (modules.has(id)) return modules.get(id);
@@ -141,7 +146,7 @@ await runAdapter(async (request) => {
   checkEngineVersion(request, "vite", vitePackage.version);
   const vite = await importFile(vitePackage.require.resolve("vite"));
 
-  const state = { resolved: null, collection: null, warnings: [], logs: [] };
+  const state = { resolved: null, collection: null, outputs: 0, warnings: [], logs: [] };
   const outDir = request.buildDir;
   const overrides = [
     `build.outDir=${path.basename(outDir)} (bundlewhy run directory)`,
@@ -185,6 +190,13 @@ await runAdapter(async (request) => {
     );
   }
 
+  if (state.outputs > 1) {
+    throw new AdapterError(
+      AdapterErrorCode.UnsupportedBuild,
+      `The configuration produces ${state.outputs} Rolldown outputs; bundlewhy analyzes one client output per run`,
+      "Configure a single build.rolldownOptions.output entry for the analyzed build.",
+    );
+  }
   progress("collecting", "Writing the collected module graph");
   if (!state.collection) {
     throw new AdapterError(

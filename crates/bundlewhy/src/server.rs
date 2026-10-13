@@ -422,6 +422,12 @@ async fn handle_rpc(
                 (analysis, served.sources.clone(), served.run_dir.clone())
             };
             let html = export::render(&state.ui_html, &analysis, &sources, body.include_sources);
+            // A run analyzed with --exclude-sources has no content to include,
+            // whatever the request asked for.
+            let sources_included = body.include_sources
+                && sources
+                    .iter()
+                    .any(|source| source.content_included && !source.content.is_empty());
             let file_name = format!(
                 "report-{}{}.html",
                 chrono::Utc::now().format("%Y%m%dT%H%M%SZ"),
@@ -438,10 +444,10 @@ async fn handle_rpc(
                     format!("Could not write the report: {error}"),
                 )
             })?;
-            tracing::info!(file = %file_name, sources = body.include_sources, bytes = html.len(), "exported report");
+            tracing::info!(file = %file_name, sources = sources_included, bytes = html.len(), "exported report");
             Ok(json_response(&rpc::ExportReportResponse {
                 file_name,
-                sources_included: body.include_sources,
+                sources_included,
                 size_bytes: u32::try_from(html.len()).unwrap_or(u32::MAX),
             }))
         }

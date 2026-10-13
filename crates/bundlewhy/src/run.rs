@@ -312,60 +312,24 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 unsupported,
             )
         }
-        Err(error) => {
-            let status = if error.code == ErrorCode::RunCancelled {
-                RunStatus::Cancelled
-            } else {
-                RunStatus::Failed
-            };
-            log.event("error", json!({ "code": error.code.as_str() }));
-            tracing::error!(code = %error.code, "run did not complete");
-            let mut analysis = Analysis {
-                schema_version: SCHEMA_VERSION,
-                run_id: run_id.clone(),
-                project_name: selection.project_name.clone(),
-                config_file: selection
-                    .config_file
-                    .as_deref()
-                    .map(|path| crate::sources::classify(&selection.project_root, path).display)
-                    .unwrap_or_default(),
-                status,
-                problems: vec![error.problem(ProblemSeverity::Error)],
-                started_at: started_at.clone(),
-                mode: ReportMode::Live,
-                tool_version: env!("CARGO_PKG_VERSION").to_owned(),
-                ..Analysis::default()
-            };
-            // Engine identity is known only from a collection; record the
-            // expected engine so the UI still shows what was attempted.
-            let spec = selection.bundler.spec();
-            let mut identity =
-                engine_identity(selection.bundler, &crate::collect::Collection::default());
-            identity.bundler_package = spec.package.to_owned();
-            identity.bundler_version = "unknown".to_owned();
-            identity.diagnostic_notice =
-                "No diagnostic build finished; no findings were collected.".to_owned();
-            analysis.engine = Some(identity);
-            analysis.coverage = crate::model::OptimizationCategory::ALL
-                .into_iter()
-                .map(|category| crate::model::CategoryCoverage {
-                    category,
-                    state: crate::model::CoverageState::Unavailable,
-                    note: "The run did not finish.".to_owned(),
-                    rules: Vec::new(),
-                })
-                .collect();
-            (
-                ResultBundle {
-                    schema_version: SCHEMA_VERSION,
-                    project_root: selection.project_root.to_string_lossy().into_owned(),
-                    analysis,
-                    ..ResultBundle::default()
-                },
-                Some(error),
-            )
-        }
+        Err(error) => incomplete_bundle(&selection, &run_id, &started_at, &log, error),
     };
+    // Ctrl+C can arrive after the adapter finished, while analysis or size
+    // measurement ran. Never save such a run as complete.
+    if cancel.is_cancelled()
+        && error
+            .as_ref()
+            .is_none_or(|error| error.code != ErrorCode::RunCancelled)
+    {
+        tracing::warn!("cancelled after collection; discarding partial analysis");
+        (result_bundle, error) = incomplete_bundle(
+            &selection,
+            &run_id,
+            &started_at,
+            &log,
+            adapter::cancelled_error(),
+        );
+    }
 
     let protected_after = protected_files(&selection);
     let modified: Vec<String> = protected_before
@@ -459,6 +423,67 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         let _ = ctrl_c.await;
     }
     Ok(AnalyzeOutcome { status, error })
+}
+
+/// Result bundle for a run that failed or was cancelled before analysis
+/// finished. Coverage is unavailable everywhere and the error is a problem.
+fn incomplete_bundle(
+    selection: &Selection,
+    run_id: &str,
+    started_at: &str,
+    log: &RunLog,
+    error: BwError,
+) -> (ResultBundle, Option<BwError>) {
+    let status = if error.code == ErrorCode::RunCancelled {
+        RunStatus::Cancelled
+    } else {
+        RunStatus::Failed
+    };
+    log.event("error", json!({ "code": error.code.as_str() }));
+    tracing::error!(code = %error.code, "run did not complete");
+    let mut analysis = Analysis {
+        schema_version: SCHEMA_VERSION,
+        run_id: run_id.to_owned(),
+        project_name: selection.project_name.clone(),
+        config_file: selection
+            .config_file
+            .as_deref()
+            .map(|path| crate::sources::classify(&selection.project_root, path).display)
+            .unwrap_or_default(),
+        status,
+        problems: vec![error.problem(ProblemSeverity::Error)],
+        started_at: started_at.to_owned(),
+        mode: ReportMode::Live,
+        tool_version: env!("CARGO_PKG_VERSION").to_owned(),
+        ..Analysis::default()
+    };
+    // Engine identity is known only from a collection; record the
+    // expected engine so the UI still shows what was attempted.
+    let spec = selection.bundler.spec();
+    let mut identity = engine_identity(selection.bundler, &crate::collect::Collection::default());
+    identity.bundler_package = spec.package.to_owned();
+    identity.bundler_version = "unknown".to_owned();
+    identity.diagnostic_notice =
+        "No diagnostic build finished; no findings were collected.".to_owned();
+    analysis.engine = Some(identity);
+    analysis.coverage = crate::model::OptimizationCategory::ALL
+        .into_iter()
+        .map(|category| crate::model::CategoryCoverage {
+            category,
+            state: crate::model::CoverageState::Unavailable,
+            note: "The run did not finish.".to_owned(),
+            rules: Vec::new(),
+        })
+        .collect();
+    (
+        ResultBundle {
+            schema_version: SCHEMA_VERSION,
+            project_root: selection.project_root.to_string_lossy().into_owned(),
+            analysis,
+            ..ResultBundle::default()
+        },
+        Some(error),
+    )
 }
 
 pub const fn status_label(status: RunStatus) -> &'static str {

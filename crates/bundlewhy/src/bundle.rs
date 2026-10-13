@@ -151,13 +151,31 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
             "Pass a run directory created by `bundlewhy analyze` (it contains analysis.json).",
         )
     })?;
+    // The run directory is untrusted: refuse special files (a symlink to
+    // /dev/zero reports a small length but never reaches EOF) and bound the
+    // read.
+    if !metadata.is_file() {
+        return Err(invalid("analysis.json is not a regular file"));
+    }
     if metadata.len() > MAX_BUNDLE_BYTES {
         return Err(invalid(format!(
             "analysis.json is larger than {MAX_BUNDLE_BYTES} bytes"
         )));
     }
-    let bytes = std::fs::read(&path)
+    let mut bytes = Vec::new();
+    std::fs::File::open(&path)
+        .and_then(|file| {
+            std::io::Read::read_to_end(
+                &mut std::io::Read::take(file, MAX_BUNDLE_BYTES + 1),
+                &mut bytes,
+            )
+        })
         .map_err(|error| invalid(format!("Could not read {}: {error}", path.display())))?;
+    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
+        return Err(invalid(format!(
+            "analysis.json is larger than {MAX_BUNDLE_BYTES} bytes"
+        )));
+    }
     let mut bundle = parse(&bytes)?;
     if bundle.analysis.status == RunStatus::Running {
         // The process that owned the run is gone; never present it as running.
@@ -335,6 +353,14 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_refuses_special_bundle_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink("/dev/zero", dir.path().join(BUNDLE_FILE)).unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
     }
 
     #[cfg(unix)]
