@@ -12,6 +12,7 @@ import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
+  ErrorDetailSchema,
   EventAction,
   InboxService,
   InteractionService,
@@ -923,4 +924,188 @@ it("retires an evicted queued receipt when a list refresh alone learns the quest
     }),
   ).not.toBeNull();
   expect(respond).toHaveBeenCalledTimes(2);
+}, 30_000);
+
+it("keeps an authoritatively removed question absent through a Snapshot and a restored older page", async () => {
+  const sessionId = newRequestId();
+  const session = create(ResourceSchema, {
+    id: sessionId,
+    sessionId,
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 1n,
+    documentJson: encode({
+      name: "Removed question fixture",
+      workspace: "general-chat",
+      outcome: "succeeded",
+      archive: "active",
+      dispatch: "paused",
+      recovery: "clear",
+    }),
+  });
+  const data = {
+    type: "user-question",
+    closure: "open",
+    questions: {
+      questions: [
+        {
+          id: "original",
+          text: "Keep exact answer",
+          header: "Original question",
+          secret: false,
+          other: true,
+          options: [],
+        },
+      ],
+    },
+  };
+  const original = create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId,
+    kind: EntityKind.INTERACTION,
+    schemaVersion: 1,
+    revision: 9n,
+    documentJson: encode(data),
+  });
+  let listed = [original];
+  let snapshots = 0;
+  let listReads = 0;
+  const respond = vi.fn(async () => ({
+    interaction: create(ResourceSchema, {
+      ...original,
+      revision: 10n,
+      documentJson: encode({ ...data, response: { state: "queued" } }),
+    }),
+  }));
+  type Channel = {
+    events: (WatchEventsResponse | "expire")[];
+    notify: () => void;
+  };
+  const channels = new Set<Channel>();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SessionService, {
+      listSessions: () => ({ sessions: [session] }),
+      listQueue: () => ({ inputs: [] }),
+    });
+    router.service(InteractionService, { respondQuestion: respond });
+    router.service(ResourceService, {
+      getSnapshot: () => {
+        snapshots += 1;
+        return { resources: [session], cursor: `removed-snapshot-${snapshots}` };
+      },
+      getResource: () => ({ resource: original }),
+      listResources: (request) => {
+        if (request.filter?.kind !== EntityKind.INTERACTION)
+          return { resources: [] };
+        listReads += 1;
+        return { resources: listed };
+      },
+      async *watchEvents(_request, context) {
+        const channel: Channel = { events: [], notify: () => {} };
+        channels.add(channel);
+        const abort = () => channel.notify();
+        context.signal.addEventListener("abort", abort);
+        try {
+          while (!context.signal.aborted) {
+            if (!channel.events.length)
+              await new Promise<void>((done) => {
+                channel.notify = done;
+              });
+            while (channel.events.length && !context.signal.aborted) {
+              const next = channel.events.shift()!;
+              if (next === "expire")
+                throw new ConnectError(
+                  "Cursor expired.",
+                  Code.OutOfRange,
+                  undefined,
+                  [
+                    {
+                      desc: ErrorDetailSchema,
+                      value: create(ErrorDetailSchema, {
+                        code: "cursor_expired",
+                      }),
+                    },
+                  ],
+                );
+              yield next;
+            }
+          }
+        } finally {
+          channels.delete(channel);
+          context.signal.removeEventListener("abort", abort);
+        }
+      },
+    });
+    router.service(InboxService, {
+      listInbox: () => ({ entries: [] }),
+      getNotificationPreferences: () => ({
+        preferences: create(NotificationPreferencesSchema, { revision: 1n }),
+      }),
+    });
+  });
+  render(<App transport={transport} />);
+  fireEvent.click(
+    await within(
+      screen.getByRole("complementary", { name: "Application sidebar" }),
+    ).findByRole("button", { name: /General Chat Removed question fixture/ }),
+  );
+  const region = screen.getByRole("region", { name: "Current session" });
+  const answer = await within(region).findByRole("textbox", {
+    name: "Your answer",
+  });
+  fireEvent.change(answer, { target: { value: "Original response bytes" } });
+  // Receipt count 1: the answered question left the resident payload page.
+  listed = [];
+  fireEvent.click(within(region).getByRole("button", { name: "Send answers" }));
+  await within(region).findByText("Response: queued");
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 50));
+  });
+  expect(region.querySelector(".requests summary")?.textContent).toContain("1");
+  await waitFor(() => expect(channels.size).toBeGreaterThan(0));
+  // Receipt count 0: an authoritative stream Remove drops it.
+  await act(async () => {
+    for (const channel of channels) {
+      channel.events.push(
+        create(WatchEventsResponseSchema, {
+          id: newRequestId(),
+          cursor: newRequestId(),
+          entityId: original.id,
+          kind: EntityKind.INTERACTION,
+          sessionId,
+          revision: 11n,
+          action: EventAction.DELETED,
+        }),
+      );
+      channel.notify();
+    }
+  });
+  await waitFor(() => expect(region.querySelector(".requests")).toBeNull());
+  // A stale list page still lists the removed id; a Snapshot clears the
+  // stream-scoped removed set before that page is restored.
+  listed = [original];
+  const snapshotsBefore = snapshots;
+  const readsBefore = listReads;
+  await act(async () => {
+    for (const channel of channels) {
+      channel.events.push("expire");
+      channel.notify();
+    }
+  });
+  await waitFor(() => expect(snapshots).toBeGreaterThan(snapshotsBefore), {
+    timeout: 5000,
+  });
+  await waitFor(() => expect(listReads).toBeGreaterThan(readsBefore), {
+    timeout: 5000,
+  });
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 100));
+  });
+  expect(region.querySelector(".requests")).toBeNull();
+  expect(
+    within(region).queryByRole("textbox", { name: "Your answer" }),
+  ).toBeNull();
+  // Removal sends nothing: only the original answer was ever submitted.
+  expect(respond).toHaveBeenCalledTimes(1);
 }, 30_000);

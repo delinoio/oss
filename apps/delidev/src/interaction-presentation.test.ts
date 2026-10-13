@@ -14,6 +14,7 @@ import {
   InteractionClosure,
   InteractionPresentationStore,
   QuestionResponseState,
+  REMOVED_INTERACTION_LIMIT,
   responseStateText,
   displayedInteraction,
   completeEmptyInteractionTray,
@@ -841,4 +842,69 @@ it("keeps revision ordering and classification with normalized values", () => {
   );
   expect(canceled.presentation).toBe(InteractionPresentation.Retired);
   expect(canceled.responseState).toBe(QuestionResponseState.Canceled);
+});
+
+it("keeps an authoritatively removed question absent through snapshots and older page restoration", () => {
+  const store = new InteractionPresentationStore();
+  const queued = row({ ...original, response: { state: "queued" } }, 10n);
+  store.observe(queued);
+  // Receipt counts 1, 0, 0: resident leave, Remove, older page restoration.
+  expect(receiptIds(store)).toEqual([id]);
+  store.remove(id);
+  expect(store.isRemoved(id)).toBe(true);
+  // The stream's removed set is empty after a Snapshot; the store still fences.
+  expect(receiptIds(store, [], [])).toEqual([]);
+  store.observe(row(original, 9n));
+  store.observe(queued);
+  store.observe(row(original, 12n));
+  expect(receiptIds(store, [], [])).toEqual([]);
+  expect([...store.entries()]).toEqual([]);
+  // A retained original answer mutation cannot revive the removed question.
+  expect(receiptIds(store, [], [], [`answer:${id}`])).toEqual([]);
+});
+it("keeps a question that only left the payload page after a Snapshot without Remove", () => {
+  const store = new InteractionPresentationStore();
+  store.observe(row({ ...original, response: { state: "queued" } }, 10n));
+  expect(store.isRemoved(id)).toBe(false);
+  expect(receiptIds(store, [], [])).toEqual([id]);
+  // Retired-without-pending and unrelated controls keep existing behavior.
+  store.observe(row(accepted, 11n));
+  expect(receiptIds(store)).toEqual([]);
+  expect(receiptIds(store, [], [], [`answer:${id}`])).toEqual([id]);
+});
+it("scopes removal tombstones to the owning store and to the removed id", () => {
+  const owner = new InteractionPresentationStore();
+  const other = new InteractionPresentationStore();
+  owner.observe(row(original));
+  other.observe(row(original));
+  owner.remove(id);
+  expect(owner.isRemoved(id)).toBe(true);
+  expect(other.isRemoved(id)).toBe(false);
+  expect(receiptIds(other)).toEqual([id]);
+  const unrelated = newRequestId();
+  expect(owner.isRemoved(unrelated)).toBe(false);
+  // An approval projection keeps its existing non-question behavior.
+  const approval = new InteractionPresentationStore();
+  approval.observe(row({ type: "native-approval", closure: "open" }));
+  expect(receiptIds(approval)).toEqual([]);
+  // A tombstone for an unseen identity still fences a later observation.
+  const unseen = new InteractionPresentationStore();
+  unseen.remove(id);
+  unseen.observe(row(original));
+  expect(receiptIds(unseen)).toEqual([]);
+});
+it("bounds removal tombstones to identities only", () => {
+  const store = new InteractionPresentationStore();
+  const ids = Array.from({ length: REMOVED_INTERACTION_LIMIT + 5 }, () =>
+    newRequestId(),
+  );
+  for (const removed of ids) store.remove(removed);
+  const fenced = store.removed();
+  expect(fenced.size).toBe(REMOVED_INTERACTION_LIMIT);
+  // The oldest identities are forgotten first; the newest stay fenced.
+  expect(store.isRemoved(ids[0])).toBe(false);
+  expect(store.isRemoved(ids[ids.length - 1])).toBe(true);
+  // The published snapshot is a copy and holds strings (ids) only.
+  expect([...fenced].every((entry) => typeof entry === "string")).toBe(true);
+  expect(store.removed()).not.toBe(fenced);
 });
