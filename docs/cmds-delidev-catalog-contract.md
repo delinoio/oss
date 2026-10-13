@@ -721,7 +721,10 @@ settings never rewrite prior generations. Retain selection through Plan/Execute
 transitions, continuation, retry, recovery, compaction and Fork snapshots.
 The existing ordered template text remains exact. Compose one deterministic
 shared instruction after it in Execute only, including it in the aggregate
-256 KiB limit. Plan and read-only Sidechat receive no prefix instruction. Codex,
+256 KiB limit. The instruction quotes the prefix JSON-style (escaping quotes,
+backslashes and control characters) without HTML escaping, so `<`, `>` and `&`
+stay exact UTF-8 rather than becoming `\u003c`, `\u003e` or `\u0026`. Plan and
+read-only Sidechat receive no prefix instruction. Codex,
 Claude Code, OpenCode and Grok Build use their existing instruction channels;
 Grok's unchanged empty-template Plan profile remains independently required.
 Worker capability 38 negotiates the complete declaration before native dispatch;

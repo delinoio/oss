@@ -76,16 +76,30 @@ func (p BranchPrefixSelection) Validate() error {
 	return ValidateBranchPrefix(p.Prefix)
 }
 
+// quoteBranchPrefixLiteral returns the JSON-style quoted prefix for the plain-text
+// instruction. Unlike json.Marshal it keeps <, > and & exact because the result
+// is never embedded in HTML; quotes, backslashes and control characters stay escaped.
+func quoteBranchPrefixLiteral(prefix string) string {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(prefix); err != nil {
+		// A string cannot fail JSON encoding; fall back to strconv quoting defensively.
+		return strconv.Quote(prefix)
+	}
+	return strings.TrimSuffix(buf.String(), "\n")
+}
+
 // NativeInstructions retains template bytes and appends exactly one shared
 // Execute instruction. Plan and read-only Sidechat retain their original profile.
 func (c ExecutionConfiguration) NativeInstructions(mode SessionMode) (string, error) {
 	instructions := c.Instructions
 	if c.BranchPrefix != nil && c.BranchPrefix.Prefix != "" && mode == ExecuteMode && c.SidechatPolicy == "" {
-		literal, _ := json.Marshal(c.BranchPrefix.Prefix)
+		literal := quoteBranchPrefixLiteral(c.BranchPrefix.Prefix)
 		if instructions != "" {
 			instructions += "\n\n"
 		}
-		instructions += "When creating a new Git branch, concatenate the literal prefix " + string(literal) + " with a suffix you choose. Do not insert a separator or rename existing branches. Preserve existing branches and workspace permissions."
+		instructions += "When creating a new Git branch, concatenate the literal prefix " + literal + " with a suffix you choose. Do not insert a separator or rename existing branches. Preserve existing branches and workspace permissions."
 	}
 	if len(instructions) > MaxAppliedInstructions {
 		return "", Fail(ResourceExhausted, "Combined instructions exceed the native adapter bound.", "Reduce the ordered templates before first execution; no contents were truncated.")

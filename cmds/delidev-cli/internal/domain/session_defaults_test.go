@@ -69,6 +69,46 @@ func TestBranchPrefixInstructionsRetainLegacyBytesAndExecuteOnly(t *testing.T) {
 		t.Fatal("Plan overflow invented")
 	}
 }
+func TestBranchPrefixInstructionLiteralIsExact(t *testing.T) {
+	cases := []struct {
+		name   string
+		prefix string
+		quoted string
+	}{
+		{"html-sensitive", "a<&>", `"a<&>"`},
+		{"slash", "a/b", `"a/b"`},
+		{"non-ascii", "팀-🐦/", `"팀-🐦/"`},
+		{"quote", `a"b`, `"a\"b"`},
+		{"tab", "a\tb", `"a\tb"`},
+	}
+	for _, tc := range cases {
+		c := ExecutionConfiguration{Harness: Codex, BranchPrefix: &BranchPrefixSelection{Version: 1, Prefix: tc.prefix}}
+		got, err := c.NativeInstructions(ExecuteMode)
+		if err != nil || !strings.Contains(got, "concatenate the literal prefix "+tc.quoted+" with a suffix") {
+			t.Fatalf("%s: instruction literal changed: %q %v", tc.name, got, err)
+		}
+		if strings.Contains(got, `\u00`) {
+			t.Fatalf("%s: unexpected unicode substitution: %q", tc.name, got)
+		}
+		for _, mode := range []SessionMode{PlanMode} {
+			if plan, _ := c.NativeInstructions(mode); plan != "" {
+				t.Fatalf("%s: Plan produced an instruction", tc.name)
+			}
+		}
+		c.SidechatPolicy = "read-only"
+		if side, _ := c.NativeInstructions(ExecuteMode); side != "" {
+			t.Fatalf("%s: read-only Sidechat produced an instruction", tc.name)
+		}
+	}
+	if ValidateBranchPrefix("a<&>") != nil {
+		t.Fatal("html-sensitive prefix must stay valid")
+	}
+	for _, bad := range []string{"a~", "a b", "a\\", "a..", "/a"} {
+		if ValidateBranchPrefix(bad) == nil {
+			t.Fatalf("invalid prefix %q accepted", bad)
+		}
+	}
+}
 func TestBranchPrefixProvenanceRejectsForeignOrMissingRevision(t *testing.T) {
 	p := BranchPrefixSelection{Version: 1, Prefix: "team", SettingsID: NewID(), SettingsRevision: 2, ProjectID: NewID(), ProjectRevision: 3}
 	if p.Validate() != nil {
