@@ -422,3 +422,62 @@ it("recovers a prior read failure after a successful resume without replaying th
   );
   expect(f.resume).toHaveBeenCalledTimes(2);
 });
+
+it("reloads the first page after an accepted resume instead of retrying a retained continuation token", async () => {
+  const f = fixture();
+  let continuationFails = false;
+  f.history.mockImplementation(async (request: unknown) => {
+    const token = (request as { pageToken: string }).pageToken;
+    if (token === "continuation-1") {
+      if (continuationFails)
+        throw new ConnectError("Read unavailable", Code.Unavailable);
+      return { problemSet: f.set, attempts: [], nextPageToken: "" };
+    }
+    return {
+      problemSet: f.set,
+      attempts: f.attempts,
+      nextPageToken: "continuation-1",
+    };
+  });
+  f.resume.mockRejectedValueOnce(
+    new ConnectError("response lost", Code.Unavailable),
+  );
+  const tokens = () =>
+    f.history.mock.calls.map(
+      (call) => (call[0] as { pageToken: string }).pageToken,
+    );
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(await screen.findByRole("button", { name: /Load more/ }));
+  await waitFor(() => expect(tokens()).toEqual(["", "continuation-1"]));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Resume automatic attempt allowance",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  await screen.findByRole("button", {
+    name: "Retry original allowance resumption",
+  });
+  continuationFails = true;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(tokens()).toEqual(["", "continuation-1", "", "continuation-1"]);
+  continuationFails = false;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original allowance resumption" }),
+  );
+  await waitFor(() => expect(f.resume).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Retry current read" }),
+    ).toBeNull(),
+  );
+  // The accepted resume reloads from the first page; the retained
+  // continuation token is not retried.
+  expect(tokens()).toEqual(["", "continuation-1", "", "continuation-1", ""]);
+});

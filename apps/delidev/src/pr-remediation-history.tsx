@@ -132,15 +132,19 @@ export function PRRemediationHistory({
     error: paginationError(traversal.error?.failure),
     refetch: traversal.refreshExplicit,
   };
-  // Deliberate refreshes recover a retained read error (exact-token retry or
-  // first-page reload); automatic refreshes keep the non-explicit traversal.refresh.
+  // The manual Refresh button recovers a retained read error (exact-token retry
+  // or first-page reload); automatic refreshes keep the non-explicit
+  // traversal.refresh.
   const refresh = traversal.refreshExplicit;
   const resume = useRetainedMutation(
     `pr-remediation-resume:${selection.remoteRepositoryId}:${selection.pullRequestId}`,
     IntegrationQuery.resumePullRequestRemediation,
     () => {
       workflow.cancelAllowance(confirmationKey);
-      refresh();
+      // An accepted resume changes the problem-set revision and invalidates
+      // every retained continuation token, so reload from the first page
+      // instead of retrying an old token that would return cursor-expired.
+      traversal.reload();
     },
   );
   const set = history.data?.problemSet,
