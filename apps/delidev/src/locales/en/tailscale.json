@@ -49,5 +49,8 @@
   "tailscale.machineApproval": "Tailscale device approval required",
   "tailscale.stopped": "Tailscale stopped",
   "tailscale.starting": "Tailscale starting",
-  "tailscale.cancel": "Cancel original request"
+  "tailscale.cancel": "Cancel original request",
+  "tailscale.retryResume": "Retry the original resume request",
+  "tailscale.retryCancel": "Retry the original cancel request",
+  "tailscale.retainedRequestHelp": "An earlier request for this connection may have been accepted. Retry that original request before sending another."
 }

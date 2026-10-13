@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -20,6 +21,7 @@ type OpenCodeEventPublisher struct {
 	text                *OpenCodeTextPublisher
 	usage               *OpenCodeUsagePublisher
 	seen                map[string]bool
+	snapshotSeen        map[string]bool
 	children            domain.SubagentState
 	final               string
 	finish              *opencode.FinishReason
@@ -55,6 +57,60 @@ func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode
 		return nil, err
 	}
 	return &OpenCodeEventPublisher{api: api, text: text, usage: usage, seen: map[string]bool{}}, nil
+}
+
+const (
+	// maxOpenCodeEventKeys bounds retained native event identities, matching
+	// the harness observer bound.
+	maxOpenCodeEventKeys = 65536
+	// maxOpenCodeSnapshotKeys bounds distinct reconciled snapshots:
+	// 2*4096 message snapshots plus 16384 part snapshots.
+	maxOpenCodeSnapshotKeys = 24576
+	// openCodeSnapshotKeyPrefix marks private reconciled snapshot digests.
+	// Native event identities always start with "evt", so the classes are disjoint.
+	openCodeSnapshotKeyPrefix = "snapshot:"
+)
+
+// isOpenCodeSnapshotKey reports whether a publication key is a private
+// reconciled snapshot digest rather than a native event identity.
+func isOpenCodeSnapshotKey(key string) bool {
+	return strings.HasPrefix(key, openCodeSnapshotKeyPrefix)
+}
+
+// openCodeKeyRejected reports a previously published key or an exhausted
+// capacity in the key's own class. It never evicts or truncates.
+func openCodeKeyRejected(events, snapshots map[string]bool, key string, snapshot bool) bool {
+	if snapshot {
+		return snapshots[key] || len(snapshots) >= maxOpenCodeSnapshotKeys
+	}
+	return events[key] || len(events) >= maxOpenCodeEventKeys
+}
+
+// admitOpenCodeKey keeps a replayed frozen snapshot idempotent even at snapshot
+// capacity, while a repeated native event or a new key at capacity is rejected.
+func admitOpenCodeKey(events, snapshots map[string]bool, key string, snapshot bool) (idempotent, rejected bool) {
+	if snapshot && snapshots[key] {
+		return true, false
+	}
+	return false, openCodeKeyRejected(events, snapshots, key, snapshot)
+}
+
+// markOpenCodeKey records a published key in its own bounded class. The
+// snapshot map is created lazily so zero-value publishers stay usable.
+func markOpenCodeKey(events map[string]bool, snapshots *map[string]bool, key string, snapshot bool) {
+	if !snapshot {
+		events[key] = true
+		return
+	}
+	if *snapshots == nil {
+		*snapshots = map[string]bool{}
+	}
+	(*snapshots)[key] = true
+}
+
+// markPublished records a published key in its own bounded dedup class.
+func (c *OpenCodeEventPublisher) markPublished(key string, snapshot bool) {
+	markOpenCodeKey(c.seen, &c.snapshotSeen, key, snapshot)
 }
 
 func (c *OpenCodeEventPublisher) fail(err error) error {
@@ -99,17 +155,24 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 		}
 	}
 	publicationKey, keyErr := o.PublicationKey()
-	if keyErr == nil && o.EventID == "" && c.seen[publicationKey] {
+	// Reconciled snapshots carry a private digest key and no native event ID.
+	// They are bounded independently from real native event identities.
+	snapshot := keyErr == nil && o.EventID == "" && isOpenCodeSnapshotKey(publicationKey)
+	if keyErr != nil {
+		return c.fail(publicationUncertain())
+	}
+	idempotent, rejected := admitOpenCodeKey(c.seen, c.snapshotSeen, publicationKey, snapshot)
+	if idempotent {
 		return nil
 	}
-	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
+	if rejected {
 		return c.fail(publicationUncertain())
 	}
 	if o.ChildPending || len(o.Children) > 0 && o.Message == nil && o.Part == nil {
 		if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
 			return c.fail(err)
 		}
-		c.seen[publicationKey] = true
+		c.markPublished(publicationKey, snapshot)
 		return nil
 	}
 	if o.ContextOnly {
@@ -119,7 +182,7 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 		if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
 			return c.fail(err)
 		}
-		c.seen[publicationKey] = true
+		c.markPublished(publicationKey, snapshot)
 		return nil
 	}
 	text, err := c.text.PublishObservation(ctx, o)
@@ -199,7 +262,7 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 	if err := c.publishForegroundChildren(ctx, o.Children); err != nil {
 		return c.fail(err)
 	}
-	c.seen[publicationKey] = true
+	c.markPublished(publicationKey, snapshot)
 	return nil
 }
 

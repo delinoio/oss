@@ -368,6 +368,29 @@ question. Serialize unresolved generations; uncertainty never authorizes another
 Fork or input. Recheck original actor, account, connection, immutable model and
 instructions, original Worker device/current captured instance, workspace
 reference and native read-only enforcement before claim and publication.
+The accepted parent turn is immutable history: validate its recorded job, input,
+completion, account, configuration and workspace against the parent's origin
+(Worker, Agent and initial configuration), never against the parent's current
+selected execution. A parent that selects or completes a later execution before
+claim or publication neither invalidates nor retargets the accepted turn; only
+ordinary current-selection continuations (compaction, native review, ordinary
+Fork) keep requiring the current selection.
+
+Admission advances the child exactly once. Fork claim and publication require the
+live child revision to equal the receipt's captured child revision plus one. An
+intervening child revision, such as a rename or session budget change, never
+renews the accepted retry: claim is rejected, or publication records the claimed
+runtime as a retained cleanup owner without native re-execution, retargeting
+child metadata or releasing the active generation.
+
+The retry execution keeps the initiating actor's authority after Fork publication.
+Every execution authority decision (grant registration, native startup, input
+send and proxied inference) resolves the succeeded retry Fork job named by the
+execution's Fork identity, requires its generation, child, runtime, question,
+previous execution and captured Worker instance/device to match, and rechecks its
+recorded actor. Revoking that paired client prevents the retained question from
+being claimed or sent; the published runtime stays a cleanup owner and no other
+actor, generation or Worker adopts the authority.
 
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted
@@ -396,6 +419,15 @@ matching child, question, generation, runtime and source boundary. Preserve the
 selected answer, generation history and admission receipt. Missing or conflicting
 proof, a prior claim, or native publication retains the original cleanup fence;
 restored authority permits only a fresh explicit retry after verified release.
+
+Execution recovery proves only the recovered generation's own execution cleanup.
+It clears the active retry owner solely when that owner is the recovered
+generation's own ID. A newer failed or uncertain Fork generation that is still
+the active owner (while the selected execution is the older generation) stays
+active and keeps its retained problem: no further generation, direct input or
+Resume is admitted, and an older generation's recovery, stale proofs or foreign
+proofs never transfer or release its authority. It leaves only through its own
+exact positive cleanup proof.
 
 The question action uses the issue's exact English/Korean explanation. Its
 noninteractive popover opens after 300 ms hover or immediately on focus, shares

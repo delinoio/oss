@@ -174,7 +174,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	var managed *managedSubscriptionLease
 	var managedLatest []byte
 	var closeManagedRPC func()
-	managedCleanup, managedSuccess, managedUnused, managedPreNative := false, false, false, false
+	managedCleanup, managedSuccess, managedUnused, managedPreNative, managedHelperRetained := false, false, false, false, false
 	defer func() {
 		if closeManagedRPC != nil {
 			defer closeManagedRPC()
@@ -183,7 +183,9 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return
 		}
 		if managedPreNative {
-			managedCleanup = cleanupUnusedExecutionAuthentication(nativeHome, managed.response.Bundle) == nil
+			// A joined tree with failed helper retirement still authorizes the
+			// independent authentication cleanup but keeps the lease retained.
+			managedCleanup, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedCleanup {
 				managedLatest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -283,7 +285,8 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	managedPreNative = false
 	native, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
-		managedPreNative = domain.SafeError(err).Code != domain.RecoveryRequired
+		managedHelperRetained = codex.NativeJoinedHelperRetirementFailed(err)
+		managedPreNative = managedHelperRetained || domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, err
 	}
 	captured, closed := false, false

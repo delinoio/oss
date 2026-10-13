@@ -98,3 +98,43 @@ func TestManagedUnusedAuthenticationRequiresAbsentOrIdenticalFileAndCleanHome(t 
 		})
 	}
 }
+
+func TestPreNativeAuthenticationCleanupKeepsLeaseAfterJoinedHelperFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		helperRetained bool
+		changed        bool
+		confirmed      bool
+		failed         bool
+	}{
+		{name: "joined with retired helpers", confirmed: true},
+		{name: "joined with unretired helpers keeps the lease", helperRetained: true},
+		{name: "changed file stays unconfirmed", changed: true, failed: true},
+		{name: "changed file with unretired helpers stays unconfirmed", helperRetained: true, changed: true, failed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := filepath.Join(t.TempDir(), "codex")
+			if err := security.PrivateDir(home); err != nil {
+				t.Fatal(err)
+			}
+			bundle := workerSubscriptionBundle("first")
+			defer clear(bundle)
+			written := bundle
+			if tc.changed {
+				written = workerSubscriptionBundle("second")
+				defer clear(written)
+			}
+			auth := filepath.Join(home, "auth.json")
+			if err := security.WriteAtomic(auth, written); err != nil {
+				t.Fatal(err)
+			}
+			confirmed, err := cleanupPreNativeAuthentication(home, bundle, tc.helperRetained)
+			if confirmed != tc.confirmed || (err != nil) != tc.failed {
+				t.Fatal("unexpected pre-native cleanup outcome", confirmed, err)
+			}
+			if _, statErr := os.Lstat(auth); !tc.changed && !os.IsNotExist(statErr) {
+				t.Fatal("a joined original tree did not authorize authentication removal", statErr)
+			}
+		})
+	}
+}
