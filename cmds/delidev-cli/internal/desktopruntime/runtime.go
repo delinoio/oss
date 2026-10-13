@@ -309,9 +309,11 @@ func (t *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// contact a listener: the runtime, a marker-refused retirement or the
 	// original pairing address. Edited credential and journal endpoints that
 	// the unchanged grant does not name never receive the bearer token.
+	// Unverifiable evidence keeps its recovery_required code so callers such as
+	// the resident Worker stop instead of retrying a transient-looking outage.
 	if err := VerifyOriginalPairing(t.Owner, t.Root, t.ServerID, t.Endpoint, t.PairingID); err != nil {
 		logUnverifiedPairing("transport", err)
-		return nil, unavailable()
+		return nil, err
 	}
 	target, err := Load(t.Owner, t.ServerID)
 	if err == nil {

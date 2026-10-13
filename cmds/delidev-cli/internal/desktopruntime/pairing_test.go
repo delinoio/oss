@@ -314,6 +314,48 @@ func TestEditedEvidenceSendsNoRequestWithoutRuntimeOrMarker(t *testing.T) {
 	}
 }
 
+// A retained grant that disappears or changes while a fixed Local Worker is
+// running must surface recovery_required through the HTTP client, because the
+// resident Worker retries server_unavailable indefinitely but stops on
+// recovery_required.
+func TestTransportPreservesRecoveryRequiredWhenGrantDisappears(t *testing.T) {
+	var hits atomic.Int32
+	original := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer original.Close()
+	owner := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(owner); err != nil {
+		t.Fatal(err)
+	}
+	target := fixtureTarget("http://127.0.0.1:41000")
+	p := retainPairing(t, owner, target.ServerID, original.URL)
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.Proxy = nil
+	defer base.CloseIdleConnections()
+	client := &http.Client{Transport: &LocalTransport{Base: base, Root: p.Worker, Owner: owner, ServerID: target.ServerID, Endpoint: original.URL, PairingID: p.PairingID}}
+	request := func() error {
+		req, _ := http.NewRequest("POST", original.URL+"/rpc", nil)
+		reply, err := client.Do(req)
+		if err == nil {
+			reply.Body.Close()
+		}
+		return err
+	}
+	if err := request(); err != nil {
+		t.Fatal("intact pairing was refused", err)
+	}
+	if err := os.Remove(filepath.Join(owner, "pairing-codes", string(p.RequestID)+".json")); err != nil {
+		t.Fatal(err)
+	}
+	hits.Store(0)
+	err := request()
+	if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatalf("missing grant did not surface recovery_required: %v", err)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("request reached the listener without a grant: %d", hits.Load())
+	}
+}
+
 // An intact retained grant still lets an unchanged Worker use its original
 // address when no desktop runtime has ever followed.
 func TestVerifiedPairingKeepsDirectFallbackBeforeAnyRuntime(t *testing.T) {
