@@ -43,7 +43,9 @@ func wireMutationIdentity(message any) string {
 
 // The probe captures the real serialized CLI request. The loss wrapper discards
 // its response only after that request has reached the authenticated fixture.
-func identityProbe[I, O any](mux *http.ServeMux, procedure string, reply *O, calls chan string, outcome identityOutcome) {
+// An optional echo builds the success reply from the received request so
+// fixtures can acknowledge the exact dispatched request ID.
+func identityProbe[I, O any](mux *http.ServeMux, procedure string, reply *O, calls chan string, outcome identityOutcome, echo ...func(*I) *O) {
 	mux.Handle(procedure, connect.NewUnaryHandler(procedure, func(ctx context.Context, req *connect.Request[I]) (*connect.Response[O], error) {
 		id := wireMutationIdentity(req.Msg)
 		calls <- id
@@ -53,8 +55,23 @@ func identityProbe[I, O any](mux *http.ServeMux, procedure string, reply *O, cal
 		if outcome == identityRejected {
 			return nil, rpc.Error(domain.Fail(domain.Conflict, "Fixture revision changed.", "Retain the original request."), "")
 		}
+		if len(echo) > 0 {
+			return connect.NewResponse(echo[0](req.Msg)), nil
+		}
 		return connect.NewResponse(reply), nil
 	}))
+}
+
+func echoCheckUpdate(r *pb.CheckUpdateRequest) *pb.CheckUpdateResponse {
+	return &pb.CheckUpdateResponse{RequestId: r.RequestId}
+}
+
+func echoWorkerUpdate(r *pb.RequestWorkerUpdateRequest) *pb.RequestWorkerUpdateResponse {
+	return &pb.RequestWorkerUpdateResponse{RequestId: r.GetMutation().GetRequestId()}
+}
+
+func echoCancelUpdate(r *pb.CancelUpdateRequest) *pb.CancelUpdateResponse {
+	return &pb.CancelUpdateResponse{RequestId: r.GetMutation().GetRequestId()}
 }
 
 func identityClientScope(t *testing.T, endpoint string, kind domain.DeviceType) string {
@@ -126,9 +143,9 @@ func TestCLIMutationDispatchRetainsGeneratedAndExplicitIdentities(t *testing.T) 
 					identityProbe[pb.RequestPullRequestFixRequest](mux, delidevv1connect.PullRequestFixServiceRequestPullRequestFixProcedure, &pb.RequestPullRequestFixResponse{}, calls, outcome)
 					identityProbe[pb.DiscoverNativeModelsRequest](mux, delidevv1connect.NativeModelServiceDiscoverNativeModelsProcedure, &pb.DiscoverNativeModelsResponse{}, calls, outcome)
 					identityProbe[pb.CancelNativeModelDiscoveryRequest](mux, delidevv1connect.NativeModelServiceCancelNativeModelDiscoveryProcedure, &pb.CancelNativeModelDiscoveryResponse{}, calls, outcome)
-					identityProbe[pb.CheckUpdateRequest](mux, delidevv1connect.InstallationServiceCheckUpdateProcedure, &pb.CheckUpdateResponse{}, calls, outcome)
-					identityProbe[pb.RequestWorkerUpdateRequest](mux, delidevv1connect.InstallationServiceRequestWorkerUpdateProcedure, &pb.RequestWorkerUpdateResponse{}, calls, outcome)
-					identityProbe[pb.CancelUpdateRequest](mux, delidevv1connect.InstallationServiceCancelUpdateProcedure, &pb.CancelUpdateResponse{}, calls, outcome)
+					identityProbe[pb.CheckUpdateRequest](mux, delidevv1connect.InstallationServiceCheckUpdateProcedure, &pb.CheckUpdateResponse{}, calls, outcome, echoCheckUpdate)
+					identityProbe[pb.RequestWorkerUpdateRequest](mux, delidevv1connect.InstallationServiceRequestWorkerUpdateProcedure, &pb.RequestWorkerUpdateResponse{}, calls, outcome, echoWorkerUpdate)
+					identityProbe[pb.CancelUpdateRequest](mux, delidevv1connect.InstallationServiceCancelUpdateProcedure, &pb.CancelUpdateResponse{}, calls, outcome, echoCancelUpdate)
 					peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						if outcome != identityLost || r.URL.Path == delidevv1connect.SystemServiceGetStatusProcedure {
 							mux.ServeHTTP(w, r)
@@ -251,5 +268,91 @@ func TestCLIReadDispatchDoesNotGenerateMutationIdentity(t *testing.T) {
 				t.Fatal("read-only failure acquired mutation identity", code, output.String(), diagnostic.String())
 			}
 		})
+	}
+}
+
+func TestCLIUpdateMutationRejectsUnacknowledgedReceiptIDs(t *testing.T) {
+	resource := string(domain.NewID())
+	foreign := string(domain.NewID())
+	commands := []struct {
+		name string
+		args []string
+		// register installs the update probe with a receipt chosen by the vector.
+		register func(mux *http.ServeMux, calls chan string, receipt func(string) string)
+	}{
+		{"update-check", []string{"update", "check", "--component", "desktop", "--target", "darwin-arm64", "--current-version", "0.0.1"}, func(mux *http.ServeMux, calls chan string, receipt func(string) string) {
+			identityProbe[pb.CheckUpdateRequest](mux, delidevv1connect.InstallationServiceCheckUpdateProcedure, &pb.CheckUpdateResponse{}, calls, identitySuccess, func(r *pb.CheckUpdateRequest) *pb.CheckUpdateResponse {
+				return &pb.CheckUpdateResponse{RequestId: receipt(r.RequestId)}
+			})
+		}},
+		{"update-worker", []string{"update", "worker-request", "--id", resource, "--revision", "1"}, func(mux *http.ServeMux, calls chan string, receipt func(string) string) {
+			identityProbe[pb.RequestWorkerUpdateRequest](mux, delidevv1connect.InstallationServiceRequestWorkerUpdateProcedure, &pb.RequestWorkerUpdateResponse{}, calls, identitySuccess, func(r *pb.RequestWorkerUpdateRequest) *pb.RequestWorkerUpdateResponse {
+				return &pb.RequestWorkerUpdateResponse{RequestId: receipt(r.GetMutation().GetRequestId())}
+			})
+		}},
+		{"update-cancel", []string{"update", "cancel", "--id", resource, "--revision", "1"}, func(mux *http.ServeMux, calls chan string, receipt func(string) string) {
+			identityProbe[pb.CancelUpdateRequest](mux, delidevv1connect.InstallationServiceCancelUpdateProcedure, &pb.CancelUpdateResponse{}, calls, identitySuccess, func(r *pb.CancelUpdateRequest) *pb.CancelUpdateResponse {
+				return &pb.CancelUpdateResponse{RequestId: receipt(r.GetMutation().GetRequestId())}
+			})
+		}},
+	}
+	vectors := []struct {
+		name    string
+		receipt func(sent string) string
+		accept  bool
+	}{
+		{"matching", func(sent string) string { return sent }, true},
+		{"missing", func(string) string { return "" }, false},
+		{"malformed", func(string) string { return "not-a-request-id" }, false},
+		{"foreign", func(string) string { return foreign }, false},
+		{"uppercase-variant", func(sent string) string { return strings.ToUpper(sent) }, false},
+	}
+	for _, command := range commands {
+		for _, explicit := range []bool{false, true} {
+			for _, vector := range vectors {
+				t.Run(command.name+"/"+map[bool]string{true: "explicit", false: "generated"}[explicit]+"/"+vector.name, func(t *testing.T) {
+					calls := make(chan string, 3)
+					mux := http.NewServeMux()
+					mux.Handle(delidevv1connect.SystemServiceGetStatusProcedure, connect.NewUnaryHandler(delidevv1connect.SystemServiceGetStatusProcedure, func(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
+						return connect.NewResponse(&pb.GetStatusResponse{Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1}}), nil
+					}))
+					command.register(mux, calls, vector.receipt)
+					peer := httptest.NewServer(mux)
+					defer peer.Close()
+					root := identityClientScope(t, peer.URL, domain.ClientDevice)
+					args := append([]string(nil), command.args...)
+					supplied := string(domain.NewID())
+					if explicit {
+						args = append(args, "--request-id", supplied)
+					}
+					code, envelope := cliRun(t, root, args, "")
+					var sent string
+					select {
+					case sent = <-calls:
+					default:
+						t.Fatalf("mutation not dispatched: %d %v", code, envelope)
+					}
+					if explicit && sent != supplied {
+						t.Fatalf("explicit identity changed: RPC=%s supplied=%s", sent, supplied)
+					}
+					if len(calls) != 0 {
+						t.Fatal("mutation automatically repeated")
+					}
+					if envelope["request_id"] != sent {
+						t.Fatalf("envelope lost the sent identity: RPC=%s envelope=%v", sent, envelope)
+					}
+					if vector.accept {
+						if code != 0 || envelope["result"] == nil {
+							t.Fatalf("matching receipt rejected: %d %v", code, envelope)
+						}
+						return
+					}
+					failure, _ := envelope["error"].(map[string]any)
+					if code == 0 || envelope["result"] != nil || failure == nil || failure["code"] != string(domain.RecoveryRequired) {
+						t.Fatalf("unacknowledged receipt not closed as recovery-required: %d %v", code, envelope)
+					}
+				})
+			}
+		}
 	}
 }
