@@ -14,6 +14,9 @@ const DOCUMENT_NAME: &str = "session-creation-preferences.json";
 // Persistent private sidecar; it is never unlinked or replaced because its
 // stable identity owns interprocess exclusion.
 const LEASE_NAME: &str = "session-creation-preferences.lock";
+// FILE_SHARE_READ | FILE_SHARE_WRITE, deliberately without FILE_SHARE_DELETE.
+#[cfg(windows)]
+const WINDOWS_LEASE_SHARE_MODE: u32 = 0x1 | 0x2;
 const LEASE_ATTEMPTS: u32 = 10;
 const LEASE_RETRY_DELAY: Duration = Duration::from_millis(10);
 
@@ -401,7 +404,14 @@ impl Lease {
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
-            options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+            // Deny FILE_SHARE_DELETE so the operating system refuses to
+            // rename, delete or replace the sidecar (or its containing
+            // directory) while this lease is held. That closes the window
+            // between the identity guard and the document replacement, which
+            // path-based rechecks alone cannot do.
+            options
+                .share_mode(WINDOWS_LEASE_SHARE_MODE)
+                .custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
         }
         let file = options.open(&lock_path).map_err(|_| {
             tracing::warn!(
@@ -1247,6 +1257,20 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .count();
         assert_eq!(leftovers, 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn held_lease_sidecar_cannot_be_renamed_or_deleted_on_windows() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DOCUMENT_NAME);
+        let lock = directory.path().join(LEASE_NAME);
+        let lease = Lease::acquire(&path).unwrap();
+        assert!(fs::rename(&lock, directory.path().join("moved.lock")).is_err());
+        assert!(fs::remove_file(&lock).is_err());
+        lease.revalidate().unwrap();
+        drop(lease);
+        assert!(fs::rename(&lock, directory.path().join("moved.lock")).is_ok());
     }
 
     #[cfg(windows)]
