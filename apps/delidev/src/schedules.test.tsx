@@ -162,9 +162,12 @@ function fixture() {
         ? job
         : resources.find((row) => row.id === request.id),
   }));
+  const listSchedules = vi.fn((_request: unknown) => ({
+    schedules: [schedule],
+  }));
   const transport = createRouterTransport((router) => {
     router.service(ScheduleService, {
-      listSchedules: () => ({ schedules: [schedule] }),
+      listSchedules,
       getSchedule: () => ({ schedule }),
       saveSchedule: save,
       runScheduleNow: run,
@@ -197,6 +200,7 @@ function fixture() {
     control,
     remove,
     discovery,
+    listSchedules,
     view,
     client,
     list,
@@ -344,6 +348,55 @@ it("hides selected schedule details without writes during notification review an
   expect(value.control).not.toHaveBeenCalled();
   expect(value.remove).not.toHaveBeenCalled();
 });
+
+it.each(["selected details", "empty workspace"])(
+  "locks the schedule sidebar and its list reads during notification review from %s",
+  async (origin) => {
+    const value = fixture(),
+      clear = vi.fn();
+    const rendered = render(value.view(<Schedules active open={() => {}} />));
+    const row = await screen.findByRole("button", { name: /Weekday review/ });
+    if (origin === "selected details") {
+      fireEvent.click(row);
+      await screen.findByRole("button", { name: "Run now" });
+    }
+    await waitFor(() => expect(value.listSchedules).toHaveBeenCalled());
+    rendered.rerender(
+      value.view(
+        <Schedules
+          active
+          open={() => {}}
+          notificationOccurrence={notificationTarget(value)}
+          clearNotificationOccurrence={clear}
+        />,
+      ),
+    );
+    await screen.findAllByText("Original occurrence prompt");
+    const reads = value.listSchedules.mock.calls.length;
+    for (const name of [
+      "New schedule",
+      "Refresh",
+      "All schedules",
+      "Enabled",
+      "Paused",
+    ]) {
+      expect(
+        (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(value.listSchedules.mock.calls.length).toBe(reads);
+    rendered.rerender(value.view(<Schedules active open={() => {}} />));
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "New schedule",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  },
+);
 
 it("hides the empty workspace and keeps the unavailable status for a missing notification occurrence", async () => {
   const value = fixture();

@@ -1203,8 +1203,11 @@ export function Schedules({
   const [projectId, setProjectId] = useState("");
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
   const closeDrawer = useCloseSidebarDrawer();
-  const locked = protectedWorkflow || Boolean(editing);
-  const workspaceActive = active && !notificationOccurrence;
+  const reviewingNotification = Boolean(notificationOccurrence);
+  // The notification occurrence destination is exclusive, so the sidebar
+  // interactions and list reads stop together with the hidden workspace.
+  const locked = protectedWorkflow || Boolean(editing) || reviewingNotification;
+  const workspaceActive = active && !reviewingNotification;
   const request = useCallback(
     (token: string) => ({
       projectId,
