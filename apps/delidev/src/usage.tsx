@@ -51,6 +51,7 @@ import { NativeAccounting } from "./native-accounting";
 import { UsageOverview } from "./usage-overview";
 import {
   UsageModelPrices,
+  modelPresentationId,
   retainedPrices,
   type PriceSelection,
 } from "./usage-prices";
@@ -221,26 +222,6 @@ function pendingRange(selection: UsageSelection): ReactNode {
   return (
     <TimestampText id="usage.range" values={{ from: start, until: end }} />
   );
-}
-
-/**
- * A native model ID is unique only within its provider or subscription source,
- * so the presentation identity scopes it by both. The key is internal and is
- * never rendered or sent over RPC.
- */
-function modelPresentationId(group: {
-  model?: { nativeId?: string };
-  providerId?: string;
-  subscriptionService?: number;
-}): string | undefined {
-  const nativeId = group.model?.nativeId;
-  return nativeId
-    ? JSON.stringify([
-        group.providerId ?? "",
-        group.subscriptionService ?? 0,
-        nativeId,
-      ])
-    : undefined;
 }
 
 function appliedFilters(
@@ -418,7 +399,11 @@ export function Usage({
     );
     productLabel(
       PresentationKind.Model,
-      modelPresentationId(group),
+      modelPresentationId(
+        group.model?.nativeId,
+        group.providerId,
+        group.subscriptionService,
+      ),
       group.modelName,
     );
   }
@@ -1018,7 +1003,11 @@ export function Usage({
                                   {group.model?.nativeId
                                     ? productLabel(
                                         PresentationKind.Model,
-                                        modelPresentationId(group),
+                                        modelPresentationId(
+                                          group.model?.nativeId,
+                                          group.providerId,
+                                          group.subscriptionService,
+                                        ),
                                         group.modelName,
                                       )
                                     : copy("usage.extra.a99bc331d9ad")}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
-import type { PriceSelection } from "./usage-prices";
+import { modelPresentationId, type PriceSelection } from "./usage-prices";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import {
@@ -92,7 +92,11 @@ export function GrokAccounting({
     productLabel(PresentationKind.Account, group.accountId, group.accountName);
     productLabel(
       PresentationKind.Model,
-      group.model?.nativeId,
+      modelPresentationId(
+        group.model?.nativeId,
+        group.providerId,
+        group.subscriptionService,
+      ),
       group.modelName,
     );
     productLabel(
@@ -104,7 +108,11 @@ export function GrokAccounting({
   for (const model of models ?? []) {
     productLabel(
       PresentationKind.Model,
-      model.model?.nativeId,
+      modelPresentationId(
+        model.model?.nativeId,
+        model.providerId,
+        model.subscriptionService,
+      ),
       model.modelName,
     );
     productLabel(
@@ -243,14 +251,22 @@ export function GrokAccounting({
                       >
                         {productLabel(
                           PresentationKind.Model,
-                          group.model?.nativeId,
+                          modelPresentationId(
+                            group.model?.nativeId,
+                            group.providerId,
+                            group.subscriptionService,
+                          ),
                           group.modelName,
                         )}
                       </button>
                       <small>
                         {productLabel(
                           PresentationKind.Model,
-                          group.model?.nativeId,
+                          modelPresentationId(
+                            group.model?.nativeId,
+                            group.providerId,
+                            group.subscriptionService,
+                          ),
                           group.modelName,
                         )}
                       </small>
@@ -367,7 +383,11 @@ export function GrokAccounting({
                         >
                           {productLabel(
                             PresentationKind.Model,
-                            model.model?.nativeId,
+                            modelPresentationId(
+                              model.model?.nativeId,
+                              model.providerId,
+                              model.subscriptionService,
+                            ),
                             model.modelName,
                           )}
                         </button>

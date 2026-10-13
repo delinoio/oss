@@ -32,6 +32,20 @@ export interface PriceSelection {
   subscriptionService?: SubscriptionServiceIdentity;
   history?: PricingVersion[];
 }
+/**
+ * A native model ID is unique only within its provider or subscription source,
+ * so every usage subview scopes the presentation identity by both. The key is
+ * internal and is never rendered or sent over RPC.
+ */
+export function modelPresentationId(
+  nativeId: string | undefined,
+  providerId?: string,
+  subscriptionService?: number,
+): string | undefined {
+  return nativeId
+    ? JSON.stringify([providerId ?? "", subscriptionService ?? 0, nativeId])
+    : undefined;
+}
 export function selectionModel(selection: PriceSelection): SourceModel {
   return {
     nativeId: selection.nativeId,
@@ -124,7 +138,9 @@ export function UsageModelPrices({
     const group = data?.groups.find(
       (row) =>
         row.model?.nativeId === model.nativeId &&
-        row.providerId === model.providerId,
+        row.providerId === model.providerId &&
+        (row.subscriptionService ?? SubscriptionServiceIdentity.UNSPECIFIED) ===
+          model.subscriptionService,
     );
     const providerName = model.providerId
       ? providers.rows.find((row) => row.providerId === model.providerId)
@@ -132,7 +148,11 @@ export function UsageModelPrices({
       : undefined;
     const identityLabel = productLabel(
       PresentationKind.Model,
-      model.nativeId,
+      modelPresentationId(
+        model.nativeId,
+        model.providerId,
+        model.subscriptionService,
+      ),
       group?.modelName,
     );
     return `${providerName ? productLabel(PresentationKind.Provider, model.providerId, providerName) : subscriptionServiceLabel(model.subscriptionService)} · ${identityLabel}`;

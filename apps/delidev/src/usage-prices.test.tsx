@@ -17,6 +17,7 @@ import {
 import { useState } from "react";
 import {
   UsageModelPrices,
+  modelPresentationId,
   retainedPrices,
   validSourceModel,
   type PriceSelection,
@@ -24,6 +25,11 @@ import {
 import { MutationIntents } from "./mutation";
 import { chooseScrollOption } from "./test-scroll-picker";
 import { priceIdentity } from "./pricing";
+import {
+  PresentationKind,
+  ProductIdentityProvider,
+  useProductLabels,
+} from "./product-identity-labels";
 it("selects exact independently sourced identities without a Model registry", async () => {
   const providerId = newRequestId();
   const models = [
@@ -135,4 +141,73 @@ it("rejects ambiguous, unbound and oversized source identities", () => {
       nativeId: "x".repeat(257),
     }),
   ).toBeFalsy();
+});
+
+it("reuses the source-scoped model identity registered by the Usage summary", async () => {
+  const providerId = newRequestId();
+  const model = {
+    providerId,
+    nativeId: "shared-exact",
+    subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED,
+  };
+  const data = create(GetUsageSummaryResponseSchema, {
+    groups: [{ providerId, model, modelName: "Shared model" }],
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(UsageService, {
+      listTokenPricing: () => ({ models: [model] }),
+      getTokenPricing: () => ({
+        providerRevision: 1n,
+        policy: { mode: TokenPricingMode.AUTOMATIC },
+        reference: { state: "current" },
+      }),
+    });
+    router.service(ProviderService, {
+      listProviderInventory: () => ({
+        entries: [{ providerId, displayName: "Original API" }],
+      }),
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  // Usage registers each group's model under its source-scoped identity in the
+  // registry it shares with the Model prices tab.
+  function View() {
+    const productLabel = useProductLabels();
+    productLabel(
+      PresentationKind.Model,
+      modelPresentationId(
+        model.nativeId,
+        model.providerId,
+        model.subscriptionService,
+      ),
+      "Shared model",
+    );
+    return (
+      <UsageModelPrices
+        active
+        selection={model}
+        select={() => {}}
+        data={data}
+      />
+    );
+  }
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <ProductIdentityProvider>
+          <MutationIntents>
+            <View />
+          </MutationIntents>
+        </ProductIdentityProvider>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Pricing model" }).textContent,
+    ).toContain("Original API \u00b7 Shared model"),
+  );
+  expect(document.body.textContent).not.toMatch(/Shared model \u00b7 \d+/);
 });
