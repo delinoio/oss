@@ -1203,8 +1203,9 @@ type ProfileList = (request: {
   pageToken: string;
 }) => Promise<{ profiles: unknown[]; nextPageToken: string }>;
 const setList = (f: Fixture, implementation: ProfileList) =>
-  (f.list as unknown as { mockImplementation: (value: ProfileList) => void })
-    .mockImplementation(implementation);
+  (
+    f.list as unknown as { mockImplementation: (value: ProfileList) => void }
+  ).mockImplementation(implementation);
 /** Intercepts only the native inventory read; everything else is unchanged. */
 function interceptInventory(read: () => Promise<unknown>) {
   const original = native.getMockImplementation()!;
@@ -1219,7 +1220,9 @@ const typeAddress = (dialog: HTMLElement, address: string) =>
     target: { value: address },
   });
 const openButton = (dialog: HTMLElement) =>
-  within(dialog).getByRole("button", { name: "Open page" }) as HTMLButtonElement;
+  within(dialog).getByRole("button", {
+    name: "Open page",
+  }) as HTMLButtonElement;
 const settle = () =>
   act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 60));
@@ -1299,8 +1302,9 @@ it("blocks admission on a profile read failure and retries only the profile read
   failing = false;
   fireEvent.click(retry);
   await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
-  expect(within(dialog).queryByRole("button", { name: "Retry profile read" }))
-    .toBeNull();
+  expect(
+    within(dialog).queryByRole("button", { name: "Retry profile read" }),
+  ).toBeNull();
   expect(f.register).not.toHaveBeenCalled();
   expect(pageCalls("create")).toHaveLength(0);
 });
