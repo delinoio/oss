@@ -3972,7 +3972,12 @@ Each Sidechat is a child conversation tab inside its original parent. Its own
 Info, actions, findings, enqueue and original read-only restrictions bind that
 child ID. Closed presentations retain child authoring/controller state; retained
 child navigation returns to the parent and selects/reopens that child. Independent
-Forks keep their separate session and deletion ownership.
+Forks keep their separate session and deletion ownership. A selected Sidechat (or
+pending Sidechat) pane fills the whole conversation region: the retained
+Conversation body is hidden and inert, the pane has full width with `min-width: 0`,
+and no blank sibling or horizontal overflow remains at desktop, narrow and 200%
+reflow widths. Returning to Conversation restores the same mounted composer, draft
+and scroll state while inactive Sidechat panes stay hidden and inert.
 
 Primary+1 through Primary+9 select exact present positions and reserve those
 bindings from editable preferences. Tab ARIA and help use the shared matcher;
