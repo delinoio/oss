@@ -94,7 +94,7 @@ func (c *Client) readManagedAccount(ctx context.Context, refresh bool) (managedA
 }
 
 func (c *Client) managedCall(ctx context.Context, method string, input any, output any) error {
-	if c.managedHome == "" && !(c.mode == QuotaProtocol && method == "config/read") {
+	if c.managedHome == "" && !(c.accessOnlyMode() && method == "config/read") {
 		return incompatible()
 	}
 	r, err := c.wire.Call(ctx, domain.NewID(), method, input)
@@ -118,7 +118,7 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 		return err
 	}
 	store := "file"
-	if c.mode == QuotaProtocol {
+	if c.accessOnlyMode() {
 		store = "ephemeral"
 	}
 	for key, want := range map[string]string{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt"} {
@@ -322,3 +322,6 @@ func (c *Client) LogoutManaged(ctx context.Context) (returned error) {
 	}
 	return nil
 }
+
+// accessOnlyMode reports the in-memory external-authentication profiles.
+func (c *Client) accessOnlyMode() bool { return c.mode == QuotaProtocol || c.mode == CreditProtocol }

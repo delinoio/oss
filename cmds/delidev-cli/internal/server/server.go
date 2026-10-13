@@ -124,6 +124,7 @@ type Service struct {
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
 	quotaOpen                     serverQuotaOpener
+	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID
