@@ -51,6 +51,15 @@ func recoveryRequired() error {
 	return domain.Fail(domain.RecoveryRequired, "The original desktop recovery evidence is unavailable or changed.", "Preserve the original registration and private recovery files; do not reset the server.")
 }
 
+// unreadableEvidence classifies evidence that exists but cannot be read safely
+// (oversized, unsafe permissions, symlinked or unreadable) as unverifiable.
+// Callers get the isolating RecoveryRequired result instead of a raw storage
+// error that would escape the follow-marker boundary.
+func unreadableEvidence(phase string, err error) error {
+	logUnverifiedPairing(phase, err)
+	return recoveryRequired()
+}
+
 func validGrantCode(value string) bool {
 	raw, err := base64.RawURLEncoding.DecodeString(value)
 	return err == nil && len(raw) == 32 && base64.RawURLEncoding.EncodeToString(raw) == value
@@ -68,7 +77,7 @@ func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint stri
 		return recoveryRequired()
 	}
 	if err != nil {
-		return err
+		return unreadableEvidence("journal", err)
 	}
 	var attempt localPairingRecord
 	if domain.Decode(raw, &attempt) != nil || attempt.RequestID.Validate() != nil || serverID.Validate() != nil || pairingID.Validate() != nil || attempt.ServerID != serverID || attempt.Endpoint != endpoint {
@@ -79,7 +88,7 @@ func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint stri
 		if errors.Is(err, os.ErrNotExist) {
 			return recoveryRequired()
 		}
-		return err
+		return unreadableEvidence("grant-directory", err)
 	}
 	raw, err = security.ReadPrivate(filepath.Join(grants, string(attempt.RequestID)+".json"), maxGrantBytes)
 	defer clear(raw)
@@ -87,7 +96,7 @@ func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint stri
 		return recoveryRequired()
 	}
 	if err != nil {
-		return err
+		return unreadableEvidence("grant", err)
 	}
 	var grant retainedGrant
 	if domain.Decode(raw, &grant) != nil || grant.Version != grantVersion || !validGrantCode(grant.Code) || grant.PairingID.Validate() != nil || grant.ServerID.Validate() != nil {
@@ -109,7 +118,7 @@ func verifySavedWorker(owner, root string, serverID domain.ID, endpoint string) 
 		return false, nil
 	}
 	if err != nil {
-		return false, err
+		return true, unreadableEvidence("credential", err)
 	}
 	var saved workerCredentialIdentity
 	if json.Unmarshal(raw, &saved) != nil || saved.Type != domain.WorkerDevice || saved.ServerID != serverID || saved.Endpoint != endpoint {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -337,5 +338,72 @@ func TestVerifiedPairingKeepsDirectFallbackBeforeAnyRuntime(t *testing.T) {
 	reply.Body.Close()
 	if hits.Load() != 1 {
 		t.Fatalf("direct request count = %d", hits.Load())
+	}
+}
+
+// Damaged retained evidence must be isolated as RecoveryRequired so that
+// publishing the app runtime is never blocked by one unverifiable Worker.
+func TestUnreadableEvidenceIsIsolatedAsRecoveryRequired(t *testing.T) {
+	const original = "http://127.0.0.1:40000"
+	cases := map[string]func(t *testing.T, owner string, p retainedPairing){
+		"oversized grant": func(t *testing.T, owner string, p retainedPairing) {
+			rewriteJSON(t, filepath.Join(owner, "pairing-codes", string(p.RequestID)+".json"), func(v map[string]any) { v["padding"] = strings.Repeat("x", maxGrantBytes) })
+		},
+		"symlinked grant": func(t *testing.T, owner string, p retainedPairing) {
+			grant := filepath.Join(owner, "pairing-codes", string(p.RequestID)+".json")
+			target := filepath.Join(owner, "elsewhere.json")
+			if err := os.Rename(grant, target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, grant); err != nil {
+				t.Skip("symlinks unavailable:", err)
+			}
+		},
+		"symlinked grant directory": func(t *testing.T, owner string, p retainedPairing) {
+			grants := filepath.Join(owner, "pairing-codes")
+			moved := filepath.Join(owner, "moved-codes")
+			if err := os.Rename(grants, moved); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(moved, grants); err != nil {
+				t.Skip("symlinks unavailable:", err)
+			}
+		},
+		"oversized journal": func(t *testing.T, owner string, p retainedPairing) {
+			rewriteJSON(t, filepath.Join(p.Worker, "local-pairing.json"), func(v map[string]any) { v["name"] = strings.Repeat("x", 8192) })
+		},
+		"corrupt journal": func(t *testing.T, owner string, p retainedPairing) {
+			if err := security.WriteAtomic(filepath.Join(p.Worker, "local-pairing.json"), []byte("{")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"oversized credential": func(t *testing.T, owner string, p retainedPairing) {
+			rewriteJSON(t, filepath.Join(p.Worker, "device.json"), func(v map[string]any) { v["padding"] = strings.Repeat("x", 32<<10) })
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			owner := filepath.Join(t.TempDir(), "owner")
+			if err := security.PrivateDir(owner); err != nil {
+				t.Fatal(err)
+			}
+			target := fixtureTarget("http://127.0.0.1:41000")
+			target.Root = owner
+			p := retainPairing(t, owner, target.ServerID, original)
+			mutate(t, owner, p)
+			if err := Publish(target); err != nil {
+				t.Fatalf("one damaged Worker blocked runtime publication: %v", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(target.Root, recordName)); statErr != nil {
+				t.Fatal("runtime record was not published", statErr)
+			}
+			if _, statErr := os.Stat(filepath.Join(p.Worker, "desktop-runtime-follow.json")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatal("marker created from unreadable evidence")
+			}
+			err := VerifyOriginalPairing(owner, p.Worker, target.ServerID, original, p.PairingID)
+			if name != "oversized credential" && (err == nil || domain.SafeError(err).Code != domain.RecoveryRequired) {
+				t.Fatalf("unreadable evidence not classified as recovery_required: %v", err)
+			}
+		})
 	}
 }

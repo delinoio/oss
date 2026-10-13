@@ -335,7 +335,7 @@ func MarkLocal(t Target) error {
 		return nil
 	}
 	if err != nil {
-		return err
+		return unreadableEvidence("journal", err)
 	}
 	var original struct {
 		RequestID domain.ID `json:"request_id"`
@@ -344,14 +344,14 @@ func MarkLocal(t Target) error {
 		Name      string    `json:"name,omitempty"`
 	}
 	if domain.Decode(raw, &original) != nil {
-		return unavailable()
+		return unreadableEvidence("journal", unavailable())
 	}
 	if original.ServerID != t.ServerID {
 		return nil
 	}
 	owner, local, err := LocalRoot(root, t.ServerID, original.Endpoint)
 	if err != nil {
-		return err
+		return unreadableEvidence("journal", err)
 	}
 	if !local || owner != t.Root {
 		return unavailable()
