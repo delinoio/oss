@@ -29,6 +29,7 @@ import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
 import { document as accountDocument, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { Settings } from "./settings";
+import { unoptedSettingsCategory } from "./entrance-test-support";
 
 // Issue 3209: AI Subscription category and owned task entrance. Every account,
 // machine and URL below is a synthetic fixture value.
@@ -224,7 +225,7 @@ function fixture(options: { holdLogin?: boolean; connected?: boolean } = {}) {
 }
 
 async function openClaudeLogin() {
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI Subscription");
   dispatch(column());
   const add = await screen.findByRole("button", {
@@ -260,7 +261,7 @@ afterEach(() => {
 
 it("plays the AI Subscription category entrance once per explicit opening", async () => {
   fixture();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("AI Subscription");
   const node = column();
@@ -277,7 +278,7 @@ it("plays the AI Subscription category entrance once per explicit opening", asyn
   await screen.findByRole("article", { name: "Retained subscription" });
   expect(column()).toBe(node);
   expect(node.getAttribute("data-entrance")).toBeNull();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("AI Subscription");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -298,7 +299,7 @@ it("leaves no stale motion when AI Subscription is left before completion", () =
   fixture();
   category("AI Subscription");
   const old = column();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   expect(document.contains(old)).toBe(false);
   dispatch(old);
   expect(column().getAttribute("data-entrance")).toBeNull();
@@ -319,7 +320,7 @@ it("settles the AI Subscription entrance for Animation Off and OS reduced motion
   };
   vi.stubGlobal("matchMedia", () => media);
   fixture();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI Subscription");
   const node = column();
   expect(node.getAttribute("data-entrance")).toBe("y4");
@@ -345,7 +346,7 @@ it("settles the AI Subscription entrance for Animation Off and OS reduced motion
 it("does not play the AI Subscription entrance when Animation is Off at activation", () => {
   document.documentElement.dataset.animation = "false";
   fixture();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI Subscription");
   expect(column().getAttribute("data-entrance")).toBeNull();
 });
@@ -434,7 +435,7 @@ it("disposes the native OAuth owner on dismissal before any login starts", async
 
 it("plays one manage window entrance and ignores refetches", async () => {
   const f = fixture();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI Subscription");
   dispatch(column());
   const row = await screen.findByRole("article", {
@@ -462,7 +463,7 @@ it("plays one manage window entrance and ignores refetches", async () => {
 
 it("keeps one manage window entrance when the logout confirmation step opens and closes", async () => {
   const f = fixture({ connected: true });
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI Subscription");
   dispatch(column());
   const row = await screen.findByRole("article", {

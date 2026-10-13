@@ -2072,6 +2072,9 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.Instructions, EntranceTarget.Surface],
     [SettingsCategory.ProjectDefaults, EntranceTarget.Surface],
     [SettingsCategory.Projects, EntranceTarget.Surface],
+    [SettingsCategory.Repositories, EntranceTarget.Surface],
+    [SettingsCategory.Integrations, EntranceTarget.Surface],
+    [SettingsCategory.ExecutionWorkers, EntranceTarget.Surface],
     [SettingsCategory.Diagnostics, EntranceTarget.Heading],
     [SettingsCategory.AppInformation, EntranceTarget.Heading],
   ]);
