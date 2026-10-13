@@ -39,6 +39,26 @@ A lost reply retries the same phase; it never invokes installation or creates a
 generation. Failed persistence retains original retry/inspection ownership and
 logs uncertainty without claiming terminal publication.
 
+The retained worker holds no window handle. After the durable begin it rechecks
+the exact original authority from retained native state only: the OAuth window
+epoch, then the product-window registry instance, role, Local revision, saved
+binding/profile authority and removal barriers. It never calls a CEF URL getter,
+`trusted_local` or `saved_binding`, so it cannot wait on a stopped UI loop during
+the post-runtime join. Initial trusted-document admission before begin and the
+authoritative window recheck at the command boundary remain required.
+
+The post-begin check has three outcomes. A definitive mismatch (changed
+instance, role, Local revision, epoch or saved profile authority, a removal
+barrier, or a departed window/binding) records pre-effect Failed with zero
+installer calls. An unverifiable result such as lock contention or poison is not
+evidence of departure: the worker retries it every 25 ms for up to 5 seconds
+with the accepted token retained, and installs only after an exact authorized
+result. Quit stops retrying after the check in progress. When the budget is
+exhausted or Quit cancels, the original Uncertain phase stays with the retained
+token and is settled through the same inspection/Quit path without any
+installation. Logs record the failure code and attempt count only, never saved
+binding details.
+
 The native application manifest declares `desktop_update_context` and
 `desktop_update_native` under the dedicated closed `desktop-update` permission.
 Only the existing main/local-* and server-* product document capabilities grant
