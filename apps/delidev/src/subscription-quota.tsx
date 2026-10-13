@@ -63,25 +63,31 @@ const outcomeLabels: Record<string, string> = {
   },
 };
 
+// The server admits quota and credit requests only when the account has no
+// native lease or an Execute lease; login, refresh and logout leases deny them.
+function serverLeaseAllows(state: Record<string, unknown>): boolean {
+  const lease = object(state.lease);
+  return !Object.keys(lease).length || text(lease.action) === "execute";
+}
+
 // System 101 consumes with the sealed generation's access token on the server.
 // It needs no Runner and may coexist with an active Execute, so only the
-// negotiated capability and a settled generation gate it.
+// negotiated capability, a settled generation and a permitted lease gate it.
 export function serverCreditAvailable(
   state: Record<string, unknown>,
   supported: boolean,
 ): boolean {
-  return supported && isEntityId(text(state.generation));
+  return (
+    supported && isEntityId(text(state.generation)) && serverLeaseAllows(state)
+  );
 }
 
 export function serverQuotaAvailable(
   state: Record<string, unknown>,
   supported: boolean,
 ): boolean {
-  const lease = object(state.lease);
   return (
-    supported &&
-    isEntityId(text(state.generation)) &&
-    (!Object.keys(lease).length || text(lease.action) === "execute")
+    supported && isEntityId(text(state.generation)) && serverLeaseAllows(state)
   );
 }
 

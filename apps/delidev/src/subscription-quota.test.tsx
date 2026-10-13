@@ -1279,6 +1279,26 @@ it("consumes beside an active Execute without selecting a Runner", async () => {
   });
 });
 
+it.each(["login", "refresh", "logout"])(
+  "keeps reset-credit use disabled during a %s lease",
+  async (action) => {
+    const value = fixture(
+      undefined,
+      { action, machine_id: newRequestId() },
+      "",
+      false,
+      true,
+      "",
+      false,
+    );
+    render(<value.Harness />);
+    await screen.findByText(/Last successful observation/);
+    const use = screen.getByRole("button", { name: "Use" });
+    await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(true));
+    expect(value.request).not.toHaveBeenCalled();
+  },
+);
+
 it.each([
   ["no credit capability", false, false],
   ["historical server capability only", true, false],
