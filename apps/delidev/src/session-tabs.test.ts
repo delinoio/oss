@@ -217,6 +217,39 @@ it("keeps inactive terminal dismissal selection and uses inventory only without 
   );
 });
 
+it("dismissal skips tombstoned terminal tabs and liveTerminals excludes them", () => {
+  const store = new SessionTabsStore();
+  const exited = (id: string) =>
+    create(ResourceSchema, {
+      id,
+      sessionId: "session",
+      kind: EntityKind.TERMINAL,
+      schemaVersion: 1,
+      revision: 5n,
+      documentJson: encode({ state: "exited", cleanup_verified: true }),
+    });
+  for (const id of ["a", "b", "c"])
+    store.open("session", { kind: SessionTabKind.Terminal, id });
+  store.select(
+    "session",
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "c" }),
+  );
+  // C and B exit in one refresh while C is selected: A is the live survivor.
+  store.terminalPresentation("session").observe("session", exited("c"));
+  store.terminalPresentation("session").observe("session", exited("b"));
+  expect(store.liveTerminals("session")).toEqual(["a"]);
+  store.dismissTerminal("session", "c", "inventory");
+  expect(store.snapshot("session").selected).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "a" }),
+  );
+  store.dismissTerminal("session", "b");
+  expect(store.snapshot("session").selected).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "a" }),
+  );
+  expect(store.liveTerminals("session")).toEqual(["a"]);
+  expect(store.liveTerminals("other")).toEqual([]);
+});
+
 it("late original creation receipts cannot reopen a dismissed content tab", () => {
   const store = new SessionTabsStore();
   store.terminalPresentation("session").observe(

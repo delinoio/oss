@@ -144,7 +144,7 @@ export function SessionTerminals({
   );
   const [, redraw] = useState(0);
   const visibleBefore = useRef<string[]>([]);
-  const observeRef = useRef<(value: Resource) => void>(() => {});
+  const observeRef = useRef<(values: Resource[]) => void>(() => {});
   const dock = useRef<HTMLElement>(null);
   const [maximized, setMaximized] = useState(false),
     [height, setHeight] = useState<number>();
@@ -596,53 +596,113 @@ export function SessionTerminals({
         : undefined));
   if (resource && !tabs.some((row) => row.id === resource.id))
     tabs.push({ id: resource.id, revision: resource.revision });
-  // A disappeared payload is not exit evidence. Only original authenticated
-  // resources advance this connection's monotonic presentation record.
-  observeRef.current = (value) => {
+  // The original creation receipt fences final dismissal: an admitted but
+  // unsettled CreateTerminal may still resolve to a live terminal.
+  const creationUnsettled = create.busy || create.uncertain;
+  // A final hide skipped while creation was unsettled is replayed once when
+  // the original receipt settles. Tombstoning itself is never deferred.
+  const pendingHide = useRef(false);
+  // Latest rendered selection, read by deferred focus callbacks.
+  const selectedNow = useRef(selected);
+  selectedNow.current = selected;
+  // Final automatic dismissal proceeds only when no live terminal remains in
+  // the visible inventory or among the Session-owned terminal content tabs.
+  const finalHide = () => {
+    pendingHide.current = false;
+    if (!active) return;
     if (
-      !presentationRecords.observe(session.id, value, unsettled.has(value.id))
+      tabs.some((row) => !presentationRecords.hidden(row.id)) ||
+      tabsStore.liveTerminals(session.id).length
     )
       return;
+    console.info("delidev.terminals.final_dismissal", {
+      sessionId: session.id,
+    });
+    (hideEmpty ?? close)();
+  };
+  // A disappeared payload is not exit evidence. Only original authenticated
+  // resources advance this connection's monotonic presentation record. One
+  // observation batch tombstones every verified exit first, then derives the
+  // surviving selection once so later exits never read a stale selection.
+  // Selection that earlier observations of the same commit already chose; the
+  // render closure's `selected` stays stale until React re-renders.
+  const selection = useRef({ rendered: selected, effective: selected });
+  if (selection.current.rendered !== selected)
+    selection.current = { rendered: selected, effective: selected };
+  observeRef.current = (values) => {
     const previous = visibleBefore.current;
+    const dismissed: string[] = [];
+    // Every observation also covers the current inventory and selected read, so
+    // a lone stream observation cannot pick a fallback that a sibling exit in
+    // the same refresh dismisses a moment later.
+    for (const value of [
+      ...values,
+      ...(list.data?.resources ?? []),
+      ...(resource ? [resource] : []),
+    ])
+      if (
+        presentationRecords.observe(session.id, value, unsettled.has(value.id))
+      )
+        dismissed.push(value.id);
+    if (!dismissed.length) return;
     const remaining = previous.filter((id) => !presentationRecords.hidden(id));
     visibleBefore.current = remaining;
-    const next =
-      selected === value.id
-        ? terminalFallback(
-            previous.filter(
-              (id) => id === value.id || !presentationRecords.hidden(id),
-            ),
-            value.id,
-          )
-        : "";
-    dismissTerminal?.(value.id, next);
-    if (selected === value.id) {
-      setSelected(next);
-      // Session owns original terminal content-tab order and focus.
-      if (next && !tabbed) openTerminal?.(next);
-      if (!tabbed && next)
-        requestAnimationFrame(() =>
-          dock.current
-            ?.querySelector<HTMLButtonElement>(`[id="terminal-tab-${next}"]`)
-            ?.focus({ preventScroll: true }),
-        );
+    const initial = selection.current.effective;
+    let effective = initial;
+    for (const id of dismissed) {
+      const next =
+        effective === id
+          ? terminalFallback(
+              previous.filter(
+                (value) => value === id || !presentationRecords.hidden(value),
+              ),
+              id,
+            )
+          : "";
+      dismissTerminal?.(id, next);
+      if (effective === id) effective = next;
     }
-    if (active && previous.includes(value.id) && !remaining.length)
-      (hideEmpty ?? close)();
+    selection.current.effective = effective;
+    if (effective !== initial) {
+      setSelected(effective);
+      // Session owns original terminal content-tab order and focus.
+      if (effective && !tabbed) openTerminal?.(effective);
+      if (!tabbed && effective) {
+        const target = effective;
+        requestAnimationFrame(() => {
+          // A user selection made before this frame wins over the batch result.
+          if (selectedNow.current !== target) return;
+          dock.current
+            ?.querySelector<HTMLButtonElement>(`[id="terminal-tab-${target}"]`)
+            ?.focus({ preventScroll: true });
+        });
+      }
+    }
+    if (dismissed.some((id) => previous.includes(id)) && !remaining.length) {
+      if (creationUnsettled) {
+        pendingHide.current = true;
+        console.info("delidev.terminals.final_dismissal_deferred", {
+          sessionId: session.id,
+          busy: create.busy,
+          uncertain: create.uncertain,
+        });
+      } else finalHide();
+    }
     redraw((value) => value + 1);
   };
   useEffect(() => {
     // Keep known rows through payload eviction; an initial exited-only read
     // does not close the explicitly opened creation surface.
-    for (const value of [
-      ...(list.data?.resources ?? []),
-      ...(resource ? [resource] : []),
-    ])
-      observeRef.current(value);
+    observeRef.current([]);
     visibleBefore.current = tabs
       .filter((row) => !presentationRecords.hidden(row.id))
       .map((row) => row.id);
   }, [list.data, resource, intents, active]);
+  useEffect(() => {
+    if (creationUnsettled || !pendingHide.current) return;
+    finalHide();
+    redraw((value) => value + 1);
+  }, [creationUnsettled]);
   // Opening, capability, read and creation-recovery notices stay reachable
   // below the tab row even while no terminal pane is selected.
   const retryInventory = (
@@ -879,7 +939,7 @@ export function SessionTerminals({
           refresh={() => {
             if (supported) void list.refresh();
           }}
-          observe={(value) => observeRef.current(value)}
+          observe={(value) => observeRef.current([value])}
         />
       ) : null}
     </aside>

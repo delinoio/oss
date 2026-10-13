@@ -1409,9 +1409,27 @@ terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no
 other terminal content tab exists, selection uses the remaining inventory
 neighbor without creating a shell. The retained standalone dock uses inventory
-order. The final automatic dismissal uses
+order. One observation (inventory refresh, stream observation or both in the same
+commit) tombstones every verified exit first, then derives the surviving
+selection once from the batch-effective selection, so a refresh reporting exits
+of selected A and B with live C selects and attaches C (never a dismissed
+terminal or Conversation) and a user selection made before the deferred standalone
+focus wins. Tombstoned terminal tabs are never fallback targets. The final
+automatic dismissal fires only when no visible inventory row and no
+non-tombstoned Terminal content tab in the Session tab store remains, so an
+opened terminal absent from a replacement inventory chain, or an uncertain or
+unsettled retained terminal, is never closed by it. It is also fenced while the
+Session's own terminal creation is busy or uncertain (a lost CreateTerminal
+response): tombstoning stays immediate, the Retry the same terminal creation
+control stays reachable and sends only the original request on explicit
+activation, and the deferred hide runs once after the original receipt settles; a
+late receipt for a dismissed terminal never reopens it and creation in another
+Session never fences it. The final automatic dismissal uses
 the Session-owned presentation close and focus path, retaining mounted
-conversation/composer/Info. An explicitly opened empty inventory remains available
+conversation/composer/Info; it focuses the surviving selected tab button by key
+after the tab bar commits (deferred frame, current index re-read, suppressed when
+the selection changed or the target is gone), like the individual dismissal
+callback. An explicitly opened empty inventory remains available
 for creation. EOF, errors, missing resources and malformed/unsupported observations
 never prove exit. Dismissal sends no process Close, deletion or replacement creation.
 

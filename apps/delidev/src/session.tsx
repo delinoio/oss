@@ -1868,18 +1868,30 @@ export function SessionView({
   };
   const closePanel = () => closeTab(tabs.selected);
   const closeTerminal = closePanel;
+  // Tab-bar DOM ids are positional, so focus waits for the tab bar to commit
+  // and re-resolves the captured selection by key. A changed selection or a
+  // removed target suppresses focus.
+  const focusSelectedTabAfterCommit = (target: string) =>
+    requestAnimationFrame(() => {
+      const current = tabs.store.snapshot(id);
+      if (current.selected !== target) return;
+      const index = current.tabs.findIndex(
+        (tab) => sessionTabKey(tab) === target,
+      );
+      if (index < 0) return;
+      document
+        .getElementById(`session-tab-${id}-${index}`)
+        ?.focus({ preventScroll: true });
+    });
   const hideEmptyTerminals = () => {
+    // Final dismissal never closes a live terminal content tab, including one
+    // that is absent from the current inventory; only tombstoned tabs close.
+    if (tabs.store.liveTerminals(id).length) return;
     for (const tab of tabs.store.snapshot(id).tabs) {
       if (tab.kind === SessionTabKind.Terminal)
         tabs.store.close(id, sessionTabKey(tab));
     }
-    const current = tabs.store.snapshot(id);
-    const index = current.tabs.findIndex(
-      (tab) => sessionTabKey(tab) === current.selected,
-    );
-    document
-      .getElementById(`session-tab-${id}-${index}`)
-      ?.focus({ preventScroll: true });
+    focusSelectedTabAfterCommit(tabs.store.snapshot(id).selected);
   };
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
     if (next === SessionPanel.Files) setFilesOpened(true);
@@ -3298,17 +3310,7 @@ export function SessionView({
                         terminalId,
                         fallback,
                       );
-                      if (selected)
-                        requestAnimationFrame(() => {
-                          const current = tabs.store.snapshot(id);
-                          if (current.selected !== target) return;
-                          const index = current.tabs.findIndex(
-                            (tab) => sessionTabKey(tab) === target,
-                          );
-                          document
-                            .getElementById(`session-tab-${id}-${index}`)
-                            ?.focus({ preventScroll: true });
-                        });
+                      if (selected) focusSelectedTabAfterCommit(target);
                     }}
                     active={active && tabs.tab.kind === SessionTabKind.Terminal}
                   />
