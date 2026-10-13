@@ -343,6 +343,9 @@ fn optimizes_chunks_that_only_mention_eval_or_import_scripts() {
     for snippet in [
         r#"const g=typeof self!=="undefined"&&typeof self.importScripts"#,
         r#"console.log(typeof importScripts,typeof eval)"#,
+        r#"console.log(typeof (importScripts),typeof (eval),typeof ((eval)))"#,
+        r#"const g=typeof self!=="undefined"&&typeof (self.importScripts)"#,
+        r#"console.log(typeof (globalThis.eval),typeof (globalThis["importScripts"]))"#,
         r#"const o={eval:1,importScripts:2};console.log(o.eval,o.importScripts)"#,
         r#"const o={"eval":1,eval(){return 2},get importScripts(){return 3}};console.log(o.eval(),o.importScripts)"#,
         r#"class K{eval(){return 1}importScripts=2}console.log(new K().eval(),new K().importScripts)"#,
@@ -375,6 +378,8 @@ fn keeps_chunks_that_use_eval_or_import_scripts_as_values() {
         r#"typeof importScripts=="function"&&importScripts("vendor.js")"#,
         r#"function f(){const{importScripts:load}=self;return load("a.js")}globalThis.__never&&f()"#,
         r#"const{importScripts:load}=(globalThis);console.log(load)"#,
+        r#"globalThis.__never&&(importScripts)("a.js")"#,
+        r#"console.log((0,eval)("1+1"))"#,
         r#"const{eval:ev}=globalThis;console.log(ev("1+1"))"#,
         r#"let load;({importScripts:load}=globalThis);globalThis.__never&&load("a.js")"#,
     ] {

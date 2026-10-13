@@ -1525,11 +1525,21 @@ fn global_use_rule(node: Node) -> Option<SyntaxBoundaryRule> {
         }
         (parent, Some(parent.expression()))
     };
+    // The outermost parenthesized form of an expression: `(eval)` and
+    // `((self.importScripts))` mean the same as the bare expression.
+    let outermost = |expression: Node| {
+        let mut outer = expression;
+        while outer.parent().kind() == SyntaxKind::ParenthesizedExpression {
+            outer = outer.parent();
+        }
+        outer
+    };
     let is_call = |callee: Node| {
+        let callee = outermost(callee);
         let holder = callee.parent();
         holder.kind() == SyntaxKind::CallExpression && holder.expression() == callee
     };
-    if expression.parent().kind() == SyntaxKind::TypeOfExpression {
+    if outermost(expression).parent().kind() == SyntaxKind::TypeOfExpression {
         // `typeof eval` and `typeof self.importScripts` are feature checks.
         return None;
     }
