@@ -33,6 +33,7 @@ import { Failure, Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 import { useRetainedMutationIntents } from "./mutation";
+import { useDiffBaseTrust } from "./session-diff-trust";
 import "./session-diff.css";
 
 export type ComparisonDescriptor = {
@@ -40,7 +41,22 @@ export type ComparisonDescriptor = {
   comparison: Comparison;
   path: string;
   base_ref?: BaseReference;
+  /**
+   * The invalidated explicit base that a base-free tab dropped. The tab owns
+   * it, so it is neither part of the tab identity nor kept after it closes.
+   */
+  dropped_base?: BaseReference;
 };
+
+/**
+ * Called when an explicit Base control selection restores trust for one
+ * reference, so the owner of the retained comparison tabs can end the
+ * `dropped_base` records that named the invalidation that just ended.
+ */
+export type RestoreBase = (
+  repository: string,
+  reference: BaseReference,
+) => void;
 
 function comparisonOriginKey(value: ComparisonDescriptor) {
   return JSON.stringify([
@@ -59,12 +75,17 @@ export function SessionDiff({
   close,
   selected,
   openComparison,
+  restoreBase,
 }: {
   sessionId: string;
   worktree: boolean;
   close: () => void;
   selected?: ComparisonDescriptor;
-  openComparison?: (value: ComparisonDescriptor) => void;
+  openComparison?: (
+    value: ComparisonDescriptor,
+    options?: { inheritDropped?: boolean },
+  ) => void;
+  restoreBase?: RestoreBase;
 }) {
   useLocale();
   const panelRoot = useRef<HTMLElement>(null);
@@ -160,6 +181,7 @@ export function SessionDiff({
               : selected
           }
           openComparison={openComparison}
+          restoreBase={restoreBase}
           onNegotiated={pending ? openNegotiated : undefined}
           worktree={worktree}
           acceptedDeletionId={acceptedDeletionId}
@@ -208,6 +230,7 @@ export function RepositoryDiff({
   acceptedDeletionId,
   initial,
   openComparison,
+  restoreBase,
   onNegotiated,
   close,
   repositoryControl,
@@ -217,7 +240,11 @@ export function RepositoryDiff({
   worktree: boolean;
   acceptedDeletionId?: string;
   initial?: Omit<ComparisonDescriptor, "repository">;
-  openComparison?: (value: ComparisonDescriptor) => void;
+  openComparison?: (
+    value: ComparisonDescriptor,
+    options?: { inheritDropped?: boolean },
+  ) => void;
+  restoreBase?: RestoreBase;
   /**
    * Set while a repository selection awaits its own negotiated base. Called at
    * most once per base with the exact typed descriptor of the displayed branch
@@ -275,9 +302,42 @@ export function RepositoryDiff({
     initial?.base_ref?.remote,
   ]);
   const chosenBase = baseRef ?? options.data?.default;
+  // An explicit base that a successful accepted inventory reported absent or
+  // unavailable stays invalidated, even if the same reference reappears in a
+  // later inventory, until the Base control explicitly selects a reference.
+  // The record is bound to the session and repository that observed it, so
+  // refresh, path submission and comparison round trips never restore trust.
+  // Every invalidated reference is retained, and the record outlives this
+  // panel's mount, so switching retained Branch comparisons, leaving the Diff
+  // presentation or changing repositories never restores trust either.
+  const optionsOwner = [sessionId, repository].join("\u0000");
+  const trust = useDiffBaseTrust();
+  // The chosen reference is checked even when it came from the inventory
+  // default, so an invalidated reference that later becomes the default is
+  // never trusted again without an explicit Base control selection.
+  const chosenBaseInvalidated = Boolean(
+    chosenBase && trust.isInvalidated(optionsOwner, chosenBase),
+  );
+  const explicitBaseKey = baseRef ? referenceKey(baseRef) : undefined;
+  useEffect(() => {
+    if (comparison !== Comparison.Branch || !options.data || !baseRef) return;
+    if (
+      options.data.choices.some(
+        (choice) =>
+          choice.available && sameReference(choice.reference, baseRef),
+      )
+    )
+      return;
+    console.debug("delidev.diff.explicit_base_invalidated", {
+      sessionId,
+      repository,
+    });
+    trust.invalidate(optionsOwner, baseRef);
+  }, [options.data, explicitBaseKey, comparison, optionsOwner]);
   const supportedBase = Boolean(
     options.data &&
     chosenBase &&
+    !chosenBaseInvalidated &&
     options.data.choices.some(
       (choice) =>
         choice.available && sameReference(choice.reference, chosenBase),
@@ -307,7 +367,6 @@ export function RepositoryDiff({
   // diff derived from it) only as a stale observation.
   // The explicit refresh reads through a disposable query, so its failure is
   // recorded here, bound to the session and repository that issued it.
-  const optionsOwner = [sessionId, repository].join("\u0000");
   // The failure also remembers the accepted options query's update position,
   // so any later accepted response (the explicit refresh, or an active-query
   // refetch such as a reconnect invalidation) ends the stale observation.
@@ -499,20 +558,64 @@ export function RepositoryDiff({
   useEffect(() => {
     if (pendingReviews && reviews.current) reviews.current.open = true;
   }, [pendingReviews]);
-  const choose = (next: Comparison, nextPath = path, nextBase = chosenBase) => {
-    const value = {
+  const choose = (
+    next: Comparison,
+    nextPath = path,
+    nextBase = chosenBase,
+    explicit = false,
+  ) => {
+    // A non-branch descriptor carries no base, which clears the local explicit
+    // selection. Returning to Branch must re-publish the invalidated selection
+    // itself, never the inventory default, until the Base control explicitly
+    // selects a reference. The base-free tab owns the base it dropped on its
+    // descriptor, so unrelated tabs never consume it, closing the tab ends it
+    // and it never depends on the options cache.
+    const droppedBase = initial?.dropped_base,
+      inheritDropped =
+        !baseRef &&
+        comparison !== Comparison.Branch &&
+        next !== Comparison.Branch;
+    // Dropping an invalidated explicit base records it on the base-free tab. A
+    // base-free tab opening another base-free tab shares its own record, which
+    // an already open destination keeps in preference.
+    const dropped =
+      next === Comparison.Branch
+        ? undefined
+        : baseRef
+          ? trust.isInvalidated(optionsOwner, baseRef)
+            ? baseRef
+            : undefined
+          : inheritDropped && droppedBase
+            ? droppedBase
+            : undefined;
+    // The record stays with the retained base-free tab, so every later return
+    // to Branch republishes the same invalidated selection until it is
+    // explicitly reselected.
+    const retained =
+      !explicit &&
+      !baseRef &&
+      next === Comparison.Branch &&
+      droppedBase &&
+      trust.isInvalidated(optionsOwner, droppedBase)
+        ? droppedBase
+        : undefined;
+    const base = retained ?? nextBase;
+    const value: ComparisonDescriptor = {
       repository,
       comparison: next,
       path: nextPath,
-      ...(next === Comparison.Branch && options.data && nextBase
-        ? { base_ref: nextBase }
+      ...(next === Comparison.Branch && base && (retained || options.data)
+        ? { base_ref: base }
         : {}),
+      ...(dropped ? { dropped_base: dropped } : {}),
     };
-    if (openComparison) openComparison(value);
-    else {
+    if (openComparison) {
+      if (inheritDropped) openComparison(value, { inheritDropped });
+      else openComparison(value);
+    } else {
       setComparison(next);
       setPath(nextPath);
-      setBaseRef(nextBase);
+      setBaseRef(base);
     }
   };
   const failureCodeMessage = (code?: Code) =>
@@ -573,12 +676,24 @@ export function RepositoryDiff({
             <select
               aria-label={copy("session-diff.base_7b4736")}
               disabled={!options.data}
-              value={chosenBase ? referenceKey(chosenBase) : ""}
+              value={
+                chosenBase && !chosenBaseInvalidated
+                  ? referenceKey(chosenBase)
+                  : ""
+              }
               onChange={(event) => {
                 const choice = options.data?.choices.find(
                   (item) => referenceKey(item.reference) === event.target.value,
                 );
-                if (choice) choose(Comparison.Branch, path, choice.reference);
+                if (!choice?.available) return;
+                // Only this explicit selection restores trust, including
+                // reselecting the recreated reference itself.
+                trust.reselect(optionsOwner, choice.reference);
+                // Retained base-free tabs that dropped this reference belong to
+                // the invalidation that just ended, so they must not bind a
+                // later, independent invalidation of the same reference.
+                restoreBase?.(repository, choice.reference);
+                choose(Comparison.Branch, path, choice.reference, true);
               }}
             >
               <option value="" disabled>
