@@ -824,3 +824,49 @@ func TestManagedClaudeRestartRecoveryOnlyReconcilesTheOriginalRuntime(t *testing
 		t.Fatal("recovery replayed input or wrote credentials")
 	}
 }
+
+func TestManagedClaudeRestartedLeaseKeepsQueuedLogoutRecoverableAfterWorkerCleanup(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The server restarts while the original execution lease is still active.
+	f.service.subscriptionEpoch = domain.NewID()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.initializeServerSubscriptions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if !account.Subscription.RecoveryRequired || account.Subscription.Lease == nil || managedClaudeNeedsRecovery(account) {
+		t.Fatal("restart did not fence the logout behind the original lease")
+	}
+	// Only the original Worker's joined cleanup releases the lease.
+	if err := f.finishLease(a, lease, true, false); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Subscription.Lease != nil || account.Health != domain.AccountRevoked || account.Connection == nil {
+		t.Fatal("cleanup did not release the lease while keeping the account revoked")
+	}
+	if !account.Subscription.RecoveryRequired || !managedClaudeNeedsRecovery(account) || managedClaudeCandidate(account) {
+		t.Fatal("releasing the restarted lease stranded the old-epoch logout outside the scanner")
+	}
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, domain.ID(logout.OperationId)); err != nil {
+		t.Fatalf("logout recovery failed: %v", err)
+	}
+	_, account = f.record()
+	if account.Connection != nil || account.Subscription.Generation != "" || account.Health != domain.AccountDisconnected || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || len(f.secrets.values[ref]) != 0 {
+		t.Fatal("recovery did not complete the pending logout and delete the vault generation")
+	}
+	if got := f.progressFor(logout.OperationId); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("logout state %v", got.State)
+	}
+}

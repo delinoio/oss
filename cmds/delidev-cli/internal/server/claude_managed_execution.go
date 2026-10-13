@@ -260,7 +260,16 @@ func (s *Service) finishManagedClaudeExecution(ctx context.Context, req *connect
 		} else {
 			st.Lease = nil
 			st.RecoveryRequired = false
-			if a.Health != domain.AccountRevoked {
+			if o := st.ServerOperation; o != nil && o.Action == domain.SubscriptionLogout && o.Active() && st.Pending != nil && st.Pending.ID == o.ID {
+				// An accepted logout queued behind this lease keeps readiness revoked.
+				// A claimable operation of the current epoch is admitted by the next
+				// scan; an operation fenced by a restart or an earlier fence is not
+				// claimable, so the recovery fence stays until recovery completes it.
+				a.Health = domain.AccountRevoked
+				if o.State != domain.SubscriptionPreparing || o.NativeStarted || o.Epoch != s.subscriptionServerEpoch() {
+					st.RecoveryRequired = true
+				}
+			} else if a.Health != domain.AccountRevoked {
 				a.Health = domain.AccountReady
 			}
 		}
