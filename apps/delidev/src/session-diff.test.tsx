@@ -2785,7 +2785,9 @@ it("ends a retained base-free tab's dropped base record when the reference is ex
   const branch = sessionTabKey(
     f
       .comparisons()
-      .find((tab) => tab.comparison === "branch" && tab.base_ref?.name === "other")!,
+      .find(
+        (tab) => tab.comparison === "branch" && tab.base_ref?.name === "other",
+      )!,
   );
   state.names = ["main"];
   await refreshWhenReady();

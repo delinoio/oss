@@ -83,7 +83,10 @@ describe("clearing dropped bases on explicit reselection", () => {
     store.open("s", comparison("repo", Comparison.WorkingTree, b));
     store.open("s", comparison("other", Comparison.Staged, a));
     store.open("s", comparison("repo", Comparison.Creation));
-    store.select("s", sessionTabKey(comparison("repo", Comparison.WorkingTree)));
+    store.select(
+      "s",
+      sessionTabKey(comparison("repo", Comparison.WorkingTree)),
+    );
     const before = store.snapshot("s");
     store.clearDroppedBase("s", "repo", a);
     expect(records(store)).toEqual([
