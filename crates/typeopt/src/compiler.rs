@@ -428,13 +428,7 @@ impl Project {
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
                 if node.kind() == SyntaxKind::CallExpression {
-                    let callee = node.expression();
-                    let callee_name = match callee.kind() {
-                        SyntaxKind::Identifier => callee.text(),
-                        SyntaxKind::PropertyAccessExpression => callee.name().text(),
-                        _ => "",
-                    };
-                    if callee_name == "importScripts" {
+                    if is_import_scripts_callee(node.expression()) {
                         for argument in node.arguments().iter() {
                             let literal = matches!(
                                 argument.kind(),
@@ -1426,6 +1420,24 @@ fn is_global_object_receiver(node: Node) -> bool {
     let node = skip_parentheses(node);
     node.kind() == SyntaxKind::Identifier
         && matches!(node.text(), "globalThis" | "self" | "window" | "global")
+}
+
+/// Whether a call's callee names `importScripts`: `importScripts`,
+/// `self.importScripts`, `self["importScripts"]` or a parenthesized form.
+fn is_import_scripts_callee(callee: Node) -> bool {
+    let callee = skip_parentheses(callee);
+    match callee.kind() {
+        SyntaxKind::Identifier => callee.text() == "importScripts",
+        SyntaxKind::PropertyAccessExpression => callee.name().text() == "importScripts",
+        SyntaxKind::ElementAccessExpression => {
+            let key = callee.argument_expression();
+            matches!(
+                key.kind(),
+                SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+            ) && key.text() == "importScripts"
+        }
+        _ => false,
+    }
 }
 
 /// The expression inside any number of enclosing parentheses.

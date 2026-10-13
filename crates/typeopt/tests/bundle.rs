@@ -532,6 +532,35 @@ fn keeps_exports_that_classic_workers_reach() {
     assert_eq!(out(only.path(), "sw.js"), worker);
 }
 
+/// A script that a worker loads through any callee form of `importScripts`
+/// is a classic script, even when another chunk also imports it statically.
+#[test]
+fn keeps_scripts_loaded_by_every_import_scripts_callee_form() {
+    let vendor = r#"function legacyHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var legacyState=legacyHelper();"#;
+    for call in [
+        r#"importScripts("./vendor.js")"#,
+        r#"self.importScripts("./vendor.js")"#,
+        r#"self["importScripts"]("./vendor.js")"#,
+        r#"globalThis[`importScripts`]("./vendor.js")"#,
+        r#"(self.importScripts)("./vendor.js")"#,
+        r#"(self["importScripts"])("./vendor.js")"#,
+    ] {
+        let worker = format!("globalThis.__never&&{call};");
+        let temp = bundle(&[
+            (
+                "index.js",
+                r#"import"./vendor.js";function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);"#,
+            ),
+            ("vendor.js", vendor),
+            ("sw.js", &worker),
+        ]);
+        let report = optimize(temp.path(), &[]);
+        same_behavior(temp.path());
+        assert_eq!(out(temp.path(), "vendor.js"), vendor, "{call}: {report:#}");
+        assert_eq!(out(temp.path(), "sw.js"), worker, "{call}");
+    }
+}
+
 #[test]
 fn never_publishes_typescript_only_syntax() {
     let (temp, _) = run(&[(
