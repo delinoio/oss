@@ -229,6 +229,29 @@ func (s *Service) finishManagedClaudeExecution(ctx context.Context, req *connect
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
+	// Cleanup that crosses a recovery fence proves only that the Worker stopped
+	// the never-delivered or interrupted execution. It says nothing about the
+	// account's credential, which the fenced Take may have failed to load, so the
+	// settled generation is re-verified before readiness can be restored.
+	credentialChecked, credentialUsable := false, false
+	if input.Cleanup && !input.Success {
+		needsCheck := false
+		err = s.Store.Read(ctx, func(tx *store.Tx) error {
+			_, a, err := managedClaudeAccount(tx, input.Account, 0)
+			if err != nil {
+				return err
+			}
+			l := a.Subscription.Lease
+			needsCheck = a.Subscription.RecoveryRequired && a.Connection != nil && l != nil && l.ID == input.Lease && l.Generation == input.Generation && a.Subscription.Generation == input.Generation
+			return nil
+		})
+		if err != nil {
+			return nil, rpc.Error(err, c)
+		}
+		if needsCheck {
+			credentialChecked, credentialUsable = true, s.managedClaudeCredentialUsable(ctx, input.Account, input.Generation)
+		}
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "claude.managed.finish-execution", input, func(tx *store.Tx) (any, error) {
 		r, a, err := managedClaudeAccount(tx, input.Account, 0)
 		if err != nil {
@@ -284,7 +307,14 @@ func (s *Service) finishManagedClaudeExecution(ctx context.Context, req *connect
 					o.ExpiresAt = now.Add(managedClaudeOperationWindow)
 				}
 			} else if a.Health != domain.AccountRevoked {
-				a.Health = domain.AccountReady
+				if recoveryCleanup && !(credentialChecked && credentialUsable) {
+					// The fence is released so the account can be disconnected, but it
+					// is never restored to ready on an unverified credential: each
+					// later session would only repeat the failed Take and recovery.
+					a.Health = domain.AccountFailed
+				} else {
+					a.Health = domain.AccountReady
+				}
 			}
 		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
@@ -299,4 +329,29 @@ func (s *Service) finishManagedClaudeExecution(ctx context.Context, req *connect
 	}
 	s.logger.InfoContext(ctx, "claude_managed_lease_finished", "account_id", input.Account, "lease_id", input.Lease, "cleanup_confirmed", input.Cleanup, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.FinishSubscriptionResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
+}
+
+// managedClaudeCredentialUsable reports whether the account's settled generation
+// still opens as exactly this server's Claude token envelope. The secret is
+// cleared immediately and any failure, including an unavailable vault, is
+// treated as unusable so readiness is only restored on positive proof.
+func (s *Service) managedClaudeCredentialUsable(ctx context.Context, id, generation domain.ID) bool {
+	vault, err := s.secrets()
+	if err != nil {
+		s.logger.WarnContext(ctx, "claude_managed_credential_check_failed", "account_id", id, "code", domain.SafeError(err).Code)
+		return false
+	}
+	envelope, err := vault.Get(ctx, credentials.Ref{Owner: id, ID: generation, Purpose: credentials.AccountLogin})
+	if err != nil {
+		s.logger.WarnContext(ctx, "claude_managed_credential_check_failed", "account_id", id, "code", domain.SafeError(err).Code)
+		return false
+	}
+	defer clear(envelope)
+	token, err := subscription.OpenClaudeToken(envelope, s.Identity.ServerID, id, generation)
+	if err != nil {
+		s.logger.WarnContext(ctx, "claude_managed_credential_check_failed", "account_id", id, "code", domain.SafeError(err).Code)
+		return false
+	}
+	token.Clear()
+	return true
 }

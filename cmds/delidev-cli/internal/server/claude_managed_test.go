@@ -610,6 +610,92 @@ func TestManagedClaudeReplayedTakeFencesTheUnfinishedLeaseForOriginalWorkerClean
 	}
 }
 
+func TestManagedClaudeCleanupAfterCredentialLoadFailureKeepsTheAccountOutOfService(t *testing.T) {
+	cases := map[string]func(f *managedFixture, ref credentials.Ref){
+		"missing": func(f *managedFixture, ref credentials.Ref) { delete(f.secrets.values, ref) },
+		"malformed": func(f *managedFixture, ref credentials.Ref) {
+			f.secrets.values[ref] = []byte(`{"kind":"unrelated"}`)
+		},
+	}
+	for name, damage := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newManagedClaudeFixture(t)
+			generation := f.connect()
+			ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+			a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+			f.secrets.mu.Lock()
+			damage(f, ref)
+			f.secrets.mu.Unlock()
+			request := domain.NewID()
+			if _, err := f.take(a, request); err == nil {
+				t.Fatal("an unusable credential was granted")
+			}
+			_, account := f.record()
+			if !account.Subscription.RecoveryRequired || account.Subscription.Lease == nil || account.Health != domain.AccountFailed {
+				t.Fatal("the failed credential load did not fence the committed lease")
+			}
+			// The Worker never received a response; its journal names the committed lease.
+			lease := &pb.TakeSubscriptionResponse{LeaseId: string(request), GenerationId: string(generation), LeaseRevision: account.Subscription.Lease.Revision}
+			// The original Worker's pre-delivery cleanup releases the lease only.
+			if err := f.finishLease(a, lease, true, false); err != nil {
+				t.Fatal(err)
+			}
+			_, account = f.record()
+			if account.Subscription.Lease != nil || account.Connection == nil || account.Health != domain.AccountFailed {
+				t.Fatal("cleanup restored an account whose credential cannot be loaded")
+			}
+			if account.Validate() != nil {
+				t.Fatalf("the settled account is invalid: %v", account.Validate())
+			}
+			// No later session is admitted only to repeat the failed Take.
+			if _, err := f.take(a, domain.NewID()); err == nil {
+				t.Fatal("a failed account was admitted again")
+			}
+			_, account = f.record()
+			if account.Subscription.Lease != nil || account.Subscription.RecoveryRequired {
+				t.Fatal("a denied admission left a lease or fence behind")
+			}
+			// The failed account can still be disconnected and then reconnected.
+			if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+				t.Fatalf("a failed account could not be disconnected: %v", err)
+			}
+		})
+	}
+}
+
+func TestManagedClaudeCleanupRestoresReadinessOnlyAfterTheCredentialLoadsAgain(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	f.secrets.mu.Lock()
+	saved := bytes.Clone(f.secrets.values[ref])
+	delete(f.secrets.values, ref)
+	f.secrets.mu.Unlock()
+	request := domain.NewID()
+	if _, err := f.take(a, request); err == nil {
+		t.Fatal("a missing credential was granted")
+	}
+	// A transient outage that has ended is proven by loading the same envelope.
+	f.secrets.mu.Lock()
+	f.secrets.values[ref] = saved
+	f.secrets.mu.Unlock()
+	_, account := f.record()
+	lost := &pb.TakeSubscriptionResponse{LeaseId: string(request), GenerationId: string(generation), LeaseRevision: account.Subscription.Lease.Revision}
+	if err := f.finishLease(a, lost, true, false); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Lease != nil || account.Health != domain.AccountReady {
+		t.Fatal("a verified credential did not restore readiness")
+	}
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.requireToken(lease)
+}
+
 func TestManagedClaudeLateReplayAfterJoinedCleanupDoesNotFence(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	f.connect()
