@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"connectrpc.com/connect"
@@ -48,7 +49,32 @@ func repositoryIntegrationFromTx(tx *store.Tx, id domain.ID) (repositoryIntegrat
 	}
 	return repositoryIntegrationSelection{record: record, repository: repository, profile: profile}, nil
 }
+
+// errIntegrationPreempted is returned by one admitted attempt that a foreground
+// read displaced. It never leaves the server package: only the resumable
+// wrapper consumes it, and only after the attempt has joined (token cleared and
+// completion signalled).
+var errIntegrationPreempted = errors.New("integration read attempt preempted by a foreground read")
+
+const (
+	integrationQueueBound  = 35 * time.Second
+	integrationActiveBound = 35 * time.Second
+)
+
+// integrationResume freezes the scope and the active deadline of a resumable
+// read at its first activation so every later attempt and queue wait shares
+// them. A nil value selects the ordinary single-attempt behavior.
+type integrationResume struct {
+	initialized    bool
+	scope          repositoryIntegrationSelection
+	activeDeadline time.Time
+}
+
 func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, operation, correlation string, read func(context.Context, []byte, repositoryIntegrationSelection) error) (repositoryIntegrationSelection, error) {
+	return s.admitRepositoryIntegration(ctx, id, operation, correlation, nil, read)
+}
+
+func (s *Service) admitRepositoryIntegration(ctx context.Context, id domain.ID, operation, correlation string, resume *integrationResume, read func(context.Context, []byte, repositoryIntegrationSelection) error) (repositoryIntegrationSelection, error) {
 	if _, err := integrationActor(ctx); err != nil {
 		return repositoryIntegrationSelection{}, err
 	}
@@ -71,6 +97,9 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 		return repositoryIntegrationSelection{}, err
 	}
 	profileID := selected.repository.IntegrationID
+	if resume != nil && resume.initialized && (selected.record.Revision != resume.scope.record.Revision || profileID != resume.scope.repository.IntegrationID || selected.profile.Connection.GenerationID != resume.scope.profile.Connection.GenerationID) {
+		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The suspended repository read scope changed.", "Reload the exact repository before retrying this read.")
+	}
 	background := operation == "workspace" || operation == "avatar"
 	if s.integrationQueued == nil {
 		s.integrationQueued = map[domain.ID]int{}
@@ -89,8 +118,19 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 			}
 		}
 	}()
-	waitCtx, waitCancel := context.WithTimeout(ctx, 35*time.Second)
+	// A resumed attempt shares the frozen active deadline for its queue wait; only
+	// first admission receives the 35-second queue bound.
+	var waitCtx context.Context
+	var waitCancel context.CancelFunc
+	if resume != nil && resume.initialized {
+		waitCtx, waitCancel = context.WithDeadline(ctx, resume.activeDeadline)
+	} else {
+		waitCtx, waitCancel = context.WithTimeout(ctx, integrationQueueBound)
+	}
 	defer waitCancel()
+	if err := waitCtx.Err(); err != nil && resume != nil && resume.initialized {
+		return repositoryIntegrationSelection{}, domain.SafeError(err)
+	}
 	for {
 		running := s.integrationChecks[profileID]
 		if running == nil && (!background || s.integrationForeground[profileID] == 0) {
@@ -107,7 +147,7 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 			queued = true
 		}
 		if !background && running != nil && running.background {
-			if err := s.stopIntegrationCheck(waitCtx, profileID); err != nil {
+			if err := s.displaceIntegrationCheck(waitCtx, profileID); err != nil {
 				return repositoryIntegrationSelection{}, err
 			}
 			continue
@@ -141,6 +181,9 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 			return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The queued repository read scope changed.", "Reload the exact repository before retrying this read.")
 		}
 	}
+	if resume != nil && resume.initialized && s.stopping.Load() {
+		return repositoryIntegrationSelection{}, domain.SafeError(context.Canceled)
+	}
 	if queued {
 		s.integrationQueued[profileID]--
 		if !background {
@@ -154,8 +197,26 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 	if s.integrationChecks == nil {
 		s.integrationChecks = map[domain.ID]*integrationCheck{}
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
-	check := &integrationCheck{cancel: cancel, done: make(chan struct{}), background: background}
+	activeDeadline := time.Now().Add(integrationActiveBound)
+	if resume != nil {
+		if resume.initialized {
+			activeDeadline = resume.activeDeadline
+		} else {
+			resume.initialized, resume.scope, resume.activeDeadline = true, selected, activeDeadline
+		}
+	}
+	causeCtx, cancelCause := context.WithCancelCause(ctx)
+	checkCtx, cancelDeadline := context.WithDeadline(causeCtx, activeDeadline)
+	cancel := func() {
+		cancelCause(context.Canceled)
+		cancelDeadline()
+	}
+	check := &integrationCheck{cancel: cancel, preempt: func() { cancelCause(errForegroundPreempted) }, done: make(chan struct{}), background: background}
+	// preempted is true only for the typed scheduler displacement while the
+	// parent request, the server and the frozen deadline all remain live.
+	preempted := func() bool {
+		return resume != nil && checkCtx.Err() != nil && ctx.Err() == nil && !s.stopping.Load() && errors.Is(context.Cause(checkCtx), errForegroundPreempted)
+	}
 	s.integrationChecks[profileID] = check
 	defer func() {
 		cancel()
@@ -183,6 +244,10 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 	s.logger.Info("repository_integration_read_started", "operation", operation, "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
 	err = read(checkCtx, token, selected)
 	clear(token)
+	if preempted() {
+		s.logger.Info("repository_integration_read_preempted", "operation", operation, "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
+		return repositoryIntegrationSelection{}, errIntegrationPreempted
+	}
 	if checkCtx.Err() != nil {
 		err = domain.SafeError(checkCtx.Err())
 	}
@@ -192,6 +257,10 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 	}
 	unlock, err = s.lockIntegrations(checkCtx)
 	if err != nil {
+		if preempted() {
+			s.logger.Info("repository_integration_read_preempted", "operation", operation, "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
+			return repositoryIntegrationSelection{}, errIntegrationPreempted
+		}
 		return repositoryIntegrationSelection{}, err
 	}
 	locked = true
@@ -205,6 +274,10 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 		}
 		return nil
 	})
+	if err != nil && preempted() {
+		s.logger.Info("repository_integration_read_preempted", "operation", operation, "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
+		return repositoryIntegrationSelection{}, errIntegrationPreempted
+	}
 	if err != nil {
 		s.logger.Warn("repository_integration_read_rejected", "operation", operation, "repository_id", id, "profile_id", profileID, "error_code", domain.SafeError(err).Code, "correlation_id", correlation)
 		return repositoryIntegrationSelection{}, err
