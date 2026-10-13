@@ -226,8 +226,16 @@ function rspackConfig(body) {
 }
 
 test("rspack adapter uses the resolved Browserslist platform for Node targets", () => {
-  const { dir, relative } = rspackConfig('entry: "./src/esm/value.js", target: "browserslist"');
-  const { status, collection } = runAdapter("rspack", "rspack-app", relative, {}, { BROWSERSLIST: "node 20" });
+  const { dir, relative } = rspackConfig(
+    'entry: "./src/esm/value.js", target: "browserslist"',
+  );
+  const { status, collection } = runAdapter(
+    "rspack",
+    "rspack-app",
+    relative,
+    {},
+    { BROWSERSLIST: "node 20" },
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.ssrBuild, true);
@@ -241,7 +249,9 @@ test("rspack adapter resolves entry functions before checking library mode", () 
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.libraryBuild, true);
-  assert.ok(collection.overrides.some((entry) => entry.includes("entry function")));
+  assert.ok(
+    collection.overrides.some((entry) => entry.includes("entry function")),
+  );
 });
 
 test("rspack adapter treats SWC with mangling disabled as non-default", () => {
@@ -250,7 +260,11 @@ test("rspack adapter treats SWC with mangling disabled as non-default", () => {
     "rspack.config.mjs",
     `import { createRequire } from "node:module";\nconst { SwcJsMinimizerRspackPlugin } = createRequire(${JSON.stringify(path.join(projectRoot, "package.json"))})("@rspack/core");\nexport default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", optimization: { minimizer: [new SwcJsMinimizerRspackPlugin({ minimizerOptions: { mangle: false } })] } };\n`,
   );
-  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  const { status, collection } = runAdapter(
+    "rspack",
+    "rspack-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.defaultMinifier, false);
@@ -258,8 +272,15 @@ test("rspack adapter treats SWC with mangling disabled as non-default", () => {
 
 test("rspack configuration functions that throw are configuration load failures", () => {
   const projectRoot = path.join(root, "fixtures/rspack-app");
-  const { dir, file } = writeConfig("rspack.config.mjs", 'export default () => { throw new Error("factory broke"); };\n');
-  const { status, events } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    'export default () => { throw new Error("factory broke"); };\n',
+  );
+  const { status, events } = runAdapter(
+    "rspack",
+    "rspack-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 1);
   const error = events.find((event) => event.event === "error");
