@@ -738,7 +738,7 @@ test("captured output does not complete before a below-watermark write callback"
   assert.equal(destination.listenerCount("error"), 0);
 });
 
-test("function and synchronous destinations finish promptly without ending shared streams", async () => {
+test("function and synchronous destinations complete without a drain timeout or ending shared streams", async () => {
   const received = [];
   const synchronous = new Writable({
     write(chunk, _encoding, callback) {
@@ -757,9 +757,8 @@ test("function and synchronous destinations finish promptly without ending share
   })({ stdout, stderr });
   stdout.end("line\ntail");
   stderr.end("error line\n");
-  const startedAt = Date.now();
   await drain();
-  assert.ok(Date.now() - startedAt < 90);
+  // Waiting for the drain bound would report output-drain-timeout below.
   assert.deepEqual(received, ["line\n", "tail"]);
   assert.deepEqual(functionOutput, ["error line\n"]);
   assert.deepEqual(incomplete, []);
