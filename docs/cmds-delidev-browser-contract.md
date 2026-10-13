@@ -150,7 +150,16 @@ failed; `metadata_committed`; `native_cleanup_complete`; a closed failure code).
 After a mutation commits, live shared children are reconciled with the shared
 selection on the UI loop: a child already on the selected page is preserved, a
 superseded child is unmapped before any handle or generation changes, and a page
-nobody presents is never displayed. Failures before admission are returned as a
+nobody presents is never displayed. CloseBrowser is asynchronous, so a successful
+close request is not completed cleanup: the receipt records the exact (window,
+generation) of every original native child it superseded and stays
+`cleanup-pending` with `native_cleanup_complete` false until each of those
+children reports `on_before_close`. Replacement children carry a newer generation
+and unrelated children are never awaited, so neither delays nor satisfies the
+original cleanup; two windows presenting one page require both original
+callbacks. Closing a page that no native child presents completes immediately.
+Observing the receipt re-evaluates this set without a second metadata mutation or
+a duplicate close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
 retained on the receipt or surfaces as an uncertain reply that only observation of
 the original operation settles. `open_browser` takes a page ID instead of an

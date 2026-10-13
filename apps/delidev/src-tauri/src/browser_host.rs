@@ -1,7 +1,7 @@
 //! Raw CEF children deliberately bypass Tauri's scripts, schemes and IPC
 //! handler.
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::PathBuf,
     sync::{
@@ -117,6 +117,10 @@ struct PageOperation {
     // A directory fsync failed after replacement. Observation retries only
     // the durability step, never the mutation.
     durability: Option<PathBuf>,
+    // Native children superseded by this operation's reconciliation, keyed by
+    // (window label, generation). CloseBrowser is asynchronous, so native
+    // cleanup is complete only after each child reports on_before_close.
+    awaiting_close: BTreeSet<(String, u64)>,
 }
 const PAGE_LIMIT: usize = 16;
 const OPERATION_LIMIT: usize = 64;
@@ -170,6 +174,9 @@ struct View {
 struct TabReplacement {
     requests: Vec<ViewRequest>,
     closing: Vec<Browser>,
+    // (window label, generation) of every superseded child that still owns a
+    // native browser or has one being created.
+    superseded: Vec<(String, u64)>,
 }
 #[derive(Default)]
 struct State {
@@ -217,6 +224,12 @@ impl State {
                 .ok_or(NativeFailure::Stopped)?;
             let generation = self.generation;
             let view = self.views.get_mut(&label).unwrap();
+            let has_native_child = view.browser.is_some() || view.creation_pending;
+            if has_native_child {
+                replacement
+                    .superseded
+                    .push((label.clone(), view.generation));
+            }
             if let Some(browser) = view.browser.take() {
                 replacement.closing.push(browser);
             }
@@ -231,6 +244,37 @@ impl State {
             }
         }
         Ok(replacement)
+    }
+
+    // Replaces the children that no longer show the shared selection and
+    // records the superseded ones on the operation, whose receipt must observe
+    // their close callbacks. Both steps run under one state lock, so a callback
+    // cannot arrive before the registration.
+    fn supersede_children(
+        &mut self,
+        key: &str,
+        profile: &str,
+        selected: &str,
+        unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<TabReplacement> {
+        let replacement = self.select_tab(profile, selected, unmap)?;
+        if let Some(operation) = self.page_operations.get_mut(key) {
+            operation
+                .awaiting_close
+                .extend(replacement.superseded.iter().cloned());
+        }
+        Ok(replacement)
+    }
+
+    // An exact (window, generation) close proof satisfies every operation that
+    // waits for it. Replacement children carry a newer generation and never
+    // match.
+    fn native_child_closed(&mut self, window: &str, generation: u64) {
+        for operation in self.page_operations.values_mut() {
+            operation
+                .awaiting_close
+                .remove(&(window.to_string(), generation));
+        }
     }
 
     fn exit_when_ready(&self) -> Option<i32> {
@@ -1018,6 +1062,7 @@ impl BrowserHost {
                     tabs: tabs.clone(),
                     order,
                     durability: None,
+                    awaiting_close: BTreeSet::new(),
                 },
             );
             state.page_busy.insert(record.id.clone(), key.clone());
@@ -1149,7 +1194,7 @@ impl BrowserHost {
             .receipt
             .metadata_committed;
         let cleanup = if committed {
-            self.reconcile_children(app, profile)
+            self.reconcile_children(app, profile, &key)
         } else {
             Ok(())
         };
@@ -1176,9 +1221,19 @@ impl BrowserHost {
             .get_mut(key)
             .ok_or(NativeFailure::InvalidEvidence)?;
         if committed {
-            operation.receipt.native_cleanup_complete = cleanup.is_ok();
+            // Successful CloseBrowser admission only requests teardown; the
+            // receipt completes after every original child has closed.
+            operation.receipt.native_cleanup_complete =
+                cleanup.is_ok() && operation.awaiting_close.is_empty();
             if let Err(code) = cleanup {
                 operation.receipt.failure = Some(code);
+            }
+            if !operation.receipt.native_cleanup_complete {
+                tracing::debug!(
+                    operation = "browser_page_cleanup",
+                    awaiting_children = operation.awaiting_close.len(),
+                    cleanup_failed = cleanup.is_err()
+                );
             }
             Self::settle_page_operation(operation);
         }
@@ -1215,6 +1270,7 @@ impl BrowserHost {
         self: &Arc<Self>,
         app: &AppHandle<CefRuntime>,
         profile: &str,
+        key: &str,
     ) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let Some(p) = state.profiles.get(profile).filter(|p| !p.removing) else {
@@ -1230,7 +1286,7 @@ impl BrowserHost {
             return Ok(());
         }
         let context = context.ok_or(NativeFailure::Busy)?;
-        let replacement = state.select_tab(profile, &selected, unmap_view)?;
+        let replacement = state.supersede_children(key, profile, &selected, unmap_view)?;
         drop(state);
         for browser in replacement.closing {
             if let Some(host) = browser.host() {
@@ -1659,6 +1715,7 @@ impl BrowserHost {
 
     fn child_closed(&self, request: &ViewRequest) -> Option<i32> {
         let mut state = self.state.lock().ok()?;
+        state.native_child_closed(&request.window, request.generation);
         if let Some(view) = state
             .views
             .get_mut(&request.window)
@@ -5494,6 +5551,191 @@ esac
         let receipt = settled.receipt.unwrap();
         assert_eq!(receipt.phase, PagePhase::Completed);
         assert_eq!(receipt.failure, None);
+    }
+
+    // Runs the state half of `finish_pages` without a CEF application handle:
+    // supersede children that no longer show the selection, then settle the
+    // receipt from the synchronous result.
+    fn finish_fixture_pages(host: &BrowserHost, record: &ProfileRecord, key: &str) -> PageReceipt {
+        {
+            let mut state = host.state.lock().unwrap();
+            let selected = state.profiles[&record.id].tabs.selected.clone();
+            state
+                .supersede_children(key, &record.id, &selected, unmap_view)
+                .unwrap();
+        }
+        host.complete_page_cleanup(key, &record.id, true, Ok(()))
+            .unwrap()
+            .receipt
+            .unwrap()
+    }
+
+    fn mark_native_child(host: &BrowserHost, window: &str) {
+        host.state
+            .lock()
+            .unwrap()
+            .views
+            .get_mut(window)
+            .unwrap()
+            .creation_pending = true;
+    }
+
+    fn admit_close(host: &BrowserHost, record: &ProfileRecord, page: &str) -> String {
+        let request = page_request(PageAction::Close, None, Some(page));
+        host.prepare_pages(OWNER, None, record, &request, commit_fixture)
+            .unwrap();
+        operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap())
+    }
+
+    fn stored_tabs_bytes(host: &BrowserHost, record: &ProfileRecord) -> Vec<u8> {
+        let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
+        fs::read(path.join("tabs.json")).unwrap()
+    }
+
+    #[test]
+    fn close_waits_for_the_original_native_child_to_report_closure() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        let committed = stored_tabs_bytes(&host, &record);
+        // CloseBrowser admission and the empty replacement succeed, but the
+        // original child has not reported on_before_close.
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        // Re-observing performs no second mutation or duplicate close request.
+        let again = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(again.phase, PagePhase::CleanupPending);
+        assert_eq!(stored_tabs_bytes(&host, &record), committed);
+        {
+            let mut state = host.state.lock().unwrap();
+            let selected = state.profiles[&record.id].tabs.selected.clone();
+            let replacement = state
+                .supersede_children(&key, &record.id, &selected, unmap_view)
+                .unwrap();
+            assert!(replacement.requests.is_empty() && replacement.superseded.is_empty());
+            assert!(replacement.closing.is_empty());
+        }
+        host.child_closed(&original);
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+        assert_eq!(receipt.failure, None);
+        assert_eq!(stored_tabs_bytes(&host, &record), committed);
+    }
+
+    #[test]
+    fn close_requires_every_window_presenting_the_page_and_ignores_unrelated_children() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        let mut sibling = original.clone();
+        sibling.window = "sibling".into();
+        let mut unrelated = original.clone();
+        unrelated.window = "unrelated".into();
+        unrelated.generation = 99;
+        {
+            let mut state = host.state.lock().unwrap();
+            for (request, profile) in [
+                (&sibling, record.id.clone()),
+                (&unrelated, "other-profile".into()),
+            ] {
+                state.views.insert(
+                    request.window.clone(),
+                    View {
+                        profile,
+                        generation: request.generation,
+                        request: request.clone(),
+                        browser: None,
+                        failure: None,
+                        creation_pending: true,
+                        closing: false,
+                        view_id: view_id.clone(),
+                    },
+                );
+            }
+        }
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::CleanupPending
+        );
+        assert_eq!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .len(),
+            2
+        );
+        // An unrelated child neither satisfies nor was ever awaited.
+        host.child_closed(&unrelated);
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::CleanupPending
+        );
+        host.child_closed(&original);
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::CleanupPending
+        );
+        host.child_closed(&sibling);
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::Completed
+        );
+    }
+
+    #[test]
+    fn replacement_child_callback_does_not_satisfy_the_original_cleanup() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        let selected = create_page(&host, &record, "https://fixture.test/selected");
+        mark_native_child(&host, "fixture");
+        // The fixture view was inserted directly with generation 1.
+        host.state.lock().unwrap().generation = original.generation;
+        // The original page is not selected, so closing it still replaces the
+        // child that shows it.
+        let key = admit_close(&host, &record, &original.tab);
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        let replacement = {
+            let state = host.state.lock().unwrap();
+            let view = &state.views["fixture"];
+            assert_eq!(view.request.tab, selected);
+            assert!(view.generation > original.generation);
+            view.request.clone()
+        };
+        host.child_closed(&replacement);
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::CleanupPending
+        );
+        host.child_closed(&original);
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::Completed
+        );
+    }
+
+    #[test]
+    fn inactive_page_close_without_a_native_child_completes_immediately() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        let selected = create_page(&host, &record, "https://fixture.test/selected");
+        {
+            // A live child already shows the selected page and is unrelated to
+            // the closed one.
+            let mut state = host.state.lock().unwrap();
+            let view = state.views.get_mut("fixture").unwrap();
+            view.request.tab = selected;
+            view.creation_pending = true;
+        }
+        let key = admit_close(&host, &record, &original.tab);
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
     }
 
     #[test]
