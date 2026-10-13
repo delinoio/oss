@@ -160,6 +160,12 @@ export function useEntranceActivation(
       ),
     [activation],
   );
+  // A surface that stops being enabled (for example a retained destination that
+  // becomes inactive) clears its in-flight entrance, so a later activation never
+  // stacks a second transform on a stale one.
+  useEffect(() => {
+    if (!enabled) settle();
+  }, [enabled, settle]);
   useEffect(() => {
     if (!active) return;
     const settleWhenDisabled = () => {

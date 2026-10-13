@@ -243,3 +243,17 @@ it("suppresses Usage motion under Animation Off and reduced motion and never rep
   expect(pageEntering()).toBeNull();
   expect(contentEntering()).toBeNull();
 });
+
+it("clears the tab entrance when Usage becomes inactive so a return never stacks transforms", async () => {
+  const f = fixture();
+  const { rerender } = render(f.view());
+  await screen.findByText("Incomplete coverage");
+  dispatchAnimation(page());
+  fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
+  expect(contentEntering()).toBe("y4");
+  rerender(f.view(false));
+  expect(contentEntering()).toBeNull();
+  rerender(f.view(true));
+  expect(pageEntering()).toBe("y4");
+  expect(contentEntering()).toBeNull();
+});

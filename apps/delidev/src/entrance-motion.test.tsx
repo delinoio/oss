@@ -326,3 +326,16 @@ it("clears the attribute synchronously when an enclosed host requests a settle",
   act(() => {});
   expect(entering()).toBeNull();
 });
+
+it("clears an in-flight entrance when the surface stops being enabled and never replays on re-enable", () => {
+  const { rerender } = render(<Harness />);
+  expect(entering()).toBe("y4");
+  rerender(<Harness enabled={false} />);
+  expect(entering()).toBeNull();
+  rerender(<Harness />);
+  expect(entering()).toBeNull();
+  act(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  });
+  expect(entering()).toBe("y4");
+});
