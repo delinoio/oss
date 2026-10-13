@@ -1,6 +1,6 @@
 // Copyright 2026 Delino. SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
@@ -16,6 +16,46 @@ async function digestOf(file, { stripBom }) {
     throw error;
   }
   return sha256(stripBom ? content.replace(/^﻿/, "") : content);
+}
+
+const INPUT_KINDS = new Set([
+  "configuration",
+  "dependency",
+  "absent",
+  "mismatch",
+]);
+
+/**
+ * Whether nothing resolves at the path. The compiler recorded the path as a
+ * resolution candidate that was missing, so a file or directory appearing
+ * there, or a symlink whose target now exists, can change resolution. Symlinks
+ * are followed because the compiler's probes follow them: a dangling symlink
+ * is still missing until its target appears.
+ */
+async function isAbsent(file) {
+  try {
+    await stat(file);
+    return false;
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return true;
+    throw error;
+  }
+}
+
+/**
+ * Whether a `mismatch` path, which existed with the wrong kind for a failed
+ * resolution probe, now has the kind that satisfies the probe. Symlinks are
+ * followed like the compiler's probes. A removed path or one that keeps the
+ * wrong kind leaves resolution unchanged.
+ */
+async function hasBecome(file, becomes) {
+  try {
+    const info = await stat(file);
+    return becomes === "file" ? info.isFile() : info.isDirectory();
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+    throw error;
+  }
 }
 
 /** Substitute code without redirecting module identity or asset resolution. */
@@ -51,9 +91,23 @@ export function typeopt(outputDirectory) {
       // before consuming any output, so a changed dependency invalidates
       // every result that could depend on it.
       const inputs = manifest.inputs ?? [];
+      // Positive inputs carry a content digest. An `absent` input names a
+      // resolution candidate that did not exist and has no digest. A
+      // `mismatch` input names a candidate of the wrong kind and records the
+      // kind (`becomes`) that would satisfy the failed probe.
       if (
         !Array.isArray(inputs) ||
-        inputs.some((i) => !DIGEST.test(i.sha256 ?? ""))
+        inputs.some(
+          (i) =>
+            !INPUT_KINDS.has(i?.kind) ||
+            typeof i.path !== "string" ||
+            (i.kind === "absent" || i.kind === "mismatch"
+              ? i.sha256 !== undefined
+              : !DIGEST.test(i.sha256 ?? "")) ||
+            (i.kind === "mismatch"
+              ? i.becomes !== "file" && i.becomes !== "directory"
+              : i.becomes !== undefined),
+        )
       )
         throw new Error(
           "typeopt module mapping has an invalid input snapshot; regenerate with the matching CLI",
@@ -69,6 +123,15 @@ export function typeopt(outputDirectory) {
             if (digest !== entry.source_sha256) stale.push(entry.source);
           }),
         ...inputs.map(async (input) => {
+          if (input.kind === "absent") {
+            if (!(await isAbsent(input.path))) stale.push(input.path);
+            return;
+          }
+          if (input.kind === "mismatch") {
+            if (await hasBecome(input.path, input.becomes))
+              stale.push(input.path);
+            return;
+          }
           const digest = await digestOf(input.path, {
             stripBom: input.kind !== "configuration",
           });
