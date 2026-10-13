@@ -9,6 +9,8 @@ export enum EntranceMotion {
 enum EntranceAnimationName {
   Y4 = "entrance-y4",
 }
+// Dispatched on an animated ancestor when a native dialog mounts beneath it.
+const ENTRANCE_SETTLE_EVENT = "delidev-entrance-settle";
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
 // The visual motion lasts 160ms. This generation-fenced fallback only settles
 // state when no animation end/cancel event can arrive (for example, an element
@@ -28,6 +30,17 @@ export function entranceMotionAllowed(): boolean {
     typeof window.matchMedia === "function" &&
     window.matchMedia(reducedMotionQuery)?.matches
   );
+}
+
+/**
+ * Settles every in-flight entrance above `host`. A native dialog calls this on
+ * mount so no animated ancestor wraps the top-layer host; the dialog's own
+ * inner entrance (a descendant) is untouched and nothing waits for the motion.
+ */
+export function settleEnclosingEntrances(host: Element | null): void {
+  for (let node = host?.parentElement; node; node = node.parentElement)
+    if (node.hasAttribute("data-entrance"))
+      node.dispatchEvent(new Event(ENTRANCE_SETTLE_EVENT));
 }
 
 /**
@@ -94,11 +107,14 @@ export function useEntranceActivation(
         )
           settle();
       };
+      const settleNow = () => settle();
       node.addEventListener("animationend", finished);
       node.addEventListener("animationcancel", finished);
+      node.addEventListener(ENTRANCE_SETTLE_EVENT, settleNow);
       return () => {
         node.removeEventListener("animationend", finished);
         node.removeEventListener("animationcancel", finished);
+        node.removeEventListener(ENTRANCE_SETTLE_EVENT, settleNow);
       };
     },
     [settle],

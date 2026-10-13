@@ -2,7 +2,10 @@ import { productDiagnostic } from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
-import type { EntranceProps } from "./entrance-motion";
+import {
+  settleEnclosingEntrances,
+  type EntranceProps,
+} from "./entrance-motion";
 import {
   useLayoutEffect,
   useId,
@@ -159,6 +162,9 @@ export function Modal({
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
+    // A native dialog never sits beneath an animated ancestor: an in-flight
+    // category entrance settles before the first paint of the dialog.
+    settleEnclosingEntrances(dialog);
     dialog.showModal();
     (focusClose ? closeButton.current : initialFocus?.current)?.focus();
     return () => {

@@ -223,3 +223,34 @@ it("settles the custom theme editor when Animation turns Off mid-flight", async 
   expect(editorSurface()).toBe(editor);
   expect(screen.getByRole("textbox", { name: "Theme name" })).toBe(name);
 });
+
+it("settles the in-flight category entrance before a native dialog mounts beneath it", async () => {
+  render(view(<Settings />, editorFixture()));
+  category("Appearance");
+  const content = column();
+  expect(content.getAttribute("data-entrance")).toBe("y4");
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Edit custom theme/ }),
+  );
+  const host = dialog();
+  // No animated ancestor wraps the dialog host; only the inner block moves.
+  expect(content.contains(host)).toBe(true);
+  expect(content.getAttribute("data-entrance")).toBeNull();
+  expect(host.parentElement?.closest("[data-entrance]")).toBeNull();
+  expect(editorSurface().getAttribute("data-entrance")).toBe("y4");
+  // Settling is final: closing the dialog does not replay the category.
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(content.getAttribute("data-entrance")).toBeNull();
+});
+
+it("settles the category entrance before the import dialog mounts", async () => {
+  render(view(<Settings />, editorFixture()));
+  category("Appearance");
+  const content = column();
+  expect(content.getAttribute("data-entrance")).toBe("y4");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Import JSON theme" }),
+  );
+  expect(dialog().parentElement?.closest("[data-entrance]")).toBeNull();
+  expect(content.getAttribute("data-entrance")).toBeNull();
+});
