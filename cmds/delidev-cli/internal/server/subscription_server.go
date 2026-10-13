@@ -202,9 +202,11 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	var workers sync.WaitGroup
-	done := make(chan domain.ID, 16)
+	done := make(chan serverSubscriptionResult, 16)
 	running := map[domain.ID]bool{}
-	cleanupAttempted := map[domain.ID]bool{}
+	// Failed durable cleanup is retried with bounded exponential backoff so a
+	// transient vault outage never strands an account until the next restart.
+	retries := map[domain.ID]cleanupRetry{}
 	defer func() { stop(); workers.Wait() }()
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
@@ -215,6 +217,8 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			claude             bool
 		}
 		var candidates []candidate
+		eligible := map[domain.ID]bool{}
+		now := time.Now()
 		err := s.Store.Read(child, func(tx *store.Tx) error {
 			records, err := all(tx, domain.AccountKind)
 			if err != nil {
@@ -227,37 +231,47 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 				}
 				if managedClaudeCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
 					candidates = append(candidates, candidate{account: r.ID, claude: true})
-				} else if managedClaudeNeedsRecovery(a) && !cleanupAttempted[a.Subscription.ServerOperation.ID] {
-					candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, claude: true})
+				} else if managedClaudeNeedsRecovery(a) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, claude: true})
+					}
 				} else if a.ManagedClaudeAccount() {
 					continue
 				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
-				} else if failedServerLoginNeedsCleanup(a) && !cleanupAttempted[a.Subscription.ServerOperation.ID] {
-					candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true})
+				} else if failedServerLoginNeedsCleanup(a) {
+					eligible[a.Subscription.ServerOperation.ID] = true
+					if retries[a.Subscription.ServerOperation.ID].due(now) {
+						candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true})
+					}
 				}
 			}
 			return nil
 		})
 		if err != nil && child.Err() == nil {
 			s.logger.WarnContext(ctx, "server_subscription_scan_failed", "code", domain.SafeError(err).Code)
+		} else if err == nil {
+			// A completed scan forgets operations that no longer need cleanup.
+			for operation := range retries {
+				if !eligible[operation] {
+					delete(retries, operation)
+				}
+			}
 		}
 		for _, next := range candidates {
 			if running[next.account] || len(running) >= 16 {
 				continue
 			}
 			running[next.account] = true
-			if next.cleanup {
-				// One bounded attempt per original operation in this server epoch.
-				// Failed cleanup stays fenced rather than retrying every scan tick.
-				cleanupAttempted[next.operation] = true
-			}
 			workers.Add(1)
 			go func() {
 				defer workers.Done()
+				result := serverSubscriptionResult{account: next.account, operation: next.operation, cleanup: next.cleanup}
 				if next.claude {
 					if next.cleanup {
 						if err := s.recoverManagedClaude(child, next.account, next.operation); err != nil && child.Err() == nil {
+							result.failed = true
 							s.logger.WarnContext(child, "claude_managed_cleanup_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 						}
 					} else {
@@ -265,22 +279,72 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					}
 				} else if next.cleanup {
 					if err := s.recoverFailedServerLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
+						result.failed = true
 						s.logger.WarnContext(child, "server_subscription_cleanup_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}
 				} else {
 					s.runServerSubscription(child, next.account)
 				}
-				done <- next.account
+				done <- result
 			}()
 		}
 		select {
 		case <-child.Done():
 			return
-		case id := <-done:
-			delete(running, id)
+		case result := <-done:
+			delete(running, result.account)
+			if result.cleanup {
+				// Success or failure, a still-eligible operation waits before its next
+				// attempt; repeated failures back off up to a fixed ceiling.
+				retry := retries[result.operation]
+				retries[result.operation] = retry.after(time.Now(), result.failed, s.cleanupRetryBase())
+				if result.failed {
+					s.logger.WarnContext(child, "server_subscription_cleanup_retry_scheduled", "operation_id", result.operation, "failures", retries[result.operation].failures, "delay_ms", time.Until(retries[result.operation].notBefore).Milliseconds())
+				}
+			}
 		case <-tick.C:
 		}
 	}
+}
+
+// serverSubscriptionResult reports one finished scanner goroutine.
+type serverSubscriptionResult struct {
+	account, operation domain.ID
+	cleanup, failed    bool
+}
+
+const (
+	defaultServerCleanupRetryBase = time.Second
+	maxServerCleanupRetryDelay    = time.Minute
+)
+
+func (s *Service) cleanupRetryBase() time.Duration {
+	if s.serverCleanupRetryBase > 0 {
+		return s.serverCleanupRetryBase
+	}
+	return defaultServerCleanupRetryBase
+}
+
+// cleanupRetry is the scanner-local schedule of one cleanup operation.
+type cleanupRetry struct {
+	failures  int
+	notBefore time.Time
+}
+
+func (r cleanupRetry) due(now time.Time) bool { return !now.Before(r.notBefore) }
+
+// after schedules the next attempt. A failure doubles the delay up to
+// maxServerCleanupRetryDelay; a completed attempt that still leaves the
+// operation eligible waits one base delay and resets the failure count.
+func (r cleanupRetry) after(now time.Time, failed bool, base time.Duration) cleanupRetry {
+	if !failed {
+		return cleanupRetry{notBefore: now.Add(base)}
+	}
+	delay := base
+	for i := 0; i < r.failures && delay < maxServerCleanupRetryDelay; i++ {
+		delay *= 2
+	}
+	return cleanupRetry{failures: r.failures + 1, notBefore: now.Add(min(delay, maxServerCleanupRetryDelay))}
 }
 
 func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {

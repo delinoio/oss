@@ -788,6 +788,54 @@ func TestManagedClaudeLogoutCheckpointSurvivesFailedVaultDeletion(t *testing.T) 
 	}
 }
 
+func TestManagedClaudeCheckpointCleanupRetriesAfterFailedScanAttempts(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.service.serverCleanupRetryBase = 20 * time.Millisecond
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.deleteError = errors.New("vault unavailable")
+	awaitServerFixture(t, f.run())
+	_, account := f.record()
+	if account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupPending {
+		t.Fatal("the settled logout has no cleanup checkpoint")
+	}
+	baseline := func() int {
+		f.secrets.mu.Lock()
+		defer f.secrets.mu.Unlock()
+		return f.secrets.deletes
+	}
+	before := baseline()
+	ctx, stop := context.WithCancel(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}))
+	done := make(chan struct{})
+	go func() { defer close(done); f.service.runServerSubscriptions(ctx) }()
+	defer func() { stop(); awaitServerFixture(t, done) }()
+	// The scanner's first attempt and its retries all fail while the vault is down.
+	deadline := time.Now().Add(10 * time.Second)
+	for baseline() < before+3 {
+		if time.Now().After(deadline) {
+			t.Fatal("the scanner stopped retrying a failed checkpoint cleanup")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.deleteError = nil
+	f.secrets.mu.Unlock()
+	for time.Now().Before(deadline) {
+		_, account = f.record()
+		f.secrets.mu.Lock()
+		retained := len(f.secrets.values[ref]) != 0
+		f.secrets.mu.Unlock()
+		if !retained && account.Subscription.ServerOperation.CleanupPhase == "" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("a recovered vault did not complete the retained checkpoint in the same server process")
+}
+
 func TestManagedClaudeRestartRecoveryOnlyReconcilesTheOriginalRuntime(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	f.native.closeErr = errors.New("still running")

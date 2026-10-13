@@ -123,12 +123,15 @@ type Service struct {
 	afterFailedSubscriptionDeleteObserve func(context.Context)
 	beforeFailedCleanupAccountGate       func(context.Context, domain.ID)
 	// Set before stream admission in isolated tests; production uses 100 ms.
-	terminalWatchInterval         time.Duration
-	terminalOutputs               map[domain.ID]*terminalOutputRing
-	terminalOutputOrder           list.List
-	prFixRequests                 prFixRequestTracker
-	subscriptionOpen              serverSubscriptionOpener
-	claudeSetupOpen               managedClaudeOpener
+	terminalWatchInterval time.Duration
+	terminalOutputs       map[domain.ID]*terminalOutputRing
+	terminalOutputOrder   list.List
+	prFixRequests         prFixRequestTracker
+	subscriptionOpen      serverSubscriptionOpener
+	claudeSetupOpen       managedClaudeOpener
+	// serverCleanupRetryBase is the first delay before a failed server-owned
+	// credential cleanup is retried. Zero selects the default; tests shorten it.
+	serverCleanupRetryBase        time.Duration
 	claudeFinishAck               func() error
 	quotaOpen                     serverQuotaOpener
 	creditOpen                    serverCreditOpener
