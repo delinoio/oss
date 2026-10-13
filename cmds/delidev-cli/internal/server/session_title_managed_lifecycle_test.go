@@ -156,6 +156,7 @@ func TestManagedTitleAccountLossBeforeDeliveryReleasesLease(t *testing.T) {
 			if err == nil || response != nil {
 				t.Fatal("a title received protected credentials after its account was lost")
 			}
+			requireTitleNotDelivered(t, err, domain.Canceled)
 			_, account := f.record()
 			if account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Health == domain.AccountFailed {
 				t.Fatalf("an undelivered title lease fenced the account: health=%s %+v", account.Health, account.Subscription)

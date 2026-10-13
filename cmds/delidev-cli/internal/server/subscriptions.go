@@ -59,6 +59,22 @@ func subscriptionTakeNotAdmitted() *domain.Error {
 	return problem
 }
 
+// subscriptionTitleNotDelivered is the definite result of a managed title Take
+// whose exact lease was committed and then released without any credential
+// crossing the boundary. Unlike subscriptionDenied it carries no recovery
+// authority, so the Worker can report and terminate the title normally instead
+// of treating the outcome as uncertain. The code only classifies the report
+// (Canceled for a denied or revoked title, Unavailable for a vault failure).
+func subscriptionTitleNotDelivered(code domain.Code) *domain.Error {
+	problem := domain.Fail(code, "The managed automatic title received no credentials.", "No credential was delivered and no inference was sent; keep the current title and the ready account.")
+	problem.Cause = subscriptionTitleNotDeliveredCause
+	return problem
+}
+
+// subscriptionTitleNotDeliveredCause is the typed proof the Worker accepts for a
+// released, undelivered managed title lease.
+const subscriptionTitleNotDeliveredCause = "subscription_title_not_delivered"
+
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	if actor.Type == domain.OwnerDevice {
 		return nil
@@ -682,36 +698,37 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}
 	// Every error below returns before any bundle crosses the boundary. For a
 	// managed title that is a definite no-delivery outcome, so its exact lease is
-	// released instead of fencing the account for recovery; every other lease
-	// keeps the conservative recovery fence.
-	releaseUndeliveredTitle := func(reason string) {
+	// released instead of fencing the account for recovery, and the caller returns
+	// the typed no-delivery result instead of the original error (whose code, for
+	// example RecoveryRequired, the Worker must treat as uncertain). When the
+	// release is unconfirmed, or for every other lease, the original error is
+	// returned and the conservative recovery fence stays.
+	definiteNoDelivery := func(reason string, original error, code domain.Code) error {
 		if titleRevision == 0 {
-			return
+			return original
 		}
 		if releaseErr := s.releaseUndeliveredTitleLease(ctx, input.Account, input.Lease, input.Machine, input.Instance, leaseRevision); releaseErr != nil {
 			// The lease stays owned, so the deferred recovery fence still applies.
 			s.logger.WarnContext(ctx, "subscription_title_lease_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "code", domain.SafeError(releaseErr).Code)
-			return
+			return original
 		}
 		owned = false
-		s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", reason)
+		s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "result_code", code)
+		return subscriptionTitleNotDelivered(code)
 	}
 	var bundle []byte
 	if generation != "" {
 		vault, err := s.secrets()
 		if err != nil {
-			releaseUndeliveredTitle("vault-unavailable")
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("vault-unavailable", err, domain.Unavailable), c)
 		}
 		bundle, err = vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: generation, Purpose: credentials.AccountLogin})
 		if err != nil {
-			releaseUndeliveredTitle("vault-read-failed")
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("vault-read-failed", err, domain.Unavailable), c)
 		}
 		if _, _, err := subscription.Parse(bundle); err != nil {
 			clear(bundle)
-			releaseUndeliveredTitle("bundle-invalid")
-			return nil, rpc.Error(err, c)
+			return nil, rpc.Error(definiteNoDelivery("bundle-invalid", err, domain.Unavailable), c)
 		}
 	}
 	// Authorization after native I/O prevents revocation from winning during Get.
@@ -750,8 +767,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	})
 	if err != nil {
 		clear(bundle)
-		releaseUndeliveredTitle("denied-before-delivery")
-		return nil, rpc.Error(err, c)
+		return nil, rpc.Error(definiteNoDelivery("denied-before-delivery", err, domain.Canceled), c)
 	}
 	s.logger.InfoContext(ctx, "subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "action", action)
 	installationJSON, _ := json.Marshal(installation)
