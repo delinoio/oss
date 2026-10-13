@@ -72,6 +72,11 @@ func configureManagedTitle(config *Config) error {
 	return nil
 }
 
+// managedTitleInertProviderKeys are the provider fields native config/read may
+// report as null defaults. Any value would add endpoint, credential, header or
+// timeout authority to the alias.
+var managedTitleInertProviderKeys = []string{"base_url", "env_key", "experimental_bearer_token", "auth", "aws", "http_headers", "env_http_headers", "query_params", "model_catalog_url", "gateway_oauth", "env_key_instructions", "stream_idle_timeout_ms", "websocket_connect_timeout_ms"}
+
 // validateManagedTitleProvider proves the alias is exactly the retry-free
 // built-in ChatGPT authority and carries no additional provider authority.
 func validateManagedTitleProvider(provider map[string]json.RawMessage) error {
@@ -83,9 +88,21 @@ func validateManagedTitleProvider(provider map[string]json.RawMessage) error {
 			return managedTitleMismatch("provider-" + key)
 		}
 	}
-	for _, key := range []string{"base_url", "env_key", "experimental_bearer_token", "auth", "aws", "http_headers", "env_http_headers", "query_params", "model_catalog_url", "gateway_oauth", "env_key_instructions", "stream_idle_timeout_ms", "websocket_connect_timeout_ms"} {
-		if raw := provider[key]; len(raw) != 0 && string(raw) != "null" {
-			return managedTitleMismatch("provider-authority")
+	// The shape is closed: every observed key must be one of the six required
+	// fields above, a known inert default that is null or absent, or the
+	// standalone web-search flag in its disabled state. An inherited or newly
+	// supported field is refused rather than assumed harmless.
+	for key, raw := range provider {
+		switch key {
+		case "name", "wire_api", "requires_openai_auth", "supports_websockets", "request_max_retries", "stream_max_retries":
+		case "supports_standalone_web_search":
+			if value := strings.TrimSpace(string(raw)); value != "false" && value != "null" {
+				return managedTitleMismatch("provider-authority")
+			}
+		default:
+			if !slices.Contains(managedTitleInertProviderKeys, key) || (len(raw) != 0 && strings.TrimSpace(string(raw)) != "null") {
+				return managedTitleMismatch("provider-authority")
+			}
 		}
 	}
 	return nil

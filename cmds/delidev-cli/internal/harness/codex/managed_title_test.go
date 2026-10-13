@@ -116,6 +116,13 @@ func TestManagedTitleProviderIsRetryFreeBuiltInAuthorityAlias(t *testing.T) {
 	if err := validateManagedTitleProvider(decode(valid)); err != nil {
 		t.Fatal(err)
 	}
+	disabledSearch := map[string]any{"supports_standalone_web_search": false}
+	for key, value := range valid {
+		disabledSearch[key] = value
+	}
+	if err := validateManagedTitleProvider(decode(disabledSearch)); err != nil {
+		t.Fatal("disabled standalone web search was refused", err)
+	}
 	for name, change := range map[string]func(map[string]any){
 		"request-retries": func(p map[string]any) { p["request_max_retries"] = 4 },
 		"stream-retries":  func(p map[string]any) { p["stream_max_retries"] = 5 },
@@ -127,6 +134,10 @@ func TestManagedTitleProviderIsRetryFreeBuiltInAuthorityAlias(t *testing.T) {
 		"headers":         func(p map[string]any) { p["http_headers"] = map[string]string{"x": "y"} },
 		"name":            func(p map[string]any) { p["name"] = "Other" },
 		"protocol":        func(p map[string]any) { p["wire_api"] = "chat" },
+		"unknown-field":   func(p map[string]any) { p["new_provider_authority"] = true },
+		"unknown-null":    func(p map[string]any) { p["new_provider_authority"] = nil },
+		"web-search":      func(p map[string]any) { p["supports_standalone_web_search"] = true },
+		"timeout":         func(p map[string]any) { p["stream_idle_timeout_ms"] = 1 },
 	} {
 		changed := map[string]any{}
 		for key, value := range valid {
