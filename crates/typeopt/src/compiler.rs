@@ -1523,6 +1523,22 @@ fn global_use_rule(node: Node) -> Option<SyntaxBoundaryRule> {
             {
                 return None;
             }
+            // `import { eval as helper }`, `export { helper as eval }` and
+            // `export * as eval from` name a module export, not the global.
+            SyntaxKind::ImportSpecifier if parent.property_name() == node => return None,
+            SyntaxKind::ExportSpecifier
+                if parent.name() == node && parent.property_name().is_some() =>
+            {
+                return None;
+            }
+            // `export { eval as e } from "./lib"` names the other module's export.
+            SyntaxKind::ExportSpecifier
+                if parent.property_name() == node
+                    && parent.parent().parent().module_specifier().is_some() =>
+            {
+                return None;
+            }
+            SyntaxKind::NamespaceExport if parent.name() == node => return None,
             SyntaxKind::BindingElement if parent.property_name() == node => return None,
             SyntaxKind::QualifiedName if parent.right() == node => return None,
             _ => (node, None),

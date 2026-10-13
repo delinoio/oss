@@ -360,6 +360,32 @@ fn optimizes_chunks_that_only_mention_eval_or_import_scripts() {
     }
 }
 
+/// Module import and export names such as `import { eval as helper }` and
+/// `export { helper as eval }` name an export, not the global `eval`, so
+/// their chunks are optimized.
+#[test]
+fn optimizes_chunks_that_name_module_exports_eval_or_import_scripts() {
+    let lib = r#"function pick(){return{verticalSpacing:1,horizontalSpacing:2}}function run(){const p=pick();return p.verticalSpacing+p.horizontalSpacing}export{run as eval,run as importScripts};"#;
+    let sub = r#"import{eval as helper,importScripts as other}from"./lib.js";export{eval as again,importScripts as more}from"./lib.js";function own(n){return{leftSpacing:n,rightSpacing:n}}function wrapped(){const o=own(2);return o.leftSpacing+o.rightSpacing}export{wrapped as eval,wrapped as importScripts};console.log(helper(),other(),wrapped());"#;
+    let namespace = r#"function own(n){return{upperSpacing:n,lowerSpacing:n}}function total(){const o=own(3);return o.upperSpacing+o.lowerSpacing}export{total};export*as eval from"./lib.js";"#;
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import"./sub.js";import"./namespace.js";console.log("index");"#,
+        ),
+        ("lib.js", lib),
+        ("sub.js", sub),
+        ("namespace.js", namespace),
+    ]);
+    for (chunk, original) in [
+        ("sub.js", sub),
+        ("lib.js", lib),
+        ("namespace.js", namespace),
+    ] {
+        assert_ne!(out(temp.path(), chunk), original, "{chunk}: {report:#}");
+    }
+}
+
 /// A call or an alias of the global `eval` or `importScripts` keeps the
 /// chunk unchanged while the rest of the bundle is optimized.
 #[test]
