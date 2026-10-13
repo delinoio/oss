@@ -166,17 +166,15 @@ function fixture(options: { holdLogin?: boolean; connected?: boolean } = {}) {
       _url: string,
     ) => ({ generation: browser }),
   );
-  const accounts = vi.fn(
-    (request: { filter?: { kind?: EntityKind } }) => ({
-      resources:
-        request.filter?.kind === EntityKind.MACHINE
-          ? [machine]
-          : request.filter?.kind === EntityKind.ACCOUNT
-            ? [row]
-            : [],
-      nextPageToken: "",
-    }),
-  );
+  const accounts = vi.fn((request: { filter?: { kind?: EntityKind } }) => ({
+    resources:
+      request.filter?.kind === EntityKind.MACHINE
+        ? [machine]
+        : request.filter?.kind === EntityKind.ACCOUNT
+          ? [row]
+          : [],
+    nextPageToken: "",
+  }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
       getStatus: () => ({
@@ -480,15 +478,21 @@ it("keeps one manage window entrance when the logout confirmation step opens and
   const header = taskHeader();
   dispatch(header);
   const logout = await screen.findByRole("button", { name: "Log out" });
-  await waitFor(() => expect((logout as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() =>
+    expect((logout as HTMLButtonElement).disabled).toBe(false),
+  );
   fireEvent.click(logout);
   await screen.findByRole("button", { name: "Confirm logout" });
   // The confirmation is a step of the same window: no second entrance.
-  expect(document.querySelectorAll("dialog.settings-task-dialog")).toHaveLength(1);
+  expect(document.querySelectorAll("dialog.settings-task-dialog")).toHaveLength(
+    1,
+  );
   expect(taskDialog()).toBe(dialog);
   expect(taskHeader()).toBe(header);
   expect(header.getAttribute("data-entrance")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Keep account connected" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Keep account connected" }),
+  );
   expect(taskDialog()).toBe(dialog);
   expect(header.getAttribute("data-entrance")).toBeNull();
   expect(f.cancel).not.toHaveBeenCalled();

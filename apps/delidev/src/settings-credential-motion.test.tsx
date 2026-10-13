@@ -85,7 +85,10 @@ function fixture(existing = false) {
       documentJson: encode(value),
     });
   const created = { id: newRequestId() };
-  const createdAccount = account(accountDocument({ health: "disconnected" }), 4n);
+  const createdAccount = account(
+    accountDocument({ health: "disconnected" }),
+    4n,
+  );
   const connected = account(
     accountDocument({
       health: "unverified",
@@ -303,13 +306,18 @@ it("plays a fresh Add account entrance for each opened task window and dismisses
     target: { value: syntheticSecret },
   });
   // Dismissal never waits for the in-flight entrance and leaves no secret behind.
-  fireEvent.click(screen.getByRole("button", { name: /^Close Add AI API key/ }));
+  fireEvent.click(
+    screen.getByRole("button", { name: /^Close Add AI API key/ }),
+  );
   expect(document.querySelector("dialog.settings-task-dialog")).toBeNull();
   expect(document.body.innerHTML).not.toContain(syntheticSecret);
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "Add AI API key" }) as HTMLButtonElement)
-        .disabled,
+      (
+        screen.getByRole("button", {
+          name: "Add AI API key",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false),
   );
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
@@ -317,7 +325,8 @@ it("plays a fresh Add account entrance for each opened task window and dismisses
   expect(second).not.toBe(first);
   expect(taskHeader().getAttribute("data-entrance")).toBe("y4");
   expect(
-    (screen.queryByLabelText("API key") as HTMLInputElement | null)?.value ?? "",
+    (screen.queryByLabelText("API key") as HTMLInputElement | null)?.value ??
+      "",
   ).toBe("");
 });
 
@@ -405,9 +414,7 @@ it("plays one entrance per opened manage connection and edit task window", async
   // Escape dismisses immediately; there is no exit animation.
   fireEvent(first, new Event("cancel", { cancelable: true }));
   expect(document.querySelector("dialog.settings-task-dialog")).toBeNull();
-  fireEvent.click(
-    within(row).getByRole("button", { name: /More actions/ }),
-  );
+  fireEvent.click(within(row).getByRole("button", { name: /More actions/ }));
   fireEvent.click(screen.getByRole("button", { name: "Edit preferences" }));
   expect(document.querySelector("dialog.settings-task-dialog")).not.toBe(first);
   expect(taskHeader().getAttribute("data-entrance")).toBe("y4");
