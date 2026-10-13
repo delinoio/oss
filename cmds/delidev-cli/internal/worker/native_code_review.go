@@ -357,6 +357,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			return err
 		}
 		usages := []domain.NativeResponseUsage{}
+		usageObservedAt := []time.Time{}
 		usageState := domain.NativeReviewReady
 		for count := 0; ; count++ {
 			if count >= domain.MaxExecutionEvents {
@@ -395,11 +396,15 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				if usageState != domain.NativeReviewEntered && usageState != domain.NativeReviewExited {
 					return publicationUncertain()
 				}
-				usageErr := publishObservation(&pb.PublishNativeCodeReviewRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(owner), ExpectedRevision: c.Assignment.Revision}, MachineId: string(input.Source.MachineID), InstanceId: string(c.Instance), State: rpc.NativeReviewStateWire(usageState), Selection: rpc.NativeReviewSelectionWire(selection), ThreadId: string(thread.Thread.ID), TurnId: string(turn.TurnID), Usage: rpc.NativeReviewUsageWire(*event.ResponseUsage, uint64(len(usages)+1), installation.Version)})
+				// Stamp the observation before the journal retains the exact request, so
+				// a delayed first publication keeps the original pricing instant.
+				observedAt := time.Now().UTC().Truncate(time.Millisecond)
+				usageErr := publishObservation(&pb.PublishNativeCodeReviewRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(owner), ExpectedRevision: c.Assignment.Revision}, MachineId: string(input.Source.MachineID), InstanceId: string(c.Instance), State: rpc.NativeReviewStateWire(usageState), Selection: rpc.NativeReviewSelectionWire(selection), ThreadId: string(thread.Thread.ID), TurnId: string(turn.TurnID), Usage: rpc.NativeReviewUsageWire(*event.ResponseUsage, uint64(len(usages)+1), installation.Version, observedAt)})
 				if usageErr != nil {
 					return usageErr
 				}
 				usages = append(usages, *event.ResponseUsage)
+				usageObservedAt = append(usageObservedAt, observedAt)
 			case codex.TurnCompletedEvent:
 				if event.Turn == nil || event.Turn.ID != turn.TurnID || event.Turn.Status != codex.TurnCompleted {
 					return publicationUncertain()
@@ -416,7 +421,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 					return subscription.Invalid()
 				}
 				for index, usage := range usages {
-					result.UsageRecords = append(result.UsageRecords, domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, Purpose: domain.NativeCodeReviewUsage, SessionID: input.Source.SessionID, ProjectID: domain.ID(c.Assignment.ProjectId), ExecutionID: input.ActionID, AccountID: input.Source.AccountID, ConnectionID: input.Source.ConnectionID, ProviderID: input.Source.Configuration.ProviderID, SubscriptionService: input.Source.Configuration.SubscriptionService, ModelID: input.Source.Configuration.ModelID, Harness: domain.Codex, Version: installation.Version, ThreadID: string(result.ThreadID), TurnID: string(result.TurnID), Sequence: uint64(index + 1), Usage: usage})
+					result.UsageRecords = append(result.UsageRecords, domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, Purpose: domain.NativeCodeReviewUsage, SessionID: input.Source.SessionID, ProjectID: domain.ID(c.Assignment.ProjectId), ExecutionID: input.ActionID, AccountID: input.Source.AccountID, ConnectionID: input.Source.ConnectionID, ProviderID: input.Source.Configuration.ProviderID, SubscriptionService: input.Source.Configuration.SubscriptionService, ModelID: input.Source.Configuration.ModelID, Harness: domain.Codex, Version: installation.Version, ThreadID: string(result.ThreadID), TurnID: string(result.TurnID), Sequence: uint64(index + 1), Usage: usage, ObservedAt: usageObservedAt[index]})
 				}
 				return nil
 			case codex.ToolStartedEvent, codex.ToolCompletedEvent:

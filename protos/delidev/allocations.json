@@ -14728,6 +14728,13 @@
       "declaration": "RequestDiagnostic",
       "member": "attribution",
       "number": 34
+    },
+    {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 3331,
+      "kind": "message",
+      "member": "observed_at_unix_ms",
+      "number": 12
     }
   ],
   "rpcReservations": [

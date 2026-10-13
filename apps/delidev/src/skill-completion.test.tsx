@@ -949,9 +949,10 @@ it("disabled-only retained rows never accept mouse, Enter or Tab; restored entri
   await client.invalidateQueries();
   const removed = await screen.findByRole("option", { name: /Unavailable/ });
   fireEvent.click(removed);
-  fireEvent.keyDown(input, { key: "Enter" });
-  fireEvent.keyDown(input, { key: "Tab" });
-  fireEvent.keyDown(input, { key: "ArrowDown" });
+  // fireEvent returns false when the dispatched event was default-prevented.
+  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+  expect(fireEvent.keyDown(input, { key: "ArrowDown" })).toBe(false);
   expect(input).toHaveProperty("value", "$a");
   expect(input.getAttribute("aria-activedescendant")).toBeNull();
   expect(send).not.toHaveBeenCalled();
@@ -966,7 +967,11 @@ it("disabled-only retained rows never accept mouse, Enter or Tab; restored entri
   current = [fresh];
   await client.invalidateQueries();
   await waitFor(() =>
-    expect(screen.getByRole("option").getAttribute("aria-disabled")).toBeNull(),
+    expect(
+      screen
+        .getAllByRole("option")
+        .filter((option) => option.getAttribute("aria-disabled") === null),
+    ).toHaveLength(1),
   );
   fireEvent.keyDown(input, { key: "Enter" });
   fireEvent.click(screen.getByText("Send"));
@@ -974,6 +979,246 @@ it("disabled-only retained rows never accept mouse, Enter or Tab; restored entri
     value: "$add-issue",
     skills: [fresh.selection],
   });
+});
+type FixtureEntry = (typeof entries)[number];
+// Models the server: every List call mints a new InventoryID and fresh SkillIDs.
+function generation(
+  list: readonly FixtureEntry[],
+  overrides: Partial<FixtureEntry["selection"]> = {},
+): FixtureEntry[] {
+  const inventoryId = newRequestId();
+  return list.map((entry) => ({
+    ...entry,
+    selection: {
+      ...entry.selection,
+      inventoryId,
+      skillId: newRequestId(),
+      ...overrides,
+    },
+  }));
+}
+function skillEntry(
+  name: string,
+  provenance = SkillProvenance.USER,
+  contentRevision = "a".repeat(64),
+): FixtureEntry {
+  return {
+    ...entries[0]!,
+    name,
+    description: `${name} fixture`,
+    provenance,
+    selection: {
+      ...entries[0]!.selection,
+      skillId: newRequestId(),
+      contentRevision,
+    },
+  };
+}
+function mutableFixture(initial: readonly FixtureEntry[]) {
+  const state = { current: [...initial], send: vi.fn() };
+  const client = new QueryClient();
+  const transport = createRouterTransport((router) =>
+    router.service(SkillService, {
+      listSkills: async () => ({ skills: state.current }),
+    }),
+  );
+  const view = (runner = machine) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <Composer runner={runner} send={state.send} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const refresh = async (next: readonly FixtureEntry[]) => {
+    state.current = [...next];
+    await client.invalidateQueries();
+  };
+  return { state, client, view, refresh };
+}
+function rowStates() {
+  return screen.getAllByRole("option").map((option) => ({
+    name: option.querySelector("strong")!.textContent,
+    unavailable: option.getAttribute("aria-disabled") === "true",
+  }));
+}
+async function expectRows(count: number) {
+  await waitFor(() =>
+    expect(screen.getAllByRole("option")).toHaveLength(count),
+  );
+}
+it("leaves plain Tab to native focus navigation when only unavailable rows remain", async () => {
+  const f = mutableFixture([entries[0]!]);
+  render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$a", selectionStart: 2 } });
+  await screen.findByRole("option");
+  await f.refresh([]);
+  await screen.findByRole("option", { name: /Unavailable/ });
+  const event = new KeyboardEvent("keydown", {
+    key: "Tab",
+    bubbles: true,
+    cancelable: true,
+  });
+  const stop = vi.spyOn(event, "stopPropagation");
+  act(() => {
+    input.dispatchEvent(event);
+  });
+  expect(event.defaultPrevented).toBe(false);
+  expect(stop).not.toHaveBeenCalled();
+  expect(input).toHaveProperty("value", "$a");
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(f.state.send).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Send"));
+  expect(f.state.send).toHaveBeenLastCalledWith({ value: "$a", skills: [] });
+  // Enter stays owned by the open panel and still accepts nothing.
+  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+  expect(input).toHaveProperty("value", "$a");
+});
+it("still accepts the selected enabled row once with plain Tab and ignores modified Tab", async () => {
+  const f = mutableFixture([skillEntry("add-issue"), skillEntry("add-note")]);
+  render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } });
+  await screen.findAllByRole("option");
+  expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(true);
+  expect(fireEvent.keyDown(input, { key: "Tab", ctrlKey: true })).toBe(true);
+  expect(fireEvent.keyDown(input, { key: "Tab", metaKey: true })).toBe(true);
+  expect(input).toHaveProperty("value", "$add");
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+  expect(input).toHaveProperty("value", "$add-issue");
+  expect(screen.queryByRole("listbox")).toBeNull();
+  // The panel is dismissed after acceptance, so a second Tab is not intercepted.
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+  expect(f.state.send).not.toHaveBeenCalled();
+});
+it("keeps intercepting plain Tab for mixed rows and accepts only the enabled one", async () => {
+  const f = mutableFixture([skillEntry("add-issue"), skillEntry("add-note")]);
+  render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } });
+  await screen.findAllByRole("option");
+  await f.refresh([f.state.current[1]!]);
+  await screen.findByRole("option", { name: /add-issue.*Unavailable/ });
+  expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+  expect(input).toHaveProperty("value", "$add-note");
+});
+it("does not leave one unavailable duplicate per refresh of unchanged skills", async () => {
+  const f = mutableFixture(generation(entries));
+  render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } });
+  await screen.findAllByRole("option");
+  let latest = f.state.current;
+  for (let round = 0; round < 3; round += 1) {
+    latest = generation(latest);
+    await f.refresh(latest);
+    await expectRows(2);
+    expect(rowStates()).toEqual([
+      { name: "add-issue", unavailable: false },
+      { name: "add-note", unavailable: false },
+    ]);
+  }
+  // Acceptance binds the latest opaque selection, not an older generation's.
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(screen.getByText("Send"));
+  expect(f.state.send).toHaveBeenLastCalledWith({
+    value: "$add-issue",
+    skills: [latest[0]!.selection],
+  });
+});
+it("keeps a changed-content row unavailable beside its available replacement until dismissal", async () => {
+  const f = mutableFixture(generation(entries));
+  render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, {
+    target: { value: "$add-issue", selectionStart: 10 },
+  });
+  await screen.findByRole("option");
+  const next = generation([entries[0]!], { contentRevision: "b".repeat(64) });
+  await f.refresh(next);
+  await expectRows(2);
+  expect(rowStates()).toEqual([
+    { name: "add-issue", unavailable: false },
+    { name: "add-issue", unavailable: true },
+  ]);
+  const [fresh, stale] = screen.getAllByRole("option");
+  fireEvent.click(stale!);
+  expect(input).toHaveProperty("value", "$add-issue");
+  fireEvent.click(fresh!);
+  fireEvent.click(screen.getByText("Send"));
+  expect(f.state.send).toHaveBeenLastCalledWith({
+    value: "$add-issue",
+    skills: [next[0]!.selection],
+  });
+  // Dismissal discards the old-content row; reopening shows only the live row.
+  fireEvent.change(input, { target: { value: "$add-i", selectionStart: 6 } });
+  await expectRows(1);
+  expect(rowStates()).toEqual([{ name: "add-issue", unavailable: false }]);
+});
+it("matches identical fingerprints by count and keeps differing provenance or content distinct", async () => {
+  const dup = skillEntry("dup"),
+    twin = {
+      ...dup,
+      selection: { ...dup.selection, skillId: newRequestId() },
+    },
+    user = skillEntry("same", SkillProvenance.USER),
+    project = skillEntry("same", SkillProvenance.PROJECT),
+    revised = skillEntry("same", SkillProvenance.USER, "c".repeat(64));
+  const f = mutableFixture(generation([dup, twin, user, project, revised]));
+  render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$", selectionStart: 1 } });
+  await expectRows(5);
+  expect(rowStates().some((row) => row.unavailable)).toBe(false);
+  // An unchanged refresh with fresh IDs still has exactly one row per entry.
+  await f.refresh(generation(f.state.current));
+  await expectRows(5);
+  expect(rowStates().some((row) => row.unavailable)).toBe(false);
+  // Two indistinguishable duplicates become one: exactly one unavailable row.
+  await f.refresh(
+    generation(f.state.current.filter((_, index) => index !== 1)),
+  );
+  await expectRows(5);
+  expect(rowStates().filter((row) => row.unavailable)).toEqual([
+    { name: "dup", unavailable: true },
+  ]);
+  // The unavailable row stays single across further unchanged refreshes.
+  await f.refresh(generation(f.state.current));
+  await expectRows(5);
+  expect(rowStates().filter((row) => row.unavailable)).toHaveLength(1);
+  // Dropping one provenance variant retains only that variant as unavailable.
+  await f.refresh(
+    generation(
+      f.state.current.filter(
+        (entry) => entry.provenance !== SkillProvenance.PROJECT,
+      ),
+    ),
+  );
+  await expectRows(5);
+  expect(rowStates().filter((row) => row.unavailable)).toHaveLength(2);
+});
+it("caps retained rows at 256 with live rows first and clears them on scope replacement", async () => {
+  const old = Array.from({ length: 200 }, (_, index) =>
+    skillEntry(`old-${index}`),
+  );
+  const f = mutableFixture(generation(old));
+  const view = render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$", selectionStart: 1 } });
+  await expectRows(200);
+  await f.refresh(
+    generation(
+      Array.from({ length: 100 }, (_, index) => skillEntry(`new-${index}`)),
+    ),
+  );
+  await expectRows(256);
+  const states = rowStates();
+  expect(states.filter((row) => !row.unavailable)).toHaveLength(100);
+  expect(states.filter((row) => row.unavailable)).toHaveLength(156);
+  // Scope replacement retires every retained unavailable row.
+  view.rerender(f.view(newRequestId()));
+  await expectRows(100);
+  expect(rowStates().some((row) => row.unavailable)).toBe(false);
 });
 it("observes history-like tokens while dismissed, and does not claim absence from incomplete inventory", async () => {
   let current = [

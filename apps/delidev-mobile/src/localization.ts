@@ -147,6 +147,10 @@ export const en = {
   noChoices:
     "No eligible saved choices. Configure projects, Agents and Runners in the desktop client.",
   inspectNote: "Inspecting never retries a request or resumes execution.",
+  steerTargetMissing:
+    "The original queued input is no longer available. Your original request is retained and cannot be retried from here.",
+  steerTargetChanged:
+    "The original queued input changed after this request was prepared. Your original request is retained and cannot be retried from here.",
   queue: "Queued messages",
   choose: "Choose",
   sessionGone: "The original session is unavailable.",
@@ -320,6 +324,10 @@ export const ko: Record<keyof typeof en, string> = {
   noChoices:
     "사용 가능한 저장된 항목이 없습니다. 데스크톱에서 프로젝트, Agent, Runner를 설정하세요.",
   inspectNote: "확인은 요청을 재시도하거나 실행을 재개하지 않습니다.",
+  steerTargetMissing:
+    "원래 대기 중인 입력을 더 이상 사용할 수 없습니다. 원래 요청은 보존되며 여기서 재시도할 수 없습니다.",
+  steerTargetChanged:
+    "이 요청을 준비한 뒤 원래 대기 중인 입력이 변경되었습니다. 원래 요청은 보존되며 여기서 재시도할 수 없습니다.",
   queue: "대기 메시지",
   choose: "선택",
   sessionGone: "원래 세션을 사용할 수 없습니다.",

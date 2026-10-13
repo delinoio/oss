@@ -618,7 +618,40 @@ The desktop remote-image CSP is unchanged.
 The shared per-profile read owner serializes foreground reads and bounded queued
 background work while retaining eight active global inspections. Foreground
 selection/tab work displaces and joins a running enrichment owner and precedes
-queued background work. Interrupted enrichment requires explicit retry. Original
-post-read authorization, repository revision, profile generation, cancellation,
-response limits and safe structured logs remain authoritative. Fixtures and CI
-builds do not establish real-account or packaged native acceptance.
+queued background work. Original post-read authorization, repository revision,
+profile generation, cancellation, response limits and safe structured logs remain
+authoritative. Fixtures and CI builds do not establish real-account or packaged
+native acceptance.
+
+`GetPullRequestWorkspace` keeps its original RPC pending and automatically resumes
+a workspace read that foreground work displaced. Only scheduler displacement sets
+the internal typed cancellation cause `errForegroundPreempted`; it is never set by
+parent cancellation, shutdown, profile cleanup, deadlines or provider failures,
+and avatar/commit/detail reads are never resumed. The interrupted attempt first
+finishes completely (token cleared, completion signal closed). The foreground
+read then runs and releases the profile before the resumed attempt is admitted
+behind every pending same-profile foreground read, so exactly one read owns the
+profile at a time. Each resumed attempt reauthorizes the original actor and
+verifies the original repository revision, profile and token generation before
+reading; any change, revocation, shutdown, parent cancellation, provider
+failure, malformed observation or exhausted limit terminates the request without
+replay or stale publication. A resumed attempt restarts the complete observation
+from the original seeds; partial graph and avatar observations of interrupted
+attempts are discarded and never merged, and only the final fresh observation is
+published.
+
+Limits are shared by all attempts of one request: the 35-second queue bound
+applies to first admission, the 35-second active deadline is frozen at first
+activation (resumed queue waits and attempts end by it and by the caller deadline),
+the adapter's 30-second deadline is frozen at the first provider attempt, and one
+cumulative 40-provider-read budget (three initial reads per attempt plus page
+reads, including those of interrupted attempts) covers the request. An attempt
+that cannot afford its initial reads fails with `resource_exhausted` instead of
+starting. The 64-queued-per-profile, eight-global-active, one-active-per-profile
+and 100-node/depth-20 graph limits are unchanged; a resumed attempt that meets
+one of them terminates the request. No public RPC, schema, capability or
+persistent data is added. Content-free structured logs record
+`repository_integration_read_preempted`, `pull_request_workspace_requeued`,
+`pull_request_workspace_resumed` and `pull_request_workspace_finished`, each with
+the original `correlation_id` and `attempt_count` (the final log also carries
+`outcome` and `error_code`).
