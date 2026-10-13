@@ -436,3 +436,65 @@ func TestOpenCodeAccountingGoSelectionStillFailsClosedOnSelectedCorruption(t *te
 		})
 	}
 }
+
+// A selected Go unit whose JSON identity is corrupted must stay in the
+// validation path even though the service predicate no longer matches it.
+func TestOpenCodeAccountingGoSelectionFailsClosedOnCorruptedServiceIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, statement string
+	}{
+		{"service removed", `UPDATE native_accounting SET body=json_remove(body,'$.opencode.subscription_service') WHERE source_id=?`},
+		{"service empty", `UPDATE native_accounting SET body=json_set(body,'$.opencode.subscription_service','') WHERE source_id=?`},
+		{"foreign service", `UPDATE native_accounting SET body=json_set(body,'$.opencode.subscription_service','chatgpt') WHERE source_id=?`},
+		{"discriminator not an object", `UPDATE native_accounting SET body=json_set(body,'$.opencode','corrupt') WHERE source_id=?`},
+		{"discriminator removed", `UPDATE native_accounting SET body=json_remove(body,'$.opencode') WHERE source_id=?`},
+		{"malformed body", `UPDATE native_accounting SET body=CAST('{' AS BLOB) WHERE source_id=?`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := openTest(t)
+			r, _, input := nativeAccountingFixture(t, s)
+			// A valid excluded API row must not mask or replace the corrupted Go row.
+			if _, err := retainOpenCodeAccounting(s, domain.NewID(), domain.NewID(), input, r, openCodeAccountingRecord(r), false); err != nil {
+				t.Fatal(err)
+			}
+			goRecord := goAccountingSource(r)
+			source := domain.NewID()
+			if _, err := retainOpenCodeAccounting(s, domain.NewID(), source, input, goRecord, openCodeAccountingRecord(goRecord), false); err != nil {
+				t.Fatal(err)
+			}
+			if v, err := readUsage(s, goOnlySelection(true)); err != nil {
+				t.Fatal("valid Go history was rejected before corruption", err)
+			} else {
+				requireOnlyGoUnit(t, v, goRecord.ModelID, 0)
+			}
+			if _, err := s.db.Exec(tc.statement, source); err != nil {
+				t.Fatal(err)
+			}
+			for _, daily := range []bool{true, false} {
+				v, err := readUsage(s, goOnlySelection(daily))
+				if domain.SafeError(err).Code != domain.RecoveryRequired || !reflect.DeepEqual(v, domain.UsageSummary{}) {
+					t.Fatal("corrupted selected Go row was silently dropped", tc.name, daily, err)
+				}
+			}
+		})
+	}
+}
+
+// Valid Go and API rows stay excluded by a different valid service selection.
+func TestOpenCodeAccountingForeignServiceSelectionExcludesValidRows(t *testing.T) {
+	s, _ := openTest(t)
+	r, _, input := nativeAccountingFixture(t, s)
+	if _, err := retainOpenCodeAccounting(s, domain.NewID(), domain.NewID(), input, r, openCodeAccountingRecord(r), false); err != nil {
+		t.Fatal(err)
+	}
+	goRecord := goAccountingSource(r)
+	if _, err := retainOpenCodeAccounting(s, domain.NewID(), domain.NewID(), input, goRecord, openCodeAccountingRecord(goRecord), false); err != nil {
+		t.Fatal(err)
+	}
+	selection := goOnlySelection(true)
+	selection.SubscriptionService = domain.SubscriptionChatGPT
+	v, err := readUsage(s, selection)
+	if err != nil || len(v.NativeAccounting) != 2 || v.NativeAccounting[1].Totals.Units != 0 || len(v.NativeAccounting[1].Groups) != 0 {
+		t.Fatal("valid rows of other services were not excluded", err)
+	}
+}
