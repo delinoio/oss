@@ -2200,7 +2200,13 @@ function repositoryNameConflict() {
 }
 const repositoryNameMessage =
   "A repository with this name already exists. Choose another name.";
-function ReopenableRepositoryEditor({ initial }: { initial: Resource }) {
+function ReopenableRepositoryEditor({
+  initial,
+  saved = () => {},
+}: {
+  initial: Resource;
+  saved?: () => void;
+}) {
   const [open, setOpen] = useState(true);
   return (
     <>
@@ -2210,10 +2216,34 @@ function ReopenableRepositoryEditor({ initial }: { initial: Resource }) {
           kind={EntityKind.REPOSITORY}
           initial={initial}
           active
-          saved={() => {}}
+          saved={saved}
           cancel={() => {}}
         />
       ) : null}
+    </>
+  );
+}
+function SwitchableRepositoryEditor({
+  repositories,
+}: {
+  repositories: Resource[];
+}) {
+  const [index, setIndex] = useState(0);
+  return (
+    <>
+      {repositories.map((_, position) => (
+        <button key={position} onClick={() => setIndex(position)}>
+          {`Show repository ${position}`}
+        </button>
+      ))}
+      <ConfigurationEditor
+        key={repositories[index].id}
+        kind={EntityKind.REPOSITORY}
+        initial={repositories[index]}
+        active
+        saved={() => {}}
+        cancel={() => {}}
+      />
     </>
   );
 }
@@ -2324,7 +2354,9 @@ describe("reopened repository editors", () => {
     expect(retried.documentJson).toEqual(original.documentJson);
   });
 
-  it("keeps an accepted job owned by the connection when an editor reopens", async () => {
+  const acceptedHint =
+    "Accepted by the server. Waiting for the selected Worker to finish.";
+  function acceptedJobFixture() {
     const repository = saved();
     const job = resource(EntityKind.JOB, {
       type: "save-repository",
@@ -2335,25 +2367,204 @@ describe("reopened repository editors", () => {
       job,
       requestId: input(request).mutation.requestId,
     }));
+    const settle = async (document: Document) => {
+      value.resources[1] = create(ResourceSchema, {
+        ...job,
+        revision: 2n,
+        documentJson: encode({ type: "save-repository", ...document }),
+      });
+      await act(async () => {
+        await value.client.invalidateQueries();
+      });
+    };
+    const mount = (onSaved?: () => void) =>
+      render(
+        <NotificationProvider>
+          {value.view(
+            <SettingsLifetime>
+              {() => (
+                <ReopenableRepositoryEditor
+                  initial={repository}
+                  saved={onSaved}
+                />
+              )}
+            </SettingsLifetime>,
+          )}
+        </NotificationProvider>,
+      );
+    return { repository, job, value, settle, mount };
+  }
+  const collision = {
+    state: "failed",
+    problem: {
+      code: "conflict",
+      cause: "configuration_name_conflict",
+      message: "Collision",
+    },
+  };
+
+  it("keeps an accepted job owned by the connection when an editor reopens", async () => {
+    const { value, mount } = acceptedJobFixture();
+    mount();
+    await renameRepository("Beta");
+    await screen.findByText(acceptedHint);
+    reopen();
+    // The original job stays authoritative: no draft form and no new write.
+    await screen.findByText(acceptedHint);
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    expect(screen.queryByText(repositoryNameMessage)).toBeNull();
+    expect(value.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a deferred collision to the restored draft after the editor reopened while pending", async () => {
+    const { value, settle, mount } = acceptedJobFixture();
+    mount();
+    await renameRepository(" Beta ");
+    await screen.findByText(acceptedHint);
+    reopen();
+    await screen.findByText(acceptedHint);
+    await settle(collision);
+    const field = (await screen.findByRole("textbox", {
+      name: "Name",
+    })) as HTMLInputElement;
+    expect(field.value).toBe(" Beta ");
+    await screen.findByText(repositoryNameMessage);
+    expect(value.save).toHaveBeenCalledTimes(1);
+    // The released draft is editable and the correction is a new save.
+    fireEvent.change(field, { target: { value: "Gamma" } });
+    expect(screen.queryByText(repositoryNameMessage)).toBeNull();
+    const save = screen.getByRole("button", {
+      name: "Save Repository",
+    }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+    const corrected = input(value.save.mock.calls[1][0]);
+    expect(
+      JSON.parse(new TextDecoder().decode(corrected.documentJson)).name,
+    ).toBe("Gamma");
+  });
+
+  it("restores the draft when the collision settled while no editor was mounted", async () => {
+    const { value, settle, mount } = acceptedJobFixture();
+    mount();
+    await renameRepository(" Beta ");
+    await screen.findByText(acceptedHint);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle editor" }));
+    expect(screen.queryByText(acceptedHint)).toBeNull();
+    await settle(collision);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle editor" }));
+    const field = (await screen.findByRole("textbox", {
+      name: "Name",
+    })) as HTMLInputElement;
+    await screen.findByText(repositoryNameMessage);
+    expect(field.value).toBe(" Beta ");
+    expect(value.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a fresh read before a restored successful job completes", async () => {
+    const { repository, job, value, settle, mount } = acceptedJobFixture();
+    const onSaved = vi.fn();
+    mount(onSaved);
+    await renameRepository("Beta");
+    await screen.findByText(acceptedHint);
+    reopen();
+    await screen.findByText(acceptedHint);
+    value.resources[0] = create(ResourceSchema, {
+      ...repository,
+      revision: 2n,
+    });
+    await settle({
+      state: "succeeded",
+      output: { id: repository.id, revision: 2 },
+    });
+    expect(await screen.findByText("Repository saved.")).toBeTruthy();
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(value.save).toHaveBeenCalledTimes(1);
+    expect(job.id).toBeTruthy();
+  });
+
+  it("keeps the review path for a generic failure of a restored job", async () => {
+    const { value, settle, mount } = acceptedJobFixture();
+    mount();
+    await renameRepository(" Beta ");
+    await screen.findByText(acceptedHint);
+    reopen();
+    await screen.findByText(acceptedHint);
+    await settle({ state: "failed" });
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Read and review repository settings",
+      }),
+    );
+    const field = (await screen.findByRole("textbox", {
+      name: "Name",
+    })) as HTMLInputElement;
+    expect(field.value).toBe(" Beta ");
+    expect(screen.queryByText(repositoryNameMessage)).toBeNull();
+    expect(value.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the submitted draft for an uncertain save and retries the original request", async () => {
+    const repository = saved();
+    const value = fixture([repository]);
+    value.save.mockRejectedValueOnce(
+      new ConnectError("Original unavailable save", Code.Unavailable),
+    );
     render(
       <NotificationProvider>
         {value.view(<ReopenableRepositoryEditor initial={repository} />)}
       </NotificationProvider>,
     );
-    await renameRepository("Beta");
-    await screen.findByText(
-      "Accepted by the server. Waiting for the selected Worker to finish.",
-    );
+    await renameRepository(" Beta ");
+    await screen.findByRole("button", {
+      name: "Retry the same configuration",
+    });
     reopen();
-    await screen.findByRole("textbox", { name: "Name" });
-    expect(screen.queryByText(repositoryNameMessage)).toBeNull();
-    expect(
-      (
-        screen.getByRole("button", {
-          name: /Save Repository/,
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+    const field = (await screen.findByRole("textbox", {
+      name: "Name",
+    })) as HTMLInputElement;
+    expect(field.value).toBe(" Beta ");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry the same configuration" }),
+    );
+    await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not hand a retained save to another repository", async () => {
+    const first = saved();
+    const second = resource(EntityKind.REPOSITORY, {
+      name: "Second",
+      remote_url: "https://github.com/fixture/second.git",
+    });
+    const { job, value } = (() => {
+      const queued = resource(EntityKind.JOB, {
+        type: "save-repository",
+        state: "queued",
+      });
+      const fixed = fixture([first, second, queued]);
+      fixed.save.mockImplementation(async (request) => ({
+        job: queued,
+        requestId: input(request).mutation.requestId,
+      }));
+      return { job: queued, value: fixed };
+    })();
+    render(
+      <NotificationProvider>
+        {value.view(
+          <SwitchableRepositoryEditor repositories={[first, second]} />,
+        )}
+      </NotificationProvider>,
+    );
+    await renameRepository("Beta");
+    await screen.findByText(acceptedHint);
+    fireEvent.click(screen.getByRole("button", { name: "Show repository 1" }));
+    const field = (await screen.findByRole("textbox", {
+      name: "Name",
+    })) as HTMLInputElement;
+    expect(field.value).toBe("Second");
+    expect(screen.queryByText(acceptedHint)).toBeNull();
+    expect(job.id).toBeTruthy();
     expect(value.save).toHaveBeenCalledTimes(1);
   });
 });
