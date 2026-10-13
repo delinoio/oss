@@ -3,7 +3,12 @@ import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useLayoutEffect, useRef } from "react";
 import { copy } from "./localization";
 import { Comparison } from "./session-diff-model";
-import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
+import {
+  SessionTabKind,
+  sessionTabKey,
+  useSessionTabsStore,
+  type SessionTab,
+} from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
 export function tabName(tab: SessionTab): string {
   switch (tab.kind) {
@@ -14,7 +19,8 @@ export function tabName(tab: SessionTab): string {
     case SessionTabKind.Comparison:
       return `${copy("session.diff_7ecf46")} · ${tab.path} · ${copy(tab.comparison === Comparison.Creation ? "session-diff.workingTreeAgainstCreationCommit_3102e8" : tab.comparison === Comparison.Staged ? "session-diff.stagedChangesAgainstCurrentHead_9974f1" : "session-diff.workingTreeAgainstCurrentHead_f0fac9")}`;
     case SessionTabKind.Terminal:
-      return copy("session.terminals_7482c4");
+      // The tab bar labels terminals by their Session presentation number.
+      return copy("product-identity.terminal");
     case SessionTabKind.Page:
       return tab.title;
     case SessionTabKind.PendingSidechat:
@@ -24,8 +30,6 @@ export function tabName(tab: SessionTab): string {
       return copy("session.files_abc7e9");
     case SessionTabKind.Diff:
       return copy("session.diff_7ecf46");
-    case SessionTabKind.Terminals:
-      return copy("session.terminals_7482c4");
     case SessionTabKind.Browser:
       return copy("session.browser_d31de1");
     case SessionTabKind.Diagnostics:
@@ -48,6 +52,7 @@ export function SessionTabBar({
   id: string;
 }) {
   const productLabel = useProductLabels();
+  const terminals = useSessionTabsStore().terminalPresentation(id);
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     root.current
@@ -65,7 +70,9 @@ export function SessionTabBar({
         const key = sessionTabKey(tab),
           name =
             tab.kind === SessionTabKind.Terminal
-              ? productLabel(PresentationKind.Terminal, tab.id)
+              ? copy("session-terminals.terminalNumber", {
+                  number: terminals.number(tab.id),
+                })
               : tabName(tab);
         return (
           <div

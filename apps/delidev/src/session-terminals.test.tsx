@@ -28,6 +28,7 @@ import { encode } from "./documents";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTabsProvider, useSessionTabsStore } from "./session-tabs";
 import { SessionTerminals } from "./session-terminals";
+import { ShortcutProvider } from "./shortcut-provider";
 
 // Component tests use a text fixture; real Ghostty parser/CSP acceptance runs in
 // the external Chrome fixture. This adapter exercises input ownership only.
@@ -35,14 +36,31 @@ vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (
     host: HTMLElement,
     input: (bytes: Uint8Array) => void,
+    _resized: unknown,
+    _unavailable: unknown,
+    tabShortcut?: (event: KeyboardEvent) => boolean,
   ) => {
     const output = document.createElement("pre"),
       field = document.createElement("textarea");
     field.setAttribute("aria-label", "Terminal input");
     field.disabled = true;
+    // Mirror the real adapter: the shortcut owner runs before PTY delivery.
+    host.addEventListener(
+      "keydown",
+      (event) => {
+        if (tabShortcut?.(event)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+      },
+      true,
+    );
     field.addEventListener("keydown", (event) => {
       if (!field.disabled && event.key === "Enter")
         input(new TextEncoder().encode(field.value + "\r"));
+      // An unconsumed modifier chord would reach the PTY as bytes.
+      else if (!field.disabled && (event.ctrlKey || event.metaKey))
+        input(new TextEncoder().encode(event.key));
     });
     host.append(output, field);
     let decoder = new TextDecoder();
@@ -239,7 +257,7 @@ it("focuses the attached terminal input and sends exact UTF-8 and native resize 
     </QueryClientProvider>,
   );
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
     const input = await screen.findByRole("textbox", {
       name: "Terminal input",
     });
@@ -344,7 +362,7 @@ it("attaches to the accepted creation beyond the first full history page", async
     </QueryClientProvider>,
   );
   try {
-    await screen.findByRole("tab", { name: /Terminal · 50/ });
+    await screen.findByRole("tab", { name: /Terminal 50/ });
     await waitFor(() =>
       expect(
         (
@@ -384,7 +402,7 @@ it("attaches to the accepted creation beyond the first full history page", async
   }
 });
 
-it("gates initial reads, polling and manual refresh on advertised terminal support", async () => {
+it("gates initial reads and polling on advertised terminal support", async () => {
   const session = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.SESSION,
@@ -426,19 +444,14 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
     });
   try {
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "Details" }));
-    const refresh = screen.getByRole("button", {
-      name: "Refresh terminals",
-    }) as HTMLButtonElement;
-    expect(refresh.disabled).toBe(true);
-    fireEvent.click(refresh);
+    expect(
+      screen.queryByRole("button", { name: "Refresh terminals" }),
+    ).toBeNull();
     await waitForPoll();
     expect(listResources).not.toHaveBeenCalled();
     statusPending = false;
     await act(async () => release({ capabilities: [] }));
     await waitForPoll();
-    expect(refresh.disabled).toBe(true);
-    fireEvent.click(refresh);
     expect(listResources).not.toHaveBeenCalled();
     expect(
       screen.getByText("Waiting for a server that supports session terminals."),
@@ -448,9 +461,6 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
       await client.invalidateQueries();
     });
     await waitFor(() => expect(listResources).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(refresh.disabled).toBe(false));
-    fireEvent.click(refresh);
-    await waitFor(() => expect(listResources).toHaveBeenCalledTimes(2));
     capabilities = [];
     // Refresh only status to avoid requesting one more supported history page.
     await act(async () => {
@@ -465,10 +475,15 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
           ),
       });
     });
-    await waitFor(() => expect(refresh.disabled).toBe(true));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Waiting for a server that supports session terminals.",
+        ),
+      ).toBeTruthy(),
+    );
     const calls = listResources.mock.calls.length;
     await waitForPoll();
-    fireEvent.click(refresh);
     expect(listResources).toHaveBeenCalledTimes(calls);
   } finally {
     release({ capabilities: [] });
@@ -540,7 +555,7 @@ it("keeps terminal input enabled while one control is pending and never steals f
     </QueryClientProvider>,
   );
   try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
     const input = (await screen.findByRole("textbox", {
       name: "Terminal input",
     })) as HTMLTextAreaElement;
@@ -550,7 +565,7 @@ it("keeps terminal input enabled while one control is pending and never steals f
     await waitFor(() => expect(controlTerminal).toHaveBeenCalledTimes(1));
     expect(input.disabled).toBe(false);
     // jsdom retains disabled focus; model the browser's focus loss explicitly.
-    const columns = screen.getByRole("button", { name: "Details" });
+    const columns = screen.getByRole("button", { name: "Create terminal" });
     columns.focus();
     expect(document.activeElement).not.toBe(input);
     await act(async () => acknowledge());
@@ -633,7 +648,7 @@ it("preserves the explicitly attached terminal and its draft after its history p
       </QueryClientProvider>
     </TransportProvider>,
   );
-  fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
+  fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
   await screen.findByText("Original attached output");
   const input = screen.getByRole("textbox", { name: "Terminal input" });
   fireEvent.change(input, { target: { value: "Retained terminal draft" } });
@@ -642,16 +657,16 @@ it("preserves the explicitly attached terminal and its draft after its history p
       screen.getByRole("button", { name: "Load more Terminal history pages" }),
     );
     await screen.findByRole("tab", {
-      name: new RegExp(`Terminal · ${index}`),
+      name: new RegExp(`Terminal ${index}`),
     });
   }
-  expect(screen.getByRole("tab", { name: /Terminal · 1/ })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: /Terminal 1/ })).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Terminal input" })).toBe(input);
   expect(input).toHaveProperty("value", "Retained terminal draft");
   expect(watch).toHaveBeenCalledTimes(1);
 });
 
-it("keeps failed terminal capability reads distinct from missing support and preserves the shell draft", async () => {
+it("keeps failed terminal capability reads distinct from missing support", async () => {
   const session = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.SESSION,
@@ -682,9 +697,6 @@ it("keeps failed terminal capability reads distinct from missing support and pre
       </TransportProvider>
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Details" }));
-  const shell = screen.getByRole("textbox");
-  fireEvent.change(shell, { target: { value: "/original/shell" } });
   const retry = await screen.findByRole("button", {
     name: "Retry terminal capability read",
   });
@@ -692,7 +704,6 @@ it("keeps failed terminal capability reads distinct from missing support and pre
   expect(createTerminal).not.toHaveBeenCalled();
   fireEvent.click(retry);
   await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
-  expect(shell).toHaveProperty("value", "/original/shell");
   expect(createTerminal).not.toHaveBeenCalled();
 });
 
@@ -767,7 +778,7 @@ it("retains exact uncertain input across dock hiding and never closes or creates
     </QueryClientProvider>
   );
   const view = render(fixture(true));
-  fireEvent.click(await screen.findByRole("tab", { name: /Terminal · 1/ }));
+  fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
   const input = await screen.findByRole("textbox", { name: "Terminal input" });
   await waitFor(() => expect(input).toHaveProperty("disabled", false));
   fireEvent.change(input, { target: { value: "€original" } });
@@ -840,8 +851,8 @@ it("keeps every existing terminal picker keyboard reachable in the single-pane w
       </TransportProvider>
     </QueryClientProvider>,
   );
-  const first = await screen.findByRole("button", { name: /Terminal · 1/ }),
-    second = screen.getByRole("button", { name: /Terminal · 2/ });
+  const first = await screen.findByRole("button", { name: /Terminal 1/ }),
+    second = screen.getByRole("button", { name: /Terminal 2/ });
   expect(first.tabIndex).toBe(0);
   expect(second.tabIndex).toBe(0);
   first.focus();
@@ -1151,7 +1162,7 @@ it("reopens the last content-tab selection instead of the first inventory termin
     </QueryClientProvider>,
   );
   try {
-    await screen.findByRole("button", { name: /Terminal · 2/ });
+    await screen.findByRole("button", { name: /Terminal 2/ });
     fireEvent.click(
       screen.getByRole("button", { name: "Select second content tab" }),
     );
@@ -1534,7 +1545,7 @@ it("selects only the atomically admitted replacement after a listed terminal ret
     </QueryClientProvider>,
   );
   try {
-    await screen.findByRole("button", { name: /Terminal · 1/ });
+    await screen.findByRole("button", { name: /Terminal 1/ });
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
     expect(opened).not.toHaveBeenCalledWith(stale.id);
@@ -1546,5 +1557,255 @@ it("selects only the atomically admitted replacement after a listed terminal ret
   } finally {
     view.unmount();
     client.clear();
+  }
+});
+
+function creationFixture(archive = "active") {
+  const session = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 7n,
+    documentJson: encode({ archive }),
+  });
+  const terminal = (state = "running") =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.TERMINAL,
+      sessionId: session.id,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({
+        state,
+        machine_id: newRequestId(),
+        shell: "/private/shell",
+        cwd: "/private/cwd",
+      }),
+    });
+  const listed = terminal(),
+    created = [terminal(), terminal()];
+  const known = new Map([listed, ...created].map((row) => [row.id, row]));
+  let gate: Promise<void> | undefined;
+  const createTerminal = vi.fn(async (_request: unknown) => {
+    await gate;
+    return { terminal: created[createTerminal.mock.calls.length - 1] };
+  });
+  const controlTerminal = vi.fn(async (_request: unknown) => ({
+    terminal: listed,
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [listed] }),
+    });
+    router.service(TerminalService, {
+      createTerminal,
+      controlTerminal,
+      watchTerminalOutput: async function* (request, context) {
+        yield {
+          epoch: newRequestId(),
+          sequence: 0n,
+          heartbeat: true,
+          terminal: known.get(request.terminalId),
+        };
+        await new Promise<void>((resolve) =>
+          context.signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          }),
+        );
+      },
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <MutationIntents>
+          <SessionTabsProvider>
+            <ShortcutProvider>
+              <SessionTerminals session={session} close={() => {}} />
+            </ShortcutProvider>
+          </SessionTabsProvider>
+        </MutationIntents>
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  return {
+    session,
+    listed,
+    created,
+    createTerminal,
+    controlTerminal,
+    hold(value: Promise<void>) {
+      gate = value;
+    },
+    cleanup() {
+      view.unmount();
+      client.clear();
+    },
+  };
+}
+const primaryT = { key: "t", code: "KeyT", ctrlKey: true } as const;
+
+it("keeps only the Terminals heading and + button in the terminal panel", async () => {
+  const f = creationFixture();
+  try {
+    fireEvent.click(await screen.findByRole("tab", { name: /^Terminal 1/ }));
+    await screen.findByRole("textbox", { name: "Terminal input" });
+    const header = document.querySelector(".terminal-dock-header")!;
+    // The standalone dock also owns its resize control; the tabbed Session
+    // workspace renders exactly the heading and +.
+    expect(
+      [...header.children].map((node) => node.textContent?.trim()),
+    ).toEqual(["Terminals", "+", "Restore terminal dock"]);
+    for (const name of [
+      "Details",
+      "Hide terminals",
+      "Refresh terminals",
+      "Close terminal",
+    ])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByLabelText("Worker shell override")).toBeNull();
+    expect(screen.queryByText(/Worker\b/)).toBeNull();
+    expect(screen.queryByText(/\/private\/(shell|cwd)/)).toBeNull();
+    expect(screen.queryByText(/Process cleanup/)).toBeNull();
+    expect(f.createTerminal).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("shares default-shell additional creation between + and terminal-focused primary+T", async () => {
+  const f = creationFixture();
+  try {
+    fireEvent.click(await screen.findByRole("tab", { name: /^Terminal 1/ }));
+    const first = await screen.findByRole("textbox", {
+      name: "Terminal input",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    // The + button selects and focuses the returned terminal.
+    fireEvent.click(screen.getByRole("button", { name: "Create terminal" }));
+    await waitFor(() => expect(f.createTerminal).toHaveBeenCalledTimes(1));
+    const second = await waitFor(() => {
+      const field = screen.getByRole("textbox", { name: "Terminal input" });
+      expect(field).not.toBe(first);
+      return field;
+    });
+    await waitFor(() => expect(document.activeElement).toBe(second));
+    expect(
+      screen
+        .getByRole("tab", { name: /^Terminal 2/ })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    // The accepted chord creates through the same callback and sends no PTY bytes.
+    expect(fireEvent.keyDown(second, primaryT)).toBe(false);
+    await waitFor(() => expect(f.createTerminal).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("tab", { name: /^Terminal 3/ })
+          .getAttribute("aria-selected"),
+      ).toBe("true"),
+    );
+    expect(f.controlTerminal).not.toHaveBeenCalled();
+    const requests = f.createTerminal.mock.calls.map(
+      ([request]) =>
+        request as {
+          shellOverride: string;
+          rows: number;
+          columns: number;
+          mutation: { requestId: string; id: string; expectedRevision: bigint };
+        },
+    );
+    for (const request of requests)
+      expect(request).toMatchObject({
+        shellOverride: "",
+        rows: 24,
+        columns: 80,
+        mutation: { id: f.session.id, expectedRevision: 7n },
+      });
+    expect(requests[0]!.mutation.requestId).not.toBe(
+      requests[1]!.mutation.requestId,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("annotates the terminal host and input with the effective primary+T binding", async () => {
+  const f = creationFixture();
+  try {
+    fireEvent.click(await screen.findByRole("tab", { name: /^Terminal 1/ }));
+    const input = await screen.findByRole("textbox", {
+      name: "Terminal input",
+    });
+    const host = input.parentElement!;
+    expect(host.classList.contains("terminal-screen")).toBe(true);
+    // The test platform resolves primary to Control, as the dispatch test does.
+    await waitFor(() => {
+      expect(input.getAttribute("aria-keyshortcuts")).toBe("Control+T");
+      expect(host.getAttribute("aria-keyshortcuts")).toBe("Control+T");
+    });
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("creates from primary+T only in terminal input and consumes it while creation is gated", async () => {
+  let release = () => {};
+  const f = creationFixture();
+  f.hold(
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+  try {
+    fireEvent.click(await screen.findByRole("tab", { name: /^Terminal 1/ }));
+    const input = await screen.findByRole("textbox", {
+      name: "Terminal input",
+    });
+    // Another control in the same panel is not terminal input.
+    const plus = screen.getByRole("button", { name: "Create terminal" });
+    plus.focus();
+    fireEvent.keyDown(plus, primaryT);
+    expect(f.createTerminal).not.toHaveBeenCalled();
+    // Wrong modifiers and repeated events never create.
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    fireEvent.keyDown(input, { ...primaryT, shiftKey: true });
+    fireEvent.keyDown(input, { ...primaryT, altKey: true });
+    fireEvent.keyDown(input, { ...primaryT, repeat: true });
+    fireEvent.keyDown(input, { key: "t", code: "KeyT" });
+    expect(f.createTerminal).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, primaryT);
+    await waitFor(() => expect(f.createTerminal).toHaveBeenCalledTimes(1));
+    // While admission is pending, the matching chord is consumed without a second request.
+    await waitFor(() => expect(plus).toHaveProperty("disabled", true));
+    expect(fireEvent.keyDown(input, primaryT)).toBe(false);
+    expect(f.createTerminal).toHaveBeenCalledTimes(1);
+  } finally {
+    release();
+    f.cleanup();
+  }
+});
+
+it("consumes primary+T without creation for an archived session", async () => {
+  const f = creationFixture("archived");
+  try {
+    fireEvent.click(await screen.findByRole("tab", { name: /^Terminal 1/ }));
+    const input = await screen.findByRole("textbox", {
+      name: "Terminal input",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(fireEvent.keyDown(input, primaryT)).toBe(false);
+    expect(f.createTerminal).not.toHaveBeenCalled();
+    expect(f.controlTerminal).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
   }
 });

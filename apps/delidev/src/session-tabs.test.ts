@@ -195,3 +195,63 @@ describe("shared Page descriptors follow native browser pages", () => {
     expect(store.snapshot("s").tabs).toHaveLength(4);
   });
 });
+
+describe("terminal presentation numbers", () => {
+  const open = (store: SessionTabsStore, session: string, id: string) =>
+    store.open(session, { kind: SessionTabKind.Terminal, id });
+  it("allocates one monotonic number per original ID and never reuses it", () => {
+    const store = new SessionTabsStore();
+    open(store, "s", "uuid-a");
+    open(store, "s", "uuid-b");
+    const numbers = store.terminalPresentation("s");
+    expect([numbers.number("uuid-a"), numbers.number("uuid-b")]).toEqual([
+      1, 2,
+    ]);
+    store.close(
+      "s",
+      sessionTabKey({ kind: SessionTabKind.Terminal, id: "uuid-a" }),
+    );
+    open(store, "s", "uuid-c");
+    open(store, "s", "uuid-a");
+    expect(numbers.number("uuid-a")).toBe(1);
+    expect(numbers.number("uuid-c")).toBe(3);
+  });
+  it("keeps sessions independent and numbers authenticated inventory encounters before opening", () => {
+    const store = new SessionTabsStore();
+    const row = (id: string, sessionId: string) =>
+      create(ResourceSchema, {
+        id,
+        sessionId,
+        kind: EntityKind.TERMINAL,
+        schemaVersion: 1,
+        revision: 1n,
+        documentJson: encode({ state: "running" }),
+      });
+    store.terminalPresentation("one").observe("one", row("x", "one"));
+    store.terminalPresentation("one").observe("one", row("y", "one"));
+    open(store, "two", "y");
+    expect(store.terminalPresentation("one").number("y")).toBe(2);
+    expect(store.terminalPresentation("two").number("y")).toBe(1);
+  });
+  it("retains a dismissed terminal number and a replacement store resets it", () => {
+    const store = new SessionTabsStore();
+    open(store, "s", "gone");
+    store.terminalPresentation("s").observe(
+      "s",
+      create(ResourceSchema, {
+        id: "gone",
+        sessionId: "s",
+        kind: EntityKind.TERMINAL,
+        schemaVersion: 1,
+        revision: 2n,
+        documentJson: encode({ state: "exited", cleanup_verified: true }),
+      }),
+    );
+    open(store, "s", "next");
+    expect(store.terminalPresentation("s").number("gone")).toBe(1);
+    expect(store.terminalPresentation("s").number("next")).toBe(2);
+    expect(
+      new SessionTabsStore().terminalPresentation("s").number("next"),
+    ).toBe(1);
+  });
+});

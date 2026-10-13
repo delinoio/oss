@@ -6,8 +6,24 @@ import { document, object } from "./documents";
 export class TerminalPresentation {
   private revisions = new Map<string, bigint>();
   private dismissed = new Set<string>();
+  private numbers = new Map<string, number>();
   hidden(id: string) {
     return this.dismissed.has(id);
+  }
+  /**
+   * Returns the monotonic presentation number of an original terminal ID. The
+   * number is allocated once, in first opened or authenticated-inventory
+   * encounter order, and is never reused or released in this connection
+   * lifetime, even after the terminal tab is closed or the payload is evicted.
+   * It is presentation only; RPCs, receipts and cache keys keep the original ID.
+   */
+  number(id: string): number {
+    let value = this.numbers.get(id);
+    if (!value) {
+      value = this.numbers.size + 1;
+      this.numbers.set(id, value);
+    }
+    return value;
   }
   observe(sessionId: string, resource: Resource, unsettled = false): boolean {
     if (
@@ -18,6 +34,7 @@ export class TerminalPresentation {
       resource.revision <= 0n
     )
       return false;
+    this.number(resource.id);
     const previous = this.revisions.get(resource.id) ?? 0n;
     if (resource.revision < previous || this.hidden(resource.id)) return false;
     this.revisions.set(resource.id, resource.revision);

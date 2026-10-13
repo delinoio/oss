@@ -23,6 +23,7 @@ export enum ShortcutId {
   OpenTool = "open-tool",
   OpenFiles = "open-files",
   OpenTerminals = "open-terminals",
+  TerminalCreate = "terminal-create",
   Help = "help",
   NewSession = "new-session",
   SessionFocus = "session-focus",
@@ -61,6 +62,8 @@ export const sessionShortcutBindings = {
   [ShortcutId.OpenTool]: [{ key: "t", primary: true }],
   [ShortcutId.OpenFiles]: [{ key: "e", primary: true }],
   [ShortcutId.OpenTerminals]: [{ key: "`", primary: true }],
+  // Target-bound: it applies only while terminal input has focus.
+  [ShortcutId.TerminalCreate]: [{ key: "t", primary: true }],
 } as const;
 export interface ShortcutBinding {
   key: string;

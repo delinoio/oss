@@ -932,7 +932,28 @@
 
 /* Session tabs supersede temporary panel, browser split and terminal dock geometry. */
 .session-tabbed {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+/* The terminal status strip is portaled here so opening, failure and
+   uncertain-recovery notices stay visible below the tab row for any pane. */
+.session-terminal-status {
+  display: contents;
+}
+.session-tabbed .terminal-status-strip {
+  grid-area: 3 / 1;
+  min-width: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 12px;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+.terminal-status-strip:empty {
+  display: none;
+}
+.terminal-status-strip p {
+  margin: 0;
 }
 .session-navigation {
   grid-area: 2 / 1;
@@ -1149,7 +1170,7 @@
 }
 
 .session-tabbed > .session-content {
-  grid-area: 3 / 1;
+  grid-area: 4 / 1;
 }
 .session-tabbed .session-upper-content {
   grid-area: 2 / 1;

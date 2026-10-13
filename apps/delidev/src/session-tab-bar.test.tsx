@@ -3,7 +3,7 @@ import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SessionTabBar } from "./session-tab-bar";
-import { SessionTabKind } from "./session-tabs";
+import { SessionTabKind, SessionTabsProvider } from "./session-tabs";
 it("roves focus and selection without an absent-position alias and leaves pinned Conversation noncloseable", () => {
   const close = vi.fn();
   function View() {
@@ -37,4 +37,42 @@ it("roves focus and selection without an absent-position alias and leaves pinned
   fireEvent.click(screen.getAllByRole("button")[0]);
   expect(close).toHaveBeenCalledWith("files");
   expect(tabs[0].getAttribute("aria-keyshortcuts")).toMatch(/1$/);
+});
+
+it("labels each direct terminal tab with a friendly number and no internal ID", () => {
+  const ids = [
+    "6f1b1f2e-8f8e-4b8c-9a55-0d6a3d1c9a01",
+    "0b7a2c4d-2b0e-4d7c-8d5e-7a4f4c3e9b02",
+  ];
+  render(
+    <SessionTabsProvider>
+      <SessionTabBar
+        id="original"
+        tabs={[
+          { kind: SessionTabKind.Conversation },
+          { kind: SessionTabKind.Terminal, id: ids[0]! },
+          { kind: SessionTabKind.Terminal, id: ids[1]! },
+        ]}
+        selected={SessionTabKind.Conversation}
+        select={() => {}}
+        close={() => {}}
+      />
+    </SessionTabsProvider>,
+  );
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+    "Conversation",
+    "Terminal 1",
+    "Terminal 2",
+  ]);
+  expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
+  const attributes = [
+    ...document.querySelectorAll("[aria-label], [title]"),
+  ].map(
+    (node) => `${node.getAttribute("aria-label")}${node.getAttribute("title")}`,
+  );
+  for (const id of ids)
+    for (const value of attributes) expect(value).not.toContain(id.slice(0, 8));
+  expect(
+    screen.getByRole("button", { name: "Close Terminal 2 tab" }),
+  ).toBeTruthy();
 });

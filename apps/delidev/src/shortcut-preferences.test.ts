@@ -12,6 +12,7 @@ import {
   fixedNativeShortcutCatalog,
   shortcutConflicts,
   ShortcutOverrideState,
+  ShortcutTargetContext,
   validShortcutChord,
 } from "./shortcut-preferences";
 import {
@@ -515,4 +516,42 @@ it("restores OpenFiles immediately and ignores disabled, Shift+E and other-key o
   expect(effectiveShortcutDefinitions([filesDefinition], {})[0]).toEqual(
     filesDefinition,
   );
+});
+
+it("registers TerminalCreate as a read-only terminal-target Session action that no override suppresses", () => {
+  const action = readOnlyShortcutCatalog.find(
+    (item) => item.id === ShortcutId.TerminalCreate,
+  );
+  expect(action).toMatchObject({
+    target: ShortcutTargetContext.Terminal,
+    scopes: [Surface.Sessions],
+    priority: 2,
+    input: ShortcutInput.Target,
+  });
+  expect(action?.defaults).toBe(
+    sessionShortcutBindings[ShortcutId.TerminalCreate],
+  );
+  expect(
+    editableShortcutCatalog.some(
+      (item) => item.id === ShortcutId.TerminalCreate,
+    ),
+  ).toBe(false);
+  expect(() =>
+    parseShortcutOverrides({
+      [ShortcutId.TerminalCreate]: { state: ShortcutOverrideState.Disabled },
+    }),
+  ).toThrow("Invalid shortcut action");
+  // Every existing custom T override stays valid, unchanged and conflict free,
+  // and none of them participates in suppressing the terminal-bound default.
+  for (const { id } of editableShortcutCatalog) {
+    const overrides = { [id]: unshiftedT };
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    expect(
+      readOnlyShortcutSuppression(ShortcutId.TerminalCreate, overrides),
+    ).toBeUndefined();
+    expect(customizationBindings(ShortcutId.TerminalCreate, overrides)).toEqual(
+      [{ key: "t", primary: true }],
+    );
+  }
 });

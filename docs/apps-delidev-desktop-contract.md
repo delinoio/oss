@@ -351,6 +351,8 @@ native authority.
 
 The fixed Session Open terminals / 터미널 열기 action uses primary+logical grave (`). Register it only for the active selected nonembedded Session, with ordinary editable input allowed and the original Sidechat parent-snapshot guard. Invoke the existing Terminals open action once, retaining the composer draft, original inventory, revision-bound reuse/create intent, pending/uncertain recovery and Worker ownership. Repeated opening selects the destination without closing it or replacing its controller. Help, the read-only Session Settings catalog and the original tool entry ARIA share the same platform binding. Accepted invocation from Help closes Help before the original callback and preserves destination focus. Grave matching has no physical Backquote fallback. Terminal input, focused native Browser pages, shortcut capture, unrelated modals and the existing handled/IME/repeat/extra-modifier/hidden/inert fences remain excluded. The seven editable actions and native preference format stay unchanged.
 
+The read-only Session New terminal / 새 터미널 action (`ShortcutId.TerminalCreate`, `ShortcutTargetContext.Terminal`, priority 2, target input permission) uses primary+T and applies only while the visible terminal input host has focus. It runs the same additional-creation callback as + (Worker default shell, original session revision, fresh request identity, 24×80), selects and focuses the returned terminal tab, and is consumed before PTY delivery so an accepted chord sends no bytes. A matching chord blocked by inactive, opening, unsupported, busy, uncertain or archived creation gates is consumed without creation or terminal input. It has no editable preference, never reserves T globally and does not participate in the Open tool custom-override suppression; saved custom unshifted T overrides stay valid and unchanged. Help lists it with its terminal-focus restriction and cannot invoke it. The terminal input host and the renderer's input field carry `aria-keyshortcuts` derived from the effective platform binding. The handled/IME/repeat/AltGraph/extra-modifier/modal/hidden/inert fences remain.
+
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
 Logical `?` accepts the layout's producing Shift state and remains ordinary text in input, textarea, select, editable/combobox contexts. Ignore handled, composing, keyCode-229, AltGraph and repeated events. Ignore hidden/inert targets and terminal passthrough, except the fixed `SessionCloseTab` (primary+W) action and the numeric tab actions, which remain eligible from terminal focus and Keyboard Help; external native child views receive no new bridge. Visible modals, including the compact sidebar drawer, suspend background dispatch and help opening. The owned help dialog has only the action-dismissal exception described below. The wide sidebar region is not a modal. The help dialog cannot stack over another modal; Escape and Close dismiss only help.
@@ -1312,16 +1314,41 @@ connected original ancestors containing the returned tree may receive them.
 
 ### Session terminals
 
-The Terminals tool opens the terminal inventory in the shared session tab workspace.
-Each explicit creation or retained-resource selection opens/selects the tab keyed
-by the original terminal ID. The active terminal occupies the complete content
+There is no standalone Terminals management tab. The Terminals tool entry is an
+explicit reuse-or-create intent that keeps the current pane selected until the
+atomic admission returns a verified original terminal, then opens or selects that
+terminal's direct tab. Each explicit creation or retained-resource selection
+opens/selects the tab keyed by the original terminal ID.
+
+Each direct terminal tab is labelled `Terminal N` / `터미널 N`. `N` is a monotonic
+presentation number owned by the connection-memory terminal presentation record of
+its Session. It is allocated once per original terminal ID in first
+opened-or-authenticated-inventory encounter order, is shared by the tab, its
+tooltip, accessible names, the Close tab name and the inventory rows, and is never
+reused. It survives close/reopen, paging, reorder, payload eviction, navigation and
+same-identity reconnect; Sessions number independently, and a replaced connection
+or app restart resets it. Labels never expose original or shortened UUIDs. The
+number is presentation only: RPCs, receipts, tab/cache keys, selection and cleanup
+proofs keep the original ID.
+
+Opening status, capability/read failures and uncertain-creation recovery render in
+a non-modal strip directly below the tab row while the current pane stays mounted;
+no placeholder tab is created. Read Retry is read-only and never creates a
+terminal. Repeated opening gestures coalesce into one admission using the captured
+session, revision and request ID. Session departure or a later explicit pane
+selection cancels an unsent intent; accepted or uncertain ownership survives.
+Retained manager lifetime, explicit-open resolution (Session visible) and
+selected-terminal observation/input (a terminal tab selected) are separate
+activity gates, so opening from Conversation enables no background input or
+unrelated observation. The active terminal occupies the complete content
 region beside persistent Info; the former independent bottom dock and its
 resize/Maximize/Restore presentation are superseded. Conversation authoring and
 original terminal mutation controllers remain mounted. Departure disposes only
 the output/input attachment, discards unsent bytes with its original notice and
 never closes the Worker-owned process. Reopening an original ID beyond the
 bounded inventory page uses an exact authenticated resource read before attachment.
-Presentation Close is separate from the explicit original process Close action.
+Tab close is presentation-only. The terminal panel offers no process Close
+action; Archive cleanup and verified exits own process termination.
 
 Original authenticated inventory or stream resources dismiss a terminal only
 when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
@@ -1346,10 +1373,14 @@ missing support. Already-loaded background history Refresh does not insert a loa
 row or change the selected terminal geometry. Preserve Initial, Additional, Reload,
 Restore and error/retry guidance, unchanged polling, original output ownership and
 explicit user resize delivery. Opening, tab selection and reattachment cannot create shells.
-The compact dark header exposes explicit creation, retained-resource choices, Details and
-presentation Close. Details owns the future-creation shell override, Worker/shell/cwd, original
-state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
-and explicit selection beyond the bounded 50-record history payload window.
+The compact dark header exposes only the Terminals heading and a right-aligned +
+button. There is no Details, Hide terminals, shell override, Create form, Refresh
+control, Worker/shell/path/cleanup metadata or Close terminal control; + creates one
+default-shell terminal (Worker account default shell, original session revision,
+fresh request identity, 24×80). Retained-resource choices, compact connection
+status, loading/empty/error notices, reattach and exact uncertain retries remain.
+Retain the accepted creation and explicit selection beyond the bounded 50-record
+history payload window.
 
 Pin @wterm/dom and @wterm/ghostty to 0.5.4 with resolved
 @wterm/core 0.5.4. The synchronous TerminalScreen facade retains its
@@ -2459,7 +2490,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Import / Export presentation alone is owned by `configuration-transfer.tsx` and `configuration-transfer.css` for this feature and the desktop/portable-configuration contracts. Keep its left-aligned 1040px column, exact panel/input/guidance copy, noninteractive state-derived stages and complete mapping/review/retry/results. Preserve original JSON bytes, bigint revisions, every existing operation/guard and Settings-host lifetime/locks; styling/reflow cannot remount controllers or acquire shell ownership from . Record browser/component and native acceptance separately in PRs/issues/CI, never repository evidence files.
 
-- Browser and Terminals use the shared typed session-tab workspace with Files, Diff and Diagnostics. Preserve original account/profile/session/revision/capability checks, explicit resource mutation controls and independent cleanup. Presentation Close only removes a descriptor; retained managers and uncertain operations remain owned.
+- Browser and direct numbered terminal tabs use the shared typed session-tab workspace with Files, Diff and Diagnostics. Preserve original account/profile/session/revision/capability checks, explicit resource mutation controls and independent cleanup. Presentation Close only removes a descriptor; retained managers and uncertain operations remain owned.
 
 - Session browser UI follows `cmds-delidev-browser-contract.md`. Require the generated browser capability and exact currently selected account, retain immutable uncertain registration requests, and bind every native open/control/cleanup to its presentation UUID. Keep the composer mounted and restore focus when the panel closes. Browser URLs and tabs remain native/device-local; never include them in RPC, query keys, logs, session messages, or workspace context. Hide native content while a modal or inert ancestor covers it, and require explicit retry after a native open failure. Account deletion displays tracked cleanup progress separately from the accepted configuration deletion.
 
@@ -5817,7 +5848,7 @@ Keep every existing expanded field, inspection/job/error/remediation/retry, URL 
 
 ### Explicit first-terminal opening
 
-The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
+The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… in the non-modal strip below the tab row while resolving without replacing the current pane, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup, then select that terminal's direct tab. Preserve full-pane tab selection and attached-input focus, + for additional default-shell terminals, exact uncertain retry and all server admission. Presentation departure or a later explicit pane selection cancels only unresolved unsent intent; opening, mounting, reconnecting, polling and exits never replace shells.
 
 ## Detailed session startup
 
