@@ -385,6 +385,23 @@ export function Usage({
   const emptySummary = emptyRecordedSummary(data?.totals);
   const responseGroups =
     data?.groups.filter((group) => (group.totals?.responses ?? 0) > 0) ?? [];
+  // Register every rendered identity before any row reads its label, so
+  // duplicate observed names are numbered on the first committed render.
+  for (const group of responseGroups) {
+    productLabel(PresentationKind.Session, group.sessionId, group.sessionName);
+    productLabel(PresentationKind.Project, group.projectId, group.projectName);
+    productLabel(PresentationKind.Account, group.accountId, group.accountName);
+    productLabel(
+      PresentationKind.Provider,
+      group.providerId,
+      group.providerName,
+    );
+    productLabel(
+      PresentationKind.Model,
+      group.model?.nativeId,
+      group.modelName,
+    );
+  }
   const responseAnalytics = data?.analytics
     ? {
         ...data.analytics,
@@ -1038,7 +1055,7 @@ export function Usage({
                                   </DisclosureSummary>
                                   <div>
                                     <dl className="usage-original-identities">
-                                      {[
+                                      {([
                                         [
                                           copy("usage.session_6959b4"),
                                           productLabel(
@@ -1073,13 +1090,16 @@ export function Usage({
                                         ],
                                         [
                                           copy("usage.model_5e2c61"),
-                                          productLabel(
-                                            PresentationKind.Model,
-                                            group.model?.nativeId,
-                                            group.modelName,
+                                          // The exact native model ID is the
+                                          // original identity; the generated
+                                          // label never replaces it.
+                                          group.model?.nativeId ? (
+                                            <code>{group.model.nativeId}</code>
+                                          ) : (
+                                            ""
                                           ),
                                         ],
-                                      ].map(([label, id]) => (
+                                      ] as [string, ReactNode][]).map(([label, id]) => (
                                         <div key={label}>
                                           <dt>{label}</dt>
                                           <dd>

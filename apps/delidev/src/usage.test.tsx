@@ -1,5 +1,5 @@
 import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import {
   InputPricingMode,
   EntityKind,
   GetUsageSummaryResponseSchema,
+  ModelIdentitySchema,
   ResourceSchema,
   ResourceService,
   UsageAnalyticsSchema,
@@ -1164,11 +1165,12 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
   for (const id of [
     f.ids.session,
     f.ids.account,
-    f.ids.model,
     f.ids.provider,
     f.data.groups[0].projectId,
   ])
     expect(detail.textContent).not.toContain(id);
+  // The native model ID is original source identity and stays verbatim.
+  expect(detail.textContent).toContain(f.ids.model);
   expect(detail.textContent).toContain("USD 0.002");
   expect(detail.textContent).toContain("EUR 0");
   expect(f.read).toHaveBeenCalledTimes(1);
@@ -1790,4 +1792,189 @@ it("keeps the timezone pinned across navigation and language changes until the e
         ?.textContent,
     ).toBe("UTC"),
   );
+});
+
+function openRowDetails(index: number) {
+  fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
+  const rows = document.querySelectorAll<HTMLTableRowElement>(
+    ".usage-detail tbody tr",
+  );
+  const detail = rows[index].querySelector<HTMLDetailsElement>("details")!;
+  fireEvent.click(detail.querySelector("summary")!);
+  return detail;
+}
+
+function detailValue(detail: HTMLElement, term: string) {
+  const dt = [...detail.querySelectorAll("dt")].find(
+    (entry) => entry.textContent === term,
+  )!;
+  return dt.nextElementSibling!.textContent;
+}
+
+it.each([
+  { modelName: "Claude Opus", nativeId: "claude-opus-4-6" },
+  { modelName: "", nativeId: "claude-opus-4-6" },
+  { modelName: "Claude Opus", nativeId: "" },
+])(
+  "shows the exact native model ID in row Details for name=$modelName id=$nativeId",
+  async ({ modelName, nativeId }) => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+    const f = fixture();
+    f.data.groups[0].modelName = modelName;
+    f.data.groups[0].model = create(ModelIdentitySchema, {
+      nativeId,
+      providerId: f.ids.provider,
+    });
+    render(f.view());
+    await screen.findByText("Incomplete coverage");
+    const detail = openRowDetails(0);
+    const value = detailValue(detail, "Model");
+    if (nativeId) {
+      expect(value).toBe(nativeId);
+      expect(value).not.toMatch(/Model \u00b7 \d+/);
+    } else {
+      expect(value).toBe("Unavailable");
+    }
+    expect(f.read).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("numbers duplicate observed names on the first committed render for every identity kind", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const f = fixture();
+  const base = f.data.groups[0];
+  const second = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  second.sessionId = newRequestId();
+  second.projectId = newRequestId();
+  second.accountId = newRequestId();
+  second.providerId = newRequestId();
+  second.model = create(ModelIdentitySchema, {
+    nativeId: "second-native-model",
+    providerId: second.providerId,
+  });
+  for (const group of [base, second]) {
+    group.sessionName = "Same session";
+    group.projectName = "Same project";
+    group.accountName = "Same account";
+    group.providerName = "Same provider";
+    group.modelName = "Same model";
+  }
+  base.projectId = newRequestId();
+  f.data.groups = [base, second];
+  // Capture the first committed table so later re-renders cannot mask a
+  // missing pre-observation.
+  let firstCommit: string[] | undefined;
+  const observer = new MutationObserver(() => {
+    const cells = document.querySelectorAll(
+      ".usage-original-identities dd:first-child, .usage-original-identities > div:first-child dd",
+    );
+    if (!firstCommit && cells.length >= 2)
+      firstCommit = [...cells].map((cell) => cell.textContent ?? "");
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  observer.disconnect();
+  expect(firstCommit).toEqual(["Same session \u00b7 1", "Same session \u00b7 2"]);
+  const labels = [0, 1].map((index) => {
+    const detail = openRowDetails(index);
+    return ["Session", "Project", "Account", "Provider"].map((term) =>
+      detailValue(detail, term),
+    );
+  });
+  for (const [column, name] of [
+    "Same session",
+    "Same project",
+    "Same account",
+    "Same provider",
+  ].entries()) {
+    expect(labels[0][column]).toBe(`${name} \u00b7 1`);
+    expect(labels[1][column]).toBe(`${name} \u00b7 2`);
+  }
+  const buttons = screen.getAllByRole("button", { name: /^Same model/ });
+  expect(buttons.map((button) => button.textContent)).toEqual([
+    "Same model \u00b7 1",
+    "Same model \u00b7 2",
+  ]);
+  expect(f.read).toHaveBeenCalledTimes(1);
+});
+
+it("keeps unique names unnumbered and absent names on localized fallbacks", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const f = fixture();
+  const base = f.data.groups[0];
+  const second = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  second.sessionId = newRequestId();
+  second.sessionName = "";
+  second.accountId = newRequestId();
+  second.accountName = "";
+  second.model = create(ModelIdentitySchema, {
+    nativeId: "other-native-model",
+    providerId: second.providerId,
+  });
+  second.modelName = "";
+  f.data.groups = [base, second];
+  const view = render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const first = openRowDetails(0);
+  expect(detailValue(first, "Session")).toBe("Retained session");
+  expect(detailValue(first, "Account")).toBe("Original account");
+  const other = openRowDetails(1);
+  expect(detailValue(other, "Session")).not.toMatch(/^Retained session/);
+  expect(detailValue(other, "Session")).toMatch(/\u00b7 \d+$/);
+  expect(detailValue(other, "Model")).toBe("other-native-model");
+  // Rerender keeps labels stable.
+  const before = [first, other].map((entry) => entry.textContent);
+  view.rerender(f.view());
+  expect([first, other].map((entry) => entry.textContent)).toEqual(before);
+});
+
+it("keeps duplicate numbering stable across reorder and updates labels on locale change", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const f = fixture();
+  const base = f.data.groups[0];
+  const second = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  const unnamed = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  second.sessionId = newRequestId();
+  unnamed.sessionId = newRequestId();
+  base.sessionName = "Same session";
+  second.sessionName = "Same session";
+  unnamed.sessionName = "";
+  f.data.groups = [base, second, unnamed];
+  const reordered = clone(GetUsageSummaryResponseSchema, f.data);
+  reordered.groups = [reordered.groups[1], reordered.groups[0], reordered.groups[2]];
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  expect(detailValue(openRowDetails(0), "Session")).toBe(
+    "Same session \u00b7 1",
+  );
+  expect(detailValue(openRowDetails(1), "Session")).toBe(
+    "Same session \u00b7 2",
+  );
+  f.read.mockResolvedValue(reordered);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  const sessionLabels = () =>
+    [
+      ...document.querySelectorAll<HTMLTableRowElement>(
+        ".usage-detail tbody tr",
+      ),
+    ].map((row) => row.querySelector(".usage-original-identities dd")!.textContent);
+  await waitFor(() =>
+    expect(sessionLabels().slice(0, 2)).toEqual([
+      "Same session \u00b7 2",
+      "Same session \u00b7 1",
+    ]),
+  );
+  const english = sessionLabels()[2];
+  expect(english).toMatch(/^Session unavailable/);
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  await waitFor(() => expect(sessionLabels()[2]).not.toBe(english));
+  expect(sessionLabels().slice(0, 2)).toEqual([
+    "Same session \u00b7 2",
+    "Same session \u00b7 1",
+  ]);
+  await i18n.changeLanguage(SupportedLanguage.English);
 });
