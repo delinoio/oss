@@ -362,9 +362,9 @@ describe.each(["en", "ko"])("startup recovery card (%s)", (language) => {
       ).toBe(cleanup === 2);
       // Presentation never grants retry authority.
       expect(canRetryExecutionStartup(session)).toBe(false);
-      expect(
-        canRetryExecutionStartup({ ...session, recovery: "none" }),
-      ).toBe(false);
+      expect(canRetryExecutionStartup({ ...session, recovery: "none" })).toBe(
+        false,
+      );
     },
   );
   it("falls back to the device correction for unknown causes and rejects malformed metadata", async () => {
