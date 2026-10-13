@@ -207,9 +207,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		if err != nil {
 			return nil, err
 		}
+		// Retirement on a failed startup runs inside the wire cleanup defer below,
+		// after the original native tree is joined. This defer then only releases
+		// proof handles that retirement has not already released.
 		defer func() {
 			if returned != nil {
-				helpers.release()
+				helpers.releaseUnlessRetired()
 			}
 		}()
 	}
@@ -226,9 +229,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	defer func() {
 		if returned != nil {
-			if err := wire.CloseGracefully(3 * time.Second); err != nil {
-				returned = domain.CodexRecoveryFailure(config.Version, domain.CodexPhase(phase), returned, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
-			}
+			returned = finishFailedStartup(config.Version, domain.CodexPhase(phase), returned, wire.CloseGracefully(3*time.Second), helpers, home, config.Process.OwnerID, wire.Identity())
 		}
 	}()
 	phase = initializePhase
@@ -333,6 +334,24 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, err
 	}
 	return client, nil
+}
+
+// finishFailedStartup combines a failed Open with its independent cleanup
+// results. The native join result gates helper retirement: only a joined
+// original tree may retire the proof captured by this startup, and a failed join
+// never infers retirement success. A pre-capture failure holds no proof and
+// keeps release-only cleanup. Both cleanup failures stay recovery-required and
+// are joined with the original startup error.
+func finishFailedStartup(version string, phase domain.CodexPhase, original, joinErr error, helpers *executionHelpers, home string, owner domain.ID, native process.Process) error {
+	if joinErr != nil {
+		return domain.CodexRecoveryFailure(version, phase, original, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
+	}
+	if helpers != nil && helpers.hasCapturedProof() {
+		if err := helpers.retire(home, owner, native); err != nil {
+			return domain.CodexRecoveryFailure(version, phase, original, err)
+		}
+	}
+	return original
 }
 func handshakeError(wire *nativewire.Connection, err error) error {
 	if observed := wire.Err(); observed != nil && observed.Code == domain.Unsupported {

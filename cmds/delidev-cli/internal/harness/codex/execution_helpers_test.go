@@ -327,3 +327,87 @@ func TestExecutionHelpersRejectHardLinkedAlias(t *testing.T) {
 		})
 	}
 }
+
+func TestFinishFailedStartupGatesRetirementOnJoinedCapturedProof(t *testing.T) {
+	original := incompatible()
+	native := func(h *executionHelpers) process.Process {
+		return process.Process{OwnerID: h.owner, PID: 1, Birth: "synthetic", ScopeDir: filepath.Join(h.home, "original-process")}
+	}
+	aliasesRemain := func(directory string) bool {
+		for _, name := range executionHelperNames {
+			if _, err := os.Lstat(filepath.Join(directory, name)); err != nil {
+				return false
+			}
+		}
+		return true
+	}
+	t.Run("joined captured proof retires and keeps the original error", func(t *testing.T) {
+		h, home, directory, _ := helperFixture(t)
+		if err := h.capture(native(h)); err != nil {
+			t.Fatal(err)
+		}
+		err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, h.native)
+		if err != error(original) {
+			t.Fatal("successful retirement changed the original startup error", err)
+		}
+		if aliasesRemain(directory) || !h.closed || h.result != nil {
+			t.Fatal("captured aliases were not retired")
+		}
+		if h.hasCapturedProof() {
+			t.Fatal("retired proof can retire twice")
+		}
+		if err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, h.native); err != error(original) {
+			t.Fatal("repeated cleanup changed the result", err)
+		}
+		h.releaseUnlessRetired()
+	})
+	t.Run("failed join never infers retirement", func(t *testing.T) {
+		h, home, directory, logs := helperFixture(t)
+		if err := h.capture(native(h)); err != nil {
+			t.Fatal(err)
+		}
+		err := finishFailedStartup("", domain.CodexProfile, original, errors.New("synthetic join failure"), h, home, h.owner, h.native)
+		if domain.SafeError(err).Code != domain.RecoveryRequired || domain.CodexErrorDiagnostic(err).Code != domain.Unsupported {
+			t.Fatal("failed join did not preserve both failures", err)
+		}
+		if !aliasesRemain(directory) || h.closed || strings.Contains(logs.String(), `"stage":"retirement"`) {
+			t.Fatal("failed join attempted retirement")
+		}
+		h.releaseUnlessRetired()
+		if !h.closed || h.result == nil {
+			t.Fatal("release-only cleanup did not record an unconfirmed result")
+		}
+	})
+	t.Run("retirement failure is joined with the original error", func(t *testing.T) {
+		h, home, directory, _ := helperFixture(t)
+		if err := h.capture(native(h)); err != nil {
+			t.Fatal(err)
+		}
+		h.unlink = func(*os.Root, string) error { return errors.New("synthetic unlink failure") }
+		err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, h.native)
+		if domain.SafeError(err).Code != domain.RecoveryRequired || domain.CodexErrorDiagnostic(err).Code != domain.Unsupported {
+			t.Fatal("retirement failure did not preserve both failures", err)
+		}
+		if !errors.Is(err, error(original)) {
+			t.Fatal("original startup error is no longer retained", err)
+		}
+		if !aliasesRemain(directory) {
+			t.Fatal("failed unlink removed aliases")
+		}
+	})
+	t.Run("pre-capture failure keeps release-only cleanup", func(t *testing.T) {
+		h, home, directory, logs := helperFixture(t)
+		err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, process.Process{})
+		if err != error(original) || !aliasesRemain(directory) || strings.Contains(logs.String(), `"stage":"retirement"`) {
+			t.Fatal("pre-capture failure retired helpers", err)
+		}
+		if h.hasCapturedProof() {
+			t.Fatal("uncaptured proof reports retirement authority")
+		}
+	})
+	t.Run("no helpers", func(t *testing.T) {
+		if err := finishFailedStartup("", domain.CodexProfile, original, nil, nil, "", domain.NewID(), process.Process{}); err != error(original) {
+			t.Fatal("missing helpers changed the original error", err)
+		}
+	})
+}

@@ -314,6 +314,27 @@ func (h *executionHelpers) release() {
 	}
 }
 
+// hasCapturedProof reports whether startup capture succeeded and retirement
+// has not already settled. It never grants authority by itself.
+func (h *executionHelpers) hasCapturedProof() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.captured && !h.closed
+}
+
+// releaseUnlessRetired closes the retained handles of a failed startup once.
+// A completed retirement already released them and recorded its own result.
+func (h *executionHelpers) releaseUnlessRetired() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return
+	}
+	h.release()
+	h.closed = true
+	h.result = helperFailure()
+}
+
 // The caller must first join the original wire/process tree. The only available
 // manifest is the proof captured on that Client before product input admission.
 func (h *executionHelpers) retire(home string, owner domain.ID, native process.Process) (returned error) {
