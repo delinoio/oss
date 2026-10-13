@@ -112,6 +112,9 @@ type Service struct {
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}
+	// Set only by isolated tests: runs after the account deletion replay check
+	// misses and before failed-subscription cleanup is admitted or observed.
+	afterAccountDeleteReplay func(context.Context)
 	// Set before stream admission in isolated tests; production uses 100 ms.
 	terminalWatchInterval         time.Duration
 	terminalOutputs               map[domain.ID]*terminalOutputRing
