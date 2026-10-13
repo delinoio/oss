@@ -992,7 +992,10 @@ it("keeps an authoritatively removed question absent through a Snapshot and a re
     router.service(ResourceService, {
       getSnapshot: () => {
         snapshots += 1;
-        return { resources: [session], cursor: `removed-snapshot-${snapshots}` };
+        return {
+          resources: [session],
+          cursor: `removed-snapshot-${snapshots}`,
+        };
       },
       getResource: () => ({ resource: original }),
       listResources: (request) => {

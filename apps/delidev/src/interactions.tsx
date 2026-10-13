@@ -167,9 +167,7 @@ export function Interaction({
             : copy("interactions.nativeApproval_c515b9")}
         </h3>
         <small>
-          {compact
-            ? statusLabel(presentation.closure)
-            : text(data.closure)}
+          {compact ? statusLabel(presentation.closure) : text(data.closure)}
         </small>
       </header>
       <p>

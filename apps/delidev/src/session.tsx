@@ -322,7 +322,10 @@ function useSessionStream(
           kinds.delete(change.id);
           // The fence must exist before any following Snapshot clears the
           // stream-scoped tombstones below.
-          if (removedKind === undefined || removedKind === EntityKind.INTERACTION)
+          if (
+            removedKind === undefined ||
+            removedKind === EntityKind.INTERACTION
+          )
             presentation.remove(change.id);
           setNewMessageIds((current) =>
             current.filter((id) => id !== change.id),

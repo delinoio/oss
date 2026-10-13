@@ -797,8 +797,9 @@ it("retains no oversized closure or response state string in the store", () => {
     expect(retained).toEqual([observed]);
     // Only fixed per-record metadata (UUID mutation key plus enum values).
     expect(retainedStringBytes(retained)).toBeLessThan(256);
-    expect(JSON.stringify(retained, (_, v) => (typeof v === "bigint" ? "0" : v)))
-      .not.toContain("xxxx");
+    expect(
+      JSON.stringify(retained, (_, v) => (typeof v === "bigint" ? "0" : v)),
+    ).not.toContain("xxxx");
   }
   // Many distinct oversized records scale with record count, not payload size.
   const many = new InteractionPresentationStore();
@@ -821,7 +822,9 @@ it("retains no oversized closure or response state string in the store", () => {
   }
   expect(total).toBe(8);
   expect(
-    retainedStringBytes([...many.entries()].map(([, projection]) => projection)),
+    retainedStringBytes(
+      [...many.entries()].map(([, projection]) => projection),
+    ),
   ).toBeLessThan(8 * 256);
 });
 it("keeps revision ordering and classification with normalized values", () => {
@@ -838,7 +841,11 @@ it("keeps revision ordering and classification with normalized values", () => {
   expect(next.mutationKey).toBe(`answer:${id}`);
   // A canceled response keeps retiring closed questions with no evidence.
   const canceled = interactionProjection(
-    row({ ...original, closure: "turn-ended", response: { state: "canceled" } }),
+    row({
+      ...original,
+      closure: "turn-ended",
+      response: { state: "canceled" },
+    }),
   );
   expect(canceled.presentation).toBe(InteractionPresentation.Retired);
   expect(canceled.responseState).toBe(QuestionResponseState.Canceled);
