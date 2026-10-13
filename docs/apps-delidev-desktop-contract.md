@@ -1403,9 +1403,12 @@ content-free `revision-contradiction` diagnostic with the original terminal ID
 and revision), while an
 identical replay (including a deferred exit observed again after its control
 settles) is accepted once without requiring a newer revision. Fingerprinting
-bounds container nesting depth; evidence nested deeper receives one fixed
-fingerprint and never dismisses, so a malformed authenticated document stays
-unsettled instead of overflowing the call stack. An inactive exit
+walks the evidence with an explicit work list rather than recursion, so
+arbitrarily deep nesting never overflows the call stack and every distinct
+document, including deeply nested ones, keeps its own evidence-specific
+fingerprint. A deeply nested state or cleanup proof is not exact exited and
+verified evidence, and a deeply nested pending value is present, so such a
+document never dismisses. An inactive exit
 preserves selection/focus; a selected exit chooses its nearest remaining left
 terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no

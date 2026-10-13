@@ -2,69 +2,67 @@
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document } from "./documents";
 
-/**
- * Maximum container nesting accepted when canonicalizing pending evidence. An
- * authenticated document may nest far deeper within its size limit, so the
- * traversal is bounded to keep it from overflowing the call stack.
- */
-const MAX_EVIDENCE_DEPTH = 32;
-
-/**
- * Fixed fingerprint for evidence nested deeper than MAX_EVIDENCE_DEPTH. Such
- * evidence is never compared structurally and never dismisses: a deeply nested
- * pending value is present, and a deeply nested state or cleanup proof is not
- * the exact exited and verified evidence that dismissal requires.
- */
-const OVER_DEPTH_FINGERPRINT = "over-depth";
-
-/**
- * Canonical JSON with sorted object keys, so equal evidence compares equal.
- * Returns null, without recursing further, when containers nest deeper than
- * MAX_EVIDENCE_DEPTH.
- */
-function canonical(value: unknown, depth = 0): string | null {
-  if (Array.isArray(value)) {
-    if (depth >= MAX_EVIDENCE_DEPTH) return null;
-    const parts: string[] = [];
-    for (const item of value) {
-      const part = canonical(item, depth + 1);
-      if (part === null) return null;
-      parts.push(part);
+/** Compact non-cryptographic 53-bit digest; retains no document bytes. */
+class Digest {
+  private h1 = 0xdeadbeef;
+  private h2 = 0x41c6ce57;
+  update(text: string) {
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      this.h1 = Math.imul(this.h1 ^ code, 2654435761);
+      this.h2 = Math.imul(this.h2 ^ code, 1597334677);
     }
-    return `[${parts.join(",")}]`;
   }
-  if (value !== null && typeof value === "object") {
-    if (depth >= MAX_EVIDENCE_DEPTH) return null;
-    const parts: string[] = [];
-    for (const key of Object.keys(value).sort()) {
-      const part = canonical(
-        (value as Record<string, unknown>)[key],
-        depth + 1,
-      );
-      if (part === null) return null;
-      parts.push(`${JSON.stringify(key)}:${part}`);
-    }
-    return `{${parts.join(",")}}`;
+  finish(): string {
+    const h1 =
+      Math.imul(this.h1 ^ (this.h1 >>> 16), 2246822507) ^
+      Math.imul(this.h2 ^ (this.h2 >>> 13), 3266489909);
+    const h2 =
+      Math.imul(this.h2 ^ (this.h2 >>> 16), 2246822507) ^
+      Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
   }
-  return JSON.stringify(value) ?? "null";
 }
 
-/** Compact non-cryptographic 53-bit digest; retains no document bytes. */
-function digest(text: string): string {
-  let h1 = 0xdeadbeef,
-    h2 = 0x41c6ce57;
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    h1 = Math.imul(h1 ^ code, 2654435761);
-    h2 = Math.imul(h2 ^ code, 1597334677);
+/**
+ * Streams the canonical JSON of a value, with sorted object keys so equal
+ * evidence compares equal, into a digest. The traversal uses an explicit work
+ * list instead of recursion, so an authenticated document may nest as deeply
+ * as its size limit allows without overflowing the call stack, and every
+ * distinct document keeps its own evidence-specific fingerprint.
+ */
+function canonicalDigest(root: unknown): string {
+  const digest = new Digest();
+  const work: unknown[] = [{ value: root }];
+  // Entries are either literal text to emit or a boxed value to expand.
+  while (work.length > 0) {
+    const entry = work.pop();
+    if (typeof entry === "string") {
+      digest.update(entry);
+      continue;
+    }
+    const value = (entry as { value: unknown }).value;
+    if (Array.isArray(value)) {
+      digest.update("[");
+      work.push("]");
+      for (let i = value.length - 1; i >= 0; i--) {
+        work.push({ value: value[i] });
+        if (i > 0) work.push(",");
+      }
+    } else if (value !== null && typeof value === "object") {
+      digest.update("{");
+      work.push("}");
+      const keys = Object.keys(value).sort();
+      for (let i = keys.length - 1; i >= 0; i--) {
+        work.push({ value: (value as Record<string, unknown>)[keys[i]] });
+        work.push(`${JSON.stringify(keys[i])}:`);
+        if (i > 0) work.push(",");
+      }
+    } else {
+      digest.update(JSON.stringify(value) ?? "null");
+    }
   }
-  h1 =
-    Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
-    Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 =
-    Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
-    Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  return digest.finish();
 }
 
 /**
@@ -81,13 +79,12 @@ function hasPending(pending: unknown): boolean {
  * and pending evidence. Equal revisions must carry identical evidence.
  */
 function fingerprint(data: Record<string, unknown>): string {
-  const evidence = canonical([
+  return canonicalDigest([
     data.state,
     data.cleanup_verified,
     hasPending(data.pending) ? data.pending : null,
     hasPending(data.pending),
   ]);
-  return evidence === null ? OVER_DEPTH_FINGERPRINT : digest(evidence);
 }
 
 /** Stable categories for authenticated observations rejected as unsafe. */

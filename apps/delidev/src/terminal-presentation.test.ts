@@ -235,6 +235,42 @@ it("rejects an equal-revision shallow replacement of over-depth evidence", () =>
   ).toBe(false);
   expect(view.hidden("original")).toBe(false);
 });
+// Same depth and shape as deepJson, differing only in the innermost value.
+const deepLeafJson = (leaf: string) =>
+  "[".repeat(DEEP_LEVELS) + leaf + "]".repeat(DEEP_LEVELS);
+const overDepthVariants = {
+  pending: (leaf: string) =>
+    `{"state":"exited","cleanup_verified":true,"pending":${deepLeafJson(leaf)}}`,
+  state: (leaf: string) =>
+    `{"state":${deepLeafJson(leaf)},"cleanup_verified":true}`,
+  "cleanup proof": (leaf: string) =>
+    `{"state":"exited","cleanup_verified":${deepLeafJson(leaf)}}`,
+};
+it.each(Object.entries(overDepthVariants))(
+  "rejects and logs equal-revision documents with different over-depth %s evidence",
+  (_name, build) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const view = new TerminalPresentation();
+      expect(view.observe("parent", rawResource(5n, build("1")))).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+      // An identical replay stays silent and is accepted.
+      expect(view.observe("parent", rawResource(5n, build("1")))).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+      expect(view.observe("parent", rawResource(5n, build("2")))).toBe(false);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith({
+        event: "terminal-presentation-observation-rejected",
+        category: TerminalPresentationRejection.RevisionContradiction,
+        terminalId: "original",
+        revision: "5",
+      });
+      expect(view.hidden("original")).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  },
+);
 it("accepts identical equal-revision replays and dismisses exactly once", () => {
   const view = new TerminalPresentation(),
     data = { state: "exited", cleanup_verified: true };
