@@ -21,6 +21,7 @@ import (
 type questionControllerFixture struct {
 	loseAcceptanceAck  bool
 	acceptanceRequests []string
+	acceptanceEvidence []domain.QuestionAcceptanceEvidence
 	delidevv1connect.WorkerServiceClient
 	t                           *testing.T
 	mapper                      *CodexEventPublisher
@@ -145,6 +146,7 @@ func (f *questionControllerFixture) PublishExecution(_ context.Context, req *con
 			f.t.Fatal("acceptance replaced original durable claim")
 		}
 		f.acceptanceRequests = append(f.acceptanceRequests, req.Msg.Mutation.RequestId)
+		f.acceptanceEvidence = append(f.acceptanceEvidence, e.QuestionAcceptance.Evidence)
 		if f.loseAcceptanceAck {
 			return nil, connect.NewError(connect.CodeUnavailable, errors.New("fixture lost acceptance acknowledgment"))
 		}

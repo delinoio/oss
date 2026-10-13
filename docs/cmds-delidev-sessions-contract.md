@@ -1064,6 +1064,10 @@ records the closed cause with the code; quota blocks are not storage failures.
 No messages, prompts, account content or native output enter logs.
 This optional metadata adds no RPC, allocation, schema, migration or backfill.
 
+## Managed MCP execution observations
+
+An execution that froze managed MCP generations accepts Codex `mcp` tool messages bound to exactly one of those generations: definition identity, immutable revision, private native server name and tool must match on start and completion, and only root (non-child) Codex executions may publish them. Snapshots carry no arguments; completed calls retain bounded result text and a content-block count, failed calls retain a bounded error. A failed or declined call is a completed item, not a failed turn. Elicitation forms from selected servers are ordinary user questions; their acceptance evidence is `native-mcp-elicitation-resolved`, published only after the original response was transmitted and the native request resolved. Calls from other servers, child threads or executions without that selection are rejected at the server. Read-only Sidechat snapshots drop managed selections.
+
 ## Managed skill execution generations
 
 At session creation the server captures enabled managed Agent selections and prepares complete independent package snapshots through the original preparation lane. The accepted queue keeps `managed_skills` separate from explicit input `skills`; first dispatch freezes the automatic bindings in `ExecutionConfiguration`. See [Worker-owned managed skills](cmds-delidev-managed-skills-contract.md). Automatic bindings never synthesize explicit input parts or change `$` input and history digests.

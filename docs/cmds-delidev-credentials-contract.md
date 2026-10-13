@@ -306,3 +306,5 @@ independent cleanup and joined shutdown keep their existing ownership.
 ## Managed MCP credentials
 
 [Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns the managed-MCP vault purpose. Original Worker definition/request identities partition manual environment/header values, PKCE verifiers and OAuth token generations. The server retains only opaque metadata. No list/export/log exposes secret values. Cancellation and retired-generation cleanup require original ownership and independently confirmed cleanup.
+
+Codex execution reads the frozen generation's protected values from the selected Worker's own vault only when a selected definition needs authentication, holds them in memory for launch, passes them solely through the owned native process environment, registers them for diagnostic redaction and excludes their names from native shell-tool environments. They are never sent to the server, written to the native home or published.

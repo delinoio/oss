@@ -195,6 +195,10 @@ func (c *CodexEventPublisher) publishQuestionAcceptance(ctx context.Context, eve
 	if !known || !delivered || original.NativeItemID != event.ItemID || delivery.ResponseID != status.ResponseID || delivery.NativeItemID != event.ItemID || delivery.Delivery == domain.QuestionNotSent || domain.QuestionDelivery(status.Delivery) != delivery.Delivery {
 		return publicationUncertain()
 	}
-	update := domain.ExecutionQuestionAcceptanceUpdate{InteractionID: status.ID, ResponseID: status.ResponseID, ClaimID: delivery.ClaimID, NativeItemID: event.ItemID, Evidence: domain.NativeQuestionOutput}
+	evidence := domain.NativeQuestionOutput
+	if status.Elicitation {
+		evidence = domain.NativeMCPElicitationResolved
+	}
+	update := domain.ExecutionQuestionAcceptanceUpdate{InteractionID: status.ID, ResponseID: status.ResponseID, ClaimID: delivery.ClaimID, NativeItemID: event.ItemID, Evidence: evidence}
 	return c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionQuestionAccepted, QuestionAcceptance: &update})
 }

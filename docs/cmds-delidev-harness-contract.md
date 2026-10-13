@@ -173,7 +173,7 @@ authority. [Official native connector registration](https://github.com/openai/co
 and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/bespoke_event_handling.rs)
 keep this status separate from tool execution and authentication. Other server
 names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
-streams and tool calls retain their existing private adapter boundaries.
+streams and tool calls retain their existing private adapter boundaries, except for the exact Worker-owned managed MCP generations frozen into the execution (see Codex managed MCP execution).
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog
@@ -2654,7 +2654,11 @@ Closure returns original process-join and helper-retirement results independentl
 
 ## Managed MCP management boundary
 
-[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) adds configuration and explicit authentication only. Management does not weaken the existing empty native MCP inventory checks. Supported-harness observations remain empty until the owning adapter independently validates managed MCP. Execution selection requires enabled, authenticated and verified original Worker definitions; existing adapters fail closed before launching a managed inventory. Future adapters consume immutable execution copies and must retain original generation/cleanup ownership.
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) adds configuration and explicit authentication only. Management does not weaken the existing empty native MCP inventory checks. Supported-harness observations are derived from the Worker's published adapter capability: only the Codex adapter publishes `CODEX_MANAGED_MCP_V1`. Execution selection requires enabled, authenticated and verified original Worker definitions; Claude Code, OpenCode and Grok adapters fail closed before launching a managed inventory. Adapters consume immutable execution copies and retain original generation/cleanup ownership.
+
+## Codex managed MCP execution
+
+The Codex adapter (`harness/codex` `mcp.go`, `mcp_events.go`) is the first consumer of managed MCP generations. It passes only the execution's frozen selection as launch overrides (secrets by environment reference, never arguments), proves the exact native inventory before every input with `config/read` plus thread/server scoped `mcpServerStatus/list`, and exposes typed startup outcomes, `VerifyManagedMCP` and a targeted `ReconnectManagedMCP`. Unselected user, project and plugin servers fail the inventory. The previously passive `mcpServer/startupStatus/updated` notifications of selected servers become typed passive metadata bound to the generation; an unselected server's startup is native drift. `mcpToolCall` thread items become `mcp` tool observations (original definition, revision, native server, tool, bounded result or error, no arguments); foreign and built-in servers stay private. `mcpServer/elicitation/request` forms from selected servers map to one once-only question and are answered with exact `accept`/`decline`/`cancel` native responses; native request resolution after a transmitted response is acceptance evidence. Unfinished calls become uncertain and are never replayed. The built-in `codex_apps` connector keeps its separate passive boundary. Read-only Sidechat, review and model-observation profiles refuse managed servers. See the [managed MCP contract](cmds-delidev-managed-mcp-contract.md) for storage, credential and cleanup rules.
 
 ## Managed skill automatic discovery
 
