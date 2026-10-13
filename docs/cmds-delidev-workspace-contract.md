@@ -637,7 +637,9 @@ setting other than `core.bare=false`, `core.worktree=..` (in `config`, and in
 `config.worktree` presence follows the source. Because Git reads `config.worktree`
 after `config`, preparation removes every `remote.<name>.url` record of the
 selected remote from a retained `config.worktree`, and the proof requires that
-layer to hold none, so the child exposes only the selected URL. Any other difference returns the
+layer to hold none, so the child exposes only the selected URL. That rewrite
+replaces `config.worktree`, so preparation synchronizes the rewritten file along
+with `config` and the Git directory before Ready publication. Any other difference returns the
 Fork snapshot Conflict. Config values and remote URLs are never logged.
 
 Fresh child root and Git-directory identities are journaled before copying.

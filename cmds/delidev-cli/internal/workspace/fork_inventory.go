@@ -151,6 +151,20 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	}
 	return nil
 }
+
+// syncForkConfigFile flushes one rewritten child config file to stable storage.
+func syncForkConfigFile(path string) error {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	err = file.Sync()
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
 func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec RepositorySpec, manifest *Manifest, write func() error, budget *snapshotCopyBudget, snapshot *ForkSnapshot) (PreparedRepository, *forkCopy, error) {
 	entry := &manifest.Repositories[len(manifest.Repositories)-1]
 	git.readOnly, git.offline = true, true
@@ -201,7 +215,8 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	// With extensions.worktreeConfig, Git reads config.worktree after config, so a
 	// retained worktree-scoped URL for the selected remote would keep the stale
 	// source endpoint effective. Drop it so the child has one selected URL.
-	if proof.configProof.worktree.hasKey(forkRemoteURLKey(remote)) {
+	worktreeConfigRewritten := proof.configProof.worktree.hasKey(forkRemoteURLKey(remote))
+	if worktreeConfigRewritten {
 		if _, err = git.run(ctx, entry.Path, "config", "--file", filepath.Join(entry.Path, ".git", "config.worktree"), "--unset-all", forkRemoteURLKey(remote)); err != nil {
 			return *entry, nil, err
 		}
@@ -226,17 +241,15 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	}
 	// Config is the only rewritten payload besides HEAD, and must reach stable
 	// storage before the Ready publication can authorize this child lifetime.
-	config, err := os.OpenFile(filepath.Join(entry.Path, ".git", "config"), os.O_RDWR, 0)
-	if err != nil {
+	if err = syncForkConfigFile(filepath.Join(entry.Path, ".git", "config")); err != nil {
 		return *entry, nil, err
 	}
-	err = config.Sync()
-	closeErr := config.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return *entry, nil, err
+	if worktreeConfigRewritten {
+		// The --unset-all rewrite replaced config.worktree after the copy budget
+		// synced it, so a crash could otherwise restore the stale source URL.
+		if err = syncForkConfigFile(filepath.Join(entry.Path, ".git", "config.worktree")); err != nil {
+			return *entry, nil, err
+		}
 	}
 	if err = syncSnapshotDir(filepath.Join(entry.Path, ".git")); err != nil {
 		return *entry, nil, err
