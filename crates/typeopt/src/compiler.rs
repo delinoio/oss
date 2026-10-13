@@ -354,7 +354,8 @@ impl Project {
     }
 
     /// Bundle chunks that stay unchanged unchecked boundaries: excluded,
-    /// classic scripts and chunks with `eval`, `with` or `importScripts`.
+    /// classic scripts and chunks that use the global `eval`, `with` or
+    /// `importScripts` (see `syntax_boundary_rule`).
     /// Publication leaves them byte-for-byte unchanged.
     pub fn bundle_boundaries(&self) -> Paths {
         let _scope = enter_program(Some(&self.version));
@@ -366,8 +367,21 @@ impl Project {
                 let mut nodes = Vec::new();
                 collect(file, &mut nodes);
                 let esm = has_esm_statements(file) || uses_import_meta(&nodes);
-                (crate::app::bundle_boundary(&name, esm) || uses_eval_or_with(&nodes))
-                    .then_some(name)
+                if crate::app::bundle_boundary(&name, esm) {
+                    tracing::debug!(
+                        chunk = %name,
+                        rule = "excluded-or-classic-script",
+                        "bundle chunk is a boundary"
+                    );
+                    return Some(name);
+                }
+                let rule = syntax_boundary_rule(&nodes)?;
+                tracing::debug!(
+                    chunk = %name,
+                    rule = rule.as_str(),
+                    "bundle chunk is a boundary"
+                );
+                Some(name)
             })
             .collect()
     }
@@ -1378,16 +1392,135 @@ pub(crate) fn percent_decode(path: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Whether a file uses `eval` (direct or aliased) or `with`, which can look
-/// up the file's bindings by runtime strings, or `importScripts`, which only
-/// a classic worker has: such a file may run as a classic script whose
-/// top-level bindings are globals, even if a module also imports it.
-pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
-    nodes.iter().any(|node| {
-        node.kind() == SyntaxKind::WithStatement
-            || (node.kind() == SyntaxKind::Identifier
-                && matches!(node.text(), "eval" | "importScripts"))
+/// The rule that makes a bundle chunk an unchanged boundary because of its
+/// syntax. The names are stable and appear in debug logs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SyntaxBoundaryRule {
+    /// A `with` statement can look up the chunk's bindings by runtime strings.
+    WithStatement,
+    /// The global `eval` is used as a value: a direct call or an alias.
+    EvalReference,
+    /// `importScripts(...)` is called, which only a classic worker can do.
+    ImportScriptsCall,
+    /// `importScripts` is used as a value that can alias it.
+    ImportScriptsReference,
+}
+
+impl SyntaxBoundaryRule {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::WithStatement => "with-statement",
+            Self::EvalReference => "eval-reference",
+            Self::ImportScriptsCall => "import-scripts-call",
+            Self::ImportScriptsReference => "import-scripts-reference",
+        }
+    }
+}
+
+/// Whether a node is an `Identifier` or string key that names a global-object
+/// receiver such as `globalThis` or `self`.
+fn is_global_object_receiver(node: Node) -> bool {
+    node.kind() == SyntaxKind::Identifier
+        && matches!(node.text(), "globalThis" | "self" | "window" | "global")
+}
+
+/// Classifies one node as a use of the global `eval` or `importScripts`.
+/// Property names, property keys, `typeof` operands and type names mention
+/// the name without running code, so they are not uses. A member of a global
+/// object (`globalThis.eval`, `self["importScripts"]`) is the global itself.
+fn global_use_rule(node: Node) -> Option<SyntaxBoundaryRule> {
+    let (name, is_name_node) = match node.kind() {
+        SyntaxKind::Identifier => (node.text(), true),
+        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral => {
+            (node.text(), false)
+        }
+        _ => return None,
+    };
+    if !matches!(name, "eval" | "importScripts") {
+        return None;
+    }
+    let parent = node.parent();
+    // The expression whose value the name denotes, and whether the name
+    // selects a member of a receiver instead of a binding.
+    let (expression, via_receiver) = if is_name_node {
+        match parent.kind() {
+            SyntaxKind::PropertyAccessExpression if parent.name() == node => {
+                (parent, Some(parent.expression()))
+            }
+            // Keys, member names and type names never run code.
+            SyntaxKind::PropertyAssignment
+            | SyntaxKind::PropertyDeclaration
+            | SyntaxKind::MethodDeclaration
+            | SyntaxKind::GetAccessor
+            | SyntaxKind::SetAccessor
+            | SyntaxKind::PropertySignature
+            | SyntaxKind::MethodSignature
+            | SyntaxKind::EnumMember
+            | SyntaxKind::JsxAttribute
+                if parent.name() == node =>
+            {
+                return None;
+            }
+            SyntaxKind::BindingElement if parent.property_name() == node => return None,
+            SyntaxKind::QualifiedName if parent.right() == node => return None,
+            _ => (node, None),
+        }
+    } else {
+        // A string literal selects a member only as `receiver["name"]`.
+        if parent.kind() != SyntaxKind::ElementAccessExpression
+            || parent.argument_expression() != node
+        {
+            return None;
+        }
+        (parent, Some(parent.expression()))
+    };
+    let is_call = |callee: Node| {
+        let holder = callee.parent();
+        holder.kind() == SyntaxKind::CallExpression && holder.expression() == callee
+    };
+    if expression.parent().kind() == SyntaxKind::TypeOfExpression {
+        // `typeof eval` and `typeof self.importScripts` are feature checks.
+        return None;
+    }
+    let global = match via_receiver {
+        None => true,
+        // `importScripts` is called on any receiver (`self`, `globalThis`, a
+        // worker scope held in a variable); `eval` is the global only on a
+        // global object, because `obj.eval` is an ordinary property.
+        Some(receiver) => {
+            is_global_object_receiver(receiver) || (name == "importScripts" && is_call(expression))
+        }
+    };
+    if !global {
+        return None;
+    }
+    Some(match (name, is_call(expression)) {
+        ("eval", _) => SyntaxBoundaryRule::EvalReference,
+        (_, true) => SyntaxBoundaryRule::ImportScriptsCall,
+        (_, false) => SyntaxBoundaryRule::ImportScriptsReference,
     })
+}
+
+/// The syntax rule that makes a file a boundary, if any: a `with` statement,
+/// the global `eval` used as a value (a call or an alias), which can look up
+/// the file's bindings by runtime strings, or `importScripts` called or used
+/// as a value, which only a classic worker has: such a file may run as a
+/// classic script whose top-level bindings are globals, even if a module also
+/// imports it. Mentions that cannot run code (`typeof self.importScripts`,
+/// `obj.eval`, `{ eval: 1 }`) are not uses.
+pub(crate) fn syntax_boundary_rule(nodes: &[Node]) -> Option<SyntaxBoundaryRule> {
+    nodes.iter().find_map(|&node| {
+        if node.kind() == SyntaxKind::WithStatement {
+            Some(SyntaxBoundaryRule::WithStatement)
+        } else {
+            global_use_rule(node)
+        }
+    })
+}
+
+/// Whether a file has a syntax boundary rule (see `syntax_boundary_rule`).
+pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
+    syntax_boundary_rule(nodes).is_some()
 }
 
 /// Whether a file uses `import.meta`, which only ES modules can parse.
