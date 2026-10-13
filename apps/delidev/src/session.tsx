@@ -582,6 +582,7 @@ export const TranscriptItem = memo(function TranscriptItem({
   const command = object(
     (tool.completed ? toolCompleted : toolStarted).command,
   );
+  const mcp = object((tool.completed ? toolCompleted : toolStarted).mcp);
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
@@ -700,6 +701,13 @@ export const TranscriptItem = memo(function TranscriptItem({
               />
             </p>
           ) : null}
+          {text(mcp.tool) ? (
+            <p>
+              {text(mcp.server)} / {text(mcp.tool)}
+            </p>
+          ) : null}
+          {text(mcp.error) ? <pre>{text(mcp.error)}</pre> : null}
+          {text(mcp.result_text) ? <pre>{text(mcp.result_text)}</pre> : null}
           {text(command.command) ? <pre>{text(command.command)}</pre> : null}
           {text(command.cwd) ? (
             <p>

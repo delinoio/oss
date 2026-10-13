@@ -156,7 +156,9 @@ export function conversationProjection(
         ? "view_image"
         : started.kind === "opencode-builtin"
           ? label(object(started.builtin).name) || label(started.kind)
-          : nativeNames[label(started.kind)] || label(started.kind);
+          : started.kind === "mcp"
+            ? label(object(started.mcp).tool) || label(started.kind)
+            : nativeNames[label(started.kind)] || label(started.kind);
     state =
       label(completed.status) ||
       (latest.kind === started.kind ? label(latest.status) : "") ||

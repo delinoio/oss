@@ -55,7 +55,7 @@ function genericAnswers(input: unknown): unknown {
  */
 function validAcceptedEnvelope(
   response: Document,
-  expectedEvidence: string,
+  expectedEvidence: readonly string[],
   request: unknown,
 ): boolean {
   const claim = object(response.claim),
@@ -81,7 +81,7 @@ function validAcceptedEnvelope(
     validSequence(delivery.sequence) &&
     response.acceptance != null &&
     hasOnlyKeys(acceptance, ["evidence", "sequence"]) &&
-    acceptance.evidence === expectedEvidence &&
+    expectedEvidence.includes(text(acceptance.evidence)) &&
     validSequence(acceptance.sequence) &&
     acceptance.sequence > delivery.sequence
   );
@@ -117,7 +117,11 @@ function validQuestion(data: Document): boolean {
   if (response.state === "accepted") {
     return (
       data.closure === "native-closed" &&
-      validAcceptedEnvelope(response, "native-question-output", data.questions)
+      validAcceptedEnvelope(
+        response,
+        ["native-question-output", "native-mcp-elicitation-resolved"],
+        data.questions,
+      )
     );
   }
   return response.acceptance == null;

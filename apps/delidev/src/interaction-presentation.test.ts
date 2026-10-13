@@ -161,6 +161,23 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
     ).presentation,
   ).toBe(InteractionPresentation.Retired);
 });
+it("retires an MCP elicitation only with its exact native resolution evidence", () => {
+  const elicitation = (evidence: string) => ({
+    ...accepted,
+    response: {
+      ...accepted.response,
+      acceptance: { evidence, sequence: 11 },
+    },
+  });
+  expect(
+    interactionProjection(
+      row(elicitation("native-mcp-elicitation-resolved")),
+    ).presentation,
+  ).toBe(InteractionPresentation.Retired);
+  expect(
+    interactionProjection(row(elicitation("transport-delivery"))).presentation,
+  ).toBe(InteractionPresentation.Pending);
+});
 it("retires only accepted or safely closed questions and keeps receipt recovery", () => {
   for (const data of [
     accepted,
