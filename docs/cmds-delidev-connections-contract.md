@@ -162,9 +162,16 @@ rejected.
 
 Admission of a new approval request first reclaims eligible records, then enforces
 the 256-record directory bound and a per-host cap of 8 live unapproved Pending
-requests. The ingress stores a SHA-256 digest of the peer host with each request;
-the digest is never exposed in public approval documents, and the per-host
-throttle and public identity endpoint are unchanged. Excess requests receive a
+requests. The ingress listens only on loopback behind `tailscale serve`, so the
+connection address is the shared local Serve proxy. The originating peer is the
+single well-formed address in the `X-Forwarded-For` header that Serve overwrites
+on every proxied request, honored only on a loopback connection; a missing,
+repeated, chained, zoned or unspecified value falls back to the connection
+address, which only makes the shared bucket stricter. The ingress stores a
+SHA-256 digest of that peer address with each request and keys the per-host
+approval throttle by the same peer; the digest is never exposed in public
+approval documents, the address grants no trust and the public identity endpoint
+is unchanged. Excess requests receive a
 bounded ResourceExhausted. Reclamation runs under the approval lock and derives
 only from durable records, so it is identical after restart. After the recovery
 window it removes only unapproved Pending, Denied/canceled/Expired and Approved

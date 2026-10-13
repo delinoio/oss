@@ -11,9 +11,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -77,6 +79,33 @@ func tailnetHostDigest(address string) string {
 	}
 	sum := sha256.Sum256([]byte(host))
 	return hex.EncodeToString(sum[:16])
+}
+
+// tailnetPeerAddress returns the "host:port" address of the originating tailnet
+// peer. The ingress listens only on loopback behind `tailscale serve`, so
+// RemoteAddr is the local Serve proxy shared by every peer. Serve overwrites
+// X-Forwarded-For with the peer's tailnet address on each proxied request, so a
+// single well-formed address from a loopback connection identifies the peer.
+// Anything else (no header, several values, a zoned or unspecified address, or a
+// non-loopback connection) falls back to RemoteAddr, which only makes the shared
+// bucket stricter. The value is used for abuse bounds only and grants no trust.
+func tailnetPeerAddress(r *http.Request) string {
+	remote, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	if proxy, err := netip.ParseAddr(remote); err != nil || !proxy.IsLoopback() {
+		return r.RemoteAddr
+	}
+	forwarded := r.Header.Values("X-Forwarded-For")
+	if len(forwarded) != 1 {
+		return r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(strings.TrimSpace(forwarded[0]))
+	if err != nil || peer.Zone() != "" || peer.IsUnspecified() {
+		return r.RemoteAddr
+	}
+	return net.JoinHostPort(peer.Unmap().String(), "0")
 }
 func tailnetRequestHost(ctx context.Context) string {
 	host, _ := ctx.Value(tailnetHostKey{}).(string)
@@ -254,11 +283,12 @@ func (s *Service) tailnetIngress(origin string) http.Handler {
 		}
 		switch r.URL.Path {
 		case delidevv1connect.TailscaleServiceCancelTailscaleApprovalProcedure, delidevv1connect.TailscaleServiceRequestTailscaleApprovalProcedure, delidevv1connect.TailscaleServiceGetTailscaleApprovalProcedure, delidevv1connect.TailscaleServiceDeliverTailscaleWorkerProcedure:
-			if !s.pairingAllowed(r.RemoteAddr) {
+			peer := tailnetPeerAddress(r)
+			if !s.pairingAllowed(peer) {
 				http.Error(w, "limited", http.StatusTooManyRequests)
 				return
 			}
-			public.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tailnetHostKey{}, tailnetHostDigest(r.RemoteAddr))))
+			public.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tailnetHostKey{}, tailnetHostDigest(peer))))
 			return
 		}
 		// Mount authenticated Connect business transports only. Private native relay,

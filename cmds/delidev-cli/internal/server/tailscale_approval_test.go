@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tailscale"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 // tailnetClock is a shared fake clock for the fixture services.
@@ -573,5 +575,90 @@ func TestTailnetReclaimablePredicate(t *testing.T) {
 	record.Approval.State = tailscale.Completed
 	if tailnetReclaimable(record, expiry.Add(100*tailnetRecoveryWindow)) {
 		t.Fatal("Completed receipts must never be reclaimable")
+	}
+}
+
+func TestTailnetPeerAddressUsesServeForwardedPeer(t *testing.T) {
+	cases := []struct {
+		name      string
+		remote    string
+		forwarded []string
+		want      string
+	}{
+		{"serve proxy with peer", "127.0.0.1:41000", []string{"100.64.0.7"}, "100.64.0.7:0"},
+		{"serve proxy with ipv6 peer", "127.0.0.1:41000", []string{"fd7a:115c:a1e0::1"}, "[fd7a:115c:a1e0::1]:0"},
+		{"mapped ipv4 peer is normalized", "127.0.0.1:41000", []string{"::ffff:100.64.0.7"}, "100.64.0.7:0"},
+		{"padded value", "127.0.0.1:41000", []string{" 100.64.0.7 "}, "100.64.0.7:0"},
+		{"ipv6 loopback proxy", "[::1]:41000", []string{"100.64.0.7"}, "100.64.0.7:0"},
+		{"no header", "127.0.0.1:41000", nil, "127.0.0.1:41000"},
+		{"chained header", "127.0.0.1:41000", []string{"100.64.0.7, 100.64.0.8"}, "127.0.0.1:41000"},
+		{"repeated header", "127.0.0.1:41000", []string{"100.64.0.7", "100.64.0.8"}, "127.0.0.1:41000"},
+		{"garbage header", "127.0.0.1:41000", []string{"not-an-ip"}, "127.0.0.1:41000"},
+		{"zoned header", "127.0.0.1:41000", []string{"fe80::1%eth0"}, "127.0.0.1:41000"},
+		{"unspecified header", "127.0.0.1:41000", []string{"0.0.0.0"}, "127.0.0.1:41000"},
+		{"non-loopback connection ignores header", "100.64.0.9:41000", []string{"100.64.0.7"}, "100.64.0.9:41000"},
+		{"unparseable remote", "bogus", []string{"100.64.0.7"}, "bogus"},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r.RemoteAddr = c.remote
+		for _, v := range c.forwarded {
+			r.Header.Add("X-Forwarded-For", v)
+		}
+		if got := tailnetPeerAddress(r); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// serveRoute models `tailscale serve`: every request reaches the ingress from the
+// loopback proxy and carries the originating peer in X-Forwarded-For.
+type serveRoute struct {
+	target *tailnetPeerFixture
+	peer   string
+}
+
+func (r *serveRoute) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.RemoteAddr = "127.0.0.1:50000"
+	clone.Header.Set("X-Forwarded-For", r.peer)
+	recorder := httptest.NewRecorder()
+	r.target.s.tailnetIngress(r.target.origin).ServeHTTP(recorder, clone)
+	return recorder.Result(), nil
+}
+
+func serveRequest(t *testing.T, target *tailnetPeerFixture, peer string, id domain.ID) error {
+	t.Helper()
+	_, public, err := tailscale.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := delidevv1connect.NewTailscaleServiceClient(&http.Client{Transport: &serveRoute{target: target, peer: peer}}, target.origin)
+	_, err = client.RequestTailscaleApproval(context.Background(), connect.NewRequest(&pb.RequestTailscaleApprovalRequest{RequestId: string(id), ServerId: string(target.s.Identity.ServerID), Origin: target.origin, Role: pb.DeviceType_DEVICE_TYPE_CLIENT, RequesterKey: public, Name: "peer"}))
+	return err
+}
+
+func TestTailnetIngressBoundsApprovalsPerOriginatingPeerBehindServe(t *testing.T) {
+	clock := &tailnetClock{now: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
+	target := newTailnetPeer(t, "target", clock)
+	for i := 0; i < tailnetHostPendingLimit; i++ {
+		if err := serveRequest(t, target, "100.64.0.1", domain.NewID()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertCode(t, serveRequest(t, target, "100.64.0.1", domain.NewID()), connect.CodeResourceExhausted)
+	if err := serveRequest(t, target, "100.64.0.2", domain.NewID()); err != nil {
+		t.Fatalf("a different originating peer behind the same Serve proxy must still be admitted: %v", err)
+	}
+	var digests = map[string]int{}
+	for _, name := range approvalFiles(t, target) {
+		v, err := target.s.readTailnet(domain.ID(strings.TrimSuffix(name, ".json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digests[v.RequesterHost]++
+	}
+	if len(digests) != 2 || digests[tailnetHostDigest("100.64.0.1:0")] != tailnetHostPendingLimit || digests[tailnetHostDigest("100.64.0.2:0")] != 1 {
+		t.Fatalf("requests must be attributed to the forwarded peer, got %v", digests)
 	}
 }
