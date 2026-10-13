@@ -113,6 +113,7 @@ until a retry read succeeds. The dialog shows
 localized read-only guidance for pending states and, for a failed profile or
 inventory read, a retry that re-reads only that state (profiles from the first
 page with cached pages bypassed, or the inventory) and never repeats any accepted or uncertain mutation.
+A session that becomes active again while the walk has no profile restarts it the same way, from the first page with cached pages bypassed, so a partial refetch of the current page never combines with pages read before the session was inactive.
 
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an

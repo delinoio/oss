@@ -1719,3 +1719,47 @@ it("restarts the profile walk with a network read of the first page when retried
   expect(f.register).not.toHaveBeenCalled();
   expect(pageCalls("create")).toHaveLength(0);
 });
+
+it("restarts the profile walk from the first page when an inactive session is reactivated", async () => {
+  const f = fixture({ registered: false });
+  // A short stale time stands in for the production client's one second.
+  f.client.setDefaultOptions({ queries: { retry: false, staleTime: 30 } });
+  let added = false;
+  setList(f, async ({ pageToken }) =>
+    pageToken
+      ? { profiles: [], nextPageToken: "" }
+      : { profiles: added ? [f.profile] : [], nextPageToken: "second" },
+  );
+  const tree = (active: boolean) => (
+    <TransportProvider transport={f.transport}>
+      <QueryClientProvider client={f.client}>
+        <MutationIntents>
+          <SessionTabsProvider>
+            <Workspace f={f} active={active} />
+          </SessionTabsProvider>
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const view = render(tree(true));
+  await waitFor(() => expect(listedTokens(f)).toEqual(["", "second"]));
+  await settle();
+  view.rerender(tree(false));
+  // Another window registers this account's profile on the first page while
+  // the session is inactive.
+  added = true;
+  await settle();
+  view.rerender(tree(true));
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/reactivated");
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  // The whole walk was read again from the first page, so the stale partial
+  // evidence never proved absence. Re-enabling the query may also refetch the
+  // current page once before the restart takes effect.
+  expect(listedTokens(f).slice(2).slice(-2)).toEqual(["", "second"]);
+  expect(f.register).not.toHaveBeenCalled();
+  fireEvent.click(openButton(dialog));
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(1);
+});

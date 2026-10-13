@@ -564,8 +564,8 @@ function NativeSessionBrowser({
     ? inventoryKnown && !inventoryFailure
     : discovery === ProfileDiscovery.Absent;
   // Re-reads profiles from the first page only; no mutation is repeated.
-  const retryDiscovery = () => {
-    console.info("delidev.browser_profiles", { phase: "discovery_retry" });
+  const restartDiscovery = (phase: "discovery_retry" | "discovery_reactivated") => {
+    console.info("delidev.browser_profiles", { phase });
     setFailure(undefined);
     setProof(undefined);
     profileWalk.current.clear();
@@ -582,6 +582,17 @@ function NativeSessionBrowser({
     if (profilePage) setProfilePage("");
     else void profiles.refetch();
   };
+  const retryDiscovery = () => restartDiscovery("discovery_retry");
+  // Re-enabling the query refetches only the current page, which would pair a
+  // fresh page with entries retained from before the session was inactive, so
+  // a reactivated session restarts its unresolved walk from the first page.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    const reactivated = active && !wasActive.current;
+    wasActive.current = active;
+    if (reactivated && supported && !profileId && idPattern.test(accountId))
+      restartDiscovery("discovery_reactivated");
+  }, [active]);
   useEffect(() => {
     alive.current = true;
     return () => {
