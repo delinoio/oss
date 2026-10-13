@@ -71,53 +71,11 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}
 		var problem error
 		if request.ManagedMCP != nil {
-			q := request.ManagedMCP
-			if request.Deadline.IsZero() || time.Until(request.Deadline) <= 0 || time.Until(request.Deadline) > 31*time.Second {
+			document, operationProblem, uncertain := executeManagedMCPRead(ctx, config, credential, instance, request)
+			if uncertain {
 				return workspace.ResultUncertain()
 			}
-			operationCtx, cancel := context.WithDeadline(ctx, request.Deadline)
-			defer cancel()
-			if q.ServerID != credential.ServerID || q.MachineID != credential.MachineID || q.WorkerDeviceID != credential.DeviceID || q.WorkerInstanceID != instance || request.Skills != nil || request.PRCandidate != nil {
-				return workspace.ResultUncertain()
-			}
-			catalog := managedmcp.Manager{Root: config.Root, ServerID: credential.ServerID, MachineID: credential.MachineID, WorkerDeviceID: credential.DeviceID, Logger: config.Logger}
-			// Metadata operations never access or unlock the native credential store.
-			if q.Action == domain.MCPAuthenticate || q.Action == domain.MCPOAuthBegin || q.Action == domain.MCPOAuthComplete || q.Action == domain.MCPOAuthCancel {
-				vault, err := credentials.Open(filepath.Join(config.Root, "managed-mcp-vault"), credential.ServerID, config.Logger)
-				if err != nil {
-					problem = err
-				} else {
-					catalog.Secrets = vault
-					closeHTTP := func() {}
-					if q.Action == domain.MCPOAuthBegin || q.Action == domain.MCPOAuthComplete {
-						// OAuth discovery and token exchange leave the Worker, so they use only
-						// the Worker's selected route and never ambient proxy settings.
-						var oauthClient *http.Client
-						oauthClient, closeHTTP, problem = managedMCPHTTPClient(operationCtx, config, credential)
-						catalog.HTTP = oauthClient
-					}
-					if problem == nil {
-						var result domain.ManagedMCPResult
-						result, problem = catalog.Execute(operationCtx, *q)
-						if problem == nil {
-							report.DocumentJson, _ = json.Marshal(result)
-						}
-					}
-					closeHTTP()
-					vault.Close()
-				}
-			} else {
-				var result domain.ManagedMCPResult
-				result, problem = catalog.Execute(operationCtx, *q)
-				if problem == nil {
-					report.DocumentJson, _ = json.Marshal(result)
-				}
-			}
-			if q.Secrets != nil {
-				clear(q.Secrets.Environment)
-				clear(q.Secrets.Headers)
-			}
-			q.CallbackURL = ""
+			report.DocumentJson, problem = document, operationProblem
 		} else if request.Skills != nil {
 			if request.Skills.WorkerDeviceID != credential.DeviceID || request.Skills.WorkerInstanceID != instance {
 				return workspace.ResultUncertain()
@@ -169,4 +127,61 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		return err
 	}
 	return domain.Fail(domain.Unavailable, "The workspace reader disconnected.", "Refresh after the Worker reconnects.")
+}
+
+// executeManagedMCPRead runs one managed MCP catalog operation. Its deadline context
+// and credential handles end with the call, so a long-lived stream retains nothing
+// per request. The last result reports an identity or deadline mismatch whose
+// outcome cannot be reported.
+func executeManagedMCPRead(ctx context.Context, config Config, credential Credential, instance domain.ID, request workspace.ReadRequest) (document []byte, problem error, uncertain bool) {
+	q := request.ManagedMCP
+	if request.Deadline.IsZero() || time.Until(request.Deadline) <= 0 || time.Until(request.Deadline) > 31*time.Second {
+		return nil, nil, true
+	}
+	operationCtx, cancel := context.WithDeadline(ctx, request.Deadline)
+	// The deadline context is released when this one operation ends, not when the
+	// long-lived stream disconnects.
+	defer cancel()
+	if q.ServerID != credential.ServerID || q.MachineID != credential.MachineID || q.WorkerDeviceID != credential.DeviceID || q.WorkerInstanceID != instance || request.Skills != nil || request.PRCandidate != nil {
+		return nil, nil, true
+	}
+	catalog := managedmcp.Manager{Root: config.Root, ServerID: credential.ServerID, MachineID: credential.MachineID, WorkerDeviceID: credential.DeviceID, Logger: config.Logger}
+	// Metadata operations never access or unlock the native credential store.
+	if q.Action == domain.MCPAuthenticate || q.Action == domain.MCPOAuthBegin || q.Action == domain.MCPOAuthComplete || q.Action == domain.MCPOAuthCancel {
+		vault, err := credentials.Open(filepath.Join(config.Root, "managed-mcp-vault"), credential.ServerID, config.Logger)
+		if err != nil {
+			problem = err
+		} else {
+			catalog.Secrets = vault
+			closeHTTP := func() {}
+			if q.Action == domain.MCPOAuthBegin || q.Action == domain.MCPOAuthComplete {
+				// OAuth discovery and token exchange leave the Worker, so they use only
+				// the Worker's selected route and never ambient proxy settings.
+				var oauthClient *http.Client
+				oauthClient, closeHTTP, problem = managedMCPHTTPClient(operationCtx, config, credential)
+				catalog.HTTP = oauthClient
+			}
+			if problem == nil {
+				var result domain.ManagedMCPResult
+				result, problem = catalog.Execute(operationCtx, *q)
+				if problem == nil {
+					document, _ = json.Marshal(result)
+				}
+			}
+			closeHTTP()
+			vault.Close()
+		}
+	} else {
+		var result domain.ManagedMCPResult
+		result, problem = catalog.Execute(operationCtx, *q)
+		if problem == nil {
+			document, _ = json.Marshal(result)
+		}
+	}
+	if q.Secrets != nil {
+		clear(q.Secrets.Environment)
+		clear(q.Secrets.Headers)
+	}
+	q.CallbackURL = ""
+	return document, problem, false
 }

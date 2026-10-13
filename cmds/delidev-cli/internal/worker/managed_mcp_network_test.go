@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/outboundtest"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workernetwork"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 func TestManagedMCPOAuthClientUsesSelectedWorkerRoute(t *testing.T) {
@@ -80,5 +81,38 @@ func TestManagedMCPOAuthClientIgnoresAmbientProxy(t *testing.T) {
 	}
 	if connections.Load() != 0 {
 		t.Fatal("OAuth traffic used the ambient proxy")
+	}
+}
+
+func TestManagedMCPReadOperationIsScopedToOneCallAndChecksItsIdentity(t *testing.T) {
+	credential := Credential{ServerID: domain.NewID(), MachineID: domain.NewID(), DeviceID: domain.NewID()}
+	instance := domain.NewID()
+	build := func(edit func(*workspace.ReadRequest)) workspace.ReadRequest {
+		q := &domain.ManagedMCPRequest{ServerID: credential.ServerID, MachineID: credential.MachineID, WorkerDeviceID: credential.DeviceID, WorkerInstanceID: instance, ActorID: domain.NewID(), RequestID: domain.NewID(), Action: domain.MCPList, CallbackURL: "http://localhost/callback?code=private"}
+		request := workspace.ReadRequest{ID: domain.NewID(), Deadline: time.Now().Add(10 * time.Second), ManagedMCP: q}
+		edit(&request)
+		return request
+	}
+	config := Config{Root: t.TempDir()}
+	for name, edit := range map[string]func(*workspace.ReadRequest){
+		"no-deadline":      func(r *workspace.ReadRequest) { r.Deadline = time.Time{} },
+		"expired":          func(r *workspace.ReadRequest) { r.Deadline = time.Now().Add(-time.Second) },
+		"too-far":          func(r *workspace.ReadRequest) { r.Deadline = time.Now().Add(time.Hour) },
+		"foreign-machine":  func(r *workspace.ReadRequest) { r.ManagedMCP.MachineID = domain.NewID() },
+		"foreign-instance": func(r *workspace.ReadRequest) { r.ManagedMCP.WorkerInstanceID = domain.NewID() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, uncertain := executeManagedMCPRead(context.Background(), config, credential, instance, build(edit)); !uncertain {
+				t.Fatal("a mismatched managed MCP request was executed")
+			}
+		})
+	}
+	request := build(func(*workspace.ReadRequest) {})
+	document, problem, uncertain := executeManagedMCPRead(context.Background(), config, credential, instance, request)
+	if uncertain || problem != nil || len(document) == 0 {
+		t.Fatalf("a valid read failed: %v %v", problem, uncertain)
+	}
+	if request.ManagedMCP.CallbackURL != "" {
+		t.Fatal("the callback URL outlived its operation")
 	}
 }
