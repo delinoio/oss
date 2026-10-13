@@ -65,14 +65,16 @@ func isRetryableStorageFailure(err error) bool {
 }
 
 func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
-	record, err := tx.Get(domain.RepositoryKind, id)
-	if expected == 0 && domain.SafeError(err).Code == domain.NotFound {
-		return tx.RequireUnusedID(id)
+	// Ordinary creation reports identity conflicts for any live kind or tombstone
+	// before the kind-specific lookup can produce revision or kind errors.
+	if expected == 0 {
+		return tx.RequireUnusedCreateID(id)
 	}
+	record, err := tx.Get(domain.RepositoryKind, id)
 	if err != nil {
 		return err
 	}
-	if expected == 0 || record.Revision != expected {
+	if record.Revision != expected {
 		return domain.Fail(domain.Conflict, "The repository revision changed.", "Read its current revision and submit a new save request.")
 	}
 	return nil

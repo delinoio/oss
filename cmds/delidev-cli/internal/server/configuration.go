@@ -105,6 +105,12 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		if id == "" {
 			id = domain.NewID()
 		}
+		// Identity availability outranks editable-name validation for new Projects.
+		if input.ExpectedRevision == 0 && input.Kind == domain.ProjectKind {
+			if err := tx.RequireUnusedCreateID(id); err != nil {
+				return nil, err
+			}
+		}
 		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind) {
 			previous, err := tx.Get(input.Kind, id)
 			if err != nil {
