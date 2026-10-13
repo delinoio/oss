@@ -268,6 +268,15 @@ export class SessionTabsStore {
           : previous.selected,
     });
   }
+  /** Opened Terminal content tabs that are not presentation tombstoned. */
+  liveTerminals(id: string) {
+    const presentation = this.terminalPresentation(id);
+    return this.snapshot(id).tabs.flatMap((tab) =>
+      tab.kind === SessionTabKind.Terminal && !presentation.hidden(tab.id)
+        ? [tab.id]
+        : [],
+    );
+  }
   dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
     const key = sessionTabKey({
       kind: SessionTabKind.Terminal,
@@ -275,10 +284,16 @@ export class SessionTabsStore {
     });
     const previous = this.snapshot(id);
     const selected = previous.selected === key;
+    // A tombstoned terminal tab (dismissed earlier in the same observation
+    // batch) is never a fallback target; only live opened terminals qualify.
+    const presentation = this.terminalPresentation(id);
     const next = selected
       ? terminalFallback(
           previous.tabs.flatMap((tab) =>
-            tab.kind === SessionTabKind.Terminal ? [tab.id] : [],
+            tab.kind === SessionTabKind.Terminal &&
+            (tab.id === terminalId || !presentation.hidden(tab.id))
+              ? [tab.id]
+              : [],
           ),
           terminalId,
         ) || inventoryFallback
