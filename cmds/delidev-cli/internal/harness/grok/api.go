@@ -74,6 +74,9 @@ type apiConnection struct {
 	closureStarted  bool
 	controlMu       sync.Mutex
 	control         *textControl
+	// protected holds only the execution token and caller-protected forms. It
+	// guards text chunks across their boundaries before any chunk is published.
+	protected security.ProtectedJSON
 }
 
 func apiConfigurationError() *domain.Error {
@@ -299,7 +302,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || decode(response.Result, &struct{}{}) != nil || profile.checkInitialized() != nil {
 		return nil, incompatible()
 	}
-	return &apiConnection{nativeVersion: nativeMetadata.Meta.Version, wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
+	return &apiConnection{nativeVersion: nativeMetadata.Meta.Version, wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1), protected: security.NewProtectedJSON(prepared.ProtectedValues)}, nil
 }
 
 func (a *apiConnection) Close() error { return a.wire.Close() }

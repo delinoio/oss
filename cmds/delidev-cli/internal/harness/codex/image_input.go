@@ -26,7 +26,9 @@ func (c *Client) nativeImageParts(ctx context.Context, input domain.SessionInput
 	}
 	models, err := c.readModelList(ctx, true)
 	if err != nil {
-		return nil, unsupportedImageBeforeSend()
+		// An unobserved inventory proves nothing about image support. Return the
+		// original typed failure so it never acquires the pre-send rejection proof.
+		return nil, err
 	}
 	supported := false
 	for _, model := range models {

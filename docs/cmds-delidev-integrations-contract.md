@@ -572,7 +572,10 @@ depth 20 and 40 provider-page reads under the original query deadline. The graph
 rechecks every discovered relationship page, including empty boundaries, original PR refs and numeric repository identity before complete claims. Desktop enrichment and tabs must also match the retained original profile generation and numeric repository scope. Limits, missing source repositories, access
 failures and relationship drift remain incomplete; cycles and competing parents
 remain ambiguous and render flat selectable observations. Foreign forks grant
-no same-repository graph relationship.
+no same-repository graph relationship; a PR whose head repository has a valid
+numeric identity different from the selected repository remains a complete flat
+node with no reason, while a missing head repository identity remains incomplete
+(`head_repository_unavailable`).
 
 Each observed PR retains its own provider-reported additions/deletions, bound to
 its exact repository/PR/base/head. Commit counts come independently from commit

@@ -223,3 +223,121 @@ it("requires explicit server support and refuses replies above the full-content 
   ).toBe(true);
   expect(send).not.toHaveBeenCalled();
 });
+
+function renderGenerationFindings(
+  retries: Record<string, unknown>[],
+  current: string | undefined,
+  replies: { id: string; execution: string | undefined; text: string }[],
+) {
+  const parent = create(ResourceSchema, {
+    schemaVersion: 1,
+    kind: EntityKind.SESSION,
+    id: newRequestId(),
+    revision: 1n,
+  });
+  const child = create(ResourceSchema, {
+    schemaVersion: 1,
+    kind: EntityKind.SESSION,
+    id: newRequestId(),
+    revision: 1n,
+    documentJson: encode({
+      fork: { source_session_id: parent.id, sidechat_parent_snapshot: {} },
+      ...(current ? { sidechat_current_answer: current } : {}),
+      ...(retries.length ? { sidechat_retries: retries } : {}),
+    }),
+  });
+  const rows = replies.map((reply) =>
+    create(ResourceSchema, {
+      schemaVersion: 1,
+      kind: EntityKind.MESSAGE,
+      id: reply.id,
+      revision: 1n,
+      sessionId: child.id,
+      documentJson: encode({
+        role: "assistant",
+        state: "complete",
+        text: reply.text,
+        ...(reply.execution ? { execution_id: reply.execution } : {}),
+      }),
+    }),
+  );
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.NATIVE_SIDECHAT_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      getResource: () => ({ resource: parent }),
+    });
+    router.service(SessionService, { sendSidechatFindings: vi.fn() });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <MutationIntents>
+          <SidechatFindings session={child} messages={rows} />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+}
+
+it("offers only the selected answer generation after a successful retry", async () => {
+  const question = newRequestId(),
+    original = newRequestId(),
+    retried = newRequestId();
+  renderGenerationFindings(
+    [
+      {
+        question_id: question,
+        previous_execution_id: original,
+        execution_id: retried,
+      },
+    ],
+    retried,
+    [
+      { id: newRequestId(), execution: original, text: "Superseded reply" },
+      { id: newRequestId(), execution: retried, text: "Current reply" },
+    ],
+  );
+  await screen.findByText("Current reply");
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  expect(screen.queryByText("Superseded reply")).toBeNull();
+});
+
+it("keeps the previous answer transferable when the retry did not succeed", async () => {
+  const question = newRequestId(),
+    original = newRequestId(),
+    attempt = newRequestId();
+  renderGenerationFindings(
+    [
+      {
+        question_id: question,
+        previous_execution_id: original,
+        execution_id: attempt,
+      },
+    ],
+    original,
+    [
+      { id: newRequestId(), execution: original, text: "Selected reply" },
+      { id: newRequestId(), execution: attempt, text: "Failed attempt reply" },
+    ],
+  );
+  await screen.findByText("Selected reply");
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  expect(screen.queryByText("Failed attempt reply")).toBeNull();
+});
+
+it("leaves legacy sessions without retries unaffected", async () => {
+  renderGenerationFindings([], undefined, [
+    { id: newRequestId(), execution: newRequestId(), text: "First reply" },
+    { id: newRequestId(), execution: newRequestId(), text: "Second reply" },
+    { id: newRequestId(), execution: undefined, text: "Unlabelled reply" },
+  ]);
+  await screen.findByText("First reply");
+  expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+});

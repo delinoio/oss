@@ -419,6 +419,17 @@ workspace lease, account lease and independent cleanup fences. It is not a
 compaction, conversation input, rollback or filesystem rewind. Other context-job
 versions retain their original rules. No migration is required.
 
+The protected ChatGPT subscription lease (`TakeSubscription`) for a context job
+validates the Worker capability set of that job's own operation. A version-4
+Revert job requires only `CodexSessionRevertV1` (plus the original managed
+subscription and execution-startup prerequisites); it does not require
+`NativeSessionCompactionV1` or `CodexSessionCompactionV1`. A version-2 Codex
+compaction job keeps both original compaction capabilities, and
+`CodexSessionRevertV1` alone never authorizes it. Neither capability set
+authorizes the other operation, and every other original lease check (machine,
+instance, assignment, account generation, source ownership, budget and
+cancellation) is unchanged.
+
 Acceptance freezes the original root session, current context revision, exact
 complete user message, accepted original input and native turn, completed source
 assignment/account/Worker and original configuration. Refuse inherited turns,

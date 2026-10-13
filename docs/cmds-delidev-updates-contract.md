@@ -125,3 +125,5 @@ the currently unset root. The packaging contract owns the new release workflow a
 GitHub Environment configuration.
 
 Public CLI `update check` uses a 35-second outer context and response-header limit so the original bounded 30-second release lookup can return its typed result. A shorter caller deadline wins. Checks never retry automatically after timeout; exact original request identities, update reads, Worker acceptance/cancellation and native installation deadlines retain their existing semantics.
+
+Public CLI `update check`, `update worker-request` and `update cancel` report success only when the response `request_id` equals the exact request ID the CLI dispatched, whether generated or supplied with `--request-id`. A missing, malformed or foreign receipt ID returns the closed `RecoveryRequired` failure, keeps the sent ID in the output envelope for recovery, and never adopts the foreign identity or repeats the mutation. `update get` is read-only and unchanged.

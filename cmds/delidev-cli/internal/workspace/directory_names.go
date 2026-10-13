@@ -143,10 +143,12 @@ func manifestRepositorySpecs(manifest Manifest) []RepositorySpec {
 	return specs
 }
 
+// ForkRequiresNamedDirectories reports whether the frozen source preparation
+// uses named repository directories. Independent Forks and Sidechat share this
+// predicate: a Sidechat child owns only reference metadata, but its source
+// inspection and reference publication still resolve the parent's frozen
+// directory names and therefore need the negotiated named-directory layout.
 func ForkRequiresNamedDirectories(input domain.ForkJobInput) (bool, error) {
-	if input.Purpose == domain.SidechatFork {
-		return false, nil
-	}
 	var preparation PrepareRequest
 	if domain.Decode(input.SourceAssignment.Preparation, &preparation) != nil {
 		return false, ResultUncertain()
