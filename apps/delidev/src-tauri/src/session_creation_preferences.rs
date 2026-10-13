@@ -199,7 +199,7 @@ impl Store {
         pair: Pair,
         expected_revision: u32,
     ) -> Snapshot {
-        self.update_with(scope, kind, pair, expected_revision, persist_all)
+        self.update_with(scope, kind, pair, expected_revision, persist_guarded)
     }
 
     fn update_with(
@@ -208,7 +208,12 @@ impl Store {
         kind: CreationKind,
         pair: Pair,
         expected_revision: u32,
-        write: impl FnOnce(&Path, &[Record], &[DeviceRecord]) -> Result<(), Problem>,
+        write: impl FnOnce(
+            &Path,
+            &[Record],
+            &[DeviceRecord],
+            &dyn Fn() -> Result<(), Problem>,
+        ) -> Result<(), Problem>,
     ) -> Snapshot {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.revision != expected_revision
@@ -231,8 +236,12 @@ impl Store {
             let path = self.path.as_deref().ok_or(Problem::Unavailable)?;
             // Hold the interprocess lease from reinspection through the
             // synchronized publication so no other process can interleave.
-            let _lease = Lease::acquire(path)?;
-            if inspect(path)? != (state.records.clone(), state.devices.clone()) {
+            let lease = Lease::acquire(path)?;
+            let observed = inspect(path)?;
+            // A rename-and-replace during inspection would leave this lease
+            // excluding nobody, so prove it still owns the path first.
+            lease.revalidate()?;
+            if observed != (state.records.clone(), state.devices.clone()) {
                 return Err(Problem::Changed);
             }
             let mut records = state.records.clone();
@@ -251,7 +260,7 @@ impl Store {
                     pair,
                 });
             }
-            write(path, &records, &state.devices)?;
+            write(path, &records, &state.devices, &|| lease.revalidate())?;
             Ok(records)
         })();
         match result {
@@ -320,8 +329,10 @@ impl Store {
                 return Err(Problem::InvalidDocument);
             }
             let path = self.path.as_deref().ok_or(Problem::Unavailable)?;
-            let _lease = Lease::acquire(path)?;
-            if inspect(path)? != (state.records.clone(), state.devices.clone()) {
+            let lease = Lease::acquire(path)?;
+            let observed = inspect(path)?;
+            lease.revalidate()?;
+            if observed != (state.records.clone(), state.devices.clone()) {
                 return Err(Problem::Changed);
             }
             let mut devices = state.devices.clone();
@@ -340,7 +351,7 @@ impl Store {
                     machine_id,
                 });
             }
-            persist_all(path, &state.records, &devices)?;
+            persist_guarded(path, &state.records, &devices, &|| lease.revalidate())?;
             Ok(devices)
         })();
         match result {
@@ -363,6 +374,7 @@ impl Store {
 /// Exclusive interprocess lease over the preferences document.
 struct Lease {
     file: File,
+    lock_path: PathBuf,
 }
 
 impl Lease {
@@ -417,11 +429,18 @@ impl Lease {
                 }
             }
         }
-        let lease = Self { file };
+        let lease = Self { file, lock_path };
         // The sidecar must still be the locked file; a replaced path would
         // leave this lease excluding nobody.
-        lease.validate_identity(&lock_path)?;
+        lease.revalidate()?;
         Ok(lease)
+    }
+
+    /// Proves the locked handle is still the file at the sidecar path. The
+    /// path is resolved afresh, so a renamed or replaced sidecar or containing
+    /// directory fails the comparison. Call it again before every publication.
+    fn revalidate(&self) -> Result<(), Problem> {
+        self.validate_identity(&self.lock_path)
     }
 
     fn validate_identity(&self, lock_path: &Path) -> Result<(), Problem> {
@@ -598,9 +617,16 @@ fn inspect(path: &Path) -> Result<(Vec<Record>, Vec<DeviceRecord>), Problem> {
 }
 #[cfg(test)]
 fn persist(path: &Path, records: &[Record]) -> Result<(), Problem> {
-    persist_all(path, records, &[])
+    persist_guarded(path, records, &[], &|| Ok(()))
 }
-fn persist_all(path: &Path, records: &[Record], devices: &[DeviceRecord]) -> Result<(), Problem> {
+/// Publishes the document after `guard` confirms, immediately before the
+/// replacement, that the caller's interprocess lease still owns the path.
+fn persist_guarded(
+    path: &Path,
+    records: &[Record],
+    devices: &[DeviceRecord],
+    guard: &dyn Fn() -> Result<(), Problem>,
+) -> Result<(), Problem> {
     let parent = path.parent().ok_or(Problem::WriteFailed)?;
     fs::create_dir_all(parent).map_err(|_| Problem::WriteFailed)?;
     let scratch = parent.join(format!(".session-creation-{}.tmp", uuid::Uuid::now_v7()));
@@ -626,6 +652,7 @@ fn persist_all(path: &Path, records: &[Record], devices: &[DeviceRecord]) -> Res
             .and_then(|_| file.sync_all())
             .map_err(|_| Problem::WriteFailed)?;
         drop(file);
+        guard()?;
         crate::appearance::replace(&scratch, path).map_err(|_| Problem::WriteFailed)?;
         #[cfg(unix)]
         File::open(parent)
@@ -862,7 +889,7 @@ mod tests {
             CreationKind::Session,
             pair(),
             read.revision,
-            |_, _, _| Err(Problem::WriteFailed),
+            |_, _, _, _| Err(Problem::WriteFailed),
         );
         assert_eq!(failed.pair, Some(original.clone()));
         assert_eq!(failed.problem, Some(Problem::WriteFailed));
@@ -873,8 +900,8 @@ mod tests {
             CreationKind::Session,
             next.clone(),
             read.revision,
-            |path, rows, devices| {
-                persist_all(path, rows, devices)?;
+            |path, rows, devices, guard| {
+                persist_guarded(path, rows, devices, guard)?;
                 Err(Problem::OutcomeUnknown)
             },
         );
@@ -1010,13 +1037,13 @@ mod tests {
             CreationKind::Session,
             parent_pair.clone(),
             initial.revision,
-            |path, records, devices| {
+            |path, records, devices, guard| {
                 fs::write(directory.path().join("attempt-while-locked"), b"go").unwrap();
                 wait_for_marker(&directory.path().join("child-refused"));
                 // The child could neither inspect nor publish while this
                 // process retained its lease after original inspection.
                 assert!(!path.exists());
-                persist_all(path, records, devices)
+                persist_guarded(path, records, devices, guard)
             },
         );
         assert_eq!(committed.problem, None);
@@ -1131,6 +1158,57 @@ mod tests {
                 .is_symlink()
         );
         assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replaced_lease_sidecar_blocks_publication() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DOCUMENT_NAME);
+        let lock = directory.path().join(LEASE_NAME);
+        let store = Store::new(Some(directory.path().into()));
+        let selected = scope();
+        let original = pair();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        assert_eq!(
+            store
+                .update(
+                    selected.clone(),
+                    CreationKind::Session,
+                    original.clone(),
+                    read.revision
+                )
+                .problem,
+            None
+        );
+        let before = fs::read(&path).unwrap();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        let replaced = store.update_with(
+            selected.clone(),
+            CreationKind::Session,
+            pair(),
+            read.revision,
+            |path, records, devices, guard| {
+                // Another process could now lock a fresh sidecar while this
+                // process still holds the renamed one.
+                fs::rename(&lock, directory.path().join("moved.lock")).unwrap();
+                let fresh = fs::File::create(&lock).unwrap();
+                fresh
+                    .set_permissions(fs::Permissions::from_mode(0o600))
+                    .unwrap();
+                persist_guarded(path, records, devices, guard)
+            },
+        );
+        assert_eq!(replaced.problem, Some(Problem::WriteFailed));
+        assert_eq!(replaced.pair, Some(original));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let leftovers = fs::read_dir(directory.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     #[cfg(unix)]
