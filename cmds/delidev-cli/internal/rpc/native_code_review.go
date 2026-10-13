@@ -55,6 +55,34 @@ func NativeReviewResultWire(v domain.NativeCodeReviewResult) *pb.NativeCodeRevie
 	}
 	return p
 }
+
+// nativeReviewUsageRecordsKey is the NativeCodeReviewResult JSON field that
+// holds private response usage receipts.
+const nativeReviewUsageRecordsKey = "usage_records"
+
+// nativeReviewPublicOutput drops the private response usage receipts from a
+// settled review output. Those receipts carry account, connection, provider,
+// model and native thread/turn identifiers plus response digests. They stay in
+// the persisted job output and the usage table; the public projection exposes
+// only findings, selection and aggregate usage. Outputs without the key, such
+// as the no-send and stale proofs, are returned byte for byte. A malformed or
+// oversized output fails closed.
+func nativeReviewPublicOutput(raw []byte) ([]byte, bool) {
+	var output map[string]json.RawMessage
+	if domain.Decode(raw, &output) != nil {
+		return nil, false
+	}
+	if _, exists := output[nativeReviewUsageRecordsKey]; !exists {
+		return raw, true
+	}
+	delete(output, nativeReviewUsageRecordsKey)
+	redacted, err := json.Marshal(output)
+	if err != nil {
+		return nil, false
+	}
+	return redacted, true
+}
+
 func nativeReviewJobDocument(raw []byte) []byte {
 	var envelope struct {
 		Type domain.JobType `json:"type"`
@@ -77,6 +105,13 @@ func nativeReviewJobDocument(raw []byte) []byte {
 		ActionID domain.ID                     `json:"action_id"`
 		Target   domain.NativeCodeReviewTarget `json:"target"`
 	}{1, input.ActionID, input.Target})
+	if len(job.Output) > 0 {
+		output, ok := nativeReviewPublicOutput(job.Output)
+		if !ok {
+			return nil
+		}
+		job.Output = output
+	}
 	result, _ := json.Marshal(job)
 	return result
 }

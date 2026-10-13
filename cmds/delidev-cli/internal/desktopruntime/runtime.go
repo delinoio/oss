@@ -71,7 +71,15 @@ func Publish(t Target) error {
 	if err := security.WriteAtomic(filepath.Join(t.Root, recordName), raw); err != nil {
 		return err
 	}
-	return MarkLocal(t)
+	// An unverifiable Local Worker never blocks the app runtime itself. It
+	// simply gains no follow marker and keeps failing closed at its transport.
+	if err := MarkLocal(t); err != nil {
+		if domain.SafeError(err).Code != domain.RecoveryRequired {
+			return err
+		}
+		logUnverifiedPairing("publish", err)
+	}
+	return nil
 }
 func Retire(t Target) error {
 	current, err := Load(t.Root, t.ServerID)
@@ -110,7 +118,9 @@ func LocalRoot(root string, serverID domain.ID, pairedEndpoint string) (string, 
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "local-pairing.json"), 4096)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
+		// A deleted journal must not turn the canonical owner scope into a
+		// direct-route Worker that sends its bearer to the saved address.
+		return "", false, requireJournalInOwnerScope(root, serverID, pairedEndpoint)
 	}
 	if err != nil {
 		return "", false, err
@@ -240,13 +250,33 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.Base.RoundTrip(copy)
 }
 
-// Once an explicitly paired Local Worker follows an app runtime, retirement
-// must never fall back to its obsolete immutable pairing address.
-func Follow(root string, serverID domain.ID) error {
+func followMarkerPath(root string) string {
+	return filepath.Join(root, "desktop-runtime-follow.json")
+}
+
+// FollowVerified persists the follow marker for the fixed Local Worker at root
+// only after the retained original pairing grant proves that the saved Worker
+// identity (server, endpoint and pairing) is the one the owner granted. The
+// proof is file-only and runs before any listener is contacted. An existing
+// marker is never trusted on its own: a version-2 marker written before grant
+// verification existed carries no proof, so the grant is re-verified every time.
+func FollowVerified(owner, root string, serverID domain.ID, endpoint string, pairingID domain.ID) error {
 	if serverID.Validate() != nil {
 		return unavailable()
 	}
-	path := filepath.Join(root, "desktop-runtime-follow.json")
+	if err := VerifyOriginalPairing(owner, root, serverID, endpoint, pairingID); err != nil {
+		return err
+	}
+	return follow(root, serverID)
+}
+
+// Once an explicitly paired Local Worker follows an app runtime, retirement
+// must never fall back to its obsolete immutable pairing address.
+func follow(root string, serverID domain.ID) error {
+	if serverID.Validate() != nil {
+		return unavailable()
+	}
+	path := followMarkerPath(root)
 	type marker struct {
 		Version  int       `json:"version"`
 		ServerID domain.ID `json:"server_id"`
@@ -270,12 +300,26 @@ type LocalTransport struct {
 	Base        http.RoundTripper
 	Root, Owner string
 	ServerID    domain.ID
+	// Endpoint and PairingID are the saved Worker's identity. They let the
+	// transport prove the retained original grant before it creates a marker.
+	Endpoint  string
+	PairingID domain.ID
 }
 
 func (t *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	// The retained original grant is proven from files before any branch can
+	// contact a listener: the runtime, a marker-refused retirement or the
+	// original pairing address. Edited credential and journal endpoints that
+	// the unchanged grant does not name never receive the bearer token.
+	// Unverifiable evidence keeps its recovery_required code so callers such as
+	// the resident Worker stop instead of retrying a transient-looking outage.
+	if err := VerifyOriginalPairing(t.Owner, t.Root, t.ServerID, t.Endpoint, t.PairingID); err != nil {
+		logUnverifiedPairing("transport", err)
+		return nil, err
+	}
 	target, err := Load(t.Owner, t.ServerID)
 	if err == nil {
-		if err := Follow(t.Root, t.ServerID); err != nil {
+		if err := follow(t.Root, t.ServerID); err != nil {
 			return nil, unavailable()
 		}
 		return (&Transport{Base: t.Base, Resolve: func() (Target, error) { return target, nil }}).RoundTrip(r)
@@ -295,7 +339,7 @@ func MarkLocal(t Target) error {
 		return nil
 	}
 	if err != nil {
-		return err
+		return unreadableEvidence("journal", err)
 	}
 	var original struct {
 		RequestID domain.ID `json:"request_id"`
@@ -304,17 +348,22 @@ func MarkLocal(t Target) error {
 		Name      string    `json:"name,omitempty"`
 	}
 	if domain.Decode(raw, &original) != nil {
-		return unavailable()
+		return unreadableEvidence("journal", unavailable())
 	}
 	if original.ServerID != t.ServerID {
 		return nil
 	}
 	owner, local, err := LocalRoot(root, t.ServerID, original.Endpoint)
 	if err != nil {
-		return err
+		return unreadableEvidence("journal", err)
 	}
 	if !local || owner != t.Root {
 		return unavailable()
 	}
-	return Follow(root, t.ServerID)
+	exists, err := verifySavedWorker(owner, root, t.ServerID, original.Endpoint)
+	if err != nil || !exists {
+		// No accepted Worker identity yet means nothing can follow the runtime.
+		return err
+	}
+	return follow(root, t.ServerID)
 }

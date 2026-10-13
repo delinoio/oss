@@ -134,6 +134,14 @@ func settleNativeReviewOutcome(ctx context.Context, logger *slog.Logger, jobRoot
 	return output, returned
 }
 
+// nativeReviewWorkspaceManager builds the workspace manager for a native review
+// with the Worker's negotiated named-directory capability, like every other
+// Worker workspace path. Without it, a frozen named repository directory is
+// rejected as Unsupported before capture and settles as the no-send proof.
+func nativeReviewWorkspaceManager(config Config, logger *slog.Logger) *workspace.Manager {
+	return &workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: config.Root, Logger: logger}
+}
+
 func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	c := config.execution
 	var input domain.NativeCodeReviewInput
@@ -263,7 +271,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 	if registration == nil || registration.Msg == nil || registration.Msg.ProxyPath != expectedProxy {
 		return nil, publicationUncertain()
 	}
-	manager := &workspace.Manager{Root: config.Root, Logger: logger}
+	manager := nativeReviewWorkspaceManager(config, logger)
 	request := workspace.ReadRequest{ID: input.ActionID, Preparation: prep, Manifest: manifest}
 	var result domain.NativeCodeReviewResult
 	workspaceJoined = false

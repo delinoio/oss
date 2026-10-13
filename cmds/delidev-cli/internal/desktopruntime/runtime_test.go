@@ -99,13 +99,14 @@ func TestLocalRetirementCannotFallBackToPairingAddress(t *testing.T) {
 	defer server.Close()
 	target = fixtureTarget(server.URL)
 	target.Root = root
+	retained := retainPairing(t, root, target.ServerID, "http://127.0.0.1:40000")
 	if err := Publish(target); err != nil {
 		t.Fatal(err)
 	}
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.Proxy = nil
 	defer base.CloseIdleConnections()
-	transport := &LocalTransport{Base: base, Root: worker, Owner: root, ServerID: target.ServerID}
+	transport := &LocalTransport{Base: base, Root: worker, Owner: root, ServerID: target.ServerID, Endpoint: retained.Endpoint, PairingID: retained.PairingID}
 	request, _ := http.NewRequest("POST", server.URL+"/rpc", nil)
 	request.Header.Set("Authorization", "Bearer retained")
 	response, err := transport.RoundTrip(request)
@@ -181,6 +182,8 @@ func TestLocalPairingNameMetadataPreservesOriginalRuntimeProof(t *testing.T) {
 			}
 			raw, _ := json.Marshal(original)
 			path := filepath.Join(root, "local-pairing.json")
+			writeRetainedEvidence(t, target.Root, root, original["request_id"].(domain.ID), target.ServerID, target.Endpoint)
+			// Keep the original journal bytes, including any optional name.
 			if err := security.WriteAtomic(path, raw); err != nil {
 				t.Fatal(err)
 			}
@@ -216,11 +219,7 @@ func TestFollowingOnlyForRelocatedFixedLocalWorker(t *testing.T) {
 	}
 	target := fixtureTarget("http://127.0.0.1:41000")
 	target.Root = root
-	pairing := map[string]any{"request_id": domain.NewID(), "server_id": target.ServerID, "endpoint": "http://127.0.0.1:40000"}
-	raw, _ := json.Marshal(pairing)
-	if err := security.WriteAtomic(filepath.Join(worker, "local-pairing.json"), raw); err != nil {
-		t.Fatal(err)
-	}
+	retainPairing(t, root, target.ServerID, "http://127.0.0.1:40000")
 	// Unchanged Local address: no record and no marker keeps the pairing route.
 	if following, err := Following(worker, target.ServerID, "http://127.0.0.1:40000"); err != nil || following {
 		t.Fatalf("unchanged Local address reported %v %v", following, err)
