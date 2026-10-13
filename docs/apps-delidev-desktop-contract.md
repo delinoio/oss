@@ -1414,7 +1414,24 @@ Original authenticated inventory or stream resources dismiss a terminal only
 when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
 Connection-memory revision fences and original-ID tombstones prevent stale
 history restoration or reopening from reviving dismissed tabs. Pending or
-uncertain original controls retain their recovery presentation. An inactive exit
+uncertain original controls retain their recovery presentation; only a missing
+or null `pending` field means no operation, so an empty object, scalar or array
+`pending` value stays unsettled and never dismisses. The same presence rule
+gates replacement creation (an inventory row with present `pending` keeps
+original cleanup unconfirmed) and terminal input or resize dispatch. Each original ID
+retains one compact fingerprint (no document bytes) of its latest accepted
+revision; an equal-revision observation whose state, cleanup proof or pending
+evidence differs is contradictory and rejected without tombstoning (logging only a
+content-free `revision-contradiction` diagnostic with the original terminal ID
+and revision), while an
+identical replay (including a deferred exit observed again after its control
+settles) is accepted once without requiring a newer revision. Fingerprinting
+walks the evidence with an explicit work list rather than recursion, so
+arbitrarily deep nesting never overflows the call stack and every distinct
+document, including deeply nested ones, keeps its own evidence-specific
+fingerprint. A deeply nested state or cleanup proof is not exact exited and
+verified evidence, and a deeply nested pending value is present, so such a
+document never dismisses. An inactive exit
 preserves selection/focus; a selected exit chooses its nearest remaining left
 terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no
