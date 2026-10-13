@@ -61,7 +61,14 @@ func (f *continuationFixture) claim(t *testing.T) {
 			break
 		}
 	}
-	f.job, f.turn, f.startupToken = f.workerStream.Msg().Job, domain.NewID(), ""
+	f.adoptClaim(t, f.workerStream.Msg().Job)
+}
+
+// adoptClaim records an already delivered execution assignment, registers its
+// grant and reports ready startup like claim does.
+func (f *continuationFixture) adoptClaim(t *testing.T, claimed *pb.Resource) {
+	t.Helper()
+	f.job, f.turn, f.startupToken = claimed, domain.NewID(), ""
 	var job domain.Job
 	f.input = domain.ExecutionJobInput{}
 	if domain.Decode(f.job.DocumentJson, &job) != nil || domain.Decode(job.Input, &f.input) != nil || f.input.Validate() != nil {

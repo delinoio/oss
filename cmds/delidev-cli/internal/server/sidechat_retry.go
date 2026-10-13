@@ -310,7 +310,7 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 	if instanceErr != nil || instance != input.Retry.WorkerInstanceID || time.Since(seen) > domain.WorkerConnectionTimeout || input.Retry.WorkerDeviceID != child.Fork.WorkerDeviceID {
 		return retryConflict()
 	}
-	if err := checkedExecutionSource(tx, pr, parent, machine, input.SourceAssignment); err != nil {
+	if err := checkedHistoricalExecutionSource(tx, pr, parent, machine, input.SourceAssignment); err != nil {
 		return err
 	}
 	if input.SourceAssignment.AccountID != child.Fork.Snapshot.InitialAccountID || input.SourceAssignment.ConnectionID != child.Fork.Snapshot.ConnectionID || input.SourceAssignment.ConfigurationDigest != child.Fork.SidechatParentSnapshot.ConfigurationDigest {

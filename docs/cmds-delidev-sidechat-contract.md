@@ -354,6 +354,13 @@ question. Serialize unresolved generations; uncertainty never authorizes another
 Fork or input. Recheck original actor, account, connection, immutable model and
 instructions, original Worker device/current captured instance, workspace
 reference and native read-only enforcement before claim and publication.
+The accepted parent turn is immutable history: validate its recorded job, input,
+completion, account, configuration and workspace against the parent's origin
+(Worker, Agent and initial configuration), never against the parent's current
+selected execution. A parent that selects or completes a later execution before
+claim or publication neither invalidates nor retargets the accepted turn; only
+ordinary current-selection continuations (compaction, native review, ordinary
+Fork) keep requiring the current selection.
 
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted

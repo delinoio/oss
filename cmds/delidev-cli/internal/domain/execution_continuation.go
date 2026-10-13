@@ -62,6 +62,15 @@ func (s Session) ExecutionSelection() ExecutionSelection {
 	return ExecutionSelection{}
 }
 
+// OwnsHistoricalExecution reports whether a recorded execution assignment came
+// from this session's immutable origin. Unlike OwnsExecution it does not require
+// the assignment to remain the session's current selected execution, so it is
+// only for replaying an already accepted historical turn.
+func (s Session) OwnsHistoricalExecution(i ExecutionJobInput) bool {
+	initial := s.InitialExecution
+	return initial != nil && s.MachineID == i.MachineID && s.AgentID == i.Configuration.AgentID && initial.ConfigurationDigest == i.ConfigurationDigest
+}
+
 func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 	initial := s.InitialExecution
 	selected := s.ExecutionSelection()
