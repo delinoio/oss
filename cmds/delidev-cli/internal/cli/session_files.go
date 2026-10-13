@@ -3,11 +3,55 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"flag"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
+
+// declareGitDiffComparisonFlags registers the comparison selection shared by
+// the diff and review-context operations. The command deadline selection parses
+// the same declarations so it cannot drift from the command's real syntax.
+func declareGitDiffComparisonFlags(f *flag.FlagSet) (comparison, baseType, baseName, baseRemote *string) {
+	comparison = f.String("comparison", string(domain.DiffWorkingTree), "branch, working-tree, staged, or Worktree creation comparison")
+	baseType = f.String("base-type", "", "branch base: local-branch, remote-branch, or commit")
+	baseName = f.String("base-name", "", "exact locally available branch or commit")
+	baseRemote = f.String("base-remote", "", "remote for a remote-branch base")
+	return comparison, baseType, baseName, baseRemote
+}
+
+// branchComparisonRequested reports whether the arguments after "session"
+// select an explicit branch comparison for a diff or review-context command,
+// including the "session files diff|review-context" aliases. It accepts both
+// "--comparison branch" and "--comparison=branch" by using the command's own
+// flag parser. Unparseable arguments are not branch comparisons: the command
+// itself rejects them before any request is sent.
+func branchComparisonRequested(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "diff", "review-context":
+		args = args[1:]
+	case "files":
+		if len(args) < 2 || args[1] != "diff" && args[1] != "review-context" {
+			return false
+		}
+		args = args[2:]
+	default:
+		return false
+	}
+	f := flags("session files diff")
+	f.String("id", "", "")
+	f.String("repository-id", "", "")
+	f.String("path", ".", "")
+	comparison, _, _, _ := declareGitDiffComparisonFlags(f)
+	if err := f.Parse(args); err != nil || f.NArg() != 0 {
+		return false
+	}
+	return domain.WorkspaceDiffComparison(*comparison) == domain.DiffBranch
+}
 
 func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 	if len(args) == 0 {
@@ -39,10 +83,7 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		page = f.String("page-token", "", "next page from the same directory observation")
 	}
 	if query.Operation == domain.WorkspaceGitDiff {
-		comparison = f.String("comparison", string(domain.DiffWorkingTree), "branch, working-tree, staged, or Worktree creation comparison")
-		baseType = f.String("base-type", "", "branch base: local-branch, remote-branch, or commit")
-		baseName = f.String("base-name", "", "exact locally available branch or commit")
-		baseRemote = f.String("base-remote", "", "remote for a remote-branch base")
+		comparison, baseType, baseName, baseRemote = declareGitDiffComparisonFlags(f)
 	}
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err

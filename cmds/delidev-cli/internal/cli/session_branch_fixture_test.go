@@ -44,6 +44,9 @@ type branchFixture struct {
 	// options builds the git-diff-options document; nil returns the default
 	// inventory containing only an available local branch named main.
 	options func() (*domain.WorkspaceReadResult, error)
+	// delay, when set, runs before each response is built with the zero-based
+	// arrival index of the request. A non-nil error aborts the response.
+	delay func(ctx context.Context, index int) error
 	// diff builds the final observation; nil returns a valid branch diff for
 	// the requested base. The request context is passed so fixtures can delay.
 	diff func(ctx context.Context, q domain.WorkspaceReadQuery) (*domain.WorkspaceDiff, error)
@@ -83,9 +86,11 @@ func newBranchFixture(t *testing.T) *branchFixture {
 		return connect.NewResponse(&pb.GetStatusResponse{}), nil
 	}))
 	mux.Handle(delidevv1connect.SessionServiceReadSessionWorkspaceProcedure, connect.NewUnaryHandler(delidevv1connect.SessionServiceReadSessionWorkspaceProcedure, func(ctx context.Context, req *connect.Request[pb.ReadSessionWorkspaceRequest]) (*connect.Response[pb.ReadSessionWorkspaceResponse], error) {
-		q := f.record(ctx, delidevv1connect.SessionServiceReadSessionWorkspaceProcedure, req.Msg.QueryJson)
+		q, err := f.record(ctx, delidevv1connect.SessionServiceReadSessionWorkspaceProcedure, req.Msg.QueryJson)
+		if err != nil {
+			return nil, err
+		}
 		var result *domain.WorkspaceReadResult
-		var err error
 		if q.Operation == domain.WorkspaceGitDiffOptions {
 			result, err = f.optionsDocument()
 		} else {
@@ -101,7 +106,10 @@ func newBranchFixture(t *testing.T) *branchFixture {
 		return connect.NewResponse(&pb.ReadSessionWorkspaceResponse{DocumentJson: raw}), nil
 	}))
 	mux.Handle(delidevv1connect.SessionServiceReadSessionReviewContextProcedure, connect.NewUnaryHandler(delidevv1connect.SessionServiceReadSessionReviewContextProcedure, func(ctx context.Context, req *connect.Request[pb.ReadSessionReviewContextRequest]) (*connect.Response[pb.ReadSessionReviewContextResponse], error) {
-		q := f.record(ctx, delidevv1connect.SessionServiceReadSessionReviewContextProcedure, req.Msg.QueryJson)
+		q, err := f.record(ctx, delidevv1connect.SessionServiceReadSessionReviewContextProcedure, req.Msg.QueryJson)
+		if err != nil {
+			return nil, err
+		}
 		diff, err := f.diffDocument(ctx, q)
 		if err != nil {
 			return nil, err
@@ -116,7 +124,7 @@ func newBranchFixture(t *testing.T) *branchFixture {
 	return f
 }
 
-func (f *branchFixture) record(ctx context.Context, procedure string, raw []byte) domain.WorkspaceReadQuery {
+func (f *branchFixture) record(ctx context.Context, procedure string, raw []byte) (domain.WorkspaceReadQuery, error) {
 	var q domain.WorkspaceReadQuery
 	if err := json.Unmarshal(raw, &q); err != nil {
 		f.t.Error("fixture received an invalid query", err)
@@ -126,9 +134,15 @@ func (f *branchFixture) record(ctx context.Context, procedure string, raw []byte
 		read.remaining = time.Until(deadline)
 	}
 	f.mu.Lock()
+	index := len(f.reads)
 	f.reads = append(f.reads, read)
 	f.mu.Unlock()
-	return q
+	if f.delay != nil {
+		if err := f.delay(ctx, index); err != nil {
+			return q, err
+		}
+	}
+	return q, nil
 }
 
 func (f *branchFixture) optionsDocument() (*domain.WorkspaceReadResult, error) {
