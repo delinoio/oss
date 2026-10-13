@@ -4487,11 +4487,31 @@ publishing safe diagnostic text. Normalize ANSI color sequences for matching so
 that they cannot split a private argument; retain ordinary colored diagnostics
 when no redaction is required. Incremental UTF-8 decoding preserves split
 characters; each line is bounded to 64 KiB and an oversized line is omitted.
-After the original child exits, drain for at most 100 ms. If a descendant retains
-an inherited pipe, close only the reader, discard its partial line and report
-`diagnostics-incomplete` with `output-drain-timeout`. Read failures report the
-separate `output-read-failed` classification. Neither outcome changes the original
-child exit code or signal. Signing retains its private output capture. Final
+After the original child exits, drain for at most 100 ms. Capture completes only
+after every accepted destination write, including an unterminated final line,
+has settled through its write callback; a write that returned `true` is not
+treated as delivered. Function destinations are synchronous, and shared process
+stdout/stderr are never ended to flush them. If a descendant retains an
+inherited pipe or an accepted write is still incomplete at the bound, close only
+the reader, discard its partial line and report `diagnostics-incomplete` with
+`output-drain-timeout`. Read failures report the separate `output-read-failed`
+classification, but only after the omission marker and every earlier accepted
+write has settled or the same drain bound expires, so a later destination error
+is still reported as `output-write-failed`. The launcher owns an `error` listener on each Writable
+destination from before the first write. A destination error stops all further
+forwarding to that sink, keeps consuming and discarding the child's pipe, and
+reports `output-write-failed` independently for stdout and stderr. After the
+original child exits, a failed destination's discarded pipe shares the same
+single 100 ms drain deadline rather than starting a second interval: if a
+descendant still holds it open at that deadline, the launcher closes only its reader
+so the launcher can exit, and the classification stays `output-write-failed`. The listener
+is removed only when no outstanding write can still emit an error; a failed
+destination keeps it until the destination closes. The launcher also keeps an
+`error` listener on each child pipe after capture ends or the destination
+fails, so a late read error on a pipe that is still being discarded cannot
+become an uncaught exception. No outcome changes the
+original child exit code or signal, and the managed child lifecycle (signal
+handler removal and build-lock release) still runs. Signing retains its private output capture. Final
 build-lock cleanup failure reports `cleanup-uncertain` with
 `build-lock-release-failed`, without logging exception paths or replacing an
 already observed child result. These observations establish neither native
