@@ -300,6 +300,7 @@ export function PRWorkspaceRows({
     edges,
     allSeeds,
     ambiguous,
+    new Set(seeds),
   ).filter((row) => seeds.includes(row.owner));
   return (
     <section

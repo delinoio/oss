@@ -57,6 +57,62 @@ it("renders each exact branch component once in seed order without summing count
   ]);
   expect(rows[1].node.counts).toEqual({ additions: "24", deletions: "8" });
 });
+it("keeps a component visible once under its earliest resident seed when an earlier seed is evicted", () => {
+  const nodes = [101, 102, 103, 104, 105].map((number) => ({
+    item: { number: String(number) },
+  }));
+  const edges = [
+    { parent: "101", child: "102" },
+    { parent: "102", child: "104" },
+  ];
+  // Accepted order: 101 (page 1), 103 and 105 (unrelated), 104 (page 4).
+  const accepted = ["101", "103", "104", "105"];
+  const evicted = orderWorkspace(
+    nodes,
+    edges,
+    accepted,
+    false,
+    new Set(["103", "104", "105"]),
+  );
+  expect(evicted.map((row) => [row.node.item, row.owner])).toEqual([
+    [{ number: "101" }, "104"],
+    [{ number: "102" }, "104"],
+    [{ number: "104" }, "104"],
+    [{ number: "103" }, "103"],
+    [{ number: "105" }, "105"],
+  ]);
+  expect(
+    evicted.filter((row) => new Set(["103", "104", "105"]).has(row.owner)),
+  ).toHaveLength(5);
+  const numbers = evicted.map((row) => row.node.item.number);
+  expect(new Set(numbers).size).toBe(numbers.length);
+  // Restoring page 1 returns ownership to the earliest resident seed.
+  const restored = orderWorkspace(
+    nodes,
+    edges,
+    accepted,
+    false,
+    new Set(accepted),
+  );
+  expect(restored.map((row) => [row.node.item.number, row.owner])).toEqual([
+    ["101", "101"],
+    ["102", "101"],
+    ["104", "101"],
+    ["103", "103"],
+    ["105", "105"],
+  ]);
+  // A component with no resident seed keeps its accepted owner and stays filtered.
+  const hidden = orderWorkspace(
+    nodes,
+    edges,
+    accepted,
+    false,
+    new Set(["103"]),
+  );
+  expect(hidden.find((row) => row.node.item.number === "104")?.owner).toBe(
+    "101",
+  );
+});
 it("keeps cycles and competing parents selectable without a fabricated tree", () => {
   const nodes = [1, 2, 3].map((number) => ({
     item: { number: String(number) },

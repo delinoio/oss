@@ -236,7 +236,12 @@ export function orderWorkspace(
   edges: Document[],
   seeds: string[],
   ambiguous: boolean,
+  resident?: ReadonlySet<string>,
 ): { node: Document; depth: number; stack: boolean; owner: string }[] {
+  // `seeds` is the full accepted order and fixes where each component renders.
+  // `resident` (when provided) names the seeds whose pages are still in the
+  // payload window; a component is owned by its earliest resident seed so an
+  // evicted seed can never hide a component that still has a resident match.
   const byNumber = new Map(nodes.map((n) => [text(object(n.item).number), n])),
     adjacent = new Map<string, Set<string>>(),
     children = new Map<string, string[]>(),
@@ -284,6 +289,9 @@ export function orderWorkspace(
       for (const child of [...(children.get(n) ?? [])].sort(numeric))
         walk(child, depth + 1);
     };
+    const owner =
+      seeds.find((s) => component.has(s) && (!resident || resident.has(s))) ??
+      seed;
     if (!invalid) for (const root of roots) walk(root, 0);
     if (ordered.length !== component.size) invalid = true;
     for (const row of invalid
@@ -294,7 +302,7 @@ export function orderWorkspace(
           node: byNumber.get(row.n)!,
           depth: row.depth,
           stack: component.size > 1 && !invalid,
-          owner: seed,
+          owner,
         });
       seen.add(row.n);
     }
