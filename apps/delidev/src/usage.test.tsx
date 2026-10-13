@@ -1875,7 +1875,10 @@ it("numbers duplicate observed names on the first committed render for every ide
   render(f.view());
   await screen.findByText("Incomplete coverage");
   observer.disconnect();
-  expect(firstCommit).toEqual(["Same session \u00b7 1", "Same session \u00b7 2"]);
+  expect(firstCommit).toEqual([
+    "Same session \u00b7 1",
+    "Same session \u00b7 2",
+  ]);
   const labels = [0, 1].map((index) => {
     const detail = openRowDetails(index);
     return ["Session", "Project", "Account", "Provider"].map((term) =>
@@ -1942,7 +1945,11 @@ it("keeps duplicate numbering stable across reorder and updates labels on locale
   unnamed.sessionName = "";
   f.data.groups = [base, second, unnamed];
   const reordered = clone(GetUsageSummaryResponseSchema, f.data);
-  reordered.groups = [reordered.groups[1], reordered.groups[0], reordered.groups[2]];
+  reordered.groups = [
+    reordered.groups[1],
+    reordered.groups[0],
+    reordered.groups[2],
+  ];
   render(f.view());
   await screen.findByText("Incomplete coverage");
   expect(detailValue(openRowDetails(0), "Session")).toBe(
@@ -1959,7 +1966,9 @@ it("keeps duplicate numbering stable across reorder and updates labels on locale
       ...document.querySelectorAll<HTMLTableRowElement>(
         ".usage-detail tbody tr",
       ),
-    ].map((row) => row.querySelector(".usage-original-identities dd")!.textContent);
+    ].map(
+      (row) => row.querySelector(".usage-original-identities dd")!.textContent,
+    );
   await waitFor(() =>
     expect(sessionLabels().slice(0, 2)).toEqual([
       "Same session \u00b7 2",
