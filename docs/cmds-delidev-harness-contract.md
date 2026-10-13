@@ -2795,7 +2795,7 @@ live dynamic responder. A failed/interrupted root with unresolved tool evidence
 can retain its terminal and verified cleanup in a version-1 completion; it cannot
 produce a continuation checkpoint or later input authority.
 
-## Server access-only reset-credit profile — issue #2970
+## Server access-only reset-credit profile
 
 The separate `CreditProtocol` profile is available only to the server-owned System 101 credit lane. It shares the [quota-only external authentication](#quota-only-external-chatgpt-authentication--issue-1854) boundary: experimental API support, disabled plugins, ephemeral credentials, the verified official OpenAI provider, configuration verified before credentials, and only an access token, account and plan supplied to one external `account/login/start`. The once-only closed login completion is validated and discarded, every `account/chatgptAuthTokens/refresh` request is refused with the fixed safe error, and no managed auth file, ID or refresh token, authentication renewal or credential write-back exists. Native readiness, the configured Direct route and the executable digest are verified for the actual server process; an unsupported profile fails without a Worker fallback.
 

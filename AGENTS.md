@@ -203,5 +203,3 @@
 - [Repository workflow](docs/repository-workflow-contract.md) owns CI, release, allocation-validation records and validation procedures.
 - [Environment ownership](docs/repository-environment-contract.md) owns development selectors, service configuration, child environments and shutdown.
 - Read scoped instructions in every affected domain, including cross-domain consumers.
-
-- Server reset credits V2 follows issue #2970 and `docs/cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2--issue-2970`: System 101 consumes manual and automatic reset credits on the server with a distinct access-only native profile, with no Runner and beside an active Execute. New omitted-machine requests never fall back to a Runner; explicit-machine and historical operations keep their lanes. Cancel any pre-send binding change with zero spend, keep the captured reference until joined cleanup and checked retirement, never fail or release Execute for credit cleanup, and reconcile only by explicit same-key request. No RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is not performed.

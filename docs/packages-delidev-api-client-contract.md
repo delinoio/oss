@@ -529,6 +529,6 @@ text/media commitments and independent reply/resolution metadata. Native wire
 request numbers remain decimal strings across JavaScript readers. These facts
 grant no dispatch, media retrieval, reply retry or continuation authority.
 
-## Server reset credits V2 negotiation — issue #2970
+## Server reset credits V2 negotiation
 
 The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`. Clients require it before a new omitted-machine reset-credit consumption and never send a Runner selector with that request. Servers without it receive existing update guidance. Historical System 19 and 49 capabilities remain only for reconciling operations already accepted on those lanes. Regenerate both bindings from the reconciled schema; no new RPC or Worker capability exists.
