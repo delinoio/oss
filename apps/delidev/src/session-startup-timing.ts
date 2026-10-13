@@ -14,6 +14,11 @@ export interface StartupTime {
   seconds?: number;
   running: boolean;
   unconfirmed: boolean;
+  /**
+   * The original paired read is still inside its lease but a healthy reread is
+   * pending: keep the elapsed value and layout, suspend only the animation.
+   */
+  paused?: boolean;
 }
 export interface StartupTimes {
   workspace?: StartupTime;
@@ -92,12 +97,19 @@ interface Frame {
   elapsed: number;
 }
 
-/** One monotonic timer uses the existing authenticated Machine/Overview pair. */
+/**
+ * One monotonic timer uses the existing authenticated Machine/Overview pair.
+ * `enabled` means a complete settled pair that may advance the clock. `retained`
+ * (defaults to `enabled`) additionally allows an in-flight healthy reread to keep
+ * the last displayed value, paused, while the original lease is still valid; it
+ * never advances the clock or refreshes the lease.
+ */
 export function useStartupTimes(
   session: Resource | undefined,
   observation: StartupClockObservation | undefined,
   enabled: boolean,
   connectionOwner: string,
+  retained: boolean = enabled,
 ): StartupTimes {
   const frames = useRef<{ workspace?: Frame; agent?: Frame }>({});
   const transport = useTransport();
@@ -114,6 +126,17 @@ export function useStartupTimes(
   }, []);
   const current = () =>
     enabled &&
+    visible &&
+    observation?.transport === transport &&
+    startupWorkerCurrent(
+      session,
+      observation?.resource,
+      true,
+      observation?.observedAt,
+      observation ? performance.now() - observation.startedAt : NaN,
+    );
+  const leaseHeld = () =>
+    retained &&
     visible &&
     observation?.transport === transport &&
     startupWorkerCurrent(
@@ -210,6 +233,13 @@ export function useStartupTimes(
       };
     const frame = frames.current[key],
       confirmed = current();
+    if (!confirmed && frame?.owner === group.owner && leaseHeld())
+      return {
+        seconds: Math.floor(frame.elapsed / 1000),
+        running: false,
+        unconfirmed: false,
+        paused: true,
+      };
     return {
       seconds:
         frame?.owner === group.owner

@@ -173,8 +173,13 @@ function fixture(
     inputs: queueInputs(id),
     nextPageToken: "",
   }));
+  // Worker-presence clock read; unavailable unless a test installs a clock.
+  const overview = vi.fn((): { observedAt: string } => {
+    throw new ConnectError("Fixture overview unavailable", Code.Unimplemented);
+  });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
+      getOverview: overview,
       getStatus: () => ({
         capabilities: terminalMode
           ? [SystemCapability.SESSION_TERMINALS_V1]
@@ -306,6 +311,7 @@ function fixture(
     list,
     publish,
     getResource,
+    overview,
     releaseTerminal,
     terminalControl,
     terminalCreate,
@@ -2305,4 +2311,230 @@ it("keeps quota and independent recovery above the composer without replacing dr
   await act(async () => {
     await i18n.changeLanguage("en");
   });
+});
+
+// Worker-presence rereads (#3135): healthy pending rereads keep the retained
+// original startup presentation and Info visibility, suspending only animation.
+const presenceClock = "2026-10-12T00:00:30Z";
+function presenceStartup(lastSeenAgoMs = 0) {
+  const base = initialResponseWaiting(),
+    machine = newRequestId(),
+    instance = newRequestId(),
+    device = newRequestId(),
+    epoch = newRequestId(),
+    execution = base.initial_execution.id;
+  const attempt = (
+    extra: Record<string, unknown>,
+    step: string,
+    count: number,
+  ) => ({
+    ...extra,
+    assignment_revision: 1,
+    machine_id: machine,
+    instance_id: instance,
+    device_id: device,
+    server_epoch: epoch,
+    last_sequence: count,
+    steps: Array.from({ length: count }, (_, index) => ({
+      [step]: index + 1,
+      sequence: index + 1,
+      state: 2,
+    })).concat(
+      step === "native_phase"
+        ? ([{ [step]: count + 1 }] as never)
+        : ([] as never),
+    ),
+  });
+  const extra = {
+    ...base,
+    machine_id: machine,
+    startup_progress: {
+      workspace: attempt(
+        { job_id: base.preparation.job_id },
+        "workspace_operation",
+        1,
+      ),
+      native: attempt(
+        { job_id: base.execution.job_id, execution_id: execution },
+        "native_phase",
+        5,
+      ),
+    },
+  };
+  const resource = create(ResourceSchema, {
+    id: machine,
+    kind: EntityKind.MACHINE,
+    schemaVersion: 1,
+    revision: 1n,
+    documentJson: encode({
+      disabled: false,
+      last_seen: new Date(Date.parse(presenceClock) - lastSeenAgoMs).toISOString(),
+      network: { instance_id: instance },
+    }),
+  });
+  return { extra, resource, instance };
+}
+function installPresence(
+  f: ReturnType<typeof fixture>,
+  resource: ReturnType<typeof create<typeof ResourceSchema>>,
+) {
+  const gates = { machine: deferred(), clock: deferred(), fail: false };
+  gates.machine.release();
+  gates.clock.release();
+  const original = f.getResource.getMockImplementation()!;
+  f.getResource.mockImplementation(((request: {
+    id: string;
+    kind: EntityKind;
+  }) => {
+    if (request.kind !== EntityKind.MACHINE)
+      return original(request);
+    return (async () => {
+      await gates.machine.gate;
+      if (gates.fail) throw new ConnectError("Machine unavailable", Code.Unavailable);
+      return { resource };
+    })();
+  }) as never);
+  f.overview.mockImplementation((async () => {
+    await gates.clock.gate;
+    return { observedAt: presenceClock };
+  }) as never);
+  return gates;
+}
+const rereadPresence = (f: ReturnType<typeof fixture>) =>
+  act(() => {
+    void f.client.invalidateQueries({
+      predicate: (query) => JSON.stringify(query.queryKey).includes("startupPresence"),
+    });
+  });
+
+async function presenceSession(lastSeenAgoMs = 0) {
+  const startup = presenceStartup(lastSeenAgoMs);
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, startup.extra);
+  const gates = installPresence(f, startup.resource);
+  const view = render(f.view("Retained startup draft"));
+  const progress = await waitFor(() => {
+    const node = view.container.querySelector<HTMLElement>(".session-progress");
+    expect(node).toBeTruthy();
+    return node!;
+  });
+  const info = view.container.querySelector<HTMLElement>(".session-information")!;
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  composer.focus();
+  return { f, gates, view, progress, info, composer, startup };
+}
+const spinnerStates = (root: HTMLElement) =>
+  [...root.querySelectorAll(".session-progress-spinner")].map((node) =>
+    node.classList.contains("is-paused"),
+  );
+it.each(["machine", "clock"] as const)(
+  "keeps startup presentation, Info and drafts stable while a healthy %s reread is pending",
+  async (read) => {
+    const { f, gates, view, progress, info, composer } = await presenceSession();
+    try {
+      expect(spinnerStates(progress).length).toBeGreaterThan(0);
+      expect(spinnerStates(progress).every((paused) => !paused)).toBe(true);
+      const held = deferred();
+      gates[read] = held as never;
+      rereadPresence(f);
+      await waitFor(() =>
+        expect(spinnerStates(progress).every((paused) => paused)).toBe(true),
+      );
+      // Same node, same Info visibility and no recovery message while pending.
+      expect(view.container.querySelector(".session-progress")).toBe(progress);
+      expect(info).toHaveProperty("hidden", true);
+      expect(screen.queryByText("Connection requires attention")).toBeNull();
+      expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+      expect(composer).toHaveProperty("value", "Retained startup draft");
+      expect(document.activeElement).toBe(composer);
+      held.release();
+      await waitFor(() =>
+        expect(spinnerStates(progress).every((paused) => !paused)).toBe(true),
+      );
+      expect(view.container.querySelector(".session-progress")).toBe(progress);
+      expect(info).toHaveProperty("hidden", true);
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.control).not.toHaveBeenCalled();
+      expect(f.recover).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      f.client.clear();
+    }
+  },
+);
+it("fails closed when a reread fails after a healthy pair", async () => {
+  const { f, gates, view, info } = await presenceSession();
+  try {
+    gates.fail = true;
+    rereadPresence(f);
+    await waitFor(() =>
+      expect(view.container.querySelector(".session-progress")).toBeNull(),
+    );
+    expect(info).toHaveProperty("hidden", false);
+    await screen.findByText("Connection requires attention");
+    expect(f.enqueue).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+it("never extends an expired original lease from a pending reread", async () => {
+  const { f, gates, view, info } = await presenceSession();
+  try {
+    const held = deferred();
+    gates.machine = held as never;
+    rereadPresence(f);
+    await waitFor(() =>
+      expect(view.container.querySelector(".session-progress")).not.toBeNull(),
+    );
+    const realNow = performance.now.bind(performance);
+    vi.spyOn(performance, "now").mockImplementation(() => realNow() + 61_000);
+    act(() =>
+      f.publish({
+        ...f.session,
+        revision: 8n,
+        documentJson: encode({ ...readDocument(f.session), unrelated: 1 }),
+      }),
+    );
+    await waitFor(() =>
+      expect(view.container.querySelector(".session-progress")).toBeNull(),
+    );
+    await waitFor(() => expect(info).toHaveProperty("hidden", false));
+    held.release();
+  } finally {
+    vi.restoreAllMocks();
+    view.unmount();
+    f.client.clear();
+  }
+});
+it("drops the retained presentation when the startup owner generation changes", async () => {
+  const { f, gates, view, info } = await presenceSession();
+  try {
+    gates.machine = deferred() as never;
+    const document = readDocument(f.session) as Record<string, any>;
+    act(() =>
+      f.publish({
+        ...f.session,
+        revision: 8n,
+        documentJson: encode({
+          ...document,
+          startup_progress: {
+            ...document.startup_progress,
+            native: {
+              ...document.startup_progress.native,
+              assignment_revision: 2,
+            },
+          },
+        }),
+      }),
+    );
+    await waitFor(() =>
+      expect(view.container.querySelector(".session-progress")).toBeNull(),
+    );
+    await waitFor(() => expect(info).toHaveProperty("hidden", false));
+    expect(f.enqueue).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
 });

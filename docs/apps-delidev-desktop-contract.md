@@ -5801,6 +5801,25 @@ Compare only server-clock timestamps; browser wall-clock skew cannot grant a lea
 Conservatively include monotonic elapsed time since the paired read began, so a
 stalled response or timer cannot extend the original lease; pending rechecks
 suspend animation until the complete pair succeeds.
+
+A healthy 5-second reread (a pending Machine or Overview read after a prior
+successful complete valid pair) keeps the retained original startup presentation
+instead of treating the in-flight read as lost evidence. The progress node, Info
+hiding, conversation width, centered 380px list, compact disclosure state, Info
+focus restoration and drafts are unchanged, and no connection-attention message
+is shown. Only the animation is suspended: spinners keep their size and position
+but freeze (`is-paused`), and elapsed timings keep their last value without an
+unconfirmed label until a new complete valid pair resumes the clock. The lease is
+always measured from the original read start (server-observed age plus monotonic
+elapsed time) and the presentation re-renders at that expiry, so a pending read
+can neither extend an expired 60-second lease nor keep stale presentation. Retained
+presentation additionally requires the same authenticated transport and startup
+owner generation, and never grants execution, retry or recovery authority.
+Failed, missing or malformed reads, a first pending read, lease expiry,
+source/generation replacement, cancellation, conversation deactivation, and real
+blocking or response evidence keep the existing fail-closed behavior. The
+transcript, queue, interaction and budget freshness fences at the Info hiding
+boundary are independent and are not relaxed.
 These paired reads are transient and read-only, leave original Machine revisions,
 storage and portable configuration unchanged, and grant no execution authority.
 Failed, missing or malformed responses, source/generation replacement, cancellation,

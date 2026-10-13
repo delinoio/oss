@@ -34,19 +34,23 @@ const nativeLabels: Record<number, MessageKey> = {
   5: "session-progress.input",
   6: "session-progress.response",
 };
+const spinner = (animating: boolean) =>
+  `session-progress-spinner${animating ? "" : " is-paused"}`;
 function Step({
   row,
   labels,
+  animating,
 }: {
   row: StartupOperationRow;
   labels: Record<number, MessageKey>;
+  animating: boolean;
 }) {
   return (
     <li className={`session-startup-operation is-${row.state}`}>
       <span
         className={
           row.state === "running"
-            ? "session-progress-spinner"
+            ? spinner(animating)
             : "session-startup-marker"
         }
         aria-hidden="true"
@@ -89,8 +93,8 @@ function Timing({ time }: { time?: StartupTime }) {
           {copy("session-progress.unconfirmed")}
         </span>
       ) : null}
-      {time.running ? (
-        <span className="session-progress-spinner" aria-hidden="true" />
+      {time.running || time.paused ? (
+        <span className={spinner(!time.paused)} aria-hidden="true" />
       ) : null}
     </span>
   );
@@ -124,10 +128,12 @@ function Groups({
   operations,
   detailed = false,
   timing,
+  animating,
 }: {
   operations: StartupOperations;
   detailed?: boolean;
   timing?: StartupTimes;
+  animating: boolean;
 }) {
   const groups = [
     {
@@ -149,7 +155,12 @@ function Groups({
         const content = (
           <ol>
             {group.rows.map((row) => (
-              <Step key={row.operation} row={row} labels={group.labels} />
+              <Step
+                key={row.operation}
+                row={row}
+                labels={group.labels}
+                animating={animating}
+              />
             ))}
           </ol>
         );
@@ -184,11 +195,14 @@ export function SessionProgressStatus({
   compact,
   operations,
   timing,
+  animating = true,
 }: {
   phase: SessionProgressPhase;
   compact: boolean;
   operations?: StartupOperations;
   timing?: StartupTimes;
+  /** False while a healthy reread is pending: keep layout, stop only the spinner. */
+  animating?: boolean;
 }) {
   useLocale();
   const currentWorkspace = operations?.workspace.find(
@@ -210,7 +224,7 @@ export function SessionProgressStatus({
         aria-atomic="true"
       >
         {!operations || compact ? (
-          <span className="session-progress-spinner" aria-hidden="true" />
+          <span className={spinner(animating)} aria-hidden="true" />
         ) : null}
         <span>
           {operations && !compact
@@ -230,10 +244,15 @@ export function SessionProgressStatus({
             <DisclosureSummary>
               {copy("session-progress.details")}
             </DisclosureSummary>
-            <Groups operations={operations} />
+            <Groups operations={operations} animating={animating} />
           </Disclosure>
         ) : (
-          <Groups operations={operations} detailed timing={timing} />
+          <Groups
+            operations={operations}
+            detailed
+            timing={timing}
+            animating={animating}
+          />
         )
       ) : null}
     </div>
