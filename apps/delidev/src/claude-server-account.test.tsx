@@ -175,5 +175,7 @@ it("keeps Sign in for a server-token account whose first login did not connect",
   );
   await screen.findByText(/The token expires, cannot use Remote Control/);
   await screen.findByRole("button", { name: /^Sign in to/ });
-  expect(screen.queryByRole("button", { name: "Connect new account" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Connect new account" }),
+  ).toBeNull();
 });
