@@ -891,3 +891,62 @@ fn escape_preservations_report_their_first_cause() {
     assert_eq!(preserved[0]["preservation"], "escapes");
     assert_eq!(preserved[0]["escape_sink"], "call_argument_method");
 }
+
+#[test]
+fn escapes_through_unsummarized_functions_report_the_function_boundary() {
+    let cases: [(&str, serde_json::Value); 9] = [
+        (
+            "export {}; async function consume(value: unknown) { return value; } const obj = \
+             {longProperty: 3}; console.log(await consume(obj));",
+            serde_json::json!({"call_argument_function": {"async_or_generator": 1}}),
+        ),
+        (
+            "export {}; function consume(value: unknown) { return arguments.length; } const obj = \
+             {longProperty: 3}; console.log(consume(obj));",
+            serde_json::json!({"call_argument_function": {"receiver": 1}}),
+        ),
+        (
+            "export {}; function consume(value: unknown) { return typeof value; } const alias = \
+             consume; const obj = {longProperty: 3}; console.log(consume(obj), alias(1));",
+            serde_json::json!({"call_argument_function": {"references": 1}}),
+        ),
+        (
+            "export {}; let consume = (value: unknown) => typeof value; const obj = \
+             {longProperty: 3}; console.log(consume(obj));",
+            serde_json::json!({"call_argument_function": {"variable": 1}}),
+        ),
+        (
+            "export {}; declare function consume(value: unknown): void; const obj = \
+             {longProperty: 3}; consume(obj);",
+            serde_json::json!({"call_argument_function": {"scope": 1}}),
+        ),
+        (
+            "export {}; const obj = {longProperty: 3}; \
+             console.log(structuredClone(obj).longProperty);",
+            serde_json::json!({"call_argument_function": {"outside_program": 1}}),
+        ),
+        (
+            "export {}; function run(consume: (value: unknown) => void) { const obj = \
+             {longProperty: 3}; consume(obj); } run(console.log);",
+            serde_json::json!({"call_argument_function": {"parameter": 1}}),
+        ),
+        (
+            "export {}; console.log([1].map(() => ({longProperty: 3}))[0].longProperty);",
+            serde_json::json!({"unsummarized_return": {"callback": 1}}),
+        ),
+        (
+            "export {}; const holder = {make() { return {longProperty: 3}; }}; \
+             console.log(holder.make().longProperty);",
+            serde_json::json!({"unsummarized_return": {"method": 1}}),
+        ),
+    ];
+    for (code, expected) in cases {
+        let temp = project(&[("main.ts", code)]);
+        // Other passes could inline or rewrite the calls first.
+        let report = check(temp.path(), &args(&only(&[SHORTENING])));
+        assert_eq!(
+            report["escape_function_boundaries"], expected,
+            "{code}\n{report:#}"
+        );
+    }
+}

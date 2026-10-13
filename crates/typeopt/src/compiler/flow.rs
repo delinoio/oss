@@ -46,7 +46,9 @@ use super::{
 };
 use crate::{
     compiler::api::*,
-    optimizer::{EscapeSink, Object, Occurrence, Preservation, Property},
+    optimizer::{
+        EscapeCause, EscapeSink, FunctionBoundary, Object, Occurrence, Preservation, Property,
+    },
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -81,7 +83,7 @@ struct Cell {
     values: BTreeSet<Value>,
     unknown: bool,
     /// Where the `unknown` flag came from (the first origin to reach it).
-    origin: Option<EscapeSink>,
+    origin: Option<EscapeCause>,
 }
 
 #[derive(Clone, Copy)]
@@ -133,7 +135,7 @@ impl Graph {
             queued: Vec::new(),
         };
         graph.cell(true);
-        graph.cells[UNKNOWN as usize].origin = Some(EscapeSink::UntrackedValue);
+        graph.cells[UNKNOWN as usize].origin = Some(EscapeSink::UntrackedValue.into());
         graph.cell(false);
         graph
     }
@@ -194,12 +196,12 @@ impl Graph {
         }
     }
 
-    fn set_unknown(&mut self, cell: CellId, origin: EscapeSink) {
+    fn set_unknown(&mut self, cell: CellId, origin: impl Into<EscapeCause>) {
         debug_assert!(cell > EMPTY);
         let target = &mut self.cells[cell as usize];
         if !target.unknown {
             target.unknown = true;
-            target.origin = Some(origin);
+            target.origin = Some(origin.into());
             self.enqueue(cell);
         }
     }
@@ -211,7 +213,7 @@ impl Graph {
         let escaped = self.escaped[object as usize];
         let cell = self.cell(escaped);
         if escaped {
-            self.cells[cell as usize].origin = Some(EscapeSink::PreservedContainer);
+            self.cells[cell as usize].origin = Some(EscapeSink::PreservedContainer.into());
         }
         self.fields.insert((object, name), cell);
         self.object_fields[object as usize].push(cell);
@@ -325,22 +327,6 @@ struct Function {
     result: CellId,
 }
 
-/// Why a function receives no trusted summary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum FunctionBoundary {
-    /// Script, namespace or bodiless declaration.
-    Scope,
-    AsyncOrGenerator,
-    /// Nested pattern, rest or `this` parameters.
-    Parameters,
-    /// `this`, `super`, `arguments` or `new.target`.
-    Receiver,
-    /// Public, JavaScript-visible, exposed or merged symbol.
-    External,
-    /// A reference other than a direct fixed-arity call.
-    References,
-}
-
 #[derive(Clone)]
 enum AccessKey {
     /// `.name`, `["name"]` or a destructured key.
@@ -383,15 +369,15 @@ struct Use {
 /// `Preservation` is not `Copy`; uses keep a compact reason.
 #[derive(Clone, Copy)]
 enum Preservation2 {
-    Escapes(EscapeSink),
+    Escapes(EscapeCause),
     Unsupported,
     Operation,
 }
 
 impl Preservation2 {
-    fn reason(self) -> (Preservation, Option<EscapeSink>) {
+    fn reason(self) -> (Preservation, Option<EscapeCause>) {
         match self {
-            Preservation2::Escapes(sink) => (Preservation::Escapes, Some(sink)),
+            Preservation2::Escapes(cause) => (Preservation::Escapes, Some(cause)),
             Preservation2::Unsupported => (Preservation::ExternalOrUnsupportedShape, None),
             Preservation2::Operation => (Preservation::ObservableOperation, None),
         }
@@ -423,19 +409,23 @@ struct Builder<'a, 'c> {
     accesses: Vec<Access>,
     stores: Vec<Store>,
     annotations: Vec<(Node, CellId)>,
-    sinks: Vec<(CellId, EscapeSink)>,
+    sinks: Vec<(CellId, EscapeCause)>,
     constraints: Vec<CellId>,
     /// `(receiver, key)` of every analyzed computed access.
     computed_keys: Vec<(CellId, CellId)>,
     /// Exports observable through module namespace objects.
     exposed: HashSet<SymbolId>,
+    /// Why each summary candidate (by symbol and by function node) has no
+    /// trusted summary; explains escapes through those functions.
+    callee_boundaries: HashMap<SymbolId, FunctionBoundary>,
+    function_boundaries: HashMap<Node, FunctionBoundary>,
 }
 
 /// Everything decided from the current cells.
 struct Evaluation {
     reasons: Vec<Option<Preservation>>,
     /// Escape causes of objects whose reason is `escapes`.
-    sinks: Vec<Option<EscapeSink>>,
+    sinks: Vec<Option<EscapeCause>>,
     occurrences: Vec<Vec<(usize, Occurrence)>>,
     parents: Vec<usize>,
 }
@@ -596,6 +586,53 @@ impl Builder<'_, '_> {
                 parent.kind() == SyntaxKind::ShorthandPropertyAssignment && parent.name() == node
             }
             RefKind::Alias | RefKind::Type => false,
+        }
+    }
+
+    /// `sink` with the boundary of `function`, a function-like node without
+    /// a trusted summary.
+    fn unsummarized(&self, sink: EscapeSink, function: Node) -> EscapeCause {
+        EscapeCause {
+            sink,
+            boundary: Some(
+                self.function_boundaries
+                    .get(&function)
+                    .copied()
+                    .unwrap_or_else(|| function_shape(function)),
+            ),
+        }
+    }
+
+    /// Why the function an identifier callee names has no trusted summary.
+    /// A callee without a runtime declaration in an analyzed module (a
+    /// library, lib or ambient declaration, or JavaScript) is outside the
+    /// program; any other callee that is not a summary candidate is
+    /// classified by its declaration form.
+    fn callee_boundary(&self, callee: Node) -> FunctionBoundary {
+        let Some(symbol) = self.symbol(callee) else {
+            return FunctionBoundary::OutsideProgram;
+        };
+        if let Some(&boundary) = self.callee_boundaries.get(&symbol) {
+            return boundary;
+        }
+        let declaration =
+            self.ctx
+                .checker
+                .sym(symbol)
+                .declarations
+                .into_iter()
+                .find(|&declaration| {
+                    !declaration.flags().intersects(NodeFlags::Ambient)
+                        && self
+                            .ctx
+                            .file_of_node(declaration)
+                            .is_some_and(|file| !self.ctx.files[file].js)
+                });
+        match declaration.map(|d| d.kind()) {
+            None => FunctionBoundary::OutsideProgram,
+            Some(SyntaxKind::VariableDeclaration) => FunctionBoundary::Variable,
+            Some(SyntaxKind::Parameter | SyntaxKind::BindingElement) => FunctionBoundary::Parameter,
+            Some(_) => FunctionBoundary::OtherShape,
         }
     }
 
@@ -804,7 +841,7 @@ impl Builder<'_, '_> {
             start: node.pos() as usize,
             properties: Vec::new(),
             preservation: None,
-            escape_sink: None,
+            escape: None,
         };
         let mut reason = None;
         if !is_external_module(source) || in_namespace(node) {
@@ -1019,6 +1056,8 @@ impl Builder<'_, '_> {
                 };
                 if let Err(boundary) = self.closed_function(node, binding, symbol) {
                     *boundaries.entry(boundary).or_default() += 1;
+                    self.callee_boundaries.insert(symbol, boundary);
+                    self.function_boundaries.insert(node, boundary);
                     continue;
                 }
                 let result = self.graph.cell(false);
@@ -1074,7 +1113,7 @@ impl Builder<'_, '_> {
                         self.bindings.insert(symbol, cell);
                         if !module || in_namespace(node) || !self.internal(symbol) {
                             self.graph.set_unknown(cell, EscapeSink::ExternalBinding);
-                            self.sinks.push((cell, EscapeSink::ExternalBinding));
+                            self.sinks.push((cell, EscapeSink::ExternalBinding.into()));
                         }
                         cell
                     }
@@ -1089,9 +1128,9 @@ impl Builder<'_, '_> {
                 };
                 if !understood {
                     let origin = if node.kind() == SyntaxKind::Parameter {
-                        EscapeSink::UnsummarizedParameter
+                        self.unsummarized(EscapeSink::UnsummarizedParameter, node.parent())
                     } else {
-                        EscapeSink::UnsupportedBinding
+                        EscapeSink::UnsupportedBinding.into()
                     };
                     self.graph.set_unknown(cell, origin);
                 }
@@ -1127,7 +1166,8 @@ impl Builder<'_, '_> {
                         if !Self::value_reference(r.node, kind) {
                             // Namespace member or qualified access.
                             self.graph.set_unknown(cell, EscapeSink::QualifiedReference);
-                            self.sinks.push((cell, EscapeSink::QualifiedReference));
+                            self.sinks
+                                .push((cell, EscapeSink::QualifiedReference.into()));
                         } else if assignment_target(r.node).is_some() && !simple_assignment(r.node)
                         {
                             self.graph.set_unknown(cell, EscapeSink::CompoundWrite);
@@ -1369,7 +1409,6 @@ impl Builder<'_, '_> {
     /// context of `node`'s parent.
     fn context(&self, node: Node) -> (Option<Preservation2>, bool) {
         const ACCEPT: (Option<Preservation2>, bool) = (None, false);
-        let escape = |sink| (Some(Preservation2::Escapes(sink)), true);
         // Write targets: a plain assignment, destructuring or loop target
         // does not read the old value; compound writes and updates do.
         let target = assignment_target(node);
@@ -1454,7 +1493,7 @@ impl Builder<'_, '_> {
                 if self.owners.contains_key(&parent.parent()) {
                     ACCEPT
                 } else {
-                    escape(EscapeSink::UnsummarizedParameter)
+                    escape(self.unsummarized(EscapeSink::UnsummarizedParameter, parent.parent()))
                 }
             }
             SyntaxKind::BindingElement if parent.initializer() == node => {
@@ -1468,11 +1507,17 @@ impl Builder<'_, '_> {
                 if self.target(parent).is_some() {
                     ACCEPT
                 } else {
-                    escape(match indirect_callee(parent.expression()).kind() {
-                        SyntaxKind::Identifier => EscapeSink::CallArgumentFunction,
+                    let callee = indirect_callee(parent.expression());
+                    escape(match callee.kind() {
+                        SyntaxKind::Identifier => EscapeCause {
+                            sink: EscapeSink::CallArgumentFunction,
+                            boundary: Some(self.callee_boundary(callee)),
+                        },
                         SyntaxKind::PropertyAccessExpression
-                        | SyntaxKind::ElementAccessExpression => EscapeSink::CallArgumentMethod,
-                        _ => EscapeSink::CallArgumentOther,
+                        | SyntaxKind::ElementAccessExpression => {
+                            EscapeSink::CallArgumentMethod.into()
+                        }
+                        _ => EscapeSink::CallArgumentOther.into(),
                     })
                 }
             }
@@ -1480,14 +1525,14 @@ impl Builder<'_, '_> {
                 if self.owners.contains_key(&owner(parent)) {
                     ACCEPT
                 } else {
-                    escape(EscapeSink::UnsummarizedReturn)
+                    escape(self.unsummarized(EscapeSink::UnsummarizedReturn, owner(parent)))
                 }
             }
             SyntaxKind::ArrowFunction if parent.body() == node => {
                 if self.owners.contains_key(&parent) {
                     ACCEPT
                 } else {
-                    escape(EscapeSink::UnsummarizedReturn)
+                    escape(self.unsummarized(EscapeSink::UnsummarizedReturn, parent))
                 }
             }
             // Receivers: accesses are analyzed separately. A key literal as
@@ -1495,9 +1540,10 @@ impl Builder<'_, '_> {
             SyntaxKind::PropertyAccessExpression if parent.expression() == node => (None, true),
             SyntaxKind::ElementAccessExpression if parent.expression() == node => (None, true),
             // Keys: objects are converted to strings.
-            SyntaxKind::ElementAccessExpression => {
-                (Some(Preservation2::Escapes(EscapeSink::ComputedKey)), false)
-            }
+            SyntaxKind::ElementAccessExpression => (
+                Some(Preservation2::Escapes(EscapeSink::ComputedKey.into())),
+                false,
+            ),
             SyntaxKind::PropertyAssignment if parent.initializer() == node => {
                 // Only static names are modeled as fields.
                 if self.allocations.contains_key(&parent.parent())
@@ -1528,16 +1574,16 @@ impl Builder<'_, '_> {
         let total = objects + self.token_info.len();
         let mut reasons = self.intrinsic.clone();
         // The escape cause recorded with each object's first `escapes` reason.
-        let mut sinks: Vec<Option<EscapeSink>> = vec![None; objects];
+        let mut sinks: Vec<Option<EscapeCause>> = vec![None; objects];
         let mut token_escaped = vec![false; self.token_info.len()];
         let mut occurrences: Vec<Vec<(usize, Occurrence)>> = vec![Vec::new(); objects];
         let mut parents: Vec<usize> = (0..total).collect();
         let graph = &self.graph;
         let preserve = |reasons: &mut Vec<Option<Preservation>>,
-                        sinks: &mut Vec<Option<EscapeSink>>,
+                        sinks: &mut Vec<Option<EscapeCause>>,
                         token_escaped: &mut Vec<bool>,
                         cell: CellId,
-                        reason: Option<(Preservation, Option<EscapeSink>)>,
+                        reason: Option<(Preservation, Option<EscapeCause>)>,
                         tokens: bool| {
             for &value in &graph.cells[cell as usize].values {
                 if graph.is_object(value) {
@@ -1597,7 +1643,7 @@ impl Builder<'_, '_> {
                         &mut sinks,
                         value as usize,
                         &Preservation::Escapes,
-                        Some(cell.origin.unwrap_or(EscapeSink::UntrackedValue)),
+                        Some(cell.origin.unwrap_or(EscapeSink::UntrackedValue.into())),
                     );
                 }
                 match first {
@@ -1652,7 +1698,7 @@ impl Builder<'_, '_> {
                     &mut sinks,
                     &mut token_escaped,
                     store.value,
-                    Some((Preservation::Escapes, Some(sink))),
+                    Some((Preservation::Escapes, Some(sink.into()))),
                     true,
                 );
             }
@@ -1692,7 +1738,7 @@ impl Builder<'_, '_> {
                         &mut sinks,
                         object,
                         &Preservation::Escapes,
-                        Some(EscapeSink::MixedReceiverAccess),
+                        Some(EscapeSink::MixedReceiverAccess.into()),
                     );
                 }
                 if access.operation {
@@ -1787,7 +1833,7 @@ impl Builder<'_, '_> {
         }
         // Region preservation. A region keeps the escape cause of the member
         // whose reason it adopts.
-        let mut region = vec![None::<(Preservation, Option<EscapeSink>)>; total];
+        let mut region = vec![None::<(Preservation, Option<EscapeCause>)>; total];
         for element in 0..total {
             let reason = if element < objects {
                 reasons[element].clone().map(|r| (r, sinks[element]))
@@ -1993,7 +2039,7 @@ impl Builder<'_, '_> {
                     .push(occurrence);
             }
             objects[index].preservation = reasons[index].clone();
-            objects[index].escape_sink = sinks[index];
+            objects[index].escape = sinks[index];
         }
         let mut merged = std::collections::BTreeMap::<usize, Object>::new();
         for (index, object) in objects.into_iter().enumerate() {
@@ -2001,7 +2047,7 @@ impl Builder<'_, '_> {
             if let Some(target) = merged.get_mut(&id) {
                 if target.preservation.is_none() {
                     target.preservation = object.preservation;
-                    target.escape_sink = object.escape_sink;
+                    target.escape = object.escape;
                 }
                 for property in object.properties {
                     if let Some(existing) = target
@@ -2032,14 +2078,19 @@ impl Builder<'_, '_> {
     }
 }
 
+/// A context that lets a value escape with `cause`, exposing key literals.
+fn escape(cause: impl Into<EscapeCause>) -> (Option<Preservation2>, bool) {
+    (Some(Preservation2::Escapes(cause.into())), true)
+}
+
 /// Records `reason` (with its escape cause) unless the object already has a
 /// reason; the first reason wins.
 fn mark(
     reasons: &mut [Option<Preservation>],
-    sinks: &mut [Option<EscapeSink>],
+    sinks: &mut [Option<EscapeCause>],
     object: usize,
     reason: &Preservation,
-    sink: Option<EscapeSink>,
+    sink: Option<EscapeCause>,
 ) {
     if reasons[object].is_none() {
         reasons[object] = Some(reason.clone());
@@ -2048,6 +2099,33 @@ fn mark(
         } else {
             None
         };
+    }
+}
+
+/// The declaration form of a function-like node that is not a summary
+/// candidate.
+fn function_shape(function: Node) -> FunctionBoundary {
+    match function.kind() {
+        SyntaxKind::MethodDeclaration
+        | SyntaxKind::GetAccessor
+        | SyntaxKind::SetAccessor
+        | SyntaxKind::Constructor => FunctionBoundary::Method,
+        SyntaxKind::FunctionExpression | SyntaxKind::ArrowFunction => {
+            let outer = walk_up_outer(function);
+            let parent = outer.parent();
+            match parent.kind() {
+                SyntaxKind::CallExpression | SyntaxKind::NewExpression
+                    if parent.expression() != outer =>
+                {
+                    FunctionBoundary::Callback
+                }
+                SyntaxKind::VariableDeclaration if parent.initializer() == outer => {
+                    FunctionBoundary::Variable
+                }
+                _ => FunctionBoundary::OtherShape,
+            }
+        }
+        _ => FunctionBoundary::OtherShape,
     }
 }
 
@@ -2249,6 +2327,8 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         constraints: Vec::new(),
         computed_keys: Vec::new(),
         exposed: HashSet::new(),
+        callee_boundaries: HashMap::new(),
+        function_boundaries: HashMap::new(),
     };
     builder.build()?;
     builder.finish()

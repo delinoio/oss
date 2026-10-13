@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::{
     compiler::Snapshot,
-    optimizer::{EscapeSink, Preservation},
+    optimizer::{EscapeSink, FunctionBoundary, Preservation},
     passes::{PassId, PassSet},
     pipeline::Outcome,
     plan::{Phase, Reason},
@@ -30,6 +30,9 @@ pub struct Report {
     pub preservation_reasons: BTreeMap<String, usize>,
     /// Properties preserved as `escapes`, by the first escape cause.
     pub escape_sinks: BTreeMap<EscapeSink, usize>,
+    /// For escape sinks caused by a function without a trusted summary, the
+    /// properties by the reason that function has no summary.
+    pub escape_function_boundaries: BTreeMap<EscapeSink, BTreeMap<FunctionBoundary, usize>>,
     pub passes: PassConfig,
     pub rounds: usize,
     pub round_limit_reached: bool,
@@ -211,14 +214,26 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
         }
     }
     let mut escape_sinks = BTreeMap::new();
+    let mut escape_function_boundaries = BTreeMap::<EscapeSink, BTreeMap<_, usize>>::new();
     for mapping in &outcome.mappings {
         if mapping.preservation == Some(Preservation::Escapes)
             && let Some(sink) = mapping.escape_sink
         {
             *escape_sinks.entry(sink).or_default() += 1;
+            if let Some(boundary) = mapping.escape_function_boundary {
+                *escape_function_boundaries
+                    .entry(sink)
+                    .or_default()
+                    .entry(boundary)
+                    .or_default() += 1;
+            }
         }
     }
-    tracing::debug!(?escape_sinks, "escape causes of preserved properties");
+    tracing::debug!(
+        ?escape_sinks,
+        ?escape_function_boundaries,
+        "escape causes of preserved properties"
+    );
     let renamed: Vec<_> = outcome
         .mappings
         .iter()
@@ -241,6 +256,7 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
         changed_occurrences: renamed.iter().map(|m| m.occurrences).sum(),
         preservation_reasons,
         escape_sinks,
+        escape_function_boundaries,
         passes: PassConfig {
             enabled: passes.enabled(),
             disabled: passes.disabled(),

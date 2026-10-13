@@ -102,6 +102,60 @@ pub enum EscapeSink {
     OtherContext,
 }
 
+/// Why a function has no trusted summary. Stable report keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FunctionBoundary {
+    /// Script, namespace or bodiless declaration.
+    Scope,
+    AsyncOrGenerator,
+    /// Nested pattern, rest or `this` parameters.
+    Parameters,
+    /// `this`, `super`, `arguments` or `new.target`.
+    Receiver,
+    /// Public, JavaScript-visible, exposed or merged symbol.
+    External,
+    /// A reference other than a direct fixed-arity call.
+    References,
+    // Forms that are never summary candidates. Only function declarations
+    // and unannotated `const` bindings of anonymous function expressions or
+    // arrow functions are summarized.
+    /// A class or object method, accessor or constructor.
+    Method,
+    /// A function or arrow function expression passed directly as an
+    /// argument.
+    Callback,
+    /// A function value held by a `let`/`var` binding, an annotated
+    /// `const`, a `const` bound to a named function expression or to a
+    /// non-function initializer (for example `g.bind(x)`).
+    Variable,
+    /// A callee that is a parameter or destructured binding.
+    Parameter,
+    /// Any other function form, such as an immediately invoked or returned
+    /// function expression or a function stored in a property.
+    OtherShape,
+    /// Declared outside the analyzed modules (library, lib or ambient
+    /// declaration, or untracked JavaScript).
+    OutsideProgram,
+}
+
+/// An escape sink with the boundary of the function involved, for sinks
+/// caused by a function without a trusted summary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EscapeCause {
+    pub sink: EscapeSink,
+    pub boundary: Option<FunctionBoundary>,
+}
+
+impl From<EscapeSink> for EscapeCause {
+    fn from(sink: EscapeSink) -> Self {
+        Self {
+            sink,
+            boundary: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Occurrence {
     /// Module containing the occurrence. Object regions can span modules.
@@ -131,7 +185,7 @@ pub struct Object {
     pub properties: Vec<Property>,
     pub preservation: Option<Preservation>,
     /// Set with an `escapes` preservation.
-    pub escape_sink: Option<EscapeSink>,
+    pub escape: Option<EscapeCause>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -145,6 +199,9 @@ pub struct Mapping {
     /// The first cause of an `escapes` preservation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub escape_sink: Option<EscapeSink>,
+    /// Why the function behind `escape_sink` has no trusted summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub escape_function_boundary: Option<FunctionBoundary>,
 }
 
 /// How groups relate when allocating names.
@@ -181,7 +238,7 @@ struct Group {
     /// Indices of (object, property) pairs that form this identity.
     members: Vec<(usize, usize)>,
     preservation: Option<Preservation>,
-    escape_sink: Option<EscapeSink>,
+    escape: Option<EscapeCause>,
     unit: usize,
 }
 
@@ -219,7 +276,7 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
                 groups.push(Group {
                     members: Vec::new(),
                     preservation: None,
-                    escape_sink: None,
+                    escape: None,
                     unit: if strategy.disambiguate {
                         o
                     } else {
@@ -234,7 +291,7 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
             groups[index].members.push((o, p));
             if let Some(reason) = &object.preservation {
                 groups[index].preservation = Some(reason.clone());
-                groups[index].escape_sink = object.escape_sink;
+                groups[index].escape = object.escape;
             }
         }
     }
@@ -337,6 +394,10 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
     let mut units = BTreeMap::<usize, Allocation>::new();
     let mut preserved = Vec::new();
     for (g, group) in groups.iter().enumerate() {
+        // Only an `escapes` preservation carries its escape cause.
+        let escape = group
+            .escape
+            .filter(|_| reasons[g] == Some(Preservation::Escapes));
         for &(o, p) in &group.members {
             let object = &objects[o];
             let property = &object.properties[p];
@@ -347,11 +408,8 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
                 renamed: renamed[g].clone().unwrap_or_else(|| property.name.clone()),
                 occurrences: property.occurrences.len(),
                 preservation: reasons[g].clone(),
-                escape_sink: if reasons[g] == Some(Preservation::Escapes) {
-                    group.escape_sink
-                } else {
-                    None
-                },
+                escape_sink: escape.map(|cause| cause.sink),
+                escape_function_boundary: escape.and_then(|cause| cause.boundary),
             };
             let Some(new_name) = &renamed[g] else {
                 preserved.push(mapping);
@@ -447,7 +505,7 @@ mod tests {
                 start: 0,
                 properties: vec![property("sharedLong", 2, 0), property("otherLong", 1, 60)],
                 preservation: None,
-                escape_sink: None,
+                escape: None,
             },
             Object {
                 file: "input.ts".into(),
@@ -457,7 +515,7 @@ mod tests {
                     property("otherLong", 2, 130),
                 ],
                 preservation: None,
-                escape_sink: None,
+                escape: None,
             },
         ]
     }
@@ -517,7 +575,10 @@ mod tests {
         assert_eq!(allocations.len(), 2);
         let mut preserved = objects();
         preserved[1].preservation = Some(Preservation::Escapes);
-        preserved[1].escape_sink = Some(EscapeSink::Spread);
+        preserved[1].escape = Some(EscapeCause {
+            sink: EscapeSink::CallArgumentFunction,
+            boundary: Some(FunctionBoundary::References),
+        });
         let (allocations, kept) = allocate(
             &mut preserved,
             Strategy {
@@ -528,10 +589,10 @@ mod tests {
         assert!(allocations.is_empty());
         assert_eq!(kept.len(), 4);
         // The name identity inherits the escape cause with the reason.
-        assert!(
-            kept.iter()
-                .all(|m| m.escape_sink == Some(EscapeSink::Spread))
-        );
+        assert!(kept.iter().all(|m| {
+            m.escape_sink == Some(EscapeSink::CallArgumentFunction)
+                && m.escape_function_boundary == Some(FunctionBoundary::References)
+        }));
         // Other preservation reasons carry no escape cause.
         let mut constrained = objects();
         constrained[0].preservation = Some(Preservation::TypeConstraint);
@@ -542,7 +603,10 @@ mod tests {
                 ambiguate: true,
             },
         );
-        assert!(kept.iter().all(|m| m.escape_sink.is_none()));
+        assert!(
+            kept.iter()
+                .all(|m| m.escape_sink.is_none() && m.escape_function_boundary.is_none())
+        );
     }
 
     #[test]
@@ -561,7 +625,7 @@ mod tests {
             start: 0,
             properties: vec![property("onlyLongName", 2, 0)],
             preservation: None,
-            escape_sink: None,
+            escape: None,
         }];
         let (allocations, _) = allocate(&mut single, all);
         assert_eq!(allocations.len(), 1);

@@ -448,6 +448,7 @@ fn preserved(candidate: &Candidate, reason: Preservation) -> impl Iterator<Item 
         renamed: m.original.clone(),
         preservation: Some(reason.clone()),
         escape_sink: None,
+        escape_function_boundary: None,
         ..m.clone()
     })
 }
