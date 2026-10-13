@@ -117,6 +117,51 @@ token and is settled through the same inspection/Quit path without any
 installation. Logs record the failure code and attempt count only, never saved
 binding details.
 
+Before the original `native-begin` is submitted, the native host durably retains
+its identity in a begin-intent record, a second closed kind (`begin-intent`) of
+the same store family at
+`<root>/desktop-updates/native-begin-intents/<operation-id>.<generation>.json`.
+It carries the server ID, operation ID, revision, native generation and optional
+saved-connection ID, and its only valid phase is Prepared. It follows the same
+owner-only, atomic, 4 KiB and never-overwrite rules, and a begin whose identity
+cannot be retained is rejected without being sent. A begin rejected before it
+reaches the resident runtime retires its intent. Once a response arrives with
+phase Installing the intent stays until the verified terminal settlement
+retires it. When the response is canceled or lost, including by Quit, native
+never submits `native-begin` or an installer a second time. It reads the
+original journal through the bounded offline `native-inspect` (the uncanceled
+local request, independent of Quit), accepting only the exact server, operation,
+revision and saved scope, and then classifies:
+
+- Installing with the original generation proves acceptance. Native builds a
+  settlement-only `AcceptedInstallation` with phase Uncertain and no installer
+  entry point, publishes it as the pending owner and settles Uncertain through
+  the offline writer, because an earlier process may already have run the
+  installer.
+- A terminal phase with the original generation was already settled; the intent
+  is retired.
+- Another generation in the journal can never be this begin, because Go accepts
+  `native-begin` only for the generation it carries. The intent is retired and
+  nothing is settled. A different saved scope or identity is rejected by the
+  original read, settles nothing and keeps the intent.
+- Prepared proves non-acceptance only when the resident runtime request that
+  carried `native-begin` can no longer land. In the same process it may still
+  land, so the intent stays retained; the launch pass of a later process runs
+  after that runtime exited and retires it.
+- An unreadable, busy or failed inspection keeps the intent across Quit and
+  restart.
+
+The launch pass and each original-scope `native-inspect` reconcile retained
+intents after retained outcomes. An exact retained outcome record for the same
+operation always settles first, and an intent never writes an inferred Uncertain
+while that record is pending. Reconciliation never repeats `native-begin` or
+invokes an installer, never changes the journal generation, and Quit stops it
+between records. Fixture sidecars cover accepted begin, a canceled response
+after acceptance, a late original response, a lost response before acceptance
+and its restart retirement, a begin rejected before sending, foreign generation
+and scope, and an unreadable inspection; they do not establish installed-platform
+acceptance.
+
 The native application manifest declares `desktop_update_context` and
 `desktop_update_native` under the dedicated closed `desktop-update` permission.
 Only the existing main/local-* and server-* product document capabilities grant

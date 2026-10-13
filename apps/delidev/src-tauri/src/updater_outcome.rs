@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Private durable store for native update evidence that must outlive the
-//! process. Each record is keyed by the original operation ID and is written
-//! under the connector root's `desktop-updates` scope, beside the Go-owned
-//! once-only journal. Records only carry the identities and the exact phase
-//! needed to repeat an idempotent offline `native-outcome` write. They never
-//! grant installation authority, and an unreadable or foreign record is kept
-//! rather than deleted or trusted.
+//! process. Records are written under the connector root's `desktop-updates`
+//! scope, beside the Go-owned once-only journal. Outcome records are keyed by
+//! the original operation ID and carry the identities plus the exact phase
+//! needed to repeat an idempotent offline `native-outcome` write. Begin-intent
+//! records are keyed by the operation ID and native generation and are written
+//! before `native-begin` is submitted, so a canceled or lost response cannot
+//! discard ownership of a possibly accepted begin. Records never grant
+//! installation authority, and an unreadable or foreign record is kept rather
+//! than deleted or trusted.
 use std::ops::ControlFlow;
 
 use super::{
@@ -15,6 +18,8 @@ use super::{
 
 /// Directory (below the connector root) that owns every retained record.
 pub(crate) const STORE_DIRECTORY: &str = "desktop-updates/native-outcomes";
+/// Directory (below the connector root) that owns every begin-intent record.
+pub(crate) const INTENT_DIRECTORY: &str = "desktop-updates/native-begin-intents";
 const RECORD_LIMIT: u64 = 4096;
 const RECORD_VERSION: u32 = 1;
 
@@ -26,6 +31,10 @@ pub enum RecordKind {
     /// The exact terminal phase an accepted native installation observed but
     /// could not yet publish to the original Installing journal.
     Outcome,
+    /// The identities of a `native-begin` request, retained before the request
+    /// is submitted. The only valid phase is the Prepared journal phase the
+    /// request needs in order to be accepted.
+    BeginIntent,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -43,6 +52,40 @@ pub struct OutcomeRecord {
 }
 
 impl OutcomeRecord {
+    /// Retains the identities of a `native-begin` request before submission.
+    pub fn begin_intent(
+        server_id: &str,
+        operation_id: &str,
+        revision: u64,
+        generation: &str,
+        saved_connection: Option<&str>,
+    ) -> Result<Self> {
+        let record = Self {
+            version: RECORD_VERSION,
+            kind: RecordKind::BeginIntent,
+            server_id: server_id.into(),
+            operation_id: operation_id.into(),
+            revision,
+            generation: generation.into(),
+            saved_connection: saved_connection.map(str::to_owned),
+            phase: Phase::Prepared,
+        };
+        record.validate()?;
+        Ok(record)
+    }
+
+    pub fn kind(&self) -> RecordKind {
+        self.kind
+    }
+
+    /// File stem inside the owning store directory.
+    fn stem(&self) -> String {
+        match self.kind {
+            RecordKind::Outcome => self.operation_id.clone(),
+            RecordKind::BeginIntent => format!("{}.{}", self.operation_id, self.generation),
+        }
+    }
+
     pub fn outcome(
         server_id: &str,
         operation_id: &str,
@@ -72,14 +115,17 @@ impl OutcomeRecord {
         if let Some(saved) = &self.saved_connection {
             canonical_id(saved)?;
         }
-        if self.version != RECORD_VERSION
-            || self.kind != RecordKind::Outcome
-            || self.revision == 0
-            || self.revision >= 1 << 63
-            || !matches!(
+        let phase_valid = match self.kind {
+            RecordKind::Outcome => matches!(
                 self.phase,
                 Phase::Installed | Phase::Failed | Phase::Uncertain
-            )
+            ),
+            RecordKind::BeginIntent => self.phase == Phase::Prepared,
+        };
+        if self.version != RECORD_VERSION
+            || self.revision == 0
+            || self.revision >= 1 << 63
+            || !phase_valid
         {
             return Err(NativeFailure::InvalidEvidence);
         }
@@ -98,17 +144,38 @@ pub enum StoredEntry {
 
 pub struct OutcomeStore {
     dir: PathBuf,
+    kind: RecordKind,
 }
 
 impl OutcomeStore {
+    /// The store of retained terminal outcomes.
     pub fn new(root: &Path) -> Self {
         Self {
             dir: root.join(STORE_DIRECTORY),
+            kind: RecordKind::Outcome,
         }
     }
 
-    fn path(&self, operation_id: &str) -> PathBuf {
-        self.dir.join(format!("{operation_id}.json"))
+    /// The store of retained `native-begin` intents.
+    pub fn intents(root: &Path) -> Self {
+        Self {
+            dir: root.join(INTENT_DIRECTORY),
+            kind: RecordKind::BeginIntent,
+        }
+    }
+
+    fn path(&self, stem: &str) -> PathBuf {
+        self.dir.join(format!("{stem}.json"))
+    }
+
+    /// Whether a directory entry stem is a canonical name for this store.
+    fn valid_stem(&self, stem: &str) -> bool {
+        match self.kind {
+            RecordKind::Outcome => canonical_id(stem).is_ok(),
+            RecordKind::BeginIntent => stem.split_once('.').is_some_and(|(op, generation)| {
+                canonical_id(op).is_ok() && canonical_id(generation).is_ok()
+            }),
+        }
     }
 
     /// Returns false when the store directory does not exist. Existing
@@ -199,14 +266,14 @@ impl OutcomeStore {
     }
 
     /// Reads one record. `Ok(None)` means the file does not exist.
-    fn read(&self, operation_id: &str) -> Result<Option<OutcomeRecord>> {
-        let Some(bytes) = Self::read_bytes(&self.path(operation_id))? else {
+    fn read(&self, stem: &str) -> Result<Option<OutcomeRecord>> {
+        let Some(bytes) = Self::read_bytes(&self.path(stem))? else {
             return Ok(None);
         };
         let record: OutcomeRecord =
             serde_json::from_slice(&bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
         record.validate()?;
-        if record.operation_id != operation_id {
+        if record.kind != self.kind || record.stem() != stem {
             return Err(NativeFailure::InvalidEvidence);
         }
         Ok(Some(record))
@@ -217,6 +284,9 @@ impl OutcomeStore {
     /// is never overwritten because it is evidence of a conflicting outcome.
     pub fn persist(&self, record: &OutcomeRecord) -> Result<()> {
         record.validate()?;
+        if record.kind != self.kind {
+            return Err(NativeFailure::InvalidEvidence);
+        }
         self.check_dir(true)?;
         // A new store directory is only a directory entry in its parent until
         // that parent is synced. Sync it on every persistence so a crash after
@@ -227,7 +297,8 @@ impl OutcomeStore {
                 .and_then(|d| d.sync_all())
                 .map_err(|_| NativeFailure::StorageUnavailable)?;
         }
-        match self.read(&record.operation_id)? {
+        let stem = record.stem();
+        match self.read(&stem)? {
             Some(existing) if existing == *record => return Ok(()),
             Some(_) => return Err(NativeFailure::InvalidEvidence),
             None => {}
@@ -241,12 +312,11 @@ impl OutcomeStore {
     /// never overwritten; it is reread and accepted only when identical.
     fn publish(&self, record: &OutcomeRecord) -> Result<()> {
         let bytes = serde_json::to_vec(record).map_err(|_| NativeFailure::InvalidEvidence)?;
-        let destination = self.path(&record.operation_id);
-        let temporary = self.dir.join(format!(
-            ".{}.{}.tmp",
-            record.operation_id,
-            uuid::Uuid::now_v7()
-        ));
+        let stem = record.stem();
+        let destination = self.path(&stem);
+        let temporary = self
+            .dir
+            .join(format!(".{}.{}.tmp", stem, uuid::Uuid::now_v7()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -270,29 +340,29 @@ impl OutcomeStore {
                     .map_err(|_| NativeFailure::StorageUnavailable)?;
                 Ok(())
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                match self.read(&record.operation_id)? {
-                    Some(existing) if existing == *record => Ok(()),
-                    _ => Err(NativeFailure::InvalidEvidence),
-                }
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => match self.read(&stem)? {
+                Some(existing) if existing == *record => Ok(()),
+                _ => Err(NativeFailure::InvalidEvidence),
+            },
             Err(_) => Err(NativeFailure::StorageUnavailable),
         }
     }
 
-    /// Loads the one entry keyed by `operation_id` without enumerating the
-    /// directory, so unrelated or unreadable evidence can never hide it.
+    /// Loads the one entry named `stem` without enumerating the directory, so
+    /// unrelated or unreadable evidence can never hide it.
     /// `Ok(None)` means no file exists; an unreadable record is reported as
     /// such and stays on disk.
-    pub fn load(&self, operation_id: &str) -> Result<Option<StoredEntry>> {
-        canonical_id(operation_id)?;
+    pub fn load(&self, stem: &str) -> Result<Option<StoredEntry>> {
+        if !self.valid_stem(stem) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
         if !self.check_dir(false)? {
             return Ok(None);
         }
-        Ok(match self.read(operation_id) {
+        Ok(match self.read(stem) {
             Ok(None) => None,
             Ok(Some(record)) => Some(StoredEntry::Record(record)),
-            Err(_) => Some(StoredEntry::Unreadable(Some(operation_id.to_owned()))),
+            Err(_) => Some(StoredEntry::Unreadable(Some(stem.to_owned()))),
         })
     }
 
@@ -332,7 +402,7 @@ impl OutcomeStore {
                 continue;
             }
             let stem = name.strip_suffix(".json").unwrap_or("");
-            let entry = if canonical_id(stem).is_err() {
+            let entry = if !self.valid_stem(stem) {
                 StoredEntry::Unreadable(None)
             } else {
                 match self.read(stem) {
@@ -354,6 +424,9 @@ impl OutcomeStore {
     /// encoded or replaced file is retained, even when it parses to an equal
     /// record.
     pub fn retire(&self, record: &OutcomeRecord) -> Result<()> {
+        if record.kind != self.kind {
+            return Err(NativeFailure::InvalidEvidence);
+        }
         self.retire_with(record, || {})
     }
 
@@ -364,7 +437,7 @@ impl OutcomeStore {
             return Ok(());
         }
         let expected = serde_json::to_vec(record).map_err(|_| NativeFailure::InvalidEvidence)?;
-        let path = self.path(&record.operation_id);
+        let path = self.path(&record.stem());
         match Self::read_bytes(&path)? {
             None => return Ok(()),
             Some(stored) if stored == expected => {}
@@ -377,7 +450,7 @@ impl OutcomeStore {
         // unlinked.
         let claimed = self.dir.join(format!(
             ".{}.{}.retire",
-            record.operation_id,
+            record.stem(),
             uuid::Uuid::now_v7()
         ));
         match fs::rename(&path, &claimed) {
@@ -393,7 +466,7 @@ impl OutcomeStore {
                 .map_err(|_| NativeFailure::StorageUnavailable)?;
             return Ok(());
         }
-        self.restore_claimed(&claimed, &path, &record.operation_id);
+        self.restore_claimed(&claimed, &path, &record.stem());
         Err(NativeFailure::InvalidEvidence)
     }
 
@@ -404,7 +477,7 @@ impl OutcomeStore {
     /// quarantine name, because dot-prefixed files are never listed and so
     /// would be neither replayed nor reported on later launches. A listing
     /// reports the quarantined file as unreadable evidence and keeps it.
-    fn restore_claimed(&self, claimed: &Path, path: &Path, operation_id: &str) {
+    fn restore_claimed(&self, claimed: &Path, path: &Path, stem: &str) {
         match fs::hard_link(claimed, path) {
             Ok(()) => {
                 let _ = fs::remove_file(claimed);
@@ -413,25 +486,25 @@ impl OutcomeStore {
             Err(e) => tracing::warn!(
                 operation = "desktop_update_outcome_restore",
                 state = "canonical-name-unavailable",
-                id = operation_id,
+                id = stem,
                 kind = ?e.kind()
             ),
         }
         let quarantine = self.dir.join(format!(
-            "{operation_id}.{}.conflict.json",
+            "{stem}.{}.conflict.json",
             uuid::Uuid::now_v7()
         ));
         match fs::rename(claimed, &quarantine) {
             Ok(()) => tracing::warn!(
                 operation = "desktop_update_outcome_restore",
                 state = "claimed-evidence-quarantined",
-                id = operation_id
+                id = stem
             ),
             // The claimed file stays on disk under its hidden name.
             Err(e) => tracing::error!(
                 operation = "desktop_update_outcome_restore",
                 state = "claimed-evidence-stranded",
-                id = operation_id,
+                id = stem,
                 kind = ?e.kind()
             ),
         }
@@ -869,5 +942,69 @@ mod tests {
         assert!(OutcomeRecord::outcome(&id, &id, 1 << 63, &id, None, Phase::Failed).is_err());
         assert!(OutcomeRecord::outcome(&id, "x", 1, &id, None, Phase::Failed).is_err());
         assert!(OutcomeRecord::outcome(&id, &id, 1, &id, Some("x"), Phase::Failed).is_err());
+    }
+
+    #[test]
+    fn begin_intents_use_their_own_store_and_never_mix_with_outcomes() {
+        let (_temp, root) = scope();
+        let id = uuid::Uuid::now_v7().to_string();
+        let generation = uuid::Uuid::now_v7().to_string();
+        let intent = OutcomeRecord::begin_intent(&id, &id, 7, &generation, None).unwrap();
+        assert_eq!(intent.kind(), RecordKind::BeginIntent);
+        let intents = OutcomeStore::intents(&root);
+        let outcomes = OutcomeStore::new(&root);
+        assert!(matches!(
+            outcomes.persist(&intent),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+        intents.persist(&intent).unwrap();
+        intents.persist(&intent).unwrap();
+        assert!(outcomes.scan().unwrap().is_empty());
+        assert_eq!(
+            intents.scan().unwrap(),
+            vec![StoredEntry::Record(intent.clone())]
+        );
+        let directory = root.join(INTENT_DIRECTORY);
+        assert_eq!(
+            fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert!(directory.join(format!("{id}.{generation}.json")).is_file());
+        // A second generation of the same operation has its own record.
+        let other_generation = uuid::Uuid::now_v7().to_string();
+        let other = OutcomeRecord::begin_intent(&id, &id, 7, &other_generation, None).unwrap();
+        intents.persist(&other).unwrap();
+        assert_eq!(intents.scan().unwrap().len(), 2);
+        intents.retire(&intent).unwrap();
+        assert_eq!(intents.scan().unwrap(), vec![StoredEntry::Record(other)]);
+    }
+
+    #[test]
+    fn begin_intents_only_accept_the_prepared_phase_and_canonical_names() {
+        let id = uuid::Uuid::now_v7().to_string();
+        let intent = OutcomeRecord::begin_intent(&id, &id, 7, &id, None).unwrap();
+        let mut terminal = intent.clone();
+        terminal.phase = Phase::Installed;
+        assert!(terminal.validate().is_err());
+        assert!(OutcomeRecord::begin_intent(&id, &id, 0, &id, None).is_err());
+        assert!(OutcomeRecord::begin_intent(&id, "x", 7, &id, None).is_err());
+        let (_temp, root) = scope();
+        let intents = OutcomeStore::intents(&root);
+        intents.persist(&intent).unwrap();
+        let directory = root.join(INTENT_DIRECTORY);
+        // A file without the operation.generation shape is unreadable evidence.
+        fs::write(directory.join(format!("{id}.json")), b"{}").unwrap();
+        // A record stored under another record's name is never trusted.
+        let swapped = uuid::Uuid::now_v7().to_string();
+        fs::copy(
+            directory.join(format!("{id}.{id}.json")),
+            directory.join(format!("{id}.{swapped}.json")),
+        )
+        .unwrap();
+        let entries = intents.scan().unwrap();
+        assert_eq!(entries.len(), 3);
+        assert!(entries.contains(&StoredEntry::Unreadable(None)));
+        assert!(entries.contains(&StoredEntry::Unreadable(Some(format!("{id}.{swapped}")))));
+        assert!(entries.contains(&StoredEntry::Record(intent)));
     }
 }

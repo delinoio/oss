@@ -111,13 +111,21 @@ pub struct DesktopUpdateRequest<'a> {
     pub outcome: Option<Phase>,
 }
 
-// Constructed only by a successful original native-begin. The renderer cannot
-// supply or change this cleanup authority, including its selected saved scope.
+// Constructed only by a successful original native-begin, or by an offline
+// inspection that proves a lost native-begin response was accepted. The
+// renderer cannot supply or change this cleanup authority, including its
+// selected saved scope.
 pub struct AcceptedInstallation {
     prepared: Prepared,
     revision: u64,
     saved: Option<SavedConnection>,
     outcome: Mutex<Option<Phase>>,
+    // Retained begin intent, retired only after the verified settlement.
+    intent: Option<OutcomeRecord>,
+    // True when ownership was recovered from an inspected journal. Such a
+    // token can only settle the original journal; it never reaches an
+    // installer.
+    settlement_only: bool,
 }
 
 impl AcceptedInstallation {
@@ -125,6 +133,12 @@ impl AcceptedInstallation {
         self.prepared.server_id == server
             && self.prepared.operation_id == id
             && self.revision == revision
+    }
+
+    /// Whether this token was recovered from inspection and has no installer
+    /// entry point.
+    pub fn is_settlement_only(&self) -> bool {
+        self.settlement_only
     }
 
     pub fn install(&self, connector: &Connector) -> Phase {
@@ -140,7 +154,11 @@ impl AcceptedInstallation {
         if let Some(phase) = *outcome {
             return phase;
         }
-        let phase = if stopping {
+        let phase = if self.settlement_only {
+            // The original process may already have run the installer, so a
+            // recovered token retains uncertainty and never installs.
+            Phase::Uncertain
+        } else if stopping {
             Phase::Failed
         } else {
             // Catch at the effect boundary while the original outcome and
@@ -167,7 +185,7 @@ impl AcceptedInstallation {
         }
         *original = Some(phase);
         let p = &self.prepared;
-        settle_original(
+        let settled = settle_original(
             connector,
             &OriginalIdentity {
                 server_id: &p.server_id,
@@ -177,7 +195,20 @@ impl AcceptedInstallation {
                 saved_connection: self.saved.as_ref().map(|saved| saved.id.as_str()),
             },
             phase,
-        )
+        )?;
+        // The journal now holds a terminal phase, so the begin intent has no
+        // remaining ownership to protect.
+        if let Some(intent) = &self.intent
+            && let Err(code) = connector.intent_store().retire(intent)
+        {
+            tracing::warn!(
+                operation = "desktop_update_begin_intent",
+                state = "retire-failed",
+                id = %intent.operation_id,
+                ?code
+            );
+        }
+        Ok(settled)
     }
 
     /// The durable record for the exact outcome this installation observed.
@@ -212,6 +243,15 @@ struct OriginalIdentity<'a> {
     saved_connection: Option<&'a str>,
 }
 
+// Which offline original-journal command one request runs.
+#[derive(Clone, Copy)]
+enum OfflineCommand {
+    // Writes one exact phase to the original Installing journal.
+    Outcome(Phase),
+    // Reads the original journal without changing it.
+    Inspect,
+}
+
 // Writes one exact phase to the original Installing journal. It never invokes
 // an installer and never changes the journal generation: Go accepts only the
 // same phase or the first terminal write. The response must echo the same
@@ -221,10 +261,38 @@ fn settle_original(
     original: &OriginalIdentity<'_>,
     phase: Phase,
 ) -> Result<Prepared> {
-    let name = terminal_name(phase)?;
+    offline_original(
+        connector,
+        original,
+        OfflineCommand::Outcome(phase),
+        Duration::from_secs(40),
+    )
+}
+
+// Reads the exact original journal through the bounded offline writer. It
+// never changes the journal and never repeats native-begin or an installer.
+fn inspect_original(connector: &Connector, original: &OriginalIdentity<'_>) -> Result<Prepared> {
+    offline_original(
+        connector,
+        original,
+        OfflineCommand::Inspect,
+        Duration::from_secs(10),
+    )
+}
+
+fn offline_original(
+    connector: &Connector,
+    original: &OriginalIdentity<'_>,
+    command: OfflineCommand,
+    budget: Duration,
+) -> Result<Prepared> {
+    let (name, outcome) = match command {
+        OfflineCommand::Outcome(phase) => ("native-outcome", Some((phase, terminal_name(phase)?))),
+        OfflineCommand::Inspect => ("native-inspect", None),
+    };
     let mut args: Vec<OsString> = vec![
         "update".into(),
-        "native-outcome".into(),
+        name.into(),
         "--id".into(),
         original.operation_id.into(),
         "--revision".into(),
@@ -233,18 +301,19 @@ fn settle_original(
         original.server_id.into(),
         "--native-generation".into(),
         original.generation.into(),
-        "--outcome".into(),
-        name.into(),
     ];
+    if let Some((_, outcome)) = outcome {
+        args.extend(["--outcome".into(), outcome.into()]);
+    }
     if let Some(saved) = original.saved_connection {
         args.extend(["--saved-connection".into(), saved.into()]);
     }
-    // Retry only the exact same-phase offline write. A lost atomic-write
-    // reply grants neither another installer invocation nor a new claim.
+    // Retry only the exact same offline request. A lost atomic-write reply
+    // grants neither another installer invocation nor a new claim.
     let started = std::time::Instant::now();
     let mut last = NativeFailure::TimedOut;
     for _ in 0..4 {
-        let remaining = Duration::from_secs(40).saturating_sub(started.elapsed());
+        let remaining = budget.saturating_sub(started.elapsed());
         if remaining.is_zero() {
             break;
         }
@@ -253,13 +322,21 @@ fn settle_original(
             .and_then(|value| {
                 let result: Prepared =
                     serde_json::from_value(value).map_err(|_| NativeFailure::InvalidEvidence)?;
+                // Inspection reports whichever generation the journal holds;
+                // the caller decides whether that generation is the original.
+                let generation = match command {
+                    OfflineCommand::Inspect => result.generation.clone(),
+                    OfflineCommand::Outcome(_) => original.generation.to_owned(),
+                };
                 result.validate(
                     &connector.root,
                     original.operation_id,
                     original.server_id,
-                    original.generation,
+                    &generation,
                 )?;
-                if result.phase != phase {
+                if let OfflineCommand::Outcome(phase) = command
+                    && result.phase != phase
+                {
                     return Err(NativeFailure::InvalidEvidence);
                 }
                 Ok(result)
@@ -269,8 +346,8 @@ fn settle_original(
             Err(code) => {
                 tracing::warn!(
                     operation = "desktop_update_settlement",
+                    command = name,
                     id = original.operation_id,
-                    ?phase,
                     ?code
                 );
                 last = code;
@@ -334,6 +411,12 @@ pub enum ReconcileScope<'a> {
 }
 
 impl ReconcileScope<'_> {
+    // Only the launch scope runs after the previous process, and with it the
+    // resident runtime that carried any native-begin, has exited.
+    fn is_quiesced(&self) -> bool {
+        matches!(self, Self::Launch)
+    }
+
     fn admits(&self, record: &OutcomeRecord) -> bool {
         match self {
             Self::Launch => true,
@@ -456,31 +539,332 @@ impl Connector {
         report
     }
 
+    pub fn intent_store(&self) -> OutcomeStore {
+        OutcomeStore::intents(&self.root)
+    }
+
+    /// Submits the original native-begin after durably retaining its identity.
+    /// A canceled or lost response never discards ownership: the exact
+    /// original journal is read through the bounded offline inspection and
+    /// native-begin is never submitted a second time.
     pub fn begin_desktop_installation(
         &self,
         expected: Option<&SavedConnection>,
         mut request: DesktopUpdateRequest<'_>,
-    ) -> Result<AcceptedInstallation> {
+    ) -> BeginOutcome {
         request.action = "native-begin";
         request.outcome = None;
         let revision = request.revision;
-        let prepared = self.desktop_update(expected, request)?;
-        if prepared.phase != Phase::Installing {
-            return Err(NativeFailure::InvalidEvidence);
-        }
-        Ok(AcceptedInstallation {
-            prepared,
+        let intent = match OutcomeRecord::begin_intent(
+            request.server,
+            request.id,
             revision,
-            saved: expected.cloned(),
-            outcome: Mutex::new(None),
-        })
+            request.generation,
+            expected.map(|saved| saved.id.as_str()),
+        ) {
+            Ok(intent) => intent,
+            Err(code) => return BeginOutcome::Rejected(code),
+        };
+        let store = self.intent_store();
+        // Fail closed: a begin whose identity cannot be retained is never
+        // submitted.
+        if let Err(code) = store.persist(&intent) {
+            tracing::error!(
+                operation = "desktop_update_begin_intent",
+                state = "persist-failed",
+                id = %intent.operation_id,
+                ?code
+            );
+            return BeginOutcome::Rejected(code);
+        }
+        let sent = AtomicBool::new(false);
+        let cause = match self.desktop_update_tracked(expected, request, &sent) {
+            Ok(prepared) if prepared.phase == Phase::Installing => {
+                return BeginOutcome::Accepted(AcceptedInstallation {
+                    prepared,
+                    revision,
+                    saved: expected.cloned(),
+                    outcome: Mutex::new(None),
+                    intent: Some(intent),
+                    settlement_only: false,
+                });
+            }
+            Ok(_) => NativeFailure::InvalidEvidence,
+            Err(code) => code,
+        };
+        if !sent.load(Ordering::Acquire) {
+            // The request was rejected before it reached the runtime, so the
+            // journal cannot have changed.
+            self.retire_intent(&store, &intent, "not-sent");
+            return BeginOutcome::Rejected(cause);
+        }
+        tracing::warn!(
+            operation = "desktop_update_begin_intent",
+            state = "response-lost",
+            id = %intent.operation_id,
+            ?cause
+        );
+        // The resident runtime that carried the request may still be alive in
+        // this process, so a Prepared journal cannot yet prove non-acceptance.
+        match self.prove_begin(&intent, false) {
+            BeginProof::Installing(prepared) => {
+                tracing::warn!(
+                    operation = "desktop_update_begin_intent",
+                    state = "accepted-recovered",
+                    id = %intent.operation_id
+                );
+                BeginOutcome::Recovered {
+                    installation: AcceptedInstallation {
+                        prepared: *prepared,
+                        revision,
+                        saved: expected.cloned(),
+                        outcome: Mutex::new(None),
+                        intent: Some(intent),
+                        settlement_only: true,
+                    },
+                    cause,
+                }
+            }
+            BeginProof::Terminal(phase) => {
+                self.retire_intent(&store, &intent, "already-settled");
+                BeginOutcome::Settled { phase, cause }
+            }
+            BeginProof::NotAccepted => {
+                self.retire_intent(&store, &intent, "not-accepted");
+                BeginOutcome::Rejected(cause)
+            }
+            BeginProof::Unproven(code) => {
+                tracing::warn!(
+                    operation = "desktop_update_begin_intent",
+                    state = "uncertain-retained",
+                    id = %intent.operation_id,
+                    ?code
+                );
+                BeginOutcome::Unresolved(cause)
+            }
+        }
+    }
+
+    fn retire_intent(&self, store: &OutcomeStore, intent: &OutcomeRecord, reason: &str) {
+        match store.retire(intent) {
+            Ok(()) => tracing::info!(
+                operation = "desktop_update_begin_intent",
+                state = "retired",
+                id = %intent.operation_id,
+                reason
+            ),
+            Err(code) => tracing::warn!(
+                operation = "desktop_update_begin_intent",
+                state = "retire-failed",
+                id = %intent.operation_id,
+                ?code
+            ),
+        }
+    }
+
+    // Reads the exact original journal and classifies what the retained
+    // intent can still mean. `quiesced` states that the runtime request that
+    // carried native-begin can no longer land, which is the only way a
+    // Prepared journal proves non-acceptance.
+    fn prove_begin(&self, intent: &OutcomeRecord, quiesced: bool) -> BeginProof {
+        let journal = match inspect_original(
+            self,
+            &OriginalIdentity {
+                server_id: &intent.server_id,
+                operation_id: &intent.operation_id,
+                revision: intent.revision,
+                generation: &intent.generation,
+                saved_connection: intent.saved_connection.as_deref(),
+            },
+        ) {
+            Ok(journal) => journal,
+            Err(code) => return BeginProof::Unproven(code),
+        };
+        if journal.generation != intent.generation {
+            // native-begin only accepts the generation it carries, so a
+            // journal owned by another generation can never be this begin.
+            return BeginProof::NotAccepted;
+        }
+        match journal.phase {
+            Phase::Installing => BeginProof::Installing(Box::new(journal)),
+            Phase::Installed | Phase::Failed | Phase::Uncertain => {
+                BeginProof::Terminal(journal.phase)
+            }
+            Phase::Prepared if quiesced => BeginProof::NotAccepted,
+            Phase::Prepared => BeginProof::Unproven(NativeFailure::Busy),
+        }
+    }
+
+    /// Resolves retained begin intents left by a canceled or lost response.
+    /// An Installing journal proves acceptance and is settled as Uncertain
+    /// through the offline writer without any installer call. A Prepared
+    /// journal retires the intent only for the launch scope, where the process
+    /// that carried the request has exited. Unreadable or foreign evidence is
+    /// kept.
+    pub fn reconcile_begin_intents(
+        &self,
+        scope: &ReconcileScope<'_>,
+        stopping: &dyn Fn() -> bool,
+    ) -> ReconcileReport {
+        let store = self.intent_store();
+        let mut report = ReconcileReport::default();
+        let entries = match store.scan() {
+            Ok(entries) => entries,
+            Err(code) => {
+                tracing::warn!(
+                    operation = "desktop_update_reconcile_intents",
+                    state = "scan-failed",
+                    ?code
+                );
+                return report;
+            }
+        };
+        // A retained outcome is more exact than an inferred Uncertain, so
+        // its operation must settle first.
+        let pending_outcomes: Vec<String> = match self.outcome_store().scan() {
+            Ok(outcomes) => outcomes
+                .into_iter()
+                .filter_map(|entry| match entry {
+                    StoredEntry::Record(record) => Some(record.operation_id),
+                    StoredEntry::Unreadable(name) => name,
+                })
+                .collect(),
+            Err(_) => {
+                report.retained = entries.len();
+                return report;
+            }
+        };
+        for entry in entries {
+            if stopping() {
+                tracing::info!(
+                    operation = "desktop_update_reconcile_intents",
+                    state = "stopped"
+                );
+                break;
+            }
+            let StoredEntry::Record(intent) = entry else {
+                report.retained += 1;
+                tracing::warn!(
+                    operation = "desktop_update_reconcile_intents",
+                    state = "evidence-unreadable-retained"
+                );
+                continue;
+            };
+            if !scope.admits(&intent) {
+                report.skipped += 1;
+                continue;
+            }
+            if pending_outcomes.contains(&intent.operation_id) {
+                report.retained += 1;
+                tracing::warn!(
+                    operation = "desktop_update_reconcile_intents",
+                    state = "outcome-evidence-pending",
+                    id = %intent.operation_id
+                );
+                continue;
+            }
+            match self.prove_begin(&intent, scope.is_quiesced()) {
+                BeginProof::Installing(_) => {
+                    let identity = OriginalIdentity {
+                        server_id: &intent.server_id,
+                        operation_id: &intent.operation_id,
+                        revision: intent.revision,
+                        generation: &intent.generation,
+                        saved_connection: intent.saved_connection.as_deref(),
+                    };
+                    match settle_original(self, &identity, Phase::Uncertain) {
+                        Ok(_) => {
+                            report.settled += 1;
+                            self.retire_intent(&store, &intent, "settled-uncertain");
+                        }
+                        Err(code) => {
+                            report.retained += 1;
+                            tracing::warn!(
+                                operation = "desktop_update_reconcile_intents",
+                                state = "settlement-uncertain-retained",
+                                id = %intent.operation_id,
+                                ?code
+                            );
+                        }
+                    }
+                }
+                BeginProof::Terminal(_) => {
+                    report.settled += 1;
+                    self.retire_intent(&store, &intent, "already-settled");
+                }
+                BeginProof::NotAccepted => {
+                    report.settled += 1;
+                    self.retire_intent(&store, &intent, "not-accepted");
+                }
+                BeginProof::Unproven(code) => {
+                    report.retained += 1;
+                    tracing::warn!(
+                        operation = "desktop_update_reconcile_intents",
+                        state = "uncertain-retained",
+                        id = %intent.operation_id,
+                        ?code
+                    );
+                }
+            }
+        }
+        report
     }
 }
+
+/// What the original native-begin request can still mean.
+pub enum BeginOutcome {
+    /// The response arrived and the journal entered Installing.
+    Accepted(AcceptedInstallation),
+    /// The response was canceled or lost, but the inspected journal is
+    /// Installing for the original generation. The settlement-only token owns
+    /// the original journal and can never reach an installer.
+    Recovered {
+        installation: AcceptedInstallation,
+        cause: NativeFailure,
+    },
+    /// The response was lost and the journal already holds a terminal phase.
+    Settled { phase: Phase, cause: NativeFailure },
+    /// The begin is positively known not to have been accepted.
+    Rejected(NativeFailure),
+    /// Acceptance can be neither proved nor disproved yet; the intent stays
+    /// retained for reconciliation across Quit and restart.
+    Unresolved(NativeFailure),
+}
+
+impl BeginOutcome {
+    /// The failure to report when no installation is owned.
+    pub fn failure(&self) -> Option<NativeFailure> {
+        match self {
+            Self::Accepted(_) => None,
+            Self::Recovered { cause, .. } | Self::Settled { cause, .. } => Some(*cause),
+            Self::Rejected(cause) | Self::Unresolved(cause) => Some(*cause),
+        }
+    }
+}
+
+enum BeginProof {
+    Installing(Box<Prepared>),
+    Terminal(Phase),
+    NotAccepted,
+    Unproven(NativeFailure),
+}
+
 impl Connector {
     pub fn desktop_update(
         &self,
         expected: Option<&SavedConnection>,
         request: DesktopUpdateRequest<'_>,
+    ) -> Result<Prepared> {
+        self.desktop_update_tracked(expected, request, &AtomicBool::new(false))
+    }
+
+    // `sent` turns true immediately before the request reaches the resident
+    // runtime. Until then a failure proves the journal was not touched.
+    fn desktop_update_tracked(
+        &self,
+        expected: Option<&SavedConnection>,
+        request: DesktopUpdateRequest<'_>,
+        sent: &AtomicBool,
     ) -> Result<Prepared> {
         let DesktopUpdateRequest {
             server,
@@ -540,6 +924,7 @@ impl Connector {
                 .into(),
             ]);
         }
+        sent.store(true, Ordering::Release);
         let value = self.run_with_input_bound(&args, None, Duration::from_secs(660))?;
         let prepared: Prepared =
             serde_json::from_value(value).map_err(|_| NativeFailure::InvalidEvidence)?;
@@ -1096,6 +1481,8 @@ mod tests {
                 revision: 7,
                 saved: None,
                 outcome: Mutex::new(None),
+                intent: None,
+                settlement_only: false,
             };
             let effects = std::sync::atomic::AtomicUsize::new(0);
             assert_eq!(
@@ -1931,5 +2318,541 @@ print(json.dumps({'version': 1, 'result': descriptor}))
         let mut record = fixture.record(Phase::Installed);
         record.operation_id = "not-an-id".into();
         assert!(SettlementToken::from_record(record).is_err());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod begin_intent_tests {
+    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+
+    use super::*;
+
+    // One fixture plays both the resident desktop-host (native-begin) and the
+    // offline original-journal commands (native-inspect, native-outcome). The
+    // journal lives in journal.json and `begins`/`calls` count each request.
+    const SIDECAR: &str = r#"#!/usr/bin/python3
+import sys, json, os, time
+root = sys.argv[2]
+journal_path = os.path.join(root, 'journal.json')
+
+def read(name, default=''):
+    path = os.path.join(root, name)
+    return open(path).read().strip() if os.path.exists(path) else default
+
+def journal_matches(options, generation_checked):
+    if not os.path.exists(journal_path):
+        return None
+    journal = json.load(open(journal_path))
+    if (options['--id'] != journal['operation_id']
+            or options['--server-id'] != journal['server_id']
+            or options['--revision'] != str(journal['revision'])
+            or options.get('--saved-connection') != journal.get('saved')):
+        return None
+    if generation_checked and options['--native-generation'] != journal['generation']:
+        return None
+    return journal
+
+def descriptor(journal):
+    value = json.load(open(os.path.join(root, 'descriptor.json')))
+    value['phase'] = journal['phase']
+    value['generation'] = journal['generation']
+    return value
+
+if sys.argv[3] == 'server':
+    print(json.dumps({'version': 2, 'result': {'endpoint': 'http://127.0.0.1:51234', 'generation': '019c2381-9300-7000-8000-000000000001', 'key': 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk'}}), flush=True)
+    for line in sys.stdin:
+        request = json.loads(line)
+        op = request['operation']
+        if op == 'runtime.shutdown':
+            break
+        if op in ('runtime.cancel', 'runtime.fence'):
+            continue
+        assert op == 'update.native-begin', op
+        open(os.path.join(root, 'begins'), 'a').write('x')
+        args = request['arguments']
+        options = dict(zip(args[0::2], args[1::2]))
+        mode = read('begin_mode', 'accept')
+        journal = journal_matches(options, True)
+        if journal is None or journal['phase'] != 'prepared':
+            print(json.dumps({'version': 2, 'id': request['id'], 'error': {'code': 'recovery_required'}}), flush=True)
+            continue
+        if mode == 'lost':
+            continue
+        if mode == 'reject':
+            print(json.dumps({'version': 2, 'id': request['id'], 'error': {'code': 'recovery_required'}}), flush=True)
+            continue
+        journal['phase'] = 'installing'
+        json.dump(journal, open(journal_path, 'w'))
+        if mode == 'accept-lost':
+            continue
+        if mode == 'accept-late':
+            while not os.path.exists(os.path.join(root, 'release')):
+                time.sleep(0.01)
+        print(json.dumps({'version': 2, 'id': request['id'], 'result': descriptor(journal)}), flush=True)
+else:
+    open(os.path.join(root, 'calls'), 'a').write(sys.argv[4][7:8])
+    args = sys.argv[3:]
+    command = args[1]
+    assert args[0] == 'update' and command in ('native-inspect', 'native-outcome'), args
+    options = dict(zip(args[2::2], args[3::2]))
+    def fail(code):
+        print(json.dumps({'version': 1, 'error': {'code': code}}))
+        sys.exit(1)
+    if read('mode') == 'down':
+        fail('unavailable')
+    journal = journal_matches(options, command == 'native-outcome')
+    if journal is None:
+        fail('recovery_required')
+    if command == 'native-outcome':
+        outcome = options['--outcome']
+        if journal['phase'] not in ('installing', outcome):
+            fail('recovery_required')
+        journal['phase'] = outcome
+        json.dump(journal, open(journal_path, 'w'))
+    print(json.dumps({'version': 1, 'result': descriptor(journal)}))
+"#;
+
+    struct Fixture {
+        _temp: tempfile::TempDir,
+        root: PathBuf,
+        connector: Arc<Connector>,
+        server: String,
+        id: String,
+        generation: String,
+    }
+
+    impl Fixture {
+        fn new(journal_phase: &str, scope: bool) -> Self {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().canonicalize().unwrap();
+            let sidecar = root.join("sidecar");
+            fs::write(&sidecar, SIDECAR).unwrap();
+            fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+            if scope {
+                fs::create_dir_all(root.join("desktop-updates")).unwrap();
+                fs::set_permissions(
+                    root.join("desktop-updates"),
+                    fs::Permissions::from_mode(0o700),
+                )
+                .unwrap();
+            }
+            let connector = Arc::new(Connector::new(sidecar, root.clone()).unwrap());
+            let id = uuid::Uuid::now_v7().to_string();
+            let server = uuid::Uuid::now_v7().to_string();
+            let generation = uuid::Uuid::now_v7().to_string();
+            let target = format!(
+                "{}-{}",
+                std::env::consts::OS,
+                if cfg!(target_arch = "aarch64") {
+                    "arm64"
+                } else {
+                    "amd64"
+                }
+            )
+            .replace("macos-", "darwin-");
+            let extension = if cfg!(target_os = "macos") {
+                ".dmg"
+            } else {
+                ".AppImage"
+            };
+            let descriptor = serde_json::json!({"version":1,"operation_id":id,"server_id":server,"generation":generation,"release_version":"0.2.0","target":target,"phase":"prepared","artifact_path":root.join("desktop-updates/downloads").join(format!("{}{}","a".repeat(64),extension)),"artifact_sha256":"a".repeat(64),"artifact_size":8,"manifest_sha256":"b".repeat(64)});
+            fs::write(
+                root.join("descriptor.json"),
+                serde_json::to_vec(&descriptor).unwrap(),
+            )
+            .unwrap();
+            let fixture = Self {
+                _temp: temp,
+                root,
+                connector,
+                server,
+                id,
+                generation,
+            };
+            fixture.set_journal(journal_phase, &fixture.generation.clone());
+            fixture
+        }
+
+        fn set_journal(&self, phase: &str, generation: &str) {
+            fs::write(
+                self.root.join("journal.json"),
+                serde_json::to_vec(&serde_json::json!({
+                    "operation_id": self.id, "server_id": self.server, "revision": 7,
+                    "generation": generation, "saved": null, "phase": phase,
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+
+        fn journal(&self) -> serde_json::Value {
+            serde_json::from_slice(&fs::read(self.root.join("journal.json")).unwrap()).unwrap()
+        }
+
+        fn mode(&self, mode: &str) {
+            fs::write(self.root.join("begin_mode"), mode).unwrap();
+        }
+
+        fn begins(&self) -> usize {
+            fs::read(self.root.join("begins")).map_or(0, |v| v.len())
+        }
+
+        // Offline requests: i = inspect, o = outcome.
+        fn calls(&self) -> String {
+            String::from_utf8(fs::read(self.root.join("calls")).unwrap_or_default()).unwrap()
+        }
+
+        fn intent(&self) -> OutcomeRecord {
+            OutcomeRecord::begin_intent(&self.server, &self.id, 7, &self.generation, None).unwrap()
+        }
+
+        fn intents(&self) -> Vec<StoredEntry> {
+            self.connector.intent_store().scan().unwrap()
+        }
+
+        fn begin(&self) -> BeginOutcome {
+            begin(&self.connector, self)
+        }
+
+        // Starts native-begin on a worker and cancels it once the runtime has
+        // received the request, the way Quit does.
+        fn begin_then_quit(&self) -> BeginOutcome {
+            let connector = Arc::clone(&self.connector);
+            let (server, id, generation) = (
+                self.server.clone(),
+                self.id.clone(),
+                self.generation.clone(),
+            );
+            let worker = std::thread::spawn(move || {
+                connector.begin_desktop_installation(
+                    None,
+                    DesktopUpdateRequest {
+                        server: &server,
+                        id: &id,
+                        revision: 7,
+                        generation: &generation,
+                        action: "native-begin",
+                        outcome: None,
+                    },
+                )
+            });
+            let waiting = std::time::Instant::now();
+            while self.begins() == 0 {
+                assert!(waiting.elapsed() < Duration::from_secs(30));
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            self.connector.exiting.store(true, Ordering::Release);
+            worker.join().unwrap()
+        }
+    }
+
+    fn begin(connector: &Connector, f: &Fixture) -> BeginOutcome {
+        connector.begin_desktop_installation(
+            None,
+            DesktopUpdateRequest {
+                server: &f.server,
+                id: &f.id,
+                revision: 7,
+                generation: &f.generation,
+                action: "native-begin",
+                outcome: None,
+            },
+        )
+    }
+
+    // A later process: same root, a fresh connector with no pending state.
+    fn restarted(f: &Fixture) -> Connector {
+        Connector::new(f.root.join("sidecar"), f.root.clone()).unwrap()
+    }
+
+    fn launch(connector: &Connector) -> ReconcileReport {
+        connector.reconcile_begin_intents(&ReconcileScope::Launch, &|| false)
+    }
+
+    #[test]
+    fn accepted_begin_keeps_normal_behavior_and_retires_the_intent_on_settlement() {
+        let f = Fixture::new("prepared", true);
+        f.mode("accept");
+        let BeginOutcome::Accepted(accepted) = f.begin() else {
+            panic!("an accepted response must stay Accepted");
+        };
+        assert!(!accepted.is_settlement_only());
+        assert_eq!(f.intents().len(), 1, "intent is retained until settlement");
+        assert_eq!(
+            accepted.install_with(false, || Phase::Installed),
+            Phase::Installed
+        );
+        accepted.settle(&f.connector, Phase::Installed).unwrap();
+        assert_eq!(f.journal()["phase"], "installed");
+        assert!(f.intents().is_empty());
+        assert_eq!((f.begins(), f.calls().as_str()), (1, "o"));
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn a_begin_whose_identity_cannot_be_retained_is_never_submitted() {
+        let f = Fixture::new("prepared", false);
+        assert!(matches!(
+            f.begin(),
+            BeginOutcome::Rejected(NativeFailure::StorageUnavailable)
+        ));
+        assert_eq!((f.begins(), f.calls().as_str()), (0, ""));
+        assert_eq!(f.journal()["phase"], "prepared");
+    }
+
+    #[test]
+    fn a_begin_rejected_before_it_is_sent_retires_its_intent() {
+        let f = Fixture::new("prepared", true);
+        let held = f.connector.gate.lock().unwrap();
+        assert!(matches!(
+            f.begin(),
+            BeginOutcome::Rejected(NativeFailure::Busy)
+        ));
+        drop(held);
+        assert!(f.intents().is_empty());
+        assert_eq!((f.begins(), f.calls().as_str()), (0, ""));
+    }
+
+    #[test]
+    fn canceled_response_after_acceptance_is_recovered_without_replaying_begin_or_installer() {
+        let f = Fixture::new("prepared", true);
+        f.mode("accept-lost");
+        let BeginOutcome::Recovered {
+            installation,
+            cause,
+        } = f.begin_then_quit()
+        else {
+            panic!("an inspected Installing journal must recover ownership");
+        };
+        assert_eq!(cause, NativeFailure::Stopped);
+        assert!(installation.is_settlement_only());
+        assert!(installation.matches(&f.server, &f.id, 7));
+        assert_eq!(f.journal()["phase"], "installing");
+        // The recovered token can never reach an installer.
+        assert_eq!(
+            installation.install_with(false, || panic!("installer must not run")),
+            Phase::Uncertain
+        );
+        assert_eq!(f.intents().len(), 1);
+        assert_eq!(
+            installation
+                .settle(&f.connector, Phase::Uncertain)
+                .unwrap()
+                .phase,
+            Phase::Uncertain
+        );
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert_eq!(f.journal()["generation"], f.generation);
+        assert!(f.intents().is_empty());
+        assert_eq!(f.begins(), 1, "native-begin is never repeated");
+        assert_eq!(f.calls(), "io");
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn lost_response_before_acceptance_stays_unresolved_in_process_and_retires_after_restart() {
+        let f = Fixture::new("prepared", true);
+        f.mode("lost");
+        assert!(matches!(
+            f.begin_then_quit(),
+            BeginOutcome::Unresolved(NativeFailure::Stopped)
+        ));
+        // The resident runtime may still land the request, so the Prepared
+        // journal does not yet prove non-acceptance.
+        assert_eq!(f.intents().len(), 1);
+        assert_eq!(f.journal()["phase"], "prepared");
+        f.connector.shutdown_owned().unwrap();
+        // A later process starts after that runtime exited.
+        let next = restarted(&f);
+        assert_eq!(
+            launch(&next),
+            ReconcileReport {
+                settled: 1,
+                retained: 0,
+                skipped: 0
+            }
+        );
+        assert!(f.intents().is_empty());
+        assert_eq!(f.journal()["phase"], "prepared");
+        assert_eq!((f.begins(), f.calls().as_str()), (1, "ii"));
+    }
+
+    #[test]
+    fn rejected_response_with_a_prepared_journal_is_retained_not_assumed_unaccepted() {
+        let f = Fixture::new("prepared", true);
+        f.mode("reject");
+        // A typed rejection cannot be told apart from a transport failure by
+        // its error code alone, so the Prepared journal stays unproven until
+        // the runtime that carried the request has exited.
+        let outcome = f.begin();
+        assert!(outcome.failure().is_some());
+        assert!(matches!(outcome, BeginOutcome::Unresolved(_)));
+        assert_eq!(f.begins(), 1);
+        assert_eq!(launch(&restarted(&f)).settled, 1);
+        assert!(f.intents().is_empty());
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn late_original_response_after_recovery_changes_nothing() {
+        let f = Fixture::new("prepared", true);
+        f.mode("accept-late");
+        let BeginOutcome::Recovered { installation, .. } = f.begin_then_quit() else {
+            panic!("Installing journal must recover ownership");
+        };
+        // The original response arrives after native gave up on it.
+        fs::write(f.root.join("release"), b"x").unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(f.journal()["phase"], "installing");
+        installation.settle(&f.connector, Phase::Uncertain).unwrap();
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert_eq!(f.begins(), 1);
+        assert_eq!(f.calls(), "io");
+        f.connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
+    fn restart_settles_an_installing_journal_as_uncertain_without_an_installer() {
+        let f = Fixture::new("installing", true);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        assert_eq!(
+            launch(&f.connector),
+            ReconcileReport {
+                settled: 1,
+                retained: 0,
+                skipped: 0
+            }
+        );
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert_eq!(f.journal()["generation"], f.generation);
+        assert!(f.intents().is_empty());
+        assert_eq!((f.begins(), f.calls().as_str()), (0, "io"));
+        assert_eq!(launch(&f.connector), ReconcileReport::default());
+    }
+
+    #[test]
+    fn restart_retires_an_intent_whose_journal_is_already_terminal() {
+        for phase in ["installed", "failed", "uncertain"] {
+            let f = Fixture::new(phase, true);
+            f.connector.intent_store().persist(&f.intent()).unwrap();
+            assert_eq!(launch(&f.connector).settled, 1);
+            assert_eq!(f.journal()["phase"], phase);
+            assert_eq!((f.begins(), f.calls().as_str()), (0, "i"));
+            assert!(f.intents().is_empty());
+        }
+    }
+
+    #[test]
+    fn foreign_generation_or_scope_never_settles() {
+        // Another generation owns the journal: this begin can never match it.
+        let f = Fixture::new("installing", true);
+        let foreign = uuid::Uuid::now_v7().to_string();
+        f.set_journal("installing", &foreign);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        launch(&f.connector);
+        assert_eq!(f.journal()["phase"], "installing");
+        assert_eq!(f.journal()["generation"], foreign);
+        assert_eq!(f.calls(), "i", "inspection only, no outcome write");
+        assert!(f.intents().is_empty());
+        // A different saved scope is rejected by the original journal read
+        // and the intent stays retained.
+        let f = Fixture::new("installing", true);
+        let saved = uuid::Uuid::now_v7().to_string();
+        let scoped =
+            OutcomeRecord::begin_intent(&f.server, &f.id, 7, &f.generation, Some(&saved)).unwrap();
+        f.connector.intent_store().persist(&scoped).unwrap();
+        assert_eq!(launch(&f.connector).retained, 1);
+        assert_eq!(f.journal()["phase"], "installing");
+        assert_eq!(f.intents().len(), 1);
+    }
+
+    #[test]
+    fn unreadable_inspection_keeps_the_intent_across_restarts() {
+        let f = Fixture::new("installing", true);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        fs::write(f.root.join("mode"), "down").unwrap();
+        for _ in 0..2 {
+            let next = restarted(&f);
+            assert_eq!(launch(&next).retained, 1);
+            assert_eq!(f.intents().len(), 1);
+            assert_eq!(f.journal()["phase"], "installing");
+        }
+        fs::remove_file(f.root.join("mode")).unwrap();
+        assert_eq!(launch(&restarted(&f)).settled, 1);
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert!(f.intents().is_empty());
+    }
+
+    #[test]
+    fn an_exact_retained_outcome_settles_before_an_inferred_uncertain() {
+        let f = Fixture::new("installing", true);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        let outcome =
+            OutcomeRecord::outcome(&f.server, &f.id, 7, &f.generation, None, Phase::Installed)
+                .unwrap();
+        f.connector.outcome_store().persist(&outcome).unwrap();
+        // While the outcome cannot settle, the intent must not write Uncertain.
+        fs::write(f.root.join("mode"), "down").unwrap();
+        assert_eq!(launch(&f.connector).retained, 1);
+        assert_eq!(f.journal()["phase"], "installing");
+        fs::remove_file(f.root.join("mode")).unwrap();
+        f.connector
+            .reconcile_retained_outcomes(&ReconcileScope::Launch, &|| false);
+        assert_eq!(f.journal()["phase"], "installed");
+        launch(&f.connector);
+        assert_eq!(f.journal()["phase"], "installed");
+        assert!(f.intents().is_empty());
+        assert!(f.connector.outcome_store().scan().unwrap().is_empty());
+    }
+
+    #[test]
+    fn original_scope_inspection_only_resolves_its_own_intent_and_never_retires_prepared() {
+        let f = Fixture::new("prepared", true);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        let other = ReconcileScope::Original {
+            server: &f.server,
+            id: &uuid::Uuid::now_v7().to_string(),
+            revision: 7,
+            saved_connection: None,
+        };
+        assert_eq!(
+            f.connector
+                .reconcile_begin_intents(&other, &|| false)
+                .skipped,
+            1
+        );
+        assert_eq!(f.calls(), "");
+        let own = ReconcileScope::Original {
+            server: &f.server,
+            id: &f.id,
+            revision: 7,
+            saved_connection: None,
+        };
+        // In-process Prepared is not proof while the runtime may be alive.
+        assert_eq!(
+            f.connector
+                .reconcile_begin_intents(&own, &|| false)
+                .retained,
+            1
+        );
+        assert_eq!(f.intents().len(), 1);
+        f.set_journal("installing", &f.generation.clone());
+        assert_eq!(
+            f.connector.reconcile_begin_intents(&own, &|| false).settled,
+            1
+        );
+        assert_eq!(f.journal()["phase"], "uncertain");
+    }
+
+    #[test]
+    fn stopping_prevents_new_intent_inspection_and_keeps_intents() {
+        let f = Fixture::new("installing", true);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        let report = f
+            .connector
+            .reconcile_begin_intents(&ReconcileScope::Launch, &|| true);
+        assert_eq!(report, ReconcileReport::default());
+        assert_eq!(f.calls(), "");
+        assert_eq!(f.intents().len(), 1);
     }
 }
