@@ -827,9 +827,10 @@ impl Connector {
             }
             ControlFlow::Continue(())
         };
-        // The launch scope walks every page so intents that stay unresolved
-        // never hide later ones; an original scope lists only the entries of
-        // its own operation, so unrelated evidence cannot starve it.
+        // The launch scope streams every intent in one pass so intents that
+        // stay unresolved never hide later ones; an original scope lists only
+        // the entries of its own operation, so unrelated evidence cannot
+        // starve it.
         let walked = match scope {
             ReconcileScope::Launch => store.for_each(None, &mut visit),
             ReconcileScope::Original { id, .. } => store.for_each(Some(id), &mut visit),
@@ -3031,7 +3032,7 @@ else:
     fn a_pending_outcome_beyond_the_scan_bound_still_settles_before_an_inferred_uncertain() {
         let f = Fixture::new("installing", true);
         f.connector.intent_store().persist(&f.intent()).unwrap();
-        // 40 earlier outcomes push the exact record past the first page.
+        // 40 earlier outcomes sort before the exact record.
         for index in 0..40 {
             let id = format!("00000000-0000-7000-8000-{index:012}");
             let decoy =
@@ -3047,7 +3048,7 @@ else:
         assert_eq!((report.settled, report.retained), (0, 1));
         assert_eq!(f.journal()["phase"], "installing", "no inferred Uncertain");
         assert_eq!(f.calls(), "");
-        // Replaying the outcomes walks past the first page to the exact one.
+        // Replaying the outcomes walks the whole store to the exact one.
         f.connector
             .reconcile_retained_outcomes(&ReconcileScope::Launch, &|| false);
         assert_eq!(f.journal()["phase"], "installed");

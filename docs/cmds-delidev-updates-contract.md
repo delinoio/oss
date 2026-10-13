@@ -167,8 +167,8 @@ when reconciliation retires the intent. An unreadable or conflicting record
 for the exact request rejects the begin without sending it.
 
 The launch pass and each original-scope `native-inspect` reconcile retained
-intents after retained outcomes. The launch pass pages through every intent
-exactly as it does for outcomes. An original-scope inspection lists only the
+intents after retained outcomes. The launch pass streams every intent in one
+directory pass exactly as it does for outcomes. An original-scope inspection lists only the
 intents whose file names carry its own operation ID, so unrelated retained
 intents cannot hide it. An exact retained outcome record for the same
 operation always settles first, and an intent never writes an inferred Uncertain
