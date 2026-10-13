@@ -64,6 +64,18 @@ func identityProbe[I, O any](mux *http.ServeMux, procedure string, reply *O, cal
 	}))
 }
 
+func echoStartOAuth(r *pb.StartAccountOAuthRequest) *pb.StartAccountOAuthResponse {
+	return &pb.StartAccountOAuthResponse{RequestId: r.GetProvider().GetRequestId()}
+}
+
+func echoCompleteOAuth(r *pb.CompleteAccountOAuthRequest) *pb.CompleteAccountOAuthResponse {
+	return &pb.CompleteAccountOAuthResponse{RequestId: r.GetMutation().GetRequestId()}
+}
+
+func echoCancelOAuth(r *pb.CancelAccountOAuthRequest) *pb.CancelAccountOAuthResponse {
+	return &pb.CancelAccountOAuthResponse{RequestId: r.GetMutation().GetRequestId()}
+}
+
 func echoCheckUpdate(r *pb.CheckUpdateRequest) *pb.CheckUpdateResponse {
 	return &pb.CheckUpdateResponse{RequestId: r.RequestId}
 }
@@ -136,9 +148,9 @@ func TestCLIMutationDispatchRetainsGeneratedAndExplicitIdentities(t *testing.T) 
 					mux.Handle(delidevv1connect.SystemServiceGetStatusProcedure, connect.NewUnaryHandler(delidevv1connect.SystemServiceGetStatusProcedure, func(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
 						return connect.NewResponse(&pb.GetStatusResponse{Capabilities: []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1}}), nil
 					}))
-					identityProbe[pb.StartAccountOAuthRequest](mux, delidevv1connect.AccountServiceStartAccountOAuthProcedure, &pb.StartAccountOAuthResponse{}, calls, outcome)
-					identityProbe[pb.CompleteAccountOAuthRequest](mux, delidevv1connect.AccountServiceCompleteAccountOAuthProcedure, &pb.CompleteAccountOAuthResponse{}, calls, outcome)
-					identityProbe[pb.CancelAccountOAuthRequest](mux, delidevv1connect.AccountServiceCancelAccountOAuthProcedure, &pb.CancelAccountOAuthResponse{}, calls, outcome)
+					identityProbe[pb.StartAccountOAuthRequest](mux, delidevv1connect.AccountServiceStartAccountOAuthProcedure, &pb.StartAccountOAuthResponse{}, calls, outcome, echoStartOAuth)
+					identityProbe[pb.CompleteAccountOAuthRequest](mux, delidevv1connect.AccountServiceCompleteAccountOAuthProcedure, &pb.CompleteAccountOAuthResponse{}, calls, outcome, echoCompleteOAuth)
+					identityProbe[pb.CancelAccountOAuthRequest](mux, delidevv1connect.AccountServiceCancelAccountOAuthProcedure, &pb.CancelAccountOAuthResponse{}, calls, outcome, echoCancelOAuth)
 					identityProbe[pb.RefreshPullRequestProblemsRequest](mux, delidevv1connect.IntegrationServiceRefreshPullRequestProblemsProcedure, &pb.RefreshPullRequestProblemsResponse{}, calls, outcome)
 					identityProbe[pb.DismissPullRequestProblemRequest](mux, delidevv1connect.IntegrationServiceDismissPullRequestProblemProcedure, &pb.DismissPullRequestProblemResponse{}, calls, outcome)
 					identityProbe[pb.ResumePullRequestRemediationRequest](mux, delidevv1connect.IntegrationServiceResumePullRequestRemediationProcedure, &pb.ResumePullRequestRemediationResponse{}, calls, outcome)
@@ -536,6 +548,97 @@ func TestServiceCommandRejectsInvalidActionBeforeAllocatingIdentity(t *testing.T
 					}
 				}
 			})
+		}
+	}
+}
+
+func TestCLIOAuthReceiptRequiresExactDispatchedRequestID(t *testing.T) {
+	attempt := &pb.AccountOAuthAttempt{Id: string(domain.NewID())}
+	account := &pb.Resource{Id: string(domain.NewID())}
+	provider := string(domain.NewID())
+	operations := []struct {
+		name  string
+		args  []string
+		input string
+	}{
+		{"start", []string{"account", "oauth", "start", "--provider-id", provider, "--revision", "1"}, ""},
+		{"complete", []string{"account", "oauth", "complete", "--attempt-id", provider, "--revision", "1", "--code-stdin"}, "fixture-code"},
+		{"cancel", []string{"account", "oauth", "cancel", "--attempt-id", provider, "--revision", "1"}, ""},
+	}
+	receipts := []struct {
+		name  string
+		reply func(sent string) string
+	}{
+		{"matching", func(sent string) string { return sent }},
+		{"missing", func(string) string { return "" }},
+		{"foreign", func(string) string { return string(domain.NewID()) }},
+		{"malformed", func(string) string { return "not-a-request-id" }},
+		{"altered-case", func(sent string) string { return strings.ToUpper(sent) }},
+	}
+	for _, operation := range operations {
+		for _, receipt := range receipts {
+			for _, explicit := range []bool{false, true} {
+				t.Run(operation.name+"/"+receipt.name+"/"+map[bool]string{true: "explicit", false: "generated"}[explicit], func(t *testing.T) {
+					calls := make(chan string, 3)
+					mux := http.NewServeMux()
+					identityProbe[pb.StartAccountOAuthRequest](mux, delidevv1connect.AccountServiceStartAccountOAuthProcedure, &pb.StartAccountOAuthResponse{}, calls, identitySuccess, func(r *pb.StartAccountOAuthRequest) *pb.StartAccountOAuthResponse {
+						return &pb.StartAccountOAuthResponse{Attempt: attempt, AuthorizationUrl: "https://example.test/auth", UserCode: "user-code", RequestId: receipt.reply(r.GetProvider().GetRequestId())}
+					})
+					identityProbe[pb.CompleteAccountOAuthRequest](mux, delidevv1connect.AccountServiceCompleteAccountOAuthProcedure, &pb.CompleteAccountOAuthResponse{}, calls, identitySuccess, func(r *pb.CompleteAccountOAuthRequest) *pb.CompleteAccountOAuthResponse {
+						return &pb.CompleteAccountOAuthResponse{Attempt: attempt, Account: account, RequestId: receipt.reply(r.GetMutation().GetRequestId())}
+					})
+					identityProbe[pb.CancelAccountOAuthRequest](mux, delidevv1connect.AccountServiceCancelAccountOAuthProcedure, &pb.CancelAccountOAuthResponse{}, calls, identitySuccess, func(r *pb.CancelAccountOAuthRequest) *pb.CancelAccountOAuthResponse {
+						return &pb.CancelAccountOAuthResponse{Attempt: attempt, RequestId: receipt.reply(r.GetMutation().GetRequestId())}
+					})
+					peer := httptest.NewServer(mux)
+					defer peer.Close()
+					root := identityClientScope(t, peer.URL, domain.ClientDevice)
+					args := append([]string(nil), operation.args...)
+					supplied := string(domain.NewID())
+					if explicit {
+						args = append(args, "--request-id", supplied)
+					}
+					code, envelope := cliRun(t, root, args, operation.input)
+					var sent string
+					select {
+					case sent = <-calls:
+					default:
+						t.Fatalf("mutation not dispatched: %d %v", code, envelope)
+					}
+					if len(calls) != 0 {
+						t.Fatal("mutation automatically repeated")
+					}
+					if envelope["request_id"] != sent || explicit && sent != supplied {
+						t.Fatalf("envelope lost the dispatched identity: sent=%s envelope=%v", sent, envelope)
+					}
+					if receipt.name == "matching" {
+						result, ok := envelope["result"].(map[string]any)
+						if code != 0 || !ok || result["request_id"] != sent {
+							t.Fatalf("matching receipt rejected or nested ID differs: %d %v", code, envelope)
+						}
+						return
+					}
+					if code == 0 {
+						t.Fatal("mismatched receipt reported success", envelope)
+					}
+					if envelope["result"] != nil {
+						t.Fatal("mismatched receipt exposed a result", envelope)
+					}
+					failure, ok := envelope["error"].(map[string]any)
+					if !ok || failure["code"] != string(domain.RecoveryRequired) {
+						t.Fatalf("mismatched receipt was not recovery_required: %v", envelope)
+					}
+					raw, err := json.Marshal(envelope)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, leaked := range []string{"authorization_url", "user_code", "example.test", "attempt", "account"} {
+						if strings.Contains(string(raw), leaked) {
+							t.Fatalf("mismatched receipt leaked %q: %s", leaked, raw)
+						}
+					}
+				})
+			}
 		}
 	}
 }

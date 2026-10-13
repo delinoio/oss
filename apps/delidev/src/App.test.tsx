@@ -2593,6 +2593,34 @@ it("refreshes reads after recovery without replacing the connection's session dr
   expect(value.enqueues).not.toHaveBeenCalled();
 });
 
+it("closes an open Open tool dialog when readiness is lost and keeps it closed after same-identity recovery", async () => {
+  const value = fixture();
+  const view = render(<App transport={value.transport} connectionReady />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    }),
+  );
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Keep this draft" } });
+  const trigger = screen.getByRole("button", { name: "Open tool" });
+  fireEvent.click(trigger);
+  const dialog = () => document.querySelector("dialog.session-tool-dialog")!;
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+  view.rerender(<App transport={value.transport} connectionReady={false} />);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  fireEvent.click(trigger);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  view.rerender(
+    <App transport={value.transport} connectionReady connectionEpoch={1} />,
+  );
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+});
+
 it("retries the exact accepted message identity after uncertainty instead of sending a new message", async () => {
   const value = fixture();
   value.enqueues.mockRejectedValueOnce(

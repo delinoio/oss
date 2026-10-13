@@ -117,6 +117,27 @@ token and is settled through the same inspection/Quit path without any
 installation. Logs record the failure code and attempt count only, never saved
 binding details.
 
+The retained token slot and the token's recorded outcome are recovered from lock
+poison instead of reported as Busy. A panic that unwinds while the worker holds
+the slot leaves the stored token and its preserved Uncertain phase intact, so
+Quit and exact-match inspection still settle that original token with zero extra
+installer calls and never infer Installed. A foreign server, operation or
+revision is ignored. Only a verified settlement clears the slot (and its poison
+flag); a failed writer leaves the token retained. A poisoned outcome whose phase
+was never recorded settles as Uncertain and never starts an installer. Logs
+record the recovery site only (`pending-poison-recovered`,
+`outcome-poison-recovered`), never identities or secrets.
+
+Quit also cancels native staging. The copy into exclusive native staging checks
+Quit before it starts, before each bounded 64 KiB chunk and once after the copy
+completes, so Quit never waits for the rest of a large artifact. Cancellation
+and any other staging failure are a pre-effect Failed: the OS installer is not
+called, only the staging file this call created (`<generation>.<extension>`
+through `create_new`) is removed, and foreign or earlier-generation files are
+left untouched. Size, digest, change-byte and `create_new` exclusivity checks
+are unchanged. Staging cancellation is pre-effect only; once the installer
+has begun, independent installer uncertainty stays Uncertain as observed.
+
 Before the original `native-begin` is submitted, the native host durably retains
 its identity in a begin-intent record, a second closed kind (`begin-intent`) of
 the same store family at

@@ -2,7 +2,7 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -130,7 +130,7 @@ fn run_retained(
     budget: Duration,
     interval: Duration,
 ) -> Result<Prepared, NativeFailure> {
-    let mut pending = task.pending.lock().map_err(|_| NativeFailure::Busy)?;
+    let mut pending = task.pending_guard("run-retained");
     *pending = Some((begun, Phase::Uncertain));
     let (accepted, phase) = pending.as_mut().unwrap();
     *phase = if accepted.is_settlement_only() {
@@ -179,8 +179,29 @@ struct Installation {
     pending: Mutex<Option<(AcceptedInstallation, Phase)>>,
 }
 impl Installation {
+    /// Locks the retained ownership slot, recovering from poison. A panic that
+    /// unwinds while the guard is held leaves the stored token and its
+    /// preserved phase untouched, and that token is the only authority able to
+    /// settle the original Installing journal, so poison must never turn it
+    /// into permanent Busy. Recovery never changes the stored phase: it stays
+    /// the Uncertain value published before any fallible work.
+    fn pending_guard(
+        &self,
+        site: &'static str,
+    ) -> MutexGuard<'_, Option<(AcceptedInstallation, Phase)>> {
+        self.pending.lock().unwrap_or_else(|poisoned| {
+            tracing::error!(
+                operation = "desktop_update_settlement",
+                state = "pending-poison-recovered",
+                site,
+                retained = poisoned.get_ref().is_some()
+            );
+            poisoned.into_inner()
+        })
+    }
+
     fn settle(&self, connector: &Connector) -> Result<Prepared, NativeFailure> {
-        let mut pending = self.pending.lock().map_err(|_| NativeFailure::Busy)?;
+        let mut pending = self.pending_guard("settle");
         let (accepted, phase) = pending.as_ref().ok_or(NativeFailure::InvalidEvidence)?;
         // Persist the exact observed outcome before the first settlement
         // attempt so it survives process exit if every attempt fails. A store
@@ -220,6 +241,9 @@ impl Installation {
                 );
             }
             *pending = None;
+            // The slot is consistent again once the verified settlement
+            // consumed the token.
+            self.pending.clear_poison();
         } else if record.is_some() {
             tracing::warn!(
                 operation = "desktop_update_settlement",
@@ -254,15 +278,13 @@ impl UpdateHost {
             if task
                 .result
                 .lock()
-                .map_err(|_| NativeFailure::Busy)?
+                .unwrap_or_else(|e| e.into_inner())
                 .is_none()
             {
                 return Ok(());
             }
             let matches = task
-                .pending
-                .lock()
-                .map_err(|_| NativeFailure::Busy)?
+                .pending_guard("settle-retained")
                 .as_ref()
                 .is_some_and(|(accepted, _)| accepted.matches(server, id, revision));
             if matches {
@@ -344,13 +366,9 @@ impl UpdateHost {
             if previous
                 .result
                 .lock()
-                .map_err(|_| NativeFailure::Busy)?
+                .unwrap_or_else(|e| e.into_inner())
                 .is_none()
-                || previous
-                    .pending
-                    .lock()
-                    .map_err(|_| NativeFailure::Busy)?
-                    .is_some()
+                || previous.pending_guard("start").is_some()
             {
                 return Err(NativeFailure::Busy);
             }
@@ -400,11 +418,7 @@ impl UpdateHost {
             {
                 tracing::error!(operation = "desktop_update_join", code = "native-uncertain");
             }
-            let pending = task
-                .pending
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some();
+            let pending = task.pending_guard("join").is_some();
             if pending && let Err(code) = task.settle(connector) {
                 tracing::error!(
                     operation = "desktop_update_join",
@@ -1165,6 +1179,65 @@ else:
                 std::fs::read(root.join("calls")).unwrap(),
                 b"xx",
                 "only original begin and same-phase outcome; no installer replay"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn poisoned_pending_still_settles_the_preserved_uncertain_token_through_inspect_and_quit() {
+        for quit in [false, true] {
+            let (fixture, accepted) = native_fixture();
+            let NativeFixture {
+                root,
+                connector,
+                server,
+                id,
+                ..
+            } = &fixture;
+            let (root, connector, server, id) = (
+                root.clone(),
+                Arc::clone(connector),
+                server.clone(),
+                id.clone(),
+            );
+            let host = Arc::new(UpdateHost::default());
+            let task = host
+                .start(move |task| {
+                    let mut pending = task.pending.lock().unwrap();
+                    *pending = Some((accepted, Phase::Uncertain));
+                    // An unwind while the guard is held poisons the slot.
+                    panic!("panic while the retained token is held");
+                })
+                .unwrap();
+            assert!(matches!(task.wait(), Err(NativeFailure::SidecarFailed)));
+            assert!(task.pending.is_poisoned());
+            if quit {
+                host.join(&connector);
+            } else {
+                // A foreign operation never consumes the retained token.
+                host.settle_retained(&connector, &server, "foreign", 7, None)
+                    .unwrap();
+                host.settle_retained(&connector, "foreign", &id, 7, None)
+                    .unwrap();
+                host.settle_retained(&connector, &server, &id, 8, None)
+                    .unwrap();
+                assert!(task.pending_guard("test").is_some());
+                assert_eq!(std::fs::read(root.join("calls")).unwrap(), b"x");
+                host.settle_retained(&connector, &server, &id, 7, None)
+                    .unwrap();
+            }
+            assert!(task.pending_guard("test").is_none());
+            assert!(
+                !task.pending.is_poisoned(),
+                "a verified settlement clears the poison"
+            );
+            host.join(&connector);
+            connector.shutdown_owned().unwrap();
+            assert_eq!(
+                std::fs::read(root.join("calls")).unwrap(),
+                b"xx",
+                "one original begin and one same-phase Uncertain outcome; no installer"
             );
         }
     }

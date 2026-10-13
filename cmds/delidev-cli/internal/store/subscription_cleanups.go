@@ -34,7 +34,7 @@ func (t *Tx) checkSubscriptionDeletionRequest(id domain.ID, digest string) error
 			DeleteRequestID domain.ID `json:"delete_request_id"`
 			DeleteRevision  uint64    `json:"delete_revision,string"`
 		}
-		if count != 1 || json.Unmarshal(raw, &job) != nil || json.Unmarshal(job.Input, &input) != nil || input.Version != 2 || input.AccountID.Validate() != nil || input.DeleteRequestID != id || input.DeleteRevision == 0 {
+		if count != 1 || json.Unmarshal(raw, &job) != nil || json.Unmarshal(job.Input, &input) != nil || input.Version != 2 && input.Version != 3 || input.AccountID.Validate() != nil || input.DeleteRequestID != id || input.DeleteRevision == 0 {
 			return domain.Fail(domain.RecoveryRequired, "The original deletion request reservation is unavailable.", "Inspect its original cleanup job without reusing the request ID.")
 		}
 		original, err := mutationDigest(id, "configuration.delete", struct {

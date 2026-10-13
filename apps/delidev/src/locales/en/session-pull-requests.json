@@ -31,5 +31,6 @@
   "session-pull-requests.extra.648a9b6650b9": "The unlink acknowledgment could not be verified. Refresh current associations.",
   "session-pull-requests.inline.60c1498ca3": "Original association:",
   "session-pull-requests.inline.a4c646bacf": "The retained unlink request could not be verified.",
-  "session-pull-requests.inline.e3faf29ec8": "Pending PR unlinks"
+  "session-pull-requests.inline.e3faf29ec8": "Pending PR unlinks",
+  "session-pull-requests.pendingPrUnlinkLabel_0e99be": "Pending PR unlink: {{label}}"
 }

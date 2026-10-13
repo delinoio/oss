@@ -106,6 +106,15 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 		if saved.Type != kind || saved.ServerID != identity.ServerID || !localEndpointMatches(o, saved.ServerID, saved.Endpoint, endpoint.URL) {
 			return nil, domain.Fail(domain.Conflict, "The device is paired to a different authority.", "Use its original server or explicitly select another client scope.")
 		}
+		// A saved Worker's authenticated probe goes through the desktop runtime,
+		// so its retained grant must be proven from files first. A missing or
+		// mismatched grant never sends the Worker token, and a revoked token
+		// cannot mask the required recovery result.
+		if o.desktop != nil && kind == domain.WorkerDevice {
+			if err := verifyDesktopWorkerGrant(o, root, saved); err != nil {
+				return nil, err
+			}
+		}
 		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
 		if err != nil {
 			return nil, err

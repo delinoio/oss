@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -418,19 +419,56 @@ func redactRestoredDeletedSessions(ctx context.Context, tx *sql.Tx, now time.Tim
 	return nil
 }
 
+const (
+	// Ordinary historical Job documents keep the generic 1 MiB bound.
+	restoreOrdinaryJobBytes = 1 << 20
+	// The envelope peek is bounded by the largest typed Job document so a
+	// larger body falls through to the strict generic rejection.
+	restoreJobEnvelopePeekBytes = domain.MaxRepositoryBranchesJobBytes
+)
+
 // Decode the original document before quarantine can replace invalid state or
-// hide a malformed input behind a canceled historical Job. Generic storage
-// decoding chooses outer limits; each exceptional profile owns its validation.
+// hide a malformed input behind a canceled historical Job. Restore never reuses
+// the generic storage decoder's type-selected outer limits: only the owning
+// closed decoders of compact-session and workspace storage recovery history may
+// exceed the ordinary 1 MiB document bound. Large native code review history
+// likewise needs its owning closed decoder, and every other Job type, including
+// discover-repository-branches, keeps the strict generic bound. Live branch Job
+// reads and writes keep their separate typed allowance outside restore.
 func decodeRestoreJob(raw []byte) (domain.Job, error) {
-	job, err := Decode[domain.Job](Record{Kind: domain.JobKind, Data: raw})
-	if err != nil {
-		return job, err
+	var job domain.Job
+	var envelope struct {
+		Type domain.JobType `json:"type"`
 	}
-	switch job.Type {
-	case domain.CompactSessionJob:
-		err = domain.DecodeCompactionJob(raw, &job)
-	case domain.WorkspaceStorageJob:
-		err = workspace.DecodeStorageJob(raw, &job)
+	// An envelope that cannot be peeked selects the strict generic path, which
+	// also reports the precise size/UTF-8/JSON failure.
+	if len(raw) <= restoreJobEnvelopePeekBytes && json.Unmarshal(raw, &envelope) == nil {
+		switch envelope.Type {
+		case domain.CompactSessionJob:
+			if err := domain.DecodeCompactionJob(raw, &job); err != nil {
+				slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
+				return job, err
+			}
+			return job, nil
+		case domain.WorkspaceStorageJob:
+			if err := workspace.DecodeStorageJob(raw, &job); err != nil {
+				slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
+				return job, err
+			}
+			return job, nil
+		case domain.NativeCodeReviewJob:
+			if len(raw) > restoreOrdinaryJobBytes {
+				if err := domain.DecodeNativeCodeReviewJob(raw, &job); err != nil {
+					slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
+					return job, err
+				}
+				return job, nil
+			}
+		}
+	}
+	err := domain.DecodeWithLimit(raw, &job, restoreOrdinaryJobBytes)
+	if err != nil {
+		slog.Warn("backup restore rejected historical job", "type", envelope.Type, "bytes", len(raw))
 	}
 	return job, err
 }

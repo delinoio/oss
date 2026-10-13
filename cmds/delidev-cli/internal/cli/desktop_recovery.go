@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -106,34 +107,10 @@ func verifyOriginalDesktopCredential(owner, digest string) error {
 }
 
 func verifyOriginalDesktopPairing(owner, root string, saved worker.Credential) error {
-	raw, err := security.ReadPrivate(filepath.Join(root, "local-pairing.json"), 4096)
-	if errors.Is(err, os.ErrNotExist) {
-		return recoveryRequired()
-	}
-	if err != nil {
-		return err
-	}
-	var attempt localPairingAttempt
-	if domain.Decode(raw, &attempt) != nil || attempt.RequestID.Validate() != nil || attempt.ServerID != saved.ServerID || attempt.Endpoint != saved.Endpoint {
-		return recoveryRequired()
-	}
-	grants := filepath.Join(owner, "pairing-codes")
-	if err := security.CheckPrivateDir(grants); err != nil {
-		return err
-	}
-	raw, err = security.ReadPrivate(filepath.Join(grants, string(attempt.RequestID)+".json"), 32<<10)
-	defer clear(raw)
-	if errors.Is(err, os.ErrNotExist) {
-		return recoveryRequired()
-	}
-	if err != nil {
-		return err
-	}
-	var grant worker.PairingCode
-	if domain.Decode(raw, &grant) != nil || grant.Validate() != nil || grant.ServerID != saved.ServerID || grant.Endpoint != saved.Endpoint || grant.PairingID != saved.PairingID {
-		return recoveryRequired()
-	}
-	return nil
+	// Desktop registration inspection and recovery keep the storage error of
+	// unreadable evidence, so unsafe permissions stay permission_denied and
+	// offer their documented remediation instead of reading as damaged evidence.
+	return desktopruntime.VerifyOriginalPairingPreservingStorageErrors(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID)
 }
 
 func recoveryRequired() error {
