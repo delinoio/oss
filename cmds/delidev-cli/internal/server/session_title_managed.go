@@ -317,6 +317,74 @@ func managedTitleAccountBusy(tx *store.Tx, accountID domain.ID, account domain.A
 	return accountHasPrimaryWork(tx, accountID, title.ID)
 }
 
+// managedTitleReservation reports whether a claimed managed title still holds
+// the custody window of an account: its auxiliary admission marked it running,
+// but its own TakeSubscription has not yet committed the one-time inference
+// claim together with the account lease. The account has no lease in that
+// window, so every other account owner (primary Take, refresh, quota or
+// reset-credit observation) must treat it as exclusively reserved; otherwise a
+// successful Finish could advance the frozen credential generation and turn an
+// already running title into skipped/authority-lost.
+//
+// The reservation lapses as soon as the title can no longer Take: a committed
+// inference claim (the lease or the immutable receipt carries custody from
+// there), a requested cancellation, or a Worker process that is no longer the
+// live claiming instance. Revocation and instance replacement also settle the
+// job itself, so a dead Worker never stalls the account.
+func managedTitleReservation(tx *store.Tx, account domain.ID, except domain.ID) (bool, error) {
+	var after domain.ID
+	for {
+		records, err := tx.ClaimedManagedTitleJobs(account, after, store.MaxPage)
+		if err != nil {
+			return false, err
+		}
+		for _, record := range records {
+			after = record.ID
+			if record.ID == except {
+				continue
+			}
+			job, err := store.Decode[domain.Job](record)
+			if err != nil {
+				return false, err
+			}
+			var input domain.AuxiliaryTitleInput
+			if job.Type != domain.GenerateSessionTitleJob || job.State != domain.JobClaimed || domain.Decode(job.Input, &input) != nil || !input.IsManaged() || input.AccountID != account {
+				continue
+			}
+			if claimed, err := tx.TitleInferenceClaimed(record.ID); err != nil || claimed {
+				if err != nil {
+					return false, err
+				}
+				continue
+			}
+			if canceled, err := tx.JobCancellationRequested(record.ID); err != nil || canceled {
+				if err != nil {
+					return false, err
+				}
+				continue
+			}
+			instance, seen, err := tx.WorkerInstance(job.MachineID)
+			if err != nil {
+				return false, err
+			}
+			if instance == "" || instance != job.InstanceID || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+				continue
+			}
+			return true, nil
+		}
+		if len(records) < store.MaxPage {
+			return false, nil
+		}
+	}
+}
+
+// managedTitleAccountReserved is the typed transient refusal returned to an
+// account owner that raced a claimed managed title. It is a definite no-effect
+// busy result: the Worker waits on the same exact account and retries.
+func managedTitleAccountReserved() *domain.Error {
+	return domain.Fail(domain.ResourceExhausted, "The selected account is reserved by a running automatic title.", "Wait for the running title to take and finish its original custody; a running title is never preempted and no account is switched.")
+}
+
 // queueManagedSessionTitle freezes the version-3 assignment for a protected
 // ChatGPT subscription session. It runs in the verified terminal transaction of
 // the first successful turn, after that turn's protected Finish settled the

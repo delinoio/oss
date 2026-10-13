@@ -196,6 +196,15 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
 		}
+		if action == domain.SubscriptionRefresh {
+			// A refresh rotates the credential generation. A claimed managed title
+			// still owns the frozen generation, so the refresh waits for it.
+			if reserved, err := managedTitleReservation(tx, r.ID, ""); err != nil {
+				return nil, err
+			} else if reserved {
+				return nil, managedTitleAccountReserved()
+			}
+		}
 		if state.ServerOperation != nil && state.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
 			// A fresh explicit Worker login supersedes the settled server attempt.
 			// Its cleanup checkpoint cannot describe the new pending/native owner.
@@ -519,6 +528,18 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			var execution domain.ExecutionJobInput
 			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
 				return nil, subscriptionDenied()
+			}
+			if job.Type != domain.GenerateSessionTitleJob {
+				// A claimed managed title has no lease until its own Take, yet it owns
+				// the account's frozen generation. Any other owner that took the account
+				// in that window would advance the generation on Finish and strand the
+				// running title, so eligible work waits for the title's original custody.
+				if reserved, err := managedTitleReservation(tx, r.ID, jr.ID); err != nil {
+					return nil, err
+				} else if reserved {
+					s.logger.DebugContext(ctx, "subscription_take_deferred_for_title", "account_id", r.ID, "operation_id", jr.ID, "job_type", job.Type)
+					return nil, managedTitleAccountReserved()
+				}
 			}
 			switch job.Type {
 			case domain.ExecuteSessionJob:
