@@ -171,7 +171,9 @@ a close can land after the staged replacement publishes and before that flag is
 set; a mutation that fails discards the registrations and a committed one keeps
 them. The same registration applies when a lifecycle close (a superseding
 reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
-reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. The `on_before_close` callback that empties a reconciled receipt's set settles it
+reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. A hide or window close whose native unmap fails
+retains the view for retried cleanup but still requests `CloseBrowser`, so it
+registers the view's exact generation on the receipt as well. The `on_before_close` callback that empties a reconciled receipt's set settles it
 immediately, so an owner that unmounts before its next Observe cannot leave a
 `cleanup-pending` receipt that exhausts the page operation limit. Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate

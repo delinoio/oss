@@ -295,14 +295,23 @@ impl State {
     // child to await, so the receipt would report cleanup complete before
     // on_before_close.
     fn remove_view_tracking_outstanding(&mut self, window: &str) {
-        let Some(view) = self.views.remove(window) else {
+        self.track_view_outstanding(window);
+        self.views.remove(window);
+    }
+
+    // Attributes a window's view to the profile's in-flight page operation
+    // without removing it. A lifecycle close whose native unmap failed keeps
+    // the view for retried cleanup but still requests CloseBrowser, and the
+    // closing view is excluded from reconciliation, so its exact generation
+    // must be awaited here.
+    fn track_view_outstanding(&mut self, window: &str) {
+        let Some(view) = self.views.get(window) else {
             return;
         };
         if view.browser.is_some() || view.creation_pending {
-            self.track_outstanding_superseded(
-                &view.profile,
-                &[(window.to_string(), view.generation)],
-            );
+            let profile = view.profile.clone();
+            let identity = (window.to_string(), view.generation);
+            self.track_outstanding_superseded(&profile, &[identity]);
         }
     }
 
@@ -1784,8 +1793,11 @@ impl BrowserHost {
             // only synchronous native invisibility permits immediate success.
             let hidden = unmap(view);
             let browser = view.browser.clone();
+            // The CloseBrowser request below is sent whether or not the unmap
+            // succeeded, so the child is awaited either way.
+            state.track_view_outstanding(window);
             if hidden.is_ok() {
-                state.remove_view_tracking_outstanding(window);
+                state.views.remove(window);
             }
             drop(state);
             if let Some(host) = browser.and_then(|browser| browser.host()) {
@@ -2263,10 +2275,18 @@ impl BrowserHost {
     // close; retain profiles and callback accounting until actual CEF
     // teardown.
     pub fn close_window(&self, window: &str) -> Result<()> {
+        self.close_window_with(window, unmap_view)
+    }
+
+    fn close_window_with(
+        &self,
+        window: &str,
+        mut unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let hidden = if let Some(view) = state.views.get_mut(window) {
             view.closing = true;
-            unmap_view(view)
+            unmap(view)
         } else {
             Ok(())
         };
@@ -2278,8 +2298,9 @@ impl BrowserHost {
             .views
             .get(window)
             .and_then(|view| view.browser.clone());
+        state.track_view_outstanding(window);
         if hidden.is_ok() {
-            state.remove_view_tracking_outstanding(window);
+            state.views.remove(window);
         }
         drop(state);
         if let Some(browser) = browser
@@ -6043,7 +6064,7 @@ esac
 
     #[test]
     fn selection_during_metadata_publication_keeps_the_receipt_pending() {
-        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        let (_temp, host, record, _view_id, _original) = active_storage_fixture();
         mark_native_child(&host, "fixture");
         let page = create_page(&host, &record, "https://fixture.test/next");
         let request = page_request(PageAction::Close, None, Some(&page));
@@ -6099,7 +6120,7 @@ esac
     }
 
     #[test]
-    fn lifecycle_close_without_a_native_child_or_failed_unmap_tracks_nothing() {
+    fn lifecycle_close_without_a_native_child_tracks_nothing() {
         let (_temp, host, record, view_id, original) = active_storage_fixture();
         let key = admit_close(&host, &record, &original.tab);
         // No native child exists, so no close callback will ever arrive.
@@ -6113,6 +6134,48 @@ esac
         assert_eq!(
             finish_fixture_pages(&host, &record, &key).phase,
             PagePhase::Completed
+        );
+    }
+
+    #[test]
+    fn window_close_with_failed_unmap_retains_the_view_and_still_awaits_its_child() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        assert_eq!(
+            host.close_window_with("fixture", |_| Err(NativeFailure::SidecarFailed)),
+            Err(NativeFailure::SidecarFailed)
+        );
+        {
+            // The view stays for retried cleanup, yet CloseBrowser was
+            // requested, so the closing view is excluded from reconciliation.
+            let state = host.state.lock().unwrap();
+            assert!(state.views["fixture"].closing);
+            assert_eq!(
+                state.page_operations[&key].awaiting_close,
+                BTreeSet::from([("fixture".to_string(), original.generation)])
+            );
+        }
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn tracking_a_retained_view_registers_its_exact_generation_without_removing_it() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        let mut state = host.state.lock().unwrap();
+        state.track_view_outstanding("fixture");
+        assert!(state.views.contains_key("fixture"));
+        assert_eq!(
+            state.page_operations[&key].awaiting_close,
+            BTreeSet::from([("fixture".to_string(), original.generation)])
         );
     }
 
