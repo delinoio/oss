@@ -8,7 +8,10 @@ import type { Document } from "./documents";
 import { NativeClaudeCompactionBoundary } from "./native-claude-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeContextCompaction } from "./native-context-compaction";
-import { NativeGrokToolsTerminal } from "./native-grok-interactions";
+import {
+  NativeGrokTool,
+  NativeGrokToolsTerminal,
+} from "./native-grok-interactions";
 
 // jsdom cannot parse the whole stylesheet, so load only the real visibility
 // rules. They are the same attribute selectors the desktop app applies.
@@ -205,6 +208,42 @@ describe("transcript token and time observation toggles", () => {
     expect(view.hidden(/paused/i, "4321")).toBe(!time);
     // Unrelated task fields stay visible.
     expect(view.hidden(/^task$/i, "original-task")).toBe(false);
+  });
+
+  it.each([true, false])("Grok tool context tokens tokens=%s", (tokens) => {
+    setToggles(tokens, true);
+    const id = newRequestId();
+    const view = rendered(
+      <NativeGrokTool
+        data={{
+          role: "tool",
+          state: "complete",
+          execution_id: id,
+          native_thread_id: id,
+          native_turn_id: "526452fa-1956-42dd-b5f4-60e2b23dfe92",
+          grok_tool: {
+            method: "session/update",
+            payload: {
+              sessionId: id,
+              update: {
+                sessionUpdate: "tool_call_update",
+                status: "completed",
+              },
+              _meta: { totalTokens: "4567" },
+            },
+          },
+        }}
+      />,
+    );
+    const paragraph = [...view.container.querySelectorAll("p")].find((item) =>
+      (item.textContent ?? "").includes("4567"),
+    );
+    expect(paragraph, "context token observation").toBeTruthy();
+    expect(getComputedStyle(paragraph!).display === "none").toBe(!tokens);
+    // The tool identity header is not a token observation.
+    expect(
+      getComputedStyle(view.container.querySelector("header")!).display,
+    ).not.toBe("none");
   });
 
   it("native context compaction hides only the token label and value", () => {

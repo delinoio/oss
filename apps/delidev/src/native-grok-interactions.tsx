@@ -745,7 +745,7 @@ export function NativeGrokTool({ data }: { data: Document }) {
         </p>
       ) : null}
       {meta.totalTokens !== undefined ? (
-        <p>
+        <p data-token-observation>
           <LocalizedText
             id="native-grok-interactions.reportedNativeContextTokens_522b65"
             components={{ s0: <>{text(meta.totalTokens)}</> }}
