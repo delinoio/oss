@@ -646,7 +646,8 @@ fn persist(path: &Path, records: &[Record]) -> Result<(), Problem> {
     persist_guarded(path, records, &[], &|| Ok(()))
 }
 /// Publishes the document after `guard` confirms, immediately before the
-/// replacement, that the caller's interprocess lease still owns the path.
+/// replacement, that the caller's interprocess lease still owns the path, and
+/// confirms it again after the replacement before reporting success.
 fn persist_guarded(
     path: &Path,
     records: &[Record],
@@ -684,6 +685,17 @@ fn persist_guarded(
         File::open(parent)
             .and_then(|d| d.sync_all())
             .map_err(|_| Problem::OutcomeUnknown)?;
+        // The sidecar can be swapped between the pre-publication guard and the
+        // replacement. A writer whose lease no longer excludes others cannot
+        // claim the document as committed: another process may already have
+        // inspected the previous contents and will overwrite this publication.
+        guard().map_err(|_| {
+            tracing::warn!(
+                operation = "creation_preferences_lease",
+                code = "lease-lost-after-publication"
+            );
+            Problem::OutcomeUnknown
+        })?;
         Ok(())
     })();
     let _ = fs::remove_file(scratch);
@@ -1248,6 +1260,42 @@ mod tests {
         for code in [5, 6, 8] {
             assert!(!extended_identity_unsupported(code));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lease_replaced_during_publication_is_not_reported_committed() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let lock = directory.path().join(LEASE_NAME);
+        let store = Store::new(Some(directory.path().into()));
+        let selected = scope();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        let swapped = store.update_with(
+            selected.clone(),
+            CreationKind::Session,
+            pair(),
+            read.revision,
+            |path, records, devices, guard| {
+                let calls = std::cell::Cell::new(0);
+                persist_guarded(path, records, devices, &|| {
+                    // The first call precedes the replacement; swap the
+                    // sidecar right after it so only the second call sees it.
+                    calls.set(calls.get() + 1);
+                    let result = guard();
+                    if calls.get() == 1 {
+                        fs::rename(&lock, directory.path().join("moved.lock")).unwrap();
+                        let fresh = fs::File::create(&lock).unwrap();
+                        fresh
+                            .set_permissions(fs::Permissions::from_mode(0o600))
+                            .unwrap();
+                    }
+                    result
+                })
+            },
+        );
+        assert_eq!(swapped.problem, Some(Problem::OutcomeUnknown));
+        assert_eq!(swapped.pair, None);
     }
 
     #[cfg(unix)]
