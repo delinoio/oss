@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func installDeletionHook(t *testing.T, hook func()) {
@@ -311,5 +312,56 @@ func TestSessionDeletionRetryFailsClosedWithoutRetainedInventory(t *testing.T) {
 	proof, err := deleteSessionCopies(context.Background(), c, w)
 	if err != nil || !proof.Complete {
 		t.Fatal("legacy started proof did not keep its previous behavior", proof, err)
+	}
+}
+
+// Restoring a retained inventory obeys the same descriptor budget as capture.
+func TestSessionDeletionRestoreAppliesHandleBudget(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	for _, dir := range []string{"execution-history/" + string(w.SessionID), "pr-startup/" + string(w.SessionID), "processes/" + string(w.Copies[0].JobID)} {
+		if err := os.MkdirAll(filepath.Join(c.Root, filepath.FromSlash(dir)), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A copy restored where absence was proven keeps the first attempt pending
+	// after it persisted the inventory, without disturbing any present object.
+	foreign := filepath.Join(c.Root, "execution-claims", string(w.SessionID)+".json")
+	installDeletionHook(t, func() { mustWrite(t, foreign, "restored foreign copy") })
+	expectPendingDeletion(t, c, w)
+	sessionDeletionBeforeRemovalHook = nil
+	root, err := filepath.EvalSymlinks(c.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := func(ids map[string]security.PathIdentity) (total, held int) {
+		for _, id := range ids {
+			if id.Present() {
+				total++
+			}
+			if id.Held() {
+				held++
+			}
+		}
+		return total, held
+	}
+	unlimited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total, held := present(unlimited)
+	closeSessionCopyIdentities(unlimited)
+	if total < 3 || held != total {
+		t.Fatal("fixture needs several present objects", total, held)
+	}
+	previous := maxHeldIdentityHandles
+	maxHeldIdentityHandles = 2
+	t.Cleanup(func() { maxHeldIdentityHandles = previous })
+	limited, err := prepareSessionCopyIdentities(context.Background(), c, root, w, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeSessionCopyIdentities(limited)
+	if gotTotal, gotHeld := present(limited); gotTotal != total || gotHeld != 2 {
+		t.Fatal("restore ignored the handle budget", gotTotal, gotHeld)
 	}
 }

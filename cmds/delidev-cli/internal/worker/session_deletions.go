@@ -508,7 +508,7 @@ var (
 // an identity keeps only its record: removal still opens the path and compares
 // it, but inode reuse is then excluded only by the record (birth time, size and
 // modification time where reported), not by a held handle.
-const maxHeldIdentityHandles = 1024
+var maxHeldIdentityHandles = 1024
 
 // maxSessionIdentityBytes bounds the retained identity file.
 const maxSessionIdentityBytes = 8 << 20
@@ -547,6 +547,7 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 			if domain.DecodeBounded(raw, &file, maxSessionIdentityBytes) != nil || file.Version != 1 || file.Digest != w.Digest() {
 				return nil, domain.SessionDeletionPending()
 			}
+			restored := 0
 			for relative, record := range file.Paths {
 				if !filepath.IsLocal(relative) {
 					closeSessionCopyIdentities(identities)
@@ -557,6 +558,12 @@ func prepareSessionCopyIdentities(ctx context.Context, config Config, root strin
 				if e != nil {
 					closeSessionCopyIdentities(identities)
 					return nil, e
+				}
+				// Restoring obeys the same descriptor budget as the first capture.
+				if identity.Held() {
+					if restored++; restored > maxHeldIdentityHandles {
+						identity.Release()
+					}
 				}
 				identities[path] = identity
 			}

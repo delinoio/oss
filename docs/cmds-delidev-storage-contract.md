@@ -380,7 +380,9 @@ but it has not been run on a Windows host in this change (it is cross-compiled a
 vetted only). Objects that cannot be opened without following
 links (symlinks, sockets) are never traversed or removed through and keep cleanup
 pending. An identity whose handle was released (the budget is 1,024 held handles
-per attempt) or restored from storage has no held handle and is only as strong as
+per attempt, applied both when capturing and when restoring a retained inventory
+on a retry, so thousands of present objects cannot exhaust the descriptor limit)
+or restored from storage has no held handle and is only as strong as
 its record, so inode reuse is excluded only by birth time where reported, size and
 modification time.
 
