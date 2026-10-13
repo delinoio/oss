@@ -47,8 +47,20 @@ Go-owned journal in the original connector root scope. The record is a closed
 server ID, operation ID, revision, native generation and optional
 saved-connection ID. The directory is owner-only and never repaired or created
 outside an existing `desktop-updates` scope, which is validated (a real
-directory without symlink ancestors) before the store directory is created;
-files are written owner-only through a fsynced temporary file (the
+directory without symlink ancestors) before the store directory is created. On
+Unix the store directory is created 0700 and an existing one must keep the same
+owner as its parent with no group or other permission bits. On Windows the
+native store creates no descriptor of its own: the `desktop-updates` scope is
+created and validated by the Go `security.PrivateDir` policy as a protected
+single-owner full-control DACL with object and container inheritance, and every
+`native-begin`, `native-inspect` and `native-outcome` revalidates it. The store
+directory is only ever created below that scope, so it inherits exactly the
+owner-only ACE, and no other principal can pre-create, replace or inject entries
+in it; changing its ACL requires the same owner principal that already owns all
+update state. Native therefore rejects symlinked ancestors but performs no
+separate DACL comparison, matching the other native private directories.
+Fixtures and cross-compilation do not establish installed Windows ACL
+acceptance. Files are written owner-only through a fsynced temporary file (the
 `desktop-updates` parent is fsynced before every persistence so a newly created
 store directory is durable) and published with a no-replace hard link (a
 destination created after the preceding read is reread and accepted only when
