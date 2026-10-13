@@ -82,7 +82,15 @@ unchanged. No RPC, capability or storage-version migration is added.
 Foreground return and connection refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
 Steer operates on an already queued input and its original revision, execution
-and native turn. Stop and Resume require current observations and confirmation.
+and native turn. Inspecting a pending Steer reads the original queue input
+(EntityKind.QUEUE at the retained request's mutation ID), never the session, and
+enables retry only when the observed resource has the same ID, queue kind,
+supported schema, original session ID and original expected revision. A missing,
+foreign-session or revised input keeps retry disabled, shows localized guidance
+and leaves the retained request unchanged; no replacement request is generated.
+Existing pending records need no migration because the ID is derived from the
+retained request, not its stored target. Stop and Resume require current
+observations and confirmation.
 Question and approval responses retain the original interaction revision.
 Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before

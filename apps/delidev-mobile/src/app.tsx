@@ -13,7 +13,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { create, type Message } from "@bufbuild/protobuf";
+import { create, fromJsonString, type Message } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import {
   QueryClient,
@@ -869,6 +869,7 @@ function Connected({
   async function inspect() {
     if (!pending || !enabled) return;
     setBusy(true);
+    setError("");
     try {
       const kind =
         pending.operation === Operation.Question ||
@@ -879,7 +880,52 @@ function Connected({
             : pending.operation === Operation.Revoke
               ? EntityKind.DEVICE
               : EntityKind.SESSION;
-      if (pending.operation === Operation.Create) {
+      if (pending.operation === Operation.Steer) {
+        // Steer acts on the queued input, so inspect that exact entity (the retained
+        // target is only the session ID) and never accept a session read as proof.
+        const request = fromJsonString(
+          SteerQueuedInputRequestSchema,
+          pending.request,
+        );
+        const original = request.mutation;
+        if (!original) throw new Error("steer-request-invalid");
+        let observed: Resource | undefined;
+        try {
+          observed = (
+            await createClient(ResourceService, transport).getResource({
+              kind: EntityKind.QUEUE,
+              id: original.id,
+            })
+          ).resource;
+        } catch (error) {
+          if (clientFailure(error).code === FailureCode.NotFound) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_input_missing",
+            });
+            setInspected("");
+            setError(c.steerTargetMissing);
+            return;
+          }
+          throw error;
+        }
+        if (
+          !observed ||
+          !supportsResourceSchema(observed) ||
+          observed.kind !== EntityKind.QUEUE ||
+          observed.id !== original.id ||
+          observed.sessionId !== request.sessionId ||
+          observed.revision !== original.expectedRevision
+        ) {
+          console.warn("mobile_steer_inspect", {
+            operation: Operation.Steer,
+            outcome: "original_input_changed",
+          });
+          setInspected("");
+          setError(c.steerTargetChanged);
+          return;
+        }
+      } else if (pending.operation === Operation.Create) {
         await createClient(ResourceService, transport).listResources({
           filter: { kind: EntityKind.SESSION, pageSize: 50 },
         });
@@ -905,6 +951,7 @@ function Connected({
       }
       setInspected(pending.request);
     } catch {
+      setInspected("");
       setError(c.error);
     } finally {
       setBusy(false);
