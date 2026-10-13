@@ -67,8 +67,11 @@ succeeds. While pairing is unverified, repeated Pair presses call only
 name, origin and grant inputs are read-only. The retained ID is cleared only
 after verified pairing, explicit dismissal (which keeps the protected profile
 and its Settings-list retry) or when the profile is forgotten or paired
-elsewhere. A failed `preparePair` retains nothing; a new grant after dismissal
-is a separate profile creation.
+elsewhere. Dismissal invalidates the submission in flight: if `preparePair`
+is still running, its durable profile is kept for the Settings-list retry, but
+the dismissed modal neither retains the ID nor calls `pair(id)`, and the form
+is cleared so a reopened modal starts empty. A failed `preparePair` retains
+nothing; a new grant after dismissal is a separate profile creation.
 
 One unresolved mutation per profile is durably stored before sending, using the
 original generated protobuf JSON and exact request ID. Create, Send, Steer,

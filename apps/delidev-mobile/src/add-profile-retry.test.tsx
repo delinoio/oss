@@ -233,3 +233,53 @@ it("clears the retained id and closes the modal after verified pairing", async (
   ).toBe(false);
   expect(within(again).getByRole("button", { name: en.pair })).toBeTruthy();
 });
+
+it("makes a dismissed modal's in-flight preparation inert and keeps the list retry", async () => {
+  const { fetcher, state } = harness(lost);
+  const dialog = await openAdd(state);
+  fill(dialog, grant());
+  // Hold preparePair open after the durable profile exists.
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const real = state.preparePair.bind(state);
+  const prepare = vi
+    .spyOn(state, "preparePair")
+    .mockImplementation(async (...args) => {
+      const id = await real(...args);
+      await gate;
+      return id;
+    });
+  const pair = vi.spyOn(state, "pair");
+  fireEvent.click(within(dialog).getByRole("button", { name: en.pair }));
+  await waitFor(() => expect(state.state.profiles).toHaveLength(1));
+  fireEvent.click(within(dialog).getByRole("button", { name: en.close }));
+  expect(screen.queryByRole("dialog", { name: en.add })).toBeNull();
+  release();
+  await waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+  // The dismissed submission never pairs and never freezes a later modal.
+  await waitFor(() => expect(screen.getByRole("button", { name: en.add })));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(pair).not.toHaveBeenCalled();
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(state.state.profiles).toHaveLength(1);
+  expect(state.state.profiles[0].pairing).toBeTruthy();
+  // The retained pairing stays available through the Settings-list retry.
+  expect(screen.getByRole("button", { name: en.retryPair })).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: en.add }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: en.add }));
+  const again = await screen.findByRole("dialog", { name: en.add });
+  for (const label of [en.name, en.origin, en.pairing]) {
+    const input = within(again).getByLabelText(label) as HTMLInputElement;
+    expect(input.readOnly).toBe(false);
+    expect(input.value).toBe("");
+  }
+  expect(within(again).queryByText(en.pendingPair)).toBeNull();
+  expect(within(again).getByRole("button", { name: en.pair })).toBeTruthy();
+});

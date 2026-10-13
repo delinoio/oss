@@ -386,6 +386,10 @@ function Settings({
     // Durable profile id from a successful preparePair whose pair() has not
     // yet been verified. While set, submit retries only that original request.
     [prepared, setPrepared] = useState<string>(),
+    // Bumped on every dismissal so a submission started by a dismissed modal
+    // cannot attach its result to a later one.
+    submission = useRef(0),
+    preparing = useRef(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState<() => Promise<void>>(),
@@ -439,7 +443,10 @@ function Settings({
   }, [preparedGone, preparedPaired]);
   const closeAdd = () => {
     // Dismissal keeps the protected profile; the list retry remains available.
-    if (prepared) resetAddForm();
+    // An in-flight submission becomes inert: it must neither freeze a later
+    // modal on the dismissed grant nor attempt pairing on its own.
+    submission.current += 1;
+    if (prepared || preparing.current) resetAddForm();
     setAdding(false);
   };
   return (
@@ -572,14 +579,24 @@ function Settings({
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              const attempt = submission.current;
               void run(async () => {
                 let id = prepared;
                 if (!id || !state.state.profiles.some((p) => p.id === id)) {
-                  id = await state.preparePair(name, origin, grant);
+                  preparing.current = true;
+                  try {
+                    id = await state.preparePair(name, origin, grant);
+                  } finally {
+                    preparing.current = false;
+                  }
+                  // Dismissed while preparing: the durable profile stays in
+                  // the Settings list for its retry; do not pair from here.
+                  if (submission.current !== attempt) return;
                   setPrepared(id);
                   changed();
                 }
                 await state.pair(id);
+                if (submission.current !== attempt) return;
                 setAdding(false);
                 resetAddForm();
               });
