@@ -17,7 +17,11 @@ test("mobile dispatch defaults to dry run; credentials are protected and ordinar
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.equal(workflow.on.workflow_dispatch.inputs.mode.default, "dry-run");
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
-  assert.equal(workflow.concurrency.group, "delidev-mobile-beta");
+  assert.deepEqual(workflow.concurrency, {
+    group: "delidev-mobile-beta",
+    "cancel-in-progress": false,
+    queue: "max",
+  });
   assert.equal(workflow.on.workflow_dispatch.inputs.target.default, "both");
   for (const [name, job] of Object.entries(workflow.jobs)) {
     if (["package", "submit"].includes(name))
@@ -42,6 +46,57 @@ test("mobile dispatch defaults to dry run; credentials are protected and ordinar
     JSON.stringify(workflow.jobs.submit),
     /pipeline.mjs build|signing.mjs/,
   );
+});
+// Documented GitHub semantics for a non-canceling `queue: max` group: one run
+// executes, up to 100 later arrivals wait in arrival order without replacing
+// one another, and an arrival beyond that capacity is cancelled itself. GitHub
+// gives no ordering guarantee between near-simultaneous dispatches, so the
+// fixture only models the order in which arrivals are observed.
+const PENDING_CAPACITY = 100;
+const RunState = Object.freeze({
+  Running: "running",
+  Pending: "pending",
+  CancelledAtCapacity: "cancelled-at-capacity",
+});
+const arrive = (runs, id, concurrency = workflow.concurrency) => {
+  assert.equal(concurrency["cancel-in-progress"], false);
+  const pending = runs.filter((run) => run.state === RunState.Pending).length;
+  const active = runs.some((run) => run.state === RunState.Running);
+  const state = !active
+    ? RunState.Running
+    : concurrency.queue === "max" && pending < PENDING_CAPACITY
+      ? RunState.Pending
+      : RunState.CancelledAtCapacity;
+  runs.push({ id, state });
+};
+test("three overlapping dispatches queue without replacing a pending run", () => {
+  const runs = [];
+  for (const id of ["A", "B", "C"]) arrive(runs, id);
+  assert.deepEqual(
+    runs.map((run) => [run.id, run.state]),
+    [
+      ["A", RunState.Running],
+      ["B", RunState.Pending],
+      ["C", RunState.Pending],
+    ],
+  );
+});
+test("the hundred-pending boundary cancels only the arrival beyond capacity", () => {
+  const runs = [];
+  arrive(runs, "running");
+  for (let index = 1; index <= PENDING_CAPACITY; index += 1)
+    arrive(runs, `pending-${index}`);
+  assert.equal(
+    runs.filter((run) => run.state === RunState.Pending).length,
+    PENDING_CAPACITY,
+  );
+  arrive(runs, "overflow");
+  assert.equal(runs.at(-1).state, RunState.CancelledAtCapacity);
+  assert.equal(
+    runs.filter((run) => run.state === RunState.Pending).length,
+    PENDING_CAPACITY,
+  );
+  assert.equal(runs[1].state, RunState.Pending);
 });
 test("dispatch validates exact iOS-only selection without Android input", () => {
   const script = workflow.jobs.validate.steps[0].run;

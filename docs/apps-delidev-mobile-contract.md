@@ -249,7 +249,18 @@ An explicit `ios` target omits Android inputs and credentials. It produces a
 schema-2 manifest with exactly the iOS artifact; the default `both` target retains
 the schema-1 manifest. Provenance pins the target and cannot reinterpret a
 candidate across targets. All beta runs share one non-canceling concurrency group
-to serialize edits against the configured Google principal. Candidate manifests include identity,
+(`delidev-mobile-beta`, `cancel-in-progress: false`, `queue: max`) across modes,
+targets and recovery runs to serialize edits against the configured Google principal.
+`queue: max` keeps up to 100 pending runs in the group instead of GitHub's default
+single pending run, so a newer waiter never replaces an older one. GitHub gives no
+dispatch-order guarantee for near-simultaneous arrivals. When the group is full, the
+excess arrival is cancelled itself (capacity cancellation). Runbook: stop dispatching
+while 100 runs are pending; inspect the capacity-cancelled original run and rerun that
+same run once through GitHub's rerun action (within GitHub's 30-day and 50-rerun
+limits). Never replace the dispatch with a new one or regenerate the candidate. If the
+cancelled run had already reached provider access, reconcile the original receipts
+first. Dry-run default, protected environments, source/recovery SHA checks, cross-run
+artifact owner checks and receipt gates are unchanged. Candidate manifests include identity,
 architectures, expected signer fingerprints, original artifact byte lengths and
 SHA-256 checksums. Conflicting candidate/version reuse is refused. Internal-only
 preflight and immutable provider receipts precede any future upload. All selected platform receipts are stored before any provider is contacted. A
