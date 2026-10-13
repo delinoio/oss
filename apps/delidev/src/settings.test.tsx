@@ -2296,6 +2296,39 @@ describe("reopened repository editors", () => {
     expect(value.save).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ["denied", () => new ConnectError("Denied fixture", Code.PermissionDenied)],
+    ["untyped aborted", () => new ConnectError("Aborted fixture", Code.Aborted)],
+  ])(
+    "keeps a definitive %s rejection in the generic presentation when an editor reopens",
+    async (_name, failure) => {
+      const repository = saved();
+      const value = fixture([repository]);
+      value.save.mockRejectedValueOnce(failure());
+      render(
+        <NotificationProvider>
+          {value.view(<ReopenableRepositoryEditor initial={repository} />)}
+        </NotificationProvider>,
+      );
+      await renameRepository("Beta");
+      await waitFor(() =>
+        expect(document.querySelector(".problem")).not.toBeNull(),
+      );
+      const before = document.querySelector(".problem")?.textContent;
+      reopen();
+      const restored = (await screen.findByRole("textbox", {
+        name: "Name",
+      })) as HTMLInputElement;
+      // The saved document returns, while the generic error stays visible and
+      // the registry entry is not cleared by the reopen.
+      expect(restored.value).toBe("Alpha");
+      expect(document.querySelector(".problem")?.textContent).toBe(before);
+      expect(screen.queryByText(repositoryNameMessage)).toBeNull();
+      expect(restored.getAttribute("aria-invalid")).not.toBe("true");
+      expect(value.save).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("keeps a late rejection that arrives after the editor reopened while busy", async () => {
     const repository = saved();
     const value = fixture([repository]);

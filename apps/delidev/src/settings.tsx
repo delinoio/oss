@@ -755,16 +755,20 @@ export function ConfigurationEditor({
           )
       : undefined,
   );
-  // A definitive rejection that predates this editor belongs to an abandoned
-  // draft: its request document is gone, so the reopened saved document must
-  // not inherit the error. Busy, uncertain, accepted-job and retained-input
-  // state keeps its connection-owned recovery and is never treated as stale.
+  // A definitive name rejection that predates this editor belongs to an
+  // abandoned draft: its request document is gone, so the reopened saved
+  // document must not inherit the name guidance. Other definitive errors
+  // (denied, revision, identity) keep their generic presentation. Busy,
+  // uncertain, accepted-job and retained-input state keeps its
+  // connection-owned recovery and is never treated as stale.
   const staleRejection = useRef<unknown>(
     kind === EntityKind.REPOSITORY &&
       Boolean(source) &&
       !mutation.busy &&
       !mutation.uncertain &&
-      !mutation.input
+      !mutation.input &&
+      mutation.error !== undefined &&
+      isConfigurationNameConflict(mutation.error)
       ? mutation.error
       : undefined,
   );
