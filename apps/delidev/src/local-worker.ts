@@ -12,7 +12,8 @@ const id =
 // state or a query cache. Only the exact pending RPC can retain it on uncertainty.
 export function useLocalWorkerProof(read?: ReadLocalWorkerProof) {
   const alive = useRef(false),
-    pending = useRef(false);
+    pending = useRef(false),
+    epoch = useRef(0);
   const [busy, setBusy] = useState(false),
     [problem, setProblem] = useProductMessage("");
   useEffect(() => {
@@ -26,6 +27,7 @@ export function useLocalWorkerProof(read?: ReadLocalWorkerProof) {
   ): Promise<LocalWorkerProof | undefined> => {
     if (!alive.current || pending.current) return;
     pending.current = true;
+    const original = epoch.current;
     setBusy(true);
     setProblem("");
     try {
@@ -39,12 +41,20 @@ export function useLocalWorkerProof(read?: ReadLocalWorkerProof) {
         throw new Error("Local proof changed");
       if (alive.current) return proof;
     } catch {
-      if (alive.current)
+      // A read that outlived its draft keeps the proof slot busy, but its
+      // failure belongs to the discarded draft and must not reach the next one.
+      if (alive.current && epoch.current === original)
         setProblem(ownedMessage("local-worker.extra.e16d869b57cc"));
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
     }
   };
-  return { load, busy, problem, available: Boolean(read) };
+  // Detaches the read in flight from the current draft: it still holds the
+  // proof slot until it settles, but its failure is no longer presented.
+  const discard = () => {
+    epoch.current += 1;
+    setProblem("");
+  };
+  return { load, discard, busy, problem, available: Boolean(read) };
 }

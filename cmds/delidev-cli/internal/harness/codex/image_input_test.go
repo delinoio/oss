@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/imageinput"
@@ -174,5 +176,79 @@ func TestCombinedTextSkillsAndImagesRetainIndependentNativeProofs(t *testing.T) 
 	proofs, proofErr := c.SkillInputProofs(ctx)
 	if err != nil || proofErr != nil || len(history) != 1 || len(proofs) != 1 || history[0].PromptDigest != original.InputDigest() || history[0].SkillDigest == ([32]byte{}) || history[0] != proofs[0] {
 		t.Fatal(history, proofs, err, proofErr)
+	}
+}
+
+// An unobserved model inventory must surface its original typed failure and
+// never acquire the private image rejection wrapper or proof.
+func TestImageModelListFailuresKeepOriginalClassificationWithoutProof(t *testing.T) {
+	cases := []struct {
+		mode string
+		code domain.Code
+	}{
+		{"native-error", domain.Unsupported},
+		{"malformed", domain.Unsupported},
+		{"exit", domain.Unavailable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			c, capture, _, _ := boundTurnFixture(t, "images-models-"+tc.mode)
+			c.imageRoot = t.TempDir()
+			c.imageMachine = domain.NewID()
+			ref := stageImage(t, c.imageRoot, c.imageMachine)
+			request, inputID := domain.NewID(), domain.NewID()
+			input := domain.SessionInput{Mode: domain.ExecuteMode, Attachments: []domain.ImageAttachment{ref}}
+			result, err := c.StartTurn(context.Background(), request, inputID, input)
+			assertCode(t, err, tc.code)
+			assertNoImageRejection(t, result, err, request, inputID, input)
+			if len(requestsOf(t, capture, "turn/start")) != 0 {
+				t.Fatal("image turn sent after model inventory failure")
+			}
+		})
+	}
+}
+func TestImageModelListCanceledAndTimedOutKeepOriginalClassification(t *testing.T) {
+	prepare := func(t *testing.T, mode string) (*Client, domain.SessionInput) {
+		c, _, _, _ := boundTurnFixture(t, mode)
+		c.imageRoot = t.TempDir()
+		c.imageMachine = domain.NewID()
+		return c, domain.SessionInput{Mode: domain.ExecuteMode, Attachments: []domain.ImageAttachment{stageImage(t, c.imageRoot, c.imageMachine)}}
+	}
+	t.Run("canceled", func(t *testing.T) {
+		c, input := prepare(t, "images-models-hang")
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(100*time.Millisecond, cancel)
+		_, err := c.nativeImageParts(ctx, input)
+		// The model discovery wrapper reports a canceled call as unavailable.
+		assertCode(t, err, domain.Unavailable)
+		assertNotImageBeforeSend(t, err)
+		if err.Error() == domain.UnsupportedImageInput().Error() {
+			t.Fatal("canceled inventory was reported as unsupported image input", err)
+		}
+	})
+	t.Run("timed-out", func(t *testing.T) {
+		c, input := prepare(t, "images-models-hang")
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		_, err := c.nativeImageParts(ctx, input)
+		assertCode(t, err, domain.Unavailable)
+		assertNotImageBeforeSend(t, err)
+	})
+}
+func assertNotImageBeforeSend(t *testing.T, err error) {
+	t.Helper()
+	var rejected *imageBeforeSendError
+	if errors.As(err, &rejected) {
+		t.Fatal("model inventory failure acquired the image rejection wrapper", err)
+	}
+}
+func assertNoImageRejection(t *testing.T, result TurnResult, err error, request, inputID domain.ID, input domain.SessionInput) {
+	t.Helper()
+	assertNotImageBeforeSend(t, err)
+	if result.imageRejection != nil || result.ProvesImageInputNotSent(request, inputID, input.InputDigest()) {
+		t.Fatal("model inventory failure acquired the image rejection proof")
+	}
+	if err.Error() == domain.UnsupportedImageInput().Error() {
+		t.Fatal("model inventory failure was reported as unsupported image input", err)
 	}
 }

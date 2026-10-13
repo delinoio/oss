@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -172,5 +173,76 @@ func TestOpenCodeEventsOwnNativeFailureClassification(t *testing.T) {
 	outcome, code, err := openCodeTerminalOutcome(c.finish, c.problem)
 	if err != nil || outcome != domain.ExecutionFailed || code != domain.Unauthenticated || c.problem.Provider != "" {
 		t.Fatal("caller mutation changed the original native failure classification")
+	}
+}
+
+func fillOpenCodeKeys(keys map[string]bool, prefix string, count int) {
+	for index := 0; index < count; index++ {
+		keys[fmt.Sprintf("%s%d", prefix, index)] = true
+	}
+}
+
+func fillOpenCodeDedupKeys(c *OpenCodeEventPublisher, native, snapshots int) {
+	for _, seen := range []*map[string]bool{&c.seen, &c.text.seen, &c.usage.seen} {
+		fillOpenCodeKeys(*seen, "evt_synthetic_", native)
+	}
+	c.snapshotSeen, c.text.snapshotSeen, c.usage.snapshotSeen = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, seen := range []map[string]bool{c.snapshotSeen, c.text.snapshotSeen, c.usage.snapshotSeen} {
+		fillOpenCodeKeys(seen, openCodeSnapshotKeyPrefix+"synthetic:", snapshots)
+	}
+}
+
+func TestOpenCodeEventsSnapshotKeysDoNotConsumeNativeEventCapacity(t *testing.T) {
+	f, c := newOpenCodeEventsFixture(t)
+	fillOpenCodeDedupKeys(c, 50000, 16000)
+	publishOpenCodeFixtureEvent(t, f, c, f.assistant(false))
+	publishOpenCodeFixtureEvent(t, f, c, f.part(textPartOneID, "after combined 66000 keys", false))
+	if len(c.seen) != 50002 || len(c.snapshotSeen) != 16000 {
+		t.Fatal("independent dedup classes were not retained separately", len(c.seen), len(c.snapshotSeen))
+	}
+}
+
+func TestOpenCodeEventsNativeCapacityFailsWithoutTruncation(t *testing.T) {
+	f, c := newOpenCodeEventsFixture(t)
+	fillOpenCodeDedupKeys(c, maxOpenCodeEventKeys, 0)
+	err := c.PublishObservation(context.Background(), f.observation(f.assistant(false)))
+	if err == nil || domain.SafeError(err).Code != publicationUncertain().Code {
+		t.Fatal("native capacity did not fail as publication uncertain", err)
+	}
+	if len(c.seen) != maxOpenCodeEventKeys || len(c.snapshotSeen) != 0 {
+		t.Fatal("capacity failure truncated or grew the dedup set")
+	}
+}
+
+func TestOpenCodeSnapshotKeyClassesAreIndependentlyBounded(t *testing.T) {
+	events, snapshots := map[string]bool{}, map[string]bool{}
+	fillOpenCodeKeys(events, "evt_synthetic_", 50000)
+	fillOpenCodeKeys(snapshots, openCodeSnapshotKeyPrefix+"synthetic:", 16000)
+	if openCodeKeyRejected(events, snapshots, "evt_new", false) || openCodeKeyRejected(events, snapshots, openCodeSnapshotKeyPrefix+"new", true) {
+		t.Fatal("combined 66000 keys tripped an independent capacity")
+	}
+	if !openCodeKeyRejected(events, snapshots, "evt_synthetic_1", false) {
+		t.Fatal("duplicate native event lost its rejection")
+	}
+	fillOpenCodeKeys(events, "evt_more_", maxOpenCodeEventKeys-len(events))
+	fillOpenCodeKeys(snapshots, openCodeSnapshotKeyPrefix+"more:", maxOpenCodeSnapshotKeys-len(snapshots))
+	if len(events) != 65536 || len(snapshots) != 24576 {
+		t.Fatal("capacity constants changed", len(events), len(snapshots))
+	}
+	if !openCodeKeyRejected(events, snapshots, "evt_new", false) || !openCodeKeyRejected(events, snapshots, openCodeSnapshotKeyPrefix+"new", true) {
+		t.Fatal("next new key at capacity was admitted")
+	}
+	idempotent, rejected := admitOpenCodeKey(events, snapshots, openCodeSnapshotKeyPrefix+"more:0", true)
+	if !idempotent || rejected {
+		t.Fatal("duplicate frozen snapshot was not idempotent at snapshot capacity")
+	}
+	idempotent, rejected = admitOpenCodeKey(events, snapshots, "evt_synthetic_1", false)
+	if idempotent || !rejected {
+		t.Fatal("duplicate native event lost its original rejection")
+	}
+	var lazy map[string]bool
+	markOpenCodeKey(events, &lazy, openCodeSnapshotKeyPrefix+"lazy", true)
+	if !lazy[openCodeSnapshotKeyPrefix+"lazy"] || !isOpenCodeSnapshotKey(openCodeSnapshotKeyPrefix+"lazy") || isOpenCodeSnapshotKey("evt_new") {
+		t.Fatal("lazy snapshot map or key classification failed")
 	}
 }

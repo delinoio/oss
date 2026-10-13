@@ -32,6 +32,29 @@ const uuid = (value: unknown): value is string =>
   /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
     value,
   );
+/**
+ * The complete ordered accepted-input list is valid evidence only when it is a
+ * bounded array of unique, digest-bound inputs whose first entry is the selected
+ * original input. Shared by progress and startup-timing settlement.
+ */
+export function acceptedInputsBind(
+  inputs: unknown,
+  selectedInputId: unknown,
+): boolean {
+  if (!Array.isArray(inputs) || !inputs.length || inputs.length > 4095)
+    return false;
+  const accepted = inputs.map(object);
+  return (
+    accepted[0].input_id === selectedInputId &&
+    accepted.every(
+      (input) =>
+        uuid(input.input_id) &&
+        typeof input.prompt_digest === "string" &&
+        /^[a-f0-9]{64}$/.test(input.prompt_digest),
+    ) &&
+    new Set(accepted.map((input) => input.input_id)).size === accepted.length
+  );
+}
 const identity = (value: unknown): value is string =>
   typeof value === "string" &&
   value.trim().length > 0 &&
@@ -399,23 +422,7 @@ export function sessionProgress(
   if (execution.outcome !== "running" || !identity(execution.native_turn_id))
     return;
   if (execution.accepted_inputs !== undefined) {
-    if (
-      !Array.isArray(execution.accepted_inputs) ||
-      !execution.accepted_inputs.length ||
-      execution.accepted_inputs.length > 4095
-    )
-      return;
-    const accepted = execution.accepted_inputs.map(object);
-    if (
-      accepted[0].input_id !== selected.input_id ||
-      accepted.some(
-        (input) =>
-          !uuid(input.input_id) ||
-          typeof input.prompt_digest !== "string" ||
-          !/^[a-f0-9]{64}$/.test(input.prompt_digest),
-      ) ||
-      new Set(accepted.map((input) => input.input_id)).size !== accepted.length
-    )
+    if (!acceptedInputsBind(execution.accepted_inputs, selected.input_id))
       return;
   } else {
     // Supported legacy progress needs an independently accepted original input.
@@ -503,8 +510,11 @@ export function initialSessionStartup(
   if (phase === SessionProgressPhase.Starting)
     // The original queue row must be current and still owned by this execution;
     // rejected, removed, uncertain, foreign or later rows retain Info.
+    // An empty current queue is missing proof, not vacuous proof: require
+    // exactly the original input row.
     return (
       queueCurrent &&
+      queue.length === 1 &&
       queue.every((input) => {
         const queued = readDocument(input);
         return (

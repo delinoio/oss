@@ -234,6 +234,50 @@ describe("resident native command presentation", () => {
       ),
     ).toBeUndefined();
   });
+  it.each([
+    ["changed command", { command: "/bin/zsh -lc ls" }],
+    ["changed cwd", { cwd: "/workspace/other" }],
+    ["changed command and cwd", { command: "ls", cwd: "/workspace/other" }],
+    ["whitespace-only command difference", { command: "/bin/zsh -lc pwd " }],
+    ["case-only cwd difference", { cwd: "/Workspace/project" }],
+  ])("rejects a Codex completion with a %s", (_name, change) => {
+    const d = data(codex());
+    const completed = (d.tool as Document).completed as Document;
+    completed.command = { ...(completed.command as Document), ...change };
+    expect(nativeCommandPresentation(row(d))).toBeUndefined();
+  });
+  it("accepts equal Codex command and cwd with late completion metadata and source transitions", () => {
+    const d = data(codex());
+    const tool = d.tool as Document;
+    const started = tool.started as Document;
+    const completed = tool.completed as Document;
+    started.command = {
+      ...(started.command as Document),
+      source: "exec-startup",
+    };
+    completed.command = {
+      ...(completed.command as Document),
+      source: "agent",
+      process_id: "1234",
+      aggregated_output: "late output",
+      exit_code: 3,
+      duration_ms: 42,
+      plugin_id: "plugin",
+      script_path: "/workspace/script.sh",
+    };
+    completed.status = "failed";
+    const p = nativeCommandPresentation(row(d))!;
+    expect(p).toBeDefined();
+    expect(p.command).toBe("/bin/zsh -lc pwd");
+  });
+  it("keeps rejecting an empty Codex command on both snapshots", () => {
+    for (const key of ["started", "completed"]) {
+      const d = data(codex());
+      const snap = (d.tool as Document)[key] as Document;
+      snap.command = { ...(snap.command as Document), command: "" };
+      expect(nativeCommandPresentation(row(d))).toBeUndefined();
+    }
+  });
   it("renders aggregate directly, preserves exact original Details and independent stream", () => {
     const { props, query } = group(codex());
     const { container } = render(<ToolTurnTranscript {...props} />);

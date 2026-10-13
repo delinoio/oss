@@ -210,6 +210,70 @@ test.each(["codex", "opencode", "oversized", "malformed"])(
   },
 );
 
+test("keeps the OpenCode update warning after its only child payload page is evicted", async () => {
+  const session = newRequestId(),
+    pages = [
+      [openCodeSubagentFixture(session)],
+      [subagentFixture(session)],
+      [subagentFixture(session)],
+      [subagentFixture(session)],
+    ];
+  let capabilities = [
+    SystemCapability.SUBAGENT_OBSERVATION_V1,
+    SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1,
+  ];
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({ capabilities }),
+    });
+    router.service(ResourceService, {
+      listResources: (request) => {
+        const index = Number(request.filter?.pageToken || "0");
+        return {
+          resources: pages[index],
+          nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+        };
+      },
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <Subagents sessionId={session} revision="1" />
+      </TransportProvider>
+    </QueryClientProvider>,
+  );
+  const rowCount = () =>
+    screen.queryAllByRole("row").filter((row) => row.querySelector("td"))
+      .length;
+  await waitFor(() => expect(rowCount()).toBe(1));
+  for (let loaded = 2; loaded <= pages.length; loaded++) {
+    const more = screen.getByRole("button", { name: "Load more Subagents" });
+    await waitFor(() => expect(more.matches(":disabled")).toBe(false));
+    fireEvent.click(more);
+    await waitFor(() => expect(rowCount()).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(
+        screen
+          .queryByRole("button", { name: "Load more Subagents" })
+          ?.matches(":disabled") ?? true,
+      ).toBe(loaded === pages.length ? true : false),
+    );
+  }
+  expect(screen.queryByText(/Update the server and Runner Device/)).toBeNull();
+  capabilities = [SystemCapability.SUBAGENT_OBSERVATION_V1];
+  await client.invalidateQueries();
+  await screen.findByText(/Update the server and Runner Device/);
+  expect(rowCount()).toBe(0);
+  expect(
+    screen.queryByRole("button", { name: "Load more Subagents" }),
+  ).toBeNull();
+  client.clear();
+});
+
 test("keeps a failed child read halted across native revisions until explicit refresh", async () => {
   const session = newRequestId(),
     tokens: string[] = [];

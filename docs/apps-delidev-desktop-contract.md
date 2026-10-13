@@ -778,6 +778,10 @@ name/fallback. Muted monospace previews show a literal `> ` prefix with visual
 ellipsis and the complete accessible string. Only Codex's exact leading
 `/bin/zsh -lc ` is hidden in the preview; no shell parsing, trimming, unquoting or
 other rewriting occurs. The full original command remains in collapsed Details.
+A Codex completion whose command or working directory differs from its started
+snapshot (exact string comparison, no normalization) retains the original tool
+fallback; late output, exit code, duration, process metadata and admitted source
+transitions remain accepted.
 
 Expanding a recognized command displays original output directly in inert
 `pre`/`code` blocks. Codex prefers completed aggregate output, including empty
@@ -1534,6 +1538,7 @@ Unsupported-schema Agent display names/aliases are projected only within the exi
 - OpenCode 1.18.32 foreground child reads use the shared Subagents page with independent capability 23. Validate exact native session/message/part identities, the original root task reference, initial task source, same requested/observed model and exact closed response usage. Keep original task JSON inert, reject a malformed complete page and expose no child mutation controls.
 
 - OpenCode Fork presentation requires the independent server capability plus the original macOS/Linux Runner Device capability and completed Build General Chat profile. Retain the accepted operation across navigation; cloned conversation is inherited context with no new input or usage. Follow `cmds-delidev-forks-contract.md` and the desktop contract.
+- Independent Fork presentation for a settled Codex source also requires an empty observed native subagent inventory, matching the OpenCode profile and Side Chat gate. The server rejects every Fork whose source observed subagents, so a nonempty inventory never renders the action; server validation remains authoritative. Follow `cmds-delidev-forks-contract.md`.
 
 - OpenCode Fork presentation reads the complete bounded canonical transcript through authenticated Resource RPC, keyed by exact source revision/native thread and rechecked before submit. Require every retained message to match the plain-text/empty-changes profile; incomplete, repeated, invalid or changed pages cannot expose the action. Go retains independent acceptance/publication authority and the Worker retains native-history proof. Task-only OpenCode child observations remain pending, and automatic compaction references require original native part IDs.
 
@@ -1915,7 +1920,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - New schedule creation presentation is owned by `src/schedule-creation.tsx` and `src/schedule-creation.css` (relative to `apps/delidev`) and follows the previous feature section in `apps-delidev-desktop-contract.md`: creation-only Task/Execution/Repeat/Review wizard with a centered 720px column, noninteractive status indicator, step count and persistent footer and an unobscured main-content action row, mounted collapsed overrides, native radios, explicit catalog states and once-only name focus. Inactive authoring steps stay mounted/hidden/unfocusable and outside native validation, with inventory reads suspended but pagination retained. Next validates/focuses its first invalid control; Back and distinct Review Edit actions preserve drafts without saves. Only Review invokes the original create path after all-step validation/reveal, including collapsed invalid references. Preserve full exact identities, available labels, prompt/reference text, raw cron/timezone and paused/enabled state; review is configuration, not readiness. Lock all navigation while proof/save/uncertain and preserve exact retry. User step changes focus the heading without refetch/reconnect focus theft. Step/frequency/time/weekday/disclosure stay in connection memory, emit only canonical existing Cron fields, preserve raw Custom transitions and invalid Time drafts, and never replace server calendar authority. Preserve strict schema-v1 writes, limits, fresh Local proof, exact uncertain retry and all existing edit/list/detail/history/sidebar behavior. Keep native viewport/zoom evidence separate from component checks.
 
-- Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies only and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `cmds-delidev-sidechat-contract.md`.
+- Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies from the selected answer generation only (superseded same-question retry answers remain read-only history) and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `cmds-delidev-sidechat-contract.md`.
 
 - Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `cmds-delidev-storage-contract.md`.
 
@@ -2462,7 +2467,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
 
-- `scroll-pagination.ts` owns serial read state, accepted opaque request tokens, atomic range refresh, typed failures, explicit exact retry/reload, scope generations and a separate three-page full-payload window. Adapters validate whole responses and retain only safe display projections in accumulated rows. Keep credentials, full configuration documents, previews and native observations outside projections. Payload restoration reuses accepted tokens and rejects changed identity/order; measured placeholders preserve reached content and focused pages retain their payload until focus leaves.
+- `scroll-pagination.ts` owns serial read state, accepted opaque request tokens, atomic range refresh, typed failures, explicit exact retry/reload, scope generations and a separate three-page full-payload window. A batch may carry an `accepted` observer that runs only for accepted reads, before payload eviction, so domain metadata projections reach evicted pages. Adapters validate whole responses and retain only safe display projections in accumulated rows. Keep credentials, full configuration documents, previews and native observations outside projections. Payload restoration reuses accepted tokens and rejects changed identity/order; measured placeholders preserve reached content and focused pages retain their payload until focus leaves.
 
 - Conversation adapters retain forward ordering and independent bounded live-stream reconciliation; Files retain metadata-only digest-bound ranges and separate previews. `session-files-model.ts` owns per-directory lazy chains, expansion, complete-parent-only absence and one serial observation scheduler; the generated Connect Query reader shares pending settlement across panel/session replacement for the same connection client. An already dispatched Files read uses a dedicated non-aborted settlement signal because Connect abort rejects before an ignored-abort handler finishes; controller cancellation fences publication and skips queued reads. Preserve all server deadlines and current authorization, and leave business mutation/native cancellation unchanged. Collapse cancels/fences unfinished descendants; explicit Refresh supersedes pending tree work and runs root/expanded directories parent-first. Back restores accepted metadata/scroll/nearest focus without rereading and discards preview bytes. Links and special files stay inert; keep exact decimal sizes, digest-bound 100-entry pages and 64KiB previews. Reject a whole directory page with duplicate entry names before accumulation; retain prior accepted metadata and the original retry token. Keep user-authored request/queue/review drafts outside evictable full payloads under their existing limits, with original mutation registries and terminal-watch/selected-review ownership unchanged.
 
@@ -2511,7 +2516,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Native model settings follow `cmds-delidev-native-models-contract.md`: capability-gate explicit scope selection, retain exact uncertain discovery/cancel requests, poll only accepted status and preserve immutable page selection. Use model selects the executable ID for final atomic Worker saving under its selected API source; observation never saves a canonical model automatically.
 
-- Claude/OpenCode usage summaries render independent native-accounting tables from the existing Connect Query. Preserve exact decimal display, unavailable versus measured zero, source-specific inclusivity, original attribution and price coverage; never compute, rank or reprice aggregates in React. Older servers receive explicit update guidance. Session budgets show separate native and response unit coverage.
+- Claude/OpenCode usage summaries render independent native-accounting tables from the existing Connect Query. Preserve exact decimal display, unavailable versus measured zero, source-specific inclusivity, original attribution (service-backed rows with an empty Provider ID, such as OpenCode Go, show their subscription service label in both native tables while API rows keep their Provider label) and price coverage; never compute, rank or reprice aggregates in React. Older servers receive explicit update guidance. Session budgets show separate native and response unit coverage.
 
 - Session request Diagnostics uses the generated owner/client read after capability 10 validation. Validate whole pages including required publication UUIDs, successful proxy HTTP send/status evidence and distinct requested/effective tier allowlists; preserve exact execution filters and bigint observations, keep native versus HTTP provenance distinct and dispose panel reads on Close/Escape with trigger focus restored. No request reconstruction, payload display, mutation retry or usage computation is permitted.
 
@@ -3556,6 +3561,8 @@ Discard changes precedes Save changes after a divider in the ordinary right-alig
 Session creation and retained-session controls expose the optional estimated-cost budget in the [usage contract](cmds-delidev-usage-contract.md). Keep currency and threshold as exact strings, distinguish absent subtotal from zero, and show incomplete/unpriced/other-currency evidence with no actual-spend or compliance claim. Read the dedicated generated SessionService view and display the inclusive reached warning; the server gates every new turn/Resume and retains pending input without canceling accepted execution.
 
 Budget editing captures the session revision. Preserve stale drafts, require an explicit latest-revision action before a new write, and retain original uncertain mutations for exact retry. Removing the budget is an explicit oneof operation. A raise/removal can permit already eligible queued execution but never itself resumes paused/archived sessions. Read failures mark cached evidence as stale and block new edits, while exact uncertain retries remain available. No display calculation or disabled button replaces server authorization.
+
+Startup Info may hide only for current budget evidence: the view must belong to the exact original Session ID and report DISABLED or ALLOW_INCOMPLETE, and no budget read may be in flight. A missing, foreign, unspecified or unknown view, a failed read or a retained view during a reread keeps Info visible; THRESHOLD_REACHED stays blocked. The renderer closes this readiness as Pending, Failed, Ready or Blocked without changing controller mounting, Retry or execution behavior.
 
 ### Devices and diagnostic observations
 
@@ -4821,6 +4828,29 @@ composer focus only when the active visible pending composer owned it at
 publication. Preserve the actual inherited transcript and existing paused/Resume
 behavior. Creation, publication and transfer never enqueue, Resume or send
 findings. Logs contain only operation IDs, closed phases and stable error codes.
+Publication also requires the returned child Session ID to be nonempty and
+different from the original parent ID. A succeeded matching job with a malformed
+readback is treated as unverified: keep the pending draft, request and accepted
+job, show the unverified-status guidance and permit only original-job status
+reinspection. It never publishes a descriptor, relationship or published log and
+never releases preparation state. The connection tab store independently rejects
+an empty child ID or one equal to the parent or an ancestor, so a self-child can
+never mount recursively.
+
+Retry current read appears only when the original parent read itself failed and no
+job state exists. A definite creation rejection with a healthy parent read shows
+its diagnostic, editable draft and guarded Discard without a read retry; a read
+retry refetches only the parent and never resends creation. An explicit replay
+that returns a definite error keeps the original uncertainty.
+
+Open Sidechat from another Session while a pending Sidechat is retained routes the
+application to the original parent through the existing Session navigation callback
+and selects the original pending descriptor, sending no second Fork request,
+input, Resume or findings transfer. Composer focus is deferred until that parent is
+active and visible; a newer reopen or later navigation invalidates the deferred
+callback. Repeating selects the same tab. Automatic publication while backgrounded
+or closed never navigates, reopens presentation or steals focus.
+
 Original account/snapshot/native ownership and dependent cleanup remain in the
 [Sidechat contract](cmds-delidev-sidechat-contract.md#direct-desktop-preparation).
 
@@ -4865,7 +4895,7 @@ Encrypted Worker export starts from its bounded original public recipient and se
 
 Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and disabled saved values on older servers. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
 
-OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. Follow the subagent contract.
+OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. The unsupported-OpenCode update warning derives from a closed harness value retained beside each reached child row's ID/revision, so it survives eviction of the bounded three-page payload window; the retained value carries no output, usage or child authority and is disposed with the original scope. Follow the subagent contract.
 
 Session Context uses authenticated Connect queries for native observations and
 current per-profile compaction eligibility. Bind the observed exact session
@@ -5889,17 +5919,22 @@ compact row after initial input publication. Every hiding path requires the
 durable first-input counter to equal exactly one; an omitted or later counter
 retains Info. Starting agent additionally requires a current queue read whose only
 row is the original input (sequence one, delivery queued, claimed or accepted,
-execution absent or the original execution); a rejected-before-start, removed,
+execution absent or the original execution); a current empty queue is missing
+proof and retains Info, as do a rejected-before-start, removed,
 uncertain, foreign or later row, or a stale queue read, retains Info. A later
 follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
 Every hiding path additionally requires, at the visibility boundary only: a
 complete current transcript, queue and interaction read (payload present, no
-error, not pending, not fetching and no continuation token), and current
+error, not pending, not fetching, no continuation token, and a resident payload
+page for every retained page token), and current
 successful non-blocking session budget evidence. A refresh that retains stale
 pages (`isFetching`) keeps the retained startup presentation but restores Info
 until the read settles; the fence is not applied to the progress projection, so
-routine refreshes cause no startup-list flicker. Pending, absent, failed or
+routine refreshes cause no startup-list flicker. A terminal token proves
+traversal only; when the three-page payload bound has evicted any retained page,
+that read is incomplete and Info stays visible, while the bound and the explicit
+restoration controls are unchanged. Pending, absent, failed or
 unavailable budget evidence, and evidence of another session identity, retain
 Info and its existing Retry; threshold-reached remains blocking. The budget
 controller reports a closed status (Pending, Failed, Ready, Blocked) keyed to the
@@ -6114,7 +6149,15 @@ The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus
 survive revisions, completion and locale changes. Preserve actual streaming,
 interrupted, failed, recovery and unavailable states. Malformed, mixed and unknown
-records retain the original fallback; OpenCode reasoning-text, Claude thinking
+records retain the original fallback. The dedicated disclosure requires a complete
+valid message envelope: role `artifact`, absent or empty-string `text` (non-string
+text is never coerced), and only the common metadata `execution_id`,
+`native_thread_id`, `native_turn_id`, `native_id`, `native_parent_id`,
+`first_sequence`, `last_sequence`, `context_revision` and `attachments` beside
+`state` and `artifact`. Role-specific fields such as `phase`, `input_id`,
+`inherited`, `turn_timing`, `tool`, `progress`, provider content and unknown
+fields select the generic artifact fallback without stripping or repair.
+OpenCode reasoning-text, Claude thinking
 and other artifacts retain their source-specific rules. Preserve reader gates,
 mounting, measured history wrappers, pagination, scroll anchors and live/history
 ordering. Disclosure adds no reads, execution authority, RPC, schema, migration,
@@ -6131,7 +6174,7 @@ The page uses three ordered sections: DeliDev information, App updates and Relat
 
 Desktop Check for updates is direct and explicit. Unchecked differs from a confirmed successful check with no matching candidate. Checking, available, preparing, installing, installed, failed and unconfirmed states remain distinct. Update recovery starts collapsed and automatically reveals attention, failure or uncertainty. Original update ID/revision and read-only local installation inspection stay mounted when collapsed; closing the disclosure restores focus to its summary. Exact uncertain checks may retry their retained request; a possibly accepted installation remains inspect-only. Native signed-manifest verification, trusted-window confirmation, original receipt authority and installation lifecycle are unchanged.
 
-The page caps content at 1040px, uses 24px section spacing, 8px card corners and 40px controls. Semantic headings and definition lists, shared semantic theme colors and wrapping layouts support English/Korean, keyboard navigation and narrow/200% reflow. Native actions use only the closed releases/license/notices selector. `open_app_information_link` captures and rechecks original product-window authority and epoch, dispatches the compiled destination through the bounded system browser opener and denies dispatch after Quit stopping. The custom permission grants only trusted local/saved product documents, never remote origins, external browser children, tray/widget or auxiliary surfaces. Logs contain operation, selector, phase and failure code, never destinations or local paths.
+The page caps content at 1040px, uses 24px section spacing, 8px card corners and 40px controls. Semantic headings and definition lists, shared semantic theme colors and wrapping layouts support English/Korean, keyboard navigation and narrow/200% reflow. Related links render as one grouped list inside the section card: a single 1px bordered group with 8px corners and visible overflow so focus outlines are never clipped. It holds three full-width button rows in the fixed order Official releases, License and Open-source notices, separated by flat 1px dividers with no per-row outlines or default button corners. Related links rows are the only App information controls with a 56px minimum height (16px horizontal padding, vertical space for wrapping); other controls keep 40px. Each row shows a 20px decorative monochrome icon (tag, document, file stack), a 12px gap, a 14px medium-weight label that wraps, and the 18px external-link icon at the trailing edge. Icons are `aria-hidden`, not focusable and never announced. Enabled rows use the subtle surface on hover and show the shared 2px accent focus outline with 3px offset; disabled rows have no hover styling and keep readable muted text. Section-scoped styling resolves the shared Settings button border-color so the group border and dividers keep the semantic border token. The 12px muted source-notice disclaimer sits 16px below the group with unchanged wording. Rows stay in one column at narrow widths and 200% zoom. Button semantics, static search targets, availability and opening/error behavior are unchanged. Native actions use only the closed releases/license/notices selector. `open_app_information_link` captures and rechecks original product-window authority and epoch, dispatches the compiled destination through the bounded system browser opener and denies dispatch after Quit stopping. The custom permission grants only trusted local/saved product documents, never remote origins, external browser children, tray/widget or auxiliary surfaces. Logs contain operation, selector, phase and failure code, never destinations or local paths.
 
 Compiled destinations are the repository's DeliDev-filtered Releases page, source LICENSE and source `apps/delidev/public` notices directory. Notices copy identifies source notices and does not claim an installed-package license inventory. No arbitrary renderer URL/path, broader opener permission, new business RPC, persisted preference or update channel is introduced. Component/browser fixtures, build outputs and native ACL tests must be reported separately from installed CEF, native OS browser dispatch and production signed-install acceptance.
 
@@ -6172,11 +6215,17 @@ After confirmed server submission, remove the original question selection and te
 
 An uncertain answer transport error collapses the active-tray question to the compact receipt immediately, without waiting for a newer interaction revision: while the question's own answer mutation key has a retained uncertain intent, the original selection and text controls and Send answers are absent and only the compact state with the exact retry remains. The retry reuses the original request UUID, revision and bytes, and no retry or second answer is sent automatically. This applies only to the active tray; Inbox forms, approvals, unanswered questions and the successful queued-compaction and closure-recovery paths are unchanged.
 
+Until a newer revision supplies an authoritative response state, a compact active-tray question whose own mutation key has a retained uncertain intent shows the existing localized uncertain status (`status.uncertain`, Korean "불확실") in its Response line instead of the unanswered `Not submitted` label, so a possibly accepted answer is never presented as unsent. Authoritative newer states (queued, claimed and so on) and compact questions without retained uncertainty keep their existing labels, and the explicit retry, mutation keys and request bytes are unchanged. The compact row also keeps the existing Agent question heading whenever the retained projection selects the compact question body, even when a newer revision of the same interaction changes or removes its `type` (including a contradictory `native-approval`); the row stays unavailable with no new question or approval form and the original exact receipt retry. Genuine approvals keep the Native approval heading and evicted receipts keep their question heading. No localization key is added.
+
 Compact question receipts follow the projection, not RPC completion: a metadata-known question that is absent from the resident payload rows (for example after its page is evicted) keeps its compact presentation, page-scoped count and tray-emptiness blocker while its projection is not retired or an answer mutation is still retained. Successful RPC completion, which clears the retained mutation, therefore never removes a queued, claimed, transmitted, uncertain, failed, unavailable or contradictory question; only authoritative acceptance or confirmed closure (a retired projection with no retained mutation) or an authoritative removal tombstone drops it, and restoring an older payload cannot revive the form. A compact receipt renders at its original reached page and row position through the payload window's projected callback, so it stays before newer page requests after its payload page is evicted; multiple receipts follow retained page/row order rather than projection observation order, each original question renders once across restore/evict cycles, and only questions that no reached page owns (for example new live arrivals) trail the final page. Focused-page protection and exact retained retry identity are unchanged.
+
+An accepted list read joins the same latest-authoritative-revision projection for every reached page before any payload is discarded. The pagination chain runs an optional per-batch `accepted` observer only after the read passes its generation, cancellation, session, cursor-boundary and continuation checks and before payload eviction, so pages outside the three-page payload window still advance their interaction projections (revision, presentation, closure and response state) while only the lightweight projection is retained. A valid accepted or confirmed-closed question with no unresolved response or retained mutation therefore loses its compact receipt, page-scoped count and tray-emptiness blocker after a list refresh alone, without restoring the evicted page. A retained original mutation and unresolved, contradictory or invalid observations stay visible under the existing rules. Canceled, superseded or boundary-rejected reads never run the observer, observation is revision-monotonic so older or equal revisions never overwrite newer metadata, and an observer failure never fails the read. The observer receives only already-validated rows of the owning session and interaction kind, and no answer content is logged.
 
 A successful retry through an evicted compact receipt applies the same acceptance validation as the resident form: the returned interaction must carry the receipt's request ID, the current session and interaction kind, a supported resource schema, and a revision newer than the submitted mutation's expected revision. The comparison basis is the revision the original retained request was submitted against, not the mutable presentation projection revision, so an exact receipt replay whose result equals an already advanced projection still retires its draft. The session-level accepted-result notification owns this retirement, so it completes even when payload restoration replaced the compact receipt before the retried RPC finished and the receipt's own presenter callback no longer runs. Only then does it clear that one request's retained edit draft; absent, mismatched, unsupported, stale or equal-revision results (relative to the submitted revision) and failed or uncertain retries preserve the draft. Unrelated drafts, the original retry UUID and bytes, response validation and native acceptance rules are unchanged, and the resident success path is not altered.
 
-A generic (non-native-family) question counts as natively accepted only when the complete accepted response envelope validates: a UUIDv7 response id, an `input` holding only `answers` (string arrays), an RFC3339 `accepted_at`, a full claim identity (UUIDv7 `id`, `job_id`, `machine_id`, `instance_id`, `device_id` and an RFC3339 `claimed_at`), a `transmitted` or `uncertain` delivery observation with a safe nonnegative integer `sequence`, `native-question-output` acceptance evidence, and an acceptance `sequence` that is a safe integer strictly greater than the delivery `sequence`. Sequences that are not JSON numbers, or that fall outside the safe-integer range, make the envelope invalid. An accepted question with any missing or malformed part stays pending and unavailable, visible, and grants no response authority; a complete envelope retires without a retained mutation, and a matching unresolved retained mutation keeps recovery visible. The OpenCode, Claude and Grok native-family paths keep their own validators.
+A generic (non-native-family) question counts as natively accepted only when the complete accepted response envelope validates: a UUIDv7 response id, an `input` holding only `answers` that satisfies the original-question response rules below, a strict RFC3339 `accepted_at`, a full claim identity (UUIDv7 `id`, `job_id`, `machine_id`, `instance_id`, `device_id` and a strict RFC3339 `claimed_at`), a `transmitted` or `uncertain` delivery observation with a safe nonnegative integer `sequence`, `native-question-output` acceptance evidence, and an acceptance `sequence` that is a safe integer strictly greater than the delivery `sequence`. Sequences that are not JSON numbers, or that fall outside the safe-integer range, make the envelope invalid. Strict RFC3339 validates the source wall-clock date and time before converting the instant (`apps/delidev/src/rfc3339.ts`): February 30, a non-leap February 29, April 31, hour 24, hour 25, minute 60 and second 60 are invalid even though `Date.parse` would normalize them, while leap days, `Z`, in-range numeric offsets and 1 to 9 fractional digits stay valid; date-only and free-text values remain invalid.
+
+The `answers` of a generic accepted response are bound to the original request in the same document (`questions.questions`) with parity to the server `QuestionRequest.Validate` and `QuestionResponseInput.Validate` rules (`apps/delidev/src/generic-question-response.ts`, `cmds/delidev-cli/internal/domain/question_responses.go`). The original request must hold 1 to 128 questions with unique non-blank ids of at most 128 UTF-8 bytes, string `header` and `text`, boolean `other` and `secret`, and at most 128 options with unique non-blank labels and string descriptions; an absent or null `options` means free text. The `answers` keys must equal the original question ids exactly, so missing and foreign identities are invalid. Any `secret` original question makes the response invalid because secret answers need a protected native capability. Each answer list is an explicit array (an empty array means unanswered) of at most 128 unique non-blank strings, each well-formed UTF-8 without NUL and within the response byte bound (256 KiB). When a question has options and `other` is false, every answer must equal an offered label. The complete response, measured as the server's Go JSON encoding (`{"answers":{...}}` with HTML-sensitive characters and U+2028/U+2029 escaped), must stay within 256 KiB. An accepted generic row that fails any rule stays pending, unavailable and visible, keeps its compact receipt through payload eviction and older-revision restore, and grants no response authority; valid empty arrays, offered labels and permitted custom text retire normally and a matching retained mutation keeps receipt recovery visible. Logs and diagnostics never include answer content. An accepted question with any missing or malformed part stays pending and unavailable, visible, and grants no response authority; a complete envelope retires without a retained mutation, and a matching unresolved retained mutation keeps recovery visible. The OpenCode, Claude and Grok native-family paths keep their own validators.
 
 Retire a question only after authoritative native acceptance or confirmed closure without an unresolved response or retained mutation. Use that same projection for rendering, the page-scoped count and automatic expansion. Preserve unanswered questions and unrelated approval forms, identities and drafts. Original question/answer documents and Inbox inspection remain retained; tray retirement does not delete resources or mark Inbox items read.
 
@@ -6205,7 +6254,17 @@ Live seconds use the paired authenticated Machine/Overview observed_at and a
 monotonic presentation timer, once per second even while closed. The clock anchors
 at receipt of the server observation; network read duration remains a conservative
 presence bound, not additional group duration. Finished time stays fixed without
-a spinner. Attention, inactivity, hidden documents, stale presence or connection
+a spinner and is confirmed only when its matching settlement is established. `finished_at` alone
+freezes an interval: Stop, failure and cancellation also write it, so it never
+confirms success. Workspace time is confirmed only by `preparation.state` ready
+for the same job; agent time only by the same job/execution's active execution
+document listing the selected original input first in a complete, valid
+`accepted_inputs` list (the same bounded, unique, digest-bound validation used for
+session progress). Legacy
+documents without that evidence, failed, stopped, lost-owner or still-pending
+claimed intervals keep the frozen seconds, no spinner and the Unconfirmed label,
+including in the retained row while cancellation is pending. Attention,
+inactivity, hidden documents, stale presence or connection
 replacement stop ticks and animation. Retained unfinished values are explicitly
 unconfirmed. Timing is outside the polite status node and has aria-live off.
 Disclosure toggles do not fetch, reset clocks, dispatch or remount controllers;

@@ -28,7 +28,7 @@ func TestManagedForkSettledToolEligibilityAndCompletePrefix(t *testing.T) {
 				t.Fatal("native tool prefix lost original field", field)
 			}
 		}
-		for _, fault := range []string{"active", "missing-exit", "plugin", "script", "startup", "input", "unknown"} {
+		for _, fault := range []string{"active", "missing-exit", "declined-exit-zero", "declined-exit-nonzero", "plugin", "script", "startup", "input", "unknown"} {
 			changed := map[string]any{}
 			for key, value := range item {
 				changed[key] = value
@@ -41,6 +41,14 @@ func TestManagedForkSettledToolEligibilityAndCompletePrefix(t *testing.T) {
 					continue
 				}
 				delete(changed, "exitCode")
+			case "declined-exit-zero", "declined-exit-nonzero":
+				if status != "declined" {
+					continue
+				}
+				changed["exitCode"] = 0
+				if fault == "declined-exit-nonzero" {
+					changed["exitCode"] = 3
+				}
 			case "plugin":
 				changed["pluginId"] = "plugin"
 			case "script":
@@ -57,6 +65,10 @@ func TestManagedForkSettledToolEligibilityAndCompletePrefix(t *testing.T) {
 				t.Fatal("unsupported tool adopted", status, fault)
 			}
 		}
+	}
+	declinedNull := json.RawMessage(`{"type":"commandExecution","id":"declined-null","status":"declined","command":"original command","cwd":"/historical/path","source":"agent","commandActions":[],"aggregatedOutput":null,"exitCode":null}`)
+	if !settledForkTool(declinedNull, "commandExecution") {
+		t.Fatal("declined command with null exit code refused")
 	}
 	for _, status := range []string{"completed", "failed", "declined"} {
 		raw := json.RawMessage(`{"type":"fileChange","id":"patch","status":"` + status + `","changes":[]}`)

@@ -63,11 +63,14 @@ const settled = (resource: Resource) => {
     execution = object(data.execution),
     initial = object(data.initial_execution);
   const harness = text(object(initial.configuration).harness);
+  // The server rejects every Fork whose source observed native subagents, so a
+  // nonempty inventory is never offered for any harness.
+  const noSubagents = !Object.keys(object(execution.subagents)).length;
   const profile =
-    harness === "codex" ||
+    (harness === "codex" && noSubagents) ||
     (harness === "opencode" &&
       data.workspace === "general-chat" &&
-      !Object.keys(object(execution.subagents)).length &&
+      noSubagents &&
       !Object.keys(object(execution.native_compactions)).length &&
       !execution.latest_workspace_event_id &&
       !execution.latest_todo_id &&
@@ -312,6 +315,10 @@ export function SessionForkProvider({
   const generation = useRef(0);
   const preflight = useRef<number | undefined>(undefined);
   const [checking, setChecking] = useState(false);
+  const nameInput = useRef<HTMLInputElement | null>(null);
+  // Set when the dialog opens while a stale read still locks its controls: a
+  // disabled input cannot take autoFocus, so focus it once the draft unlocks.
+  const focusNameOnUnlock = useRef(false);
   useEffect(
     () => () => {
       generation.current += 1;
@@ -378,11 +385,54 @@ export function SessionForkProvider({
     current.data?.resource &&
     current.data.resource.revision !== source.revision,
   );
-  const blocked = mutation.busy || mutation.uncertain || local.busy || invalid;
+  // Admitted ownership (an in-flight, uncertain or invalid mutation) blocks
+  // explicit replacement and Discard. A pending read-only Local proof or an
+  // OpenCode profile refresh has admitted nothing, so those stay revocable.
+  const admitted = mutation.busy || mutation.uncertain || invalid;
+  // The request is frozen before asynchronous prerequisites run, so every draft
+  // control and the submit gesture stay locked until they settle.
+  const controlsLocked = admitted || checking || local.busy;
   const invalidatePreflight = () => {
     generation.current += 1;
     preflight.current = undefined;
+    local.discard();
     setChecking(false);
+  };
+  // Reopening routes to the original parent first, then selects the original
+  // pending descriptor. Focus is deferred and fenced by a token so a later
+  // navigation or another reopen gesture cannot be overtaken by a stale callback.
+  const reopenToken = useRef(0);
+  useEffect(
+    () => () => {
+      reopenToken.current += 1;
+    },
+    [],
+  );
+  const reopenRetained = (retained: DirectSidechat) => {
+    const token = ++reopenToken.current;
+    const key = sessionTabKey({
+      kind: SessionTabKind.PendingSidechat,
+      requestId: retained.requestId,
+      name: retained.name,
+    });
+    console.info("delidev.sidechat.preparation", {
+      requestId: retained.requestId,
+      phase: "reopen",
+    });
+    openSession(retained.parent);
+    tabs.open(retained.parent, {
+      kind: SessionTabKind.PendingSidechat,
+      requestId: retained.requestId,
+      name: retained.name,
+    });
+    requestAnimationFrame(() => {
+      if (reopenToken.current !== token) return;
+      if (tabs.snapshot(retained.parent).selected !== key) return;
+      const input = globalThis.document.getElementById(
+        `pending-sidechat-${retained.requestId}`,
+      );
+      if (input && !input.closest("[hidden], [inert]")) input.focus();
+    });
   };
   const show = (
     resource: Resource,
@@ -391,29 +441,12 @@ export function SessionForkProvider({
     // Ref ownership fences repeated gestures before React publishes state.
     const retained = directOwner.current;
     if (retained) {
-      tabs.open(retained.parent, {
-        kind: SessionTabKind.PendingSidechat,
-        requestId: retained.requestId,
-        name: retained.name,
-      });
-      requestAnimationFrame(() => {
-        if (
-          tabs.snapshot(retained.parent).selected ===
-          sessionTabKey({
-            kind: SessionTabKind.PendingSidechat,
-            requestId: retained.requestId,
-            name: retained.name,
-          })
-        )
-          globalThis.document
-            .getElementById(`pending-sidechat-${retained.requestId}`)
-            ?.focus();
-      });
+      reopenRetained(retained);
       return;
     }
     if (
       !source ||
-      (!blocked &&
+      (!admitted &&
         !job &&
         !direct &&
         (source.id !== resource.id || purpose !== requestedPurpose))
@@ -432,7 +465,7 @@ export function SessionForkProvider({
     }
     if (
       requestedPurpose === ForkPurpose.SIDECHAT &&
-      (!source || (!blocked && !job && !direct))
+      (!source || (!admitted && !job && !direct))
     ) {
       const value: DirectSidechat = {
         requestId: newRequestId(),
@@ -454,33 +487,17 @@ export function SessionForkProvider({
         name: value.name,
       });
       setVisible(false);
-    } else if (directOwner.current) {
-      const original = directOwner.current;
-      tabs.open(original.parent, {
-        kind: SessionTabKind.PendingSidechat,
-        requestId: original.requestId,
-        name: original.name,
-      });
-      requestAnimationFrame(() => {
-        if (
-          tabs.snapshot(original.parent).selected ===
-          sessionTabKey({
-            kind: SessionTabKind.PendingSidechat,
-            requestId: original.requestId,
-            name: original.name,
-          })
-        )
-          globalThis.document
-            .getElementById(`pending-sidechat-${original.requestId}`)
-            ?.focus();
-      });
-    } else setVisible(true);
+    } else if (directOwner.current) reopenRetained(directOwner.current);
+    else {
+      focusNameOnUnlock.current = controlsLocked;
+      setVisible(true);
+    }
   };
   const submit = async () => {
     if (
       !source ||
       preflight.current !== undefined ||
-      blocked ||
+      controlsLocked ||
       job ||
       stale ||
       !name.trim() ||
@@ -536,10 +553,20 @@ export function SessionForkProvider({
   const resultJob = verifiedJob ?? job;
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
+  // A published child must be a distinct, nonempty Session; an empty or
+  // source-equal readback id would corrupt tab ownership of the original parent.
+  const returnedId = text(fork.data?.session?.id);
+  const returnedIdValid = Boolean(returnedId) && returnedId !== source?.id;
+  const malformedChild =
+    Boolean(verifiedJob) &&
+    state === JobState.Succeeded &&
+    fork.data?.session?.kind === EntityKind.SESSION &&
+    !returnedIdValid;
   const child =
     Boolean(verifiedJob) &&
     state === JobState.Succeeded &&
     fork.data?.session?.kind === EntityKind.SESSION &&
+    returnedIdValid &&
     text(object(document(fork.data.session).fork).source_session_id) ===
       source?.id &&
     (!sidechat ||
@@ -585,13 +612,23 @@ export function SessionForkProvider({
     )
       return;
     void submit();
+    // A replacement Sidechat can start while a stale Local proof read still
+    // holds the controls locked, so settling that read must retry the submit.
   }, [
     direct?.requestId,
     current.data,
     current.isFetching,
     current.isError,
     stale,
+    controlsLocked,
   ]);
+  useEffect(() => {
+    if (!visible) focusNameOnUnlock.current = false;
+    else if (!controlsLocked && focusNameOnUnlock.current) {
+      focusNameOnUnlock.current = false;
+      nameInput.current?.focus();
+    }
+  }, [visible, controlsLocked]);
   useEffect(() => {
     const original = directOwner.current;
     if (!original || !child) return;
@@ -603,7 +640,7 @@ export function SessionForkProvider({
     const input = focused
       ? (globalThis.document.activeElement as HTMLTextAreaElement)
       : undefined;
-    tabs.publishSidechat(
+    const published = tabs.publishSidechat(
       original.parent,
       original.requestId,
       {
@@ -618,6 +655,14 @@ export function SessionForkProvider({
         focus: focused,
       },
     );
+    if (!published) {
+      console.warn("delidev.sidechat.preparation", {
+        requestId: original.requestId,
+        jobId: job?.id,
+        phase: "publication-rejected",
+      });
+      return;
+    }
     console.info("delidev.sidechat.preparation", {
       requestId: original.requestId,
       jobId: job?.id,
@@ -644,7 +689,10 @@ export function SessionForkProvider({
               !settled(current.data.resource)),
           ),
         error: mutation.error ?? current.error ?? fork.error,
-        invalid: invalid || Boolean(fork.data && !verifiedJob),
+        // Only a failed original parent read can be recovered by re-reading it.
+        readError: current.error,
+        invalid:
+          invalid || Boolean(fork.data && (!verifiedJob || malformedChild)),
         state,
         problem,
         busy: mutation.busy || checking,
@@ -729,11 +777,12 @@ export function SessionForkProvider({
                 <label>
                   {copy("session-fork.forkName_d9ad67")}
                   <input
+                    ref={nameInput}
                     autoFocus
                     required
                     maxLength={256}
                     value={name}
-                    disabled={blocked}
+                    disabled={controlsLocked}
                     onChange={(event) => setName(event.target.value)}
                   />
                 </label>
@@ -742,7 +791,7 @@ export function SessionForkProvider({
                     {copy("session-fork.workspace_87bb59")}
                     <select
                       value={workspace}
-                      disabled={blocked}
+                      disabled={controlsLocked}
                       onChange={(event) =>
                         setWorkspace(
                           Number(event.target.value) as ForkWorkspace,
@@ -793,8 +842,7 @@ export function SessionForkProvider({
                 {local.problem ? <p role="alert">{local.problem}</p> : null}
                 <button
                   disabled={
-                    blocked ||
-                    checking ||
+                    controlsLocked ||
                     stale ||
                     !name.trim() ||
                     !settled(current.data?.resource ?? source) ||
@@ -808,7 +856,7 @@ export function SessionForkProvider({
                     ? copy("session-fork.createSidechat_664521")
                     : copy("session-fork.createFork_d217b7")}
                 </button>
-                {!blocked ? (
+                {!admitted ? (
                   <button type="button" onClick={reset}>
                     {copy("session-fork.discardForkDraft_8920d0")}
                   </button>
@@ -906,6 +954,7 @@ interface DirectSidechat {
 interface PendingSidechat extends DirectSidechat {
   stale: boolean;
   error: unknown;
+  readError: unknown;
   invalid: boolean;
   state: string;
   problem: Record<string, unknown>;
@@ -979,7 +1028,7 @@ export function PendingSidechatPane({
               {copy("session-fork.retrySameSidechatRequest")}
             </button>
           ) : null}
-          {pending.error && !pending.state && !pending.uncertain ? (
+          {pending.readError && !pending.state && !pending.uncertain ? (
             <button disabled={pending.reading} onClick={pending.retryRead}>
               {copy("ui.retryCurrentRead")}
             </button>

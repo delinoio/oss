@@ -186,6 +186,45 @@ func helperNames(root *os.Root) ([]string, error) {
 	return names, nil
 }
 
+// capturedIdentityRemains reports whether any retained entry of root, other
+// than the names listed in skip, still carries one of the captured identities.
+// Original-basename absence alone cannot prove that a captured identity was
+// unlinked: it can survive under another basename after a rename or hard link.
+// The inventory is bounded by helperDirectoryLimit and never follows entries.
+func capturedIdentityRemains(root *os.Root, skip func(string) bool, captured ...os.FileInfo) (bool, error) {
+	names, err := helperNames(root)
+	if err != nil {
+		return false, err
+	}
+	for _, name := range names {
+		if skip != nil && skip(name) {
+			continue
+		}
+		info, err := root.Lstat(name)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, helperFailure()
+		}
+		for _, identity := range captured {
+			if os.SameFile(identity, info) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func isExecutionHelperName(name string) bool {
+	for _, original := range executionHelperNames {
+		if name == original {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *executionHelpers) unchanged() bool {
 	canonical, err := filepath.EvalSymlinks(h.home)
 	current, statErr := os.Lstat(h.home)
@@ -275,6 +314,27 @@ func (h *executionHelpers) release() {
 	}
 }
 
+// hasCapturedProof reports whether startup capture succeeded and retirement
+// has not already settled. It never grants authority by itself.
+func (h *executionHelpers) hasCapturedProof() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.captured && !h.closed
+}
+
+// releaseUnlessRetired closes the retained handles of a failed startup once.
+// A completed retirement already released them and recorded its own result.
+func (h *executionHelpers) releaseUnlessRetired() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return
+	}
+	h.release()
+	h.closed = true
+	h.result = helperFailure()
+}
+
 // The caller must first join the original wire/process tree. The only available
 // manifest is the proof captured on that Client before product input admission.
 func (h *executionHelpers) retire(home string, owner domain.ID, native process.Process) (returned error) {
@@ -305,6 +365,18 @@ func (h *executionHelpers) retire(home string, owner domain.ID, native process.P
 		_, err := h.directories[2].root.Lstat(directory.name)
 		helperAbsent = errors.Is(err, os.ErrNotExist)
 		if helperAbsent {
+			// The pinned directory handle keeps its inode allocated, so a matching
+			// entry in the retained parent is the captured directory under another
+			// basename. That is a rename, not native destructor removal.
+			remains, scanErr := capturedIdentityRemains(h.directories[2].root, nil, directory.info)
+			if scanErr != nil {
+				reason = helperInventoryInvalid
+				return helperFailure()
+			}
+			if remains {
+				reason = helperIdentityChanged
+				return helperFailure()
+			}
 			h.directories = h.directories[:3]
 			defer directory.root.Close()
 		}
@@ -342,11 +414,28 @@ func (h *executionHelpers) retire(home string, owner domain.ID, native process.P
 		target, targetErr := root.Readlink(alias.name)
 		return err == nil && targetErr == nil && info.Mode()&os.ModeSymlink != 0 && os.SameFile(alias.info, info) && target == h.executable, true
 	}
+	// Original-name absence is not proof of removal. A captured alias identity
+	// under any other basename (rename or hard link) leaves cleanup unconfirmed
+	// and the adopted basename is never deleted.
+	aliasIdentities := make([]os.FileInfo, len(h.aliases))
+	for i, alias := range h.aliases {
+		aliasIdentities[i] = alias.info
+	}
+	aliasRemains := func() (bool, error) {
+		return capturedIdentityRemains(root, isExecutionHelperName, aliasIdentities...)
+	}
 	for _, alias := range h.aliases {
 		if valid, _ := validate(alias); !valid {
 			reason = helperAliasChanged
 			return helperFailure()
 		}
+	}
+	if remains, err := aliasRemains(); err != nil {
+		reason = helperInventoryInvalid
+		return helperFailure()
+	} else if remains {
+		reason = helperAliasChanged
+		return helperFailure()
 	}
 	for _, alias := range h.aliases {
 		if !h.unchanged() {
@@ -379,6 +468,13 @@ func (h *executionHelpers) retire(home string, owner domain.ID, native process.P
 			reason = helperAliasChanged
 			return helperFailure()
 		}
+	}
+	if remains, err := aliasRemains(); err != nil {
+		reason = helperInventoryInvalid
+		return helperFailure()
+	} else if remains {
+		reason = helperAliasChanged
+		return helperFailure()
 	}
 	if !h.unchanged() {
 		reason = helperIdentityChanged

@@ -49,7 +49,15 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		if mode == "thread-managed-image-disabled" {
 			features["image_generation"] = false
 		}
-		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}, "origins": nil, "layers": nil})
+		store := "file"
+		if strings.HasPrefix(mode, helperFixtureFailure) {
+			// A post-capture profile validation failure.
+			store = "ephemeral"
+			if strings.Contains(mode, "tamper") {
+				tamperHelperFixtureAlias()
+			}
+		}
+		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}, "origins": nil, "layers": nil})
 	case "account/login/start":
 		if sentinel := os.Getenv("DELIDEV_CODEX_LOGIN_SENTINEL"); sentinel != "" {
 			if os.WriteFile(sentinel, []byte("sent"), 0600) != nil {

@@ -15,6 +15,7 @@ import (
 type OpenCodeUsagePublisher struct {
 	transcript              *OpenCodeTextPublisher
 	seen                    map[string]bool
+	snapshotSeen            map[string]bool
 	steps                   map[string]string
 	starts                  map[string]string
 	last                    map[string]domain.OpenCodeUsageObservation
@@ -67,12 +68,13 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		return false, err
 	}
 	publicationKey, keyErr := o.PublicationKey()
-	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
+	snapshot := keyErr == nil && o.EventID == "" && isOpenCodeSnapshotKey(publicationKey)
+	if keyErr != nil || openCodeKeyRejected(c.seen, c.snapshotSeen, publicationKey, snapshot) {
 		return false, publicationUncertain()
 	}
 	defer func() {
 		if returned == nil && handled {
-			c.seen[publicationKey] = true
+			markOpenCodeKey(c.seen, &c.snapshotSeen, publicationKey, snapshot)
 		}
 	}()
 	var value domain.OpenCodeUsageObservation
@@ -112,7 +114,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		counts = *p.Step.Usage
 	case o.Kind == opencode.MessageUpdatedEvent && o.MessageFinalized:
 		m := o.Message
-		if m == nil || !t.seen[publicationKey] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn && !t.contextUsers[m.Assistant.ParentID] || m.Assistant.Completed == nil {
+		if m == nil || !t.seen[publicationKey] && !t.snapshotSeen[publicationKey] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn && !t.contextUsers[m.Assistant.ParentID] || m.Assistant.Completed == nil {
 			return true, publicationUncertain()
 		}
 		owner := t.messages[m.ID]

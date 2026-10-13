@@ -157,6 +157,11 @@ then retry only that journal. Startup uses the existing detached Worker controll
 registration. Client/Worker completion does not create an Agent Worker or infer
 harness/account readiness.
 
+The desktop Tailscale device view retains resume and cancel requests through
+connection-owned retained mutations. While either retains input or is uncertain,
+its row action stays disabled, and a separately labelled retry control replays
+only the original request ID and bytes; it never creates a second request.
+
 CLI commands are `tailscale discover|check|access|enable|disable|connect|register-worker|
 inspect|requests|approvals|decide|cancel`. Mutations require original request UUIDs;
 inspect reconciles only that original request. Product output contains public

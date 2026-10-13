@@ -119,6 +119,9 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if input.SidechatRetry != nil && (!slices.Contains(machine.WorkerCapabilities, domain.SidechatQuestionRetryV1) || session.SidechatActiveRetry != input.SidechatRetry.GenerationID || session.AutomaticRemediationStopped || grant.InstanceID != input.SidechatRetry.WorkerInstanceID || grant.DeviceID != input.SidechatRetry.WorkerDeviceID) {
 		return empty, executionDenied()
 	}
+	if input.SidechatRetry != nil && requireSidechatRetryExecutionOrigin(tx, grant, input) != nil {
+		return empty, executionDenied()
+	}
 	if !session.OwnsExecution(input) {
 		return empty, executionDenied()
 	}
@@ -154,6 +157,12 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 			// different request receipt. It must not become new quota admission.
 			stored, storedErr := tx.ExecutionGrant(grant.Digest)
 			if storedErr != nil || !sameExecutionGrantOwnership(stored, grant) {
+				// Dispatch requires the live managed Codex capability; a same-instance
+				// Worker reattachment may have withdrawn it since the job was claimed.
+				if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+					a.service.logger.Info("execution_quota_admission_denied", "job_id", grant.JobID, "account_id", input.AccountID, "reason", "managed_codex_capability_missing")
+					return empty, executionDenied()
+				}
 				admission := domain.ClassifyExecutionQuotaAdmission(account, input.Configuration.Harness, tx.ObservationTime())
 				a.service.logger.Info("execution_quota_admission", "job_id", grant.JobID, "account_id", input.AccountID, "classification", admission)
 				if admission == domain.QuotaAdmissionBlocked {
