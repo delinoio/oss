@@ -87,10 +87,19 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 					problem = err
 				} else {
 					catalog.Secrets = vault
-					var result domain.ManagedMCPResult
-					result, problem = catalog.Execute(operationCtx, *q)
-					if problem == nil {
-						report.DocumentJson, _ = json.Marshal(result)
+					// OAuth metadata discovery and the token exchange leave the Worker, so
+					// they follow the selected network route and never an ambient proxy.
+					httpClient, closeHTTP, clientErr := externalHTTPClient(operationCtx, config, credential)
+					if clientErr != nil {
+						problem = clientErr
+					} else {
+						catalog.HTTP = httpClient
+						var result domain.ManagedMCPResult
+						result, problem = catalog.Execute(operationCtx, *q)
+						if problem == nil {
+							report.DocumentJson, _ = json.Marshal(result)
+						}
+						closeHTTP()
 					}
 					vault.Close()
 				}

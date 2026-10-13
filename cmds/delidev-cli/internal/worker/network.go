@@ -251,6 +251,32 @@ func networkHTTPClientFor(ctx context.Context, config Config, credential Credent
 	return client, base.CloseIdleConnections, nil
 }
 
+// externalHTTPClient returns a client for destinations outside the product
+// server, such as managed MCP OAuth metadata and token endpoints. It applies the
+// Worker's selected immutable route when one exists and never consults ambient
+// proxy settings. It deliberately omits the desktop transport, which only
+// serves the paired product server.
+func externalHTTPClient(ctx context.Context, config Config, credential Credential) (*http.Client, func(), error) {
+	client, base := rpc.HTTPClient()
+	if config.network != nil {
+		client.Transport = &outbound.Transport{Base: base, Resolve: config.network.resolver}
+		return client, base.CloseIdleConnections, nil
+	}
+	runtime, err := openWorkerNetwork(ctx, config.Root, credential, config.Logger)
+	if err != nil {
+		base.CloseIdleConnections()
+		return nil, nil, err
+	}
+	if runtime == nil {
+		return client, base.CloseIdleConnections, nil
+	}
+	client.Transport = &outbound.Transport{Base: base, Resolve: runtime.resolver}
+	return client, func() {
+		base.CloseIdleConnections()
+		runtime.vault.Close()
+	}, nil
+}
+
 func desktopHTTPClient(ctx context.Context, root string, credential Credential, client *http.Client) error {
 	if target := desktopruntime.FromContext(ctx); target != nil && target.ServerID == credential.ServerID {
 		// Only native-closed operations can inject this in-memory target. The
