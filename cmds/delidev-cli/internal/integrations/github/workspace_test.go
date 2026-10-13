@@ -559,3 +559,56 @@ func TestWorkspaceReadableSeedsInAnyOrderStayComplete(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceNodesOmitBodiesAndStayUnderResponseCap(t *testing.T) {
+	refs := map[int][2]string{}
+	for n := 1; n <= 8; n++ {
+		refs[n] = [2]string{"base" + strconv.Itoa(n), "head" + strconv.Itoa(n)}
+	}
+	body := strings.Repeat("x", 128<<10)
+	// Foreign forks are complete flat nodes, so the eight seeds fit the provider
+	// read budget without relationship pages.
+	c := workspaceFixture(t, refs, func(n int, item map[string]any) {
+		item["body"] = body
+		item["head"].(map[string]any)["repo"] = map[string]any{"id": 99, "node_id": "R_99", "name": "fork", "full_name": "fork-owner/fork", "owner": map[string]any{"login": "fork-owner"}, "private": true, "default_branch": "main", "clone_url": "https://github.com/fork-owner/fork.git", "ssh_url": "git@github.com:fork-owner/fork.git"}
+	})
+	seeds := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds)
+	if e != nil || value.State != domain.PRWorkspaceComplete || len(value.Nodes) != 8 {
+		t.Fatal("graph with maximum-size bodies failed", e, value.State, value.Reasons)
+	}
+	workspace := domain.PRWorkspace{PRReadScope: domain.PRReadScope{RepositoryID: domain.NewID(), RepositoryRevision: "1", ProfileID: domain.NewID(), GenerationID: domain.NewID(), ObservedAt: time.Now().UTC(), Repository: value.Repository}, State: value.State, Reasons: value.Reasons, Seeds: seeds, Nodes: value.Nodes, Edges: value.Edges}
+	if !workspace.Validate() {
+		t.Fatal("body-free workspace rejected by domain validation")
+	}
+	raw, err := json.Marshal(workspace)
+	if err != nil || len(raw) >= 1<<20 {
+		t.Fatal("workspace not under the response cap", len(raw), err)
+	}
+	for _, node := range value.Nodes {
+		if node.Item.Body != nil {
+			t.Fatal("node retained a body")
+		}
+	}
+	var decoded struct {
+		Nodes []struct {
+			Item map[string]json.RawMessage `json:"item"`
+		} `json:"nodes"`
+	}
+	if json.Unmarshal(raw, &decoded) != nil || len(decoded.Nodes) != 8 {
+		t.Fatal("workspace did not round trip")
+	}
+	for _, node := range decoded.Nodes {
+		if _, present := node.Item["body"]; present {
+			t.Fatal("marshaled node contains a body field")
+		}
+	}
+}
+
+func TestWorkspaceStillRejectsOversizeProviderBody(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}}, func(_ int, item map[string]any) { item["body"] = strings.Repeat("x", 128<<10+1) })
+	value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
+	if e != nil || len(value.Nodes) != 0 || value.State == domain.PRWorkspaceComplete {
+		t.Fatal("oversize body admitted as a node", e, value.State)
+	}
+}

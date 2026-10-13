@@ -581,6 +581,14 @@ numeric identity different from the selected repository remains a complete flat
 node with no reason, while a missing head repository identity remains incomplete
 (`head_repository_unavailable`).
 
+Workspace nodes are body-free graph projections: the adapter validates each
+pull request description against its 128 KiB Detail limit but never retains it,
+so the 1 MiB response cap covers structure rather than up to 20 maximum-size
+descriptions. `PRWorkspace.Validate` and the desktop `validWorkspaceItem` accept
+only nodes without a `body` field and reject a node that carries one. The
+selected pull request's description still comes from its own Detail read with
+its existing limit and error handling.
+
 Each observed PR retains its own provider-reported additions/deletions, bound to
 its exact repository/PR/base/head. Commit counts come independently from commit
 fields. Counts never sum patch lines, commits or stack members. Exact unsigned

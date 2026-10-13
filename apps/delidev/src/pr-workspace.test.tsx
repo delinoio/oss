@@ -103,6 +103,11 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
         }
       : {}),
   });
+  // Workspace graph nodes carry every Detail field except the description.
+  const nodeItem = (number: string) => {
+    const { body: _body, ...rest } = item(number, true);
+    return rest;
+  };
   const legacy = vi.fn(async (request: { queryJson: Uint8Array }) => {
     const query = JSON.parse(new TextDecoder().decode(request.queryJson));
     const detail = query.operation !== "list";
@@ -147,7 +152,7 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
       reasons: [],
       seeds: request.seedNumbers,
       nodes: ["101", "102", "103", "104"].map((number) => ({
-        item: item(number, true),
+        item: nodeItem(number),
         seed: request.seedNumbers.includes(number),
         counts: { additions: "24", deletions: "8" },
       })),
@@ -384,6 +389,11 @@ function pendingWorkspaceFixture(
         }
       : {}),
   });
+  // Workspace graph nodes carry every Detail field except the description.
+  const nodeItem = (number: string) => {
+    const { body: _body, ...rest } = item(number, true);
+    return rest;
+  };
   const legacy = vi.fn(async (request: { queryJson: Uint8Array }) => {
     const query = JSON.parse(new TextDecoder().decode(request.queryJson));
     const detail = query.operation !== "list";
@@ -449,14 +459,14 @@ function pendingWorkspaceFixture(
       </QueryClientProvider>
     </TransportProvider>,
   );
-  const workspaceDocument = (seeds: string[]) =>
+  const workspaceDocument = (seeds: string[], withBodies = false) =>
     encode({
       ...scope,
       state: "complete",
       reasons: [],
       seeds,
       nodes: ["101", "102", "103", "104"].map((number) => ({
-        item: item(number, true),
+        item: withBodies ? item(number, true) : nodeItem(number),
         seed: seeds.includes(number),
         counts: { additions: "24", deletions: "8" },
       })),
@@ -525,5 +535,50 @@ it("still exposes Retry stack context after a terminal workspace failure", async
   expect(workspace).toHaveBeenCalledTimes(1);
   fireEvent.click(retry);
   await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
+  view.unmount();
+});
+
+it("rejects workspace nodes that carry a description body", async () => {
+  const { view, workspace, workspaceDocument } = pendingWorkspaceFixture(
+    async (request) => ({
+      schemaVersion: 1,
+      documentJson: workspaceDocument(request.seedNumbers, true),
+    }),
+  );
+  await waitFor(() =>
+    expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(
+      2,
+    ),
+  );
+  await screen.findByRole("button", { name: "Retry stack context" });
+  expect(workspace).toHaveBeenCalledTimes(1);
+  expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(2);
+  view.unmount();
+});
+
+it("accepts body-free workspace nodes and keeps the selected description from its own read", async () => {
+  const { view, legacy, workspace, workspaceDocument } =
+    pendingWorkspaceFixture(async (request) => ({
+      schemaVersion: 1,
+      documentJson: workspaceDocument(request.seedNumbers),
+    }));
+  await waitFor(() =>
+    expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(
+      4,
+    ),
+  );
+  expect(workspace).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole("button", { name: "Retry stack context" }),
+  ).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: /#102 Complete original title 102/ }),
+  );
+  await screen.findAllByText("Pending path body");
+  expect(
+    legacy.mock.calls.map(
+      ([q]) => JSON.parse(new TextDecoder().decode(q.queryJson)).operation,
+    ),
+  ).toEqual(["list", "detail"]);
   view.unmount();
 });

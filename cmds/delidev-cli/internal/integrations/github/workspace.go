@@ -237,6 +237,10 @@ func (c *Client) WorkspaceWithBudget(ctx context.Context, token []byte, owner, n
 			reason("identity_unavailable")
 			return domain.PRWorkspaceNode{}, false
 		}
+		// The description is validated by parseItem but never retained: graph nodes
+		// stay body-free so the response cap covers structure, not up to 128 KiB
+		// per pull request. Selecting a pull request reads its body separately.
+		item.Body = nil
 		fields, _ := jsonObject(v.raw)
 		retainAvatar(fields["user"], item.Author, result.Avatars)
 		return domain.PRWorkspaceNode{Item: item, Counts: parseCounts(fields), Seed: seenSeeds[number]}, true
