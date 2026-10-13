@@ -933,8 +933,16 @@ fn references(text: &str, name: &str) -> Vec<usize> {
         // unquoted value (`url( name )`).
         let spaced = text[..at].trim_end_matches([' ', '\t', '\n', '\r', '\u{c}']);
         let after_assignment = spaced.ends_with('=');
+        // The `url` must begin a complete CSS identifier token: `myurl(`,
+        // `curl(`, `--url(` and `.url(` are not CSS `url(` tokens.
         let after_css_url = spaced.strip_suffix('(').is_some_and(|head| {
-            head.len() >= 3 && head.as_bytes()[head.len() - 3..].eq_ignore_ascii_case(b"url")
+            head.len() >= 3
+                && head.as_bytes()[head.len() - 3..].eq_ignore_ascii_case(b"url")
+                && !head[..head.len() - 3].chars().next_back().is_some_and(|c| {
+                    c.is_alphanumeric()
+                        || !c.is_ascii()
+                        || matches!(c, '-' | '_' | '\\' | '.' | '$')
+                })
         });
         let leads = matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '='))
             || (before.is_some_and(|c| c.is_ascii_whitespace())
@@ -1626,6 +1634,21 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
         assert_eq!(references("a{b:url( 'index-DnKDBunT.js' )}", name).len(), 1);
         assert!(references("a{b:url( https://cdn.example/index-DnKDBunT.js )}", name).is_empty());
         assert!(references("foo( index-DnKDBunT.js )", name).is_empty());
+        // `url` must start a CSS identifier token, not end a longer identifier.
+        for ident in ["myurl", "curl", "--url", "_url", "x.url", "$url", "\\url"] {
+            let text = format!("{ident}( index-DnKDBunT.js )");
+            assert!(references(&text, name).is_empty(), "{text}");
+        }
+        assert_eq!(references("a{b:URL( index-DnKDBunT.js )}", name).len(), 1);
+        assert_eq!(references("a,url( index-DnKDBunT.js )", name).len(), 1);
+        assert_eq!(references("url( index-DnKDBunT.js )", name).len(), 1);
+        assert_eq!(
+            rewrite(
+                "myurl( index-DnKDBunT.js ) url( index-DnKDBunT.js )",
+                &BTreeMap::from([(name.to_owned(), "index-NEW12345.js".to_owned())])
+            ),
+            "myurl( index-DnKDBunT.js ) url( index-NEW12345.js )"
+        );
         assert!(references("see ( index-DnKDBunT.js )", name).is_empty());
         let spaced = "a{b:url( index-DnKDBunT.js )}";
         let renamed = BTreeMap::from([(name.to_owned(), "index-NEW12345.js".to_owned())]);
