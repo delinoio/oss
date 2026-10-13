@@ -601,6 +601,9 @@
   align-self: start;
   min-height: 40px;
   min-width: 0;
+  /* Reset the global label block margin so the label's 40px box starts at the
+     same row start as the 40px combobox and the centers align. */
+  margin-block: 0;
 }
 .appearance-content .language-settings > p,
 .appearance-content .language-settings > button {
@@ -642,6 +645,8 @@
   }
   .appearance-content .language-settings > label {
     min-height: 0;
+    /* Stacked layout keeps the global label spacing above the picker. */
+    margin-block: 12px;
   }
   .appearance-content .date-format-settings legend {
     position: static;

@@ -205,6 +205,22 @@ test("Revert text is readable at rest and on hover in every admitted palette", (
   }
 });
 
+test("the wide Appearance Language label resets the global block margin and the stacked label keeps it", () => {
+  const css = source.replace(/\/\*[\s\S]*?\*\//gu, "");
+  const wide = css.match(
+    /\.appearance-content \.language-settings > label\s*\{([^}]*)\}/u,
+  );
+  expect(wide?.[1]).toMatch(/min-height:\s*40px/u);
+  expect(wide?.[1]).toMatch(/align-self:\s*start/u);
+  expect(wide?.[1]).toMatch(/margin-block:\s*0\s*;/u);
+  // The stacked override is the only indented (nested) occurrence.
+  const narrow = css.match(
+    /^ {2}\.appearance-content \.language-settings > label\s*\{([^}]*)\}/mu,
+  );
+  expect(narrow?.[1]).toMatch(/min-height:\s*0\s*;/u);
+  expect(narrow?.[1]).toMatch(/margin-block:\s*12px/u);
+});
+
 test("the shared entrance primitive is a static opaque 160ms Y4 ease-out keyframe", () => {
   const css = readFileSync(
     join(directory, "entrance-motion.css"),
