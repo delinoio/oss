@@ -178,7 +178,8 @@ async function presentCandidate(
     create(ClaimNotificationRequestSchema, { inboxId, requestId: uuid() }),
     inboxId,
   )) as ClaimNotificationResponse;
-  if (!claim.delivery || !claim.mayPresent) return { fresh: false, halt: false };
+  if (!claim.delivery || !claim.mayPresent)
+    return { fresh: false, halt: false };
   // Retain an uncertain report before asking the OS. A crash or profile switch
   // leaves this exact report recoverable and cannot authorize another alert.
   const report = create(ReportNotificationRequestSchema, {

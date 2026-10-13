@@ -210,13 +210,7 @@ it("stops when the app leaves the foreground or the profile changes", async () =
         });
       return true;
     });
-    await presentForeground(
-      state,
-      profile.id,
-      () => live,
-      { notify },
-      owner(),
-    );
+    await presentForeground(state, profile.id, () => live, { notify }, owner());
     expect(notify).toHaveBeenCalledTimes(1);
     expect(claimed.size).toBe(1);
   }
@@ -243,9 +237,9 @@ it("denied OS submission is reported once and never resubmitted", async () => {
   await presentForeground(state, profile.id, () => true, { notify }, owner());
   await presentForeground(state, profile.id, () => true, { notify }, owner());
   expect(notify).toHaveBeenCalledTimes(2);
-  expect(reported.every((r) => r.endsWith(":" + NotificationState.DENIED))).toBe(
-    true,
-  );
+  expect(
+    reported.every((r) => r.endsWith(":" + NotificationState.DENIED)),
+  ).toBe(true);
 });
 it("lost report response leaves the exact pending report and stops without duplicate OS submission", async () => {
   const { state, profile, claimed } = await harness({
@@ -262,7 +256,13 @@ it("lost report response leaves the exact pending report and stops without dupli
   expect(pending?.phase).toBe(PendingPhase.Uncertain);
   const request = pending?.request;
   // A later trigger does nothing while the report is unresolved.
-  await presentForeground(state, profile.id, () => true, { notify }, connection);
+  await presentForeground(
+    state,
+    profile.id,
+    () => true,
+    { notify },
+    connection,
+  );
   expect(notify).toHaveBeenCalledTimes(1);
   expect(claimed.size).toBe(1);
   expect(state.profile(profile.id).pending?.request).toBe(request);
