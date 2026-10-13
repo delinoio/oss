@@ -5760,7 +5760,7 @@ The single directly submitted text-only Sidechat question exposes Retry under Sy
 
 Present original native `view_image` observations in the existing collapsed tool transcript. Show the validated lifecycle status, immutable root-relative location and explicit unavailable preview. The reference retains an observation, not original bytes or access to the current file. Keep location text inert; add no image, link, preview/download, image-input or source-file deletion action. Reject mixed/unknown metadata and changed start/completion identity, Worker, manifest, root or location. Preserve localization and original tool-turn grouping.
 
-Preserve literal colon and backslash characters in admitted POSIX filenames. Do not reinterpret them as a drive, separator, URL or link. Continue rejecting absolute paths, UNC references, traversal, malformed segments and changed lifecycle metadata; original Worker-OS and manifest validation remain server-owned.
+Preserve literal colon and backslash characters in admitted POSIX filenames, including drive-looking names such as `C:/frame.png` and `C:\frame.png`, which are valid relative POSIX paths. Do not reinterpret them as a drive, separator, URL or link. The renderer applies no Windows drive-letter rule; Windows drive paths are rejected by Worker-OS publication and server validation before publication. Continue rejecting absolute paths, UNC references, traversal, malformed segments and changed lifecycle metadata; original Worker-OS and manifest validation remain server-owned.
 
 ## Situation-specific notification presentation
 
