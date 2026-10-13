@@ -138,7 +138,11 @@ test("selected-border cue contrasts at least 3:1 with adjacent surfaces in every
   for (const [name, modes] of Object.entries(appearancePalettes)) {
     if (name === "default") continue;
     for (const [mode, colors] of Object.entries(modes)) {
-      for (const adjacent of ["surface", "surface-muted", "selected-background"])
+      for (const adjacent of [
+        "surface",
+        "surface-muted",
+        "selected-background",
+      ] as const)
         expect(
           contrast(colors["selected-border"], colors[adjacent]),
           `${name} ${mode}: selected-border / ${adjacent}`,
