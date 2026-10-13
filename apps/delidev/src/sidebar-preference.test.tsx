@@ -273,6 +273,52 @@ test.each([
     );
   },
 );
+test.each([
+  SidebarProblem.Unavailable,
+  SidebarProblem.ReadFailed,
+  SidebarProblem.InvalidDocument,
+  SidebarProblem.UnsupportedVersion,
+])(
+  "an older %s inspection reply to the original save stays an ignored stale snapshot",
+  async (problem) => {
+    const value = fixture();
+    let resolve!: (reply: unknown) => void;
+    vi.mocked(value.bridge.update).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(
+      <SidebarProvider bridge={value.bridge}>
+        <Controls />
+      </SidebarProvider>,
+    );
+    const toggle = screen.getByRole("button", { name: "Toggle" });
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+    fireEvent.click(toggle);
+    act(() =>
+      value.publish({
+        revision: 3,
+        sidebar_preference: SidebarPreference.Collapsed,
+        problem: null,
+      }),
+    );
+    await act(async () =>
+      resolve({
+        revision: 2,
+        sidebar_preference: SidebarPreference.Expanded,
+        problem,
+      }),
+    );
+    expect(screen.getByText("collapsed")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+  },
+);
 test("an older healthy reply to the original save stays ignored and a disposed generation ignores late failures", async () => {
   const value = fixture();
   let resolve!: (reply: unknown) => void;

@@ -23,6 +23,13 @@ export enum SidebarProblem {
   OutcomeUnknown = "outcome-unknown",
   Changed = "changed",
 }
+// Only these classifications describe the outcome of the original save, so only
+// they fence a reply that is older than an already accepted event.
+const saveFailureProblems: ReadonlySet<SidebarProblem> = new Set([
+  SidebarProblem.Changed,
+  SidebarProblem.WriteFailed,
+  SidebarProblem.OutcomeUnknown,
+]);
 enum SidebarOperation {
   Reading = "reading",
   Saving = "saving",
@@ -222,11 +229,16 @@ export function SidebarProvider({
           : await bridge.update(sidebar_preference, current.current.revision);
       if (generation.current === owned) {
         if (sidebar_preference !== undefined) {
-          // A structured failure for the original save is not an ordinary
+          // A structured save failure for the original save is not an ordinary
           // stale snapshot. Even when a newer healthy event was already
           // accepted, fence on the latest presentation without regressing it.
+          // Inspection failures stay ordinary stale snapshots.
           const reply = parseSidebar(value);
-          if (reply.problem && reply.revision < current.current.revision) {
+          if (
+            reply.problem &&
+            saveFailureProblems.has(reply.problem) &&
+            reply.revision < current.current.revision
+          ) {
             failed(reply.problem);
             return;
           }

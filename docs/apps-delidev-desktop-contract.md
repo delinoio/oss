@@ -5936,8 +5936,10 @@ pending/failed/uncertain writes remain fenced. A structured problem reply
 (Changed, WriteFailed or OutcomeUnknown) to the original save fences the latest
 committed presentation even when its revision is older than an already accepted
 newer event; the committed revision and selection never regress to the older
-reply, ordinary older healthy replies stay ignored, and only a successful
-explicit Reload clears the fence without replaying the save. Logs contain only stable operations,
+reply, ordinary older healthy replies and older inspection classifications
+(InvalidDocument, UnsupportedVersion, ReadFailed or Unavailable) stay ignored,
+and only a successful explicit Reload clears the fence without replaying the
+save. Logs contain only stable operations,
 revision and outcome classifications. No business RPC, protocol allocation,
 migration, feature flag, dependency or OS-global keyboard bridge is added.
 
