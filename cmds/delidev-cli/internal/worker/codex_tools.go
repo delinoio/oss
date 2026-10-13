@@ -15,6 +15,8 @@ type codexToolPublication struct {
 	Completed       bool
 	SleepDurationMS *uint64
 	ImageView       *domain.ImageViewObservation
+	MCP             *domain.MCPServerIdentity
+	MCPTool         string
 }
 
 // Called under the event publisher lock. Only identities remain in this map;
@@ -59,6 +61,10 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 				return publicationUncertain()
 			}
 			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView, SleepDurationMS: nil}
+			if snapshot.MCP != nil {
+				identity := snapshot.MCP.MCPServerIdentity
+				retained.MCP, retained.MCPTool = &identity, snapshot.MCP.Tool
+			}
 			if snapshot.Sleep != nil {
 				retained.SleepDurationMS = snapshot.Sleep.DurationMS
 			}
@@ -69,6 +75,9 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			kind = domain.ExecutionToolStarted
 		} else {
 			if !known || retained.Completed || retained.Kind != snapshot.Kind || snapshot.Kind == domain.ImageViewTool && (retained.ImageView == nil || snapshot.ImageView == nil || *retained.ImageView != *snapshot.ImageView) {
+				return publicationUncertain()
+			}
+			if snapshot.Kind == domain.MCPTool && (retained.MCP == nil || snapshot.MCP == nil || *retained.MCP != snapshot.MCP.MCPServerIdentity || retained.MCPTool != snapshot.MCP.Tool) {
 				return publicationUncertain()
 			}
 			if snapshot.Kind == domain.SleepTool && (retained.SleepDurationMS == nil || snapshot.Sleep == nil || snapshot.Sleep.DurationMS == nil || *retained.SleepDurationMS != *snapshot.Sleep.DurationMS) {
@@ -120,7 +129,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
 	result := domain.ToolSnapshot{
-		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool}[native.Kind],
+		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool, codex.MCPToolKind: domain.MCPTool}[native.Kind],
 		Status:  map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],
 		Changes: codexFileChanges(native.Changes),
 	}
@@ -130,6 +139,9 @@ func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
 	}
 	if native.ImagePath != "" {
 		return result, publicationUncertain()
+	}
+	if m := native.MCP; m != nil {
+		result.MCP = &domain.MCPToolObservation{MCPServerIdentity: m.Identity, Tool: m.Tool, ReadOnlyHint: m.ReadOnlyHint, DurationMS: m.DurationMS, Error: m.Error, ResultText: m.ResultText, ContentBlocks: m.ContentBlocks}
 	}
 	if n := native.Command; n != nil {
 		c := &domain.CommandObservation{Command: n.Command, Cwd: n.Cwd, Source: map[codex.CommandSource]domain.CommandSource{codex.AgentCommand: domain.AgentCommand, codex.UserShellCommand: domain.UserShellCommand, codex.ExecStartupCommand: domain.ExecStartupCommand, codex.ExecInputCommand: domain.ExecInputCommand}[n.Source], ProcessID: n.ProcessID, AggregatedOutput: n.AggregatedOutput, ExitCode: n.ExitCode, DurationMS: n.DurationMS, PluginID: n.PluginID, ScriptPath: n.ScriptPath}

@@ -478,4 +478,4 @@ Server reset credits V2 uses System 101 under the [subscription contract](cmds-d
 
 ## Worker-owned managed MCP
 
-[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns `cmds/delidev-cli/internal/managedmcp`, the typed management service and desktop MCP Settings. Worker definitions/secrets, bounded server metadata, additive Agent selections and immutable execution generations remain distinct authorities. Management and explicit OAuth never advertise native runtime acceptance.
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns `cmds/delidev-cli/internal/managedmcp`, the typed management service and desktop MCP Settings. Worker definitions/secrets, bounded server metadata, additive Agent selections and immutable execution generations remain distinct authorities. Management and explicit OAuth never advertise native runtime acceptance; the Codex adapter publishes verified runtime support through its own Worker capability and consumes the immutable execution generations.

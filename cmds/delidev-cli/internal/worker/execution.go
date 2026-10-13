@@ -45,8 +45,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		return nil, err
 	}
-	if len(input.Configuration.ManagedMCP) > 0 {
-		return nil, domain.Fail(domain.Unsupported, "This Worker has no managed MCP runtime adapter.", "Keep selected definitions and use independently verified native adapter support.")
+	if err := checkManagedMCPProfile(input.Configuration); err != nil {
+		return nil, err
 	}
 	if err := (skills.Manager{Root: config.Root}).CheckContext(input.Input.Skills, input); err != nil {
 		return nil, err
@@ -382,6 +382,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
+	if len(input.Configuration.ManagedMCP) > 0 {
+		servers, err := resolveManagedMCP(ctx, config, connection.Credential, input.Configuration.ManagedMCP)
+		if err != nil {
+			return nil, err
+		}
+		nativeConfig.ManagedMCP = servers
+		// The launch copies protected values into the owned process environment.
+		defer clearManagedMCP(servers)
+	}
 	var ownedProxy *nativeproxy.Proxy
 	if managed == nil {
 		proxy, err := openCodexNativeProxy(nativeCtx, config, input.ExecutionID)
@@ -501,6 +510,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
+	if len(input.Configuration.ManagedMCP) > 0 {
+		if err := verifyManagedMCPBeforeInput(ctx, client, logger); err != nil {
+			return nil, err
+		}
+	}
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
 	}
