@@ -303,7 +303,11 @@ dispose the presentation without restoring focus into hidden content.
 
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
-shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. Any
+shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. A new
+read-only default chord that can collide with an editable unshifted primary chord
+must be added to `readOnlyShortcutCatalog` with a `readOnlyShortcutPolicies` entry;
+dispatch, conflict validation, Help, the Settings catalog and ARIA derive from that
+one policy. Any
 committed editable override that is an unshifted primary+T binding suppresses
 only the new OpenTool default, in memory and across all scopes. Disabled
 overrides and Shift+T overrides do not suppress it; removing or changing the

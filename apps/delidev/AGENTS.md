@@ -23,8 +23,3 @@
 - [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)
 - [DeliDev native read-only Sidechat](../../docs/cmds-delidev-sidechat-contract.md)
 - [Repository Workflow Contract](../../docs/repository-workflow-contract.md)
-
-## Shortcut defaults
-
-- Add a new read-only default chord to `readOnlyShortcutCatalog` and give it an entry in `readOnlyShortcutPolicies` (`shortcut-preferences.ts`) when it can collide with an existing editable unshifted primary chord. Dispatch, conflict validation, Help, the Settings catalog and ARIA must all derive from that one policy; never rewrite saved preferences or extend the seven editable IDs.
-- Open tool (`ShortcutId.OpenTool`, primary+T) is the reference implementation; keep it aligned with `docs/apps-delidev-desktop-contract.md`.
