@@ -36,6 +36,10 @@ import { MutationIntents } from "./mutation";
 import { SessionTabsProvider } from "./session-tabs";
 import { SessionView } from "./session";
 import { ShortcutProvider } from "./shortcut-provider";
+import {
+  ShortcutPreferenceProvider,
+  type ShortcutPreferenceBridge,
+} from "./shortcut-preference-controller";
 
 vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (host: HTMLElement) => {
@@ -868,7 +872,7 @@ it("keeps exactly five workspace tools and no Info action in either locale", asy
   const toolbar = document.querySelector(".session-tool-menu")!;
   expect(
     [...toolbar.querySelectorAll("button")].map((button) => button.textContent),
-  ).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+  ).toEqual(["Diff", "FilesCtrl + E", "Terminals", "Browser", "Diagnostics"]);
   expect(screen.queryByRole("button", { name: "Info" })).toBeNull();
   const info = screen.getByRole("complementary", {
     name: "Session information",
@@ -879,7 +883,7 @@ it("keeps exactly five workspace tools and no Info action in either locale", asy
   });
   expect(
     [...toolbar.querySelectorAll("button")].map((button) => button.textContent),
-  ).toEqual(["변경 사항", "파일", "터미널", "브라우저", "진단"]);
+  ).toEqual(["변경 사항", "파일Ctrl + E", "터미널", "브라우저", "진단"]);
   expect(screen.queryByRole("button", { name: "정보" })).toBeNull();
   expect(screen.getByRole("complementary", { name: "세션 정보" })).toBe(info);
   expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
@@ -2562,7 +2566,7 @@ it("opens the shared Open tool dialog from primary+T, keeps the draft and select
       within(dialog)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+    ).toEqual(["Diff", "FilesCtrl + E", "Terminals", "Browser", "Diagnostics"]);
     expect(document.activeElement).toBe(
       within(dialog).getByRole("menuitem", { name: "Diff" }),
     );
@@ -2608,6 +2612,116 @@ it("keeps Terminals disabled in the dialog for a Sidechat parent snapshot", asyn
     expect(screen.getByRole("dialog", { name: "Open tool" })).not.toBeNull();
     expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
     expect(f.terminalCreate).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+
+it("opens Files from primary+E once, keeps one tab on repeat, preserves the draft and shows the entry badge", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  const view = render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
+  try {
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() =>
+      expect(composer).toHaveProperty("value", "Original draft"),
+    );
+    const mode = screen.getByRole("checkbox", { name: "Plan Mode" });
+    const planMode = (mode as HTMLInputElement).checked;
+    composer.focus();
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    fireEvent.keyDown(composer, { key: "e", code: "KeyE", ctrlKey: true });
+    expect(screen.getAllByRole("tab", { name: "Files" })).toHaveLength(1);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("tab", { name: "Files" }),
+      ),
+    );
+    expect(
+      screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    // Repeating selects the same tab and never closes it.
+    fireEvent.keyDown(document.activeElement!, {
+      key: "e",
+      code: "KeyE",
+      ctrlKey: true,
+    });
+    expect(screen.getAllByRole("tab", { name: "Files" })).toHaveLength(1);
+    expect(
+      screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    // Reselect from another parent tab.
+    fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    fireEvent.keyDown(document.activeElement!, {
+      key: "e",
+      code: "KeyE",
+      ctrlKey: true,
+    });
+    expect(screen.getAllByRole("tab", { name: "Files" })).toHaveLength(1);
+    expect(
+      screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    expect(composer).toHaveProperty("value", "Original draft");
+    expect((mode as HTMLInputElement).checked).toBe(planMode);
+    expect(f.enqueue).not.toHaveBeenCalled();
+    // Wrong modifiers and plain E do not open anything new.
+    fireEvent.keyDown(composer, { key: "e", code: "KeyE" });
+    fireEvent.keyDown(composer, {
+      key: "e",
+      code: "KeyE",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    // The Files entry shows platform guidance and the matching ARIA binding.
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    const entry = screen.getByRole("menuitem", { name: /Files/ });
+    expect(entry.textContent).toContain("Ctrl + E");
+    expect(entry.getAttribute("aria-keyshortcuts")).toContain("E");
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+
+it("omits Files guidance and keeps the custom primary+E binding authoritative while suppressed", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const bridge: ShortcutPreferenceBridge = {
+    read: async () => ({
+      revision: 1,
+      problem: null,
+      overrides: {
+        "session-focus": {
+          state: "binding",
+          chord: { key: "e", shift: false },
+        },
+      },
+    }),
+    update: vi.fn(),
+    subscribe: async () => () => {},
+  };
+  const f = fixture();
+  const view = render(
+    <ShortcutPreferenceProvider bridge={bridge}>
+      <ShortcutProvider>{f.view()}</ShortcutProvider>
+    </ShortcutPreferenceProvider>,
+  );
+  try {
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await act(async () => {});
+    composer.focus();
+    fireEvent.keyDown(composer, { key: "e", code: "KeyE", ctrlKey: true });
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    const entry = screen.getByRole("menuitem", { name: "Files" });
+    expect(entry.textContent).toBe("Files");
+    expect(entry.hasAttribute("aria-keyshortcuts")).toBe(false);
   } finally {
     view.unmount();
     f.client.clear();

@@ -678,3 +678,53 @@ it("shows the read-only Open tool default and explains custom primary+T priority
   );
   expect(f.state().overrides).toEqual({});
 });
+
+it("shows the read-only Open Files default and explains custom primary+E priority only after a committed save", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  render(<Owner bridge={f.bridge} />);
+  await screen.findByText("Current saved shortcuts");
+  const entry = () => screen.getByText("Open Files").closest("div")!;
+  expect(within(entry()).getByText("Ctrl + E")).toBeTruthy();
+  expect(within(entry()).queryByRole("button")).toBeNull();
+  expect(within(entry()).queryByText(/custom shortcut/)).toBeNull();
+  const opener = screen.getByRole("button", {
+    name: "Capture shortcut for New session",
+  });
+  fireEvent.click(opener);
+  await screen.findByText(/Press Command on macOS/);
+  fireEvent.keyDown(opener, { key: "e", ctrlKey: true });
+  await screen.findByText("Unsaved changes");
+  // The unsaved draft never changes read-only guidance.
+  expect(within(entry()).getByText("Ctrl + E")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(within(entry()).getByText(/custom shortcut uses/)).toBeTruthy(),
+  );
+  expect(within(entry()).getByText("Disabled")).toBeTruthy();
+  expect(f.state().overrides).toEqual({
+    [ShortcutId.NewSession]: {
+      state: ShortcutOverrideState.Binding,
+      chord: { key: "e", shift: false },
+    },
+  });
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(
+    within(screen.getByText("파일 열기").closest("div")!).getByText(
+      /사용자 지정 단축키/,
+    ),
+  ).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Restore default for New session" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(within(entry()).getByText("Ctrl + E")).toBeTruthy(),
+  );
+  expect(f.state().overrides).toEqual({});
+});

@@ -6,6 +6,8 @@
   "shortcuts.help": "Open shortcut help",
   "shortcuts.openSettings": "Open Settings",
   "shortcuts.toolSuppressed": "The default Open tool shortcut is inactive because a saved custom shortcut uses Command or Control + T.",
+  "shortcuts.openFiles": "Open Files",
+  "shortcuts.filesSuppressed": "The default Files shortcut is inactive because a saved custom shortcut uses Command or Control + E.",
   "shortcuts.openTerminals": "Open terminals",
   "shortcuts.terminalsUnavailable": "Terminals are unavailable in a read-only Sidechat.",
   "shortcuts.newSession": "New session",

@@ -156,6 +156,15 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
     defaults: sessionShortcutBindings[ShortcutId.OpenTool],
   },
   {
+    id: ShortcutId.OpenFiles,
+    label: "shortcuts.openFiles",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: sessionShortcutBindings[ShortcutId.OpenFiles],
+  },
+  {
     id: ShortcutId.OpenTerminals,
     label: "shortcuts.openTerminals",
     group: ShortcutGroup.Session,
@@ -300,6 +309,7 @@ const readOnlyShortcutPolicies: Partial<
   Record<ShortcutId, { key: string; reason: MessageKey }>
 > = {
   [ShortcutId.OpenTool]: { key: "t", reason: "shortcuts.toolSuppressed" },
+  [ShortcutId.OpenFiles]: { key: "e", reason: "shortcuts.filesSuppressed" },
 };
 /** Returns the localized reason when a committed override suppresses `id`. */
 export function readOnlyShortcutSuppression(
