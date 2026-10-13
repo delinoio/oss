@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 type ContentEventKind string
@@ -106,18 +107,24 @@ type NativeToolResult struct {
 }
 
 type ContentEvent struct {
-	CallbackArrivalID  domain.ID
-	Kind               ContentEventKind
-	MessageID          string
-	Model              string
-	ParentToolID       string
-	Index              *uint32
-	Block              *NativeContentBlock
-	Blocks             []NativeContentBlock
-	SubagentType       *string
-	TaskDescription    *string
-	DeltaKind          ContentDeltaKind
-	Delta              *string
+	CallbackArrivalID domain.ID
+	Kind              ContentEventKind
+	MessageID         string
+	Model             string
+	ParentToolID      string
+	Index             *uint32
+	Block             *NativeContentBlock
+	Blocks            []NativeContentBlock
+	SubagentType      *string
+	TaskDescription   *string
+	DeltaKind         ContentDeltaKind
+	Delta             *string
+	// Withheld marks a text, thinking or tool-input delta whose bytes were
+	// all kept private because they may start a protected form. Delta is nil.
+	Withheld bool
+	// Held is the private suffix released with ContentCompleted once the whole
+	// block is proven free of protected forms. It continues the published deltas.
+	Held               *string
 	Citation           *NativeCitation
 	CitationCompletion NativeCitationCompletion
 	Usage              *ProviderUsage
@@ -140,6 +147,9 @@ type contentBlockState struct {
 	cache              json.RawMessage
 	caller             json.RawMessage
 	staticDigest       *[sha256.Size]byte
+	// guard is scoped to this exact original block. It never sees another
+	// block, message or parent tool and is cleared on every terminal path.
+	guard *security.ProtectedStream
 }
 
 type providerMessageState struct {
@@ -396,6 +406,9 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 			state.text.WriteString(*block.Thinking)
 		}
 		state.signature.WriteString(block.signature)
+		if err := b.guardBlock(state, block); err != nil {
+			return nil, err
+		}
 		if block.Tool != nil {
 			if !b.advertisedTools[block.Tool.Name] || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
 				return nil, lifecycleUncertain()
@@ -484,14 +497,27 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 				return nil, lifecycleUncertain()
 			}
 		}
+		released := content
+		if delta != SignatureDelta {
+			var err error
+			if released, err = state.guard.Push(content); err != nil {
+				return nil, b.protectedContentRefused("delta", state.kind)
+			}
+		}
 		if err := b.content.retainBytes(len(content)); err != nil {
 			return nil, err
 		}
 		if delta == SignatureDelta {
 			state.signature.WriteString(content)
 		} else {
+			// The complete block stays available for exact completion proof;
+			// only the released prefix is exposed to public observers.
 			state.text.WriteString(content)
-			base.Delta = &content
+			if released != "" || content == "" {
+				base.Delta = &released
+			} else {
+				base.Withheld = true
+			}
 		}
 		base.Kind, base.Index, base.DeltaKind = ContentChanged, change.Index, delta
 	case "content_block_stop":
@@ -508,6 +534,8 @@ func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, 
 		// is only a provisional transport fact, never content completion.
 		if !state.completed && !state.stopped && !state.interruptStopped && b.interrupt != nil && parent == "" && len(active.blocks) == 1 && *stop.Index == 0 && state.kind == TextBlock {
 			state.interruptStopped = true
+			// An interrupted stream never publishes its private holdback.
+			state.guard.Discard()
 			base.Kind, base.Index = ContentInterruptStreamClosed, stop.Index
 			return []ContentEvent{base}, nil
 		}
@@ -758,6 +786,20 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		}
 		b.commitServerBlocks(changes, delta)
 	}
+	// The complete block matches the streamed bytes and contains no protected
+	// form, so a withheld text suffix can no longer be extended. Structured tool
+	// input ends with its closing brace, so any unresolved suffix there only
+	// means a protected form begins with that brace and is refused.
+	var held *string
+	if state.guard.Held() > 0 {
+		if state.kind != TextBlock && state.kind != ThinkingBlock {
+			state.guard.Discard()
+			return nil, b.protectedContentRefused("completion", state.kind)
+		}
+		tail := state.guard.Flush()
+		held = &tail
+	}
+	state.guard.Discard()
 	state.completed = true
 	// Completion has been compared with the streamed bytes, preserving the
 	// separately classified native citation omission when applicable.
@@ -769,7 +811,7 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 	state.initialInput = nil
 	state.cache, state.citations = nil, nil
 	state.caller, state.staticDigest = nil, nil
-	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, CitationCompletion: citationCompletion, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
+	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, Held: held, CitationCompletion: citationCompletion, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
 }
 
 func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []ContentEvent, returned error) {
@@ -1050,4 +1092,47 @@ func (b *ExecutionBinding) contentOwner(parent string) (domain.ID, string) {
 		return "", b.turnID
 	}
 	return b.input, b.turnID
+}
+
+// guardBlock binds a cross-delta protected value matcher to one original
+// content block. Text and thinking deltas carry plain text; tool input deltas
+// carry partial JSON, so their escaped spellings are protected too. The initial
+// block text was already published by the start event and only primes matching.
+func (b *ExecutionBinding) guardBlock(state *contentBlockState, block NativeContentBlock) error {
+	profile := security.StreamPlainText
+	switch block.Kind {
+	case TextBlock, ThinkingBlock:
+	case ToolUseBlock, ServerToolUseBlock:
+		profile = security.StreamJSONText
+	default:
+		return nil
+	}
+	state.guard = b.protected.NewStream(profile)
+	if state.text.Len() > 0 {
+		if err := state.guard.Prime(state.text.String()); err != nil {
+			return b.protectedContentRefused("start", block.Kind)
+		}
+	}
+	return nil
+}
+
+// protectedContentRefused rejects the offending original block before the
+// fragment that would complete a protected form is exposed. It logs only the
+// structural context, never the withheld bytes.
+func (b *ExecutionBinding) protectedContentRefused(phase string, kind ContentBlockKind) error {
+	b.discardHoldbacks()
+	if b.logger != nil {
+		b.logger.Warn("claude_protected_content_refused", "owner_id", b.owner, "phase", phase, "block_kind", kind)
+	}
+	return domain.Fail(domain.Unsupported, "Claude Code sent content that reconstructs a protected value across streamed deltas.", "Retain the native session and inspect the original stream before resuming; no content was published.")
+}
+
+// discardHoldbacks clears every private holdback without publishing it. It runs
+// on terminal failure, refusal and interruption.
+func (b *ExecutionBinding) discardHoldbacks() {
+	for _, message := range b.content.active {
+		for _, block := range message.blocks {
+			block.guard.Discard()
+		}
+	}
 }

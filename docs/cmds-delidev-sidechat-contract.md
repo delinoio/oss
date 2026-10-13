@@ -95,6 +95,8 @@ gate before atomic claim; a scan wake never grants native cleanup authority.
 
 - Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
 
+- A Sidechat whose frozen source preparation names any repository directory requires the `named-workspace-directories-v1` Worker capability, like an independent Fork of the same source. Admission, claim-time authority and Worker preflight (`ForkRequiresNamedDirectories`) reject an unsupported or downgraded Worker with the Unsupported named-directory outcome before job creation, source inspection or native work. Unnamed Worktree, Local and General Chat sources are unchanged; the child still owns only reference metadata, with parent-dependent lifetime and no UUID-path fallback.
+
 ### cmds/delidev-cli/internal/store constraints
 
 - Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `cmds-delidev-sidechat-contract.md`.

@@ -750,3 +750,177 @@ it.each([
   },
   30_000,
 );
+
+it("retires an evicted queued receipt when a list refresh alone learns the question was accepted", async () => {
+  const sessionId = newRequestId();
+  const session = create(ResourceSchema, {
+    id: sessionId,
+    sessionId,
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 1n,
+    documentJson: encode({
+      name: "Refresh reconcile fixture",
+      workspace: "general-chat",
+      outcome: "succeeded",
+      archive: "active",
+      dispatch: "paused",
+      recovery: "clear",
+    }),
+  });
+  const question = (header: string) => ({
+    type: "user-question",
+    closure: "open",
+    questions: {
+      questions: [
+        {
+          id: "original",
+          text: header,
+          header,
+          secret: false,
+          other: true,
+          options: [],
+        },
+      ],
+    },
+  });
+  const pages = ["First", "Second", "Third", "Fourth"].map((header) =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId,
+      kind: EntityKind.INTERACTION,
+      schemaVersion: 1,
+      revision: 9n,
+      documentJson: encode(question(`${header} question`)),
+    }),
+  );
+  let first = pages[0];
+  // The acknowledgement is lost once, so the evicted receipt can retry. The
+  // retry returns the queued revision; only the list read knows acceptance.
+  const respond = vi
+    .fn()
+    .mockRejectedValueOnce(new ConnectError("Lost", Code.Unavailable))
+    .mockImplementation(async () => ({
+      interaction: create(ResourceSchema, {
+        ...pages[0],
+        revision: 10n,
+        documentJson: encode({
+          ...question("First question"),
+          response: { state: "queued" },
+        }),
+      }),
+    }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SessionService, {
+      listSessions: () => ({ sessions: [session] }),
+      listQueue: () => ({ inputs: [] }),
+    });
+    router.service(InteractionService, { respondQuestion: respond });
+    router.service(ResourceService, {
+      getSnapshot: () => ({
+        resources: [session],
+        cursor: "refresh-reconcile-snapshot",
+      }),
+      getResource: () => ({ resource: first }),
+      listResources: (request) => {
+        if (request.filter?.kind !== EntityKind.INTERACTION)
+          return { resources: [] };
+        const index = request.filter.pageToken
+          ? Number(request.filter.pageToken)
+          : 0;
+        return {
+          resources: [index === 0 ? first : pages[index]],
+          nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+        };
+      },
+      async *watchEvents(_request, context) {
+        await new Promise<void>((done) =>
+          context.signal.addEventListener("abort", () => done()),
+        );
+      },
+    });
+    router.service(InboxService, {
+      listInbox: () => ({ entries: [] }),
+      getNotificationPreferences: () => ({
+        preferences: create(NotificationPreferencesSchema, { revision: 1n }),
+      }),
+    });
+  });
+  render(<App transport={transport} />);
+  fireEvent.click(
+    await within(
+      screen.getByRole("complementary", { name: "Application sidebar" }),
+    ).findByRole("button", { name: /General Chat Refresh reconcile fixture/ }),
+  );
+  const region = screen.getByRole("region", { name: "Current session" });
+  const answer = await within(region).findByRole("textbox", {
+    name: "Your answer",
+  });
+  fireEvent.change(answer, { target: { value: "Original response bytes" } });
+  fireEvent.click(within(region).getByRole("button", { name: "Send answers" }));
+  await within(region).findByRole("button", { name: "Retry the same answers" });
+  act(() => {
+    (window.document.activeElement as HTMLElement | null)?.blur();
+  });
+  const requests = region.querySelector<HTMLElement>(".requests")!;
+  for (let page = 1; page < pages.length; page++) {
+    fireEvent.click(
+      await within(requests).findByRole("button", { name: /^Load more/ }),
+    );
+    await waitFor(() =>
+      expect(requests.querySelectorAll("[data-payload-page]")).toHaveLength(
+        page + 1,
+      ),
+    );
+  }
+  await waitFor(() =>
+    expect(
+      within(requests).getByRole("button", {
+        name: "Restore previously loaded items",
+      }),
+    ).not.toBeNull(),
+  );
+  // The authoritative list now reports the evicted question as accepted and
+  // closed; page 0 is never restored in this test.
+  first = create(ResourceSchema, {
+    ...pages[0],
+    revision: 11n,
+    documentJson: encode({
+      ...question("First question"),
+      closure: "native-closed",
+      response: {
+        id: newRequestId(),
+        state: "accepted",
+        input: { answers: { original: ["Original response bytes"] } },
+        accepted_at: "2026-01-02T03:04:05Z",
+        claim: {
+          id: newRequestId(),
+          job_id: newRequestId(),
+          machine_id: newRequestId(),
+          instance_id: newRequestId(),
+          device_id: newRequestId(),
+          claimed_at: "2026-01-02T03:04:06Z",
+        },
+        delivery: { state: "transmitted", sequence: 10 },
+        acceptance: { evidence: "native-question-output", sequence: 11 },
+      },
+    }),
+  });
+  fireEvent.click(
+    within(requests).getByRole("button", { name: "Retry the same answers" }),
+  );
+  await waitFor(() => expect(respond).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(requests.textContent).not.toContain("queued"));
+  expect(requests.textContent).not.toContain("Retry the same answers");
+  // Page 0 stays evicted: its question is neither restored nor a receipt.
+  expect(requests.textContent).not.toContain("First question");
+  for (const header of ["Second", "Third", "Fourth"])
+    expect(requests.textContent).toContain(`${header} question`);
+  expect(
+    within(requests).getByRole("button", {
+      name: "Restore previously loaded items",
+    }),
+  ).not.toBeNull();
+  expect(respond).toHaveBeenCalledTimes(2);
+}, 30_000);

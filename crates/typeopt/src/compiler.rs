@@ -354,7 +354,8 @@ impl Project {
     }
 
     /// Bundle chunks that stay unchanged unchecked boundaries: excluded,
-    /// classic scripts and chunks with `eval`, `with` or `importScripts`.
+    /// classic scripts and chunks that use the global `eval`, `with` or
+    /// `importScripts` (see `syntax_boundary_rule`).
     /// Publication leaves them byte-for-byte unchanged.
     pub fn bundle_boundaries(&self) -> Paths {
         let _scope = enter_program(Some(&self.version));
@@ -366,8 +367,21 @@ impl Project {
                 let mut nodes = Vec::new();
                 collect(file, &mut nodes);
                 let esm = has_esm_statements(file) || uses_import_meta(&nodes);
-                (crate::app::bundle_boundary(&name, esm) || uses_eval_or_with(&nodes))
-                    .then_some(name)
+                if crate::app::bundle_boundary(&name, esm) {
+                    tracing::debug!(
+                        chunk = %name,
+                        rule = "excluded-or-classic-script",
+                        "bundle chunk is a boundary"
+                    );
+                    return Some(name);
+                }
+                let rule = syntax_boundary_rule(&nodes)?;
+                tracing::debug!(
+                    chunk = %name,
+                    rule = rule.as_str(),
+                    "bundle chunk is a boundary"
+                );
+                Some(name)
             })
             .collect()
     }
@@ -413,33 +427,31 @@ impl Project {
             }
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
-                if node.kind() == SyntaxKind::CallExpression {
-                    let callee = node.expression();
-                    let callee_name = match callee.kind() {
-                        SyntaxKind::Identifier => callee.text(),
-                        SyntaxKind::PropertyAccessExpression => callee.name().text(),
-                        _ => "",
-                    };
-                    if callee_name == "importScripts" {
-                        for argument in node.arguments().iter() {
-                            let literal = matches!(
-                                argument.kind(),
-                                SyntaxKind::StringLiteral
-                                    | SyntaxKind::NoSubstitutionTemplateLiteral
-                            );
-                            if !literal {
-                                worker_computed = true;
-                                continue;
-                            }
-                            let path = percent_decode(
-                                argument.text().split(['?', '#']).next().unwrap_or_default(),
-                            );
-                            if let Ok(resolved) = base.join(&path).canonicalize() {
-                                worker_scripts.insert(resolved.to_string_lossy().into_owned());
-                            }
+                if node.kind() == SyntaxKind::CallExpression
+                    && is_import_scripts_callee(node.expression())
+                {
+                    for argument in node.arguments().iter() {
+                        let literal = matches!(
+                            argument.kind(),
+                            SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+                        );
+                        if !literal {
+                            worker_computed = true;
+                            continue;
                         }
-                        continue;
+                        let path = percent_decode(
+                            argument.text().split(['?', '#']).next().unwrap_or_default(),
+                        );
+                        let resolved = if is_root_relative(argument.text()) {
+                            resolve_root_relative(dir, argument.text())
+                        } else {
+                            base.join(&path).canonicalize().ok()
+                        };
+                        if let Some(resolved) = resolved {
+                            worker_scripts.insert(resolved.to_string_lossy().into_owned());
+                        }
                     }
+                    continue;
                 }
                 let specifier = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
@@ -468,13 +480,8 @@ impl Project {
                 // Root-relative: resolve under the bundle root, dropping
                 // leading segments of a deployment base path when needed. The
                 // compiler cannot link it, so the target is public.
-                if text.starts_with('/') && !text.starts_with("//") {
-                    let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
-                    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-                    let resolved = (0..segments.len())
-                        .filter_map(|skip| dir.join(segments[skip..].join("/")).canonicalize().ok())
-                        .find(|c| c.starts_with(dir) && c.is_file());
-                    match resolved {
+                if is_root_relative(text) {
+                    match resolve_root_relative(dir, text) {
                         Some(resolved) => {
                             let resolved = resolved.to_string_lossy().into_owned();
                             public.insert(resolved.clone());
@@ -1357,6 +1364,22 @@ fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
         })
 }
 
+/// Whether a specifier is a root-relative URL path (a single leading slash).
+fn is_root_relative(text: &str) -> bool {
+    text.starts_with('/') && !text.starts_with("//")
+}
+
+/// Resolves a root-relative URL path under the bundle root `dir`, dropping
+/// leading segments of a deployment base path until a bundled file matches.
+/// The query and fragment are ignored and `%` escapes are decoded.
+fn resolve_root_relative(dir: &std::path::Path, text: &str) -> Option<std::path::PathBuf> {
+    let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
+    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    (0..segments.len())
+        .filter_map(|skip| dir.join(segments[skip..].join("/")).canonicalize().ok())
+        .find(|c| c.starts_with(dir) && c.is_file())
+}
+
 /// Decodes `%XX` escapes of a URL path.
 pub(crate) fn percent_decode(path: &str) -> String {
     let bytes = path.as_bytes();
@@ -1378,16 +1401,230 @@ pub(crate) fn percent_decode(path: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Whether a file uses `eval` (direct or aliased) or `with`, which can look
-/// up the file's bindings by runtime strings, or `importScripts`, which only
-/// a classic worker has: such a file may run as a classic script whose
-/// top-level bindings are globals, even if a module also imports it.
-pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
-    nodes.iter().any(|node| {
-        node.kind() == SyntaxKind::WithStatement
-            || (node.kind() == SyntaxKind::Identifier
-                && matches!(node.text(), "eval" | "importScripts"))
+/// The rule that makes a bundle chunk an unchanged boundary because of its
+/// syntax. The names are stable and appear in debug logs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SyntaxBoundaryRule {
+    /// A `with` statement can look up the chunk's bindings by runtime strings.
+    WithStatement,
+    /// The global `eval` is used as a value: a direct call or an alias.
+    EvalReference,
+    /// `importScripts(...)` is called, which only a classic worker can do.
+    ImportScriptsCall,
+    /// `importScripts` is used as a value that can alias it.
+    ImportScriptsReference,
+}
+
+impl SyntaxBoundaryRule {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::WithStatement => "with-statement",
+            Self::EvalReference => "eval-reference",
+            Self::ImportScriptsCall => "import-scripts-call",
+            Self::ImportScriptsReference => "import-scripts-reference",
+        }
+    }
+}
+
+/// Whether a node is an `Identifier` or string key that names a global-object
+/// receiver such as `globalThis` or `self`.
+fn is_global_object_receiver(node: Node) -> bool {
+    if node.is_nil() {
+        return false;
+    }
+    let node = skip_parentheses(node);
+    node.kind() == SyntaxKind::Identifier
+        && matches!(node.text(), "globalThis" | "self" | "window" | "global")
+}
+
+/// Whether a call's callee names `importScripts`: `importScripts`,
+/// `self.importScripts`, `self["importScripts"]` or a parenthesized form.
+fn is_import_scripts_callee(callee: Node) -> bool {
+    let callee = skip_parentheses(callee);
+    match callee.kind() {
+        SyntaxKind::Identifier => callee.text() == "importScripts",
+        SyntaxKind::PropertyAccessExpression => callee.name().text() == "importScripts",
+        SyntaxKind::ElementAccessExpression => {
+            let key = callee.argument_expression();
+            matches!(
+                key.kind(),
+                SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+            ) && key.text() == "importScripts"
+        }
+        _ => false,
+    }
+}
+
+/// The expression inside any number of enclosing parentheses.
+fn skip_parentheses(mut node: Node) -> Node {
+    while node.kind() == SyntaxKind::ParenthesizedExpression {
+        node = node.expression();
+    }
+    node
+}
+
+/// The source object that `key` reads from when it is the property key of a
+/// destructuring pattern: `const { key: alias } = source` or the assignment
+/// `({ key: alias } = source)`. `NIL` for any other node.
+fn destructuring_source(key: Node) -> Node {
+    let holder = key.parent();
+    match holder.kind() {
+        SyntaxKind::BindingElement if holder.property_name() == key => {
+            let pattern = holder.parent();
+            let owner = pattern.parent();
+            if pattern.kind() == SyntaxKind::ObjectBindingPattern
+                && owner.kind() == SyntaxKind::VariableDeclaration
+            {
+                return owner.initializer();
+            }
+        }
+        SyntaxKind::PropertyAssignment if holder.name() == key => {
+            let literal = holder.parent();
+            let assignment = literal.parent();
+            if literal.kind() == SyntaxKind::ObjectLiteralExpression
+                && assignment.kind() == SyntaxKind::BinaryExpression
+                && assignment.operator_token().kind() == SyntaxKind::EqualsToken
+                && assignment.left() == literal
+            {
+                return assignment.right();
+            }
+        }
+        _ => {}
+    }
+    Node::NIL
+}
+
+/// Classifies one node as a use of the global `eval` or `importScripts`.
+/// Property names, property keys, `typeof` operands and type names mention
+/// the name without running code, so they are not uses. A member of a global
+/// object (`globalThis.eval`, `self["importScripts"]`) is the global itself,
+/// also when a destructuring pattern reads it (`const { importScripts: load } =
+/// self`), because the renamed binding hides the name.
+fn global_use_rule(node: Node) -> Option<SyntaxBoundaryRule> {
+    let (name, is_name_node) = match node.kind() {
+        SyntaxKind::Identifier => (node.text(), true),
+        SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral => {
+            (node.text(), false)
+        }
+        _ => return None,
+    };
+    if !matches!(name, "eval" | "importScripts") {
+        return None;
+    }
+    let parent = node.parent();
+    // The expression whose value the name denotes, and whether the name
+    // selects a member of a receiver instead of a binding.
+    let (expression, via_receiver) = if is_name_node {
+        match parent.kind() {
+            SyntaxKind::PropertyAccessExpression if parent.name() == node => {
+                (parent, Some(parent.expression()))
+            }
+            // A destructuring key of a global object reads the global.
+            SyntaxKind::BindingElement | SyntaxKind::PropertyAssignment
+                if is_global_object_receiver(destructuring_source(node)) =>
+            {
+                (node, Some(destructuring_source(node)))
+            }
+            // Keys, member names and type names never run code.
+            SyntaxKind::PropertyAssignment
+            | SyntaxKind::PropertyDeclaration
+            | SyntaxKind::MethodDeclaration
+            | SyntaxKind::GetAccessor
+            | SyntaxKind::SetAccessor
+            | SyntaxKind::PropertySignature
+            | SyntaxKind::MethodSignature
+            | SyntaxKind::EnumMember
+            | SyntaxKind::JsxAttribute
+                if parent.name() == node =>
+            {
+                return None;
+            }
+            // `import { eval as helper }`, `export { helper as eval }` and
+            // `export * as eval from` name a module export, not the global.
+            SyntaxKind::ImportSpecifier if parent.property_name() == node => return None,
+            SyntaxKind::ExportSpecifier
+                if parent.name() == node && parent.property_name().is_some() =>
+            {
+                return None;
+            }
+            // `export { eval as e } from "./lib"` names the other module's export.
+            SyntaxKind::ExportSpecifier
+                if parent.property_name() == node
+                    && parent.parent().parent().module_specifier().is_some() =>
+            {
+                return None;
+            }
+            SyntaxKind::NamespaceExport if parent.name() == node => return None,
+            SyntaxKind::BindingElement if parent.property_name() == node => return None,
+            SyntaxKind::QualifiedName if parent.right() == node => return None,
+            _ => (node, None),
+        }
+    } else {
+        // A string literal selects a member only as `receiver["name"]`.
+        if parent.kind() != SyntaxKind::ElementAccessExpression
+            || parent.argument_expression() != node
+        {
+            return None;
+        }
+        (parent, Some(parent.expression()))
+    };
+    // The outermost parenthesized form of an expression: `(eval)` and
+    // `((self.importScripts))` mean the same as the bare expression.
+    let outermost = |expression: Node| {
+        let mut outer = expression;
+        while outer.parent().kind() == SyntaxKind::ParenthesizedExpression {
+            outer = outer.parent();
+        }
+        outer
+    };
+    let is_call = |callee: Node| {
+        let callee = outermost(callee);
+        let holder = callee.parent();
+        holder.kind() == SyntaxKind::CallExpression && holder.expression() == callee
+    };
+    if outermost(expression).parent().kind() == SyntaxKind::TypeOfExpression {
+        // `typeof eval` and `typeof self.importScripts` are feature checks.
+        return None;
+    }
+    let global = match via_receiver {
+        None => true,
+        // `importScripts` is called on any receiver (`self`, `globalThis`, a
+        // worker scope held in a variable); `eval` is the global only on a
+        // global object, because `obj.eval` is an ordinary property.
+        Some(receiver) => {
+            is_global_object_receiver(receiver) || (name == "importScripts" && is_call(expression))
+        }
+    };
+    if !global {
+        return None;
+    }
+    Some(match (name, is_call(expression)) {
+        ("eval", _) => SyntaxBoundaryRule::EvalReference,
+        (_, true) => SyntaxBoundaryRule::ImportScriptsCall,
+        (_, false) => SyntaxBoundaryRule::ImportScriptsReference,
     })
+}
+
+/// The syntax rule that makes a file a boundary, if any: a `with` statement,
+/// the global `eval` used as a value (a call or an alias), which can look up
+/// the file's bindings by runtime strings, or `importScripts` called or used
+/// as a value, which only a classic worker has: such a file may run as a
+/// classic script whose top-level bindings are globals, even if a module also
+/// imports it. Mentions that cannot run code (`typeof self.importScripts`,
+/// `obj.eval`, `{ eval: 1 }`) are not uses.
+pub(crate) fn syntax_boundary_rule(nodes: &[Node]) -> Option<SyntaxBoundaryRule> {
+    nodes.iter().find_map(|&node| {
+        if node.kind() == SyntaxKind::WithStatement {
+            Some(SyntaxBoundaryRule::WithStatement)
+        } else {
+            global_use_rule(node)
+        }
+    })
+}
+
+/// Whether a file has a syntax boundary rule (see `syntax_boundary_rule`).
+pub(crate) fn uses_eval_or_with(nodes: &[Node]) -> bool {
+    syntax_boundary_rule(nodes).is_some()
 }
 
 /// Whether a file uses `import.meta`, which only ES modules can parse.

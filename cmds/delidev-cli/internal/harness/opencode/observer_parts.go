@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, problem error) {
@@ -108,6 +110,9 @@ func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, pro
 	state := &observedPart{raw: raw, value: value}
 	if value.Text != nil {
 		state.text = value.Text.Text
+		if err := o.guardPart(state, old, message.value.User == nil); err != nil {
+			return nil, false, err
+		}
 	}
 	o.parts[value.ID] = state
 	if old == nil {
@@ -219,8 +224,54 @@ func (o *inputObserver) delta(fields map[string]json.RawMessage) (*NativeTextDel
 	if len(text) > maxHTTPBody-len(part.text) {
 		return nil, eventBound()
 	}
+	// The observer keeps the complete original text for exact ownership proof;
+	// observers outside it only receive the prefix proven unable to complete a
+	// protected form. A refusal happens before the completing fragment leaves.
+	released, err := part.guard.Push(text)
+	if err != nil {
+		return nil, o.protectedPartRefused("delta", part)
+	}
 	part.text += text
-	return &NativeTextDelta{MessageID: messageID, PartID: partID, Text: text}, nil
+	return &NativeTextDelta{MessageID: messageID, PartID: partID, Text: released}, nil
+}
+
+// guardPart binds a cross-delta matcher to one exact original part. A complete
+// snapshot is itself checked as one frame, so its text is published by the
+// consumer without a holdback; it only extends the matching window and a final
+// snapshot closes the part. Nothing withheld is ever released as a delta.
+func (o *inputObserver) guardPart(state, old *observedPart, assistant bool) error {
+	if !assistant {
+		return nil
+	}
+	known := ""
+	if old != nil && old.guard != nil {
+		state.guard, known = old.guard, old.text
+	} else {
+		state.guard = o.protected.NewStream(security.StreamPlainText)
+	}
+	if err := state.guard.Prime(strings.TrimPrefix(state.text, known)); err != nil {
+		return o.protectedPartRefused("snapshot", state)
+	}
+	state.guard.Settle()
+	if timing := state.value.Text.Timing; timing != nil && timing.End != nil {
+		state.guard.Discard()
+	}
+	return nil
+}
+
+func (o *inputObserver) protectedPartRefused(phase string, part *observedPart) error {
+	o.discardHoldbacks()
+	if o.logger != nil {
+		o.logger.WarnContext(o.ctx, "opencode_protected_part_refused", "owner_id", o.owner, "phase", phase, "part_kind", part.value.Kind)
+	}
+	return protectedContentRefused()
+}
+
+// discardHoldbacks clears every private holdback without publishing it.
+func (o *inputObserver) discardHoldbacks() {
+	for _, part := range o.parts {
+		part.guard.Discard()
+	}
 }
 
 // Step and assistant observations overlap, so this equality only verifies the

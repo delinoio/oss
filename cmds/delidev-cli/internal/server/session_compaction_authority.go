@@ -10,6 +10,42 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
+// openCodeGoCompactionScope authorizes manual compaction for the key-backed
+// OpenCode Go subscription profile. It mirrors the ordinary execution branch:
+// the fixed OpenCode Go provider, the Worker capability, the exact protected
+// connection and the original native OpenCode session proof. It never
+// manufactures a managed ChatGPT lease or a user-configured endpoint fallback.
+func (a *executionAuthority) openCodeGoCompactionScope(tx *store.Tx, g store.ExecutionGrant, i domain.SessionCompactionInput, machine domain.Machine) (apiproxy.Scope, error) {
+	denied := func(reason string) (apiproxy.Scope, error) {
+		a.service.logger.Info("opencode_go_compaction_authority_denied", "job_id", g.JobID, "execution_id", g.ExecutionID, "reason", reason)
+		return apiproxy.Scope{}, executionDenied()
+	}
+	v := i.Assignment
+	if !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeGoSubscriptionsV1) {
+		return denied("missing_worker_capability")
+	}
+	_, account, err := executionAccountFromTx(tx, v.AccountID, v.ConnectionID)
+	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != v.ConnectionID || !account.IsOpenCodeGo() || account.Validate() != nil {
+		return denied("account_or_connection_not_current")
+	}
+	// The native session proof is the immutable completion of the source
+	// execution that the compaction restores; it is never taken from the relay.
+	nativeSession := i.Completion.NativeThreadID
+	if nativeSession.Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {
+		return denied("missing_native_session_proof")
+	}
+	provider := domain.OpenCodeGoProvider()
+	operations := executionAPIOperations(v, provider.Protocol)
+	if len(operations) == 0 {
+		return denied("no_compatible_operations")
+	}
+	scope := apiproxy.Scope{ContextRevision: v.ContextRevision, ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, SubscriptionService: v.Configuration.SubscriptionService, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Harness: v.Configuration.Harness, Provider: provider, Operations: operations, OpenCodeSession: string(nativeSession)}
+	if scope.Validate() != nil {
+		return denied("invalid_scope")
+	}
+	return scope, nil
+}
+
 func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGrant, r store.Record, j domain.Job) (apiproxy.Scope, error) {
 	denied := func() (apiproxy.Scope, error) { return apiproxy.Scope{}, executionDenied() }
 	var i domain.SessionCompactionInput
@@ -56,6 +92,9 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	v := i.Assignment
+	if v.Configuration.IsOpenCodeGo() {
+		return a.openCodeGoCompactionScope(tx, g, i, machine)
+	}
 	if v.Configuration.Subscription {
 		_, account, err := accountFromTx(tx, v.AccountID, 0)
 		if err != nil || v.Configuration.Harness != domain.Codex || v.Configuration.SubscriptionService != domain.SubscriptionChatGPT || account.SubscriptionService != v.Configuration.SubscriptionService || account.ProviderID != "" || account.Type != domain.SubscriptionAccount || account.Subscription == nil || account.Subscription.RecoveryRequired || account.Subscription.Lease == nil {

@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 const maxObservedBytes = 32 << 20
@@ -98,6 +99,10 @@ type observedPart struct {
 	raw   []byte
 	value NativePart
 	text  string
+	// guard is scoped to this exact original part. Only deltas it has proven
+	// safe leave the observer; the rest stays private until a verified full
+	// snapshot publishes it or the part is discarded.
+	guard *security.ProtectedStream
 }
 
 // inputObserver consumes original native arrivals in order. Reconciliation joins
@@ -140,6 +145,7 @@ type inputObserver struct {
 	contextPruned        []NativePrunedPart
 	snapshotJoining      bool
 	reconciliationText   map[string]string
+	protected            security.ProtectedJSON
 }
 
 func observerProblem() *domain.Error {
@@ -177,8 +183,8 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	s.observer = &inputObserver{
 		creation: creation, input: input, sessionPermissions: slices.Clone(s.sessionPermissions), cwd: s.cwd, root: root, logger: s.logger, owner: s.owner,
 		ctx: observerContext, cancel: cancel, interactions: map[string]*observedInteraction{}, responseIDs: map[domain.ID]bool{},
-		rejectionPolicy: s.rejectionPolicy,
-		seen:            map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
+		rejectionPolicy: s.rejectionPolicy, protected: s.contentGuard(),
+		seen: map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
 		contextUsers: map[string]bool{}, contextParent: input.receipt.MessageID,
 		progress: inputProgress{RequestID: input.receipt.RequestID, SessionID: input.receipt.SessionID, MessageID: input.receipt.MessageID, Status: NativeStatusUnknown},
 	}
@@ -218,6 +224,8 @@ func messageBase(raw []byte, role MessageRole) []byte {
 }
 
 func (o *inputObserver) fail(ctx context.Context, stage string, err error) error {
+	// A failed observer never publishes a private holdback.
+	o.discardHoldbacks()
 	if o.problem == nil {
 		o.problem = domain.SafeError(err)
 		o.progress.NeedsRecovery = true

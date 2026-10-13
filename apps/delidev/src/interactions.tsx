@@ -44,6 +44,10 @@ export enum InteractionType {
   Question = "user-question",
   Approval = "native-approval",
 }
+// Response-state value shared with the mutation registry's uncertain outcome.
+enum ResponseState {
+  Uncertain = "uncertain",
+}
 enum Decision {
   Accept = "accept",
   Session = "acceptForSession",
@@ -157,7 +161,7 @@ export function Interaction({
     <article className="interaction">
       <header>
         <h3>
-          {text(data.type) === InteractionType.Question
+          {compact || text(data.type) === InteractionType.Question
             ? copy("interactions.agentQuestion_1a6b3f")
             : copy("interactions.nativeApproval_c515b9")}
         </h3>
@@ -171,7 +175,8 @@ export function Interaction({
               <>
                 {statusLabel(
                   compact
-                    ? presentation.responseState
+                    ? presentation.responseState ||
+                        (retainedUncertain ? ResponseState.Uncertain : "")
                     : text(
                         object(data.response ?? data.approval_response).state,
                       ),

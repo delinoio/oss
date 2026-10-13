@@ -230,8 +230,15 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		if !eligible {
 			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 		}
+		// The checkpoint digest pins the composed instructions the worker passed to
+		// the native adapter, so recovery must compose them from the same frozen
+		// execution configuration and original input mode.
+		instructions, err := input.Configuration.NativeInstructions(input.Input.Mode)
+		if err != nil {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
 		result.Harness = domain.ClaudeCode
-		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
 		if input.Version == 4 {
 			if session.Startup == nil || session.Startup.Ready == nil || session.Startup.Ready.Validate() != nil {
 				return result, domain.ExecutionRecoveryUncertain()

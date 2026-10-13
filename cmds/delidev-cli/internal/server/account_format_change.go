@@ -19,15 +19,24 @@ type changeAccountFormatInput struct {
 	Protocol                                         domain.APIProtocol
 	Alias                                            string
 	Enabled, ExcludeAutomatic, RecoveryNotifications bool
+	// Actor binds the retry receipt to the authenticated owner/client. Receipts
+	// created before this field existed digest differently and fail closed.
+	Actor domain.Principal
 }
 
 func (s *Service) ChangeAccountApiFormat(ctx context.Context, req *connect.Request[pb.ChangeAccountApiFormatRequest]) (*connect.Response[pb.ChangeAccountApiFormatResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	// Resolve the caller before any receipt lookup so a retry can never be
+	// adopted by a different actor.
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can change an API format.", "Use an authenticated product client."), correlation)
+	}
 	if err := validateAccountMutation(req.Msg.Mutation); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	meta := req.Msg.Mutation
-	input := changeAccountFormatInput{domain.ID(meta.Id), meta.ExpectedRevision, rpc.APIProtocol(req.Msg.ApiProtocol), req.Msg.Alias, req.Msg.Enabled, req.Msg.ExcludeAutomatic, req.Msg.RecoveryNotifications}
+	input := changeAccountFormatInput{domain.ID(meta.Id), meta.ExpectedRevision, rpc.APIProtocol(req.Msg.ApiProtocol), req.Msg.Alias, req.Msg.Enabled, req.Msg.ExcludeAutomatic, req.Msg.RecoveryNotifications, actor}
 	if !input.Protocol.API() {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported API format.", "Select a declared provider format."), correlation)
 	}
