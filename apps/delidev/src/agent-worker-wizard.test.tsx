@@ -679,7 +679,11 @@ it("retains a genuine alias equal to a generated fallback byte for byte after a 
 it("keeps name precedence over alias in the retained selected account name", async () => {
   const f = fixture();
   const row = f.accounts[0];
-  row.documentJson = encode({ ...document(row), name: "Named", alias: "Other" });
+  row.documentJson = encode({
+    ...document(row),
+    name: "Named",
+    alias: "Other",
+  });
   render(f.view());
   await selectFirstAccount(f);
   expect(selectedAccountNames()).toEqual(["Select Named"]);
