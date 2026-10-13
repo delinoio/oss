@@ -1387,10 +1387,11 @@ implemented product operation, never native/account/platform acceptance.
 Worker `CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64`
 negotiates the optional `execution_id` and `checkpoint_digest` fields of the
 frozen Revert target. An older Worker strictly rejects those fields, so the
-server freezes them only for a skilled target that an earlier execution accepted
-and only when the original Worker advertises 64. The same Worker must advertise
-64 again before the lease or dispatch authority admits such a job. Every other
-Revert keeps the original envelope under capability 36 alone. No System
+server freezes them only for a skilled target that an earlier execution accepted.
+Every skilled Revert target, with or without those fields, requires the original
+Worker to advertise 64, and the same Worker must advertise 64 again before the
+lease or dispatch authority admits such a job. A text-only Revert keeps the
+original envelope under capability 36 alone. No System
 capability, RPC, field in any other message or database migration is added.
 
 ## Image rejection startup metadata

@@ -35,6 +35,16 @@ func (t SessionRevertTarget) CarriesProof() bool {
 	return t.ExecutionID != ""
 }
 
+// RequiresProofCapability reports whether only a Worker with
+// CodexSessionRevertTargetProofV1 may execute this target. Every skilled target
+// requires it, even when the source checkpoint supplies the proof and the
+// envelope carries no checkpoint reference, because a Worker that predates the
+// capability compares only the prompt digest and never authenticates the
+// selected skills. A target that carries a reference also requires it.
+func (t SessionRevertTarget) RequiresProofCapability() bool {
+	return t.CarriesProof() || len(t.Prompt.Skills) > 0
+}
+
 func (t SessionRevertTarget) Validate() error {
 	if UniqueIDs([]ID{t.MessageID, t.InputID}) != nil || t.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || t.Prompt.Validate() != nil {
 		return CompactionUncertain()

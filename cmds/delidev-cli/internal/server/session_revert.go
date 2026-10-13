@@ -127,17 +127,25 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 	return response, nil
 }
 
-// freezeRevertTargetProof freezes the retained checkpoint reference of the
-// target execution only for a skilled target that an earlier execution accepted,
-// the one case the source checkpoint cannot prove. Every other target keeps the
-// original envelope, which any Worker advertising CodexSessionRevertV1 decodes.
-// A Worker without CodexSessionRevertTargetProofV1 strictly rejects the extra
-// fields, so that case is refused here instead of pausing the session first.
+// freezeRevertTargetProof enforces the proof capability for every skilled
+// target and freezes the retained checkpoint reference of the target execution
+// only for a skilled target that an earlier execution accepted, the one case the
+// source checkpoint cannot prove. A text-only target keeps the original
+// envelope, which any Worker advertising CodexSessionRevertV1 decodes. A Worker
+// without CodexSessionRevertTargetProofV1 never authenticates selected skills
+// and strictly rejects the extra fields, so every skilled target is refused here
+// for such a Worker instead of pausing the session first.
 func freezeRevertTargetProof(revert *domain.SessionRevertTarget, targetExecution, sourceExecution domain.ID, completion domain.ExecutionCompletion, capabilities []domain.WorkerCapability) error {
-	if len(revert.Prompt.Skills) == 0 || targetExecution == sourceExecution {
+	if len(revert.Prompt.Skills) == 0 {
 		return nil
 	}
-	if completion.Version != 2 || !machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1) {
+	if !machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1) {
+		return domain.Fail(domain.Unsupported, "The original Worker cannot revert to a turn that selected skills.", "Update the original Worker.")
+	}
+	if targetExecution == sourceExecution {
+		return nil
+	}
+	if completion.Version != 2 {
 		return domain.Fail(domain.Unsupported, "The original Worker cannot revert to an earlier turn that selected skills.", "Update the original Worker.")
 	}
 	revert.ExecutionID, revert.CheckpointDigest = targetExecution, completion.NativeCheckpointDigest

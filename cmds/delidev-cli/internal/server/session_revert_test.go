@@ -415,7 +415,7 @@ func TestRevertPreSendFailureReleasesOnlyExactOriginalContextJob(t *testing.T) {
 	}
 }
 
-func TestFreezeRevertTargetProofOnlyForSkilledEarlierExecution(t *testing.T) {
+func TestFreezeRevertTargetProofRequiresCapabilityForEverySkilledTarget(t *testing.T) {
 	earlier, source := domain.NewID(), domain.NewID()
 	digest := strings.Repeat("d", 64)
 	skilled := domain.SessionInput{Prompt: "p", Mode: domain.ExecuteMode, Skills: []domain.SkillBinding{{}}}
@@ -432,7 +432,9 @@ func TestFreezeRevertTargetProofOnlyForSkilledEarlierExecution(t *testing.T) {
 		frozen, deny bool
 	}{
 		{"text-only-earlier-legacy-worker", textOnly, earlier, completion, legacy, false, false},
-		{"skilled-source-execution-legacy-worker", skilled, source, completion, legacy, false, false},
+		{"text-only-source-execution-legacy-worker", textOnly, source, completion, legacy, false, false},
+		{"skilled-source-execution-legacy-worker", skilled, source, completion, legacy, false, true},
+		{"skilled-source-execution-proof-worker", skilled, source, completion, proof, false, false},
 		{"skilled-earlier-proof-worker", skilled, earlier, completion, proof, true, false},
 		{"skilled-earlier-legacy-worker", skilled, earlier, completion, legacy, false, true},
 		{"skilled-earlier-legacy-completion", skilled, earlier, domain.ExecutionCompletion{Version: 1}, proof, false, true},
@@ -450,18 +452,21 @@ func TestFreezeRevertTargetProofOnlyForSkilledEarlierExecution(t *testing.T) {
 	}
 }
 
-func TestCompactionLeaseRequiresProofCapabilityOnlyForProofCarryingRevert(t *testing.T) {
+func TestCompactionLeaseRequiresProofCapabilityForSkilledOrProofCarryingRevert(t *testing.T) {
 	plain := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{}}
+	skilled := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{Prompt: domain.SessionInput{Skills: []domain.SkillBinding{{}}}}}
 	proof := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{ExecutionID: domain.NewID(), CheckpointDigest: strings.Repeat("e", 64)}}
 	legacy := []domain.WorkerCapability{domain.CodexSessionRevertV1}
 	extended := []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}
 	if !compactionLeaseCapabilities(legacy, plain) || !compactionLeaseCapabilities(extended, plain) {
-		t.Fatal("original Revert envelope needs only the Revert capability")
+		t.Fatal("original text-only Revert envelope needs only the Revert capability")
 	}
-	if compactionLeaseCapabilities(legacy, proof) || !compactionLeaseCapabilities(extended, proof) {
-		t.Fatal("extended Revert envelope must require the proof capability")
-	}
-	if compactionLeaseCapabilities([]domain.WorkerCapability{domain.CodexSessionRevertTargetProofV1}, proof) {
-		t.Fatal("proof capability alone authorized Revert")
+	for name, input := range map[string]domain.SessionCompactionInput{"skilled-without-reference": skilled, "proof-carrying": proof} {
+		if compactionLeaseCapabilities(legacy, input) || !compactionLeaseCapabilities(extended, input) {
+			t.Fatal("skilled or extended Revert envelope must require the proof capability", name)
+		}
+		if compactionLeaseCapabilities([]domain.WorkerCapability{domain.CodexSessionRevertTargetProofV1}, input) {
+			t.Fatal("proof capability alone authorized Revert", name)
+		}
 	}
 }
