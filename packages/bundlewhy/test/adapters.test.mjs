@@ -172,7 +172,11 @@ test("rspack adapter treats an empty minimizer list as disabled minification", (
     "rspack.config.mjs",
     `export default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", optimization: { minimize: true, minimizer: [] } };\n`,
   );
-  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  const { status, collection } = runAdapter(
+    "rspack",
+    "rspack-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.minifyEnabled, false);
