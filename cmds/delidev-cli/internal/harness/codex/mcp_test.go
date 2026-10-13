@@ -660,6 +660,10 @@ func (f *threadFixture) mcpReply(id, raw json.RawMessage, errored bool) {
 	if f.mode != "thread-turn-mcp-unresolved" {
 		f.notify("serverRequest/resolved", map[string]any{"threadId": f.thread["id"], "requestId": id})
 	}
+	if f.mode == "thread-turn-mcp-exit-after-resolve" {
+		// The connection fails after the exact native resolution was delivered.
+		time.AfterFunc(time.Second, func() { os.Exit(0) })
+	}
 }
 
 func openMCPFixture(t *testing.T, mode string, servers ...ManagedMCPServer) (*Client, string, ThreadSettings) {
@@ -1118,5 +1122,34 @@ func TestManagedMCPPlainStringFieldsRemainPresentable(t *testing.T) {
 	schema := map[string]any{"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string"}}}
 	if _, ok := decodeElicitationSchema("form", mcpJSON(t, schema)); !ok {
 		t.Fatal("a plain string field became unpresentable")
+	}
+}
+
+func TestManagedMCPResolvedElicitationEvidenceSurvivesALaterWireFailure(t *testing.T) {
+	client, _, _ := openMCPFixture(t, "mcp-exit-after-resolve", mcpStdioServer("fx_bbbb"))
+	turn, err := client.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureSignal(t, client, "elicitation", map[string]any{"requestId": 43, "params": map[string]any{"turnId": "active", "serverName": "fx_bbbb", "mode": "form", "message": "Write the file?", "requestedSchema": map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}, "required": []any{"path"}}}})
+	requested := nextKind(t, client, InteractionRequestedEvent)
+	answers := QuestionAnswers{Answers: map[string][]string{"action": {"accept"}, "field:path": {"/tmp/out.txt"}}}
+	if _, err := client.AnswerQuestions(context.Background(), domain.NewID(), requested.Interaction.ID, turn.TurnID, answers); err != nil {
+		t.Fatal(err)
+	}
+	nextKind(t, client, InteractionClosedEvent)
+	// The acceptance is now queued. Wait for the native connection to fail.
+	deadline := time.Now().Add(5 * time.Second)
+	for client.wire.Err() == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the fixture connection never failed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	event, err := client.NextEvent(ctx)
+	if err != nil || event.Kind != QuestionAcceptedEvent || !event.InteractionState.Accepted {
+		t.Fatalf("the observed native resolution was lost to a later wire failure: %+v %v", event, err)
 	}
 }

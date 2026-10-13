@@ -235,11 +235,15 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 		return Event{}, domain.SafeError(ctx.Err())
 	}
 	defer func() { <-c.eventGate }()
-	if err := c.wire.Err(); err != nil {
-		return Event{}, err
+	if len(c.queuedEvents) == 0 {
+		if err := c.wire.Err(); err != nil {
+			return Event{}, err
+		}
 	}
 	if len(c.queuedEvents) > 0 {
-		// A derived observation follows the native event that produced it.
+		// A derived observation follows the native event that produced it. It is
+		// drained before a later wire failure because the exact native resolution it
+		// reports was already observed and its response must not stay unconfirmed.
 		if err := c.acquireControl(ctx); err != nil {
 			return Event{}, err
 		}
