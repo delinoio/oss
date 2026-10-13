@@ -538,6 +538,7 @@ it.each(["pointer", "Enter"])(
                 <SessionFiles
                   sessionId={f.sessionId}
                   active={!path}
+                  previewing={Boolean(path)}
                   close={() => {}}
                   openFile={(_repository, path) => setPath(path)}
                 />
@@ -689,6 +690,20 @@ it("restores the retained explorer after every File reselect round trip with cur
   other.focus();
   fireEvent.click(screen.getByRole("button", { name: "Select Files" }));
   expect(document.activeElement).toBe(other);
+  // Files -> File -> another tab -> Files abandons the File departure, so the
+  // direct Files selection restores no stale position and never moves focus.
+  scroll.scrollTop = 90;
+  workspace.scrollTop = 20;
+  fireEvent.click(screen.getByRole("button", { name: "Select File" }));
+  await screen.findByRole("heading", { name: "note.txt" });
+  fireEvent.click(screen.getByRole("button", { name: "Select Other" }));
+  scroll.scrollTop = 5;
+  workspace.scrollTop = 6;
+  other.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Select Files" }));
+  expect(document.activeElement).toBe(other);
+  expect(scroll.scrollTop).toBe(5);
+  expect(workspace.scrollTop).toBe(6);
 });
 
 it("fences late shared File reads and does not focus hidden or replaced previews", async () => {

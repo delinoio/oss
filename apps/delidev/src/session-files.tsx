@@ -393,6 +393,15 @@ function Explorer({
       returning.current = true;
     };
   }, [active]);
+  // Leaving the File preview for any tab other than Files abandons the pending
+  // return: a later direct Files selection must neither restore stale scroll
+  // positions nor move focus. A return to Files makes the explorer active in the
+  // same commit, so this only runs for abandoned departures.
+  useLayoutEffect(() => {
+    if (active || previewing) return;
+    returning.current = false;
+    ancestors.current = undefined;
+  }, [active, previewing]);
   const open = (path: string) => {
     captureScroll();
     if (openFile && state.repository !== undefined) {
