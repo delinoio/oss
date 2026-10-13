@@ -564,33 +564,30 @@ it.each([
 it.each([
   ["compact-session", {}],
   ["workspace-storage", { action: "recover" }],
-])(
-  "rejects a %s Job document one byte above 4 MiB",
-  async (type, input) => {
-    const job = {
-      ...resource(),
-      kind: EntityKind.JOB,
-      documentJson: largeJobDocument(type, input, (4 << 20) + 1),
-    };
-    const abort = new AbortController();
-    const client = createClient(
-      ResourceService,
-      createRouterTransport((router) =>
-        router.service(ResourceService, {
-          getSnapshot: () => ({ resources: [job], cursor: "oversize-job" }),
-          async *watchEvents() {
-            abort.abort();
-          },
-        }),
-      ),
-    );
-    const updates: SyncUpdate[] = [];
-    for await (const update of synchronizeResources(
-      client,
-      { kind: EntityKind.JOB },
-      { signal: abort.signal, maxDocumentBytes: 8 << 20 },
-    ))
-      updates.push(update);
-    expect(updates.some((u) => u.kind === SyncKind.Snapshot)).toBe(false);
-  },
-);
+])("rejects a %s Job document one byte above 4 MiB", async (type, input) => {
+  const job = {
+    ...resource(),
+    kind: EntityKind.JOB,
+    documentJson: largeJobDocument(type, input, (4 << 20) + 1),
+  };
+  const abort = new AbortController();
+  const client = createClient(
+    ResourceService,
+    createRouterTransport((router) =>
+      router.service(ResourceService, {
+        getSnapshot: () => ({ resources: [job], cursor: "oversize-job" }),
+        async *watchEvents() {
+          abort.abort();
+        },
+      }),
+    ),
+  );
+  const updates: SyncUpdate[] = [];
+  for await (const update of synchronizeResources(
+    client,
+    { kind: EntityKind.JOB },
+    { signal: abort.signal, maxDocumentBytes: 8 << 20 },
+  ))
+    updates.push(update);
+  expect(updates.some((u) => u.kind === SyncKind.Snapshot)).toBe(false);
+});
