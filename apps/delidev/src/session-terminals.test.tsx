@@ -1738,6 +1738,25 @@ it("shares default-shell additional creation between + and terminal-focused prim
   }
 });
 
+it("annotates the terminal host and input with the effective primary+T binding", async () => {
+  const f = creationFixture();
+  try {
+    fireEvent.click(await screen.findByRole("tab", { name: /^Terminal 1/ }));
+    const input = await screen.findByRole("textbox", {
+      name: "Terminal input",
+    });
+    const host = input.parentElement!;
+    expect(host.classList.contains("terminal-screen")).toBe(true);
+    // The test platform resolves primary to Control, as the dispatch test does.
+    await waitFor(() => {
+      expect(input.getAttribute("aria-keyshortcuts")).toBe("Control+T");
+      expect(host.getAttribute("aria-keyshortcuts")).toBe("Control+T");
+    });
+  } finally {
+    f.cleanup();
+  }
+});
+
 it("creates from primary+T only in terminal input and consumes it while creation is gated", async () => {
   let release = () => {};
   const f = creationFixture();

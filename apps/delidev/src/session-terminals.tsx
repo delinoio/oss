@@ -238,7 +238,7 @@ export function SessionTerminals({
       rows: 24,
       columns: 80,
     });
-  useShortcuts([
+  const shortcuts = useShortcuts([
     {
       id: ShortcutId.TerminalCreate,
       scope: Surface.Sessions,
@@ -762,6 +762,7 @@ export function SessionTerminals({
           key={resource.id}
           resource={resource}
           hostRef={terminalInput}
+          keyShortcuts={shortcuts.aria(ShortcutId.TerminalCreate)}
           tabbed={tabbed}
           discarded={() => setDiscarded(true)}
           refresh={() => {
@@ -777,6 +778,7 @@ export function SessionTerminals({
 function TerminalView({
   resource,
   hostRef,
+  keyShortcuts,
   tabbed,
   discarded,
   refresh,
@@ -784,6 +786,7 @@ function TerminalView({
 }: {
   resource: Resource;
   hostRef: RefObject<HTMLDivElement | null>;
+  keyShortcuts: string;
   tabbed: boolean;
   discarded: () => void;
   refresh: () => void;
@@ -910,6 +913,21 @@ function TerminalView({
       screen.current = undefined;
     };
   }, [resource.id, rendererRestart]);
+  // Expose the effective terminal-input chord on the host and on the renderer's
+  // input field, which the adapter appends asynchronously as a direct child.
+  useEffect(() => {
+    const root = host.current;
+    if (!root) return;
+    const apply = () => {
+      for (const field of root.querySelectorAll(":scope > textarea"))
+        if (keyShortcuts) field.setAttribute("aria-keyshortcuts", keyShortcuts);
+        else field.removeAttribute("aria-keyshortcuts");
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(root, { childList: true });
+    return () => observer.disconnect();
+  }, [keyShortcuts, resource.id, rendererRestart]);
   useEffect(() => {
     screen.current?.enabled(canType);
     if (canType && focusPending.current) {
@@ -1061,6 +1079,7 @@ function TerminalView({
       <div
         ref={host}
         className="terminal-screen"
+        aria-keyshortcuts={keyShortcuts || undefined}
         data-shortcuts="passthrough"
         aria-label={copy("session-terminals.attribute.34ad7d49708a")}
         onKeyDown={(event) => event.stopPropagation()}
