@@ -386,3 +386,26 @@ func TestFollowMarkerKeepsWrapperWithoutOwnerIdentity(t *testing.T) {
 		t.Fatalf("retired follower fell back to the saved address: %v hits=%d", err, hits.Load())
 	}
 }
+
+// An owner identity that names a different server distinguishes an edited
+// canonical Worker from a custom Worker scope: the Worker must fail closed
+// instead of sending its bearer token to the edited endpoint directly.
+func TestMismatchedOwnerIdentityFailsClosedWithoutDirectRoute(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if err := os.Remove(filepath.Join(f.owner, "owner.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := security.CreateIdentity(f.owner); err != nil {
+		t.Fatal(err)
+	}
+	client, closeIdle, err := networkHTTPClientForHeaders(context.Background(), f.config(), f.credential, 0)
+	if closeIdle != nil {
+		defer closeIdle()
+	}
+	if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || hits.Load() != 0 {
+		t.Fatalf("mismatched owner identity did not fail closed: client=%v err=%v hits=%d", client != nil, err, hits.Load())
+	}
+}

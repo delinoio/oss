@@ -162,7 +162,9 @@ func verifySavedWorker(owner, root string, serverID domain.ID, endpoint string) 
 // pairing grants a fixed Local Worker is verified against. A custom Worker
 // scope whose parent merely contains a "worker" directory has no owner
 // identity here and is not wrapped. An unreadable or corrupt identity fails
-// closed.
+// closed, and so does an identity that names a different server: the owner
+// identity exists, so the saved Worker credential and journal were edited to
+// another server and must never fall back to the direct pairing route.
 func OwnsServer(owner string, serverID domain.ID) (bool, error) {
 	identity, err := security.LoadIdentity(owner)
 	if errors.Is(err, os.ErrNotExist) {
@@ -171,7 +173,11 @@ func OwnsServer(owner string, serverID domain.ID) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return identity.ServerID == serverID, nil
+	if identity.ServerID != serverID {
+		slog.Warn("desktop_runtime_follow", "phase", "owner-identity", "code", domain.RecoveryRequired)
+		return false, recoveryRequired()
+	}
+	return true, nil
 }
 
 // RequiresLocalTransport reports whether a classified fixed Local Worker must

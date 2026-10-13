@@ -541,8 +541,10 @@ func TestOwnsServerRequiresMatchingOwnerIdentity(t *testing.T) {
 	if owns, err := OwnsServer(owner, identity.ServerID); err != nil || !owns {
 		t.Fatalf("matching owner reported %v %v", owns, err)
 	}
-	if owns, err := OwnsServer(owner, serverID); err != nil || owns {
-		t.Fatalf("foreign server reported %v %v", owns, err)
+	// An owner identity for another server fails closed instead of reporting a
+	// custom Worker scope that may use its direct pairing route.
+	if owns, err := OwnsServer(owner, serverID); err == nil || owns || domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatalf("foreign server was not rejected: %v %v", owns, err)
 	}
 	if err := security.WriteAtomic(filepath.Join(owner, "owner.json"), []byte("{")); err != nil {
 		t.Fatal(err)
