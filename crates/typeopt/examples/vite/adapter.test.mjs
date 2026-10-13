@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  realpath,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -306,6 +313,199 @@ test("rejects stale transitive modules, configuration, declarations and unknown 
   }
 });
 
+test("rejects output once an absent higher-priority resolution candidate appears", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-absent-"));
+  try {
+    const files = {
+      "main.ts": "import { f } from './dep';",
+      "dep.tsx": "export const f = 1;",
+      "tsconfig.json": "{}",
+    };
+    for (const [name, text] of Object.entries(files))
+      await writeFile(path.join(root, name), text);
+    const absent = path.join(root, "dep.ts");
+    const manifest = {
+      schema_version: 0,
+      modules: ["main.ts", "dep.tsx"].map((name, index) => ({
+        source: path.join(root, name),
+        source_sha256: sha256(files[name]),
+        output: `${index}.js`,
+        source_map: `${index}.js.map`,
+        kind: index === 0 ? "optimized" : "preserved",
+      })),
+      inputs: [
+        {
+          path: path.join(root, "tsconfig.json"),
+          sha256: sha256(files["tsconfig.json"]),
+          kind: "configuration",
+        },
+        { path: absent, kind: "absent" },
+        { path: path.join(root, "dep.d.ts"), kind: "absent" },
+      ],
+    };
+    const out = path.join(root, "out");
+    await mkdir(out);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    // A still-absent candidate with unchanged listed files validates.
+    await typeopt(out).buildStart();
+    // Creating the candidate leaves every positive digest unchanged.
+    await writeFile(absent, "export const f = 2;");
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(absent));
+      return true;
+    });
+    // A directory at the candidate path also invalidates the output.
+    await rm(absent);
+    await mkdir(absent);
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+    await rm(absent, { recursive: true });
+    await typeopt(out).buildStart();
+    // A dangling symlink candidate is still absent until its target appears.
+    const dangling = path.join(root, "dep.mts");
+    const target = path.join(root, "later-target.mts");
+    await symlink(target, dangling);
+    manifest.inputs.push({ path: dangling, kind: "absent" });
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    await typeopt(out).buildStart();
+    await writeFile(target, "export const f = 4;");
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(dangling));
+      return true;
+    });
+    await rm(target);
+    manifest.inputs.pop();
+    await rm(dangling);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    await typeopt(out).buildStart();
+    // A candidate below a regular file stays absent (ENOTDIR).
+    manifest.inputs.push({
+      path: path.join(root, "main.ts", "nested.ts"),
+      kind: "absent",
+    });
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    await typeopt(out).buildStart();
+    // Positive inputs still invalidate on edit or removal.
+    await writeFile(path.join(root, "dep.tsx"), "export const f = 3;");
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+    await writeFile(path.join(root, "dep.tsx"), files["dep.tsx"]);
+    await rm(path.join(root, "tsconfig.json"));
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects unknown input forms, digests on negative inputs and malformed mismatch inputs", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-forms-"));
+  try {
+    const source = path.join(root, "main.ts");
+    await writeFile(source, "export {};");
+    const out = path.join(root, "out");
+    await mkdir(out);
+    const base = {
+      schema_version: 0,
+      modules: [
+        {
+          source,
+          source_sha256: sha256("export {};"),
+          output: "0.js",
+          source_map: "0.js.map",
+          kind: "preserved",
+        },
+      ],
+    };
+    for (const input of [
+      { path: path.join(root, "dep.ts"), kind: "future_kind" },
+      { path: path.join(root, "dep.ts"), kind: "absent", sha256: sha256("") },
+      { kind: "absent" },
+      { path: path.join(root, "dep.ts"), kind: "dependency" },
+      { path: path.join(root, "dep.ts"), kind: "mismatch" },
+      { path: path.join(root, "dep.ts"), kind: "mismatch", becomes: "symlink" },
+      {
+        path: path.join(root, "dep.ts"),
+        kind: "mismatch",
+        becomes: "file",
+        sha256: sha256(""),
+      },
+      { path: path.join(root, "dep.ts"), kind: "absent", becomes: "file" },
+    ]) {
+      await writeFile(
+        path.join(out, "modules.json"),
+        JSON.stringify({ ...base, inputs: [input] }),
+      );
+      await assert.rejects(
+        typeopt(out).buildStart(),
+        /invalid input snapshot; regenerate with the matching CLI/,
+        JSON.stringify(input),
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects output once a wrong-kind resolution candidate becomes the kind that satisfies the probe", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-mismatch-"));
+  try {
+    const files = {
+      "main.ts": "import { f } from './dep';",
+      "dep.tsx": "export const f = 1;",
+    };
+    for (const [name, text] of Object.entries(files))
+      await writeFile(path.join(root, name), text);
+    // `dep.ts` is a directory, so a file probe skipped it for `dep.tsx`.
+    const directory = path.join(root, "dep.ts");
+    await mkdir(directory);
+    // `dep.mts` is a file that a directory probe skipped.
+    const file = path.join(root, "dep.mts");
+    await writeFile(file, "export const f = 0;");
+    const manifest = {
+      schema_version: 0,
+      modules: ["main.ts", "dep.tsx"].map((name, index) => ({
+        source: path.join(root, name),
+        source_sha256: sha256(files[name]),
+        output: `${index}.js`,
+        source_map: `${index}.js.map`,
+        kind: index === 0 ? "optimized" : "preserved",
+      })),
+      inputs: [
+        { path: directory, kind: "mismatch", becomes: "file" },
+        { path: file, kind: "mismatch", becomes: "directory" },
+      ],
+    };
+    const out = path.join(root, "out");
+    await mkdir(out);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    // Wrong-kind candidates that keep their kind do not invalidate output.
+    await typeopt(out).buildStart();
+    // Removing a wrong-kind candidate leaves resolution unchanged.
+    await rm(directory, { recursive: true });
+    await typeopt(out).buildStart();
+    // Replacing the directory with a regular file satisfies the file probe.
+    await writeFile(directory, "export const f = 2;");
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(directory));
+      return true;
+    });
+    await rm(directory);
+    await mkdir(directory);
+    await typeopt(out).buildStart();
+    // Replacing the file with a directory satisfies the directory probe.
+    await rm(file);
+    await mkdir(file);
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(file));
+      return true;
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("loads a structurally transformed module without property renaming", async () => {
   const { execFileSync } = await import("node:child_process");
   const { fileURLToPath } = await import("node:url");
@@ -409,6 +609,70 @@ test("loads a structurally transformed module without property renaming", async 
       }),
       /stale/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("real optimizer output is rejected once a shadowing dep.ts appears", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const { readFile } = await import("node:fs/promises");
+  const root = await realpath(
+    await mkdtemp(path.join(tmpdir(), "typeopt-vite-shadow-")),
+  );
+  try {
+    const output = path.join(root, "optimized");
+    await writeFile(
+      path.join(root, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "ESNext",
+          target: "ES2022",
+          moduleResolution: "bundler",
+          jsx: "react-jsx",
+          strict: true,
+        },
+      }),
+    );
+    await writeFile(
+      path.join(root, "main.ts"),
+      'import { answer } from "./dep"; console.log(answer());',
+    );
+    await writeFile(
+      path.join(root, "dep.tsx"),
+      "export function answer() { return 1; }",
+    );
+    const binary =
+      process.env.TYPEOPT_BIN ||
+      fileURLToPath(
+        new URL("../../../../target/debug/typeopt", import.meta.url),
+      );
+    execFileSync(
+      binary,
+      [
+        "--project",
+        path.join(root, "tsconfig.json"),
+        "--entry",
+        path.join(root, "main.ts"),
+        "--out-dir",
+        output,
+      ],
+      { stdio: "pipe" },
+    );
+    const manifest = JSON.parse(
+      await readFile(path.join(output, "modules.json"), "utf8"),
+    );
+    const absent = path.join(root, "dep.ts");
+    assert.ok(
+      manifest.inputs.some((i) => i.kind === "absent" && i.path === absent),
+      JSON.stringify(manifest.inputs),
+    );
+    // Unchanged files and a still-absent dep.ts validate.
+    await typeopt(output).buildStart();
+    // Creating dep.ts changes no recorded digest, yet must invalidate.
+    await writeFile(absent, "export function answer() { return 2; }");
+    await assert.rejects(typeopt(output).buildStart(), /stale/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

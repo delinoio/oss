@@ -173,9 +173,6 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
     [".usage-model-labels li", "border-left", "selected-border"],
   ]);
   await declarations("session.css", [
-    [".session-tab.is-selected", "color", "link"],
-    [".session-tab.is-selected", "border-bottom-color", "selected-border"],
-    [".session-tab button:focus-visible", "outline", "focus"],
     [".queue-insertion", "border-top", "selected-border"],
     [".context-capacity > div", "background", "selected-border"],
   ]);
@@ -209,12 +206,15 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
   await declarations("credential-access.css", [
     [".credential-access-brand", "color", "link"],
   ]);
-  await declarations("project-edit-tabs.css", [
+  await declarations("tab-strip.css", [
+    [".tab-strip .tab-item.is-selected", "color", "selected-text"],
     [
-      '.project-edit-tablist button[aria-selected="true"]',
+      '.tab-strip .tab-item[aria-selected="true"]',
       "border-bottom-color",
       "selected-border",
     ],
+    [".tab-strip .tab-label:focus-visible", "outline", "focus"],
+    [".tab-strip .tab-close:focus-visible", "outline", "focus"],
   ]);
 });
 
