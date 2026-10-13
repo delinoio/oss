@@ -233,3 +233,50 @@ func TestManagedTitleBusyCandidateDoesNotBlockLaterTitles(t *testing.T) {
 		t.Fatalf("the busy title session was retired: %+v", session)
 	}
 }
+
+// Authority lost after auxiliary admission but before the Take transaction
+// commits no lease and no inference claim, so the Worker receives the typed
+// definite no-delivery result instead of a RecoveryRequired denial.
+func TestManagedTitlePreLeaseDenialReturnsDefiniteResult(t *testing.T) {
+	changes := map[string]func(f *managedTitleFixture, tx *store.Tx) error{
+		"stop": func(f *managedTitleFixture, tx *store.Tx) error {
+			sr, session, err := sessionRecord(tx, f.original.SessionID)
+			if err != nil {
+				return err
+			}
+			if _, err := cancelSessionTitleJob(tx, session.TitleJobID); err != nil {
+				return err
+			}
+			session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonCanceled
+			_, err = tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+			return err
+		},
+		"generation": func(f *managedTitleFixture, tx *store.Tx) error {
+			r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+			if err != nil {
+				return err
+			}
+			a.Subscription.Generation = domain.NewID()
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return err
+		},
+	}
+	for name, change := range changes {
+		t.Run(name, func(t *testing.T) {
+			f := newManagedTitleFixture(t, managedTitleOptions{})
+			record, err := f.claim()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.mutate(t, name, func(tx *store.Tx) error { return change(f, tx) })
+			response, err := f.takeTitle(record.Revision)
+			if err == nil || response != nil {
+				t.Fatal("a title that lost its authority received protected credentials")
+			}
+			requireTitleNotDelivered(t, err, domain.Canceled)
+			if _, account := f.record(); account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Health != domain.AccountReady {
+				t.Fatalf("a pre-lease denial fenced the account: %+v", account.Subscription)
+			}
+		})
+	}
+}

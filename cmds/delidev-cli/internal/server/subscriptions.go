@@ -555,8 +555,28 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
+			// A denial before the managed title's inference claim commits rolls this
+			// transaction back: no lease, claim or credential exists. It is a definite
+			// no-delivery result (Stop, Archive, rename, logout, disablement or creator
+			// revocation won first), so the Worker can report and settle the title
+			// instead of treating it as an uncertain execution. Once an earlier Take
+			// committed the claim, delivery is unknown and the conservative recovery
+			// denial remains. Every other job type keeps the recovery denial.
+			preLeaseDenied := func(job domain.Job, reason string) error {
+				if job.Type != domain.GenerateSessionTitleJob {
+					return subscriptionDenied()
+				}
+				if claimed, claimErr := tx.TitleInferenceClaimed(jr.ID); claimErr != nil || claimed {
+					return subscriptionDenied()
+				}
+				s.logger.InfoContext(ctx, "subscription_title_take_denied_before_lease", "account_id", r.ID, "operation_id", jr.ID, "reason", reason)
+				return subscriptionTitleNotDelivered(domain.Canceled)
+			}
 			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
-				return nil, subscriptionDenied()
+				if err != nil {
+					return nil, subscriptionDenied()
+				}
+				return nil, preLeaseDenied(job, "claim-lost")
 			}
 			if job.Type != domain.GenerateSessionTitleJob {
 				// A claimed managed title has no lease until its own Take, yet it owns
@@ -616,16 +636,19 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				// A managed title reuses the EXECUTE lease but is admitted only by its
 				// exact immutable assignment. The one-time inference claim commits in
 				// this transaction, so a lost response can never deliver credentials or
-				// send inference again.
+				// send inference again. Pre-lease denials use preLeaseDenied above.
 				authority, err := s.validateManagedTitle(tx, jr, job, managedTitleTake)
 				if err != nil {
-					if domain.SafeError(err).Code == domain.BudgetReached {
+					switch domain.SafeError(err).Code {
+					case domain.BudgetReached:
 						return nil, err
+					case domain.PermissionDenied, domain.Unsupported:
+						return nil, preLeaseDenied(job, "authority-lost")
 					}
 					return nil, subscriptionDenied()
 				}
 				if authority.Input.Managed.Generation != state.Generation {
-					return nil, subscriptionDenied()
+					return nil, preLeaseDenied(job, "generation-changed")
 				}
 				if claimed, err := tx.ClaimTitleInference(jr.ID); err != nil || !claimed {
 					return nil, subscriptionDenied()
