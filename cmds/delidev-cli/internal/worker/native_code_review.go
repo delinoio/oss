@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -209,6 +210,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		defer stopCancellation()
 		nativeConfig := codex.Config{CodeReviewModel: input.Source.Configuration.NativeModel, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: path, Env: env, Logger: logger, ProtectedValues: protected}}
 		var proxy *nativeproxy.Proxy
+		var forwarder *nativeforward.Forwarder
 		if managed != nil {
 			nativeConfig.API = nil
 			nativeConfig.ManagedAuthentication = true
@@ -221,6 +223,14 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			if proxy != nil {
 				nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
 				nativeConfig.Process.ProtectedValues = append(protected, proxy.ProtectedValues()...)
+			} else {
+				forwarder, err = openCodexNativeForwarder(nativeCtx, config, input.ActionID, token, false)
+				if err != nil {
+					return err
+				}
+				if forwarder != nil {
+					nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+				}
 			}
 		}
 		closed := false
@@ -253,6 +263,11 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			}
 			if proxy != nil {
 				if e := proxy.Close(); e != nil {
+					failures = append(failures, e)
+				}
+			}
+			if forwarder != nil {
+				if e := forwarder.Close(); e != nil {
 					failures = append(failures, e)
 				}
 			}

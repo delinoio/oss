@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -258,6 +259,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
 	var proxy *nativeproxy.Proxy
+	var forwarder *nativeforward.Forwarder
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
@@ -279,6 +281,23 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 					proxyClosed = true
 				}
 			}()
+		} else {
+			forwarder, err = openCodexNativeForwarder(nativeCtx, config, i.ActionID, token, false)
+			if err != nil {
+				return nil, err
+			}
+			if forwarder != nil {
+				proxyClosed = false
+				nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+				defer func() {
+					if err := forwarder.Close(); err != nil {
+						cleanupFailed = true
+						output, returned = nil, err
+					} else {
+						proxyClosed = true
+					}
+				}()
+			}
 		}
 	}
 	phase = compactionLaunch
@@ -407,6 +426,12 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	if proxy != nil {
 		if err := proxy.Close(); err != nil {
+			return nil, err
+		}
+		proxyClosed = true
+	}
+	if forwarder != nil {
+		if err := forwarder.Close(); err != nil {
 			return nil, err
 		}
 		proxyClosed = true

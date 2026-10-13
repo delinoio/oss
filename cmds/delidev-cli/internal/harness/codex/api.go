@@ -12,6 +12,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeforward"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 )
 
@@ -26,6 +27,11 @@ type APIConfig struct {
 	Token            string `json:"-"`
 	TitleProfile     bool   `json:"-"`
 	LoopbackProxyURL string `json:"-"`
+	// ForwarderOrigin is the execution-owned private loopback origin of the
+	// Worker's API forwarder. It replaces only the native base origin; the
+	// execution token, provider shape and retry policy are unchanged. It cannot
+	// be combined with the owned upstream proxy.
+	ForwarderOrigin string `json:"-"`
 }
 
 // Retain only non-secret configuration after launch. The process owner receives
@@ -49,6 +55,17 @@ func configureAPI(config *Config) (*apiBinding, error) {
 	origin, err := url.Parse(config.API.ServerOrigin)
 	if err != nil || origin.ForceQuery || origin.RawPath != "" {
 		return nil, incompatible()
+	}
+	if config.API.ForwarderOrigin != "" {
+		// The native process addresses only the exact private forwarder. The
+		// paired origin stays validated above but is never given to Codex.
+		if config.API.LoopbackProxyURL != "" || !nativeforward.ValidNativeOrigin(config.API.ForwarderOrigin) {
+			return nil, apiConfigMismatch("owned-forwarder")
+		}
+		origin, err = url.Parse(config.API.ForwarderOrigin)
+		if err != nil {
+			return nil, apiConfigMismatch("owned-forwarder")
+		}
 	}
 	origin.Path = apiproxy.Prefix
 	binding := &apiBinding{endpoint: origin.String(), title: config.API.TitleProfile}

@@ -135,6 +135,26 @@ func LocalRoot(root string, serverID domain.ID, pairedEndpoint string) (string, 
 	return owner, true, nil
 }
 
+// Following reports whether LocalTransport would route this fixed Local Worker
+// through an app-owned runtime now: a current record exists, or the durable
+// follow marker proves a retired runtime must fail closed. An unchanged Local
+// address (no record and no marker) and every Saved/remote Worker report false.
+// Corrupt state reports true so the transport rejects it instead of silently
+// using the pairing address.
+func Following(root string, serverID domain.ID, pairedEndpoint string) (bool, error) {
+	owner, local, err := LocalRoot(root, serverID, pairedEndpoint)
+	if err != nil || !local {
+		return false, err
+	}
+	if _, err := Load(owner, serverID); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if _, err := security.ReadPrivate(filepath.Join(root, "desktop-runtime-follow.json"), 4096); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return true, nil
+}
+
 func proof(t Target, challenge string) string {
 	key, _ := base64.RawURLEncoding.DecodeString(t.Key)
 	mac := hmac.New(sha256.New, key)

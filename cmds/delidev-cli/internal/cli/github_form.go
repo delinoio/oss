@@ -56,7 +56,7 @@ func githubTokenFormCommand(ctx context.Context, c client, args []string) (any, 
 }
 
 func githubPresentationCommand(ctx context.Context, args []string, input io.Reader) (any, error) {
-	if len(args) == 0 || (args[0] != "open-github" && args[0] != "dispatch-github") {
+	if len(args) == 0 || (args[0] != "open-github" && args[0] != "dispatch-github" && args[0] != "validate-github") {
 		return nil, usage()
 	}
 	f := flags("presentation " + args[0])
@@ -65,8 +65,11 @@ func githubPresentationCommand(ctx context.Context, args []string, input io.Read
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
 	}
+	if args[0] == "validate-github" && !*stdin {
+		return nil, domain.Fail(domain.InvalidArgument, "Select one presentation input source.", "Use --url-stdin for local GitHub validation.")
+	}
 	if *stdin {
-		if *address != "" || args[0] != "open-github" {
+		if *address != "" || args[0] == "dispatch-github" {
 			return nil, domain.Fail(domain.InvalidArgument, "Select one presentation input source.", "Use --url-stdin without --url for local GitHub opening.")
 		}
 		var err error
@@ -77,6 +80,12 @@ func githubPresentationCommand(ctx context.Context, args []string, input io.Read
 	}
 	if err := domain.ValidateGitHubPresentationURL(*address); err != nil {
 		return nil, err
+	}
+	// validate-github proves the closed destination contract only. The desktop
+	// host uses it before launching the browser the user selected; the
+	// standalone CLI never reads that device preference.
+	if args[0] == "validate-github" {
+		return map[string]any{"validated": true}, nil
 	}
 	var err error
 	if args[0] == "dispatch-github" {
