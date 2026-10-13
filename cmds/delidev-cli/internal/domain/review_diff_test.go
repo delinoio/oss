@@ -107,3 +107,115 @@ func TestReviewExactEOFAndBoundedContext(t *testing.T) {
 		t.Fatal("context bound", err)
 	}
 }
+
+func branchReviewDiffFixture(patch string, base Reference) WorkspaceDiff {
+	v := WorkspaceDiff{Comparison: DiffBranch, RepositoryID: NewID(), Path: ".", Base: DiffCommit, BaseObject: strings.Repeat("c", 40), HeadCommit: strings.Repeat("a", 40), BaseCommit: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40), BaseRef: base, Patch: patch, Untracked: []string{}}
+	v.Revision = v.Digest()
+	return v
+}
+
+func TestReviewFilesParseBranchObservationsForEveryBaseKind(t *testing.T) {
+	for name, base := range map[string]Reference{
+		"local branch":  {Type: LocalBranch, Name: "main"},
+		"remote branch": {Type: RemoteBranch, Remote: "origin", Name: "main"},
+		"commit":        {Type: CommitReference, Name: strings.Repeat("b", 40)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := branchReviewDiffFixture(ordinaryReviewPatch, base)
+			files, err := v.ReviewFiles()
+			if err != nil || len(files) != 1 || files[0].Path != "file.txt" || files[0].Kind != ReviewTextFile || len(files[0].Lines) != 4 {
+				t.Fatal(files, err)
+			}
+			if files[0].Lines[1].Old != 2 || files[0].Lines[1].New != 0 || files[0].Lines[2].New != 2 || files[0].Lines[2].Old != 0 {
+				t.Fatal("line coordinates changed", files[0].Lines)
+			}
+			// The branch coordinates must equal those of an identical working-tree patch.
+			working, err := reviewDiffFixture(ordinaryReviewPatch).ReviewFiles()
+			if err != nil || working[0].Digest != files[0].Digest {
+				t.Fatal("branch file digest differs from the ordinary patch digest", err)
+			}
+			selection := ReviewSelection{Path: "file.txt", Kind: ReviewLineAnchor, Side: ReviewNewSide, Start: 1, End: 3}
+			anchor, err := v.ReviewAnchor(selection)
+			if err != nil || anchor.BaseRef != base || anchor.DiffRevision != v.Revision || anchor.Comparison != DiffBranch || anchor.FileDigest != files[0].Digest || anchor.Context != "context\nnew\ntail\n" || !anchor.Matches(v) {
+				t.Fatal(anchor, err)
+			}
+			changedBase := v
+			changedBase.BaseRef.Name = "other"
+			changedBase.Revision = changedBase.Digest()
+			if anchor.Matches(changedBase) {
+				t.Fatal("anchor matched a different base reference")
+			}
+			changedPatch := branchReviewDiffFixture(strings.Replace(ordinaryReviewPatch, "+new", "+newer", 1), base)
+			changedPatch.RepositoryID = v.RepositoryID
+			changedPatch.Revision = changedPatch.Digest()
+			if anchor.Matches(changedPatch) {
+				t.Fatal("anchor matched a changed revision")
+			}
+		})
+	}
+}
+
+func TestReviewFilesBranchEmptyPatchIsEmptyNonNilSlice(t *testing.T) {
+	files, err := branchReviewDiffFixture("", Reference{Type: LocalBranch, Name: "main"}).ReviewFiles()
+	if err != nil || files == nil || len(files) != 0 {
+		t.Fatal(files, err)
+	}
+}
+
+func TestReviewFilesBranchRejectsInvalidObservations(t *testing.T) {
+	base := Reference{Type: LocalBranch, Name: "main"}
+	valid := func() WorkspaceDiff { return branchReviewDiffFixture(ordinaryReviewPatch, base) }
+	for name, change := range map[string]func(*WorkspaceDiff){
+		"missing base ref":    func(v *WorkspaceDiff) { v.BaseRef = Reference{}; v.Revision = v.Digest() },
+		"unknown base type":   func(v *WorkspaceDiff) { v.BaseRef.Type = "tag"; v.Revision = v.Digest() },
+		"remote on local ref": func(v *WorkspaceDiff) { v.BaseRef.Remote = "origin"; v.Revision = v.Digest() },
+		"altered base ref":    func(v *WorkspaceDiff) { v.BaseRef.Name = "other" },
+		"tampered patch":      func(v *WorkspaceDiff) { v.Patch = strings.Replace(v.Patch, "+new", "+newer", 1) },
+		"merge base mismatch": func(v *WorkspaceDiff) { v.MergeBase = strings.Repeat("d", 40); v.Revision = v.Digest() },
+		"missing base commit": func(v *WorkspaceDiff) { v.BaseCommit = ""; v.Revision = v.Digest() },
+		"combined patch": func(v *WorkspaceDiff) {
+			v.Patch = strings.Replace(ordinaryReviewPatch, "diff --git a/file.txt b/file.txt", "diff --cc file.txt", 1)
+			v.Revision = v.Digest()
+		},
+		"incomplete patch": func(v *WorkspaceDiff) {
+			v.Patch = strings.TrimSuffix(ordinaryReviewPatch, "\n")
+			v.Revision = v.Digest()
+		},
+		"mismatched header": func(v *WorkspaceDiff) {
+			v.Patch = strings.Replace(ordinaryReviewPatch, "+++ b/file.txt", "+++ b/other.txt", 1)
+			v.Revision = v.Digest()
+		},
+		"short hunk count": func(v *WorkspaceDiff) {
+			v.Patch = strings.Replace(ordinaryReviewPatch, "-1,3", "-1,2", 1)
+			v.Revision = v.Digest()
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := valid()
+			change(&v)
+			if _, err := v.ReviewFiles(); err == nil {
+				t.Fatal("invalid branch observation accepted")
+			}
+			if _, err := v.ReviewAnchor(ReviewSelection{Path: "file.txt", Kind: ReviewFileAnchor}); err == nil {
+				t.Fatal("anchor created for invalid branch observation")
+			}
+		})
+	}
+}
+
+func TestReviewFilesNonBranchObservationsStayUnchanged(t *testing.T) {
+	for _, comparison := range []WorkspaceDiffComparison{DiffWorkingTree, DiffStaged} {
+		v := reviewDiffFixture(ordinaryReviewPatch)
+		v.Comparison = comparison
+		v.Revision = v.Digest()
+		if files, err := v.ReviewFiles(); err != nil || len(files) != 1 {
+			t.Fatal(comparison, files, err)
+		}
+		// A non-branch observation must not carry a speculative branch base.
+		v.BaseRef = Reference{Type: LocalBranch, Name: "main"}
+		v.Revision = v.Digest()
+		if _, err := v.ReviewFiles(); err == nil {
+			t.Fatal(comparison, "accepted branch base on non-branch observation")
+		}
+	}
+}
