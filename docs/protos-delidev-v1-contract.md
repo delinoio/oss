@@ -2,8 +2,8 @@
 
 ## Branch prefix exact-quote negotiation
 
-Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated under issue 2324 and
-activated with this change. It is independent of `BRANCH_PREFIX_INSTRUCTIONS_V1 = 38`
+Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
+the immutable selection version 2 change. It is independent of `BRANCH_PREFIX_INSTRUCTIONS_V1 = 38`
 and advertises that the Worker validates immutable branch prefix selection
 version 2 (exact JSON-style quoting of the Execute instruction). The server
 echoes it in `AttachWorkerResponse.supported_worker_capabilities`; a Worker
