@@ -158,12 +158,18 @@ func TestRepositoryCreateIdentityUsesOrdinaryGuidanceAndRPCAborts(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	live := domain.NewID()
+	doctorPut(t, s, domain.RepositoryKind, live, 0, domain.Repository{Name: "Live repository", RemoteURL: "https://example.test/live.git", Checkouts: []domain.Checkout{}, AutoFetch: true})
+	otherKind := domain.NewID()
+	doctorPut(t, s, domain.MachineKind, otherKind, 0, domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0"})
 	cases := []struct {
 		name     string
 		id       domain.ID
 		message  string
 		guidance string
 	}{
+		{"same kind live ID", live, identityUsedMessage, identityUsedGuidance},
+		{"other kind live ID", otherKind, identityUsedMessage, identityUsedGuidance},
 		{"tombstoned ID", deleted, identityDeletedMessage, identityDeletedAdvice},
 	}
 	for _, test := range cases {
