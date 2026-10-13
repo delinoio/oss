@@ -3944,9 +3944,7 @@ function RunnerDeviceInventory({
                       />
                     </p>
                   ) : null}
-                  <small>
-                    {productLabel(PresentationKind.Resource, row.id)}
-                  </small>
+                  <small>{productLabel(PresentationKind.Runner, row.id)}</small>
                 </div>
                 <div className="actions">
                   <SettingsActionButton
