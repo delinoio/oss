@@ -640,9 +640,7 @@ it.each(
       expect(
         bodyHidden(screen.getByText(/closes all windows/i, { exact: false })),
       ).toBe(true);
-    fireEvent.click(
-      screen.getByRole("button", { name: `Continue ${title}` }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: `Continue ${title}` }));
     expect(
       screen.queryByRole("button", { name: `Continue ${title}` }),
     ).toBeNull();
