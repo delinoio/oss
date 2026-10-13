@@ -314,8 +314,10 @@ Claim the exact pending arrival before sampling the executing Worker's clock
 once, immediately before reply generation. Use whole Unix seconds, without
 borrowing desktop time, native emission timestamps, stored values or an external
 clock. Same-ID response transmission grants no semantic acceptance, approval,
-input, account, tool, retry or completion authority. Ordinary execution and the
-isolated title consumer discard the content-free sent metadata. Logs contain
+input, account, tool, retry or completion authority. Ordinary execution, the
+isolated title consumer and the dedicated native code-review consumer discard the
+content-free sent metadata; native review still rejects it when its thread or
+turn differs from the original review. Logs contain
 only closed service and delivery classifications. Stale/replaced tokens,
 repeated attempts, stopped connections and uncertain delivery cannot resample
 or resend. Retain at most 4,096 current-time request-ID claims on the original

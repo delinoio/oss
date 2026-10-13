@@ -27,3 +27,19 @@ func TestNativeReviewIgnoresValidatedWindowsSandboxMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeReviewIgnoresCurrentTimeReplyMetadata(t *testing.T) {
+	const threadID = "original-thread"
+	event := codex.Event{Kind: codex.MetadataEvent, ThreadID: threadID, Metadata: codex.CurrentTimeReplySent, Correlated: true}
+	if !nativeReviewMayIgnoreMetadata(event, threadID, "original-turn") {
+		t.Fatal("content-free current-time reply metadata interrupted native review")
+	}
+	for name, foreign := range map[string]codex.Event{
+		"foreign thread": {Kind: codex.MetadataEvent, ThreadID: "foreign-thread", Metadata: codex.CurrentTimeReplySent, Correlated: true},
+		"foreign turn":   {Kind: codex.MetadataEvent, ThreadID: threadID, TurnID: "foreign-turn", Metadata: codex.CurrentTimeReplySent, Correlated: true},
+	} {
+		if nativeReviewMayIgnoreMetadata(foreign, threadID, "original-turn") {
+			t.Errorf("%s current-time metadata bypassed native review ownership checks", name)
+		}
+	}
+}
