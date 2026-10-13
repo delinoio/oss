@@ -70,11 +70,7 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		if err := options.Validate(optionsQuery); err != nil {
 			return nil, err
 		}
-		available := false
-		for _, choice := range options.DiffOptions.Choices {
-			available = available || choice.Reference == query.BaseRef && choice.Available
-		}
-		if !available {
+		if !branchBaseAvailable(options.DiffOptions.Choices, query.BaseRef) {
 			return nil, domain.Fail(domain.Unavailable, "The requested branch base is unavailable locally.", "Choose an available base after updating the original server and Worker.")
 		}
 	}
@@ -113,4 +109,27 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		}
 	}
 	return result, nil
+}
+
+// branchBaseAvailable decides whether the CLI may send the final branch read.
+// The options inventory enumerates local and remote-tracking branches plus one
+// configured reference. It is not an inventory of commit objects, so a named
+// branch must match an available choice exactly, while a commit that the
+// inventory does not mention is left to the original Worker. The Worker
+// resolves the full lowercase object ID locally without fetching and rejects
+// absent objects, non-commits, unrelated history and ambiguous merge-bases.
+// A commit the inventory does list (the configured Base) keeps its labelled
+// availability, so a known-missing configured commit never reaches the Worker.
+func branchBaseAvailable(choices []domain.WorkspaceDiffChoice, base domain.Reference) bool {
+	listed := false
+	for _, choice := range choices {
+		if choice.Reference != base {
+			continue
+		}
+		if choice.Available {
+			return true
+		}
+		listed = true
+	}
+	return base.Type == domain.CommitReference && !listed
 }
