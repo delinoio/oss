@@ -3096,6 +3096,49 @@ it("denies branch path submission while an options refresh is pending or stale",
   await screen.findByText("Relative diff path: src");
 });
 
+it("denies branch path submission while a background options refetch is in flight", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  const pathApplied = () => screen.queryByText("Relative diff path: src");
+  // Hold only the options read so the previous inventory stays observable.
+  const inner = f.read.getMockImplementation()!;
+  let release: () => void = () => {};
+  const opened = new Promise<void>((resolve) => (release = resolve));
+  f.read.mockImplementation(async (request) => {
+    const q = JSON.parse(new TextDecoder().decode(request.queryJson));
+    if (q.operation === "git-diff-options") await opened;
+    return inner(request);
+  });
+  const before = operations().length;
+  // The connection-ready handler invalidates every active query.
+  void f.client.invalidateQueries({ refetchType: "active" });
+  await waitFor(() => expect(operations()).toContain("git-diff-options"));
+  await waitFor(() =>
+    expect(
+      f.client.isFetching({
+        predicate: (query) =>
+          (query.state.data as { documentJson?: Uint8Array } | undefined)
+            ?.documentJson !== undefined &&
+          query.state.fetchStatus === "fetching",
+      }),
+    ).toBeGreaterThan(0),
+  );
+  const submit = submitDraftPath("src");
+  expect(submit.disabled).toBe(true);
+  const during = operations().length;
+  fireEvent.submit(submit.closest("form")!);
+  expect(pathApplied()).toBeNull();
+  expect(operations()).toHaveLength(during);
+  expect(during).toBeGreaterThan(before);
+  release();
+  await waitFor(() =>
+    expect((submitDraftPath("src") as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(submitDraftPath("src"));
+  await screen.findByText("Relative diff path: src");
+});
+
 it("keeps a denied path draft after the pending repository negotiation opens its tab", async () => {
   let release: () => void = () => {},
     requested = false;

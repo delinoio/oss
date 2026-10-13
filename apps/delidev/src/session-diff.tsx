@@ -622,11 +622,13 @@ export function RepositoryDiff({
     }
   };
   // A branch path is admitted only against a successfully negotiated, available
-  // base whose inventory is not being renewed or stale. Other comparisons are
-  // base-free and stay immediately submittable.
+  // base whose inventory is not being renewed or stale. A background refetch
+  // (for example a connection-level invalidation) keeps the previous data
+  // observable, so it renews the inventory just like an explicit Refresh.
+  // Other comparisons are base-free and stay immediately submittable.
   const pathAdmitted =
     comparison !== Comparison.Branch ||
-    (supportedBase && !refreshing && !optionsStale);
+    (supportedBase && !refreshing && !options.isFetching && !optionsStale);
   // Returns whether the submission was admitted; a denied submission keeps the
   // typed draft and publishes no tab and no read.
   const submitPath = (): boolean => {
@@ -638,6 +640,7 @@ export function RepositoryDiff({
         optionsPending: options.isPending,
         optionsFailed: options.isError,
         optionsRefreshing: refreshing,
+        optionsFetching: options.isFetching,
         optionsStale,
       });
       return false;
