@@ -34,6 +34,17 @@ func (g *credentialJSONGuard) frame(b byte, offset int64) {
 		g.feed(b, offset)
 		return
 	}
+	// An unframed body whose first byte is RS is an RFC 7464 JSON text sequence:
+	// neither JSON nor a useful SSE field can start with it, and a request that
+	// accepts application/json-seq parses it as such whatever label the response
+	// carries (including none or text/event-stream). Commit to sequence framing so
+	// every record is decoded as an independent JSON text.
+	if g.framing == credentialUnknown && len(g.probe) == 0 && offset == 0 && b == credentialRecordSeparator {
+		g.framing = credentialOrdinary
+		g.sequence = true
+		g.sse.probeLeadingWhitespace = false
+		return
+	}
 	// An optional initial UTF-8 BOM belongs to framing, not a field name.
 	if offset == 0 && b == 0xef || len(g.probe) > 0 && g.probe[0] == 0xef {
 		g.probe = append(g.probe, b)

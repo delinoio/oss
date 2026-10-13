@@ -425,6 +425,30 @@ func TestCredentialJSONTextSequenceMediaTypesRejectEscapedReflections(t *testing
 	}
 }
 
+func TestCredentialUnframedJSONTextSequenceRejectsEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	wire := "\x1e{\"value\":\"\\u0066ixture-password\"}\n\x1e{\"value\":\"safe\"}\n"
+	safe := "\x1e{\"value\":\"safe\"}\n\x1e[\"\\u0073afe\"]\n"
+	// A JSON-expecting request keeps sequence framing when the response omits its
+	// label or mislabels the sequence as an event stream.
+	for _, mediaType := range [][]string{nil, {"text/event-stream"}} {
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, mediaType...)
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") {
+				t.Fatal("unframed JSON text sequence accepted escaped reflection", mediaType)
+			}
+			guard.Close()
+		}
+		guard := newExpectedCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, true, mediaType...)
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("unframed JSON text sequence changed safe bytes", mediaType, err)
+		}
+		guard.Close()
+	}
+}
+
 func TestCredentialOpaqueMediaTypesIgnoreJSONEscapedSpellings(t *testing.T) {
 	credential := domain.ProxyCredential{Username: "fixture-user", Password: `fixture-"password\<tail>`}
 	// Source literals that spell the password with JSON escapes are not wire
