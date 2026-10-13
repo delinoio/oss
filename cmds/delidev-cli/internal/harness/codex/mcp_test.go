@@ -130,6 +130,11 @@ func TestManagedMCPLaunchRejectsUnsafeSelections(t *testing.T) {
 		"stdio-no-command":  func(c *Config) { c.ManagedMCP[0].Command = "" },
 		"unknown-transport": func(c *Config) { c.ManagedMCP[0].Transport = "carrier-pigeon" },
 		"zero-revision":     func(c *Config) { c.ManagedMCP[0].Identity.Revision = 0 },
+		"case-folded-conflict": func(c *Config) {
+			second := mcpStdioServer("second_dddd")
+			second.Environment = map[string]string{"fixture_token": "different"}
+			c.ManagedMCP = append(c.ManagedMCP, second)
+		},
 		"conflicting-values": func(c *Config) {
 			second := mcpStdioServer("second_dddd")
 			second.Environment = map[string]string{"FIXTURE_TOKEN": "different"}
@@ -142,7 +147,7 @@ func TestManagedMCPLaunchRejectsUnsafeSelections(t *testing.T) {
 			mutate(&config)
 			_, err := configureManagedMCP(&config)
 			assertCode(t, err, domain.Unsupported)
-			if strings.Contains(strings.Join(config.Process.Args, "\n"), "fx_bbbb={") && name != "duplicate-name" && name != "conflicting-values" {
+			if strings.Contains(strings.Join(config.Process.Args, "\n"), "fx_bbbb={") && name != "duplicate-name" && name != "conflicting-values" && name != "case-folded-conflict" {
 				// A rejected selection never leaves a partial native server behind.
 				t.Fatal("rejected selection left native arguments")
 			}

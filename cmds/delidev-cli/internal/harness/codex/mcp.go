@@ -122,6 +122,9 @@ func configureManagedMCP(config *Config) ([]mcpBinding, error) {
 		return nil, mcpUnavailable()
 	}
 	claimed := map[string]string{}
+	// Windows environment names are case-insensitive, so a collision between
+	// differently cased names is compared exactly like the host environment.
+	claimedFolded := map[string]string{}
 	taken := func(name string) bool {
 		for _, entry := range config.Process.Env {
 			key, _, _ := strings.Cut(entry, "=")
@@ -165,6 +168,12 @@ func configureManagedMCP(config *Config) ([]mcpBinding, error) {
 				} else if !exists && taken(name) {
 					return nil, mcpUnavailable()
 				}
+				if other, exists := claimedFolded[strings.ToUpper(name)]; exists && other != name {
+					// A differently cased name could reach another server's child on a
+					// case-insensitive host; fail closed instead of sharing a value.
+					return nil, mcpUnavailable()
+				}
+				claimedFolded[strings.ToUpper(name)] = name
 				claimed[name] = value
 				binding.environment = append(binding.environment, name)
 			}
