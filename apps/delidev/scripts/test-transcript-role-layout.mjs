@@ -101,9 +101,16 @@ try {
         shortHeight,
         { width: 1120, height: 960, zoom: 2 },
       ];
+  const workspaces = ["general-chat", "worktree"];
+  let block = 0;
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "system"])
-      for (const size of sizes) {
+      for (const [sizeIndex, size] of sizes.entries()) {
+        // Rotate by language/theme block so each viewport covers both workspaces
+        // regardless of how many viewports the matrix contains.
+        const sizeWorkspace =
+          workspaces[(block + sizeIndex) % workspaces.length];
+        if (sizeIndex === sizes.length - 1) block++;
         await page.emulateMedia({ colorScheme: "dark" });
         process.stdout.write(
           JSON.stringify({
@@ -115,7 +122,7 @@ try {
         );
         await page.setViewportSize(size);
         await page.goto(
-          `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}&workspace=${cases % 2 ? "worktree" : "general-chat"}`,
+          `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}&workspace=${sizeWorkspace}`,
         );
         await page.locator(".message-user").first().waitFor();
         const transcript = page.locator(".transcript");
