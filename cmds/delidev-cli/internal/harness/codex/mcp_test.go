@@ -598,6 +598,9 @@ func (f *threadFixture) handleMCP(id json.RawMessage, method string, raw json.Ra
 				state = "starting"
 			case f.mode == "thread-turn-mcp-stuck":
 				state = "starting"
+			case f.mode == "thread-turn-mcp-slow-status":
+				// A thread-scoped listing waits for its server to finish starting.
+				time.Sleep(3 * time.Second)
 			}
 			entry := map[string]any{"name": name, "runtimeStatus": state, "pluginId": nil, "httpOrigin": nil, "serverInfo": nil, "serverCapabilities": nil, "tools": map[string]any{}, "toolsError": nil, "resources": []any{}, "resourceTemplates": []any{}, "authStatus": "unsupported"}
 			if url, ok := servers[name]["url"].(string); ok {
@@ -1048,5 +1051,24 @@ func TestManagedMCPConnectedServerWithToolDiscoveryFailureIsNotReady(t *testing.
 	}
 	if got := classifyMCP(mcpStatusEntry{RuntimeStatus: &connected, ToolsError: &failure}); got != domain.MCPStartupFailed {
 		t.Fatalf("a connected server without a tool catalog was classified %v", got)
+	}
+}
+
+func TestManagedMCPStatusCallsAreBoundedByTheOverallStartupDeadline(t *testing.T) {
+	previous := mcpStartupWait
+	mcpStartupWait = 400 * time.Millisecond
+	defer func() { mcpStartupWait = previous }()
+	client, capture, _ := openMCPFixture(t, "mcp-slow-status", mcpStdioServer("fx_bbbb"), mcpHTTPServer("web_aaaa"))
+	started := time.Now()
+	_, err := client.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
+	if domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatalf("a stuck status call was not reported as unavailable: %v", err)
+	}
+	// The first call alone takes three seconds; the shared deadline ends it earlier.
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("the startup deadline did not bound the status call: %v", elapsed)
+	}
+	if slices.Contains(captureMethods(t, capture), "turn/start") {
+		t.Fatal("input was sent without a verified inventory")
 	}
 }

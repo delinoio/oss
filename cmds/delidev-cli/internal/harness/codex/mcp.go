@@ -355,6 +355,9 @@ type mcpStatusEntry struct {
 	AuthStatus    string          `json:"authStatus"`
 }
 
+// mcpStartupWait is the overall bound for every selected server to start.
+var mcpStartupWait = 45 * time.Second
+
 // listMCPStatus asks for each selected server separately. With a thread and a
 // server name the installed app-server reuses the thread's own connection; an
 // unscoped listing would start a second copy of every configured server.
@@ -436,10 +439,17 @@ func (c *Client) verifyManagedMCP(ctx context.Context, cwd string) (returned err
 	if err := c.validateMCPConfig(config.Config); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(45 * time.Second)
+	deadline := time.Now().Add(mcpStartupWait)
+	// Every status call is bounded by the overall startup deadline: a thread-scoped
+	// listing waits for its selected server, so serial calls could otherwise exceed it.
+	statusCtx, cancelStatus := context.WithDeadline(ctx, deadline)
+	defer cancelStatus()
 	for {
-		entries, err := c.listMCPStatus(ctx)
+		entries, err := c.listMCPStatus(statusCtx)
 		if err != nil {
+			if ctx.Err() == nil && statusCtx.Err() != nil {
+				return domain.Fail(domain.Unavailable, "A selected MCP server did not finish starting.", "Reconnect the original selected definition; no input was sent.")
+			}
 			return err
 		}
 		outcomes, pending, err := c.matchMCPInventory(entries)
