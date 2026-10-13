@@ -553,3 +553,82 @@ func TestOwnsServerRequiresMatchingOwnerIdentity(t *testing.T) {
 		t.Fatalf("corrupt identity did not fail closed: %v %v", owns, err)
 	}
 }
+
+// A deleted fixed journal is original evidence missing from the canonical
+// owner scope. Only that scope fails closed; scopes without the owner identity
+// naming this server, saved connections and remote endpoints keep their route.
+func TestMissingJournalRequiresRecoveryOnlyInCanonicalOwnerScope(t *testing.T) {
+	const local = "http://127.0.0.1:40000"
+	writeIdentity := func(t *testing.T, owner string, serverID domain.ID) {
+		t.Helper()
+		token, err := security.RandomToken()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(security.Identity{ServerID: serverID, Token: token})
+		if err := security.WriteAtomic(filepath.Join(owner, "owner.json"), raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := []struct {
+		name     string
+		endpoint string
+		prepare  func(t *testing.T, owner string, serverID domain.ID) string
+		wantCode domain.Code
+	}{
+		{"canonical owner scope", local, func(t *testing.T, owner string, serverID domain.ID) string {
+			writeIdentity(t, owner, serverID)
+			return filepath.Join(owner, "worker")
+		}, domain.RecoveryRequired},
+		{"custom scope without owner identity", local, func(t *testing.T, owner string, serverID domain.ID) string {
+			return filepath.Join(owner, "worker")
+		}, ""},
+		{"owner identity for another server", local, func(t *testing.T, owner string, serverID domain.ID) string {
+			writeIdentity(t, owner, domain.NewID())
+			return filepath.Join(owner, "worker")
+		}, ""},
+		{"remote endpoint", "https://example.com", func(t *testing.T, owner string, serverID domain.ID) string {
+			writeIdentity(t, owner, serverID)
+			return filepath.Join(owner, "worker")
+		}, ""},
+		{"saved connection scope", local, func(t *testing.T, owner string, serverID domain.ID) string {
+			connection := filepath.Join(owner, "connections", "saved")
+			if err := security.PrivateDir(connection); err != nil {
+				t.Fatal(err)
+			}
+			writeIdentity(t, connection, serverID)
+			return filepath.Join(connection, "worker")
+		}, ""},
+		{"non-worker directory", local, func(t *testing.T, owner string, serverID domain.ID) string {
+			writeIdentity(t, owner, serverID)
+			return filepath.Join(owner, "custom")
+		}, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			owner := filepath.Join(t.TempDir(), "owner")
+			if err := security.PrivateDir(owner); err != nil {
+				t.Fatal(err)
+			}
+			serverID := domain.NewID()
+			root := test.prepare(t, owner, serverID)
+			if err := security.PrivateDir(root); err != nil {
+				t.Fatal(err)
+			}
+			_, isLocal, err := LocalRoot(root, serverID, test.endpoint)
+			following, followErr := Following(root, serverID, test.endpoint)
+			if isLocal || following {
+				t.Fatalf("missing journal reported local=%v following=%v", isLocal, following)
+			}
+			for _, got := range []error{err, followErr} {
+				if test.wantCode == "" {
+					if got != nil {
+						t.Fatalf("unexpected error: %v", got)
+					}
+				} else if got == nil || domain.SafeError(got).Code != test.wantCode {
+					t.Fatalf("want %s, got %v", test.wantCode, got)
+				}
+			}
+		})
+	}
+}

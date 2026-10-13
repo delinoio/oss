@@ -409,3 +409,52 @@ func TestMismatchedOwnerIdentityFailsClosedWithoutDirectRoute(t *testing.T) {
 		t.Fatalf("mismatched owner identity did not fail closed: client=%v err=%v hits=%d", client != nil, err, hits.Load())
 	}
 }
+
+// A deleted fixed journal in the canonical owner scope is missing original
+// evidence, not a custom Worker: the Worker must fail closed with
+// recovery_required before any request, with or without follow evidence.
+func TestMissingJournalInCanonicalOwnerScopeFailsClosed(t *testing.T) {
+	for _, followed := range []bool{false, true} {
+		var hits atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+		f := newForwardFixture(t, server.URL, false)
+		if followed {
+			if err := desktopruntime.Publish(f.target); err != nil {
+				t.Fatal(err)
+			}
+			if err := desktopruntime.Retire(f.target); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Remove(filepath.Join(f.root, "local-pairing.json")); err != nil {
+			t.Fatal(err)
+		}
+		client, closeIdle, err := networkHTTPClientForHeaders(context.Background(), f.config(), f.credential, 0)
+		if closeIdle != nil {
+			closeIdle()
+		}
+		if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || hits.Load() != 0 {
+			t.Fatalf("followed=%v deleted journal did not fail closed: client=%v err=%v hits=%d", followed, client != nil, err, hits.Load())
+		}
+		server.Close()
+	}
+}
+
+// Without the canonical owner identity the same missing journal belongs to a
+// custom Worker scope that keeps its direct route.
+func TestMissingJournalInCustomWorkerScopeKeepsDirectRoute(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if err := os.Remove(filepath.Join(f.root, "local-pairing.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(f.owner, "owner.json")); err != nil {
+		t.Fatal(err)
+	}
+	response, err := sendThroughWorkerClient(t, f)
+	if err != nil || response.StatusCode != http.StatusOK || hits.Load() != 1 {
+		t.Fatalf("custom Worker scope lost its direct route: %v hits=%d", err, hits.Load())
+	}
+}

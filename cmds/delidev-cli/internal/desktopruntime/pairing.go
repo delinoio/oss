@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -214,4 +216,41 @@ func RequiresLocalTransport(owner, root string, serverID domain.ID, endpoint str
 
 func logUnverifiedPairing(phase string, err error) {
 	slog.Warn("desktop_runtime_follow", "phase", phase, "code", domain.SafeError(err).Code)
+}
+
+// requireJournalInOwnerScope distinguishes a Worker scope whose fixed
+// local-pairing journal was deleted from a scope that never had one. The scope
+// is a canonical Local Worker only when it sits directly under the server data
+// directory whose owner identity names serverID and the saved endpoint is a
+// loopback address, as every Local pairing endpoint is. Its journal is then
+// required original evidence: its absence reports RecoveryRequired so the
+// bearer token is never sent to the saved pairing address without grant
+// verification. A custom scope without that owner identity, a saved
+// connection's Worker and a Worker paired to a remote endpoint keep their
+// direct route.
+func requireJournalInOwnerScope(root string, serverID domain.ID, endpoint string) error {
+	owner := filepath.Dir(root)
+	if filepath.Base(filepath.Dir(owner)) == "connections" || !loopbackEndpoint(endpoint) {
+		return nil
+	}
+	identity, err := security.LoadIdentity(owner)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return unreadableEvidence("owner-identity", err)
+	}
+	if identity.ServerID != serverID {
+		return nil
+	}
+	logUnverifiedPairing("journal-missing", recoveryRequired())
+	return recoveryRequired()
+}
+
+func loopbackEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Hostname() == "" {
+		return false
+	}
+	return parsed.Hostname() == "localhost" || net.ParseIP(parsed.Hostname()).IsLoopback()
 }

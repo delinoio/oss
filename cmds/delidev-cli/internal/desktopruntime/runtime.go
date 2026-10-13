@@ -118,7 +118,9 @@ func LocalRoot(root string, serverID domain.ID, pairedEndpoint string) (string, 
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "local-pairing.json"), 4096)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
+		// A deleted journal must not turn the canonical owner scope into a
+		// direct-route Worker that sends its bearer to the saved address.
+		return "", false, requireJournalInOwnerScope(root, serverID, pairedEndpoint)
 	}
 	if err != nil {
 		return "", false, err
