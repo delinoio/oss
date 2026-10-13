@@ -3086,7 +3086,9 @@ cards, radio choices, meaningful Review sections and diagnostic panels. Existing
 footer owners align actions and helper text with the body; their actual wrapped
 height reserves space without covering controls, errors or focus outlines. Wrap
 step labels and actions at narrow widths using semantic theme tokens and existing
-English/Korean copy. Dialog headers own their title; do not duplicate it in the body.
+English/Korean copy. Agent Worker step labels stay visible for every step (completed,
+current and future) at every width, including 760px and below; no stylesheet may hide
+non-current labels. Dialog headers own their title; do not duplicate it in the body.
 
 Keep all original stage transitions, hidden-step validation/read suspension,
 conditional bypasses, drafts, resource bindings, pagination, enablement, original
