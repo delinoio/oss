@@ -2140,3 +2140,66 @@ fn renames_preloads_with_a_non_frozen_entry() {
     let after = run_asset(&out_dir, "index-");
     assert_eq!(before.stdout, after.stdout);
 }
+
+/// An HTML entry that is a boundary imports another boundary, which imports
+/// an ordinary chunk. The entry is the first boundary in path order that
+/// reaches the chunk, so it is the one that gets the credit and the warning.
+#[test]
+fn credits_the_first_boundary_through_nested_boundaries() {
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/a-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/a-AAAAAAAA.js",
+            r#"import"./b-BBBBBBBB.js";console.log("a");"#,
+        ),
+        (
+            "assets/b-BBBBBBBB.js",
+            r#"import{p}from"./plain-CCCCCCCC.js";console.log(p());"#,
+        ),
+        (
+            "assets/plain-CCCCCCCC.js",
+            r#"function p(){return"plain"}function unusedPlainHelper(n){return n.toString(36).repeat(4)}export{p,unusedPlainHelper};"#,
+        ),
+    ]);
+    let output = run_typeopt(
+        temp.path(),
+        &[
+            "--bundle-exclude",
+            "a-AAAAAAAA",
+            "--bundle-exclude",
+            "b-BBBBBBBB",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("HTML entry chunk imports chunks that therefore cannot be optimized"),
+        "{stderr}"
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let frozen = report["frozen_chunks"].as_array().unwrap();
+    assert_eq!(frozen.len(), 1, "{report:#}");
+    assert!(
+        frozen[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("plain-CCCCCCCC.js")
+    );
+    assert!(
+        frozen[0]["boundary"]
+            .as_str()
+            .unwrap()
+            .ends_with("a-AAAAAAAA.js")
+    );
+    assert_eq!(
+        fs::read(temp.path().join("out/assets/plain-CCCCCCCC.js")).unwrap(),
+        fs::read(temp.path().join("dist/assets/plain-CCCCCCCC.js")).unwrap()
+    );
+}

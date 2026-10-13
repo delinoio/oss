@@ -1160,13 +1160,21 @@ pub(crate) fn boundary_closure(
 ) -> BTreeMap<String, String> {
     let mut frozen = BTreeMap::<String, String>::new();
     for boundary in boundaries {
+        // Traversal passes through other boundary chunks: what a nested
+        // boundary imports is reachable from this one as well, so the first
+        // boundary in path order gets the credit.
+        let mut visited = Paths::from([boundary.clone()]);
         let mut pending = vec![boundary.clone()];
         while let Some(chunk) = pending.pop() {
             for target in edges.get(&chunk).into_iter().flatten() {
-                if boundaries.contains(target) || frozen.contains_key(target) {
+                if !visited.insert(target.clone()) {
                     continue;
                 }
-                frozen.insert(target.clone(), boundary.clone());
+                if !boundaries.contains(target) {
+                    frozen
+                        .entry(target.clone())
+                        .or_insert_with(|| boundary.clone());
+                }
                 pending.push(target.clone());
             }
         }
@@ -1798,5 +1806,19 @@ mod tests {
         // Boundaries are not part of the closure; `z` is reached first through
         // `a`, and chunks no boundary reaches stay editable.
         assert_eq!(frozen, [("w", "b"), ("x", "a"), ("y", "b"), ("z", "a")]);
+    }
+
+    #[test]
+    fn closure_continues_through_nested_boundaries() {
+        // `a` imports the boundary `b`, which imports `x`: the first boundary
+        // in path order, `a`, reaches `x`, and `b` is not a frozen chunk.
+        let edges = graph(&[("a", &["b"]), ("b", &["x", "a"]), ("x", &["y"])]);
+        let boundaries: Paths = ["a", "b"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(frozen, [("x", "a"), ("y", "a")]);
     }
 }
