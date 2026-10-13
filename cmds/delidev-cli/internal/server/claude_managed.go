@@ -926,6 +926,11 @@ func (s *Service) markManagedClaudeRecovery(id, operation domain.ID, diagnostic 
 		if st.ServerOperation == nil || st.ServerOperation.ID != operation {
 			return nil, subscriptionDenied()
 		}
+		if st.ServerOperation.State == domain.SubscriptionSucceeded {
+			// A settled operation keeps its connected state; any remaining credential
+			// cleanup is selected by its durable checkpoint instead of a fence.
+			return struct{}{}, nil
+		}
 		st.ServerOperation.State = domain.SubscriptionRecovery
 		if st.ServerOperation.ClaudeDiagnostic == nil {
 			st.ServerOperation.ClaudeDiagnostic = diagnostic

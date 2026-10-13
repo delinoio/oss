@@ -742,6 +742,20 @@ func TestManagedClaudeLoginKeepsSettledStateAndRetriesStaleCleanupFromCheckpoint
 	}
 }
 
+func TestManagedClaudeLateRecoveryMarkNeverRewritesASettledOperation(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	_, account := f.record()
+	o := account.Subscription.ServerOperation
+	if err := f.service.markManagedClaudeRecovery(f.input.AccountID, o.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.Generation != generation || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.ServerOperation.State != domain.SubscriptionSucceeded {
+		t.Fatal("an uncertain finish error unsettled a committed login")
+	}
+}
+
 func TestManagedClaudeLogoutCheckpointSurvivesFailedVaultDeletion(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	generation := f.connect()
