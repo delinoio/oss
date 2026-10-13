@@ -583,9 +583,12 @@ func (c *Client) VerifyManagedMCP(ctx context.Context) (outcomes []MCPServerOutc
 	return c.ManagedMCPOutcomes(), err
 }
 
-// ReconnectManagedMCP restarts only failed selected servers from the frozen
-// native configuration. It cannot add, edit or substitute a definition, resend
-// any call or elicitation, or run while a turn owns the thread.
+// ReconnectManagedMCP reloads the frozen native configuration for a selected
+// definition that is not ready. The installed native reload has no server
+// selector, so it refreshes every selected server of this execution and healthy
+// ones may restart; the typed outcomes of all selected servers are returned. It
+// cannot add, edit or substitute a definition, resend any call or elicitation,
+// or run while a turn owns the thread.
 func (c *Client) ReconnectManagedMCP(ctx context.Context, definition domain.ID) (outcomes []MCPServerOutcome, returned error) {
 	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	if err := definition.Validate(); err != nil {
@@ -599,11 +602,19 @@ func (c *Client) ReconnectManagedMCP(ctx context.Context, definition domain.ID) 
 		return nil, mcpUnavailable()
 	}
 	selected := false
+	ready := false
 	for _, binding := range c.managedMCP {
-		selected = selected || binding.server.Identity.DefinitionID == definition
+		if binding.server.Identity.DefinitionID == definition {
+			selected = true
+			ready = c.mcpOutcome(binding.name) == domain.MCPStartupReady
+		}
 	}
 	if !selected {
 		return nil, domain.Fail(domain.Conflict, "That MCP definition is not part of this execution.", "Reconnect only a definition selected when this execution started.")
+	}
+	if ready {
+		// The native reload cannot target one server, so never run it for a healthy one.
+		return nil, domain.Fail(domain.Conflict, "That MCP definition is already ready.", "Reconnect only a selected definition that failed to start; a reload can restart every selected server.")
 	}
 	state := c.execution
 	if state.paused || state.active != "" || state.interrupt != "" || state.interactions.blocksInput() {

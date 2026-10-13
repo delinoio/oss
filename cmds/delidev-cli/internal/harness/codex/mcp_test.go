@@ -1072,3 +1072,16 @@ func TestManagedMCPStatusCallsAreBoundedByTheOverallStartupDeadline(t *testing.T
 		t.Fatal("input was sent without a verified inventory")
 	}
 }
+
+func TestManagedMCPReconnectNeverReloadsForAReadyDefinition(t *testing.T) {
+	client, capture, _ := openMCPFixture(t, "mcp", mcpStdioServer("fx_bbbb"), mcpHTTPServer("web_aaaa"))
+	if _, err := client.VerifyManagedMCP(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// The native reload has no server selector, so a ready definition must not trigger it.
+	_, err := client.ReconnectManagedMCP(context.Background(), client.managedMCP[0].server.Identity.DefinitionID)
+	assertCode(t, err, domain.Conflict)
+	if slices.Contains(captureMethods(t, capture), "config/mcpServer/reload") {
+		t.Fatal("a reload of every selected server ran for a healthy definition")
+	}
+}
