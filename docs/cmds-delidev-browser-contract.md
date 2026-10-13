@@ -162,8 +162,11 @@ reconciliation, the reconciliation does not replace children; instead the receip
 awaits every native child of that profile until removal's own close requests
 report `on_before_close`, so it never reports completed cleanup early. Closing a
 page that no native child presents completes immediately.
-Observing the receipt re-evaluates this set without a second metadata mutation or
-a duplicate close request. Failures before admission are returned as a
+The `on_before_close` callback that empties a reconciled receipt's set settles it
+immediately, so an owner that unmounts before its next Observe cannot leave a
+`cleanup-pending` receipt that exhausts the page operation limit. Observing the
+receipt re-evaluates this set without a second metadata mutation or a duplicate
+close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
 retained on the receipt or surfaces as an uncertain reply that only observation of
 the original operation settles. `open_browser` takes a page ID instead of an

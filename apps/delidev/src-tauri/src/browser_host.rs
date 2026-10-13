@@ -121,6 +121,10 @@ struct PageOperation {
     // (window label, generation). CloseBrowser is asynchronous, so native
     // cleanup is complete only after each child reports on_before_close.
     awaiting_close: BTreeSet<(String, u64)>,
+    // The UI-loop reconciliation finished without error, so the awaited set is
+    // final. Only then may a close callback settle the receipt without another
+    // Observe; before it, or after a failed reconciliation, the set is partial.
+    cleanup_reconciled: bool,
 }
 const PAGE_LIMIT: usize = 16;
 const OPERATION_LIMIT: usize = 64;
@@ -285,12 +289,28 @@ impl State {
 
     // An exact (window, generation) close proof satisfies every operation that
     // waits for it. Replacement children carry a newer generation and never
-    // match.
+    // match. The close that empties a reconciled operation's set settles its
+    // receipt here: the owning window may unmount before another Observe, and
+    // an unsettled receipt would never be reclaimed by operation admission.
     fn native_child_closed(&mut self, window: &str, generation: u64) {
         for operation in self.page_operations.values_mut() {
-            operation
+            let removed = operation
                 .awaiting_close
                 .remove(&(window.to_string(), generation));
+            if removed
+                && operation.cleanup_reconciled
+                && operation.awaiting_close.is_empty()
+                && operation.receipt.metadata_committed
+                && !operation.receipt.native_cleanup_complete
+            {
+                operation.receipt.native_cleanup_complete = true;
+                BrowserHost::settle_page_operation(operation);
+                tracing::debug!(
+                    operation = "browser_page_cleanup",
+                    state = "settled_on_child_close",
+                    phase = ?operation.receipt.phase
+                );
+            }
         }
     }
 
@@ -1080,6 +1100,7 @@ impl BrowserHost {
                     order,
                     durability: None,
                     awaiting_close: BTreeSet::new(),
+                    cleanup_reconciled: false,
                 },
             );
             state.page_busy.insert(record.id.clone(), key.clone());
@@ -1240,6 +1261,7 @@ impl BrowserHost {
         if committed {
             // Successful CloseBrowser admission only requests teardown; the
             // receipt completes after every original child has closed.
+            operation.cleanup_reconciled = cleanup.is_ok();
             operation.receipt.native_cleanup_complete =
                 cleanup.is_ok() && operation.awaiting_close.is_empty();
             if let Err(code) = cleanup {
@@ -5652,6 +5674,88 @@ esac
         assert!(receipt.native_cleanup_complete);
         assert_eq!(receipt.failure, None);
         assert_eq!(stored_tabs_bytes(&host, &record), committed);
+    }
+
+    #[test]
+    fn last_child_close_settles_the_receipt_without_another_observe() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        // The owning window unmounts before any further Observe: the close
+        // callback alone must settle the receipt.
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+        assert_eq!(receipt.failure, None);
+    }
+
+    #[test]
+    fn settled_receipts_are_reclaimed_after_the_operation_limit() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        finish_fixture_pages(&host, &record, &key);
+        host.child_closed(&original);
+        {
+            // Every other slot holds an abandoned pending receipt, so
+            // admission can only reclaim this settled one.
+            let mut state = host.state.lock().unwrap();
+            let template = state.page_operations[&key].clone();
+            for (other, operation) in state.page_operations.iter_mut() {
+                if *other != key {
+                    operation.receipt.phase = PagePhase::CleanupPending;
+                }
+            }
+            let mut index = 0;
+            while state.page_operations.len() < OPERATION_LIMIT {
+                let mut operation = template.clone();
+                operation.order = index + 1000;
+                operation.receipt.phase = PagePhase::CleanupPending;
+                state
+                    .page_operations
+                    .insert(format!("filler-{index}"), operation);
+                index += 1;
+            }
+            assert_eq!(state.page_operations.len(), OPERATION_LIMIT);
+        }
+        create_page(&host, &record, "https://fixture.test/after-limit");
+        assert!(
+            !host
+                .state
+                .lock()
+                .unwrap()
+                .page_operations
+                .contains_key(&key)
+        );
+    }
+
+    #[test]
+    fn child_close_before_reconciliation_does_not_complete_the_receipt() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        {
+            let mut state = host.state.lock().unwrap();
+            let selected = state.profiles[&record.id].tabs.selected.clone();
+            state
+                .supersede_children(&key, &record.id, &selected, unmap_view)
+                .unwrap();
+        }
+        // The callback beats the UI-loop settlement: the set is empty but the
+        // reconciliation has not reported success yet.
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_ne!(receipt.phase, PagePhase::Completed);
+        assert!(!receipt.native_cleanup_complete);
+        let settled = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap()
+            .receipt
+            .unwrap();
+        assert_eq!(settled.phase, PagePhase::Completed);
     }
 
     #[test]
