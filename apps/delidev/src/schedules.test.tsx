@@ -405,6 +405,56 @@ it("defers an accepted schedule save and list reads until notification review re
   expect(value.save).toHaveBeenCalledTimes(1);
 });
 
+it("moves focus to the resulting details when a deferred save unmounts the focused editor", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.save.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { schedule: value.schedule };
+  });
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Edit schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: "Saved during review" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  prompt.focus();
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  // Browsers drop focus from the hidden inert editor; Back then takes it.
+  prompt.blur();
+  screen.getByRole("button", { name: "Back to schedules" }).focus();
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  const runNow = await screen.findByRole("button", { name: "Run now" });
+  const workspace = runNow.closest(".schedule-workspace") as HTMLElement;
+  expect(prompt.isConnected).toBe(false);
+  await waitFor(() => {
+    const focused = globalThis.document.activeElement;
+    expect(focused).not.toBe(globalThis.document.body);
+    expect(workspace.contains(focused)).toBe(true);
+  });
+});
+
 it("defers the schedule detail refetch after an accepted control until the view is active", async () => {
   const value = fixture();
   let release: () => void = () => {};

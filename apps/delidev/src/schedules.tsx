@@ -1262,6 +1262,8 @@ export function Schedules({
   // Hiding the inert workspace blurs its focused control and the review's Back
   // button unmounts on return, so remember the control and restore it then.
   const workspace = useRef<HTMLDivElement>(null);
+  const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
+  const focusAfterDeferredSave = useRef(false);
   const wasReviewing = useRef(false);
   const focusBeforeReview = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -1277,6 +1279,10 @@ export function Schedules({
     }
     const target = focusBeforeReview.current;
     focusBeforeReview.current = null;
+    // A save accepted during the review unmounts the retained editor right
+    // after this effect, so focusing it would be lost; the deferred save hands
+    // focus to the resulting view instead.
+    if (deferredSave.current) return;
     const current = globalThis.document.activeElement;
     if (
       target?.isConnected &&
@@ -1317,7 +1323,6 @@ export function Schedules({
   // the retained editor or read the list; it applies when the review clears.
   const reviewingNow = useRef(reviewingNotification);
   reviewingNow.current = reviewingNotification;
-  const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
   const applySave = (row?: Resource) => {
     setEditing(undefined);
     setProtectedWorkflow(false);
@@ -1330,8 +1335,21 @@ export function Schedules({
     if (reviewingNotification || !deferredSave.current) return;
     const { row } = deferredSave.current;
     deferredSave.current = undefined;
+    focusAfterDeferredSave.current = true;
     latestApplySave.current(row);
   }, [reviewingNotification]);
+  // The applied save unmounts the focused retained editor, so move focus to the
+  // first enabled control of the resulting view unless focus already moved.
+  useLayoutEffect(() => {
+    if (!focusAfterDeferredSave.current || editing) return;
+    focusAfterDeferredSave.current = false;
+    const current = globalThis.document.activeElement;
+    if (current && current !== globalThis.document.body && current.isConnected)
+      return;
+    workspace.current
+      ?.querySelector<HTMLElement>("button:not(:disabled)")
+      ?.focus({ preventScroll: true });
+  }, [editing, selected]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
     if (row.id !== selected?.id)
