@@ -24,7 +24,7 @@ import {
 import { App } from "./App";
 import { encode } from "./documents";
 import { i18n } from "./localization";
-import { sessionProblemTitle } from "./session-presentation";
+import { sessionStreamFailureTitle } from "./session-presentation";
 
 enum FailureStage {
   Snapshot = "snapshot",
@@ -169,19 +169,33 @@ it("titles a terminal non-transient server failure as a connection problem", asy
 }, 15000);
 
 it.each([
-  [undefined, undefined, "Connection unavailable"],
-  ["unauthenticated", undefined, "Authentication required"],
-  ["server_unavailable", undefined, "Connection unavailable"],
-  ["unavailable", undefined, "Connection unavailable"],
-  ["recovery_required", undefined, "Recovery required"],
-  ["budget_reached", undefined, "Session budget reached"],
-  ["missing_input", "quota_exhausted", "Usage limit reached"],
-  ["permission_denied", undefined, "Connection unavailable"],
+  [FailureStage.Snapshot, Code.FailedPrecondition],
+  [FailureStage.Watch, Code.FailedPrecondition],
 ])(
-  "maps code %s and cause %s to %s with a connection fallback",
-  (code, cause, title) => {
-    expect(sessionProblemTitle(code, cause, "Connection unavailable")).toBe(
-      title,
-    );
+  "keeps the connection heading on a %s FailedPrecondition failure",
+  async (stage, code) => {
+    await mountSession(stage, code);
+    const region = await screen.findByRole("region", {
+      name: "Session recovery",
+    });
+    const card = (
+      await within(region).findByRole("button", { name: /Refresh connection/ })
+    ).closest(".session-notice");
+    expect(card).not.toBeNull();
+    const title = card?.querySelector(".session-notice-title");
+    expect(title?.textContent).toBe("Connection unavailable");
   },
+  15000,
 );
+
+it.each([
+  [undefined, "Connection unavailable"],
+  ["unauthenticated", "Authentication required"],
+  ["server_unavailable", "Connection unavailable"],
+  ["unavailable", "Connection unavailable"],
+  ["recovery_required", "Connection unavailable"],
+  ["budget_reached", "Connection unavailable"],
+  ["permission_denied", "Connection unavailable"],
+])("maps stream failure code %s to the %s heading", (code, title) => {
+  expect(sessionStreamFailureTitle(code)).toBe(title);
+});

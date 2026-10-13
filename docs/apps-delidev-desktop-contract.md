@@ -6626,7 +6626,8 @@ budget and uncertain recovery have distinct localized headings. The live stream
 card derives its heading from the typed failure code of the snapshot or watch
 observation (authentication for `unauthenticated`, connection for
 `unavailable`/`server_unavailable`, and the connection heading as the fallback
-for unclassified or other codes), never from message text; its message,
+for unclassified or every other code, including recovery, budget and quota
+classifications), never from message text; its message,
 guidance, Info target and alert announcement are unchanged. Connection
 refresh retains its original failed-observation gate and only reobserves.
 Show details opens the original Info target, including Budget and Recovery.

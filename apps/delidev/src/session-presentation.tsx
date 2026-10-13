@@ -108,7 +108,7 @@ function matchesCatalogCopy(value: string, key: MessageKey): boolean {
  * closed code/cause values only, never message text. `fallbackTitle` applies to
  * codes without a dedicated heading.
  */
-export function sessionProblemTitle(
+function sessionProblemTitle(
   code: unknown,
   cause?: unknown,
   fallbackTitle?: string,
@@ -128,6 +128,17 @@ export function sessionProblemTitle(
     default:
       return fallbackTitle ?? copy("session.attentionRequired");
   }
+}
+
+/**
+ * Localized heading for the live-stream failure card. Only the typed
+ * `unauthenticated` code has a dedicated heading; every other code, including
+ * recovery, budget and quota classifications, keeps the connection heading.
+ */
+export function sessionStreamFailureTitle(code: unknown): string {
+  return code === FailureCode.Unauthenticated
+    ? copy("session.authenticationTitle")
+    : copy("session.connectionTitle");
 }
 
 /** Presentation only: callers retain actions, confirmations and request identity. */
