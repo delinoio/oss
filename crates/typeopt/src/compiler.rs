@@ -52,6 +52,22 @@ pub enum InputKind {
     /// resolution, so consumers must reject output once the path exists. The
     /// entry has no `sha256`.
     Absent,
+    /// A path that exists but has the wrong kind for a failed probe, such as
+    /// a directory named `dep.ts` probed with `file_exists`. Resolution is
+    /// unaffected until the path becomes the kind in `Input::becomes`, so
+    /// consumers must reject output only once that happens. The entry has no
+    /// `sha256`.
+    Mismatch,
+}
+
+/// The kind of filesystem entry a path must become to satisfy a failed probe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BecomesKind {
+    /// A regular file (after following symlinks).
+    File,
+    /// A directory (after following symlinks).
+    Directory,
 }
 
 /// The compiler filesystem call that reported a path as missing.
@@ -75,6 +91,10 @@ pub struct Input {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
     pub kind: InputKind,
+    /// Set exactly for `InputKind::Mismatch`: the entry kind that would
+    /// satisfy the failed probe and change resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub becomes: Option<BecomesKind>,
 }
 
 /// Everything the analysis read: application sources by absolute path and
@@ -594,6 +614,7 @@ impl Project {
                 path: path.clone(),
                 sha256: Some(sha256_hex(&text)),
                 kind: InputKind::Configuration,
+                becomes: None,
             });
         }
         for file in files {
@@ -611,6 +632,7 @@ impl Project {
                         sha256: Some(sha256_hex(source_file_text(file).as_bytes())),
                         path: name,
                         kind: InputKind::Dependency,
+                        becomes: None,
                     });
                 }
                 continue;
@@ -661,6 +683,7 @@ impl Project {
                     path: path.clone(),
                     sha256: Some(sha256.clone()),
                     kind: InputKind::Dependency,
+                    becomes: None,
                 });
             }
         }
@@ -671,36 +694,49 @@ impl Project {
         // symlink counts) or when it appeared after the failed probe: the
         // already-built program ignores such a file, so the entry makes
         // consumers reject the output instead of trusting a stale module
-        // graph. A probe that failed only because the path is a directory (or
-        // the reverse) never becomes a false absence.
-        let mut absent = Vec::new();
+        // graph. A path that exists with the wrong kind for its failed probe
+        // (a directory probed as a file, or the reverse) is recorded as a
+        // `mismatch` that names the kind which would satisfy the probe, so it
+        // never becomes a false absence but still invalidates the output once
+        // it changes kind.
+        let mut negative = Vec::new();
         for (path, probes) in self.misses.lock().expect("compiler probe log").iter() {
             if known.contains(path) {
                 continue;
             }
-            match classify_miss(path, probes) {
-                MissState::Absent => absent.push(path.clone()),
+            let (kind, becomes) = match classify_miss(path, probes) {
+                MissState::Absent => (InputKind::Absent, None),
                 MissState::Appeared => {
                     tracing::warn!(
                         path = path.as_str(),
                         "resolution candidate appeared after the compiler found it missing; \
                          recording it so the output is rejected"
                     );
-                    absent.push(path.clone());
+                    (InputKind::Absent, None)
                 }
-                MissState::Unrelated => {}
-            }
+                MissState::Mismatch(becomes) => {
+                    tracing::debug!(
+                        path = path.as_str(),
+                        becomes = ?becomes,
+                        "recording wrong-kind resolution candidate"
+                    );
+                    (InputKind::Mismatch, Some(becomes))
+                }
+                MissState::Unrelated => continue,
+            };
+            negative.push(Input {
+                path: path.clone(),
+                sha256: None,
+                kind,
+                becomes,
+            });
         }
-        absent.sort();
+        negative.sort();
         tracing::debug!(
-            probes = absent.len(),
+            probes = negative.len(),
             "recording absent resolution candidates"
         );
-        inputs.extend(absent.into_iter().map(|path| Input {
-            path,
-            sha256: None,
-            kind: InputKind::Absent,
-        }));
+        inputs.extend(negative);
         Ok(Snapshot { sources, inputs })
     }
 
@@ -1115,9 +1151,13 @@ enum MissState {
     /// appeared after the compiler resolved modules and the program was built
     /// from a different filesystem state than the one on disk.
     Appeared,
-    /// The path exists but never satisfied the failed probes (for example, a
-    /// directory probed with `file_exists`), or its state is unknown, such as
-    /// after a permission error. It is not a resolution dependency.
+    /// The path exists but does not satisfy the failed probes (for example, a
+    /// directory probed with `file_exists`). Resolution changes once it
+    /// becomes the carried kind.
+    Mismatch(BecomesKind),
+    /// The path exists as neither a file nor a directory, or its state is
+    /// unknown, such as after a permission error. It is not a resolution
+    /// dependency.
     Unrelated,
 }
 
@@ -1131,6 +1171,10 @@ fn classify_miss(path: &str, probes: &BTreeSet<ProbeKind>) -> MissState {
             };
             if probes.iter().any(satisfies) {
                 MissState::Appeared
+            } else if metadata.is_dir() && probes.contains(&ProbeKind::File) {
+                MissState::Mismatch(BecomesKind::File)
+            } else if metadata.is_file() && probes.contains(&ProbeKind::Directory) {
+                MissState::Mismatch(BecomesKind::Directory)
             } else {
                 MissState::Unrelated
             }
@@ -1951,7 +1995,7 @@ mod tests {
     }
 
     #[test]
-    fn a_probe_of_the_wrong_kind_is_not_a_resolution_dependency() {
+    fn a_probe_of_the_wrong_kind_records_the_kind_that_would_satisfy_it() {
         let temp = tempfile::tempdir().unwrap();
         let file = temp.path().join("file.ts");
         std::fs::write(&file, "").unwrap();
@@ -1959,11 +2003,11 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         assert_eq!(
             classify(&file, &[ProbeKind::Directory]),
-            MissState::Unrelated
+            MissState::Mismatch(BecomesKind::Directory)
         );
         assert_eq!(
             classify(&directory, &[ProbeKind::File]),
-            MissState::Unrelated
+            MissState::Mismatch(BecomesKind::File)
         );
     }
 

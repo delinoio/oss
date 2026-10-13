@@ -18,7 +18,12 @@ async function digestOf(file, { stripBom }) {
   return sha256(stripBom ? content.replace(/^﻿/, "") : content);
 }
 
-const INPUT_KINDS = new Set(["configuration", "dependency", "absent"]);
+const INPUT_KINDS = new Set([
+  "configuration",
+  "dependency",
+  "absent",
+  "mismatch",
+]);
 
 /**
  * Whether nothing resolves at the path. The compiler recorded the path as a
@@ -33,6 +38,22 @@ async function isAbsent(file) {
     return false;
   } catch (error) {
     if (error.code === "ENOENT" || error.code === "ENOTDIR") return true;
+    throw error;
+  }
+}
+
+/**
+ * Whether a `mismatch` path, which existed with the wrong kind for a failed
+ * resolution probe, now has the kind that satisfies the probe. Symlinks are
+ * followed like the compiler's probes. A removed path or one that keeps the
+ * wrong kind leaves resolution unchanged.
+ */
+async function hasBecome(file, becomes) {
+  try {
+    const info = await stat(file);
+    return becomes === "file" ? info.isFile() : info.isDirectory();
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
     throw error;
   }
 }
@@ -71,16 +92,21 @@ export function typeopt(outputDirectory) {
       // every result that could depend on it.
       const inputs = manifest.inputs ?? [];
       // Positive inputs carry a content digest. An `absent` input names a
-      // resolution candidate that did not exist and has no digest.
+      // resolution candidate that did not exist and has no digest. A
+      // `mismatch` input names a candidate of the wrong kind and records the
+      // kind (`becomes`) that would satisfy the failed probe.
       if (
         !Array.isArray(inputs) ||
         inputs.some(
           (i) =>
             !INPUT_KINDS.has(i?.kind) ||
             typeof i.path !== "string" ||
-            (i.kind === "absent"
+            (i.kind === "absent" || i.kind === "mismatch"
               ? i.sha256 !== undefined
-              : !DIGEST.test(i.sha256 ?? "")),
+              : !DIGEST.test(i.sha256 ?? "")) ||
+            (i.kind === "mismatch"
+              ? i.becomes !== "file" && i.becomes !== "directory"
+              : i.becomes !== undefined),
         )
       )
         throw new Error(
@@ -99,6 +125,11 @@ export function typeopt(outputDirectory) {
         ...inputs.map(async (input) => {
           if (input.kind === "absent") {
             if (!(await isAbsent(input.path))) stale.push(input.path);
+            return;
+          }
+          if (input.kind === "mismatch") {
+            if (await hasBecome(input.path, input.becomes))
+              stale.push(input.path);
             return;
           }
           const digest = await digestOf(input.path, {

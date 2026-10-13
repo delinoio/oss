@@ -397,7 +397,7 @@ test("rejects output once an absent higher-priority resolution candidate appears
   }
 });
 
-test("rejects unknown input forms and absent inputs that carry a digest", async () => {
+test("rejects unknown input forms, digests on negative inputs and malformed mismatch inputs", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-forms-"));
   try {
     const source = path.join(root, "main.ts");
@@ -421,6 +421,15 @@ test("rejects unknown input forms and absent inputs that carry a digest", async 
       { path: path.join(root, "dep.ts"), kind: "absent", sha256: sha256("") },
       { kind: "absent" },
       { path: path.join(root, "dep.ts"), kind: "dependency" },
+      { path: path.join(root, "dep.ts"), kind: "mismatch" },
+      { path: path.join(root, "dep.ts"), kind: "mismatch", becomes: "symlink" },
+      {
+        path: path.join(root, "dep.ts"),
+        kind: "mismatch",
+        becomes: "file",
+        sha256: sha256(""),
+      },
+      { path: path.join(root, "dep.ts"), kind: "absent", becomes: "file" },
     ]) {
       await writeFile(
         path.join(out, "modules.json"),
@@ -432,6 +441,66 @@ test("rejects unknown input forms and absent inputs that carry a digest", async 
         JSON.stringify(input),
       );
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects output once a wrong-kind resolution candidate becomes the kind that satisfies the probe", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-mismatch-"));
+  try {
+    const files = {
+      "main.ts": "import { f } from './dep';",
+      "dep.tsx": "export const f = 1;",
+    };
+    for (const [name, text] of Object.entries(files))
+      await writeFile(path.join(root, name), text);
+    // `dep.ts` is a directory, so a file probe skipped it for `dep.tsx`.
+    const directory = path.join(root, "dep.ts");
+    await mkdir(directory);
+    // `dep.mts` is a file that a directory probe skipped.
+    const file = path.join(root, "dep.mts");
+    await writeFile(file, "export const f = 0;");
+    const manifest = {
+      schema_version: 0,
+      modules: ["main.ts", "dep.tsx"].map((name, index) => ({
+        source: path.join(root, name),
+        source_sha256: sha256(files[name]),
+        output: `${index}.js`,
+        source_map: `${index}.js.map`,
+        kind: index === 0 ? "optimized" : "preserved",
+      })),
+      inputs: [
+        { path: directory, kind: "mismatch", becomes: "file" },
+        { path: file, kind: "mismatch", becomes: "directory" },
+      ],
+    };
+    const out = path.join(root, "out");
+    await mkdir(out);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    // Wrong-kind candidates that keep their kind do not invalidate output.
+    await typeopt(out).buildStart();
+    // Removing a wrong-kind candidate leaves resolution unchanged.
+    await rm(directory, { recursive: true });
+    await typeopt(out).buildStart();
+    // Replacing the directory with a regular file satisfies the file probe.
+    await writeFile(directory, "export const f = 2;");
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(directory));
+      return true;
+    });
+    await rm(directory);
+    await mkdir(directory);
+    await typeopt(out).buildStart();
+    // Replacing the file with a directory satisfies the directory probe.
+    await rm(file);
+    await mkdir(file);
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(file));
+      return true;
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -202,6 +202,34 @@ fn dangling_symlink_resolution_candidates_are_recorded_as_absent() {
 }
 
 #[test]
+fn wrong_kind_resolution_candidates_are_recorded_with_the_kind_that_satisfies_the_probe() {
+    let temp = shadowed_dependency();
+    // A directory named `dep.ts` fails the file probe, so `./dep` resolves to
+    // `dep.tsx`. Replacing the directory with a file would change resolution.
+    let candidate = temp.path().join("dep.ts");
+    std::fs::create_dir(&candidate).unwrap();
+    optimize(temp.path(), &[]);
+    let manifest = modules(temp.path());
+    let entry = manifest["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("/dep.ts"))
+        .unwrap_or_else(|| panic!("dep.ts missing from {:#?}", manifest["inputs"]))
+        .clone();
+    assert_eq!(entry["kind"], "mismatch", "{entry}");
+    assert_eq!(entry["becomes"], "file", "{entry}");
+    assert!(entry.get("sha256").is_none(), "{entry}");
+    // It is not a false absence: the path exists, so an absent entry would
+    // reject output that is still valid.
+    assert!(
+        !absent_paths(&manifest)
+            .iter()
+            .any(|p| p.ends_with("/dep.ts"))
+    );
+}
+
+#[test]
 fn absent_candidate_snapshot_is_deterministic() {
     let temp = shadowed_dependency();
     optimize(temp.path(), &[]);
