@@ -220,3 +220,110 @@ func TestExecutionHelpersBoundStartupAndNeverAdoptHistoricalAliases(t *testing.T
 		}
 	})
 }
+
+func captureHelperFixture(t *testing.T) (*executionHelpers, string, string) {
+	t.Helper()
+	h, home, directory, _ := helperFixture(t)
+	if err := h.capture(process.Process{OwnerID: h.owner, PID: 1, Birth: "synthetic", ScopeDir: filepath.Join(h.home, "original-process")}); err != nil {
+		t.Fatal(err)
+	}
+	return h, home, directory
+}
+
+func requireHelperEntries(t *testing.T, directory string, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if _, err := os.Lstat(filepath.Join(directory, name)); err != nil {
+			t.Fatal("entry was removed or lost", name, err)
+		}
+	}
+}
+
+func TestExecutionHelpersRejectRenamedDirectory(t *testing.T) {
+	h, home, directory := captureHelperFixture(t)
+	renamed := directory + ".renamed"
+	if err := os.Rename(directory, renamed); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("renamed captured directory was accepted as destructor removal", err)
+	}
+	requireHelperEntries(t, renamed, append([]string{".lock"}, executionHelperNames[:]...)...)
+	if _, err := os.Lstat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("cleanup created or adopted the original basename", err)
+	}
+	if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("failed cleanup result did not replay", err)
+	}
+}
+
+func TestExecutionHelpersNativeRemovalWithUnrelatedParentEntries(t *testing.T) {
+	h, home, directory := captureHelperFixture(t)
+	unrelated := filepath.Join(filepath.Dir(directory), "unrelated-native")
+	if err := os.Mkdir(unrelated, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(directory); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.retire(home, h.owner, h.native); err != nil {
+		t.Fatal("native destructor removal was rejected", err)
+	}
+	requireHelperEntries(t, filepath.Dir(directory), "unrelated-native")
+}
+
+func TestExecutionHelpersRejectRenamedAlias(t *testing.T) {
+	for _, nativeRemovedOthers := range []bool{false, true} {
+		t.Run(strconv.FormatBool(nativeRemovedOthers), func(t *testing.T) {
+			h, home, directory := captureHelperFixture(t)
+			if nativeRemovedOthers {
+				// Original names for the other aliases are absent, so only the
+				// bounded identity scan can detect the renamed alias.
+				for _, name := range executionHelperNames[1:] {
+					if err := os.Remove(filepath.Join(directory, name)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			renamed := "renamed-" + executionHelperNames[0]
+			if err := os.Rename(filepath.Join(directory, executionHelperNames[0]), filepath.Join(directory, renamed)); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("renamed captured alias was accepted as removal", err)
+			}
+			requireHelperEntries(t, directory, renamed, ".lock")
+			if !nativeRemovedOthers {
+				requireHelperEntries(t, directory, executionHelperNames[1:]...)
+			}
+		})
+	}
+}
+
+func TestExecutionHelpersRejectHardLinkedAlias(t *testing.T) {
+	for _, original := range []string{"kept", "removed"} {
+		t.Run(original, func(t *testing.T) {
+			h, home, directory := captureHelperFixture(t)
+			alias := filepath.Join(directory, executionHelperNames[0])
+			second := filepath.Join(directory, "second-name")
+			if err := os.Link(alias, second); err != nil {
+				t.Skip("symlink hard links are unsupported on this platform", err)
+			}
+			linked, linkErr := os.Lstat(second)
+			captured, captureErr := os.Lstat(alias)
+			if linkErr != nil || captureErr != nil || !os.SameFile(linked, captured) {
+				// Some platforms follow the symlink when linking.
+				t.Skip("platform did not hard-link the symlink itself")
+			}
+			if original == "removed" {
+				if err := os.Remove(alias); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("hard-linked captured alias was accepted as removal", err)
+			}
+			requireHelperEntries(t, directory, "second-name", ".lock", executionHelperNames[1], executionHelperNames[2])
+		})
+	}
+}

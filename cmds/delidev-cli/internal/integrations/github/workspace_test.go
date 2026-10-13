@@ -249,6 +249,50 @@ func TestWorkspaceProviderPageBudgetAndForkFence(t *testing.T) {
 	}
 }
 
+func TestWorkspaceForeignForkStaysCompleteFlatNode(t *testing.T) {
+	foreign := func(_ int, item map[string]any) {
+		item["head"].(map[string]any)["repo"] = map[string]any{"id": 99, "node_id": "R_99", "name": "repo", "full_name": "fork-owner/repo", "owner": map[string]any{"login": "fork-owner"}, "private": false, "default_branch": "main", "clone_url": "https://github.com/fork-owner/repo.git", "ssh_url": "git@github.com:fork-owner/repo.git"}
+	}
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, foreign)
+	v, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
+	if e != nil || v.State != domain.PRWorkspaceComplete || len(v.Nodes) != 1 || len(v.Edges) != 0 || len(v.Reasons) != 0 {
+		t.Fatal("foreign fork was not a complete flat node", e, v.State, len(v.Nodes), len(v.Edges), v.Reasons)
+	}
+
+	// A foreign child never acquires an edge to a same-repository parent.
+	c = workspaceFixture(t, map[int][2]string{1: {"main", "feature"}, 2: {"feature", "child"}}, func(n int, item map[string]any) {
+		if item["number"].(int) == 2 {
+			foreign(n, item)
+		}
+	})
+	v, e = c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1", "2"})
+	if e != nil || v.State != domain.PRWorkspaceComplete || len(v.Nodes) != 2 || len(v.Edges) != 0 || len(v.Reasons) != 0 {
+		t.Fatal("foreign fork gained an edge or incomplete reason", e, v.State, len(v.Edges), v.Reasons)
+	}
+}
+
+func TestWorkspaceMissingHeadRepositoryStaysIncomplete(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, func(_ int, item map[string]any) {
+		item["head"].(map[string]any)["repo"] = nil
+	})
+	v, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
+	found := false
+	for _, reason := range v.Reasons {
+		found = found || reason == "head_repository_unavailable"
+	}
+	if e != nil || v.State != domain.PRWorkspaceIncomplete || !found || len(v.Edges) != 0 {
+		t.Fatal("missing head repository identity did not stay incomplete", e, v.State, v.Reasons)
+	}
+}
+
+func TestWorkspaceSameRepositoryStackKeepsEdges(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}, 2: {"feature", "child"}}, nil)
+	v, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
+	if e != nil || v.State != domain.PRWorkspaceComplete || len(v.Nodes) != 2 || len(v.Edges) != 1 || v.Edges[0].Parent != "1" || v.Edges[0].Child != "2" || len(v.Reasons) != 0 {
+		t.Fatal("same-repository stack lost its edge", e, v.State, v.Edges, v.Reasons)
+	}
+}
+
 func TestWorkspaceRechecksCompleteRelationInventory(t *testing.T) {
 	c := workspaceFixture(t, map[int][2]string{101: {"main", "s1"}, 102: {"s1", "s2"}}, nil)
 	original := c.http.Transport

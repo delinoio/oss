@@ -6,8 +6,15 @@ ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on mai
 in the originating change. The owner/client operation receives an account ID, expected revision,
 request ID, closed API protocol and editable preferences. Its transaction publishes
 all preferences and the selected profile together with an actor-bound retry receipt.
-An exact replay returns current account metadata without another generation or
-protected-store operation. A conflicting revision or failed transaction publishes
+The server resolves and validates the authenticated owner/client principal before
+any receipt lookup, and that principal is part of the digested receipt input.
+An exact replay by the same actor returns current account metadata without another
+generation or protected-store operation. A different actor, or changed input,
+under the same request ID returns Conflict without key access or mutation.
+Receipts created before actor binding have no original actor proof: they are
+preserved byte-for-byte, never adopted or replayed as caller-owned, and reusing
+their request ID returns Conflict with guidance to make a fresh explicit request
+with a new ID (no automatic retry or second mutation under the old ID). A conflicting revision or failed transaction publishes
 nothing. Unknown formats, unsupported profiles, pending cleanup and keyless/key
 ownership changes fail closed. Active inspections must settle before the change;
 late original inspection results cannot validate a new connection ID.

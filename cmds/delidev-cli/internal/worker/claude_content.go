@@ -249,6 +249,18 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 			return true, b.block()
 		}
 		block := prior.content.Blocks[*native.Index]
+		if native.Withheld {
+			// The native adapter keeps a possible protected-value prefix private
+			// until it is proven safe. Nothing is published for this frame; the
+			// withheld bytes join a later delta or the completion tail.
+			text := native.DeltaKind == claude.TextDelta && block.Block.Kind == domain.ClaudeText || native.DeltaKind == claude.ThinkingDelta && block.Block.Kind == domain.ClaudeThinking
+			tool := native.DeltaKind == claude.ToolInputDelta && (block.Block.Kind == domain.ClaudeToolUse || block.Block.Kind == domain.ClaudeWebCall)
+			if native.Delta != nil || native.Block != nil || native.Held != nil || !text && !tool || block.State != domain.ClaudeBlockStreaming {
+				return true, b.block()
+			}
+			c.seen[o.NativeID] = true
+			return true, nil
+		}
 		if native.DeltaKind == claude.CitationsDelta {
 			if native.Citation == nil || native.Delta != nil || block.Block.Kind != domain.ClaudeText || native.Block != nil {
 				return true, b.block()
@@ -297,14 +309,31 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	default:
 		return true, b.block()
 	}
+	var tailCommit []claudeContentCommit
+	if native.Held != nil {
+		// A clean completion releases the suffix that the adapter withheld. It is
+		// published as the final ordered append before the exact completion proof.
+		if native.Kind != claude.ContentCompleted || native.Index == nil || native.Delta != nil || native.Withheld || *native.Held == "" || int(*native.Index) >= len(prior.content.Blocks) {
+			return true, b.block()
+		}
+		index, tail := *native.Index, *native.Held
+		append := domain.ClaudeMessageUpdate{ID: prior.id, NativeID: native.MessageID, Model: native.Model, Index: &index, Mutation: domain.ClaudeBlockAppend, Delta: &tail}
+		mid, midState, err := domain.ApplyClaudeContent(prior.content, prior.state, append)
+		if err != nil {
+			return true, b.block()
+		}
+		tailCommit = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeMessageObserved, ClaudeMessage: &append}, native: native.MessageID, next: claudePublishedContent{id: prior.id, state: midState, content: mid}}}
+		prior.content, prior.state = mid, midState
+	}
 	next, state, err := domain.ApplyClaudeContent(prior.content, prior.state, u)
 	if err != nil {
 		return true, b.block()
 	}
 	c.seen[o.NativeID] = true
-	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeMessageObserved, ClaudeMessage: &u}, native: native.MessageID, next: claudePublishedContent{id: u.ID, state: state, content: next}}}
+	c.queue = append(tailCommit, claudeContentCommit{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeMessageObserved, ClaudeMessage: &u}, native: native.MessageID, next: claudePublishedContent{id: u.ID, state: state, content: next}})
 	if u.Tool != nil {
-		c.queue[0].toolNative, c.queue[0].toolNext = u.Tool.Reference.NativeID, toolNext
+		last := len(c.queue) - 1
+		c.queue[last].toolNative, c.queue[last].toolNext = u.Tool.Reference.NativeID, toolNext
 	}
 	return true, c.drain(ctx)
 }

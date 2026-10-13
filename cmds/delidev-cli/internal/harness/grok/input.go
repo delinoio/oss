@@ -344,6 +344,14 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		}
 		return nil
 	}
+	// Text chunks pass through a bounded protected-value holdback. Everything it
+	// withholds stays private and is dropped on every non-clean exit.
+	holdback := newTextHoldback(a.protected, publish, func(chunk uint64) {
+		if logger := a.inspection.Logger; logger != nil {
+			logger.WarnContext(life, "grok_protected_text_refused", "owner_id", a.inspection.OwnerID, "input_id", request, "chunk", chunk)
+		}
+	})
+	defer holdback.discard()
 	upgradeTools := func() error {
 		if !public || profile != plainTextInput {
 			return nil
@@ -677,7 +685,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				settled.chunks = append(settled.chunks, historyValueDigest(chunk))
 				settled.lastChunk = historyTextEnvelopeDigest(chunk)
 				_, _ = output.Write([]byte(chunk.Update.Content.Text))
-				if err := publish(InputObservation{Kind: InputText, Chunk: &chunk}); err != nil {
+				if err := holdback.text(chunk); err != nil {
 					return result, err
 				}
 			case "turn_completed":
@@ -742,7 +750,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					if !queue.running {
 						return result, incompatible()
 					}
-					if err := publish(InputObservation{Kind: InputTitle, Title: observation.text}); err != nil {
+					if err := holdback.ordered(InputObservation{Kind: InputTitle, Title: observation.text}); err != nil {
 						return result, err
 					}
 				case responseMetadata:
@@ -751,6 +759,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					}
 					responseCounters, responseObserved = observation.usage, true
 					if err := accounting.observe(observation.usage); err != nil {
+						return result, err
+					}
+					if err := holdback.messageEnd(); err != nil {
 						return result, err
 					}
 					if err := publish(InputObservation{Kind: InputResponse, Response: &observation.usage}); err != nil {
@@ -931,6 +942,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if err := a.retainStoppedText(settled, nil); err != nil {
 			return result, err
 		}
+		if err := holdback.messageEnd(); err != nil {
+			return result, err
+		}
 		if err := emit(ctx, InputObservation{Kind: InputCompleted, InputID: request, NativePromptID: queue.prompt, Result: &result}); err != nil {
 			return result, sessionUncertain()
 		}
@@ -955,6 +969,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, err
 		}
 		a.completedTools = &completedTools{request: request, prompt: queue.prompt, terminal: facts, accounting: accounting, idle: settled.idle, output: hex.EncodeToString(output.Sum(nil)), chunks: append([][32]byte(nil), settled.chunks...)}
+	}
+	if err := holdback.messageEnd(); err != nil {
+		return result, err
 	}
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err

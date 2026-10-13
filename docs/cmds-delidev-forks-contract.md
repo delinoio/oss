@@ -462,6 +462,18 @@ before refreshing. Discard or replacement invalidates that generation; recheck i
 after each asynchronous prerequisite and before ForkSession admission. Late reads
 cannot submit the old source or populate another draft. Hiding the operation
 retains its original preflight, accepted job and exact uncertain retry.
+While the profile refresh or Local worker proof read is pending, the name input,
+workspace select and submit stay disabled so the request equals the visible draft.
+Explicit replacement and Discard stay available because only admitted, uncertain or
+invalid mutation ownership blocks them; a read-only pending proof does not. A
+replacement draft cannot submit until the stale Local proof read settles, because
+the proof slot admits one read at a time. A replacement Sidechat prepared meanwhile
+retries its automatic submission once that read settles and unlocks the controls;
+it is never left preparing indefinitely. Discard or replacement also detaches the
+stale read from the draft: it keeps the proof slot busy until it settles, but its
+rejection or changed-Runner proof is not presented in the replacement draft. A Fork
+dialog opened while the stale read still disables the name input moves focus to that
+input when the draft unlocks, because a disabled input cannot take initial focus.
 A definite rejected draft retains its diagnostic while hidden and reopened in
 that original context. Explicit discard or replacement with another source or
 purpose clears only terminal rejection presentation from the connection-owned
