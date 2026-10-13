@@ -5773,12 +5773,20 @@ unlink, so it uses single-syscall atomic renames (`renamex_np` with
 `RENAME_EXCL`/`RENAME_SWAP` on Apple platforms, `renameat2` with
 `RENAME_NOREPLACE`/`RENAME_EXCHANGE` on Linux and Android): Missing uses
 no-replace and Present exchanges the scratch and destination entries. Immediately
-after the syscall, compare entry identities with the verified file; if the entry
-that moved is not this save's scratch (or the displaced destination is not the
-observed document), reverse the same atomic rename so the destination returns to
-its observed state, keep the foreign entry at the scratch pathname as evidence and
-report a safe failure or OutcomeUnknown. Foreign bytes may be visible at the
-destination pathname for the duration of that rollback only. Unsupported platforms
+after the syscall, compare entry identities with the verified file. Before an
+exchange, refuse with Changed and touch nothing when the destination is already
+not the observed document. If the entry that moved into the destination is not
+this save's scratch while the displaced entry is the observed document (or a
+no-replace move placed a foreign entry), reverse the same atomic rename so the
+destination returns to its observed state, keep the foreign entry at the scratch
+pathname as evidence and report a safe failure only when that restoration is
+verified, otherwise OutcomeUnknown. When this save's file reached the
+destination but the entry displaced to the scratch pathname is not the observed
+document, a changed destination cannot be told apart from a late replacement of
+the displaced entry, so never reverse it into the destination: keep the entry at
+the scratch pathname as evidence, leave the destination untouched by any
+reversal and report OutcomeUnknown. Foreign bytes may be visible at the
+destination pathname for the duration of a verified rollback only. Unsupported platforms
 or filesystems that refuse the atomic variants fail closed with WriteFailed and an
 unchanged destination; never fall back to a pathname rename or link.
 `SetFileInformationByHandle` rename has no write-through option, so after a
@@ -5813,9 +5821,11 @@ and use the same lease. The final evidence check detects observed changes by
 nonparticipating writers. Scratch-pathname replacement after that check is
 detected and reverted as described above (bound on Windows). A writer that
 ignores the protocol can still replace an existing destination after the final
-check and before the Unix exchange; the exchange then detects that the displaced
-entry is not the observed document and swaps it back, but the contract does not
-promise an atomic comparison against writers that ignore the protocol. Process revisions
+check and before the Unix exchange. The pre-exchange identity check refuses a
+change it can see, and an exchange that displaces anything but the observed
+document is reported as OutcomeUnknown with the displaced entry retained at the
+scratch pathname, but the contract does not promise an atomic comparison against
+writers that ignore the protocol. Process revisions
 and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,

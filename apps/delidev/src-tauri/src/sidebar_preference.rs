@@ -617,6 +617,26 @@ fn rename_checked(source: &Path, target: &Path, mode: RenameMode) -> std::io::Re
     }
 }
 
+// Test seam that runs between the Unix rename syscall and the identity reads
+// that follow it, the window in which a late writer can alter either entry.
+#[cfg(all(test, unix))]
+type RenameHook = Box<dyn FnMut(&Path, &Path)>;
+
+#[cfg(all(test, unix))]
+thread_local! {
+    static AFTER_RENAME: std::cell::RefCell<Option<RenameHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(all(test, unix))]
+fn run_after_rename_hook(scratch: &Path, target: &Path) {
+    AFTER_RENAME.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().as_mut() {
+            hook(scratch, target);
+        }
+    });
+}
+
 /// Device/inode of the entry itself (symlinks are not followed).
 #[cfg(unix)]
 fn entry_identity(path: &Path) -> std::io::Result<Option<FileIdentity>> {
@@ -893,6 +913,22 @@ impl Scratch {
         mode: RenameMode,
         replaced: Option<FileIdentity>,
     ) -> Result<(), PublishFailure> {
+        if let Some(expected) = replaced {
+            // Refuse before touching anything when the destination is already
+            // known to differ from the observed document, so a change that
+            // precedes the exchange never needs a reversal.
+            match entry_identity(target) {
+                Ok(Some(found)) if found == expected => {}
+                Ok(_) => {
+                    tracing::warn!(
+                        operation = "sidebar_preference_publish",
+                        code = "destination-changed-before-exchange"
+                    );
+                    return Err(PublishFailure::untouched(SidebarProblem::Changed));
+                }
+                Err(_) => return Err(PublishFailure::untouched(SidebarProblem::WriteFailed)),
+            }
+        }
         if let Err(error) = rename_checked(&self.path, target, mode) {
             tracing::warn!(
                 operation = "sidebar_preference_publish",
@@ -906,6 +942,8 @@ impl Scratch {
                 _ => SidebarProblem::WriteFailed,
             }));
         }
+        #[cfg(test)]
+        run_after_rename_hook(&self.path, target);
         let published = entry_identity(target).ok().flatten();
         let displaced = entry_identity(&self.path).ok();
         let ours = published == Some(self.identity);
@@ -924,6 +962,24 @@ impl Scratch {
             }
             return Ok(());
         }
+        // An exchange that placed this save's file but displaced something
+        // other than the observed document cannot be told apart from a late
+        // replacement of the displaced entry at the scratch pathname. Reversing
+        // would move that possibly foreign entry into the destination, so keep
+        // it at the scratch pathname as evidence and report the outcome as
+        // unknown instead of claiming a verified rollback.
+        let can_reverse = match mode {
+            RenameMode::NoReplace => true,
+            RenameMode::Exchange => displaced == Some(replaced),
+        };
+        if !can_reverse {
+            tracing::error!(
+                operation = "sidebar_preference_publish",
+                code = "displaced-entry-unverified",
+                rolling_back = false
+            );
+            return Err(PublishFailure::touched(SidebarProblem::OutcomeUnknown));
+        }
         tracing::warn!(
             operation = "sidebar_preference_publish",
             code = "unexpected-entry-published",
@@ -933,11 +989,14 @@ impl Scratch {
             RenameMode::NoReplace => rename_checked(target, &self.path, RenameMode::NoReplace),
             RenameMode::Exchange => rename_checked(&self.path, target, RenameMode::Exchange),
         };
+        // Verified only when the destination holds its observed state again
+        // (absent, or the observed document) and the foreign entry sits at the
+        // scratch pathname.
         let restored = rollback.is_ok()
             && entry_identity(&self.path).ok() == Some(published)
             && match mode {
                 RenameMode::NoReplace => entry_identity(target).ok() == Some(None),
-                RenameMode::Exchange => entry_identity(target).ok() == displaced,
+                RenameMode::Exchange => entry_identity(target).ok() == Some(replaced),
             };
         if restored {
             // The foreign entry stays at the scratch pathname as evidence.
@@ -2064,6 +2123,42 @@ mod tests {
         assert_eq!(Some(inode(&path)), external_inode);
         // Our owned scratch returned to its pathname and was cleaned.
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn late_scratch_replacement_after_exchange_is_not_swapped_into_the_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        fs::write(&path, EXISTING).unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let foreign = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let recorder = foreign.clone();
+        AFTER_RENAME.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move |scratch, _| {
+                // Replaces the displaced original at the scratch pathname.
+                *recorder.borrow_mut() = Some((
+                    scratch.to_path_buf(),
+                    install_foreign(scratch, b"late foreign scratch"),
+                ));
+            }));
+        });
+        let uncertain = store.update_with(SidebarPreference::Collapsed, initial.revision, persist);
+        AFTER_RENAME.with(|hook| *hook.borrow_mut() = None);
+        // Neither a verified rollback nor an untouched failure: the foreign
+        // entry stays at the scratch pathname and the outcome is unknown.
+        assert_eq!(uncertain.problem, Some(SidebarProblem::OutcomeUnknown));
+        assert_eq!(uncertain.sidebar_preference, SidebarPreference::Expanded);
+        let (scratch, foreign_inode) = foreign.borrow_mut().take().unwrap();
+        assert_eq!(fs::read(&scratch).unwrap(), b"late foreign scratch");
+        assert_eq!(inode(&scratch), foreign_inode);
+        // The foreign bytes never became the canonical preference.
+        assert_ne!(fs::read(&path).unwrap(), b"late foreign scratch");
+        assert_ne!(inode(&path), foreign_inode);
+        let recovered = store.read();
+        assert_eq!(recovered.problem, None);
+        assert_eq!(recovered.sidebar_preference, SidebarPreference::Collapsed);
     }
 
     #[cfg(unix)]
