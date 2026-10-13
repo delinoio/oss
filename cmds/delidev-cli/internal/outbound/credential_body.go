@@ -46,9 +46,16 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 			} else {
 				g.jsonGuard.short = append(g.jsonGuard.short, []byte(candidate))
 			}
-			encoded, _ := json.Marshal(candidate)
-			g.patterns = append(g.patterns, bytes.Clone(encoded))
-			for _, form := range [][]byte{[]byte(candidate), encoded[1 : len(encoded)-1]} {
+			forms := [][]byte{[]byte(candidate)}
+			if g.jsonGuard.framing != credentialOpaque {
+				// JSON-escaped spellings (for example a quoted or backslash
+				// escaped password) exist only in JSON-framed bodies. Opaque
+				// bodies are matched on their literal and Base64 wire forms.
+				encoded, _ := json.Marshal(candidate)
+				g.patterns = append(g.patterns, bytes.Clone(encoded))
+				forms = append(forms, encoded[1:len(encoded)-1])
+			}
+			for _, form := range forms {
 				if len(form) >= 8 {
 					g.patterns = append(g.patterns, bytes.Clone(form))
 				} else {

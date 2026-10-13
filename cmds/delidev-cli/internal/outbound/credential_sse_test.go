@@ -424,3 +424,31 @@ func TestCredentialJSONTextSequenceMediaTypesRejectEscapedReflections(t *testing
 		guard.Close()
 	}
 }
+
+func TestCredentialOpaqueMediaTypesIgnoreJSONEscapedSpellings(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: `fixture-"password\<tail>`}
+	// Source literals that spell the password with JSON escapes are not wire
+	// reflections of an opaque body.
+	safe := "diff --git a/f b/f\n+const s = \"fixture-\\\"password\\\\\\u003ctail\\u003e\"\n"
+	for _, mediaType := range []string{"application/vnd.github.diff", "text/plain"} {
+		guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, mediaType)
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("opaque body rejected a JSON-escaped spelling", mediaType, err)
+		}
+		guard.Close()
+		literal := "context " + credential.Password + " tail"
+		guard = newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(literal)}), credential, mediaType)
+		if _, err = io.ReadAll(guard); err == nil {
+			t.Fatal("opaque body accepted a literal password", mediaType)
+		}
+		guard.Close()
+	}
+	// JSON framing keeps rejecting the JSON-escaped spelling on the wire.
+	wire := `{"value":"fixture-\"password\\\u003ctail\u003e"}`
+	guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(wire)}), credential, "application/json")
+	if _, err := io.ReadAll(guard); err == nil {
+		t.Fatal("JSON body accepted a JSON-escaped spelling")
+	}
+	guard.Close()
+}
