@@ -80,6 +80,7 @@ type Tool struct {
 	Changes         []FileChange
 	SleepDurationMS *uint64
 	ImagePath       string
+	MCP             *MCPCall
 }
 
 type ToolInput struct {

@@ -29,9 +29,14 @@ type threadFixture struct {
 	historyNotification    *fixtureHistoryNotification
 	sidechatDrift          string
 	reverted               bool
+	mcpReloaded            bool
+	mcpListCalls           int
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleMCP(id, method, raw, write) {
+		return true
+	}
 	if f.handleNativeCodeReview(id, method, raw, write) {
 		return true
 	}

@@ -153,6 +153,11 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		default:
 			return Event{}, incompatible()
 		}
+		if params.ThreadID != nil && *params.ThreadID == c.thread {
+			if event, handled, err := c.observeMCPStartupLocked(params.Name, params.Status, params.FailureReason); handled || err != nil {
+				return event, err
+			}
+		}
 		// Official Codex injects this connector for ChatGPT accounts. Its passive
 		// startup status is independent of account authentication and tool calls;
 		// preserve the dedicated boundaries for all other MCP activity.

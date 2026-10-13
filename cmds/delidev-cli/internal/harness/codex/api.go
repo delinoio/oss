@@ -77,7 +77,7 @@ func configureAPI(config *Config) (*apiBinding, error) {
 	}
 	config.Process.Env = append(slices.Clone(config.Process.Env), executionTokenEnv+"="+config.API.Token)
 	config.Process.ProtectedValues = append(slices.Clone(config.Process.ProtectedValues), config.API.Token)
-	excluded := []string{executionTokenEnv}
+	excluded := append([]string{executionTokenEnv}, config.mcpExcluded...)
 	if config.API.LoopbackProxyURL != "" {
 		proxy, err := url.Parse(config.API.LoopbackProxyURL)
 		if err != nil || proxy.Scheme != "http" || proxy.Hostname() != "127.0.0.1" || proxy.Port() == "" || proxy.User == nil || proxy.User.Username() != "delidev" || proxy.Path != "" || proxy.RawQuery != "" || proxy.ForceQuery || proxy.Fragment != "" || proxy.RawPath != "" || proxy.Opaque != "" {

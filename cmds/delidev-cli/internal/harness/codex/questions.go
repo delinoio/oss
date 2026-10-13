@@ -69,9 +69,14 @@ type Interaction struct {
 	Kind      InteractionKind
 	Questions *QuestionRequest
 	Approval  *ApprovalRequest
+	// elicitation is present only for a managed MCP form mapped to Questions.
+	elicitation *elicitationRequest
 }
 
 func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error) {
+	if native.Method == "mcpServer/elicitation/request" {
+		return c.observeElicitationLocked(native)
+	}
 	if native.Method != "item/tool/requestUserInput" {
 		return c.observeApprovalLocked(native)
 	}

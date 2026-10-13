@@ -4,11 +4,13 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +37,10 @@ type Config struct {
 	RevertHistory         bool                  `json:"-"`
 	EnableImageGeneration bool
 
+	// ManagedMCP carries execution-frozen Worker-owned MCP generations. It is
+	// valid only for an ordinary thread execution, never read-only Sidechat.
+	ManagedMCP       []ManagedMCPServer `json:"-"`
+	mcpExcluded      []string
 	SkillsRoot       string
 	ImageRoot        string
 	ImageMachineID   domain.ID
@@ -64,6 +70,11 @@ type Client struct {
 	currentTimeClock     func() time.Time
 	currentTimeClaims    map[currentTimeRequestKey]struct{}
 	quotaUsed            atomic.Bool
+	managedMCP           []mcpBinding
+	mcpMu                sync.Mutex
+	mcpOutcomes          map[string]domain.MCPStartupOutcome
+	mcpCalls             map[string]*mcpCall
+	queuedEvents         []Event
 	skillsRoot           string
 	imageRoot            string
 	imageMachine         domain.ID
@@ -197,6 +208,10 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := configureImageGeneration(&config); err != nil {
 		return nil, err
 	}
+	mcpBindings, err := configureManagedMCP(&config)
+	if err != nil {
+		return nil, err
+	}
 	api, err := configureAPI(&config)
 	if err != nil {
 		return nil, err
@@ -212,6 +227,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, err
 	}
 	configureOrdinaryTools(&config)
+	if api == nil && len(config.mcpExcluded) > 0 {
+		// Protected MCP values must not reach native shell tools either.
+		exclusion, _ := json.Marshal(config.mcpExcluded)
+		config.Process.Args = append(config.Process.Args, "-c", "shell_environment_policy.exclude="+string(exclusion))
+	}
 	config.Process.Args = append(config.Process.Args, "app-server")
 	var helpers *executionHelpers
 	if config.ManagedAuthentication && config.Mode == ThreadProtocol {
@@ -319,7 +339,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations, "frame_profile", config.FrameProfile)
 	}
-	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat, managedMCP: mcpBindings}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err
