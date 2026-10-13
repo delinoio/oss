@@ -379,8 +379,7 @@ try {
                   geometry.requestTop,
                   geometry.contentTop + geometry.contentPaddingTop,
                 );
-              else
-                assert.equal(geometry.requestTop - geometry.hostBottom, 16);
+              else assert.equal(geometry.requestTop - geometry.hostBottom, 16);
             });
             fail("flat pair count", () => {
               assert.equal(geometry.dts.length, 4);
