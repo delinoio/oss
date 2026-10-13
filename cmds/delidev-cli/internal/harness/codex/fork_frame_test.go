@@ -197,3 +197,44 @@ func TestForkTurnsPrivateLocatorsStayOutOfPublicProjection(t *testing.T) {
 		t.Fatal("private locator escaped into the public projection")
 	}
 }
+
+func TestForkHistoryFrameProfileIsExplicitAndManagedOnly(t *testing.T) {
+	managed := Config{Mode: ThreadProtocol, ManagedAuthentication: true, ManagedForkHistory: true, FrameProfile: ForkHistoryFrameProfile}
+	api := managed
+	api.ManagedAuthentication, api.ManagedForkHistory, api.API = false, false, &APIConfig{}
+	for _, test := range []struct {
+		name   string
+		config Config
+		enable bool
+	}{
+		// Fork history enables the enlarged frame without image generation.
+		{"managed-independent-fork", managed, true},
+		// The managed route without the explicit option keeps the default frame.
+		{"managed-fork-default", Config{Mode: ThreadProtocol, ManagedAuthentication: true, ManagedForkHistory: true, ImageRoot: "/image-root"}, false},
+		{"api-fork", api, false},
+		{"api-fork-default", Config{Mode: ThreadProtocol, API: &APIConfig{}, ImageRoot: "/image-root"}, false},
+	} {
+		if test.config.imageObservationProfile() != test.enable {
+			t.Fatal("unexpected frame profile", test.name)
+		}
+	}
+	client := Client{imageObservations: managed.imageObservationProfile()}
+	if client.nativeFrameLimit() != 16<<20 {
+		t.Fatal("managed independent Fork keeps the one-MiB frame")
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{"without-managed-fork-history", func(c *Config) { c.ManagedForkHistory = false }},
+		{"with-api", func(c *Config) { c.API = &APIConfig{} }},
+		{"with-sidechat", func(c *Config) { c.Sidechat = ReadOnlySidechatV1 }},
+		{"unknown-profile", func(c *Config) { c.FrameProfile = "unbounded" }},
+	} {
+		config := managed
+		test.mutate(&config)
+		if _, err := Open(context.Background(), config); err == nil {
+			t.Fatal("invalid frame profile request was admitted", test.name)
+		}
+	}
+}

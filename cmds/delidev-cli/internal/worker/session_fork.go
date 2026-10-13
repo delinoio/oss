@@ -186,7 +186,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
+	sourceConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
 		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
@@ -294,7 +294,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}
@@ -507,4 +507,14 @@ func readForkCheckpoint(root string, input domain.ExecutionJobInput) (codex.Cont
 		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
 	}
 	return result.Native, nil
+}
+
+// forkFrameProfile selects the native frame limit for both Fork clients. Only
+// managed independent Fork reads original private history that can exceed the
+// one-MiB frame; API Fork and Sidechat keep the default profile.
+func forkFrameProfile(subscription bool, purpose domain.ForkPurpose) codex.FrameProfile {
+	if subscription && purpose == domain.IndependentFork {
+		return codex.ForkHistoryFrameProfile
+	}
+	return codex.DefaultFrameProfile
 }
