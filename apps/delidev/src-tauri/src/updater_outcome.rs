@@ -377,11 +377,21 @@ impl OutcomeStore {
     /// [`OutcomeStore::for_each`].
     pub fn scan(&self) -> Result<Vec<StoredEntry>> {
         let mut entries = Vec::new();
-        self.for_each(|entry| {
+        self.for_each(None, |entry| {
             entries.push(entry);
             ControlFlow::Continue(())
         })?;
         Ok(entries)
+    }
+
+    /// Whether a directory entry stem belongs to `operation`.
+    fn belongs_to(&self, stem: &str, operation: &str) -> bool {
+        match self.kind {
+            RecordKind::Outcome => stem == operation,
+            RecordKind::BeginIntent => stem
+                .strip_prefix(operation)
+                .is_some_and(|rest| rest.starts_with('.')),
+        }
     }
 
     /// Streams every retained entry to `visit` in a single directory pass
@@ -393,10 +403,15 @@ impl OutcomeStore {
     /// example on Quit) before the rest of a very large store is listed.
     /// Retained records that stay unresolved never hide later ones: every
     /// entry that exists for the whole walk is visited exactly once, and an
-    /// entry removed by `visit` itself is not revisited. Temporary and claimed
-    /// files from an interrupted write or retirement are dot-prefixed and are
-    /// ignored and never trusted.
-    pub fn for_each(&self, mut visit: impl FnMut(StoredEntry) -> ControlFlow<()>) -> Result<()> {
+    /// entry removed by `visit` itself is not revisited. `operation` limits
+    /// the walk to the entries of that one operation; every other name is
+    /// ignored. Temporary and claimed files from an interrupted write or
+    /// retirement are dot-prefixed and are ignored and never trusted.
+    pub fn for_each(
+        &self,
+        operation: Option<&str>,
+        mut visit: impl FnMut(StoredEntry) -> ControlFlow<()>,
+    ) -> Result<()> {
         if !self.check_dir(false)? {
             return Ok(());
         }
@@ -408,6 +423,11 @@ impl OutcomeStore {
                 continue;
             }
             let stem = name.strip_suffix(".json").unwrap_or("");
+            if let Some(operation) = operation
+                && (name.strip_suffix(".json").is_none() || !self.belongs_to(stem, operation))
+            {
+                continue;
+            }
             let entry = if !self.valid_stem(stem) {
                 StoredEntry::Unreadable(None)
             } else {
@@ -496,10 +516,9 @@ impl OutcomeStore {
                 kind = ?e.kind()
             ),
         }
-        let quarantine = self.dir.join(format!(
-            "{stem}.{}.conflict.json",
-            uuid::Uuid::now_v7()
-        ));
+        let quarantine = self
+            .dir
+            .join(format!("{stem}.{}.conflict.json", uuid::Uuid::now_v7()));
         match fs::rename(claimed, &quarantine) {
             Ok(()) => tracing::warn!(
                 operation = "desktop_update_outcome_restore",
@@ -831,7 +850,7 @@ mod tests {
         let mut seen = Vec::new();
         let mut unreadable = 0;
         store
-            .for_each(|entry| {
+            .for_each(None, |entry| {
                 match entry {
                     StoredEntry::Record(record) => seen.push(record),
                     StoredEntry::Unreadable(_) => unreadable += 1,
@@ -856,7 +875,7 @@ mod tests {
         }
         let mut visited = 0;
         store
-            .for_each(|_| {
+            .for_each(None, |_| {
                 visited += 1;
                 ControlFlow::Break(())
             })
@@ -911,6 +930,54 @@ mod tests {
             fs::read(quarantined).unwrap(),
             serde_json::to_vec(&claimed_record).unwrap()
         );
+    }
+
+    #[test]
+    fn an_operation_filter_lists_only_that_operations_entries() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::intents(&root);
+        let own = uuid::Uuid::now_v7().to_string();
+        let generation = uuid::Uuid::now_v7().to_string();
+        let other_generation = uuid::Uuid::now_v7().to_string();
+        let server = uuid::Uuid::now_v7().to_string();
+        for index in 0..BULK {
+            let id = format!("00000000-0000-7000-8000-{index:012}");
+            let decoy = OutcomeRecord::begin_intent(&server, &id, 3, &generation, None).unwrap();
+            store.persist(&decoy).unwrap();
+        }
+        let first = OutcomeRecord::begin_intent(&server, &own, 3, &generation, None).unwrap();
+        let second =
+            OutcomeRecord::begin_intent(&server, &own, 3, &other_generation, None).unwrap();
+        store.persist(&first).unwrap();
+        store.persist(&second).unwrap();
+        let mut seen = Vec::new();
+        store
+            .for_each(Some(&own), |entry| {
+                seen.push(entry);
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        let key = |record: &OutcomeRecord| format!("{}.{}", record.operation_id, record.generation);
+        let mut expected = vec![first, second];
+        expected.sort_by_key(key);
+        let mut seen: Vec<_> = seen
+            .into_iter()
+            .map(|entry| match entry {
+                StoredEntry::Record(record) => record,
+                other => panic!("unexpected entry {other:?}"),
+            })
+            .collect();
+        seen.sort_by_key(key);
+        assert_eq!(seen, expected);
+        let absent = uuid::Uuid::now_v7().to_string();
+        let mut visited = 0;
+        store
+            .for_each(Some(&absent), |_| {
+                visited += 1;
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        assert_eq!(visited, 0);
     }
 
     #[test]

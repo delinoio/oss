@@ -522,7 +522,7 @@ impl Connector {
         // reads only its own operation's record, so unrelated evidence cannot
         // starve it either.
         let walked = match scope {
-            ReconcileScope::Launch => store.for_each(&mut visit),
+            ReconcileScope::Launch => store.for_each(None, &mut visit),
             ReconcileScope::Original { id, .. } => store.load(id).map(|entry| {
                 if let Some(entry) = entry {
                     let _ = visit(entry);
@@ -744,40 +744,15 @@ impl Connector {
         stopping: &dyn Fn() -> bool,
     ) -> ReconcileReport {
         let store = self.intent_store();
+        let outcomes = self.outcome_store();
         let mut report = ReconcileReport::default();
-        let entries = match store.scan() {
-            Ok(entries) => entries,
-            Err(code) => {
-                tracing::warn!(
-                    operation = "desktop_update_reconcile_intents",
-                    state = "scan-failed",
-                    ?code
-                );
-                return report;
-            }
-        };
-        // A retained outcome is more exact than an inferred Uncertain, so
-        // its operation must settle first.
-        let pending_outcomes: Vec<String> = match self.outcome_store().scan() {
-            Ok(outcomes) => outcomes
-                .into_iter()
-                .filter_map(|entry| match entry {
-                    StoredEntry::Record(record) => Some(record.operation_id),
-                    StoredEntry::Unreadable(name) => name,
-                })
-                .collect(),
-            Err(_) => {
-                report.retained = entries.len();
-                return report;
-            }
-        };
-        for entry in entries {
+        let mut visit = |entry: StoredEntry| {
             if stopping() {
                 tracing::info!(
                     operation = "desktop_update_reconcile_intents",
                     state = "stopped"
                 );
-                break;
+                return ControlFlow::Break(());
             }
             let StoredEntry::Record(intent) = entry else {
                 report.retained += 1;
@@ -785,20 +760,27 @@ impl Connector {
                     operation = "desktop_update_reconcile_intents",
                     state = "evidence-unreadable-retained"
                 );
-                continue;
+                return ControlFlow::Continue(());
             };
             if !scope.admits(&intent) {
                 report.skipped += 1;
-                continue;
+                return ControlFlow::Continue(());
             }
-            if pending_outcomes.contains(&intent.operation_id) {
-                report.retained += 1;
-                tracing::warn!(
-                    operation = "desktop_update_reconcile_intents",
-                    state = "outcome-evidence-pending",
-                    id = %intent.operation_id
-                );
-                continue;
+            // A retained outcome is more exact than an inferred Uncertain, so
+            // its operation must settle first. Look the exact record up rather
+            // than scanning a bounded prefix, and fail closed when it cannot
+            // be read.
+            match outcomes.load(&intent.operation_id) {
+                Ok(None) => {}
+                Ok(Some(_)) | Err(_) => {
+                    report.retained += 1;
+                    tracing::warn!(
+                        operation = "desktop_update_reconcile_intents",
+                        state = "outcome-evidence-pending",
+                        id = %intent.operation_id
+                    );
+                    return ControlFlow::Continue(());
+                }
             }
             match self.prove_begin(&intent, scope.is_quiesced()) {
                 BeginProof::Installing(_) => {
@@ -843,6 +825,21 @@ impl Connector {
                     );
                 }
             }
+            ControlFlow::Continue(())
+        };
+        // The launch scope walks every page so intents that stay unresolved
+        // never hide later ones; an original scope lists only the entries of
+        // its own operation, so unrelated evidence cannot starve it.
+        let walked = match scope {
+            ReconcileScope::Launch => store.for_each(None, &mut visit),
+            ReconcileScope::Original { id, .. } => store.for_each(Some(id), &mut visit),
+        };
+        if let Err(code) = walked {
+            tracing::warn!(
+                operation = "desktop_update_reconcile_intents",
+                state = "scan-failed",
+                ?code
+            );
         }
         report
     }
@@ -2210,30 +2207,18 @@ print(json.dumps({'version': 1, 'result': descriptor}))
                 rejected
             })
             .collect();
-        for launch in 0..2 {
-            let report = fixture.launch();
-            if launch == 0 {
-                assert_eq!(
-                    (report.settled, report.retained),
-                    (1, rejected.len()),
-                    "launch {launch}"
-                );
-                assert_eq!(fixture.journal()["phase"], "installed");
-                assert!(!fixture.marker(&fixture.id).exists());
-            } else {
-                assert_eq!(
-                    (report.settled, report.retained),
-                    (0, rejected.len()),
-                    "launch {launch}"
-                );
-            }
-            // Rejected evidence is retained untouched on every pass.
-            for stored in &rejected {
-                assert_eq!(
-                    fixture.store().load(&stored.operation_id).unwrap(),
-                    Some(StoredEntry::Record(stored.clone()))
-                );
-            }
+        let first = fixture.launch();
+        assert_eq!((first.settled, first.retained), (1, rejected.len()));
+        assert_eq!(fixture.journal()["phase"], "installed");
+        assert!(!fixture.marker(&fixture.id).exists());
+        let second = fixture.launch();
+        assert_eq!((second.settled, second.retained), (0, rejected.len()));
+        // Rejected evidence is retained untouched on every pass.
+        for stored in &rejected {
+            assert_eq!(
+                fixture.store().load(&stored.operation_id).unwrap(),
+                Some(StoredEntry::Record(stored.clone()))
+            );
         }
         assert_eq!(fixture.calls(), 2 * rejected.len() + 1);
     }
@@ -2928,11 +2913,10 @@ else:
             revision: 7,
             saved_connection: None,
         };
+        // Another operation's scope never lists, reads or contacts anything.
         assert_eq!(
-            f.connector
-                .reconcile_begin_intents(&other, &|| false)
-                .skipped,
-            1
+            f.connector.reconcile_begin_intents(&other, &|| false),
+            ReconcileReport::default()
         );
         assert_eq!(f.calls(), "");
         let own = ReconcileScope::Original {
@@ -2955,6 +2939,90 @@ else:
             1
         );
         assert_eq!(f.journal()["phase"], "uncertain");
+    }
+
+    // Intents of other operations that sort before the fixture's own record
+    // and stay retained because the journal cannot prove them. UUID-v7 names
+    // made now sort after the all-zero timestamp prefix.
+    fn write_unresolved_prefix(f: &Fixture, count: usize) {
+        for index in 0..count {
+            let id = format!("00000000-0000-7000-8000-{index:012}");
+            let decoy =
+                OutcomeRecord::begin_intent(&f.server, &id, 7, &f.generation, None).unwrap();
+            f.connector.intent_store().persist(&decoy).unwrap();
+        }
+    }
+
+    #[test]
+    fn retained_intents_never_starve_launch_reconciliation_beyond_the_scan_bound() {
+        let f = Fixture::new("installing", true);
+        // Many unresolved intents sort before the fixture's own record.
+        write_unresolved_prefix(&f, 40);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        for _ in 0..2 {
+            let report = launch(&restarted(&f));
+            assert_eq!(report.retained, 40, "unprovable decoys stay retained");
+            assert_eq!(f.intents().len(), 40, "retained intents are never deleted");
+        }
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert_eq!(f.journal()["generation"], f.generation);
+        assert!(
+            !f.root
+                .join(crate::updater_outcome::INTENT_DIRECTORY)
+                .join(format!("{}.{}.json", f.id, f.generation))
+                .exists()
+        );
+        assert_eq!(f.begins(), 0);
+    }
+
+    #[test]
+    fn an_exact_original_inspection_reaches_its_intent_behind_unrelated_ones() {
+        let f = Fixture::new("installing", true);
+        write_unresolved_prefix(&f, 40);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        let own = ReconcileScope::Original {
+            server: &f.server,
+            id: &f.id,
+            revision: 7,
+            saved_connection: None,
+        };
+        assert_eq!(
+            f.connector.reconcile_begin_intents(&own, &|| false),
+            ReconcileReport {
+                settled: 1,
+                retained: 0,
+                skipped: 0
+            }
+        );
+        assert_eq!(f.journal()["phase"], "uncertain");
+        assert_eq!(f.calls(), "io", "unrelated intents are never inspected");
+    }
+
+    #[test]
+    fn a_pending_outcome_beyond_the_scan_bound_still_settles_before_an_inferred_uncertain() {
+        let f = Fixture::new("installing", true);
+        f.connector.intent_store().persist(&f.intent()).unwrap();
+        // 40 earlier outcomes push the exact record past the first page.
+        for index in 0..40 {
+            let id = format!("00000000-0000-7000-8000-{index:012}");
+            let decoy =
+                OutcomeRecord::outcome(&f.server, &id, 7, &f.generation, None, Phase::Failed)
+                    .unwrap();
+            f.connector.outcome_store().persist(&decoy).unwrap();
+        }
+        let outcome =
+            OutcomeRecord::outcome(&f.server, &f.id, 7, &f.generation, None, Phase::Installed)
+                .unwrap();
+        f.connector.outcome_store().persist(&outcome).unwrap();
+        let report = launch(&f.connector);
+        assert_eq!((report.settled, report.retained), (0, 1));
+        assert_eq!(f.journal()["phase"], "installing", "no inferred Uncertain");
+        assert_eq!(f.calls(), "");
+        // Replaying the outcomes walks past the first page to the exact one.
+        f.connector
+            .reconcile_retained_outcomes(&ReconcileScope::Launch, &|| false);
+        assert_eq!(f.journal()["phase"], "installed");
+        assert!(matches!(f.connector.outcome_store().load(&f.id), Ok(None)));
     }
 
     #[test]

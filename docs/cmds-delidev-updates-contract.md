@@ -164,9 +164,22 @@ when reconciliation retires the intent. An unreadable or conflicting record
 for the exact request rejects the begin without sending it.
 
 The launch pass and each original-scope `native-inspect` reconcile retained
-intents after retained outcomes. An exact retained outcome record for the same
+intents after retained outcomes. The launch pass pages through every intent
+exactly as it does for outcomes. An original-scope inspection lists only the
+intents whose file names carry its own operation ID, so unrelated retained
+intents cannot hide it. An exact retained outcome record for the same
 operation always settles first, and an intent never writes an inferred Uncertain
-while that record is pending. Reconciliation never repeats `native-begin` or
+while that record is pending; that record is looked up by its exact operation
+name, and an unreadable or unavailable lookup keeps the intent.
+
+The launch-only Prepared classification relies on the previous process having
+exited. Every desktop process holds the exclusive `browser-data/browser-host.lock`
+lease of its connector root from startup, before the launch pass begins, until
+after the update host has joined at exit. A second process on the same root
+cannot start, so a launch pass never overlaps a runtime that could still land a
+retained request or invoke the installer, and the operating system releases the
+lease when a process dies. Processes with different data roots share neither the
+lease nor the update scope. Reconciliation never repeats `native-begin` or
 invokes an installer, never changes the journal generation, and Quit stops it
 between records. Fixture sidecars cover accepted begin, a canceled response
 after acceptance, a late original response, a lost response before acceptance
