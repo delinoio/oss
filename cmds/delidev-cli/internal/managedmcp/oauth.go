@@ -57,6 +57,11 @@ func (m Manager) oauth(ctx context.Context, c *catalog, q domain.ManagedMCPReque
 		params.Set("code_challenge", base64.RawURLEncoding.EncodeToString(challenge[:]))
 		params.Set("code_challenge_method", "S256")
 		u.RawQuery = params.Encode()
+		// The composed URL is returned by every catalog read, so it must satisfy the
+		// same bound as a stored MCP URL before any secret or attempt is persisted.
+		if domain.ValidateMCPURL(u.String()) != nil {
+			return result, domain.Fail(domain.InvalidArgument, "The MCP OAuth authorization URL is too long.", "Shorten the authorization endpoint, redirect URI or scope in the OAuth profile.")
+		}
 		secret, _ := json.Marshal(oauthPrivate{Verifier: verifier})
 		defer clear(secret)
 		if e = m.putSecret(ctx, d.ID, q.RequestID, secret); e != nil {

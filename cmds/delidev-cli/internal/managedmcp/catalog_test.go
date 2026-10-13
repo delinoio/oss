@@ -350,3 +350,57 @@ func TestManagedMCPHTTPManualCredentialsBindEndpointGeneration(t *testing.T) {
 		t.Fatal("original credential generation lost")
 	}
 }
+
+func TestManagedMCPOAuthRejectsOversizedComposedAuthorizationURL(t *testing.T) {
+	m, q, d := fixture(t)
+	var endpoint string
+	pad := strings.Repeat("a", 3000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/.well-known/oauth-protected-resource/mcp":
+			json.NewEncoder(w).Encode(map[string]any{"resource": endpoint + "/mcp", "authorization_servers": []string{endpoint}})
+		case "/.well-known/oauth-authorization-server":
+			json.NewEncoder(w).Encode(map[string]any{"issuer": endpoint, "authorization_endpoint": endpoint + "/authorize?pad=" + pad, "token_endpoint": endpoint + "/token", "code_challenge_methods_supported": []string{"S256"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	endpoint = server.URL
+	d.Transport = domain.MCPStreamableHTTP
+	d.Command = ""
+	d.Cwd = ""
+	d.Endpoint = endpoint + "/mcp"
+	d.Authentication = domain.MCPOAuthAuthentication
+	// Each field is valid alone; only the composed authorization URL exceeds 4096 bytes.
+	d.OAuth = &domain.MCPOAuthProfile{ClientID: "fixture", AuthorizationURL: endpoint + "/authorize?pad=" + pad, TokenURL: endpoint + "/token", RedirectURI: "http://localhost/callback", Scope: strings.Repeat("s", 2048)}
+	q.Definition = &d
+	must(t, m, q)
+	begin := q
+	begin.Definition = nil
+	begin.DefinitionID = d.ID
+	begin.ExpectedRevision = 1
+	begin.RequestID = domain.NewID()
+	begin.Action = domain.MCPOAuthBegin
+	if _, e := m.Execute(context.Background(), begin); domain.SafeError(e).Code != domain.InvalidArgument {
+		t.Fatalf("oversized composed authorization URL accepted: %v", e)
+	}
+	if len(m.Secrets.(*fixtureSecrets).values) != 0 {
+		t.Fatal("rejected OAuth begin retained a verifier")
+	}
+	list := begin
+	list.RequestID = domain.NewID()
+	list.Action = domain.MCPList
+	if observed := must(t, m, list); len(observed.Operations) != 0 {
+		t.Fatal("rejected OAuth begin left an awaiting attempt")
+	}
+	edit := q
+	edit.RequestID = domain.NewID()
+	edit.ExpectedRevision = 1
+	edited := d
+	edited.Revision = 2
+	edited.Name = "Edited after rejected begin"
+	edit.Definition = &edited
+	must(t, m, edit)
+}
