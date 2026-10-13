@@ -273,10 +273,15 @@ function RunnerMcp({
           .includes(search.trim().toLocaleLowerCase()),
       )
     : [];
+  // A restored awaiting attempt exists only in the catalog operations until the
+  // user continues it, but it already forbids replacing the selected Runner.
+  const awaitingAuthorization = operations.some(
+    (op) => op.state === State.AWAITING_AUTHORIZATION,
+  );
   useEffect(() => {
-    blockRunner(pending || Boolean(authorization));
+    blockRunner(pending || Boolean(authorization) || awaitingAuthorization);
     return () => blockRunner(false);
-  }, [pending, authorization, blockRunner]);
+  }, [pending, authorization, awaitingAuthorization, blockRunner]);
   const ready =
     active &&
     Boolean(valid) &&
