@@ -90,8 +90,11 @@ export function defaultPreferences(): AppearancePreferences {
 }
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
-const exact = (v: Record<string, unknown>, keys: string[]) =>
-  Object.keys(v).sort().join(",") === keys.sort().join(",");
+// Compare key sets structurally. Joining keys with a delimiter would let one
+// key that contains the delimiter collide with several separate keys.
+const exact = (v: Record<string, unknown>, keys: readonly string[]) =>
+  Object.keys(v).length === keys.length &&
+  keys.every((key) => Object.hasOwn(v, key));
 const luminance = (hex: string) => {
   const values = [1, 3, 5]
     .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)

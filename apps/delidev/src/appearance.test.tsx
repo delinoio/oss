@@ -440,6 +440,119 @@ test("v2 validates custom theme imports and preserves immutable defaults", async
   ).toThrow();
 });
 
+test("exact key checks reject delimiter-collision, unknown, missing and duplicate-style key sets", async () => {
+  const { defaultPreferences, parsePreferences, parseThemeFile, palettes } =
+    await import("./appearance-preferences");
+  const { validColors, validTheme } =
+    await import("./appearance-preferences");
+  const base = palettes.default.light;
+  // One key that embeds the old delimiter replaces two real keys. The key count
+  // differs, so joining sorted keys with commas used to make these look equal.
+  const { background, border, ...withoutPair } = base;
+  const collided = {
+    ...withoutPair,
+    "background,border": background,
+  };
+  expect(validColors(base)).toBe(true);
+  expect(validColors(collided)).toBe(false);
+  // Same key count with one missing token and one unknown token.
+  const { link, ...withoutLink } = base;
+  expect(validColors({ ...withoutLink, extra: link })).toBe(false);
+  expect(validColors(withoutLink)).toBe(false);
+  expect(validColors({ ...base, extra: "#000000" })).toBe(false);
+  // A reversed key order is still the same complete set.
+  expect(validColors(Object.fromEntries(Object.entries(base).reverse()))).toBe(
+    true,
+  );
+
+  const theme = { version: 1, name: "Fixture", ...structuredClone(palettes.default) };
+  const identity = { ...theme, id: "01900000-0000-7000-8000-000000000001" };
+  for (const mode of ["light", "dark"] as const) {
+    const bad = { ...theme, [mode]: collided };
+    expect(validTheme(bad)).toBe(false);
+    expect(validTheme({ ...identity, [mode]: collided }, true)).toBe(false);
+    expect(() => parseThemeFile(JSON.stringify(bad))).toThrow();
+  }
+  expect(validTheme(theme)).toBe(true);
+  expect(validTheme(identity, true)).toBe(true);
+  expect(validTheme({ ...theme, id: identity.id })).toBe(false);
+  expect(validTheme(theme, true)).toBe(false);
+  expect(validTheme({ ...identity, extra: true }, true)).toBe(false);
+  const { dark, ...withoutDark } = theme;
+  expect(validTheme({ ...withoutDark, "dark,id": dark })).toBe(false);
+  expect(
+    validTheme(
+      { version: 1, name: "Fixture", light: theme.light, "dark,name": dark },
+      false,
+    ),
+  ).toBe(false);
+  expect(
+    validTheme({ ...identity, light: collided, dark: theme.dark }, true),
+  ).toBe(false);
+
+  const preferences = defaultPreferences();
+  expect(parsePreferences(preferences)).toEqual(preferences);
+  const { density, composer_size, ...withoutPair2 } = preferences;
+  expect(() =>
+    parsePreferences({
+      ...withoutPair2,
+      "density,composer_size": density,
+    }),
+  ).toThrow();
+  expect(() => parsePreferences(withoutPair2)).toThrow();
+  expect(() => parsePreferences({ ...preferences, extra: true })).toThrow();
+  expect(() =>
+    parsePreferences({ ...withoutPair2, composer_size, extra: density }),
+  ).toThrow();
+  expect(() =>
+    parsePreferences({
+      ...preferences,
+      custom_themes: [{ ...identity, light: collided }],
+    }),
+  ).toThrow();
+});
+
+test("the custom theme preview ignores color maps that are not an exact complete set", async () => {
+  const { palettes } = await import("./appearance-preferences");
+  const { ColorPreview } = await import("./appearance-controls");
+  const OriginalSheet = CSSStyleSheet;
+  vi.stubGlobal(
+    "CSSStyleSheet",
+    class extends OriginalSheet {
+      replaceSync(source: string) {
+        this.insertRule(source);
+      }
+    },
+  );
+  const descriptor = Object.getOwnPropertyDescriptor(
+    document,
+    "adoptedStyleSheets",
+  );
+  Object.defineProperty(document, "adoptedStyleSheets", {
+    configurable: true,
+    writable: true,
+    value: [],
+  });
+  try {
+    const valid = { version: 1 as const, name: "Fixture", ...palettes.default };
+    const { background, border, ...withoutPair } = palettes.default.light;
+    const collided = {
+      ...withoutPair,
+      "background,border": background,
+    } as unknown as typeof palettes.default.light;
+    const accepted = render(<ColorPreview draft={valid} />);
+    expect(document.adoptedStyleSheets).toHaveLength(2);
+    accepted.unmount();
+    expect(document.adoptedStyleSheets).toHaveLength(0);
+    render(<ColorPreview draft={{ ...valid, light: collided }} />);
+    expect(document.adoptedStyleSheets).toHaveLength(0);
+  } finally {
+    if (descriptor)
+      Object.defineProperty(document, "adoptedStyleSheets", descriptor);
+    else Reflect.deleteProperty(document, "adoptedStyleSheets");
+  }
+});
+
 test("selected palette sheets follow System changes and retire only their own sheet", async () => {
   const { defaultPreferences, palettes } =
     await import("./appearance-preferences");
