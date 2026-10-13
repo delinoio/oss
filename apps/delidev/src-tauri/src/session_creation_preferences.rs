@@ -442,8 +442,9 @@ impl Lease {
         #[cfg(windows)]
         {
             // Re-open the current sidecar path without following a reparse
-            // point and compare stable volume and file-index identities with
-            // the locked handle.
+            // point and compare the stable volume and 128-bit file identities
+            // (legacy file index only where unsupported) with the locked
+            // handle.
             use std::os::windows::fs::OpenOptionsExt;
             let current = OpenOptions::new()
                 .read(true)
@@ -463,29 +464,63 @@ impl Lease {
     }
 }
 
-/// Returns the stable `(volume serial number, file index)` identity of an
-/// open file handle.
+/// Stable identity of an open Windows file handle.
+///
+/// The legacy 64-bit file index is not guaranteed to be unique on ReFS, so the
+/// 128-bit `FileIdInfo` identifier is preferred. The legacy pair is only a
+/// fallback for file systems that cannot report the extended identifier.
 #[cfg(windows)]
-fn windows_file_identity(file: &File) -> Result<(u32, u64), Problem> {
+#[derive(Debug, PartialEq, Eq)]
+enum WindowsFileIdentity {
+    Extended { volume: u64, file_id: [u8; 16] },
+    Legacy { volume: u32, file_index: u64 },
+}
+
+#[cfg(windows)]
+fn windows_file_identity(file: &File) -> Result<WindowsFileIdentity, Problem> {
     use std::os::windows::io::AsRawHandle;
 
     use windows_sys::Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, FileIdInfo, GetFileInformationByHandle,
+        GetFileInformationByHandleEx,
     };
+    let handle = file.as_raw_handle();
+    let mut extended: FILE_ID_INFO = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is owned by `file` for the duration of the call and
+    // `extended` is a valid, writable buffer of exactly the size passed.
+    let extended_ok = unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileIdInfo,
+            std::ptr::addr_of_mut!(extended).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    } != 0;
+    if extended_ok {
+        return Ok(WindowsFileIdentity::Extended {
+            volume: extended.VolumeSerialNumber,
+            file_id: extended.FileId.Identifier,
+        });
+    }
+    tracing::debug!(
+        operation = "creation_preferences_lease",
+        code = "lease-extended-identity-unavailable"
+    );
     let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
     // SAFETY: the handle is owned by `file` for the duration of the call and
     // `information` is a valid, writable out-pointer.
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
+    if unsafe { GetFileInformationByHandle(handle, &mut information) } == 0 {
         tracing::warn!(
             operation = "creation_preferences_lease",
             code = "lease-identity-unavailable"
         );
         return Err(Problem::WriteFailed);
     }
-    Ok((
-        information.dwVolumeSerialNumber,
-        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
-    ))
+    Ok(WindowsFileIdentity::Legacy {
+        volume: information.dwVolumeSerialNumber,
+        file_index: (u64::from(information.nFileIndexHigh) << 32)
+            | u64::from(information.nFileIndexLow),
+    })
 }
 
 impl Drop for Lease {
