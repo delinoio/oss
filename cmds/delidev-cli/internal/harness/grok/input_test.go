@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,7 +88,21 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 		value["update"].(map[string]any)["content"].(map[string]any)["text"] = reflectedFixtureValue(secret, strings.TrimPrefix(mode, "input-reflect-"))
 		chunk, _ = json.Marshal(value)
 	}
-	notify(textMethod, chunk)
+	chunks := [][]byte{chunk}
+	if texts := fixtureSplitTexts(mode, os.Getenv(credentialVariable)); texts != nil {
+		chunks = chunks[:0]
+		for index, text := range texts {
+			value := fixtureObject(textChunkFixture)
+			value["update"].(map[string]any)["content"].(map[string]any)["text"] = text
+			meta := value["_meta"].(map[string]any)
+			meta["eventId"], meta["chunkId"] = string(turnFixtureSession)+"-"+strconv.Itoa(4+index), index+1
+			raw, _ := json.Marshal(value)
+			chunks = append(chunks, raw)
+		}
+	}
+	for _, chunk := range chunks {
+		notify(textMethod, chunk)
+	}
 	if strings.HasPrefix(mode, "stop-") && mode != "stop-completion-race" {
 		return
 	}
@@ -254,4 +269,22 @@ func TestInputPublicationJoinsNativeClosure(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("native closure did not cancel publication")
 	}
+}
+
+// fixtureSplitTexts returns ordered chunk texts for the cross-chunk protected
+// value modes. input-split-N-FORM splits a reflected form after byte N;
+// input-hold-continue and input-hold-end only end a chunk with a prefix of it.
+func fixtureSplitTexts(mode, secret string) []string {
+	switch {
+	case strings.HasPrefix(mode, "input-split-"):
+		number, form, _ := strings.Cut(strings.TrimPrefix(mode, "input-split-"), "-")
+		split, _ := strconv.Atoi(number)
+		full := "before " + reflectedFixtureValue(secret, form).(string) + " after"
+		return []string{full[:split], full[split:]}
+	case mode == "input-hold-continue":
+		return []string{"Hello " + secret[:3], "world."}
+	case mode == "input-hold-end":
+		return []string{"Hello ", "tail " + secret[:3]}
+	}
+	return nil
 }
