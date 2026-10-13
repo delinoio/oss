@@ -109,6 +109,37 @@ export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
   );
 }
 
+/** Last successful quota observation and failed-refresh wording from saved
+ * evidence. Shared by the connected controls and the disconnected read-only
+ * view so both show the same timestamp and never invent one. */
+function LastQuotaObservation({ state }: { state: Record<string, unknown> }) {
+  useLocale();
+  return (
+    <p>
+      <LocalizedText
+        id="subscription-quota.lastSuccessfulObservation_836238"
+        components={{
+          s0: (
+            <>
+              <Timestamp
+                value={text(state.quota_observed_at)}
+                fallback={copy("subscription-quota.extra.ca1844969742")}
+              />
+            </>
+          ),
+          s1: (
+            <>
+              {state.quota_state === "failed"
+                ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e")
+                : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}
+            </>
+          ),
+        }}
+      />
+    </p>
+  );
+}
+
 export function SubscriptionQuotaControls({
   current,
   active,
@@ -588,7 +619,37 @@ export function SubscriptionQuotaControls({
         ) : null}
       </SettingsTaskDialog>
     );
-  if (!visible) return <>{footer?.()}</>;
+  if (!visible) {
+    // A disconnected account keeps only read-only retained evidence and the
+    // status footer. No interactive quota, credit or preference control is
+    // admitted here; the guards above stay the only source of eligibility.
+    const retainedError =
+      status.error ||
+      consent.error ||
+      observe.error ||
+      reconcile.error ||
+      preferences.error;
+    // Hide the saved observation only when the server is known to lack quota
+    // support; unread capability data must not invent a support claim.
+    const savedObservation =
+      (!status.data || quotaSupported) &&
+      (text(state.quota_observed_at) !== "" || state.quota_state === "failed");
+    return (
+      <>
+        {savedObservation ? <LastQuotaObservation state={state} /> : null}
+        {retainedError ? (
+          <section
+            className="reset-credit-results"
+            aria-label={copy("subscription-quota.resultsTitle")}
+          >
+            <h4>{copy("subscription-quota.resultsTitle")}</h4>
+            <Problem error={retainedError} />
+          </section>
+        ) : null}
+        {footer?.()}
+      </>
+    );
+  }
   return (
     <>
       <section
@@ -603,32 +664,7 @@ export function SubscriptionQuotaControls({
           </p>
         ) : (
           <>
-            <p>
-              <LocalizedText
-                id="subscription-quota.lastSuccessfulObservation_836238"
-                components={{
-                  s0: (
-                    <>
-                      <Timestamp
-                        value={text(state.quota_observed_at)}
-                        fallback={copy("subscription-quota.extra.ca1844969742")}
-                      />
-                    </>
-                  ),
-                  s1: (
-                    <>
-                      {state.quota_state === "failed"
-                        ? copy(
-                            "subscription-quota.theLatestRefreshFailedTheLast_78f81e",
-                          )
-                        : copy(
-                            "subscription-quota.quotaIsObservedByTheOriginal_16d486",
-                          )}
-                    </>
-                  ),
-                }}
-              />
-            </p>
+            <LastQuotaObservation state={state} />
           </>
         )}
         {quotaSupported && !serverSupported ? (

@@ -305,6 +305,14 @@ ineligible accounts retain available read-only status refresh and existing
 update/recovery guidance. Neither a successful status read nor a read-error
 retry submits quota or acquires eligibility for its original activation.
 
+A disconnected ChatGPT account renders only read-only retained evidence above the
+status footer: the last-success timestamp and failed-refresh wording when saved
+`quota_observed_at` or `quota_state = failed` exists, plus any retained original
+quota, credit, preference, consent or status failure Problem, including after
+the operation settles. No timestamp, value or success claim is invented when no
+saved evidence exists, and no checkbox, Use credit, consent, preference or retry
+control is added by this presentation.
+
 The quota/credit/preferences/consent controllers stay mounted for the original
 Manage account, retaining exact uncertain requests when later status reads
 change its connection or presentation. Only explicit original retry reuses
