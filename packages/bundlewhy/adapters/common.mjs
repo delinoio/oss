@@ -44,7 +44,9 @@ export class AdapterError extends Error {
  * adapter events.
  */
 export function emit(event) {
-  process.stdout.write(`${FRAME_PREFIX} ${protocolToken} ${JSON.stringify(event)}\n`);
+  process.stdout.write(
+    `${FRAME_PREFIX} ${protocolToken} ${JSON.stringify(event)}\n`,
+  );
 }
 
 export function progress(stage, message) {
@@ -192,7 +194,9 @@ export async function runAdapter(main) {
   } catch (error) {
     // Also report on stderr: before the request is read no token is known and
     // the frame below cannot be authenticated.
-    process.stderr.write(`bundlewhy adapter error: ${String(error?.message ?? error).slice(0, 4000)}\n`);
+    process.stderr.write(
+      `bundlewhy adapter error: ${String(error?.message ?? error).slice(0, 4000)}\n`,
+    );
     const code =
       error instanceof AdapterError ? error.code : AdapterErrorCode.BuildFailed;
     const recovery =

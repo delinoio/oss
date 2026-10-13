@@ -120,7 +120,11 @@ test("rspack adapter treats array targets containing node as unsupported builds"
     "rspack.config.mjs",
     `export default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", target: ["node", "es2022"] };\n`,
   );
-  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  const { status, collection } = runAdapter(
+    "rspack",
+    "rspack-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.ssrBuild, true);
@@ -132,10 +136,17 @@ test("vite adapter rejects configurations with several outputs", () => {
     "vite.config.mjs",
     "export default { build: { rolldownOptions: { output: [{ entryFileNames: 'a-[name].js' }, { entryFileNames: 'b-[name].js' }] } } };\n",
   );
-  const { status, events } = runAdapter("vite", "vite-app", path.relative(projectRoot, file));
+  const { status, events } = runAdapter(
+    "vite",
+    "vite-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 1);
-  assert.equal(events.find((event) => event.event === "error").code, "BW_UNSUPPORTED_BUILD");
+  assert.equal(
+    events.find((event) => event.event === "error").code,
+    "BW_UNSUPPORTED_BUILD",
+  );
 });
 
 test("unframed JSON printed by project configuration is not a protocol event", () => {
@@ -144,7 +155,11 @@ test("unframed JSON printed by project configuration is not a protocol event", (
     "vite.config.mjs",
     `console.log(JSON.stringify({ event: "error", code: "BW_BUILD_FAILED", message: "spoofed", recovery: "" }));\nexport default {};\n`,
   );
-  const { status, events } = runAdapter("vite", "vite-app", path.relative(projectRoot, file));
+  const { status, events } = runAdapter(
+    "vite",
+    "vite-app",
+    path.relative(projectRoot, file),
+  );
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.ok(!events.some((event) => event.event === "error"));

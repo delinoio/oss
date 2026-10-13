@@ -286,11 +286,17 @@ await runAdapter(async (request) => {
   const minimizer = describeMinimizer(rspackModule, config);
   const rawTarget = config.target ?? "web";
   // Inspect every raw target entry; the summary below is for display only.
-  const targets = (Array.isArray(rawTarget) ? rawTarget : [rawTarget]).map((entry) =>
-    typeof entry === "string" ? entry : "",
+  const targets = (Array.isArray(rawTarget) ? rawTarget : [rawTarget]).map(
+    (entry) => (typeof entry === "string" ? entry : ""),
   );
-  const nodeTarget = targets.some((entry) => /(^|[^a-z])(node|async-node|electron-main|electron-preload|nwjs|node-webkit)/.test(entry));
-  const target = Array.isArray(rawTarget) ? rawTarget.map((entry) => summarizeValue(entry)).join(", ") : summarizeValue(rawTarget);
+  const nodeTarget = targets.some((entry) =>
+    /(^|[^a-z])(node|async-node|electron-main|electron-preload|nwjs|node-webkit)/.test(
+      entry,
+    ),
+  );
+  const target = Array.isArray(rawTarget)
+    ? rawTarget.map((entry) => summarizeValue(entry)).join(", ")
+    : summarizeValue(rawTarget);
   const overrides = [
     "mode=production",
     `output.path=${path.basename(request.buildDir)} (bundlewhy run directory)`,

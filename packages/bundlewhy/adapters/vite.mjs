@@ -146,7 +146,13 @@ await runAdapter(async (request) => {
   checkEngineVersion(request, "vite", vitePackage.version);
   const vite = await importFile(vitePackage.require.resolve("vite"));
 
-  const state = { resolved: null, collection: null, outputs: 0, warnings: [], logs: [] };
+  const state = {
+    resolved: null,
+    collection: null,
+    outputs: 0,
+    warnings: [],
+    logs: [],
+  };
   const outDir = request.buildDir;
   const overrides = [
     `build.outDir=${path.basename(outDir)} (bundlewhy run directory)`,
