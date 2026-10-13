@@ -188,3 +188,7 @@
     grid-template-rows: minmax(160px, 1fr);
   }
 }
+
+.terminal-screen[data-link] .term-row {
+  cursor: pointer;
+}

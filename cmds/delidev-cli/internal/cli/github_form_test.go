@@ -71,3 +71,31 @@ func TestCLIGitHubPresentationStdinIsBoundedValidatedAndDoesNotBootstrap(t *test
 		}
 	}
 }
+
+func TestCLIGitHubValidateOnlyNeverLaunchesAndKeepsStrictInput(t *testing.T) {
+	url := "https://github.com/owner/repo/pull/1"
+	root := filepath.Join(t.TempDir(), "unused")
+	var out, diagnostic strings.Builder
+	code := Run(context.Background(), []string{"--data-dir", root, "presentation", "validate-github", "--url-stdin"}, IO{In: strings.NewReader(url + "\n"), Out: &out, Err: &diagnostic})
+	if code != 0 || !strings.Contains(out.String(), `"validated":true`) || strings.Contains(out.String(), "dispatched") {
+		t.Fatal("validate-only result", code, out.String(), diagnostic.String())
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatal("validation bootstrapped server state", err)
+	}
+	for _, args := range [][]string{
+		{"presentation", "validate-github", "--url", url},
+		{"presentation", "validate-github"},
+	} {
+		var failed, ignored strings.Builder
+		if Run(context.Background(), append([]string{"--data-dir", root}, args...), IO{In: strings.NewReader(""), Out: &failed, Err: &ignored}) == 0 {
+			t.Fatal("validate-only accepted unsafe input", args, failed.String())
+		}
+	}
+	for _, input := range []string{"", url + "?token=fixture-private-value", "https://example.com/owner/repo/pull/1", "http://github.com/owner/repo/pull/1", strings.Repeat("x", 2051)} {
+		var failed, ignored strings.Builder
+		if Run(context.Background(), []string{"--data-dir", root, "presentation", "validate-github", "--url-stdin"}, IO{In: strings.NewReader(input), Out: &failed, Err: &ignored}) == 0 || strings.Contains(failed.String(), "fixture-private-value") {
+			t.Fatal("validate-only accepted an invalid destination")
+		}
+	}
+}

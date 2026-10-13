@@ -90,6 +90,46 @@ function fixture(): TrayPanelSnapshot {
     ],
   };
 }
+function secondWithSummary(): TrayPanelSnapshot {
+  const snapshot = fixture();
+  const observed_at = new Date(Date.now() - 60000).toISOString();
+  snapshot.windows[1] = {
+    ...snapshot.windows[1],
+    stale: false,
+    observed_age_ms: 0,
+    summary: {
+      overview: {
+        observed_at,
+        stale: false,
+        active_sessions: "5",
+        pending_interactions: "4",
+        connected_workers: "2",
+        registered_workers: "2",
+      },
+      usage: null,
+      accounts: {
+        more: false,
+        entries: [
+          {
+            alias: "Second account",
+            subscription_service: TraySubscriptionService.Claude,
+            more: false,
+            windows: [
+              {
+                id: "claude:primary",
+                state: TrayQuotaState.Observed,
+                remaining_basis_points: 8800,
+                observed_at,
+                reset_at: null,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  return snapshot;
+}
 function controller(initial = fixture()) {
   let current = initial,
     changed = () => {};
@@ -115,7 +155,7 @@ afterEach(async () => {
   await i18n.changeLanguage("en");
 });
 describe("isolated tray panel", () => {
-  it("shows independent quotas before exact metrics, focuses the selector and only navigates", async () => {
+  it("shows independent quotas before exact metrics, focuses Close, renders no window selector and only navigates", async () => {
     const { bridge } = controller();
     render(<TrayStatus instance={instance} bridge={bridge} />);
     await screen.findByText("57.00% remaining");
@@ -123,7 +163,13 @@ describe("isolated tray panel", () => {
     expect(screen.getByText("codex:primary")).toBeTruthy();
     expect(screen.getByText("Quota 2")).toBeTruthy();
     expect(screen.getByText("90,071,992,547,409,930,000")).toBeTruthy();
-    expect(screen.getByRole("combobox")).toBe(document.activeElement);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Close status" })).toBe(
+        document.activeElement,
+      ),
+    );
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("Product window")).toBeNull();
     expect(screen.getByText("Usage details").closest("details")?.open).toBe(
       false,
     );
@@ -173,31 +219,82 @@ describe("isolated tray panel", () => {
     expect(bridge.activate).not.toHaveBeenCalled();
     expect(bridge.dismiss).not.toHaveBeenCalled();
   });
-  it("selection changes only projection, persists across snapshots and rejects disappeared identity", async () => {
-    const { bridge, update } = controller();
+  it("presents only the native recent window, never merging or summing windows", async () => {
+    const snapshot = secondWithSummary();
+    snapshot.recent = second;
+    const { bridge } = controller(snapshot);
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await screen.findByText("88.00% remaining");
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("57.00% remaining")).toBeNull();
+    expect(screen.queryByText("Personal")).toBeNull();
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByText("5")).toBeTruthy();
+    expect(screen.queryByText("8")).toBeNull();
+    expect(screen.queryByText("3")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Active sessions 5" }));
+    await waitFor(() =>
+      expect(bridge.activate).toHaveBeenCalledWith(
+        TrayPanelAction.Sessions,
+        snapshot.windows[1].target,
+      ),
+    );
+    expect(bridge.read).toHaveBeenCalledTimes(1);
+  });
+  it("falls back to the first ready window when the recent window is absent", async () => {
+    const snapshot = secondWithSummary();
+    snapshot.recent = null;
+    const { bridge } = controller(snapshot);
     render(<TrayStatus instance={instance} bridge={bridge} />);
     await screen.findByText("57.00% remaining");
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: second },
-    });
+    expect(screen.queryByText("88.00% remaining")).toBeNull();
+  });
+  it("retains the representative window during a visit and replaces it only when it disappears", async () => {
+    const start = secondWithSummary();
+    start.recent = second;
+    const { bridge, update } = controller(start);
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await screen.findByText("88.00% remaining");
+    const changed = secondWithSummary();
+    changed.recent = first;
+    update(changed);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("88.00% remaining")).toBeTruthy();
     expect(screen.queryByText("57.00% remaining")).toBeNull();
-    expect(bridge.activate).not.toHaveBeenCalled();
-    expect(bridge.read).toHaveBeenCalledTimes(1);
-    const next = fixture();
-    next.recent = first;
-    update(next);
+    const removed = secondWithSummary();
+    removed.windows.splice(1, 1);
+    update(removed);
+    await screen.findByText("57.00% remaining");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage subscriptions" }),
+    );
     await waitFor(() =>
-      expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
-        second,
+      expect(bridge.activate).toHaveBeenCalledWith(
+        TrayPanelAction.Settings,
+        removed.windows[0].target,
       ),
     );
-    next.windows.splice(1, 1);
-    update({ ...next });
-    await waitFor(() =>
-      expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
-        first,
-      ),
-    );
+  });
+  it("reselects the recent window and refocuses Close on panel opening but not on updates", async () => {
+    const start = secondWithSummary();
+    start.recent = second;
+    const { bridge, update } = controller(start);
+    render(<TrayStatus instance={instance} bridge={bridge} />);
+    await screen.findByText("88.00% remaining");
+    const close = screen.getByRole("button", { name: "Close status" });
+    await waitFor(() => expect(close).toBe(document.activeElement));
+    const open = screen.getByRole("button", { name: "Open DeliDev" });
+    open.focus();
+    const changed = secondWithSummary();
+    changed.recent = first;
+    update(changed);
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
+    expect(document.activeElement).toBe(open);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await screen.findByText("57.00% remaining");
+    await waitFor(() => expect(close).toBe(document.activeElement));
   });
   it("retains quota state, supports locale updates, and Escape hides without activating product windows", async () => {
     const { bridge, update } = controller();
@@ -224,7 +321,9 @@ describe("isolated tray panel", () => {
     render(<TrayStatus instance={instance} bridge={bridge} />);
     await screen.findByText("No accounts in this observation.");
     update({ ...snapshot, windows: [], recent: null });
-    await screen.findByText("No ready product window");
+    await waitFor(() =>
+      expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open DeliDev" }));
     await waitFor(() =>
       expect(bridge.activate).toHaveBeenCalledWith(
