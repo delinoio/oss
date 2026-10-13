@@ -242,10 +242,9 @@ it("keeps recovery controls reachable when an explicit Retry over a failed empty
       ),
     ).not.toBeNull(),
   );
-  const retry = within(region.querySelector<HTMLElement>(".requests")!).getByRole(
-    "button",
-    { name: "Retry" },
-  );
+  const retry = within(
+    region.querySelector<HTMLElement>(".requests")!,
+  ).getByRole("button", { name: "Retry" });
   expect(retry).toHaveProperty("disabled", false);
 }, 30_000);
 
@@ -255,7 +254,9 @@ it("keeps the surface through a boundary Reload from a failed empty list until i
     ReadBehavior.ContinuationAppeared,
   );
   // A changed list boundary requires an explicit Reload instead of Retry.
-  expect(within(disclosure).queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(
+    within(disclosure).queryByRole("button", { name: "Retry" }),
+  ).toBeNull();
   const reload = await within(disclosure).findByRole("button", {
     name: "Reload list",
   });
