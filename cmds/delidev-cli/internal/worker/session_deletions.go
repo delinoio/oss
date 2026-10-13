@@ -395,7 +395,13 @@ func loadSessionDeletionProof(root, path string, w domain.SessionDeletionWork, p
 			}
 		}
 		if legacyProof && (legacy.Digest == w.Digest() || sessionDeletionUpgradable(legacy, w)) {
-			// A crash left the already migrated legacy proof in place.
+			// A crash left the already migrated legacy proof in place. Its
+			// workspace proof moves before the tombstone drops the legacy scope.
+			if legacy.Digest == w.Digest() {
+				if err := workspace.MigrateLegacyWorkspaceProof(root, w); err != nil {
+					return err
+				}
+			}
 			return writeJSON(tombstone, sessionDeletionProof{Version: sessionDeletionTombstoneVersion})
 		}
 		return nil
@@ -407,10 +413,19 @@ func loadSessionDeletionProof(root, path string, w domain.SessionDeletionWork, p
 		if legacy.Digest != w.Digest() && !sessionDeletionUpgradable(legacy, w) {
 			return domain.SessionDeletionPending()
 		}
+		// A completed legacy proof takes the Complete fast path and never reaches
+		// workspace cleanup, so the exact obligation's session-keyed workspace
+		// proof migrates here, before the tombstone drops the legacy scope.
+		exact := legacy.Digest == w.Digest()
 		legacy.Digest = w.Digest()
 		*proof = legacy
 		if err := writeJSON(path, *proof); err != nil {
 			return err
+		}
+		if exact {
+			if err := workspace.MigrateLegacyWorkspaceProof(root, w); err != nil {
+				return err
+			}
 		}
 		return writeJSON(tombstone, sessionDeletionProof{Version: sessionDeletionTombstoneVersion})
 	}

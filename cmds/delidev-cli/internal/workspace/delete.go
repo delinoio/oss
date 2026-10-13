@@ -361,10 +361,26 @@ func migrateLegacyWorkspaceProof(root, proofPath string, w domain.SessionDeletio
 	} else if err != nil {
 		return domain.SessionDeletionPending()
 	}
+	if legacy.Removed {
+		// The legacy session-keyed proof recorded the shared directory's removal
+		// for this exact obligation. Preserve it as session-scoped evidence so
+		// other device obligations can verify it before the legacy file is gone.
+		if err := writeSharedWorkspaceRemoval(root, w); err != nil {
+			return err
+		}
+	}
 	if err := os.Remove(legacyPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
 	}
 	return nil
+}
+
+// MigrateLegacyWorkspaceProof moves a session-keyed workspace proof to the exact
+// obligation that owns it, even when that obligation's session proof is already
+// complete and DeleteOwnedWorkspace is never reached. Without a legacy proof it
+// does nothing.
+func MigrateLegacyWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+	return migrateLegacyWorkspaceProof(root, filepath.Join(root, "session-deletions", SessionDeletionObligationName(w)+"-workspace.json"), w)
 }
 
 func writeDeletionWorkspaceProof(path string, v deletionWorkspaceProof) error {

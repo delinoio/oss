@@ -308,7 +308,12 @@ independently, and a proof copied to another obligation fails its digest check.
 A pre-existing session-keyed (version 1) proof or workspace proof migrates only to
 the one obligation whose digest matches exactly (or an untouched proof upgraded by
 server-proved child owners), preserving its report UUID; any other legacy scope
-stays pending and is never copied to another device.
+stays pending and is never copied to another device. The session-keyed workspace
+proof migrates together with its session proof, before the version-2 tombstone
+replaces the legacy scope, so an already completed legacy proof (which never
+reaches workspace cleanup) cannot strand another device obligation behind its
+digest. A migrated proof that recorded the removal also publishes the shared
+removal evidence below.
 
 The managed `workspaces/<session>` directory is shared by every device obligation
 of one session and machine. When an obligation removes it, it first publishes
