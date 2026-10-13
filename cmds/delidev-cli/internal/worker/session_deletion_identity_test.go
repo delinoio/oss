@@ -194,3 +194,60 @@ func TestSessionDeletionDoesNotAdoptForeignMaintenanceLocks(t *testing.T) {
 		})
 	}
 }
+
+// A pending attempt has already persisted RemovalStarted. Its retry must compare
+// against the identities retained before the first removal, never recapture the
+// replacement as a fresh baseline.
+func TestSessionDeletionRetryKeepsValidatedIdentityAcrossPendingAttempts(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	original := filepath.Join(c.Root, "processes", string(w.Copies[0].JobID))
+	if err := os.MkdirAll(original, 0700); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(c.Root, "moved-original")
+	installDeletionHook(t, func() {
+		if err := os.Rename(original, moved); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, filepath.Join(original, "sentinel"), "foreign sentinel")
+	})
+	expectPendingDeletion(t, c, w)
+	if saved := readDeletionProof(t, sessionDeletionObligationPath(c.Root, w, ".json")); !saved.RemovalStarted {
+		t.Fatal("first attempt did not persist removal start", saved)
+	}
+	sessionDeletionBeforeRemovalHook = nil
+	for attempt := 2; attempt <= 3; attempt++ {
+		expectPendingDeletion(t, c, w)
+		if b, err := os.ReadFile(filepath.Join(original, "sentinel")); err != nil || string(b) != "foreign sentinel" {
+			t.Fatal("retry removed the replacement", attempt, err)
+		}
+	}
+	// Restoring the validated original lets the retry finish and remove it.
+	if err := os.RemoveAll(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(moved, original); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal("retry did not finish once the original returned", proof, err)
+	}
+	if _, err := os.Lstat(original); !os.IsNotExist(err) {
+		t.Fatal("original survived", err)
+	}
+}
+
+// A retry cannot adopt anything outside the retained inventory: a copy that was
+// absent when removal started stays foreign on every later attempt.
+func TestSessionDeletionRetryKeepsProvenAbsence(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	path := filepath.Join(c.Root, "execution-claims", string(w.SessionID)+".json")
+	installDeletionHook(t, func() { mustWrite(t, path, "restored foreign copy") })
+	expectPendingDeletion(t, c, w)
+	sessionDeletionBeforeRemovalHook = nil
+	expectPendingDeletion(t, c, w)
+	if b, err := os.ReadFile(path); err != nil || string(b) != "restored foreign copy" {
+		t.Fatal("retry removed a copy restored after absence was proven", err)
+	}
+}

@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -165,7 +166,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// the path with this capture, so an object swapped in during or after
 	// validation is never adopted. A started attempt reuses the identities
 	// persisted before its first removal instead of capturing a fresh baseline.
-	validated, e := prepareSessionCopyIdentities(ctx, root, w)
+	validated, e := prepareSessionCopyIdentities(ctx, config, root, w, proof.RemovalStarted)
 	if e != nil {
 		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 		return proof, domain.SessionDeletionPending()
@@ -177,6 +178,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	startRemoval := func() error {
 		if proof.RemovalStarted {
 			return nil
+		}
+		if err := persistSessionCopyIdentities(root, w, validated); err != nil {
+			return err
 		}
 		proof.RemovalStarted = true
 		return writeJSON(path, proof)
@@ -497,11 +501,57 @@ var (
 // modification time where reported), not by a held handle.
 const maxHeldIdentityHandles = 1024
 
-// prepareSessionCopyIdentities captures the identity of every inventoried managed
-// path, holding each object open, so removal can only act on the objects that
-// existed before ownership validation began.
-func prepareSessionCopyIdentities(ctx context.Context, root string, w domain.SessionDeletionWork) (map[string]security.PathIdentity, error) {
+// maxSessionIdentityBytes bounds the retained identity file.
+const maxSessionIdentityBytes = 8 << 20
+
+// sessionIdentityFile is the content-free identity inventory retained before the
+// first removal. Only present objects are listed; every other inventoried path
+// was proven absent. Keys are relative to the Worker root.
+type sessionIdentityFile struct {
+	Version uint32                                 `json:"version"`
+	Digest  string                                 `json:"digest"`
+	Paths   map[string]security.PathIdentityRecord `json:"paths"`
+}
+
+func sessionIdentityPath(root string, w domain.SessionDeletionWork) string {
+	return sessionDeletionObligationPath(root, w, "-identities.json")
+}
+
+// prepareSessionCopyIdentities returns the identity of every inventoried managed
+// path. A started attempt restores the identities persisted before its first
+// removal and re-binds them to the objects now present; a mismatch is pending,
+// so a retry never gains authority over a replacement. A proof written before
+// identities were retained has no baseline to restore and captures afresh, with
+// the authority that earlier releases granted.
+func prepareSessionCopyIdentities(ctx context.Context, config Config, root string, w domain.SessionDeletionWork, started bool) (map[string]security.PathIdentity, error) {
 	identities := map[string]security.PathIdentity{}
+	if started {
+		raw, e := security.ReadPrivate(sessionIdentityPath(root, w), maxSessionIdentityBytes)
+		if e == nil {
+			var file sessionIdentityFile
+			if domain.DecodeBounded(raw, &file, maxSessionIdentityBytes) != nil || file.Version != 1 || file.Digest != w.Digest() {
+				return nil, domain.SessionDeletionPending()
+			}
+			for relative, record := range file.Paths {
+				if !filepath.IsLocal(relative) {
+					closeSessionCopyIdentities(identities)
+					return nil, domain.SessionDeletionPending()
+				}
+				path := filepath.Join(root, relative)
+				identity, e := security.ReopenPathIdentity(path, record)
+				if e != nil {
+					closeSessionCopyIdentities(identities)
+					return nil, e
+				}
+				identities[path] = identity
+			}
+			return identities, nil
+		}
+		if !errors.Is(e, os.ErrNotExist) {
+			return nil, domain.SessionDeletionPending()
+		}
+		config.Logger.WarnContext(ctx, "session_deletion_identity_baseline_missing", "deletion_id", w.DeletionID)
+	}
 	paths, e := sessionDeletionCopyPaths(ctx, root, w)
 	if e != nil {
 		return nil, e
@@ -531,6 +581,31 @@ func closeSessionCopyIdentities(identities map[string]security.PathIdentity) {
 	for _, identity := range identities {
 		identity.Close()
 	}
+}
+
+// persistSessionCopyIdentities retains the identity inventory before the first
+// removal, so a retry compares against the validated originals instead of
+// whatever replaced them after a pending attempt.
+func persistSessionCopyIdentities(root string, w domain.SessionDeletionWork, identities map[string]security.PathIdentity) error {
+	file := sessionIdentityFile{Version: 1, Digest: w.Digest(), Paths: map[string]security.PathIdentityRecord{}}
+	for path, identity := range identities {
+		if !identity.Present() {
+			continue
+		}
+		relative, e := filepath.Rel(root, path)
+		if e != nil || !filepath.IsLocal(relative) {
+			return domain.SessionDeletionPending()
+		}
+		file.Paths[relative] = identity.Record()
+	}
+	raw, e := json.Marshal(file)
+	if e != nil || len(raw) > maxSessionIdentityBytes {
+		return domain.SessionDeletionPending()
+	}
+	if e := security.WriteAtomic(sessionIdentityPath(root, w), raw); e != nil {
+		return domain.SessionDeletionPending()
+	}
+	return nil
 }
 
 // adoptMaintenanceLocks captures the Worker's own process-owner maintenance

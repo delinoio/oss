@@ -339,9 +339,16 @@ owner reconciliation after capture, so they alone are adopted, and only for exac
 owners: each job owner's lock right after job validation, and the session owner's
 lock right after workspace retirement, in both cases only as empty private regular
 files. A lock at any other name, or one that appears after adoption, keeps cleanup
-pending. The captured identity lives for one attempt; a later
-retry re-validates and captures again and does not carry a prior attempt's baseline
-across restarts. `security.RemoveOwnedTree` remains for callers without an earlier
+pending. The identity inventory (present objects only; every other
+inventoried path was proven absent) is retained, content-free, at
+`session-deletions/<session>-<deletion>-<device>-identities.json` before the
+attempt persists `removal_started`. A retry skips validation, so it restores that
+inventory and re-binds each record to the object now at its path instead of
+capturing a fresh baseline: a replacement, or a copy restored where absence was
+proven, stays pending on every later attempt, and the original vanishing counts as
+removed. A proof from an earlier release that started removal without a retained
+inventory has no baseline to restore, so its retry captures afresh with the
+authority that release granted. `security.RemoveOwnedTree` remains for callers without an earlier
 validated identity.
 
 A captured identity (`security.PathIdentity`) is read from an open handle, never
