@@ -151,7 +151,8 @@ function fixture(
   });
   function Harness() {
     const [current, setCurrent] = useState(account),
-      [, setBusy] = useState(false);
+      [, setBusy] = useState(false),
+      [visible, setVisible] = useState(true);
     return (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
@@ -161,12 +162,19 @@ function fixture(
               active
               accepted={setCurrent}
               busyChanged={setBusy}
+              visible={visible}
               footer={(refresh) => (
                 <button disabled={!refresh} onClick={() => void refresh?.()}>
                   Refresh account status and quota
                 </button>
               )}
             />
+            <button onClick={() => setVisible(false)}>
+              Disconnect fixture account
+            </button>
+            <button onClick={() => setVisible(true)}>
+              Reconnect fixture account
+            </button>
             <button
               onClick={() => {
                 account = create(ResourceSchema, {
@@ -1182,6 +1190,50 @@ it("fences a consent confirmation after account revision replacement", async () 
       })) as HTMLInputElement
     ).checked,
   ).toBe(false);
+});
+
+it("leaves the consent confirmation when the account disconnects and does not restore it on reconnect", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  const checkbox = await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(checkbox);
+  await screen.findByRole("heading", {
+    name: "Enable automatic reset credit use?",
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", {
+        name: "Enable automatic reset credit use?",
+      }),
+    ).toBeNull(),
+  );
+  // The read-only presentation keeps the status footer and admits no control.
+  expect(
+    screen.getByRole("button", { name: "Refresh account status and quota" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(value.consent).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reconnect fixture account" }),
+  );
+  const reconnected = (await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  })) as HTMLInputElement;
+  expect(reconnected.checked).toBe(false);
+  expect(
+    screen.queryByRole("heading", {
+      name: "Enable automatic reset credit use?",
+    }),
+  ).toBeNull();
+  expect(value.consent).not.toHaveBeenCalled();
 });
 
 it.each(["light", "dark"])(

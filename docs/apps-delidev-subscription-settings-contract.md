@@ -309,7 +309,8 @@ A disconnected ChatGPT account renders only read-only retained evidence above th
 status footer: the last-success timestamp and failed-refresh wording when saved
 `quota_observed_at` or `quota_state = failed` exists, plus any retained original
 quota, credit, preference, consent or status failure Problem, including after
-the operation settles. No timestamp, value or success claim is invented when no
+the operation settles. An automatic-use confirmation opened while connected
+closes when the account disconnects and is not restored on reconnect. No timestamp, value or success claim is invented when no
 saved evidence exists, and no checkbox, Use credit, consent, preference or retry
 control is added by this presentation.
 
