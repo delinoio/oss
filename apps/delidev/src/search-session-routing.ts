@@ -5,6 +5,7 @@ import {
   EntityKind,
   ResourceQuery,
   newRequestId,
+  supportsResourceSchema,
 } from "@delinoio/delidev-api-client";
 import { document, resourceName } from "./documents";
 import { ConversationKind, conversationProvenance } from "./home-navigation";
@@ -73,6 +74,15 @@ export async function resolveSearchSession(
     const resource = response.resource;
     if (!resource || resource.id !== id || resource.kind !== EntityKind.SESSION)
       return unavailable(id, "missing-or-mismatched-resource");
+    // Apply the same envelope checks as the mounted Session view's
+    // synchronization boundary before trusting any Fork/Sidechat metadata.
+    if (
+      resource.sessionId !== id ||
+      typeof resource.revision !== "bigint" ||
+      resource.revision <= 0n ||
+      !supportsResourceSchema(resource)
+    )
+      return unavailable(id, "invalid-resource-envelope");
     const provenance = conversationProvenance(resource, document(resource));
     switch (provenance.conversationKind) {
       case ConversationKind.Sidechat:

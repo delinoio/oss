@@ -4408,6 +4408,60 @@ it.each([
   },
 );
 
+it.each([
+  [
+    "a foreign session ID",
+    (row: Resource) => {
+      row.sessionId = newRequestId();
+    },
+  ],
+  [
+    "an empty session ID",
+    (row: Resource) => {
+      row.sessionId = "";
+    },
+  ],
+  [
+    "a nonpositive revision",
+    (row: Resource) => {
+      row.revision = 0n;
+    },
+  ],
+  [
+    "an unsupported schema",
+    (row: Resource) => {
+      row.schemaVersion = 99;
+    },
+  ],
+] as const)(
+  "reports an unavailable result for a Sidechat child with %s",
+  async (_name, corrupt) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const value = fixture([], [], [], false, true);
+    const child = sidechatOf(value.session);
+    corrupt(child);
+    value.extraResources.push(child);
+    value.searchHits.push(searchHit(child, "Side hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/could not be opened/);
+    expect(sidechatTabs()).toHaveLength(0);
+    expect(
+      screen.queryByRole("heading", { name: "Side question" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+    expect(warn).toHaveBeenCalledWith(
+      "delidev.search.session_route_unavailable",
+      { sessionId: child.id, reason: "invalid-resource-envelope" },
+    );
+    warn.mockRestore();
+  },
+);
+
 it("discards a pending Search read after the connection is replaced", async () => {
   const info = vi.spyOn(console, "info").mockImplementation(() => {});
   const original = fixture([], [], [], false, true),
