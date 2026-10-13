@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -134,5 +135,68 @@ func TestSidechatQuestionRetryKeepsAcceptedParentTurnAfterParentAdvances(t *test
 	var execution domain.ExecutionJobInput
 	if err != nil || domain.Decode(queued.Input, &execution) != nil || execution.Fork == nil || execution.Fork.NativeTurnID != input.Completion.NativeTurnID || execution.SidechatRetry == nil || execution.SidechatRetry.GenerationID != generation.ID {
 		t.Fatal("retry execution retargeted the parent turn", err)
+	}
+}
+
+// interveneChildFixture advances the child revision with an ordinary lifecycle
+// write that is not part of the accepted retry admission.
+func interveneChildFixture(t *testing.T, child *continuationFixture, kind string) {
+	t.Helper()
+	current := child.refresh(t)
+	mutation := &pb.Mutation{Id: string(current.ID), ExpectedRevision: current.Revision, RequestId: string(domain.NewID())}
+	client := sessionClient(child.accountFixture)
+	var err error
+	switch kind {
+	case "rename":
+		_, err = client.RenameSession(context.Background(), ownerRequest(child.identity, &pb.RenameSessionRequest{Mutation: mutation, Name: "Renamed after retry admission"}))
+	case "budget":
+		_, err = client.SetSessionBudget(context.Background(), ownerRequest(child.identity, &pb.SetSessionBudgetRequest{Mutation: mutation, Change: &pb.SetSessionBudgetRequest_Budget{Budget: &pb.EstimatedCostBudget{Currency: "USD", Threshold: "5"}}}))
+	default:
+		t.Fatal("unknown intervention", kind)
+	}
+	if err != nil {
+		t.Fatal(kind, err)
+	}
+}
+
+func TestSidechatQuestionRetryRequiresExactPostAdmissionChildRevision(t *testing.T) {
+	for _, kind := range []string{"rename", "budget"} {
+		t.Run(kind+" before claim", func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			_, generation := acceptRetryFixture(t, child)
+			input := storedForkInputFixture(t, child, generation.ForkJobID)
+			if err := retryAuthorityFixture(t, child, input); err != nil {
+				t.Fatal("exact post-admission revision rejected", err)
+			}
+			interveneChildFixture(t, child, kind)
+			if retryAuthorityFixture(t, child, input) == nil {
+				t.Fatal("intervening revision renewed retry authority at claim")
+			}
+		})
+		t.Run(kind+" before publication", func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			request, generation := acceptRetryFixture(t, child)
+			job, input := forkClaimFixture(t, child, string(generation.ForkJobID))
+			interveneChildFixture(t, child, kind)
+			changed, _ := store.Decode[domain.Session](child.refresh(t))
+			reportRetryForkFixture(t, child, job, input)
+			view := retryViewFixture(t, child, request.Mutation.RequestId)
+			g := view.Generations[0]
+			if g.ExecutionJobID != "" || g.ExecutionID != "" || g.Completed {
+				t.Fatal("rejected retry reached native execution")
+			}
+			// The claimed runtime stays owned for deletion cleanup.
+			if g.Fork == nil || g.Fork.RuntimeID != input.RuntimeID || g.ID != generation.ID {
+				t.Fatal("rejected retry lost its claimed runtime owner", g)
+			}
+			after, _ := store.Decode[domain.Session](child.refresh(t))
+			sameBudget := reflect.DeepEqual(after.EstimatedCostBudget, changed.EstimatedCostBudget)
+			if !sameBudget || after.Recovery != domain.NeedsRecovery || after.SidechatActiveRetry != generation.ID || after.Name != changed.Name || after.Fork == nil || after.CurrentExecution != nil && changed.CurrentExecution != nil && *after.CurrentExecution != *changed.CurrentExecution {
+				t.Fatal("rejected retry retargeted child metadata or released ownership")
+			}
+			if retryViewFixture(t, child, request.Mutation.RequestId).Phase != domain.JobUncertain {
+				t.Fatal("rejected publication was not retained as uncertain")
+			}
+		})
 	}
 }

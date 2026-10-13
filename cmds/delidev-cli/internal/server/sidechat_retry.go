@@ -289,7 +289,9 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 		return err
 	}
 	cr, child, qr, _, err := sidechatRetryCandidate(tx, input.ChildSessionID)
-	if err != nil || qr.ID != input.Retry.QuestionID || qr.Revision != input.Retry.QuestionRevision || child.SidechatActiveRetry != input.Retry.GenerationID || child.AutomaticRemediationStopped || child.Archive != domain.NotArchived || child.Recovery != domain.NoRecovery || child.ActiveExecutionID != "" || child.PendingInputs != 0 || child.PendingSteerID != "" || child.CompactionJobID != "" || child.Execution == nil || !child.Execution.CleanupVerified || child.Execution.JobID != input.Retry.PreviousJobID || child.Execution.ExecutionID != input.Retry.PreviousExecutionID {
+	// Admission advances the child exactly once. Any later revision, such as a
+	// rename or budget change, is not part of the accepted retry and cannot renew it.
+	if err != nil || cr.Revision != input.Retry.ChildRevision+1 || qr.ID != input.Retry.QuestionID || qr.Revision != input.Retry.QuestionRevision || child.SidechatActiveRetry != input.Retry.GenerationID || child.AutomaticRemediationStopped || child.Archive != domain.NotArchived || child.Recovery != domain.NoRecovery || child.ActiveExecutionID != "" || child.PendingInputs != 0 || child.PendingSteerID != "" || child.CompactionJobID != "" || child.Execution == nil || !child.Execution.CleanupVerified || child.Execution.JobID != input.Retry.PreviousJobID || child.Execution.ExecutionID != input.Retry.PreviousExecutionID {
 		return retryConflict()
 	}
 	if err := requireSidechatParent(tx, child); err != nil {

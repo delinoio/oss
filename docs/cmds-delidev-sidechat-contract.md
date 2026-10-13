@@ -362,6 +362,13 @@ claim or publication neither invalidates nor retargets the accepted turn; only
 ordinary current-selection continuations (compaction, native review, ordinary
 Fork) keep requiring the current selection.
 
+Admission advances the child exactly once. Fork claim and publication require the
+live child revision to equal the receipt's captured child revision plus one. An
+intervening child revision, such as a rename or session budget change, never
+renews the accepted retry: claim is rejected, or publication records the claimed
+runtime as a retained cleanup owner without native re-execution, retargeting
+child metadata or releasing the active generation.
+
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted
 prefix. Verify the original metadata-only child reference without preparing it
