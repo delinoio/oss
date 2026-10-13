@@ -164,7 +164,7 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
 it("retires an MCP elicitation only with its exact native resolution evidence", () => {
   const withEvidence = (evidence: string, marked: boolean) => ({
     ...accepted,
-    ...(marked ? { mcp_elicitation: true } : {}),
+    ...(marked ? { mcp_elicitation: { fields: [] } } : {}),
     response: {
       ...accepted.response,
       acceptance: { evidence, sequence: 11 },

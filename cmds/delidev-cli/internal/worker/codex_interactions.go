@@ -105,7 +105,11 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		c.approvalKinds[update.ID] = update.Approval.Codex.Kind
 	}
 	update.Questions = nil // Durable original question content belongs to the server.
-	update.Approval = nil  // The original approval also belongs to server retention.
+	if update.MCPElicitation != nil {
+		// Closure needs only the subtype marker; the typed form belongs to the server.
+		update.MCPElicitation = &domain.MCPElicitationSchema{}
+	}
+	update.Approval = nil // The original approval also belongs to server retention.
 	if update.NativeRequestID.Number != nil {
 		number := *update.NativeRequestID.Number
 		update.NativeRequestID.Number = &number

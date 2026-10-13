@@ -4,10 +4,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
-	"math"
-	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -227,32 +224,22 @@ func (c *Client) observeMCPStartupLocked(name string, status nativeMCPStartupSta
 	return event, true, nil
 }
 
-type elicitationKind string
+type elicitationKind = domain.MCPElicitationKind
 
 const (
-	elicitationString  elicitationKind = "string"
-	elicitationNumber  elicitationKind = "number"
-	elicitationInteger elicitationKind = "integer"
-	elicitationBoolean elicitationKind = "boolean"
-	elicitationEnum    elicitationKind = "enum"
-	elicitationMulti   elicitationKind = "multi"
+	elicitationString  = domain.MCPElicitationString
+	elicitationNumber  = domain.MCPElicitationNumber
+	elicitationInteger = domain.MCPElicitationInteger
+	elicitationBoolean = domain.MCPElicitationBoolean
+	elicitationEnum    = domain.MCPElicitationEnum
+	elicitationMulti   = domain.MCPElicitationMulti
 )
 
-const elicitationActionQuestion = "action"
+const elicitationActionQuestion = domain.MCPElicitationActionQuestion
 
-type elicitationField struct {
-	Key        string
-	QuestionID string
-	Kind       elicitationKind
-	Required   bool
-	Options    []string
-	Minimum    *float64
-	Maximum    *float64
-	MinLength  *uint64
-	MaxLength  *uint64
-	MinItems   *uint64
-	MaxItems   *uint64
-}
+// elicitationField carries every constraint that the server also uses to validate
+// an answer before it accepts the response.
+type elicitationField = domain.MCPElicitationField
 
 // elicitationRequest is the closed form subset the product can answer. It keeps
 // the original server identity and message separate from user-entered content.
@@ -491,94 +478,19 @@ func buildElicitationQuestions(server, message string, form *elicitationRequest)
 }
 
 // validateElicitationAnswers maps the owner's answers to the exact native form
-// response. Decline and cancel carry no content, so a refused write has no
-// value that could be misread as consent.
+// response with the same validation that the server applied before acceptance.
 func validateElicitationAnswers(request *elicitationRequest, answers QuestionAnswers) (nativeElicitationResponse, error) {
-	invalid := func() (nativeElicitationResponse, error) {
+	if request == nil {
 		return nativeElicitationResponse{}, domain.Fail(domain.InvalidArgument, "The answer does not match the original MCP request.", "Answer accept, decline or cancel and provide each offered field only when accepting.")
 	}
-	if request == nil || len(answers.Answers) != len(request.Fields)+1 {
-		return invalid()
+	action, content, err := request.schema().Response(answers.Answers)
+	if err != nil {
+		return nativeElicitationResponse{}, err
 	}
-	action := answers.Answers[elicitationActionQuestion]
-	if len(action) != 1 || !slices.Contains([]string{"accept", "decline", "cancel"}, action[0]) {
-		return invalid()
-	}
-	if action[0] != "accept" {
-		for _, field := range request.Fields {
-			if len(answers.Answers[field.QuestionID]) != 0 {
-				return invalid()
-			}
-		}
-		return nativeElicitationResponse{Action: action[0]}, nil
-	}
-	content := map[string]any{}
-	for _, field := range request.Fields {
-		values, present := answers.Answers[field.QuestionID]
-		if !present || values == nil {
-			return invalid()
-		}
-		if len(values) == 0 {
-			if field.Required {
-				return invalid()
-			}
-			continue
-		}
-		value, ok := nativeElicitationValue(field, values)
-		if !ok {
-			return invalid()
-		}
-		content[field.Key] = value
-	}
-	return nativeElicitationResponse{Action: "accept", Content: content}, nil
+	return nativeElicitationResponse{Action: action, Content: content}, nil
 }
 
-func nativeElicitationValue(field elicitationField, values []string) (any, bool) {
-	if field.Kind != elicitationMulti && len(values) != 1 {
-		return nil, false
-	}
-	switch field.Kind {
-	case elicitationString:
-		length := uint64(len([]rune(values[0])))
-		if field.MinLength != nil && length < *field.MinLength || field.MaxLength != nil && length > *field.MaxLength {
-			return nil, false
-		}
-		return values[0], true
-	case elicitationBoolean:
-		switch values[0] {
-		case "true":
-			return true, true
-		case "false":
-			return false, true
-		}
-		return nil, false
-	case elicitationEnum:
-		return values[0], slices.Contains(field.Options, values[0])
-	case elicitationNumber, elicitationInteger:
-		number, err := strconv.ParseFloat(strings.TrimSpace(values[0]), 64)
-		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || field.Minimum != nil && number < *field.Minimum || field.Maximum != nil && number > *field.Maximum {
-			return nil, false
-		}
-		if field.Kind == elicitationInteger {
-			if number != math.Trunc(number) || math.Abs(number) > 1<<53 {
-				return nil, false
-			}
-			return int64(number), true
-		}
-		return number, true
-	case elicitationMulti:
-		count := uint64(len(values))
-		if field.MinItems != nil && count < *field.MinItems || field.MaxItems != nil && count > *field.MaxItems {
-			return nil, false
-		}
-		seen := map[string]bool{}
-		for _, value := range values {
-			if !slices.Contains(field.Options, value) || seen[value] {
-				return nil, false
-			}
-			seen[value] = true
-		}
-		return slices.Clone(values), true
-	}
-	return nil, false
+// schema is the typed non-secret form retained with the interaction.
+func (r *elicitationRequest) schema() *domain.MCPElicitationSchema {
+	return &domain.MCPElicitationSchema{Fields: r.Fields}
 }

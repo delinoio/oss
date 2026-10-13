@@ -48,7 +48,7 @@ func TestQuestionPublicationRejectsNullMissingAndCrossKindFields(t *testing.T) {
 
 func TestMCPElicitationMarkerIsLimitedToGenericQuestions(t *testing.T) {
 	question := func() ExecutionInteractionUpdate {
-		return ExecutionInteractionUpdate{ID: NewID(), NativeItemID: "mcp-elicitation/n:1", NativeRequestID: InteractionRequestID{Kind: InteractionTextID, Text: "native"}, Type: UserQuestionInteraction, Questions: &QuestionRequest{Blocking: true, Questions: []Question{{ID: "action", Header: "MCP", Text: "Write?", Options: []QuestionOption{{Label: "accept"}}}}}, MCPElicitation: true}
+		return ExecutionInteractionUpdate{ID: NewID(), NativeItemID: "mcp-elicitation/n:1", NativeRequestID: InteractionRequestID{Kind: InteractionTextID, Text: "native"}, Type: UserQuestionInteraction, Questions: &QuestionRequest{Blocking: true, Questions: []Question{{ID: "action", Header: "MCP", Text: "Write?", Options: []QuestionOption{{Label: "accept"}}}}}, MCPElicitation: &MCPElicitationSchema{}}
 	}
 	if err := question().Validate(ExecutionInteractionRequested); err != nil {
 		t.Fatalf("a marked generic question was rejected: %v", err)
@@ -59,6 +59,12 @@ func TestMCPElicitationMarkerIsLimitedToGenericQuestions(t *testing.T) {
 		},
 		"no-questions":  func(u *ExecutionInteractionUpdate) { u.Questions = nil },
 		"opencode-body": func(u *ExecutionInteractionUpdate) { u.OpenCode = &OpenCodeInteractionRequest{} },
+		"form-mismatch": func(u *ExecutionInteractionUpdate) {
+			u.MCPElicitation = &MCPElicitationSchema{Fields: []MCPElicitationField{{Key: "path", QuestionID: "field:path", Kind: MCPElicitationString}}}
+		},
+		"bad-question-id": func(u *ExecutionInteractionUpdate) {
+			u.MCPElicitation = &MCPElicitationSchema{Fields: []MCPElicitationField{{Key: "path", QuestionID: "field:other", Kind: MCPElicitationString}}}
+		},
 	} {
 		u := question()
 		edit(&u)

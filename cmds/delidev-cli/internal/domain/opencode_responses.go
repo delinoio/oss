@@ -145,7 +145,15 @@ func (r QuestionResponseInput) ValidateInteraction(original ExecutionInteraction
 		return invalidQuestionResponse()
 	}
 	if original.OpenCode == nil {
-		return r.Validate(original.Questions)
+		if err := r.Validate(original.Questions); err != nil {
+			return err
+		}
+		// An MCP form carries typed constraints that generic questions cannot express;
+		// reject an invalid answer here so it is never accepted and then refused.
+		if original.MCPElicitation != nil {
+			return original.MCPElicitation.ValidateAnswers(r.Answers)
+		}
+		return nil
 	}
 	if original.Questions != nil || original.Approval != nil || original.OpenCode.Validate(original.Type, original.NativeRequestID) != nil || r.Answers != nil || r.OpenCode == nil {
 		return invalidQuestionResponse()

@@ -76,7 +76,7 @@ func publishQuestionAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 	}
 	// Native MCP resolution is evidence only for a persisted MCP elicitation, and an
 	// elicitation can be accepted by no other evidence.
-	if (u.Evidence == domain.NativeMCPElicitationResolved) != value.MCPElicitation && (u.Evidence == domain.NativeMCPElicitationResolved || u.Evidence == domain.NativeQuestionOutput) {
+	if (u.Evidence == domain.NativeMCPElicitationResolved) != (value.MCPElicitation != nil) && (u.Evidence == domain.NativeMCPElicitationResolved || u.Evidence == domain.NativeQuestionOutput) {
 		return executionEventConflict()
 	}
 	if value.OpenCode != nil && ((response.Input.OpenCode.Reject && u.Evidence != domain.NativeOpenCodeQuestionRejected) || (!response.Input.OpenCode.Reject && u.Evidence != domain.NativeOpenCodeQuestionReply)) {

@@ -91,7 +91,7 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 	}
 	key, keyErr := value.NativeRequestID.Key()
 	newKey, newErr := u.NativeRequestID.Key()
-	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.MCPElicitation != u.MCPElicitation || value.Closure != domain.InteractionOpen {
+	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || (value.MCPElicitation != nil) != (u.MCPElicitation != nil) || value.Closure != domain.InteractionOpen {
 		return false, executionEventConflict()
 	}
 	if value.Grok != nil {

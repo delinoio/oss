@@ -184,18 +184,55 @@ func TestQuestionAcceptanceOutboxReplaysLostAcknowledgmentWithoutAnswerContent(t
 	}
 }
 
-func TestMCPElicitationAcceptanceBindsEvidenceToTheMarkedInteraction(t *testing.T) {
+func mcpElicitationFixture(t *testing.T) (*publicationFixture, domain.ID) {
+	t.Helper()
 	f := newPublicationFixture(t)
 	f.registerGrant(t)
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
 	id := domain.NewID()
+	maximum := 10.0
 	e := f.interactionEvent(3, id, "native-question")
-	e.Interaction.Questions.Questions = append(e.Interaction.Questions.Questions, domain.Question{ID: "optional", Header: "Optional", Text: "Optional question", Other: true})
-	e.Interaction.MCPElicitation = true
+	e.Interaction.Questions = &domain.QuestionRequest{Blocking: true, Questions: []domain.Question{
+		{ID: "action", Header: "MCP", Text: "Write?", Options: []domain.QuestionOption{{Label: "accept"}, {Label: "decline"}, {Label: "cancel"}}},
+		{ID: "field:count", Header: "count", Text: "count (required)", Other: true},
+	}}
+	e.Interaction.MCPElicitation = &domain.MCPElicitationSchema{Fields: []domain.MCPElicitationField{{Key: "count", QuestionID: "field:count", Kind: domain.MCPElicitationInteger, Required: true, Maximum: &maximum}}}
 	f.publish(t, e)
+	return f, id
+}
+
+func mcpElicitationInput(count string) domain.QuestionResponseInput {
+	return domain.QuestionResponseInput{Answers: map[string][]string{"action": {"accept"}, "field:count": {count}}}
+}
+
+func TestMCPElicitationResponseIsValidatedAgainstItsTypedFormBeforeAcceptance(t *testing.T) {
+	f, id := mcpElicitationFixture(t)
+	_, original := readPublishedInteraction(t, f, id)
+	if original.MCPElicitation == nil || len(original.MCPElicitation.Fields) != 1 {
+		t.Fatal("the typed form was not persisted")
+	}
+	for name, answer := range map[string]string{"above-maximum": "11", "not-an-integer": "2.5", "not-a-number": "many"} {
+		t.Run(name, func(t *testing.T) {
+			// The generic questions accept any text, but the native form would refuse it.
+			if _, err := acceptFixtureResponse(f, domain.NewID(), id, 1, mcpElicitationInput(answer)); err == nil || domain.SafeError(err).Code != domain.InvalidArgument {
+				t.Fatalf("an answer the native form refuses was accepted: %v", err)
+			}
+			if _, value := readPublishedInteraction(t, f, id); value.Response != nil {
+				t.Fatal("a refused answer consumed the once-only response")
+			}
+		})
+	}
+	// A corrected answer remains possible after the refusals.
+	if _, err := acceptFixtureResponse(f, domain.NewID(), id, 1, mcpElicitationInput("7")); err != nil {
+		t.Fatalf("the corrected answer was refused: %v", err)
+	}
+}
+
+func TestMCPElicitationAcceptanceBindsEvidenceToTheMarkedInteraction(t *testing.T) {
+	f, id := mcpElicitationFixture(t)
 	responseID := domain.NewID()
-	if _, err := acceptFixtureResponse(f, responseID, id, 1, responseInput()); err != nil {
+	if _, err := acceptFixtureResponse(f, responseID, id, 1, mcpElicitationInput("7")); err != nil {
 		t.Fatal(err)
 	}
 	claim := &pb.ClaimQuestionResponseRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(id), ExpectedRevision: 2}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), JobId: string(f.job), ResponseId: string(responseID)}
@@ -204,9 +241,6 @@ func TestMCPElicitationAcceptanceBindsEvidenceToTheMarkedInteraction(t *testing.
 	}
 	f.publish(t, questionDeliveryEvent(f, claim, domain.QuestionTransmitted))
 	before, original := readPublishedInteraction(t, f, id)
-	if !original.MCPElicitation {
-		t.Fatal("the elicitation subtype was not persisted")
-	}
 	// Ordinary tool-output evidence cannot retire a marked elicitation.
 	if _, err := f.call(f.requestEvent(t, acceptanceEvent(f, claim, 5))); err == nil {
 		t.Fatal("ordinary question evidence accepted an MCP elicitation")

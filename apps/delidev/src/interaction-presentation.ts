@@ -122,7 +122,7 @@ function validQuestion(data: Document): boolean {
         // Native MCP resolution is evidence only for a persisted MCP elicitation,
         // and that elicitation is retired by no other evidence.
         [
-          data.mcp_elicitation === true
+          data.mcp_elicitation != null
             ? "native-mcp-elicitation-resolved"
             : "native-question-output",
         ],
