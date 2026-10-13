@@ -555,6 +555,9 @@ its original accepted requests and recovery semantics are unchanged. Available
 body widths of at least 900 CSS pixels use independently scrolling 40/60 list
 and detail panes. Compact Back restores the retained list position and row focus.
 Repository, applied-filter or connection replacement disposes the selection.
+Enrichment whose profile generation or numeric repository identity differs from
+the selected PR's retained scope also disposes the selection and clears the
+avatar cache before new observations render; same-scope enrichment keeps it.
 
 System capability `PULL_REQUEST_WORKSPACE_V1` negotiates three independent reads:
 `GetPullRequestWorkspace`, `ListPullRequestCommits` and `ReadPullRequestAvatar`.

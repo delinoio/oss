@@ -527,3 +527,208 @@ it("still exposes Retry stack context after a terminal workspace failure", async
   await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
   view.unmount();
 });
+
+// A selection and the avatar cache are bound to the profile generation and
+// numeric repository that produced them. A reconnect that re-reads the retained
+// list under another identity must dispose both before new observations render,
+// while a same-scope refresh keeps the selection.
+enum ScopeChange {
+  None = "none",
+  Generation = "generation",
+  NumericRepository = "numeric-repository",
+}
+it.each([
+  [ScopeChange.None, true],
+  [ScopeChange.Generation, false],
+  [ScopeChange.NumericRepository, false],
+])(
+  "handles a reconnect scope change of %s (selection kept: %s)",
+  async (change, kept) => {
+    const profile = newRequestId(),
+      avatarReference = newRequestId(),
+      selected = create(ResourceSchema, {
+        id: newRequestId(),
+        kind: EntityKind.REPOSITORY,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          integration_id: profile,
+          github_owner: "fixture-owner",
+          github_name: "repo",
+        }),
+      });
+    let generation = newRequestId(),
+      repositoryId = "37";
+    const scope = () => ({
+      repository_id: selected.id,
+      repository_revision: "1",
+      profile_id: profile,
+      generation_id: generation,
+      observed_at: "2026-10-11T00:00:00Z",
+      repository: {
+        provider: "github.com",
+        id: repositoryId,
+        node_id: `R_${repositoryId}`,
+        owner: "fixture-owner",
+        name: "repo",
+        private: true,
+      },
+    });
+    const author = {
+      provider_type: "User",
+      kind: "user",
+      id: "19",
+      node_id: "U_19",
+      login: "fixture-author",
+    };
+    const item = (number: string, detail: boolean) => ({
+      provider: "github.com",
+      kind: "pull-request",
+      identity_source: "pull-request-api",
+      id: String(Number(number) + 1000),
+      node_id: `PR_${number}`,
+      number,
+      title: `Complete original title ${number}`,
+      state: "open",
+      created_at: "2026-10-10T00:00:00Z",
+      updated_at: "2026-10-11T00:00:00Z",
+      url: `https://github.com/fixture-owner/repo/pull/${number}`,
+      author,
+      draft: false,
+      ...(detail
+        ? {
+            body: "Scoped body",
+            merged: false,
+            base_ref: "main",
+            head_ref: "independent",
+            base_sha: "a".repeat(40),
+            head_sha: "b".repeat(40),
+            head_repository: {
+              state: "available",
+              repository: { ...scope().repository, default_branch: "main" },
+            },
+          }
+        : {}),
+    });
+    const legacy = vi.fn(async (request: { queryJson: Uint8Array }) => {
+      const query = JSON.parse(new TextDecoder().decode(request.queryJson));
+      return {
+        schemaVersion: 1,
+        documentJson: encode({
+          ...scope(),
+          identity: { id: "17", node_id: "U_17", login: "fixture-user" },
+          query,
+          items:
+            query.operation === "list"
+              ? [item("102", false), item("104", false)]
+              : [item(query.number, true)],
+        }),
+      };
+    });
+    const workspace = vi.fn(async (request: { seedNumbers: string[] }) => ({
+      schemaVersion: 1,
+      documentJson: encode({
+        ...scope(),
+        state: "complete",
+        reasons: [],
+        seeds: request.seedNumbers,
+        nodes: ["102", "104"].map((number) => ({
+          item: item(number, true),
+          seed: request.seedNumbers.includes(number),
+          avatar_reference: avatarReference,
+          counts: { additions: "24", deletions: "8" },
+        })),
+        edges: [],
+      }),
+    }));
+    const avatar = vi.fn(async () => ({ png: new Uint8Array([1, 2, 3]) }));
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.PULL_REQUEST_WORKSPACE_V1],
+        }),
+      });
+      router.service(IntegrationService, {
+        queryRepositoryIntegration: legacy,
+        getPullRequestWorkspace: workspace,
+        readPullRequestAvatar: avatar as never,
+      });
+    });
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private callback: (entries: unknown[]) => void) {}
+        observe() {
+          this.callback([{ contentRect: { width: 1000 } }]);
+        }
+        disconnect() {}
+      },
+    );
+    const originalCreate = URL.createObjectURL,
+      originalRevoke = URL.revokeObjectURL;
+    const create_ = vi.fn(() => "blob:fixture-avatar"),
+      revoke = vi.fn();
+    URL.createObjectURL = create_;
+    URL.revokeObjectURL = revoke;
+    try {
+      const client = new QueryClient();
+      function Fixture() {
+        const [navigation, setNavigation] = useState<PullRequestNavigation>({
+          scopeKey: "fixture",
+          query: {
+            kind: ItemKind.PullRequest,
+            operation: QueryOperation.List,
+            state: ItemState.Open,
+            page: 1,
+            page_size: 20,
+          },
+          previous: [],
+        });
+        return (
+          <StandalonePullRequestResults
+            selected={selected}
+            navigation={navigation}
+            changeNavigation={setNavigation}
+            active
+          />
+        );
+      }
+      const view = render(
+        <TransportProvider transport={transport}>
+          <QueryClientProvider client={client}>
+            <Fixture />
+          </QueryClientProvider>
+        </TransportProvider>,
+      );
+      await waitFor(() => expect(create_).toHaveBeenCalled());
+      fireEvent.click(
+        screen.getByRole("button", { name: /#102 Complete original title 102/ }),
+      );
+      await screen.findAllByText("Scoped body");
+      expect(revoke).not.toHaveBeenCalled();
+      const listCalls = legacy.mock.calls.length;
+      if (change === ScopeChange.Generation) generation = newRequestId();
+      if (change === ScopeChange.NumericRepository) repositoryId = "38";
+      await act(async () => {
+        await client.invalidateQueries();
+      });
+      await waitFor(() =>
+        expect(legacy.mock.calls.length).toBeGreaterThan(listCalls),
+      );
+      if (kept) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(screen.queryByText(/Select a pull request/)).toBeNull();
+        expect(screen.getAllByText("Scoped body").length).toBeGreaterThan(0);
+        expect(revoke).not.toHaveBeenCalled();
+      } else {
+        await screen.findByText(/Select a pull request/);
+        expect(screen.queryByText("Scoped body")).toBeNull();
+        expect(revoke).toHaveBeenCalledWith("blob:fixture-avatar");
+      }
+      view.unmount();
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  },
+);

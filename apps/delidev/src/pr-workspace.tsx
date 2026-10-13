@@ -1099,15 +1099,35 @@ export function PullRequestWorkspace({
     observer.observe(body.current);
     return () => observer.disconnect();
   }, []);
-  const enrich = useCallback((scope: Document) => {
-    setSelection((old) => {
-      if (!old || old.scope === scope) return old;
-      const node = items(scope.nodes)
-        .map(object)
-        .find((n) => object(n.item).number === old.number);
-      return node ? { ...old, node, scope } : old;
-    });
-  }, []);
+  // Mirrors the committed selection so enrichment can dispose it without
+  // running side effects inside a state updater.
+  const selectionScope = useRef<Document | undefined>(undefined);
+  useLayoutEffect(() => {
+    selectionScope.current = selection?.scope;
+  }, [selection]);
+  const enrich = useCallback(
+    (scope: Document) => {
+      const current = selectionScope.current;
+      // A selection and its avatar references are bound to the profile
+      // generation and numeric repository that produced them. Enrichment from
+      // another generation or repository identity disposes both instead of
+      // silently rebinding the selected PR.
+      if (current && current !== scope && !sameReadScope(current, scope)) {
+        selectionScope.current = undefined;
+        setSelection(undefined);
+        avatars.clear();
+        return;
+      }
+      setSelection((old) => {
+        if (!old || old.scope === scope) return old;
+        const node = items(scope.nodes)
+          .map(object)
+          .find((n) => object(n.item).number === old.number);
+        return node ? { ...old, node, scope } : old;
+      });
+    },
+    [avatars],
+  );
   const back = () => {
     const number = selection?.number;
     setSelection(undefined);
