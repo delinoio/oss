@@ -441,9 +441,9 @@ it("allows source replacement during a pending Local proof read without submitti
   await waitFor(() => expect(name.disabled).toBe(false));
   expect(fixture.fork).not.toHaveBeenCalled();
   expect(name.value).toBe("Local B fork");
-  expect(
-    (screen.getByRole("combobox") as HTMLSelectElement).value,
-  ).toBe(String(ForkWorkspace.UNSPECIFIED));
+  expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
+    String(ForkWorkspace.UNSPECIFIED),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
   await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
   expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
