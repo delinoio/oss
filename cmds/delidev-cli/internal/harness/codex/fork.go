@@ -468,7 +468,9 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 		if c.Source != AgentCommand && c.Source != UserShellCommand || c.PluginID != nil || c.ScriptPath != nil {
 			return false
 		}
-		if tool.Status != ToolDeclined && c.ExitCode == nil {
+		// A declined command never executed, so executed evidence contradicts it;
+		// every executed status must instead carry an exit code.
+		if tool.Status == ToolDeclined && c.ExitCode != nil || tool.Status != ToolDeclined && c.ExitCode == nil {
 			return false
 		}
 	}
