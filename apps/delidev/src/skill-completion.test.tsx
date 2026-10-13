@@ -1539,6 +1539,159 @@ it("retains selected decoration through locks and unknown inventory, but confirm
   expect(f.send).not.toHaveBeenCalled();
 });
 
+type SelectionField =
+  "workerDeviceId" | "inventoryId" | "skillId" | "contentRevision";
+function replaceSelection(field: SelectionField) {
+  // Keep the snapshot internally consistent while changing exactly one field.
+  const value = field === "contentRevision" ? "b".repeat(64) : newRequestId();
+  return entries.map((entry, index) => ({
+    ...entry,
+    selection: {
+      ...entry.selection,
+      ...(field === "skillId"
+        ? index === 0
+          ? { skillId: value }
+          : {}
+        : field === "contentRevision"
+          ? index === 0
+            ? { contentRevision: value }
+            : {}
+          : { [field]: value }),
+    },
+  }));
+}
+it.each([
+  "workerDeviceId",
+  "inventoryId",
+  "skillId",
+  "contentRevision",
+] as const)(
+  "treats a bound token as unavailable when only its %s is absent from a same-named inventory entry",
+  async (field) => {
+    const f = fixture();
+    const view = render(f.view());
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, {
+      target: { value: "$add-iss $gone", selectionStart: 8 },
+    });
+    await screen.findByRole("option");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.value).toBe("$add-issue $gone");
+    await waitFor(() =>
+      expect(
+        [...view.container.querySelectorAll(".skill-token-unavailable")].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(["$gone"]),
+    );
+    expect(
+      [...view.container.querySelectorAll(".skill-token-selected")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["$add-issue"]);
+    // The same four fields keep the selected decoration after a refresh.
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    await waitFor(() => expect(f.client.isFetching()).toBe(0));
+    expect(
+      view.container.querySelectorAll(".skill-token-selected"),
+    ).toHaveLength(1);
+    const replaced = replaceSelection(field);
+    f.read.mockImplementation(async () => ({ skills: replaced }));
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    await waitFor(() =>
+      expect(
+        [...view.container.querySelectorAll(".skill-token-unavailable")].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(["$add-issue", "$gone"]),
+    );
+    expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+    expect(countStatus(view).textContent).toBe(
+      "2 skill tokens are unavailable in this scope.",
+    );
+    expect(input.getAttribute("aria-describedby")).toBeTruthy();
+    expect(input.value).toBe("$add-issue $gone");
+    // Explicit reselection binds the new current selection without moving text or focus.
+    input.focus();
+    fireEvent.change(input, {
+      target: { value: "$add-issu $gone", selectionStart: 9 },
+    });
+    await screen.findByRole("option", { name: /add-issue/ });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.value).toBe("$add-issue $gone");
+    await waitFor(() =>
+      expect(
+        [...view.container.querySelectorAll(".skill-token-selected")].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(["$add-issue"]),
+    );
+    expect(
+      [...view.container.querySelectorAll(".skill-token-unavailable")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["$gone"]);
+    await act(async () => {});
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(10);
+    fireEvent.click(screen.getByText("Send"));
+    expect(f.send).toHaveBeenLastCalledWith({
+      value: "$add-issue $gone",
+      skills: [replaced[0]!.selection],
+    });
+  },
+);
+it("keeps a bound token confirmed unavailable when its display name changes and preserves unknown or IME behavior", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+  await screen.findByRole("option");
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() =>
+    expect(
+      view.container.querySelectorAll(".skill-token-selected"),
+    ).toHaveLength(1),
+  );
+  // Unknown reads fabricate no absence and keep the selected decoration.
+  f.read.mockRejectedValueOnce(new Error("Synthetic inventory failure"));
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+  // Same selection, new display name: the token name is absent and the selection is not enough.
+  f.read.mockImplementation(async () => ({
+    skills: [{ ...entries[0]!, name: "renamed-skill" }],
+  }));
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  await waitFor(() =>
+    expect(
+      view.container.querySelectorAll(".skill-token-unavailable"),
+    ).toHaveLength(1),
+  );
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  expect(countStatus(view).textContent).toBe(
+    "1 skill token is unavailable in this scope.",
+  );
+  fireEvent.compositionStart(input);
+  expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+  fireEvent.compositionEnd(input);
+  await waitFor(() =>
+    expect(
+      view.container.querySelectorAll(".skill-token-unavailable"),
+    ).toHaveLength(1),
+  );
+  expect(input.value).toBe("$add-issue");
+});
 function BoundDecorationComposer({
   prompt,
   initialBindings,

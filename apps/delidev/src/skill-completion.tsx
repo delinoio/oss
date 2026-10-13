@@ -82,31 +82,48 @@ export interface SkillTokenAnalysisInput {
   names?: ReadonlySet<string>;
   // The caret-owned token start and whether its prefix matches any inventory name.
   caret?: { start: number; prefixAvailable: boolean };
-  // Whether a complete token carries valid explicit selection authority.
-  bound?: (range: SkillToken) => boolean;
+  // The valid retained explicit selection for a complete token, if any.
+  bound?: (range: SkillToken) => SkillSelection | undefined;
+  // Exact four-field selections in the current inventory; undefined when unknown.
+  selectionKeys?: ReadonlySet<string>;
+}
+// The backend requires all four selection fields to match exactly.
+export function skillSelectionKey(selection: SkillSelection): string {
+  return [
+    selection.workerDeviceId,
+    selection.inventoryId,
+    selection.skillId,
+    selection.contentRevision,
+  ].join("|");
 }
 // One lazy pass: one Set lookup per complete token, an exact absence count and
 // at most MAX_PAINTED_SKILL_RANGES materialized ranges.
 export function analyzeSkillTokens(
   value: string,
-  { names, caret, bound }: SkillTokenAnalysisInput,
+  { names, caret, bound, selectionKeys }: SkillTokenAnalysisInput,
 ): SkillTokenAnalysis {
   const unavailable: SkillToken[] = [],
     selected: SkillToken[] = [];
   let unavailableCount = 0;
   if (names || bound) {
     for (const range of iterateSkillRanges(value)) {
+      const selection = bound?.(range);
       if (
-        names &&
-        !names.has(range.prefix) &&
-        !(caret && range.start === caret.start && caret.prefixAvailable)
+        (names &&
+          !names.has(range.prefix) &&
+          !(caret && range.start === caret.start && caret.prefixAvailable)) ||
+        // A same-named replacement cannot satisfy an explicit binding whose
+        // exact selection is absent from the confirmed inventory.
+        (selection &&
+          selectionKeys &&
+          !selectionKeys.has(skillSelectionKey(selection)))
       ) {
         unavailableCount++;
         if (unavailable.length < MAX_PAINTED_SKILL_RANGES)
           unavailable.push(range);
         continue;
       }
-      if (bound && selected.length < MAX_SELECTED_SKILL_RANGES && bound(range))
+      if (selection && selected.length < MAX_SELECTED_SKILL_RANGES)
         selected.push(range);
       if (!names && selected.length === MAX_SELECTED_SKILL_RANGES) break;
     }
@@ -357,6 +374,9 @@ export function useSkillCompletion({
     caretPrefix = caretToken?.prefix;
   const analysis = useMemo(() => {
     if (scanSuppressed) return analyzeSkillTokens("", {});
+    const selectionKeys = skills
+      ? new Set(skills.map((entry) => skillSelectionKey(entry.selection!)))
+      : undefined;
     const names = skills
       ? new Set(skills.map((entry) => entry.name))
       : undefined;
@@ -389,8 +409,7 @@ export function useSkillCompletion({
             `${range.start}:${range.end}:$${range.prefix}`,
           ),
           binding = matches?.[0];
-        return !(
-          matches?.length !== 1 ||
+        return matches?.length !== 1 ||
           !binding ||
           binding.stale ||
           binding.ambiguous ||
@@ -399,10 +418,11 @@ export function useSkillCompletion({
           !isEntityId(binding.selection.inventoryId) ||
           !isEntityId(binding.selection.workerDeviceId) ||
           !/^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
-        );
+          ? undefined
+          : binding.selection;
       };
     }
-    return analyzeSkillTokens(value, { names, caret, bound });
+    return analyzeSkillTokens(value, { names, caret, bound, selectionKeys });
   }, [
     value,
     skills,

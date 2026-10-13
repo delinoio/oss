@@ -5148,6 +5148,17 @@ textarea text visible, and report the exact count through the localized status a
 the textarea description; editing back to 256 or fewer restores the full aligned
 overlay. Painted absent and selected ranges together stay within 256 ranges so the
 mirror holds at most 512 spans.
+An explicit retained binding is confirmed unavailable, with no selected decoration,
+when its exact four-field selection (Worker device, inventory, skill and content
+revision) is absent from a complete successful current-scope inventory, even if an
+entry with the same display name exists. Such a token joins the same budgeted
+unavailable count and status once, whether its name, its selection or both are
+absent. A binding whose four fields match keeps selected styling. Loading, failed,
+disabled or unsupported inventory keeps the selected decoration and fabricates no
+absence, and composition suppresses both. Presentation never mutates bindings or
+send guards; explicit reselection binds the new current selection through the
+existing completion acceptance without moving text, caret or focus. Selected
+decorations remain bounded to 16 and unbound manual tokens stay plain.
 Keep one mounted polite atomic count region in the shared composer wrapper,
 independent of panel visibility, and retain the textarea's count description and
 hidden painted mirror. Announce only changed counts proven by a complete current
