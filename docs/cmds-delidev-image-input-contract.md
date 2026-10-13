@@ -82,7 +82,7 @@ Native/account/platform observations remain separate from automated decoder, aut
 
 - Image inputs use the pinned V2 localImage primitive under `cmds-delidev-image-input-contract.md`. Require the exact immutable model to advertise image modality before send, resolve only original validated private Worker bytes, and bind ordered refs into acknowledgment/history/recovery digests. Never publish native paths, convert images to text, omit image parts or enable image-bound Steer without a separate complete profile.
 
-- The feature image rejection proof is private to original image preparation before turn/start and binds request/input/full ordered input digest. Generic errors, attachment resolution, transport/acknowledgment and successful native sends cannot grant the proof. Preserve exact native model modality and localImage/history verification under the image-input and direct startup contracts.
+- The feature image rejection proof is private to original image preparation before turn/start and binds request/input/full ordered input digest. Generic errors, model-inventory failures (cancellation, timeout, transport, native error, malformed page), attachment resolution, transport/acknowledgment and successful native sends cannot grant the proof; only a successful complete inventory that lacks the exact model's image modality can. Preserve exact native model modality and localImage/history verification under the image-input and direct startup contracts.
 
 ## cmds/delidev-cli/internal/imageinput constraints
 
