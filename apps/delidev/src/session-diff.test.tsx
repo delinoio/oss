@@ -879,8 +879,7 @@ function cachedOptionDefaults(client: QueryClient) {
     .getAll()
     .flatMap((query) => {
       const data = query.state.data as
-        | { documentJson?: Uint8Array }
-        | undefined;
+        { documentJson?: Uint8Array } | undefined;
       if (!data?.documentJson) return [];
       const value = JSON.parse(new TextDecoder().decode(data.documentJson));
       return value.diff_options
@@ -924,7 +923,9 @@ it("keeps authoring closed until a changed implicit default has a ready comparis
   await waitFor(() => expect(operations()).toHaveLength(before + 1));
   expect(addReviewComment().disabled).toBe(true);
   options.release();
-  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:trunk"));
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:trunk"),
+  );
   expect(
     screen.queryByRole("button", { name: "Add review comment" }) === null ||
       addReviewComment().disabled,
@@ -1015,9 +1016,7 @@ it("does not publish a late options response after the comparison changes and re
   fireEvent.change(screen.getByLabelText("Comparison"), {
     target: { value: "branch" },
   });
-  await waitFor(() =>
-    expect(operations().at(-1)).toBe("git-diff:branch:main"),
-  );
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:main"));
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
     JSON.stringify(["local-branch", "main", null]),
   );
@@ -1042,9 +1041,7 @@ it("does not publish a late options response after the path changes", async () =
     target: { value: "src/main.ts" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
-  await waitFor(() =>
-    expect(operations().at(-1)).toBe("git-diff:branch:main"),
-  );
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:main"));
   options.release();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
@@ -1075,9 +1072,7 @@ it("does not publish a late options response after the repository changes", asyn
   fireEvent.change(screen.getByLabelText("Diff repository"), {
     target: { value: f.other },
   });
-  await waitFor(() =>
-    expect(operations().at(-1)).toBe("git-diff:branch:main"),
-  );
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:main"));
   options.release();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(

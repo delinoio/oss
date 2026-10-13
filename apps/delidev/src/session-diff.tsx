@@ -242,15 +242,11 @@ export function RepositoryDiff({
       path: ".",
     }),
   };
-  const options = useQuery(
-    SessionQuery.readSessionWorkspace,
-    optionsInput,
-    {
-      ...workspaceReadOptions,
-      enabled: comparison === Comparison.Branch,
-      select: (response) => readDiffOptions(response.documentJson, repository),
-    },
-  );
+  const options = useQuery(SessionQuery.readSessionWorkspace, optionsInput, {
+    ...workspaceReadOptions,
+    enabled: comparison === Comparison.Branch,
+    select: (response) => readDiffOptions(response.documentJson, repository),
+  });
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
   }, []);
