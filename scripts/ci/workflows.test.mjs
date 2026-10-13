@@ -66,10 +66,8 @@ test("workflows without a queue are returned unchanged", () => {
     source,
   });
   assert.deepEqual(
-    prepareLintSource(
-      MOBILE,
-      mutate(mobileSource(), "  queue: max\n", ""),
-    ).masked,
+    prepareLintSource(MOBILE, mutate(mobileSource(), "  queue: max\n", ""))
+      .masked,
     false,
   );
 });
@@ -87,7 +85,11 @@ test("mobile queue declaration rejects any altered shape", () => {
   );
   rejects(
     MOBILE,
-    mutate(source, "cancel-in-progress: false\n", "cancel-in-progress: false\n  extra: 1\n"),
+    mutate(
+      source,
+      "cancel-in-progress: false\n",
+      "cancel-in-progress: false\n  extra: 1\n",
+    ),
   );
 });
 
@@ -162,13 +164,14 @@ test("the Linux publisher declaration is rejected when altered or relocated", ()
   );
   rejects(
     LINUX,
-    mutate(source, "cancel-in-progress: false\n      queue", "cancel-in-progress: true\n      queue"),
+    mutate(
+      source,
+      "cancel-in-progress: false\n      queue",
+      "cancel-in-progress: true\n      queue",
+    ),
   );
   // A workflow-level queue is forbidden for the Linux publisher.
-  rejects(
-    LINUX,
-    mutate(source, "\njobs:\n", `\n${MOBILE_BLOCK}jobs:\n`),
-  );
+  rejects(LINUX, mutate(source, "\njobs:\n", `\n${MOBILE_BLOCK}jobs:\n`));
   rejects(LINUX, mutate(source, "\n  publish:\n", "\n  publisher:\n"));
 });
 
@@ -216,10 +219,7 @@ test("lintWorkflows masks only the validated queue line and still reports action
       path.join(directory, "bad.yml"),
       "name: x\non: push\nconcurrency:\n  group: g\n  queue: max\njobs: {}\n",
     );
-    assert.throws(
-      () => run(0),
-      /Unsupported concurrency queue declaration/u,
-    );
+    assert.throws(() => run(0), /Unsupported concurrency queue declaration/u);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

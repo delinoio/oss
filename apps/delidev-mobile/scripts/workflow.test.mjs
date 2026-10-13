@@ -81,8 +81,6 @@ test("three overlapping dispatches queue without replacing a pending run", () =>
     ],
   );
 });
-  assert.equal(legacy[1].state, RunState.CancelledAtCapacity);
-});
 test("the hundred-pending boundary cancels only the arrival beyond capacity", () => {
   const runs = [];
   arrive(runs, "running");

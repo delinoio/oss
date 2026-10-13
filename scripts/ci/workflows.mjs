@@ -102,7 +102,8 @@ export function prepareLintSource(name, source) {
   if (parent < 0 || lines[parent] !== allowed.header)
     throw new Error("Unexpected queue syntax");
 
-  lines[queueIndex] = `${" ".repeat(indentOf(allowed.queueLine))}${MASKED_LINE_PREFIX}`;
+  lines[queueIndex] =
+    `${" ".repeat(indentOf(allowed.queueLine))}${MASKED_LINE_PREFIX}`;
   return { masked: true, source: lines.join("\n") };
 }
 
