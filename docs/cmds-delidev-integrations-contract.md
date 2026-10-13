@@ -606,7 +606,9 @@ is introduced.
 
 Opaque avatar references retain their original actor, local repository revision,
 selected profile generation and numeric author in a bounded 64-entry memory
-cache. The authenticated byte read denies foreign, revoked and evicted scope.
+cache. The authenticated byte read denies foreign, revoked and evicted scope,
+including a reference evicted while the uncached network fetch is in flight: the
+fetched bytes are discarded and published only while the same cache entry remains.
 Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
 bounded known query fields are fetched through the selected outbound route. No
 PAT, client bearer, cookies or origin Authorization is attached, and redirects

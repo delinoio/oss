@@ -111,6 +111,7 @@ type Service struct {
 	github                githubIdentity
 	githubQueries         githubRepositoryQueries
 	githubWorkspaces      githubPullRequestWorkspaces
+	githubAvatars         githubAvatarFetcher
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}
