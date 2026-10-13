@@ -406,6 +406,15 @@ selected answer, generation history and admission receipt. Missing or conflictin
 proof, a prior claim, or native publication retains the original cleanup fence;
 restored authority permits only a fresh explicit retry after verified release.
 
+Execution recovery proves only the recovered generation's own execution cleanup.
+It clears the active retry owner solely when that owner is the recovered
+generation's own ID. A newer failed or uncertain Fork generation that is still
+the active owner (while the selected execution is the older generation) stays
+active and keeps its retained problem: no further generation, direct input or
+Resume is admitted, and an older generation's recovery, stale proofs or foreign
+proofs never transfer or release its authority. It leaves only through its own
+exact positive cleanup proof.
+
 The question action uses the issue's exact English/Korean explanation. Its
 noninteractive popover opens after 300 ms hover or immediately on focus, shares
 `aria-describedby`, stays open across its button and popover, and closes on

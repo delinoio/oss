@@ -354,3 +354,134 @@ func TestSidechatQuestionRetryExecutionRechecksInitiatingActor(t *testing.T) {
 		}
 	})
 }
+
+// completeChildRecoveryFixture claims the accepted recovery job through the
+// original Worker identity and reports exact completion evidence for it.
+func completeChildRecoveryFixture(t *testing.T, child *continuationFixture, resource *pb.Resource) {
+	t.Helper()
+	var claimed store.Record
+	var expected domain.ExecutionRecoveryRequest
+	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claim-child-recovery", resource.Id, func(tx *store.Tx) (any, error) {
+		r, e := tx.Get(domain.JobKind, domain.ID(resource.Id))
+		if e != nil {
+			return nil, e
+		}
+		job, e := store.Decode[domain.Job](r)
+		if e != nil || domain.Decode(job.Input, &expected) != nil {
+			return nil, e
+		}
+		job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, domain.ID(child.workerInstance), child.workerDevice
+		claimed, e = tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+		return nil, e
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion := expected.Completion
+	completion.Version, completion.NativeCheckpointDigest = 2, strings.Repeat("ab", 32)
+	raw, _ := json.Marshal(domain.ExecutionRecoveryEvidence{Version: 1, JobID: expected.JobID, ReportID: domain.NewID(), Completion: completion})
+	if _, err := child.workerClient.ReportWork(context.Background(), ownerRequest(child.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: string(claimed.ID), ExpectedRevision: claimed.Revision, RequestId: string(domain.NewID())}, MachineId: child.machine.Id, InstanceId: child.workerInstance, OutputJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func recoverChildExecutionFixture(t *testing.T, child *continuationFixture, execution domain.ID) {
+	t.Helper()
+	current := child.refresh(t)
+	response, err := sessionClient(child.accountFixture).RecoverSessionExecution(context.Background(), ownerRequest(child.identity, &pb.RecoverSessionExecutionRequest{Mutation: &pb.Mutation{Id: string(current.ID), RequestId: string(domain.NewID()), ExpectedRevision: current.Revision}, ExpectedExecutionId: string(execution)}))
+	if err != nil {
+		t.Fatal("recovery rejected", err)
+	}
+	completeChildRecoveryFixture(t, child, response.Msg.Change.ExecutionRecoveryJob)
+}
+
+func TestSidechatQuestionRetryRecoveryOfOlderGenerationKeepsNewerForkOwner(t *testing.T) {
+	_, child := completedRetrySidechatFixture(t)
+	requestA, generationA := acceptRetryFixture(t, child)
+	finishRetryForkFixture(t, child, requestA)
+	completeReadOnlySidechat(t, child, domain.ExecutionSucceeded)
+	executionA := child.input.ExecutionID
+	// Generation B fails before any execution exists. Its private runtime owner
+	// stays active while the selected execution remains generation A.
+	requestB, generationB := acceptRetryFixture(t, child)
+	job, _ := forkClaimFixture(t, child, string(generationB.ForkJobID))
+	if _, err := child.workerClient.ReportWork(context.Background(), ownerRequest(child.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: child.machine.Id, InstanceId: child.workerInstance, Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}})); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.Decode[domain.Session](child.refresh(t))
+	if before.SidechatActiveRetry != generationB.ID || before.Recovery != domain.NeedsRecovery || before.ExecutionSelection().ID != executionA {
+		t.Fatal("fixture did not leave generation B as the active owner", before.SidechatActiveRetry)
+	}
+	recoverChildExecutionFixture(t, child, executionA)
+	after, _ := store.Decode[domain.Session](child.refresh(t))
+	if after.SidechatActiveRetry != generationB.ID || after.Dispatch != domain.DispatchPaused || after.Problem == nil {
+		t.Fatal("older generation recovery released the newer owner", after.SidechatActiveRetry)
+	}
+	if !after.SidechatRetries[0].Completed || after.SidechatCurrentAnswer != executionA {
+		t.Fatal("older generation recovery lost its own answer")
+	}
+	view := retryViewFixture(t, child, "")
+	if view.Eligible || view.ObservedGeneration != generationB.ID || view.Phase != domain.JobUncertain {
+		t.Fatal("newer owner is no longer observed as active", view.Phase)
+	}
+	// No third generation, direct input or Resume may bypass the retained owner.
+	third := &pb.RetrySidechatQuestionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(child.change.Session.Id), ExpectedRevision: view.ChildRevision}, QuestionId: string(view.QuestionID), ExpectedQuestionRevision: view.QuestionRevision, ExpectedParentRevision: view.ParentRevision, ExpectedParentTurnId: string(view.ParentTurnID)}
+	if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, third)); err == nil {
+		t.Fatal("third generation admitted while the newer owner is active")
+	}
+	raw, _ := json.Marshal(domain.SessionInput{Prompt: "Input behind the retained owner", Mode: domain.ExecuteMode})
+	if _, err := sessionClient(child.accountFixture).EnqueueInput(context.Background(), ownerRequest(child.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: child.change.Session.Id, DocumentJson: raw})); err == nil {
+		t.Fatal("input admitted while the newer owner is active")
+	}
+	// Replaying the older recovery or stopping the session cannot transfer the
+	// newer generation's cleanup ownership.
+	current := child.refresh(t)
+	if _, err := sessionClient(child.accountFixture).ControlSession(context.Background(), ownerRequest(child.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(current.ID), ExpectedRevision: current.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME})); err == nil {
+		t.Fatal("Resume admitted while the newer owner is active")
+	}
+	final, _ := store.Decode[domain.Session](child.refresh(t))
+	if final.SidechatActiveRetry != generationB.ID || final.SidechatRetries[0].ID != generationA.ID || requestB.Mutation.RequestId != string(generationB.ID) {
+		t.Fatal("retained owner changed", final.SidechatActiveRetry)
+	}
+}
+
+func TestSidechatQuestionRetryRecoveryOfSameGenerationStillReleasesItsOwner(t *testing.T) {
+	_, child := completedRetrySidechatFixture(t)
+	request, generation := acceptRetryFixture(t, child)
+	finishRetryForkFixture(t, child, request)
+	child.grant(t)
+	event := domain.ExecutionEvent{Version: 1, ExecutionID: child.input.ExecutionID, Sequence: 1, Kind: domain.ExecutionThreadBound, NativeThreadID: string(child.thread), Observed: &domain.ObservedExecutionSettings{Model: child.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "never"}}
+	raw, _ := json.Marshal(event)
+	if _, err := child.workerClient.PublishExecution(context.Background(), ownerRequest(child.workerIdentity, &pb.PublishExecutionRequest{Mutation: acctMutation(child.job, domain.NewID()), MachineId: child.machine.Id, InstanceId: child.workerInstance, EventJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+	child.publish(t, domain.ExecutionInputAccepted, 2, "")
+	child.publish(t, domain.ExecutionTurnFinished, 3, domain.ExecutionSucceeded)
+	// Lose only the completion receipt so the retry execution itself needs recovery.
+	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-recovery-uncertain", nil, func(tx *store.Tx) (any, error) {
+		original, err := tx.Get(domain.JobKind, domain.ID(child.job.Id))
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](original)
+		if err != nil {
+			return nil, err
+		}
+		job.State, job.Problem = domain.JobUncertain, nativeCompletionUncertain()
+		if err := finishLostNativeExecution(tx, original, job); err != nil {
+			return nil, err
+		}
+		return tx.PutJob(original.ID, original.Revision, original.SessionID, original.ProjectID, job)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session, _ := store.Decode[domain.Session](child.refresh(t)); session.SidechatActiveRetry != generation.ID {
+		t.Fatal("uncertain execution did not retain its owner")
+	}
+	recoverChildExecutionFixture(t, child, child.input.ExecutionID)
+	session, _ := store.Decode[domain.Session](child.refresh(t))
+	if session.SidechatActiveRetry != "" || session.Recovery != domain.NoRecovery || !session.SidechatRetries[0].Completed {
+		t.Fatal("same-owner recovery did not release its own generation", session.SidechatActiveRetry)
+	}
+}
