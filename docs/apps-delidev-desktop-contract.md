@@ -1437,7 +1437,8 @@ attachment focus. Disabled input suppresses keyboard, IME, paste, mouse, focus
 reports and parser replies while selection and copy remain usable. The Ghostty
 patch discards fragmented OSC 52 writes and queries before parsing, ends the
 discard on BEL, ESC `\`, standalone C1 ST, CAN, SUB or any other ESC-introduced
-sequence (which is then parsed normally), and silences the raw WASM log import. OSC 8 remains inert, and title, working-directory and
+sequence (which is then parsed normally; repeated ESC bytes collapse to the newest
+pending ESC so no orphan ESC reaches the parser), and silences the raw WASM log import. OSC 8 remains inert, and title, working-directory and
 shell-integration callbacks stay disconnected. Diagnostics contain only stable
 stage/category values.
 

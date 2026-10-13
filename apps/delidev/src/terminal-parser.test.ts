@@ -207,6 +207,43 @@ it("lets ESC, CAN and SUB abort a discarded OSC52 string, whole or split across 
   }
 });
 
+it("keeps no orphan ESC pending when repeated ESC bytes restart a discarded OSC52", async () => {
+  const cases = [
+    { name: "abort then restart", lead: "\x1b]52;c;QQ==", abort: "\x1b\x1b" },
+    { name: "triple ESC", lead: "\x1b]52;c;QQ==", abort: "\x1b\x1b\x1b" },
+    { name: "ground ESC ESC", lead: "ok", abort: "\x1b\x1b" },
+    { name: "query abort", lead: "\x1b]52;c;?", abort: "\x1b\x1b" },
+  ];
+  for (const { name, lead, abort } of cases) {
+    for (const [terminator, restart] of [
+      ["\x07", "]52;c;c2VjcmV0"],
+      ["\x1b\\", "]52;c;?"],
+    ]) {
+      // The letters after the terminator would be eaten as an escape final if an ESC leaked.
+      const input = `${lead}${abort}${restart}${terminator}after`;
+      const expected = await create(false);
+      expected.writeRaw(encoder.encode(input));
+      const splits: number[][] = [
+        [],
+        Array.from({ length: input.length - 1 }, (_, i) => i + 1),
+      ];
+      const first = input.indexOf("\x1b", lead.length);
+      splits.push([first + 1], [first, first + 1], [first + abort.length]);
+      for (const offsets of splits) {
+        const core = await create();
+        const { terminal, onData } = await screen(core);
+        for (const part of splitAt(input, offsets))
+          terminal.write(encoder.encode(part));
+        const label = `${name} ${JSON.stringify(terminator)} ${offsets.join(",")}`;
+        expect(row(core, 0), label).toBe(lead === "ok" ? "okafter" : "after");
+        expect(cells(core, 0), label).toEqual(cells(expected, 0));
+        expect(core.getClipboardWrite(), label).toBeNull();
+        expect(onData, label).not.toHaveBeenCalled();
+      }
+    }
+  }
+});
+
 it("starts a new discard after ESC aborts an OSC52 and keeps BEL, ESC backslash and C1 ST termination", async () => {
   const core = await create();
   const feed = (text: string) => {

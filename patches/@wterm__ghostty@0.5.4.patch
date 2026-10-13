@@ -57,7 +57,7 @@
          this._cols = cols;
          this._rows = rows;
          this.wasm.exports.resize(this.termPtr, cols, rows);
-@@ -177,14 +191,64 @@
+@@ -177,14 +191,66 @@
      writeString(str, afterChunk) {
          if (this._disposed || this.termPtr === 0)
              return;
@@ -111,6 +111,8 @@
 +            const candidate = prefix[0] === 27 ? [27, 93, 53, 50, 59] : [0x9d, 53, 50, 59];
 +            if (byte !== candidate[prefix.length - 1]) {
 +                const last = prefix.pop();
++                // ESC ESC is equivalent to a single ESC for the parser; keep only the newest ESC pending so no orphan ESC leaks.
++                if (last === 27 && prefix.length === 1 && prefix[0] === 27) continue;
 +                result.push(...prefix);
 +                this._clipboardPrefix = [];
 +                if (last === 27 || last === 0x9d) this._clipboardPrefix.push(last);
