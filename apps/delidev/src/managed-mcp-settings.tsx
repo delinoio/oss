@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useState, type FormEvent } from "react";
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   EntityKind,
@@ -12,11 +12,13 @@ import {
   ManagedMcpOAuthProfileSchema,
   SaveManagedMcpResponseSchema,
   DeleteManagedMcpResponseSchema,
+  AuthenticateManagedMcpRequestSchema,
   AuthenticateManagedMcpResponseSchema,
   isEntityId,
   newRequestId,
   type ManagedMcpDefinition,
   type ManagedMcpOperation,
+  type AuthenticateManagedMcpRequest,
   type GetManagedMcpOperationResponse,
 } from "@delinoio/delidev-api-client";
 import { ResourceChoice } from "./configuration-fields";
@@ -40,6 +42,19 @@ import {
 } from "./managed-mcp-credential";
 import { Problem } from "./ui";
 import { Timestamp, TimestampText } from "./timestamp-display";
+
+/** Recovery needs only the request and definition identities. The write-only
+ * environment values, headers and callback URL (which carries the authorization
+ * code) never enter the retained mutation registry. */
+export function sanitizeAuthRequest(
+  request: AuthenticateManagedMcpRequest,
+): AuthenticateManagedMcpRequest {
+  const copy = clone(AuthenticateManagedMcpRequestSchema, request);
+  copy.environment = {};
+  copy.headers = {};
+  copy.callbackUrl = "";
+  return copy;
+}
 
 // Readback never becomes editable metadata: native support, authentication and
 // Agent references are exclusively published by the original Worker/server.
@@ -237,6 +252,8 @@ function RunnerMcp({
         request.action === Action.OAUTH_BEGIN,
       ),
     true,
+    undefined,
+    sanitizeAuthRequest,
   );
   const pending = Boolean(
     save.input ||

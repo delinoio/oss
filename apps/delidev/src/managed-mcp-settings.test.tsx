@@ -24,6 +24,7 @@ import {
   type AuthenticateManagedMcpRequest,
 } from "@delinoio/delidev-api-client";
 import { ManagedMcpSettings } from "./managed-mcp-settings";
+import { useRetainedMutationIntents } from "./mutation";
 import { MutationIntents } from "./mutation";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsTasks } from "./settings-task";
@@ -56,6 +57,15 @@ vi.mock("./configuration-fields", () => ({
 const machine = newRequestId(),
   otherMachine = newRequestId(),
   worker = newRequestId();
+const retainedAuth: { intents: { input: object }[] } = { intents: [] };
+const retainedJson = () =>
+  JSON.stringify(retainedAuth.intents[0].input, (_, v) =>
+    typeof v === "bigint" ? v.toString() : v,
+  );
+function RetainedAuthProbe() {
+  retainedAuth.intents = useRetainedMutationIntents("managed-mcp:auth:");
+  return null;
+}
 function fixture(lost = false, oauth = false, recovery?: State) {
   const retainedRequestId = newRequestId();
   const row = create(ManagedMcpDefinitionSchema, {
@@ -156,6 +166,7 @@ function fixture(lost = false, oauth = false, recovery?: State) {
             <MutationIntents>
               <SettingsTasks>
                 <ManagedMcpSettings active />
+                <RetainedAuthProbe />
               </SettingsTasks>
             </MutationIntents>
           )}
@@ -276,6 +287,13 @@ it("clears write-only credential drafts on submission while retaining their exac
   await waitFor(() => expect(f.authenticated).toHaveBeenCalledTimes(1));
   expect(secret.value).toBe("");
   expect(document.body.textContent).not.toContain("fixture-private-value");
+  // The retained recovery projection keeps identities, never the write-only values.
+  await waitFor(() => expect(retainedAuth.intents).toHaveLength(1));
+  expect(retainedJson()).not.toContain("fixture-private-value");
+  expect(retainedAuth.intents[0].input).toMatchObject({
+    machineId: machine,
+    environment: {},
+  });
   expect(f.original()).toMatchObject({
     environment: { FIXTURE_TOKEN: "fixture-private-value" },
     machineId: machine,
@@ -348,6 +366,7 @@ it("keeps the original OAuth authorization after dialog dismissal and never repe
   );
   await screen.findAllByRole("button", { name: "Inspect original operation" });
   expect(callback.value).toBe("");
+  expect(retainedJson()).not.toContain("fixture-private-code");
   expect(f.original()).toMatchObject({
     action: Action.OAUTH_COMPLETE,
     attemptId: attempt,

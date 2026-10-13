@@ -397,6 +397,9 @@ export function useRetainedMutation<
   acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
   retainOnError = false,
   rejected?: (request: MessageInitShape<I>) => void,
+  // Write-only fields (secrets, callback codes) never enter the retained registry:
+  // recovery needs only the request identity, and an uncertain request is never replayed.
+  sanitize?: (request: MessageShape<I>) => MessageShape<I>,
 ) {
   const registry = useIntentRegistry(key);
   if (!registry)
@@ -499,15 +502,17 @@ export function useRetainedMutation<
         : undefined;
     const originalAcknowledgement =
       retainedAcknowledgement ?? acknowledge ?? repositoryAcknowledgement;
+    // The registry keeps this projection; only the in-flight call uses `retained`.
+    const kept = sanitize ? sanitize(retained) : retained;
     const verify =
       current.acknowledge ??
       (originalAcknowledgement
-        ? bindAcknowledgement<I, O>(originalAcknowledgement, retained)
+        ? bindAcknowledgement<I, O>(originalAcknowledgement, kept)
         : undefined);
     setLocalError(undefined);
     registry.put(key, {
       ...current,
-      input: retained,
+      input: kept,
       bytes,
       acknowledge: verify,
       busy: true,
@@ -536,7 +541,7 @@ export function useRetainedMutation<
       registry.put(key, {
         busy: false,
         uncertain,
-        input: uncertain ? retained : undefined,
+        input: uncertain ? kept : undefined,
         bytes: uncertain ? bytes : undefined,
         acknowledge: uncertain ? verify : undefined,
         error,
@@ -563,7 +568,7 @@ export function useRetainedMutation<
         registry.put(key, {
           busy: false,
           uncertain: true,
-          input: retained,
+          input: kept,
           bytes,
           acknowledge: verify,
           error,
