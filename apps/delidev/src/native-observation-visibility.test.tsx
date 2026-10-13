@@ -95,7 +95,9 @@ describe("transcript token and time observation toggles", () => {
     [false, false],
   ])("Claude compaction boundary tokens=%s time=%s", (tokens, time) => {
     setToggles(tokens, time);
-    const view = rendered(<NativeClaudeCompactionBoundary value={compactionValue} />);
+    const view = rendered(
+      <NativeClaudeCompactionBoundary value={compactionValue} />,
+    );
     expect(view.hidden(/before compaction/i, "111")).toBe(!tokens);
     expect(view.hidden(/after compaction/i, "222")).toBe(!tokens);
     expect(view.hidden(/dropped/i, "444")).toBe(!tokens);
@@ -124,7 +126,11 @@ describe("transcript token and time observation toggles", () => {
             output_file: "file:///private/original-output",
             summary: "summary",
             skip_transcript: false,
-            usage: { total_tokens: "555", tool_uses: "666", duration_ms: "777" },
+            usage: {
+              total_tokens: "555",
+              tool_uses: "666",
+              duration_ms: "777",
+            },
           },
         })}
       />,
@@ -163,7 +169,11 @@ describe("transcript token and time observation toggles", () => {
         data={progressData({
           kind: "tool-progress",
           tool: {
-            tool: { id: newRequestId(), native_id: "tool_original", name: "Bash" },
+            tool: {
+              id: newRequestId(),
+              native_id: "tool_original",
+              name: "Bash",
+            },
             parent_tool_use_id: null,
             elapsed_time_seconds: "12.5",
             heartbeat: false,
@@ -197,7 +207,9 @@ describe("transcript token and time observation toggles", () => {
 
   it("restores the original markup when toggles return to On", () => {
     setToggles(false, false);
-    const view = rendered(<NativeClaudeCompactionBoundary value={compactionValue} />);
+    const view = rendered(
+      <NativeClaudeCompactionBoundary value={compactionValue} />,
+    );
     const hiddenHtml = view.container.innerHTML;
     expect(view.hidden(/before compaction/i, "111")).toBe(true);
     setToggles(true, true);
