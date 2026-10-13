@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/managedmcp"
+	"net/http"
 	"path/filepath"
 	"time"
 
@@ -87,11 +88,22 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 					problem = err
 				} else {
 					catalog.Secrets = vault
-					var result domain.ManagedMCPResult
-					result, problem = catalog.Execute(operationCtx, *q)
-					if problem == nil {
-						report.DocumentJson, _ = json.Marshal(result)
+					closeHTTP := func() {}
+					if q.Action == domain.MCPOAuthBegin || q.Action == domain.MCPOAuthComplete {
+						// OAuth discovery and token exchange leave the Worker, so they use only
+						// the Worker's selected route and never ambient proxy settings.
+						var oauthClient *http.Client
+						oauthClient, closeHTTP, problem = managedMCPHTTPClient(operationCtx, config, credential)
+						catalog.HTTP = oauthClient
 					}
+					if problem == nil {
+						var result domain.ManagedMCPResult
+						result, problem = catalog.Execute(operationCtx, *q)
+						if problem == nil {
+							report.DocumentJson, _ = json.Marshal(result)
+						}
+					}
+					closeHTTP()
 					vault.Close()
 				}
 			} else {

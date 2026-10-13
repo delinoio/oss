@@ -12,6 +12,15 @@ is accepted. Bound HTTP to 15 seconds/1 MiB and cancel/join on server shutdown.
 Structured logs contain catalog version/date and stable failure codes only;
 responses, transport errors, proxy addresses and secrets never enter logs.
 
+## Managed MCP OAuth traffic
+
+Worker-originated managed-MCP OAuth metadata discovery and token exchange use
+the Worker's selected immutable route through the outbound transport, resolved
+per attempt. A Worker without a prepared route uses a direct transport with
+ambient proxy discovery disabled (`HTTP_PROXY`, `HTTPS_PROXY` and similar
+variables are ignored). These clients never wrap the Server transport and never
+fall back to another route. See [the managed MCP contract](cmds-delidev-managed-mcp-contract.md).
+
 ## Scope
 
 The feature own explicit server/Worker routing, recipient-encrypted bootstrap and authenticated generation reconciliation. The feature owns the separately leased Codex API tunnel in `internal/nativeproxy`; native subscription traffic retains its independent original-owner scope.

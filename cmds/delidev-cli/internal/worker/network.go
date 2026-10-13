@@ -270,3 +270,29 @@ func desktopHTTPClient(ctx context.Context, root string, credential Credential, 
 	}
 	return nil
 }
+
+// managedMCPHTTPClient returns the client for Worker-originated third-party
+// OAuth traffic. It uses the Worker's selected immutable route when one exists
+// and otherwise a direct transport with ambient proxy discovery disabled. It
+// never wraps the Server transport, so no Server credential can reach an OAuth
+// authority. The returned function releases idle connections and any vault.
+func managedMCPHTTPClient(ctx context.Context, config Config, credential Credential) (*http.Client, func(), error) {
+	client, base := rpc.HTTPClient()
+	if config.network != nil {
+		client.Transport = &outbound.Transport{Base: base, Resolve: config.network.resolver}
+		return client, base.CloseIdleConnections, nil
+	}
+	runtime, err := openWorkerNetwork(ctx, config.Root, credential, config.Logger)
+	if err != nil {
+		base.CloseIdleConnections()
+		return nil, func() {}, err
+	}
+	if runtime == nil {
+		return client, base.CloseIdleConnections, nil
+	}
+	client.Transport = &outbound.Transport{Base: base, Resolve: runtime.resolver}
+	return client, func() {
+		base.CloseIdleConnections()
+		runtime.vault.Close()
+	}, nil
+}
