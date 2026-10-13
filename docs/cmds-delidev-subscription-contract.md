@@ -621,6 +621,10 @@ Before the original lease finishes, the exact consent snapshot, lease and genera
 
 Historical Worker-owned automatic observations remain on their original lane. Logs carry only closed phase, code, operation and cleanup facts; they never contain credentials, account identity or native bodies. Fixture and build evidence stays separate from installed-native, real-account, remote-machine and platform acceptance, which this change does not perform.
 
+## Managed ChatGPT automatic titles
+
+`GenerateSessionTitleJob` version-3 assignments use the existing `SUBSCRIPTION_ACTION_EXECUTE` lease under the [session title contract](cmds-delidev-session-titles-contract.md#protected-chatgpt-subscription-titles). `TakeSubscription` admits only the exact claimed title job on its original Worker process, requires the frozen settled generation and identity lineage, and commits the one-time inference claim with the lease; the lease records the claimed title job revision. `FinishSubscription` revalidates structural lineage before vault staging and again inside the receipt transaction, without session-state checks that would fence the account, and writes a metadata-only `managed_title` receipt only for a successful, cleaned Finish. Automatic reset-credit episodes never attach to a title lease. Busy, refreshing or recovery-fenced accounts keep the title queued or uncertain and never redistribute credentials. System 59 / Worker 32 `MANAGED_CODEX_TITLES_V1` add no RPC, action or migration.
+
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
