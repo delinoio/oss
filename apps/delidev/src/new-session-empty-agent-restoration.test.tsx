@@ -134,25 +134,25 @@ function fixture(kind: NewSessionKind) {
   const view = viewFor();
   function viewFor(entryProjectId?: string, activation = 1) {
     return (
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          <NewSession
-            kind={kind}
-            entryProjectId={entryProjectId}
-            active
-            ownsActivation
-            activation={activation}
-            back={() => {}}
-            openSettings={() => {}}
-            open={() => {}}
-            created={() => {}}
-            preferenceBridge={bridge}
-            preferenceScope={scope}
-          />
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <NewSession
+              kind={kind}
+              entryProjectId={entryProjectId}
+              active
+              ownsActivation
+              activation={activation}
+              back={() => {}}
+              openSettings={() => {}}
+              open={() => {}}
+              created={() => {}}
+              preferenceBridge={bridge}
+              preferenceScope={scope}
+            />
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
     );
   }
   const snapshot = (pair: { agent_id: string; machine_id: string } | null) => ({
@@ -304,9 +304,13 @@ it.each(kinds)(
       await screen.findByRole("button", { name: "Inspect saved choices" }),
     ).toBeTruthy();
     expect(await screen.findByRole("button", CREATE)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Inspect saved choices" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect saved choices" }),
+    );
     // Control: without a manual edit the held read still withholds the entry.
-    await waitFor(() => expect(screen.queryByRole("button", CREATE)).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", CREATE)).toBeNull(),
+    );
     expect(screen.getByText("Loading Agent Worker choices…")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
       target: { value: "Manual draft" },
@@ -322,9 +326,7 @@ it.each(kinds)(
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(screen.getByRole("button", CREATE)).toBeTruthy();
-    expect(
-      screen.queryByRole("combobox", { name: "Agent Worker" }),
-    ).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Agent Worker" })).toBeNull();
   },
 );
 
