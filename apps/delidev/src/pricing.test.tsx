@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   InputPricingMode,
@@ -17,6 +17,7 @@ import {
   type SetTokenPricingRequest,
 } from "@delinoio/delidev-api-client";
 import { MutationIntents } from "./mutation";
+import { i18n } from "./localization";
 import { ModelPricing } from "./pricing";
 function fixture(initial = false, subscription = false) {
   const model = {
@@ -100,6 +101,14 @@ function fixture(initial = false, subscription = false) {
     switchMode,
     view,
     version,
+    versionWith: (basis: PricingVersion["basis"] | object | undefined) =>
+      create(PricingVersionSchema, {
+        id: newRequestId(),
+        model,
+        providerId: model.providerId,
+        revision: 1n,
+        basis: basis as PricingVersion["basis"],
+      }),
     refresh: () => client.invalidateQueries(),
     setPricing: (value: PricingVersion) => {
       pricing = value;
@@ -265,3 +274,141 @@ it("retains the reviewed active revision during uncertain mode retries", async (
   await waitFor(() => expect(f.switchMode).toHaveBeenCalledTimes(2));
   expect(f.switchMode.mock.calls[1][0]).toEqual(original);
 });
+
+enum CompactCase {
+  UniformPresent = "uniform-present",
+  UniformZero = "uniform-zero",
+  UniformMissing = "uniform-missing",
+  DiscountPresent = "discount-present",
+  DiscountZero = "discount-zero",
+  DiscountMissing = "discount-missing",
+  UnknownMode = "unknown-mode",
+  AbsentBasis = "absent-basis",
+}
+const compactLabels = {
+  en: {
+    input: "Input / million",
+    cached: "Cached input / million",
+    uniform: "Uniform input (cache included)",
+    unknown: "Unknown mode",
+    unavailable: "Unavailable",
+    output: "Output / million",
+  },
+  ko: {
+    input: "입력 / 백만 개",
+    cached: "캐시된 입력 / 백만 개",
+    uniform: "균일 입력(캐시 포함)",
+    unknown: "알 수 없는 모드",
+    unavailable: "확인할 수 없음",
+    output: "출력 / 백만 개",
+  },
+} as const;
+function compactBasis(kind: CompactCase) {
+  const base = {
+    currency: "USD",
+    source: "Explicit fixture source",
+    asOf: "2026-09-25",
+    outputPerMillion: "4",
+    exclusions: [] as string[],
+  };
+  switch (kind) {
+    case CompactCase.UniformPresent:
+      return { ...base, inputMode: InputPricingMode.UNIFORM, inputPerMillion: "2.5" };
+    case CompactCase.UniformZero:
+      return { ...base, inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0" };
+    case CompactCase.UniformMissing:
+      return { ...base, inputMode: InputPricingMode.UNIFORM };
+    case CompactCase.DiscountPresent:
+      return {
+        ...base,
+        inputMode: InputPricingMode.CACHED_DISCOUNT,
+        inputPerMillion: "2.5",
+        cachedInputPerMillion: "0.5",
+      };
+    case CompactCase.DiscountZero:
+      return {
+        ...base,
+        inputMode: InputPricingMode.CACHED_DISCOUNT,
+        inputPerMillion: "2.5",
+        cachedInputPerMillion: "0",
+      };
+    case CompactCase.DiscountMissing:
+      return {
+        ...base,
+        inputMode: InputPricingMode.CACHED_DISCOUNT,
+        inputPerMillion: "2.5",
+      };
+    case CompactCase.UnknownMode:
+      return {
+        ...base,
+        inputMode: InputPricingMode.UNSPECIFIED,
+        inputPerMillion: "2.5",
+        cachedInputPerMillion: "0.5",
+      };
+    case CompactCase.AbsentBasis:
+      return undefined;
+  }
+}
+function rateRow(label: string) {
+  const rates = document.querySelector(".usage-price-rates") as HTMLElement;
+  return within(rates).getByText(label, { selector: "dt" })
+    .parentElement as HTMLElement;
+}
+for (const locale of ["en", "ko"] as const) {
+  const t = compactLabels[locale];
+  for (const [kind, expected] of [
+    [CompactCase.UniformPresent, { input: "USD 2.5 / 1M", cached: undefined, note: t.uniform }],
+    [CompactCase.UniformZero, { input: "USD 0 / 1M", cached: undefined, note: t.uniform }],
+    [CompactCase.UniformMissing, { input: t.unavailable, cached: undefined, note: t.uniform }],
+    [CompactCase.DiscountPresent, { input: "USD 2.5 / 1M", cached: "USD 0.5 / 1M", note: undefined }],
+    [CompactCase.DiscountZero, { input: "USD 2.5 / 1M", cached: "USD 0 / 1M", note: undefined }],
+    [CompactCase.DiscountMissing, { input: "USD 2.5 / 1M", cached: t.unavailable, note: undefined }],
+    [CompactCase.UnknownMode, { input: "USD 2.5 / 1M", cached: t.unavailable, note: t.unknown }],
+    [CompactCase.AbsentBasis, { input: t.unavailable, cached: t.unavailable, note: undefined }],
+  ] as const) {
+    it(`renders the compact ${kind} summary in ${locale}`, async () => {
+      const f = fixture(true);
+      const basis = compactBasis(kind);
+      f.setPricing(f.versionWith(basis));
+      await act(async () => {
+        await i18n.changeLanguage(locale);
+      });
+      try {
+        const { container } = render(f.view());
+        await waitFor(() =>
+          expect(container.querySelector(".usage-price-rates")).not.toBeNull(),
+        );
+        await waitFor(() =>
+          expect(
+            within(rateRow(t.input)).getByText(
+              expected.input,
+              { exact: false },
+            ),
+          ).toBeTruthy(),
+        );
+        const input = rateRow(t.input);
+        expect(input.textContent).toContain(expected.input);
+        if (expected.note) expect(input.textContent).toContain(expected.note);
+        else {
+          expect(input.textContent).not.toContain(t.uniform);
+          expect(input.textContent).not.toContain(t.unknown);
+        }
+        if (expected.cached === undefined)
+          expect(
+            within(
+              document.querySelector(".usage-price-rates") as HTMLElement,
+            ).queryByText(t.cached, { selector: "dt" }),
+          ).toBeNull();
+        else
+          expect(rateRow(t.cached).textContent).toContain(expected.cached);
+        expect(rateRow(t.output).textContent).toContain(
+          basis ? "USD 4 / 1M" : t.unavailable,
+        );
+      } finally {
+        await act(async () => {
+          await i18n.changeLanguage("en");
+        });
+      }
+    });
+  }
+}
