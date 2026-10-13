@@ -71,7 +71,7 @@ func (d ManagedMCPDefinition) Validate() error {
 	}
 	switch d.Transport {
 	case MCPStdio:
-		if Text(d.Command, "MCP executable", 4096, true) != nil || !filepath.IsAbs(d.Command) || !filepath.IsAbs(d.Cwd) || d.Endpoint != "" || len(d.Arguments) > 128 {
+		if Text(d.Command, "MCP executable", 4096, true) != nil || !filepath.IsAbs(d.Command) || Text(d.Cwd, "MCP working directory", 4096, true) != nil || !filepath.IsAbs(d.Cwd) || d.Endpoint != "" || len(d.Arguments) > 128 {
 			return Fail(InvalidArgument, "The stdio MCP definition is invalid.", "Choose an absolute executable and working directory, with at most 128 arguments.")
 		}
 		for _, v := range d.Arguments {
