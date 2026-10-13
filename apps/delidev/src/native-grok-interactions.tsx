@@ -873,18 +873,24 @@ export function NativeGrokToolsTerminal({ progress }: { progress: Document }) {
         />
       </p>
       <dl>
-        <dt>{copy("native-grok-interactions.reportedInputTokens_696907")}</dt>
-        <dd>{text(counts.input_tokens)}</dd>
-        <dt>{copy("native-grok-interactions.reportedOutputTokens_4eabd2")}</dt>
-        <dd>{text(counts.output_tokens)}</dd>
-        <dt>
+        <dt data-token-observation>
+          {copy("native-grok-interactions.reportedInputTokens_696907")}
+        </dt>
+        <dd data-token-observation>{text(counts.input_tokens)}</dd>
+        <dt data-token-observation>
+          {copy("native-grok-interactions.reportedOutputTokens_4eabd2")}
+        </dt>
+        <dd data-token-observation>{text(counts.output_tokens)}</dd>
+        <dt data-token-observation>
           {copy("native-grok-interactions.reportedNativeTotalTokens_357240")}
         </dt>
-        <dd>{text(v.total_tokens)}</dd>
+        <dd data-token-observation>{text(v.total_tokens)}</dd>
         <dt>{copy("native-grok-interactions.modelResponses_9fe614")}</dt>
         <dd>{text(v.model_calls)}</dd>
-        <dt>{copy("native-grok-interactions.nativeElapsedTimeMs_3a0a11")}</dt>
-        <dd>{text(v.elapsed_ms)}</dd>
+        <dt data-time-observation>
+          {copy("native-grok-interactions.nativeElapsedTimeMs_3a0a11")}
+        </dt>
+        <dd data-time-observation>{text(v.elapsed_ms)}</dd>
       </dl>
       <p>
         <LocalizedText

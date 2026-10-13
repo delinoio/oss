@@ -283,16 +283,18 @@ export function NativeClaudeProgress({ data }: { data: Document }) {
       ) : (
         <>
           <dl>
-            <dt>
+            <dt data-token-observation>
               {copy("native-claude-progress.estimatedThinkingTokens_8bcb46")}
             </dt>
-            <dd>{t.estimated_tokens as string}</dd>
-            <dt>
+            <dd data-token-observation>{t.estimated_tokens as string}</dd>
+            <dt data-token-observation>
               {copy(
                 "native-claude-progress.estimatedThinkingTokenDelta_4b1b48",
               )}
             </dt>
-            <dd>{t.estimated_tokens_delta as string}</dd>
+            <dd data-token-observation>
+              {t.estimated_tokens_delta as string}
+            </dd>
           </dl>
           <p>
             {copy(
