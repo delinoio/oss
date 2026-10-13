@@ -398,6 +398,25 @@ impl<'c> Ctx<'c> {
             {
                 return true;
             }
+            // Declaration kinds the ordinary identifier proof does not cover.
+            let declaration = self.checker.sym(symbol).value_declaration;
+            if declaration.is_some() {
+                match declaration.kind() {
+                    // A class binding is lexical: it is initialized only
+                    // after its declaration ran in the same function.
+                    SyntaxKind::ClassDeclaration => {
+                        return declared_before(declaration, operand);
+                    }
+                    // A top-level non-const enum emits a hoisted `var`.
+                    SyntaxKind::EnumDeclaration
+                        if declaration.parent().kind() == SyntaxKind::SourceFile
+                            && !has_syntactic_modifier(declaration, ModifierFlags::Const) =>
+                    {
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
         }
         self.is_pure(operand)
     }
@@ -444,11 +463,7 @@ impl<'c> Ctx<'c> {
                             .intersects(NodeFlags::Let | NodeFlags::Const | NodeFlags::Using);
                         // Declared earlier in the same file and not inside
                         // a loop body that could re-enter the TDZ.
-                        !block_scoped
-                            || (get_source_file_of_node(declaration)
-                                == get_source_file_of_node(node)
-                                && declaration.end() <= node.pos()
-                                && same_function(declaration, node))
+                        !block_scoped || declared_before(declaration, node)
                     }
                     _ => false,
                 }
@@ -785,6 +800,15 @@ fn parameter_initialized(parameter: Node, read: Node) -> bool {
         }
         node == p && parameter.pos() >= p.pos()
     })
+}
+
+/// Whether a lexical `declaration` precedes `read` in the same file and the
+/// same function, outside any loop body that could re-enter its temporal
+/// dead zone.
+fn declared_before(declaration: Node, read: Node) -> bool {
+    get_source_file_of_node(declaration) == get_source_file_of_node(read)
+        && declaration.end() <= read.pos()
+        && same_function(declaration, read)
 }
 
 fn same_function(a: Node, b: Node) -> bool {

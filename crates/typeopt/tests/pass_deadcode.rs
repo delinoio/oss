@@ -429,6 +429,58 @@ export function value() { return 1; }
     }
 }
 
+/// Class and catch bindings that are initialized before a same-scope
+/// `typeof` read keep the non-throwing proof.
+#[test]
+fn residual_typeof_of_initialized_class_and_catch_binding_is_removed() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                "import { value } from \"./dep.ts\";\nconsole.log(value());\n",
+            ),
+            (
+                "dep.ts",
+                r#"class Local {}
+const unusedClass = typeof Local;
+try { throw 1; } catch (caught) { const unusedCatch = typeof caught; }
+export function value() { return 1; }
+"#,
+            ),
+        ],
+        &[RESIDUAL],
+    );
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    for probe in ["unusedClass", "unusedCatch"] {
+        assert!(!dep.contains(probe), "{probe}: {dep}");
+    }
+}
+
+/// Enums compile to hoisted `var` bindings, so `typeof` of one never
+/// throws. Node cannot run enums in strip-only mode, so this fixture checks
+/// the emitted output instead of comparing behavior.
+#[test]
+fn residual_typeof_of_enum_is_removed() {
+    let temp = project(&[
+        (
+            "main.ts",
+            "import { value } from \"./dep.ts\";\nconsole.log(value());\n",
+        ),
+        (
+            "dep.ts",
+            r#"enum Kind { A, B }
+const unusedEnum = typeof Kind;
+export function value() { return 1; }
+"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &args(&only(&[RESIDUAL])));
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    assert!(!dep.contains("unusedEnum"), "{dep}");
+}
+
 /// A `typeof` read of a class before its declaration throws, so the unused
 /// probe stays in every pass configuration.
 #[test]
