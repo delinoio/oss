@@ -304,13 +304,16 @@ export function App({ state = owner }: { state?: ProtectedState }) {
     loaded && profile && !profile.pairing && !profile.revoked
       ? profile.id
       : undefined;
-  const [, setStatus] = useState(Status.Connecting),
+  const [, changedConnection] = useState(0),
     [syncTick, setSyncTick] = useState(0);
   const connection = useMemo(
     () =>
       verifiedId
-        ? new Connection(state, verifiedId, setStatus, () =>
-            setSyncTick((n) => n + 1),
+        ? new Connection(
+            state,
+            verifiedId,
+            () => changedConnection((n) => n + 1),
+            () => setSyncTick((n) => n + 1),
           )
         : undefined,
     [state, verifiedId],

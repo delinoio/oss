@@ -458,7 +458,8 @@ it("verifies a replacement profile before Settings reads and preserves original 
 it("retains mounted creation fields through mismatch and fresh verification", async () => {
   const f = fixture();
   render(<App state={f.state} />);
-  fireEvent.click(await screen.findByRole("button", { name: en.newSession }));
+  await screen.findByText(en.live);
+  fireEvent.click(screen.getByRole("button", { name: en.newSession }));
   const dialog = within(screen.getByRole("dialog", { name: en.newSession }));
   fireEvent.change(dialog.getByLabelText(en.title), {
     target: { value: "Retained title" },
