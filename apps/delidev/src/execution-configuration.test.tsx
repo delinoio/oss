@@ -12,7 +12,7 @@ import {
   SavedExecutionChips,
   savedExecutionSnapshot,
 } from "./execution-configuration";
-import { sourceModelKey } from "./source-model-key-fixture";
+import { rawSourceModelKey, sourceModelKey } from "./source-model-key-fixture";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(
   props: ComponentProps<typeof OriginalExecutionConfiguration>,
@@ -246,6 +246,45 @@ const invalidSnapshots: [string, Mutation][] = [
         provider_id: "provider-1",
         native_id: "original-model",
       });
+    },
+  ],
+  [
+    "a source model key with reordered identity fields",
+    (_, configuration) => {
+      configuration.model_key = rawSourceModelKey(
+        `{"native_id":"original-model","provider_id":"${configuration.provider_id}"}`,
+      );
+    },
+  ],
+  [
+    "a source model key with whitespace in the identity JSON",
+    (_, configuration) => {
+      configuration.model_key = rawSourceModelKey(
+        `{"provider_id": "${configuration.provider_id}", "native_id": "original-model"}`,
+      );
+    },
+  ],
+  [
+    "a source model key with a duplicate identity field",
+    (_, configuration) => {
+      configuration.model_key = rawSourceModelKey(
+        `{"provider_id":"${newRequestId()}","provider_id":"${configuration.provider_id}","native_id":"original-model"}`,
+      );
+    },
+  ],
+  [
+    "a source model key with non-canonical base64 trailing bits",
+    (_, configuration) => {
+      const alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const canonical = configuration.model_key as string;
+      const payload = canonical.slice("source:".length);
+      // The canonical payload length leaves unused low bits in the last
+      // character; setting the lowest bit decodes to the same bytes.
+      expect(payload.length % 4).not.toBe(0);
+      const last = alphabet.indexOf(payload.slice(-1));
+      expect(last % 2).toBe(0);
+      configuration.model_key = canonical.slice(0, -1) + alphabet[last + 1];
     },
   ],
   [

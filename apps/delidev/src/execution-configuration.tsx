@@ -59,12 +59,39 @@ const sourceModelKeyMaxBytes = 1024;
 const sourceModelKeyPayload = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * Re-encodes the source model identity exactly like the server's
+ * `ModelIdentity.Key` (Go `json.Marshal` of the identity struct: fixed field
+ * order, compact, HTML-safe escaping, then unpadded base64url).
+ */
+function canonicalSourceModelKey(identity: Document): string {
+  const ordered: Document = {};
+  if (identity.provider_id !== undefined)
+    ordered.provider_id = identity.provider_id;
+  if (identity.subscription_service !== undefined)
+    ordered.subscription_service = identity.subscription_service;
+  ordered.native_id = identity.native_id;
+  const json = JSON.stringify(ordered).replace(
+    /[<>&\u2028\u2029]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+  const binary = Array.from(new TextEncoder().encode(json), (byte) =>
+    String.fromCharCode(byte),
+  ).join("");
+  return `${sourceModelKeyPrefix}${btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "")}`;
+}
+
+/**
  * Validates the internal source-scoped model key of a saved execution
  * configuration. The server never stores a resource UUID here: the key is
  * `source:` followed by the unpadded base64url JSON of the exact source
  * (one API provider ID or one subscription service) and native model ID. The
  * decoded identity must agree with the snapshot's own source attribution and
- * native model, matching the server's frozen-identity check.
+ * native model, matching the server's frozen-identity check, and the key must
+ * equal the canonical re-encoding of that identity (field order, whitespace,
+ * duplicate fields and base64 trailing bits are not tolerated).
  */
 function sourceModelKeyMatches(
   key: string,
@@ -110,6 +137,7 @@ function sourceModelKeyMatches(
   return (
     hasProvider !== hasService &&
     identity.native_id === nativeModel &&
+    key === canonicalSourceModelKey(identity) &&
     (!hasProvider ||
       (typeof provider === "string" &&
         isEntityId(provider) &&
