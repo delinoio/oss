@@ -14,10 +14,18 @@ import type { Document } from "./documents";
 afterEach(() => {
   void i18n.changeLanguage("en");
 });
+const causes = [
+  ["not_found", "session.startupInstall"],
+  ["permission_denied", "session.startupPermissions"],
+  ["unsupported", "session.startupSettings"],
+  ["invalid_argument", "session.startupSettings"],
+  ["unavailable", "session.startupCheckDevice"],
+] as const;
 for (const language of ["en", "ko"])
-  for (const delivery of [1, 2, 3, 4])
-    for (const cleanup of [1, 2]) {
-      it(`${language} preserves recovery and independent delivery ${delivery}/cleanup ${cleanup}`, async () => {
+  for (const [problemCode, correctionKey] of causes)
+    for (const delivery of [1, 2, 3, 4])
+      for (const cleanup of [1, 2]) {
+      it(`${language} ${problemCode} preserves recovery and independent delivery ${delivery}/cleanup ${cleanup}`, async () => {
         await i18n.changeLanguage(language);
         const job = newRequestId(),
           execution = newRequestId();
@@ -25,7 +33,7 @@ for (const language of ["en", "ko"])
           state: 3,
           phase: 6,
           harness: "codex",
-          problem_code: "unsupported",
+          problem_code: problemCode,
           native_version: "0.151.0",
           correlation_id: job,
           input_delivery: delivery,
@@ -58,8 +66,11 @@ for (const language of ["en", "ko"])
           cleanup === 2,
         );
         expect(guidance).toContain(copy("session.startupRecoverOriginal"));
-        if (delivery === 3 && cleanup === 1)
-          expect(guidance).toContain(copy("session.startupSettings"));
+        // The cause-specific correction is retained for every delivery and
+        // cleanup combination and appears exactly once.
+        const correction = copy(correctionKey);
+        expect(guidance.startsWith(`${correction} `)).toBe(true);
+        expect(guidance.split(correction).length - 1).toBe(1);
         expect(
           screen.queryByRole("button", { name: /retry|send|재시도|보내기/i }),
         ).toBeNull();

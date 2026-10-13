@@ -90,8 +90,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import {
   executionStartupFailure,
   canRetryExecutionStartup,
-  startupCorrection,
-  startupRecoveryGuidance,
+  StartupRecoverySummary,
   ExecutionStartupDetails,
 } from "./execution-startup";
 
@@ -2956,8 +2955,7 @@ export function SessionView({
                         }
                         details={(opener) => showInfo(opener)}
                       >
-                        <span>{startupCorrection(startupFailure)}</span>
-                        <p>{startupRecoveryGuidance(startupFailure)}</p>
+                        <StartupRecoverySummary failure={startupFailure} />
                         <StartupObservedOperation session={session} />
                         <ExecutionStartupDetails
                           key={text(startupFailure.correlation_id)}

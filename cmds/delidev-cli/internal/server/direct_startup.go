@@ -206,11 +206,9 @@ func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
 		if o.Cleanup == domain.StartupCleanupConfirmed {
 			cleanup = "Original cleanup was confirmed."
 		}
-		correction := ""
-		if o.InputDelivery == domain.StartupAcknowledged && o.Cleanup == domain.StartupCleanupConfirmed {
-			correction = guidance + " "
-		}
-		guidance = correction + delivery + " " + cleanup + " Recover the original execution before continuing. Do not send the original input again."
+		// The cause-specific correction is independent of delivery and cleanup
+		// facts and never grants resend authority, so it is always retained.
+		guidance = guidance + " " + delivery + " " + cleanup + " Recover the original execution before continuing. Do not send the original input again."
 	}
 	return domain.Fail(o.ProblemCode, message, guidance)
 }

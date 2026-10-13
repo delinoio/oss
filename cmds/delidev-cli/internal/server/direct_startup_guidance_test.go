@@ -12,31 +12,46 @@ import (
 )
 
 func TestDirectStartupGuidanceIndependentDeliveryAndCleanup(t *testing.T) {
-	for _, delivery := range []domain.ExecutionStartupInputDelivery{domain.StartupNotSent, domain.StartupClaimed, domain.StartupAcknowledged, domain.StartupDeliveryUncertain} {
-		for _, cleanup := range []domain.ExecutionStartupCleanup{domain.StartupCleanupConfirmed, domain.StartupCleanupUncertain} {
-			t.Run(fmt.Sprintf("delivery%d-cleanup%d", delivery, cleanup), func(t *testing.T) {
-				o := domain.ExecutionStartupObservation{State: domain.StartupUncertain, Phase: domain.StartupExecution, Harness: domain.Codex, ProblemCode: domain.Unsupported, CorrelationID: domain.NewID(), InputDelivery: delivery, Cleanup: cleanup}
-				if err := o.Validate(); err != nil {
-					t.Fatal(err)
-				}
-				before := o
-				problem := startupFailureProblem(o)
-				if o != before || problem.Code != domain.Unsupported || !strings.Contains(problem.Guidance, "Recover the original execution") || !strings.Contains(problem.Guidance, "Do not send the original input again") {
-					t.Fatalf("lost recovery or original facts: %+v", problem)
-				}
-				deliveryUncertain := delivery == domain.StartupClaimed || delivery == domain.StartupDeliveryUncertain
-				if strings.Contains(problem.Guidance, "Input delivery is uncertain") != deliveryUncertain || strings.Contains(problem.Guidance, "Original cleanup is uncertain") != (cleanup == domain.StartupCleanupUncertain) {
-					t.Fatalf("contradictory independent facts: %s", problem.Guidance)
-				}
-				if delivery == domain.StartupAcknowledged && cleanup == domain.StartupCleanupConfirmed && !strings.Contains(problem.Guidance, "Check the selected harness and settings") {
-					t.Fatalf("lost unsupported correction: %s", problem.Guidance)
-				}
-			})
-		}
+	causes := []struct {
+		code       domain.Code
+		correction string
+	}{
+		{domain.NotFound, "Install the harness on the selected Runner Device or correct its executable path."},
+		{domain.PermissionDenied, "Check the selected Runner Device's permissions."},
+		{domain.Unsupported, "Check the selected harness and settings; details identify the failing stage."},
+		{domain.Unavailable, "Check the selected Runner Device and its original log reference."},
 	}
-	settled := domain.ExecutionStartupObservation{State: domain.StartupFailed, ProblemCode: domain.Unsupported, InputDelivery: domain.StartupNotSent, Cleanup: domain.StartupCleanupConfirmed}
-	if got := startupFailureProblem(settled).Guidance; got != "Check the selected harness and settings; details identify the failing stage." {
-		t.Fatalf("changed explicit no-send guidance: %s", got)
+	for _, cause := range causes {
+		for _, delivery := range []domain.ExecutionStartupInputDelivery{domain.StartupNotSent, domain.StartupClaimed, domain.StartupAcknowledged, domain.StartupDeliveryUncertain} {
+			for _, cleanup := range []domain.ExecutionStartupCleanup{domain.StartupCleanupConfirmed, domain.StartupCleanupUncertain} {
+				t.Run(fmt.Sprintf("%s-delivery%d-cleanup%d", cause.code, delivery, cleanup), func(t *testing.T) {
+					o := domain.ExecutionStartupObservation{State: domain.StartupUncertain, Phase: domain.StartupExecution, Harness: domain.Codex, ProblemCode: cause.code, CorrelationID: domain.NewID(), InputDelivery: delivery, Cleanup: cleanup}
+					if err := o.Validate(); err != nil {
+						t.Fatal(err)
+					}
+					before := o
+					problem := startupFailureProblem(o)
+					if o != before || problem.Code != cause.code || !strings.Contains(problem.Guidance, "Recover the original execution") || !strings.Contains(problem.Guidance, "Do not send the original input again") {
+						t.Fatalf("lost recovery or original facts: %+v", problem)
+					}
+					deliveryUncertain := delivery == domain.StartupClaimed || delivery == domain.StartupDeliveryUncertain
+					if strings.Contains(problem.Guidance, "Input delivery is uncertain") != deliveryUncertain || strings.Contains(problem.Guidance, "Original cleanup is uncertain") != (cleanup == domain.StartupCleanupUncertain) {
+						t.Fatalf("contradictory independent facts: %s", problem.Guidance)
+					}
+					if strings.Contains(problem.Guidance, "Input delivery was acknowledged") != (delivery == domain.StartupAcknowledged) || strings.Contains(problem.Guidance, "Input was not sent") != (delivery == domain.StartupNotSent) {
+						t.Fatalf("wrong delivery wording: %s", problem.Guidance)
+					}
+					// The cause correction is retained exactly once for every combination.
+					if !strings.HasPrefix(problem.Guidance, cause.correction+" ") || strings.Count(problem.Guidance, cause.correction) != 1 {
+						t.Fatalf("lost %s correction: %s", cause.code, problem.Guidance)
+					}
+				})
+			}
+		}
+		settled := domain.ExecutionStartupObservation{State: domain.StartupFailed, ProblemCode: cause.code, InputDelivery: domain.StartupNotSent, Cleanup: domain.StartupCleanupConfirmed}
+		if got := startupFailureProblem(settled).Guidance; got != cause.correction {
+			t.Fatalf("changed explicit no-send guidance for %s: %s", cause.code, got)
+		}
 	}
 }
 

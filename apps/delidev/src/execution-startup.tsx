@@ -172,12 +172,24 @@ export function startupRecoveryGuidance(failure: Document): string {
     failure.cleanup === Cleanup.Confirmed
       ? copy("session.startupCleanupConfirmed")
       : copy("session.startupCleanupUncertain");
-  const correction =
-    failure.input_delivery === InputDelivery.Acknowledged &&
-    failure.cleanup === Cleanup.Confirmed
-      ? `${startupCorrection(failure)} `
-      : "";
-  return `${correction}${delivery} ${cleanup} ${copy("session.startupRecoverOriginal")}`;
+  // The cause-specific correction never depends on delivery or cleanup facts and
+  // never grants resend authority, so it is always part of the guidance.
+  return `${startupCorrection(failure)} ${delivery} ${cleanup} ${copy("session.startupRecoverOriginal")}`;
+}
+
+// Renders the startup correction and recovery guidance for the session
+// recovery card. The guidance already embeds the correction, so the separate
+// correction is shown only when the guidance does not contain it.
+export function StartupRecoverySummary({ failure }: { failure: Document }) {
+  useLocale();
+  const correction = startupCorrection(failure);
+  const guidance = startupRecoveryGuidance(failure);
+  return (
+    <>
+      {guidance.includes(correction) ? null : <span>{correction}</span>}
+      <p>{guidance}</p>
+    </>
+  );
 }
 
 export function ExecutionStartupDetails({ failure }: { failure: Document }) {

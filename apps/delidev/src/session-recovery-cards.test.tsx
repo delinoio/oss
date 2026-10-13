@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { newRequestId } from "@delinoio/delidev-api-client";
+import {
+  canRetryExecutionStartup,
+  executionStartupFailure,
+  StartupRecoverySummary,
+} from "./execution-startup";
+import type { Document } from "./documents";
 import {
   SessionNotice,
   SessionNoticeSeverity,
   SessionProblemNotice,
 } from "./session-presentation";
-import { i18n } from "./localization";
+import { copy, i18n } from "./localization";
 it.each([
   ["missing_input", "quota_exhausted", "Usage limit reached"],
   ["unauthenticated", undefined, "Authentication required"],
@@ -274,4 +281,137 @@ it("changes only quota catalog copy on locale change and keeps the mounted card"
       await i18n.changeLanguage("en");
     });
   }
+});
+
+const startupCauses = [
+  ["not_found", "session.startupInstall"],
+  ["permission_denied", "session.startupPermissions"],
+  ["unsupported", "session.startupSettings"],
+  ["unavailable", "session.startupCheckDevice"],
+] as const;
+function startupSession(failure: Document): Document {
+  const job = newRequestId(),
+    execution = newRequestId();
+  return {
+    archive: "active",
+    dispatch: "paused",
+    recovery: "required",
+    pending_inputs: 0,
+    pending_input_bytes: 0,
+    initial_execution: { id: execution },
+    startup: {
+      job_id: job,
+      execution_id: execution,
+      failure: { phase: 6, harness: "codex", correlation_id: job, ...failure },
+    },
+  };
+}
+function occurrences(container: HTMLElement, needle: string): number {
+  return (container.textContent ?? "").split(needle).length - 1;
+}
+describe.each(["en", "ko"])("startup recovery card (%s)", (language) => {
+  afterEach(() => {
+    void i18n.changeLanguage("en");
+  });
+  it.each(
+    startupCauses.flatMap(([code, key]) =>
+      (
+        [
+          [3, 1],
+          [2, 1],
+          [3, 2],
+          [4, 2],
+          [1, 2],
+        ] as const
+      ).map(([delivery, cleanup]) => [code, key, delivery, cleanup] as const),
+    ),
+  )(
+    "shows the %s correction once for delivery %i / cleanup %i",
+    async (code, key, delivery, cleanup) => {
+      await i18n.changeLanguage(language);
+      const session = startupSession({
+        state: 3,
+        problem_code: code,
+        input_delivery: delivery,
+        cleanup,
+      });
+      const failure = executionStartupFailure(session);
+      expect(failure).toBeDefined();
+      const { container } = render(
+        <SessionNotice
+          title="Recovery required"
+          severity={SessionNoticeSeverity.Warning}
+        >
+          <StartupRecoverySummary failure={failure as Document} />
+        </SessionNotice>,
+      );
+      expect(occurrences(container, copy(key))).toBe(1);
+      // Delivery, cleanup and original-execution guidance stay visible.
+      expect(container.textContent).toContain(
+        copy("session.startupRecoverOriginal"),
+      );
+      expect(
+        (container.textContent ?? "").includes(
+          copy("session.startupDeliveryAcknowledged"),
+        ),
+      ).toBe(delivery === 3);
+      expect(
+        (container.textContent ?? "").includes(
+          copy("session.startupCleanupUncertain"),
+        ),
+      ).toBe(cleanup === 2);
+      // Presentation never grants retry authority.
+      expect(canRetryExecutionStartup(session)).toBe(false);
+      expect(
+        canRetryExecutionStartup({ ...session, recovery: "none" }),
+      ).toBe(false);
+    },
+  );
+  it("falls back to the device correction for unknown causes and rejects malformed metadata", async () => {
+    await i18n.changeLanguage(language);
+    const valid = startupSession({
+      state: 3,
+      problem_code: "canceled",
+      input_delivery: 3,
+      cleanup: 1,
+    });
+    const failure = executionStartupFailure(valid) as Document;
+    const { container } = render(<StartupRecoverySummary failure={failure} />);
+    expect(occurrences(container, copy("session.startupCheckDevice"))).toBe(1);
+    for (const bad of [
+      { problem_code: "made_up" },
+      { problem_code: undefined },
+      { input_delivery: 9 },
+      { foreign: "field" },
+    ])
+      expect(
+        executionStartupFailure(
+          startupSession({
+            state: 3,
+            problem_code: "canceled",
+            input_delivery: 3,
+            cleanup: 1,
+            ...bad,
+          }),
+        ),
+      ).toBeUndefined();
+  });
+  it("keeps the correction once and retry eligibility for settled no-send failures", async () => {
+    await i18n.changeLanguage(language);
+    const session = startupSession({
+      state: 2,
+      phase: 1,
+      problem_code: "not_found",
+      input_delivery: 1,
+      cleanup: 1,
+    });
+    session.recovery = "none";
+    const failure = executionStartupFailure(session) as Document;
+    const { container } = render(<StartupRecoverySummary failure={failure} />);
+    expect(occurrences(container, copy("session.startupInstall"))).toBe(1);
+    expect(container.textContent).toContain(
+      copy("session.startupDeliveryNotSent"),
+    );
+    expect(canRetryExecutionStartup(session)).toBe(true);
+  });
 });
