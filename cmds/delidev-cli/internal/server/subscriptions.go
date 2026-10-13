@@ -474,7 +474,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}
 	defer unlock()
 	directExecution := false
-	var forkRevision uint64
+	var forkRevision, titleRevision uint64
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
 		// Take retains the original observation while another lease or metadata
 		// update advances the account. Lifecycle authority is the exact still-queued
@@ -562,6 +562,26 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 					return nil, err
 				}
 				execution = compact.Assignment
+			case domain.GenerateSessionTitleJob:
+				// A managed title reuses the EXECUTE lease but is admitted only by its
+				// exact immutable assignment. The one-time inference claim commits in
+				// this transaction, so a lost response can never deliver credentials or
+				// send inference again.
+				authority, err := s.validateManagedTitle(tx, jr, job, managedTitleTake)
+				if err != nil {
+					if domain.SafeError(err).Code == domain.BudgetReached {
+						return nil, err
+					}
+					return nil, subscriptionDenied()
+				}
+				if authority.Input.Managed.Generation != state.Generation {
+					return nil, subscriptionDenied()
+				}
+				if claimed, err := tx.ClaimTitleInference(jr.ID); err != nil || !claimed {
+					return nil, subscriptionDenied()
+				}
+				execution = authority.Original
+				titleRevision = jr.Revision
 			default:
 				return nil, subscriptionDenied()
 			}
@@ -605,7 +625,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
-		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
+		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, TitleRevision: titleRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
@@ -669,6 +689,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
 				return subscriptionDenied()
+			}
+			if lease := a.Subscription.Lease; lease.TitleRevision != 0 {
+				if _, _, err := s.managedTitleLease(tx, *lease, managedTitleCustody); err != nil {
+					return subscriptionDenied()
+				}
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := a.Subscription.Observation
@@ -790,6 +815,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			_, original, err = s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
 			if err == nil && original.Subscription.Lease.Action == domain.SubscriptionExecute {
 				_, err = managedSidechatLease(tx, *original.Subscription.Lease)
+				if err == nil && original.Subscription.Lease.TitleRevision != 0 {
+					_, _, err = s.managedTitleLease(tx, *original.Subscription.Lease, managedTitleCustody)
+				}
 			}
 			return err
 		})
@@ -891,6 +919,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionExecute {
 				if _, err := managedSidechatLease(tx, *lease); err != nil {
 					return nil, err
+				}
+				if lease.TitleRevision != 0 {
+					if _, _, err := s.managedTitleLease(tx, *lease, managedTitleCustody); err != nil {
+						return nil, err
+					}
 				}
 			}
 			if state.RecoveryRequired || state.Generation != input.Generation {
@@ -1000,6 +1033,21 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					}
 					receipt.ManagedSidechat = &domain.SubscriptionForkFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
 				}
+			}
+			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.TitleRevision != 0 {
+				// Only a successful, independently cleaned managed title leaves the
+				// server-written receipt that publication requires.
+				// Account custody was validated above, before this transaction advanced
+				// the account generation; here only the exact job revision is bound.
+				jr, err := tx.Get(domain.JobKind, lease.OperationID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](jr)
+				if err != nil || job.Type != domain.GenerateSessionTitleJob || job.State != domain.JobClaimed || jr.Revision != lease.TitleRevision || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+					return nil, subscriptionDenied()
+				}
+				receipt.ManagedTitle = &domain.SubscriptionTitleFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
 			}
 			return receipt, nil
 		})

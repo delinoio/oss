@@ -121,7 +121,7 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 	if c.accessOnlyMode() {
 		store = "ephemeral"
 	}
-	for key, want := range map[string]string{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt"} {
+	for key, want := range map[string]string{"cli_auth_credentials_store": store, "model_provider": c.managedProviderKey(), "forced_login_method": "chatgpt"} {
 		var value string
 		if json.Unmarshal(result.Config[key], &value) != nil || value != want {
 			return incompatible()
@@ -131,7 +131,16 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 	if json.Unmarshal(result.Config["model_providers"], &providers) != nil {
 		return incompatible()
 	}
-	if provider := providers["openai"]; provider != nil {
+	if c.managedTitle {
+		// The alias must exist and reproduce the built-in authority exactly.
+		if providers[ManagedTitleProvider] == nil {
+			return managedTitleMismatch("provider-alias")
+		}
+		if err := validateManagedTitleProvider(providers[ManagedTitleProvider]); err != nil {
+			return err
+		}
+	}
+	if provider := providers[c.managedProviderKey()]; provider != nil {
 		// Built-in OpenAI must retain its official authority; inherited custom
 		// providers, command auth and literal bearer overrides are not supported.
 		for _, key := range []string{"base_url", "env_key", "experimental_bearer_token", "auth", "aws", "http_headers", "env_http_headers", "query_params"} {
