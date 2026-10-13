@@ -21,3 +21,4 @@
 - [DeliDev native subscriptions](../../../../../docs/cmds-delidev-subscription-contract.md)
 - [DeliDev Session Terminals Contract](../../../../../docs/cmds-delidev-terminals-contract.md)
 - [DeliDev Worker-owned managed skills](../../../../../docs/cmds-delidev-managed-skills-contract.md)
+- [DeliDev Worker-owned managed MCP](../../../../../docs/cmds-delidev-managed-mcp-contract.md)

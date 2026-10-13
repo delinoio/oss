@@ -203,7 +203,9 @@ type Event struct {
 	Diff             *string
 	Interaction      *Interaction
 	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	// MCPStartup is a closed outcome for an exact selected MCP generation.
+	MCPStartup *MCPServerOutcome
+	Steer      *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -227,6 +229,19 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	defer func() { <-c.eventGate }()
 	if err := c.wire.Err(); err != nil {
 		return Event{}, err
+	}
+	if len(c.queuedEvents) > 0 {
+		// A derived observation follows the native event that produced it.
+		if err := c.acquireControl(ctx); err != nil {
+			return Event{}, err
+		}
+		defer func() { <-c.control }()
+		event := c.queuedEvents[0]
+		c.queuedEvents = c.queuedEvents[1:]
+		if c.logger != nil && event.Kind == QuestionAcceptedEvent {
+			c.logger.InfoContext(ctx, "Codex managed MCP elicitation acceptance observed", "owner_id", c.ownerID, "interaction_id", event.InteractionState.ID, "response_id", event.InteractionState.ResponseID, "turn_id", event.TurnID)
+		}
+		return event, nil
 	}
 	if c.pendingEvent == nil {
 		for {
@@ -418,6 +433,7 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		if turn.Status.terminal() {
+			c.markUncertainMCPCallsLocked(turn.ID)
 			for _, review := range c.execution.autoReviews[turn.ID] {
 				if review.Status == domain.AutoReviewInProgress {
 					return Event{}, incompatible()
@@ -644,6 +660,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
+	case "mcpToolCall":
+		return c.observeMCPToolLocked(native, params.TurnID, params.Item, native.Method == "item/completed")
 	case "commandExecution", "fileChange", "imageView", "sleep":
 		if a := c.codeReview; a != nil && a.childTurn != "" && params.TurnID == a.childTurn {
 			params.TurnID = a.turn

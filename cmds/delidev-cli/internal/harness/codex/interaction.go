@@ -34,12 +34,16 @@ type InteractionStatus struct {
 	Delivery         QuestionDelivery
 	ApprovalEvidence ApprovalEvidence
 	Accepted         bool
+	// Elicitation marks a managed MCP form whose native resolution is its
+	// acceptance evidence; it is false for ordinary native user questions.
+	Elicitation bool
 }
 
 type trackedInteraction struct {
 	status          InteractionStatus
 	native          nativewire.Event
 	questions       *QuestionRequest
+	elicitation     *elicitationRequest
 	kind            InteractionKind
 	approval        *ApprovalRequest
 	bytes           int
@@ -158,6 +162,10 @@ func (c *Client) retainInteractionLocked(native nativewire.Event, turn domain.ID
 	}
 	if interaction.Kind == UserInputInteraction {
 		owned.questions = cloneQuestions(interaction.Questions)
+		if interaction.elicitation != nil {
+			owned.elicitation = interaction.elicitation
+			owned.status.Elicitation = true
+		}
 	} else {
 		var err error
 		owned.approval, err = cloneApproval(interaction.Approval)
@@ -195,7 +203,7 @@ func (c *Client) closeInteractionLocked(owned *trackedInteraction, closure Inter
 	s := &c.execution.interactions
 	s.bytes -= owned.bytes
 	s.open--
-	owned.questions, owned.approval, owned.bytes = nil, nil, 0
+	owned.questions, owned.approval, owned.elicitation, owned.bytes = nil, nil, nil, 0
 	return nil
 }
 
@@ -238,7 +246,17 @@ func (c *Client) observeInteractionClosedLocked(native nativewire.Event) (Event,
 	}
 	status := owned.status
 	turn, known := c.execution.turns[status.TurnID]
-	return Event{Kind: InteractionClosedEvent, ThreadID: c.thread, TurnID: status.TurnID, ItemID: status.ItemID, InteractionState: &status, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
+	closed := Event{Kind: InteractionClosedEvent, ThreadID: c.thread, TurnID: status.TurnID, ItemID: status.ItemID, InteractionState: &status, Correlated: known, Late: turn.Turn.Status.terminal()}
+	interrupted := c.execution.interrupt != "" || turn.Turn.Status.terminal()
+	if status.Elicitation && status.ResponseID != "" && status.Delivery == QuestionTransmitted && !owned.status.Accepted && !interrupted {
+		// The native server resolves an elicitation after consuming the exact
+		// transmitted response. An interruption or finished turn also resolves
+		// pending requests, so only an uninterrupted live turn proves consumption.
+		owned.confirmAcceptance("")
+		accepted := owned.status
+		c.queuedEvents = append(c.queuedEvents, Event{Kind: QuestionAcceptedEvent, ThreadID: c.thread, TurnID: status.TurnID, ItemID: status.ItemID, InteractionState: &accepted, Correlated: known, Late: turn.Turn.Status.terminal()})
+	}
+	return closed, nil
 }
 
 // QuestionAnswers is memory-only. The coordinator must protect secret answers
@@ -334,7 +352,13 @@ func (c *Client) AnswerQuestions(ctx context.Context, responseID, interactionID,
 	if len(s.responses) >= maxTrackedInteractions {
 		return InteractionStatus{}, domain.Fail(domain.ResourceExhausted, "Native response tracking reached its bound.", "Reconcile pending responses before replacing the native connection.")
 	}
-	response, err := validateQuestionAnswers(owned.questions, answers)
+	var response any
+	var err error
+	if owned.elicitation != nil {
+		response, err = validateElicitationAnswers(owned.elicitation, answers)
+	} else {
+		response, err = validateQuestionAnswers(owned.questions, answers)
+	}
 	if err != nil {
 		return owned.status, err
 	}

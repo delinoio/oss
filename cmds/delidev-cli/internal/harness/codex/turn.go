@@ -276,6 +276,10 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if err := c.verifySidechat(ctx, s.Cwd, c.thread); err != nil {
 		return result, err
 	}
+	// Managed MCP inventory is proven for the exact thread before every input.
+	if err := c.verifyManagedMCP(ctx, s.Cwd); err != nil {
+		return result, err
+	}
 	if c.sidechat != "" && !sidechatEffective(s) {
 		return result, sidechatUnavailable()
 	}

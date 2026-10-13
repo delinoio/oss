@@ -193,6 +193,10 @@ func init() {
 				}
 				continue
 			}
+			if request.Method == "" && strings.HasPrefix(mode, "thread-turn-mcp") {
+				threads.mcpReply(request.ID, request.Result, len(request.Error) > 0)
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-questions" {
 				if !threads.questionReply(request.ID, request.Result) {
 					os.Exit(34)
