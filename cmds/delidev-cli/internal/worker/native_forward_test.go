@@ -58,9 +58,38 @@ func newForwardFixture(t *testing.T, endpoint string, savedConnection bool) *for
 	if err := security.PrivateDir(f.root); err != nil {
 		t.Fatal(err)
 	}
-	f.credential = Credential{Endpoint: endpoint, ServerID: domain.NewID(), DeviceID: domain.NewID(), MachineID: domain.NewID(), PairingID: domain.NewID()}
-	f.pairing, _ = json.Marshal(map[string]any{"request_id": domain.NewID(), "server_id": f.credential.ServerID, "endpoint": endpoint})
+	token, err := RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.credential = Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: endpoint, ServerID: domain.NewID(), DeviceID: domain.NewID(), MachineID: domain.NewID(), PairingID: domain.NewID(), Token: token}
+	if err := writeJSON(credentialPath(f.root), f.credential); err != nil {
+		t.Fatal(err)
+	}
+	requestID := domain.NewID()
+	f.pairing, _ = json.Marshal(map[string]any{"request_id": requestID, "server_id": f.credential.ServerID, "endpoint": endpoint})
 	if err := security.WriteAtomic(filepath.Join(f.root, "local-pairing.json"), f.pairing); err != nil {
+		t.Fatal(err)
+	}
+	// The retained original grant proves the pairing before a Worker may follow.
+	grantCode, err := RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(f.owner, "pairing-codes")); err != nil {
+		t.Fatal(err)
+	}
+	grant, _ := json.Marshal(PairingCode{Version: 1, PairingID: f.credential.PairingID, ServerID: f.credential.ServerID, Endpoint: endpoint, Code: grantCode})
+	if err := security.WriteAtomic(filepath.Join(f.owner, "pairing-codes", string(requestID)+".json"), grant); err != nil {
+		t.Fatal(err)
+	}
+	// The canonical owner scope holds the server identity beside the grants.
+	ownerToken, err := RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, _ := json.Marshal(security.Identity{ServerID: f.credential.ServerID, Token: ownerToken})
+	if err := security.WriteAtomic(filepath.Join(f.owner, "owner.json"), identity); err != nil {
 		t.Fatal(err)
 	}
 	f.relay = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -279,5 +308,153 @@ func TestCodexAPITitleForwarderUsesTitleBodyLimit(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusRequestEntityTooLarge || f.received.Load() != 0 {
 		t.Fatalf("title body limit %d", response.StatusCode)
+	}
+}
+
+// sendThroughWorkerClient issues one request through the Worker's protected
+// Local client to the credential endpoint.
+func sendThroughWorkerClient(t *testing.T, f *forwardFixture) (*http.Response, error) {
+	t.Helper()
+	client, closeIdle, err := networkHTTPClientForHeaders(context.Background(), f.config(), f.credential, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeIdle()
+	req, _ := http.NewRequest(http.MethodPost, f.credential.Endpoint+"/rpc", nil)
+	req.Header.Set("Authorization", "Bearer worker-token")
+	response, err := client.Do(req)
+	if response != nil {
+		response.Body.Close()
+	}
+	return response, err
+}
+
+// A custom --worker-dir whose basename happens to be "worker" is not the
+// canonical owner scope: its parent holds no server identity or pairing grants,
+// so it must keep its direct route instead of failing with recovery_required.
+func TestCustomWorkerScopeNamedWorkerKeepsDirectRoute(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if err := os.Remove(filepath.Join(f.owner, "owner.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(f.owner, "pairing-codes")); err != nil {
+		t.Fatal(err)
+	}
+	response, err := sendThroughWorkerClient(t, f)
+	if err != nil || response.StatusCode != http.StatusOK || hits.Load() != 1 {
+		t.Fatalf("custom Worker scope lost its direct route: %v hits=%d", err, hits.Load())
+	}
+}
+
+// The canonical owner scope verifies its retained grant before every request.
+func TestCanonicalWorkerScopeVerifiesRetainedGrant(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if response, err := sendThroughWorkerClient(t, f); err != nil || response.StatusCode != http.StatusOK || hits.Load() != 1 {
+		t.Fatalf("verified canonical Worker lost its direct route: %v hits=%d", err, hits.Load())
+	}
+	if err := os.RemoveAll(filepath.Join(f.owner, "pairing-codes")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendThroughWorkerClient(t, f); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || hits.Load() != 1 {
+		t.Fatalf("missing grant did not stop the canonical Worker: %v hits=%d", err, hits.Load())
+	}
+}
+
+// Follow evidence keeps the wrapper even if the owner identity disappears, so
+// the bearer token never falls back to the saved pairing address.
+func TestFollowMarkerKeepsWrapperWithoutOwnerIdentity(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if err := desktopruntime.Publish(f.target); err != nil {
+		t.Fatal(err)
+	}
+	if err := desktopruntime.Retire(f.target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(f.owner, "owner.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendThroughWorkerClient(t, f); err == nil || hits.Load() != 0 {
+		t.Fatalf("retired follower fell back to the saved address: %v hits=%d", err, hits.Load())
+	}
+}
+
+// An owner identity that names a different server distinguishes an edited
+// canonical Worker from a custom Worker scope: the Worker must fail closed
+// instead of sending its bearer token to the edited endpoint directly.
+func TestMismatchedOwnerIdentityFailsClosedWithoutDirectRoute(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if err := os.Remove(filepath.Join(f.owner, "owner.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := security.CreateIdentity(f.owner); err != nil {
+		t.Fatal(err)
+	}
+	client, closeIdle, err := networkHTTPClientForHeaders(context.Background(), f.config(), f.credential, 0)
+	if closeIdle != nil {
+		defer closeIdle()
+	}
+	if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || hits.Load() != 0 {
+		t.Fatalf("mismatched owner identity did not fail closed: client=%v err=%v hits=%d", client != nil, err, hits.Load())
+	}
+}
+
+// A deleted fixed journal in the canonical owner scope is missing original
+// evidence, not a custom Worker: the Worker must fail closed with
+// recovery_required before any request, with or without follow evidence.
+func TestMissingJournalInCanonicalOwnerScopeFailsClosed(t *testing.T) {
+	for _, followed := range []bool{false, true} {
+		var hits atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+		f := newForwardFixture(t, server.URL, false)
+		if followed {
+			if err := desktopruntime.Publish(f.target); err != nil {
+				t.Fatal(err)
+			}
+			if err := desktopruntime.Retire(f.target); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Remove(filepath.Join(f.root, "local-pairing.json")); err != nil {
+			t.Fatal(err)
+		}
+		client, closeIdle, err := networkHTTPClientForHeaders(context.Background(), f.config(), f.credential, 0)
+		if closeIdle != nil {
+			closeIdle()
+		}
+		if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || hits.Load() != 0 {
+			t.Fatalf("followed=%v deleted journal did not fail closed: client=%v err=%v hits=%d", followed, client != nil, err, hits.Load())
+		}
+		server.Close()
+	}
+}
+
+// Without the canonical owner identity the same missing journal belongs to a
+// custom Worker scope that keeps its direct route.
+func TestMissingJournalInCustomWorkerScopeKeepsDirectRoute(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	f := newForwardFixture(t, server.URL, false)
+	if err := os.Remove(filepath.Join(f.root, "local-pairing.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(f.owner, "owner.json")); err != nil {
+		t.Fatal(err)
+	}
+	response, err := sendThroughWorkerClient(t, f)
+	if err != nil || response.StatusCode != http.StatusOK || hits.Load() != 1 {
+		t.Fatalf("custom Worker scope lost its direct route: %v hits=%d", err, hits.Load())
 	}
 }

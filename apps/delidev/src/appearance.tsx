@@ -36,7 +36,7 @@ export enum AppearanceProblem {
   OutcomeUnknown = "outcome-unknown",
   Changed = "changed",
 }
-enum AppearanceOperation {
+export enum AppearanceOperation {
   Reading = "reading",
   Saving = "saving",
 }

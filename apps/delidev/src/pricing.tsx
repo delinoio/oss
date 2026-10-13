@@ -47,6 +47,60 @@ export function priceIdentity(model?: SourceModel) {
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
+enum CompactRateKey {
+  Input = "input",
+  CachedInput = "cachedInput",
+  Output = "output",
+}
+interface CompactRateRow {
+  key: CompactRateKey;
+  label: string;
+  rate: string | undefined;
+  note?: string;
+}
+/**
+ * Builds the compact model-price rate rows from the basis input mode.
+ * A uniform input rate already includes cached input, so it never gets an
+ * independent cached row; a separate cached rate exists only for
+ * CACHED_DISCOUNT. Unknown or absent bases keep an explicit unavailable
+ * cached row and never borrow another rate.
+ */
+export function compactRateRows(basis?: TokenPricing): CompactRateRow[] {
+  const inputRow: CompactRateRow = {
+    key: CompactRateKey.Input,
+    label: copy("pricing.inputMillion_fb54c1"),
+    rate: basis?.inputPerMillion,
+  };
+  const outputRow: CompactRateRow = {
+    key: CompactRateKey.Output,
+    label: copy("pricing.outputMillion_bd8cb4"),
+    rate: basis?.outputPerMillion,
+  };
+  if (basis?.inputMode === InputPricingMode.UNIFORM) {
+    return [
+      { ...inputRow, note: copy("pricing.uniformInputCacheIncluded_420f49") },
+      outputRow,
+    ];
+  }
+  const cachedRow: CompactRateRow = {
+    key: CompactRateKey.CachedInput,
+    label: copy("pricing.cachedInputMillion_187c72"),
+    rate:
+      basis?.inputMode === InputPricingMode.CACHED_DISCOUNT
+        ? basis.cachedInputPerMillion
+        : undefined,
+  };
+  if (basis?.inputMode === InputPricingMode.CACHED_DISCOUNT) {
+    return [inputRow, cachedRow, outputRow];
+  }
+  return [
+    basis
+      ? { ...inputRow, note: copy("pricing.unknownMode_892fdb") }
+      : inputRow,
+    cachedRow,
+    outputRow,
+  ];
+}
 export function PricingBasis({ value }: { value: PricingVersion }) {
   const productLabel = useProductLabels();
   useLocale();
@@ -545,20 +599,16 @@ export function ModelPricing({
             <p role="alert">{copy("pricing.invalidSourcePrice")}</p>
           ) : null}
           <dl className="usage-price-rates">
-            {[
-              [copy("pricing.inputMillion_fb54c1"), basis?.inputPerMillion],
-              [
-                copy("pricing.cachedInputMillion_187c72"),
-                basis?.cachedInputPerMillion,
-              ],
-              [copy("pricing.outputMillion_bd8cb4"), basis?.outputPerMillion],
-            ].map(([label, rate]) => (
-              <div key={label}>
-                <dt>{label}</dt>
+            {compactRateRows(basis).map((row) => (
+              <div key={row.key}>
+                <dt>{row.label}</dt>
                 <dd>
-                  {rate === undefined || rate === ""
+                  {row.rate === undefined || row.rate === ""
                     ? copy("pricing.unavailable_ca1844")
-                    : `${basis?.currency} ${formatDecimal(rate)} / 1M`}
+                    : `${basis?.currency} ${formatDecimal(row.rate)} / 1M`}
+                  {row.note ? (
+                    <small className="usage-price-rate-note">{row.note}</small>
+                  ) : null}
                 </dd>
               </div>
             ))}

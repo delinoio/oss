@@ -2596,8 +2596,17 @@ A nonempty sample list, positive extra count or failed scan can emit the existin
 generic native-warning notice on the original process and active known
 nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
 three warning classifications (world-writable paths, failed scan, or both) for
-the lifetime of that original execution process. Replays and observations in
-paused, failed or completed contexts become validated discarded metadata. They
+the lifetime of that original execution process. Every valid nonempty
+classification observed on the bound original process records its class in that
+process-local registry, including observations between turns, while paused, in
+failed or completed contexts, with a recovery problem, or with an unknown or
+absent active turn. Those observations, and replays of an already-recorded
+class, become validated discarded metadata, so replaying the same class on a
+later eligible active turn in that process is also discarded metadata. A first
+observation of a different class on an eligible turn emits exactly one notice,
+and a fresh original process starts with an empty registry. Empty successful
+scans, malformed payloads, foreign or unbound process contexts, server requests
+and setup completions never write the registry. Discarded observations
 do not create a new current turn or change settings, approvals, account/provider,
 readiness, input delivery, response receipts, recovery or cleanup ownership.
 
@@ -2774,6 +2783,13 @@ atomic arrival claim and before its pipe write. With no selected backend, the
 only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
 tool backend, automatic input replay or automatic resend is introduced.
+
+A dynamic tool shares the Worker's native item identity space and the 10,000
+retained-item bound with messages, tools, artifacts, image generations and
+function outputs. A retained dynamic native ID cannot start any other item
+family, and a new item of any family is rejected as publication-uncertain at the
+bound without emitting an event. Updates to an already retained dynamic tool
+remain admitted at the bound and do not change the count.
 
 The first wire-request uniqueness claim atomically publishes a complete private
 original owner document. A missing or partial later call journal preserves that

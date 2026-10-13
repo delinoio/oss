@@ -155,12 +155,16 @@ function TaskUsage({ value }: { value: unknown }) {
   return (
     <>
       <dl>
-        <dt>{copy("native-claude-tasks.taskTokens_d80bbe")}</dt>
-        <dd>{v.total_tokens as string}</dd>
+        <dt data-token-observation>
+          {copy("native-claude-tasks.taskTokens_d80bbe")}
+        </dt>
+        <dd data-token-observation>{v.total_tokens as string}</dd>
         <dt>{copy("native-claude-tasks.taskToolUses_32f155")}</dt>
         <dd>{v.tool_uses as string}</dd>
-        <dt>{copy("native-claude-tasks.taskDurationMs_458ab8")}</dt>
-        <dd>{v.duration_ms as string}</dd>
+        <dt data-time-observation>
+          {copy("native-claude-tasks.taskDurationMs_458ab8")}
+        </dt>
+        <dd data-time-observation>{v.duration_ms as string}</dd>
       </dl>
       <p>
         {copy("native-claude-tasks.theseTaskCountersCanOverlapProvider_c6a474")}
@@ -309,14 +313,18 @@ export function NativeClaudeTask({ value }: { value: unknown }) {
             ) : null}
             {patch.end_time !== undefined ? (
               <>
-                <dt>{copy("native-claude-tasks.reportedEndTime_d22cb3")}</dt>
-                <dd>{patch.end_time as string}</dd>
+                <dt data-time-observation>
+                  {copy("native-claude-tasks.reportedEndTime_d22cb3")}
+                </dt>
+                <dd data-time-observation>{patch.end_time as string}</dd>
               </>
             ) : null}
             {patch.total_paused_ms !== undefined ? (
               <>
-                <dt>{copy("native-claude-tasks.totalPausedMs_f3621c")}</dt>
-                <dd>{patch.total_paused_ms as string}</dd>
+                <dt data-time-observation>
+                  {copy("native-claude-tasks.totalPausedMs_f3621c")}
+                </dt>
+                <dd data-time-observation>{patch.total_paused_ms as string}</dd>
               </>
             ) : null}
           </dl>

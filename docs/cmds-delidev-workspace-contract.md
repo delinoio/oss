@@ -160,7 +160,7 @@ weakens the complete original manifest or primary-directory checks.
 
 - The feature remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
 
-- Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. Follow the workspace contract.
+- Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. This applies to every final-validation step (identity/tombstone query, relationship and machine checks): only unexpected storage-class failures (internal, unavailable, canceled, or a storage-caused resource-exhausted/permission-denied) return from the report transaction, so the child success and parent state stay uncommitted and the exact original report retries to a single publication. Known terminal outcomes (used/deleted identity or revision mismatch conflict, deleted-target not-found, validation invalid-argument, disabled machine) still settle the parent failure with the child success committed. Follow the workspace contract.
 
 ### cmds/delidev-cli/internal/store constraints
 
@@ -571,7 +571,7 @@ inventory to 8 MiB and 10,000 branches; overflow fails instead of publishing a
 partial list. This job alone has 9 MiB JSON/journal envelope headroom. Its report
 receipt, bounded transport and single-resource reader support the complete result;
 other job inputs/outputs, page/event bounds and native Git output limits remain
-unchanged. A dedicated branch reader must not widen the general document parser.
+unchanged. A dedicated branch reader must not widen the general document parser. The allowance covers live branch Job reads and writes only: backup restore decodes `discover-repository-branches` history under the ordinary 1 MiB document bound and rejects larger documents before publication.
 
 ## Project behavior settings
 
@@ -640,7 +640,7 @@ Review capture records tracked and untracked symlinks instead of rejecting them.
 
 Native review selections carry Git object names in the repository's own object format: canonical lowercase hex of exactly 40 characters (SHA-1) or 64 characters (SHA-256). `head_commit`, `base_commit` and a commit-target `reference` share this rule; a base-branch selection requires both commits to use the same width, and a commit-target selection requires its `reference` and `head_commit` to use the same width. Uppercase, non-hex, odd-length or other-length names are rejected. The 64-character lowercase hex `diff_revision`, `content_digest` and rollout digests are SHA-256 integrity digests, independent of the repository object format, and stay exact.
 
-Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged.
+Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged. The Worker's native review workspace manager carries the negotiated `NAMED_WORKSPACE_DIRECTORIES_V1` capability like every other Worker workspace path: a frozen named repository directory reaches capture when negotiated, and otherwise yields Unsupported before capture and settles as the existing no-send rejected proof. Unnamed reviews are unchanged.
 
 ## Workspace preparation group timing
 
