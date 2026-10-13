@@ -277,6 +277,52 @@ Dispatch and the read-only help use the same declarations. Match input-target re
 
 Common shortcuts are logical `?` for help, primary+Shift+N for New session and fixed primary+comma for Open Settings. Open Settings uses the existing category-free navigation callback and is available from ordinary text fields. A fresh Settings visit opens AI Subscription through the existing focus handoff; invoking it during an active visit retains the current category, draft, pending requests and focus. The read-only Common catalog, Help and Settings button accessibility annotation share the same binding declaration. This shortcut performs no configuration save or execution action and retains the existing event, modal, terminal and capture guards. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
 
+The fixed Session Open tool / 도구 열기 action uses primary+T (Command+T on macOS,
+Control+T on Windows/Linux) for the active, selected, nonembedded Session, with
+ordinary editable input allowed. `ShortcutId.OpenTool` is a read-only catalog
+entry and never one of the seven editable action IDs. The icon button and the
+effective shortcut open the same single native `DialogSurface` modal, which
+performs no tool action or resource read on open. Keep the five original rows in
+order: Diff, Files, Terminals, Browser and Diagnostics. The eligible existing
+Open Sidechat action follows as an additional row; this feature neither moves nor
+redesigns it. Keep all original eligibility, including disabled Terminals for a
+Sidechat parent snapshot. Child controllers stay mounted across dialog visits.
+
+The dialog uses the localized Open tool / 도구 열기 title and a named close button.
+It has no search field or footer. Width is `min(360px, viewport minus 32px)` with
+20px padding, 12px corners, 44px row and close targets, semantic theme tokens and
+visible focus; height is bounded to the viewport minus 32px and scrolls
+vertically, including at 200% zoom. Opening focuses the first enabled row. Tab is
+contained to the close button and enabled rows; arrows and Home/End navigate
+enabled rows; native Enter/Space activates a row. Escape, the close button and
+backdrop dismissal restore the available opener (the focused element that opened
+it, otherwise the trigger). Selecting a row closes the dialog synchronously
+before invoking the original callback once and preserves the destination-tab
+focus instead of restoring the opener. Session, surface and connection departure
+dispose the presentation without restoring focus into hidden content.
+
+Read-only shortcut defaults yield to existing editable chords through one shared
+policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by
+shortcut ID and the unshifted primary key it protects. OpenTool protects `t`. A new
+read-only default chord that can collide with an editable unshifted primary chord
+must be added to `readOnlyShortcutCatalog` with a `readOnlyShortcutPolicies` entry;
+dispatch, conflict validation, Help, the Settings catalog and ARIA derive from that
+one policy. Any
+committed editable override that is an unshifted primary+T binding suppresses
+only the new OpenTool default, in memory and across all scopes. Disabled
+overrides and Shift+T overrides do not suppress it; removing or changing the
+committed override restores the default immediately. Effective dispatch, conflict
+validation, Help, the read-only Settings catalog (which follows the committed map,
+not the unsaved draft) and the trigger `aria-keyshortcuts` share this policy, and
+Help and Settings show localized custom-binding-priority guidance while it is
+suppressed. Saved preference bytes, the seven editable IDs and native
+validation/storage never change, so every previously valid custom T preference
+stays valid. Terminal-targeted bindings keep their independent admission and are
+never suppressed by this policy. Handled-event, IME/229, repeat, modifier,
+hidden/inert, capture, other-modal, terminal-passthrough and focused native
+Browser fences are unchanged. The dialog adds no RPC, protocol allocation,
+migration, dependency or key/content logging.
+
 The fixed Session Open terminals / 터미널 열기 action uses primary+logical grave (`). Register it only for the active selected nonembedded Session, with ordinary editable input allowed and the original Sidechat parent-snapshot guard. Invoke the existing Terminals open action once, retaining the composer draft, original inventory, revision-bound reuse/create intent, pending/uncertain recovery and Worker ownership. Repeated opening selects the destination without closing it or replacing its controller. Help, the read-only Session Settings catalog and the original tool entry ARIA share the same platform binding. Accepted invocation from Help closes Help before the original callback and preserves destination focus. Grave matching has no physical Backquote fallback. Terminal input, focused native Browser pages, shortcut capture, unrelated modals and the existing handled/IME/repeat/extra-modifier/hidden/inert fences remain excluded. The seven editable actions and native preference format stay unchanged.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
@@ -305,7 +351,7 @@ Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
 primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. The former New Window primary+T chord is editable; no T alias remains. No palette, window action or tab action is added.
+chords cannot be assigned. The former New Window primary+T chord is editable; no native T alias remains, and the read-only Open tool default yields to it. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an
@@ -2680,7 +2726,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - Home sidebar density uses a 16px brand, 32px header/Inbox/Search targets and stacked 30px-minimum creation actions with 6px gaps/corners and 8px horizontal padding. Keep normal header/action height at 104px while allowing enlarged labels to grow; put the compact Home drawer Close navigation control after both creation actions, outside that block, while other contexts retain its placement; preserve pane/list spacing and normal bottom padding and every other sidebar context under the desktop contract.
 
-- Session workspace the feature use a two-row outer header and continuous editor tabs with internal sibling 40px close targets. The feature gives its Open tool trigger a decorative enum-derived 18px outlined wrench, a centered 40×40px target with zero padding/8px corners and localized accessible name/title; preserve semantic hover/expanded/focus and menu ARIA. The fixed Open tool menu owns only presentation/focus and invokes original tool callbacks once; retain original tab/controller/resource identity, Sidechat restrictions and read-only menu lifecycle. Follow the desktop workspace presentation contract.
+- Session workspace the feature use a two-row outer header and continuous editor tabs with internal sibling 40px close targets. The feature gives its Open tool trigger a decorative enum-derived 18px outlined wrench, a centered 40×40px target with zero padding/8px corners and localized accessible name/title; preserve semantic hover/expanded/focus and dialog ARIA. The fixed Open tool dialog owns only presentation/focus and invokes original tool callbacks once; retain original tab/controller/resource identity, Sidechat restrictions and read-only dialog lifecycle. Follow the desktop workspace presentation contract.
 
 - API Providers for this feature shows connection/validation/compatibility guidance once as a stable muted paragraph after the header and before search. Provider rows retain only exact connected/total or unavailable counts. Preserve header scope, grouping, ordering, search/pagination/refresh, Off-provider guidance and original account actions.
 
@@ -3807,7 +3853,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and dialog ARIA relationships (`aria-haspopup="dialog"`). It opens the compact Open tool dialog described in the Session Open tool section, which exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The rows use the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Tool selection closes the dialog and focuses the selected singleton descriptor without new resources or observation reads.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px selected-border underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -4682,7 +4728,7 @@ There is no Activity page or PR source disclosure. PR problems, local dismissals
 
 ## Direct Sidechat preparation
 
-Open Sidechat is an explicit creation gesture in the flat Open tool menu after
+Open Sidechat is an explicit creation gesture in the compact Open tool dialog after
 Diagnostics. Opening, dismissing or retrying capability/Runner reads does not
 create a job. The existing source, storage, cleanup, account, subagent and busy
 checks remain authoritative; managed Sidechat support is independent of Fork.
@@ -5157,7 +5203,7 @@ revision, commands, results and unresolved limits in PRs and CI artifacts.
 
 Managed ChatGPT/Codex Sidechat composes System 47, Worker 26,
 existing Sidechat 27/16 and managed authentication Worker 3. The session detail
-Open tool menu exposes Open Sidechat after Diagnostics only for the original eligible completed
+Open tool dialog exposes Open Sidechat after Diagnostics only for the original eligible completed
 source and negotiated Runner. Activation starts direct preparation and focuses the editable pending composer; no name/Create modal is shown. Independent subscription Fork remains unsupported.
 See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat)
 for protected lease/Finish publication, read-only continuation and dependent

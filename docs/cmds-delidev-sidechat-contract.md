@@ -292,11 +292,11 @@ not repository evidence documents.
 
 ## Direct desktop preparation
 
-The desktop places Open Sidechat after Diagnostics in the flat Open tool menu,
+The desktop places Open Sidechat after Diagnostics in the compact Open tool dialog,
 independently of the ordinary Fork action in session overflow. The original
 server/Worker, managed authentication and completed source eligibility remain
 shared checks. Read retries observe only their original capability/Runner data;
-menu disclosure grants no creation authority. Embedded or selected children
+dialog disclosure grants no creation authority. Embedded or selected children
 cannot silently use their parent's authority to create another Sidechat.
 
 An explicit Open Sidechat gesture immediately retains one original creation

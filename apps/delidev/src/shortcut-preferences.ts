@@ -147,6 +147,15 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
     defaults: globalShortcutBindings[ShortcutId.CommandMenu],
   },
   {
+    id: ShortcutId.OpenTool,
+    label: "session.openTool",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: sessionShortcutBindings[ShortcutId.OpenTool],
+  },
+  {
     id: ShortcutId.OpenTerminals,
     label: "shortcuts.openTerminals",
     group: ShortcutGroup.Session,
@@ -280,10 +289,42 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
     ? !/^[vz]$/.test(value.key)
     : !nativeReservedKeys.has(value.key) && !/^[bkn1-9acvxyz]$/.test(value.key);
 }
+/**
+ * Read-only defaults that yield to existing editable chords. A policy lists the
+ * unshifted primary key whose committed editable override suppresses the default
+ * in every scope. The result is an in-memory presentation/dispatch decision; it
+ * never rewrites saved preferences, the seven editable IDs or native validation.
+ * Add one entry here to give another new default the same priority rule.
+ */
+const readOnlyShortcutPolicies: Partial<
+  Record<ShortcutId, { key: string; reason: MessageKey }>
+> = {
+  [ShortcutId.OpenTool]: { key: "t", reason: "shortcuts.toolSuppressed" },
+};
+/** Returns the localized reason when a committed override suppresses `id`. */
+export function readOnlyShortcutSuppression(
+  id: ShortcutId,
+  overrides: ShortcutOverrides,
+): MessageKey | undefined {
+  const policy = readOnlyShortcutPolicies[id];
+  if (!policy) return;
+  // Disabled overrides and Shift variants never claim the unshifted chord.
+  return editableShortcutCatalog.some((action) => {
+    const override = overrides[action.id];
+    return (
+      override?.state === ShortcutOverrideState.Binding &&
+      !override.chord.shift &&
+      override.chord.key === policy.key
+    );
+  })
+    ? policy.reason
+    : undefined;
+}
 export function customizationBindings(
   id: ShortcutId,
   overrides: ShortcutOverrides,
 ): readonly ShortcutBinding[] {
+  if (readOnlyShortcutSuppression(id, overrides)) return [];
   const override = overrides[id];
   return override?.state === ShortcutOverrideState.Disabled
     ? []
@@ -295,8 +336,16 @@ export function effectiveShortcutDefinitions(
   definitions: readonly ShortcutDefinition[],
   overrides: ShortcutOverrides,
 ): ShortcutDefinition[] {
-  return definitions.map((action) =>
-    !editableIds.has(action.id)
+  return definitions.map((action) => {
+    const suppression = readOnlyShortcutSuppression(action.id, overrides);
+    if (suppression)
+      return {
+        ...action,
+        bindings: [],
+        enabled: false,
+        unavailableReason: suppression,
+      };
+    return !editableIds.has(action.id)
       ? action
       : {
           ...action,
@@ -306,8 +355,8 @@ export function effectiveShortcutDefinitions(
             ),
             ...customizationBindings(action.id, overrides),
           ],
-        },
-  );
+        };
+  });
 }
 export function shortcutConflicts(
   overrides: ShortcutOverrides,

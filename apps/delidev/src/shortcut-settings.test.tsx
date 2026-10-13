@@ -628,3 +628,53 @@ it("shows localized read-only Open Settings and rejects its chord during capture
   expect(within(entry).queryByRole("button")).toBeNull();
   expect(within(entry).getByText("Ctrl + ,")).toBeTruthy();
 });
+
+it("shows the read-only Open tool default and explains custom primary+T priority only after a committed save", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  render(<Owner bridge={f.bridge} />);
+  await screen.findByText("Current saved shortcuts");
+  const entry = () => screen.getByText("Open tool").closest("div")!;
+  expect(within(entry()).getByText("Ctrl + T")).toBeTruthy();
+  expect(within(entry()).queryByRole("button")).toBeNull();
+  expect(within(entry()).queryByText(/custom shortcut/)).toBeNull();
+  const opener = screen.getByRole("button", {
+    name: "Capture shortcut for New session",
+  });
+  fireEvent.click(opener);
+  await screen.findByText(/Press Command on macOS/);
+  fireEvent.keyDown(opener, { key: "t", ctrlKey: true });
+  await screen.findByText("Unsaved changes");
+  // The unsaved draft never changes read-only guidance.
+  expect(within(entry()).getByText("Ctrl + T")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(within(entry()).getByText(/custom shortcut uses/)).toBeTruthy(),
+  );
+  expect(within(entry()).getByText("Disabled")).toBeTruthy();
+  expect(f.state().overrides).toEqual({
+    [ShortcutId.NewSession]: {
+      state: ShortcutOverrideState.Binding,
+      chord: { key: "t", shift: false },
+    },
+  });
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(
+    within(screen.getByText("도구 열기").closest("div")!).getByText(
+      /사용자 지정 단축키/,
+    ),
+  ).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Restore default for New session" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(within(entry()).getByText("Ctrl + T")).toBeTruthy(),
+  );
+  expect(f.state().overrides).toEqual({});
+});
