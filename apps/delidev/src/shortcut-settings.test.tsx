@@ -742,9 +742,7 @@ it("shows Open Files and Open tool as pending in the read-only catalog until the
     expect(within(entry).getByText(/finish loading/)).toBeTruthy();
     expect(within(entry).queryByText(/Ctrl \+ [ET]/)).toBeNull();
   }
-  await act(async () =>
-    resolve({ revision: 1, overrides: {}, problem: null }),
-  );
+  await act(async () => resolve({ revision: 1, overrides: {}, problem: null }));
   const files = screen.getByText("Open Files").closest("div")!;
   expect(within(files).getByText("Ctrl + E")).toBeTruthy();
   expect(within(files).queryByText(/finish loading/)).toBeNull();

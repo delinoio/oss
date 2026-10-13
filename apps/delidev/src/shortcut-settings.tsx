@@ -66,8 +66,7 @@ function ShortcutKeycaps({
 }
 export function ShortcutSettings() {
   useLocale();
-  const { snapshot, ready, operation, save, reload } =
-    useShortcutPreferences();
+  const { snapshot, ready, operation, save, reload } = useShortcutPreferences();
   const [draft, setDraft] = useState(snapshot.overrides),
     [baseline, setBaseline] = useState(snapshot);
   const [capturing, setCapturing] = useState<ShortcutId>(),
