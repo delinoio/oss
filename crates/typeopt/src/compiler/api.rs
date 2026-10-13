@@ -34,7 +34,7 @@ impl Node {
     }
 
     pub fn symbol(self) -> SymbolId {
-        SymbolId(self.0.and_then(|n| n.symbol()))
+        SymbolId::new(self.0.and_then(|n| n.symbol()))
     }
 
     pub fn for_each_child(self, mut f: impl FnMut(Node) -> bool) -> bool {
@@ -381,20 +381,27 @@ fn node_list(list: impl Into<Option<P<tsrs_ast::NodeList>>>) -> NodeSlice {
     NodeSlice(list.into().map_or(&[], |l| l.nodes()))
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SymbolId(pub Option<P<tsrs_ast::Symbol>>);
+pub struct SymbolId(pub u64, Option<P<tsrs_ast::Symbol>>);
 impl SymbolId {
-    pub const NIL: Self = Self(None);
+    pub const NIL: Self = Self(0, None);
+
+    fn new(symbol: Option<P<tsrs_ast::Symbol>>) -> Self {
+        // Assign the compiler identity when the symbol enters the adapter,
+        // before it enters unordered analysis collections. Ordering by arena
+        // addresses would let allocation layout affect optimization decisions.
+        Self(symbol.map_or(0, |s| tsrs_ast::get_symbol_id(s).0), symbol)
+    }
 
     pub fn is_nil(self) -> bool {
-        self.0.is_none()
+        self.1.is_none()
     }
 
     pub fn is_some(self) -> bool {
-        self.0.is_some()
+        self.1.is_some()
     }
 
     fn raw(self) -> P<tsrs_ast::Symbol> {
-        self.0.expect("non-null compiler identity")
+        self.1.expect("non-null compiler identity")
     }
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -586,7 +593,7 @@ pub fn with_type_checker_for_file<R>(_file: Node, f: impl FnOnce(&mut Checker) -
     let inner = current().get_type_checker(&tsrs_core::context::Context::background());
     let mut checker = Checker {
         compiler_options: inner.compiler_options,
-        undefined_symbol: SymbolId(Some(inner.undefined_symbol)),
+        undefined_symbol: SymbolId::new(Some(inner.undefined_symbol)),
         inner,
         symbols: Symbols,
     };
@@ -637,12 +644,15 @@ pub struct Symbols;
 pub struct SymbolTable(Option<P<tsrs_ast::SymbolTable>>);
 impl Symbols {
     pub fn get(&self, table: SymbolTable, name: &str) -> SymbolId {
-        SymbolId(table.0.and_then(|t| t.lookup(name)))
+        SymbolId::new(table.0.and_then(|t| t.lookup(name)))
     }
 
     pub fn values(&self, table: SymbolTable) -> Vec<SymbolId> {
         table.0.map_or_else(Vec::new, |t| {
-            t.values().into_iter().map(|s| SymbolId(Some(s))).collect()
+            t.values()
+                .into_iter()
+                .map(|s| SymbolId::new(Some(s)))
+                .collect()
         })
     }
 }
@@ -655,7 +665,7 @@ impl Checker {
             flags: s.flags(),
             declarations: s.declarations().iter().map(|&n| Node::from(n)).collect(),
             value_declaration: Node::from(s.value_declaration()),
-            export_symbol: SymbolId(s.export_symbol()),
+            export_symbol: SymbolId::new(s.export_symbol()),
         }
     }
 
@@ -664,7 +674,7 @@ impl Checker {
         TypeView {
             flags: raw.flags(),
             alias: raw.alias().map(|_| ()),
-            symbol: SymbolId(raw.symbol()),
+            symbol: SymbolId::new(raw.symbol()),
             raw,
         }
     }
@@ -679,7 +689,11 @@ impl Checker {
                 .map(|&t| TypeId(Some(t)))
                 .collect(),
             declaration: Node::from(s.declaration.get()),
-            parameters: s.parameters().iter().map(|&s| SymbolId(Some(s))).collect(),
+            parameters: s
+                .parameters()
+                .iter()
+                .map(|&s| SymbolId::new(Some(s)))
+                .collect(),
             target: SignatureId(s.target()),
         }
     }
@@ -727,7 +741,7 @@ impl Checker {
     }
 
     pub fn get_export_specifier_local_target_symbol(&mut self, node: Node) -> SymbolId {
-        SymbolId(
+        SymbolId::new(
             self.inner
                 .get_export_specifier_local_target_symbol(node.raw()),
         )
@@ -737,7 +751,7 @@ impl Checker {
         self.inner
             .get_exports_of_module_exported(symbol.raw())
             .iter()
-            .map(|&v| SymbolId(Some(v)))
+            .map(|&v| SymbolId::new(Some(v)))
             .collect()
     }
 
@@ -750,11 +764,11 @@ impl Checker {
     }
 
     pub fn get_merged_symbol(&mut self, symbol: SymbolId) -> SymbolId {
-        SymbolId(Some(self.inner.get_merged_symbol_exported(symbol.raw())))
+        SymbolId::new(Some(self.inner.get_merged_symbol_exported(symbol.raw())))
     }
 
     pub fn get_merged_symbol_exported(&mut self, symbol: SymbolId) -> SymbolId {
-        SymbolId(Some(self.inner.get_merged_symbol_exported(symbol.raw())))
+        SymbolId::new(Some(self.inner.get_merged_symbol_exported(symbol.raw())))
     }
 
     pub fn get_non_nullable_type(&mut self, t: TypeId) -> TypeId {
@@ -765,7 +779,7 @@ impl Checker {
         self.inner
             .get_properties_of_type_exported(t.raw())
             .iter()
-            .map(|&v| SymbolId(Some(v)))
+            .map(|&v| SymbolId::new(Some(v)))
             .collect()
     }
 
@@ -780,7 +794,7 @@ impl Checker {
     }
 
     pub fn get_shorthand_assignment_value_symbol(&mut self, location: Node) -> SymbolId {
-        SymbolId(self.inner.get_shorthand_assignment_value_symbol(location.0))
+        SymbolId::new(self.inner.get_shorthand_assignment_value_symbol(location.0))
     }
 
     pub fn get_signature_from_declaration(&mut self, declaration: Node) -> SignatureId {
@@ -799,7 +813,7 @@ impl Checker {
     }
 
     pub fn get_symbol_at_location(&mut self, node: Node) -> SymbolId {
-        SymbolId(self.inner.get_symbol_at_location_exported(node.raw()))
+        SymbolId::new(self.inner.get_symbol_at_location_exported(node.raw()))
     }
 
     pub fn get_symbol_flags(&mut self, symbol: SymbolId) -> SymbolFlags {
@@ -867,14 +881,14 @@ impl Checker {
         meaning: SymbolFlags,
         exclude_globals: bool,
     ) -> SymbolId {
-        SymbolId(
+        SymbolId::new(
             self.inner
                 .resolve_name_exported(name, location.0, meaning, exclude_globals),
         )
     }
 
     pub fn skip_alias_exported(&mut self, symbol: SymbolId) -> SymbolId {
-        SymbolId(Some(self.inner.skip_alias(symbol.raw())))
+        SymbolId::new(Some(self.inner.skip_alias(symbol.raw())))
     }
 
     pub fn type_to_string(&mut self, t: TypeId) -> String {
@@ -1141,7 +1155,7 @@ impl Node {
 }
 impl Checker {
     pub fn get_property_of_type(&mut self, t: TypeId, name: &str) -> SymbolId {
-        SymbolId(self.inner.get_property_of_type_exported(t.raw(), name))
+        SymbolId::new(self.inner.get_property_of_type_exported(t.raw(), name))
     }
 }
 pub fn get_config_file_parsing_diagnostics() -> Vec<P<tsrs_ast::Diagnostic>> {
