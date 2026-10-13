@@ -33,6 +33,7 @@ import { Failure, Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 import { useRetainedMutationIntents } from "./mutation";
+import { DiffBaseTrust, useDiffBaseTrust } from "./session-diff-trust";
 import "./session-diff.css";
 
 export type ComparisonDescriptor = {
@@ -280,15 +281,13 @@ export function RepositoryDiff({
   // later inventory, until the Base control explicitly selects a reference.
   // The record is bound to the session and repository that observed it, so
   // refresh, path submission and comparison round trips never restore trust.
+  // Every invalidated reference is retained, so switching between retained
+  // Branch comparisons never restores trust for an earlier one either.
   const optionsOwner = [sessionId, repository].join("\u0000");
-  const [invalidatedBase, setInvalidatedBase] = useState<
-    { owner: string; key: string; reference: BaseReference } | undefined
-  >();
+  const [panelTrust] = useState(() => new DiffBaseTrust());
+  const trust = useDiffBaseTrust(panelTrust);
   const explicitBaseInvalidated = Boolean(
-    baseRef &&
-    invalidatedBase &&
-    invalidatedBase.owner === optionsOwner &&
-    invalidatedBase.key === referenceKey(baseRef),
+    baseRef && trust.isInvalidated(optionsOwner, baseRef),
   );
   const explicitBaseKey = baseRef ? referenceKey(baseRef) : undefined;
   useEffect(() => {
@@ -304,12 +303,12 @@ export function RepositoryDiff({
       sessionId,
       repository,
     });
-    setInvalidatedBase({
-      owner: optionsOwner,
-      key: referenceKey(baseRef),
-      reference: baseRef,
-    });
+    trust.invalidate(optionsOwner, baseRef);
   }, [options.data, explicitBaseKey, comparison, optionsOwner]);
+  useEffect(() => {
+    // Once Branch is displayed again, a dropped selection has been republished.
+    if (comparison === Comparison.Branch) trust.settle(optionsOwner);
+  }, [comparison, optionsOwner]);
   const supportedBase = Boolean(
     options.data &&
     chosenBase &&
@@ -544,10 +543,10 @@ export function RepositoryDiff({
     // selection. Returning to Branch must re-publish the invalidated selection
     // itself, never the inventory default, until the Base control explicitly
     // selects a reference.
+    if (baseRef && next !== Comparison.Branch)
+      trust.depart(optionsOwner, baseRef);
     const retained =
-      !explicit && !baseRef && invalidatedBase?.owner === optionsOwner
-        ? invalidatedBase.reference
-        : undefined;
+      !explicit && !baseRef ? trust.departed(optionsOwner) : undefined;
     const base = retained ?? nextBase;
     const value = {
       repository,
@@ -634,7 +633,7 @@ export function RepositoryDiff({
                 if (!choice?.available) return;
                 // Only this explicit selection restores trust, including
                 // reselecting the recreated reference itself.
-                setInvalidatedBase(undefined);
+                trust.reselect(optionsOwner, choice.reference);
                 choose(Comparison.Branch, path, choice.reference, true);
               }}
             >

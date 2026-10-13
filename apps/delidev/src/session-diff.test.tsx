@@ -1775,6 +1775,7 @@ function tabsFixture(
         <QueryClientProvider client={f.client}>
           <MutationIntents>
             <button onClick={() => setOpen(false)}>Leave Diff</button>
+            <button onClick={() => setOpen(true)}>Reopen Diff</button>
             {open ? (
               <SessionDiff
                 sessionId={f.sessionId}
@@ -2164,4 +2165,104 @@ it("omits the raw Git reference from the base invalidation diagnostic", async ()
   } finally {
     debug.mockRestore();
   }
+});
+
+function namedInventory(state: { names: string[] }) {
+  return async (repository: string) => ({
+    documentJson: encode({
+      size: "0",
+      binary: false,
+      truncated: false,
+      diff_options: {
+        version: 1,
+        repository_id: repository,
+        choices: state.names.map((name) => ({
+          reference: { type: "local-branch", name },
+          available: true,
+          configured: false,
+        })),
+        default: { type: "local-branch", name: "main" },
+      },
+    }),
+  });
+}
+
+const branchBaseNames = (read: { mock: { calls: unknown[][] } }) =>
+  branchReads(read).map((q) => (q.base_ref as { name: string }).name);
+
+const refreshWhenReady = async () => {
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  refreshDiff();
+};
+
+it("retains every invalidated base across retained Branch comparison tabs until each is reselected", async () => {
+  const state = { names: ["main", "alpha", "beta"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  for (const name of ["alpha", "beta"]) {
+    fireEvent.change(screen.getByLabelText("Base"), {
+      target: { value: baseValue(name) },
+    });
+    await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe(name));
+  }
+  const tabKey = (name: string) =>
+    sessionTabKey(
+      f
+        .comparisons()
+        .find(
+          (tab) => tab.comparison === "branch" && tab.base_ref?.name === name,
+        )!,
+    );
+  const alpha = tabKey("alpha"),
+    beta = tabKey("beta");
+  // Invalidate alpha while its tab is displayed.
+  act(() => f.store.select(f.sessionId, alpha));
+  await waitFor(() =>
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+      baseValue("alpha"),
+    ),
+  );
+  state.names = ["main", "beta"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  // Then invalidate beta from its own tab; alpha must stay invalidated.
+  act(() => f.store.select(f.sessionId, beta));
+  await screen.findByRole("region", { name: "Git comparison" });
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  state.names = ["main", "alpha", "beta"];
+  await refreshWhenReady();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "alpha" })).toBeTruthy(),
+  );
+  const settled = branchReads(f.read).length;
+  act(() => f.store.select(f.sessionId, alpha));
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "alpha" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(branchReads(f.read)).toHaveLength(settled);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+  // Reselecting alpha restores only alpha; beta is still invalidated.
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("alpha") },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(branchBaseNames(f.read).at(-1)).toBe("alpha");
+  act(() => f.store.select(f.sessionId, beta));
+  await waitFor(() =>
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(""),
+  );
+  const afterAlpha = branchReads(f.read).length;
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(branchReads(f.read)).toHaveLength(afterAlpha);
+  expect(comparisonRegion()).toBeNull();
 });
