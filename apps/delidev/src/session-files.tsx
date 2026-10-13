@@ -137,10 +137,14 @@ export function SessionFiles({
   close,
   openFile,
   active = true,
+  previewing = false,
 }: {
   sessionId: string;
   close: () => void;
   active?: boolean;
+  // True while a shared File preview owns the visible panel, so leaving the
+  // active explorer is a File departure whose position must be restored.
+  previewing?: boolean;
   openFile?: (repository: string, path: string) => void;
 }) {
   useLocale();
@@ -245,6 +249,7 @@ export function SessionFiles({
           state={state}
           openFile={openFile}
           active={active}
+          previewing={previewing}
         />
       ) : null}
     </aside>
@@ -255,11 +260,13 @@ function Explorer({
   state,
   openFile,
   active,
+  previewing,
 }: {
   owner: FilesController;
   state: FilesSnapshot;
   openFile?: (repository: string, path: string) => void;
   active: boolean;
+  previewing: boolean;
 }) {
   const scroll = useRef<HTMLDivElement>(null),
     tree = useRef<HTMLDivElement>(null),
@@ -343,7 +350,10 @@ function Explorer({
     )
       focusRow(focusPath);
   }, [state.directories, state.expanded, state.preview, focused, active]);
-  const open = (path: string) => {
+  // Records the current inner and enclosing scroll positions that a later
+  // return to this exact explorer restores. It must run while the explorer is
+  // still displayed, because hiding it resets scroll offsets.
+  const captureScroll = () => {
     scrollPosition.current = {
       top: scroll.current?.scrollTop ?? 0,
       left: scroll.current?.scrollLeft ?? 0,
@@ -366,6 +376,25 @@ function Explorer({
       if (element.classList.contains("session-workspace")) break;
     }
     ancestors.current = { owner, repository: state.repository, positions };
+  };
+  const previewingRef = useRef(previewing);
+  previewingRef.current = previewing;
+  const captureRef = useRef(captureScroll);
+  captureRef.current = captureScroll;
+  // Every departure of the active explorer to a shared File preview re-arms the
+  // one-shot return, so reselecting an existing File tab restores like the
+  // first open did. The cleanup runs before the parent applies hidden/inert,
+  // while scroll offsets are still readable. Other departures never arm it.
+  useLayoutEffect(() => {
+    if (!active) return;
+    return () => {
+      if (!previewingRef.current || !tree.current?.isConnected) return;
+      captureRef.current();
+      returning.current = true;
+    };
+  }, [active]);
+  const open = (path: string) => {
+    captureScroll();
     if (openFile && state.repository !== undefined) {
       // Shared preview hides this retained explorer. Restore its original row
       // and scroll only when the same owner becomes active again.

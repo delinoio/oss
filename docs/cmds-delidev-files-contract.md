@@ -142,7 +142,7 @@ File activation moves focus to the visible shared preview heading without scroll
 the retained explorer. Read completion and explicit content refresh never move
 focus. Closing the selected File preview returns to its retained Files descriptor
 when available; the same active explorer restores an available selected row or tree
-and its original scroll owners. Inactive or replaced explorers and late reads cannot
+and its scroll owners. Every departure of the active explorer to a selected File preview, including reselecting an existing File tab after Files was shown, re-arms that restoration and captures the current inner and enclosing scroll positions before the explorer is hidden, so each File round trip restores again from current positions rather than the first open. Selecting Files directly, or leaving it for a non-File tab, arms nothing and never moves focus. Inactive or replaced explorers and late reads cannot
 receive a focus handoff. Closing an inactive File preserves current selection and
 focus; without a retained Files descriptor the ordinary neighboring tab fallback
 remains available.
