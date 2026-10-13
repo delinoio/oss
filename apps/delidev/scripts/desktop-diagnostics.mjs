@@ -313,9 +313,7 @@ export function captureDesktopDiagnostics(
         });
         try {
           const outcomes = await Promise.race([drained, deadline]);
-          if (
-            outcomes?.every((outcome) => outcome === CaptureOutcome.Complete)
-          )
+          if (outcomes?.every((outcome) => outcome === CaptureOutcome.Complete))
             return;
           const timedOut = outcomes === undefined;
           if (timedOut) for (const stream of streams) stream.stop();
