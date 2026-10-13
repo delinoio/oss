@@ -130,8 +130,12 @@ function LastQuotaObservation({ state }: { state: Record<string, unknown> }) {
           s1: (
             <>
               {state.quota_state === "failed"
-                ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e")
-                : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}
+                ? copy(
+                    "subscription-quota.theLatestRefreshFailedTheLast_78f81e",
+                  )
+                : copy(
+                    "subscription-quota.quotaIsObservedByTheOriginal_16d486",
+                  )}
             </>
           ),
         }}

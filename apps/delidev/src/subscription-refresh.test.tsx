@@ -813,7 +813,10 @@ it.each([
         new Promise((_resolve, rejectPromise) => {
           reject = () =>
             rejectPromise(
-              new ConnectError("private-rejection-fixture", Code.InvalidArgument),
+              new ConnectError(
+                "private-rejection-fixture",
+                Code.InvalidArgument,
+              ),
             );
         }),
     );
@@ -832,9 +835,7 @@ it.each([
     await waitFor(() =>
       expect(screen.getByRole("button", { name: statusRefresh })).toBeTruthy(),
     );
-    await waitFor(() =>
-      expect(screen.getByText(requestFailed)).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText(requestFailed)).toBeTruthy());
     expect(screen.getByText(lastObservation)).toBeTruthy();
     expect(screen.queryByText(/private-rejection-fixture/)).toBeNull();
     expectReadOnlyDisconnected(f);
