@@ -6,10 +6,10 @@ bundlewhy is not yet published to npm. Version 0.1.0 is in development. This mat
 
 ## Compatibility matrix
 
-| Bundler | Package | Version | Default JavaScript minifier |
-| --- | --- | --- | --- |
-| Vite | `vite` | `8.3.4` (Rolldown `1.2.13`) | Oxc minifier (`build.minify: 'oxc'`) |
-| Rspack | `@rspack/core` | `2.2.9` | `SwcJsMinimizerRspackPlugin` |
+| Bundler | Package        | Version                     | Default JavaScript minifier          |
+| ------- | -------------- | --------------------------- | ------------------------------------ |
+| Vite    | `vite`         | `8.3.4` (Rolldown `1.2.13`) | Oxc minifier (`build.minify: 'oxc'`) |
+| Rspack  | `@rspack/core` | `2.2.9`                     | `SwcJsMinimizerRspackPlugin`         |
 
 Run `bundlewhy engines` to print the matrix for the installed bundlewhy version.
 

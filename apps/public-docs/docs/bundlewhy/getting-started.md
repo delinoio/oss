@@ -28,20 +28,20 @@ If the browser does not open, open the printed URL manually.
 
 By default, bundlewhy analyzes the current directory and selects the bundler and configuration automatically when exactly one candidate of each exists. Otherwise, select them explicitly:
 
-| Flag | Purpose |
-| --- | --- |
-| `--project <dir>` | Analyze another project directory. |
-| `--config <file>` | Use this bundler configuration file. |
-| `--config-name <name>` | Select one build when an Rspack configuration exports several builds. |
-| `--bundler vite` or `--bundler rspack` | Select the bundler when several are candidates. |
+| Flag                                   | Purpose                                                               |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `--project <dir>`                      | Analyze another project directory.                                    |
+| `--config <file>`                      | Use this bundler configuration file.                                  |
+| `--config-name <name>`                 | Select one build when an Rspack configuration exports several builds. |
+| `--bundler vite` or `--bundler rspack` | Select the bundler when several are candidates.                       |
 
 ## Other analyze options
 
-| Flag | Effect |
-| --- | --- |
-| `--no-open` | Start the local server but do not open a browser. |
-| `--no-serve` | Save the results and exit without starting the local server. |
-| `--exclude-sources` | Store source hashes and paths, but not source content. |
+| Flag                         | Effect                                                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--no-open`                  | Start the local server but do not open a browser.                                                          |
+| `--no-serve`                 | Save the results and exit without starting the local server.                                               |
+| `--exclude-sources`          | Store source hashes and paths, but not source content.                                                     |
 | `--allow-unsupported-engine` | Analyze with an installed engine version outside the [compatibility matrix](/bundlewhy/supported-engines). |
 
 Global flags are `--verbose`, `--no-color`, `--help` and `--version`.
@@ -76,12 +76,12 @@ This prints the frozen engine compatibility matrix for the installed bundlewhy v
 
 ## Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Success. |
-| `1` | Failure. The error output names a `BW_*` code and a recovery instruction. |
-| `2` | Usage error, including an ambiguous bundler or configuration selection. |
-| `130` | Cancelled. |
+| Code  | Meaning                                                                   |
+| ----- | ------------------------------------------------------------------------- |
+| `0`   | Success.                                                                  |
+| `1`   | Failure. The error output names a `BW_*` code and a recovery instruction. |
+| `2`   | Usage error, including an ambiguous bundler or configuration selection.   |
+| `130` | Cancelled.                                                                |
 
 ## One run at a time
 

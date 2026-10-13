@@ -17,10 +17,10 @@ npx @delino/bundlewhy engines
 
 ## Supported engines
 
-| Bundler | Version | Default minifier |
-| --- | --- | --- |
-| Vite | 8.3.4 (Rolldown 1.2.13) | Oxc minifier |
-| Rspack (`@rspack/core`) | 2.2.9 | SwcJsMinimizerRspackPlugin |
+| Bundler                 | Version                 | Default minifier           |
+| ----------------------- | ----------------------- | -------------------------- |
+| Vite                    | 8.3.4 (Rolldown 1.2.13) | Oxc minifier               |
+| Rspack (`@rspack/core`) | 2.2.9                   | SwcJsMinimizerRspackPlugin |
 
 Other versions require `--allow-unsupported-engine`. The results then show that an unsupported engine was selected explicitly.
 

@@ -8,11 +8,11 @@ bundlewhy is not yet published to npm. Version 0.1.0 is in development. This pag
 
 Every finding states how bundlewhy knows it.
 
-| Status | Meaning |
-| --- | --- |
-| Confirmed | Observed in the analysis engine's output or configuration, for the engine used in this analysis. |
-| Inferred | Derived by bundlewhy's own analysis. It is not an observed engine decision, and the finding lists the evidence it is based on. |
-| Unavailable | The evidence could not be collected. |
+| Status      | Meaning                                                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Confirmed   | Observed in the analysis engine's output or configuration, for the engine used in this analysis.                               |
+| Inferred    | Derived by bundlewhy's own analysis. It is not an observed engine decision, and the finding lists the evidence it is based on. |
+| Unavailable | The evidence could not be collected.                                                                                           |
 
 An inferred cause is never presented as an engine decision. Treat inferred findings as a well-supported hypothesis to verify.
 
@@ -20,29 +20,29 @@ An inferred cause is never presented as an engine decision. Treat inferred findi
 
 Each optimization category has a coverage state for the run.
 
-| State | Meaning |
-| --- | --- |
-| Covered | Verified detectors ran for this category. |
-| Not applicable | The category does not apply to the selected engine. |
-| Unavailable | The category applies, but no evidence could be collected. |
-| Partial | Detectors ran on incomplete input, for example after a partial collection. |
+| State          | Meaning                                                                    |
+| -------------- | -------------------------------------------------------------------------- |
+| Covered        | Verified detectors ran for this category.                                  |
+| Not applicable | The category does not apply to the selected engine.                        |
+| Unavailable    | The category applies, but no evidence could be collected.                  |
+| Partial        | Detectors ran on incomplete input, for example after a partial collection. |
 
 "No findings" in a covered category means the detectors ran and found nothing. That is different from "no coverage": an unavailable or not-applicable category says nothing about your build. bundlewhy never presents missing coverage as a clean result.
 
 ## Rules
 
-| Rule | Engine | Category | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| `rspack/side-effect-retained` | Rspack | Tree shaking | Confirmed | No used exports and an engine-reported `Statement with side_effects` bailout with location |
-| `vite/side-effect-retained` | Vite | Tree shaking | Confirmed | Module rendered with no rendered exports while its exports exist |
-| `rspack/module-concatenation-bailout` | Rspack | Module concatenation | Confirmed | `ModuleConcatenation bailout` reason for a module that is in a chunk and not concatenated |
-| `vite/commonjs-wrapped` | Vite | Module concatenation | Confirmed | Rolldown input format `cjs` and the `__commonJSMin` runtime helper is rendered |
-| `rspack/module-in-multiple-chunks` | Rspack | Chunk splitting | Confirmed | Module listed in two or more chunks |
-| `vite/ineffective-dynamic-import` | Vite | Chunk splitting | Confirmed | Rolldown `INEFFECTIVE_DYNAMIC_IMPORT` log, or static and dynamic importers |
-| `bundle/duplicate-package` | Both | Duplicate modules | Confirmed | Same package name included from two or more package directories |
-| `minifier/unresolved-env-condition` | Both | Dead-code elimination | Inferred | Generated code still reads `process.env.<NAME>` (Rspack) or Vite's `({}).<NAME>` replacement |
-| `minifier/minification-disabled` | Both | Dead-code elimination | Confirmed | Configuration disables minification |
-| `minifier/direct-eval-blocks-mangling` | Both | Name mangling | Confirmed with an engine-reported `EVAL` log or eval bailout, Inferred from source otherwise | Direct `eval` in a module whose long local names survive in the generated chunk |
+| Rule                                   | Engine | Category              | Status                                                                                       | Evidence                                                                                     |
+| -------------------------------------- | ------ | --------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `rspack/side-effect-retained`          | Rspack | Tree shaking          | Confirmed                                                                                    | No used exports and an engine-reported `Statement with side_effects` bailout with location   |
+| `vite/side-effect-retained`            | Vite   | Tree shaking          | Confirmed                                                                                    | Module rendered with no rendered exports while its exports exist                             |
+| `rspack/module-concatenation-bailout`  | Rspack | Module concatenation  | Confirmed                                                                                    | `ModuleConcatenation bailout` reason for a module that is in a chunk and not concatenated    |
+| `vite/commonjs-wrapped`                | Vite   | Module concatenation  | Confirmed                                                                                    | Rolldown input format `cjs` and the `__commonJSMin` runtime helper is rendered               |
+| `rspack/module-in-multiple-chunks`     | Rspack | Chunk splitting       | Confirmed                                                                                    | Module listed in two or more chunks                                                          |
+| `vite/ineffective-dynamic-import`      | Vite   | Chunk splitting       | Confirmed                                                                                    | Rolldown `INEFFECTIVE_DYNAMIC_IMPORT` log, or static and dynamic importers                   |
+| `bundle/duplicate-package`             | Both   | Duplicate modules     | Confirmed                                                                                    | Same package name included from two or more package directories                              |
+| `minifier/unresolved-env-condition`    | Both   | Dead-code elimination | Inferred                                                                                     | Generated code still reads `process.env.<NAME>` (Rspack) or Vite's `({}).<NAME>` replacement |
+| `minifier/minification-disabled`       | Both   | Dead-code elimination | Confirmed                                                                                    | Configuration disables minification                                                          |
+| `minifier/direct-eval-blocks-mangling` | Both   | Name mangling         | Confirmed with an engine-reported `EVAL` log or eval bailout, Inferred from source otherwise | Direct `eval` in a module whose long local names survive in the generated chunk              |
 
 Inlining and constant folding currently have no coverage for either engine. Neither engine exposes those decisions, and bundlewhy has no verified detector for them, so those categories are always shown as unavailable.
 
