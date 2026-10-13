@@ -135,7 +135,10 @@ has one of four actions:
   page leaves the profile with zero pages. The 16-page gate is retained. Storage
   work stages off the UI thread and only the replacement is published under the
   existing worker fence and a window-authority fence that rechecks registry,
-  barrier and binding state.
+  barrier and binding state. Immediately before replacement the publication fence
+  re-reads the Go profile and requires the exact admitted Active revision; a
+  removal-pending, removed or changed record rejects the publication and leaves
+  the prior metadata untouched.
 - `observe` (operation ID) returns the original receipt and the current inventory.
   It never repeats metadata mutation; it retries only the directory fsync that
   followed a successful replacement and the idempotent native child

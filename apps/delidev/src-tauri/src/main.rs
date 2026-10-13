@@ -744,15 +744,42 @@ fn recheck_record(
     }
     Ok(())
 }
-// Retain the original native admission locks through atomic metadata
-// replacement. Registry/connection retirement cannot cross the captured
-// publication boundary.
+// The Go profile record authorizes page metadata only while it is the exact
+// Active revision admitted at the start of the operation. Removal-pending or
+// removed state, or any other revision, is account-deletion authority that
+// supersedes the stale record.
+fn verify_profile_authority(
+    admitted: &delidev_desktop::browser::ProfileRecord,
+    current: &delidev_desktop::browser::ProfileRecord,
+) -> Result<(), NativeFailure> {
+    if current.id != admitted.id
+        || current.data.server_id != admitted.data.server_id
+        || current.data.device_id != admitted.data.device_id
+        || current.data.account_id != admitted.data.account_id
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    if current.data.state != delidev_desktop::browser::ProfileState::Active {
+        return Err(NativeFailure::Stopped);
+    }
+    if current.revision != admitted.revision {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(())
+}
+// Re-read the authoritative Go profile at the publication boundary, before the
+// short native admission locks are taken, so the blocking sidecar read never
+// runs under them. Retain the original native admission locks through atomic
+// metadata replacement. Registry/connection retirement cannot cross the
+// captured publication boundary.
 fn publish_browser_pages(
     windows: &ProductWindows,
     original: &WindowAuthority,
+    profile_fence: impl FnOnce() -> Result<(), NativeFailure>,
     staged: delidev_desktop::browser::PrivateWrite,
     committed: &mut bool,
 ) -> Result<(), NativeFailure> {
+    profile_fence()?;
     let target = staged.target().to_path_buf();
     let barriers = windows.removals.lock().map_err(|_| NativeFailure::Busy)?;
     let registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
@@ -1678,7 +1705,16 @@ async fn browser_pages(
             &record,
             &worker_request,
             |staged, committed| {
-                publish_browser_pages(&windows, &worker_authority, staged, committed)
+                publish_browser_pages(
+                    &windows,
+                    &worker_authority,
+                    || {
+                        let current = worker_connector.browser_profile(scope.as_ref(), &id)?;
+                        verify_profile_authority(&record, &current)
+                    },
+                    staged,
+                    committed,
+                )
             },
         )?;
         if admission == browser_host::PageAdmission::Replayed {
@@ -3018,7 +3054,7 @@ mod product_window_tests {
         let original = saved(&windows, "profile");
         let (_temp, path, staged) = staged_tabs();
         let mut committed = false;
-        publish_browser_pages(&windows, &original, staged, &mut committed).unwrap();
+        publish_browser_pages(&windows, &original, || Ok(()), staged, &mut committed).unwrap();
         assert!(committed && path.exists());
 
         // A changed window instance, binding identity or removal barrier is
@@ -3064,11 +3100,97 @@ mod product_window_tests {
             let (_temp, path, staged) = staged_tabs();
             let mut committed = false;
             assert!(
-                publish_browser_pages(&windows, &first, staged, &mut committed).is_err(),
+                publish_browser_pages(&windows, &first, || Ok(()), staged, &mut committed).is_err(),
                 "{stale}"
             );
             assert!(!committed && !path.exists(), "{stale}");
         }
+    }
+
+    fn profile_record(
+        revision: u64,
+        state: delidev_desktop::browser::ProfileState,
+    ) -> delidev_desktop::browser::ProfileRecord {
+        let id = |value: u8| format!("00000000-0000-4000-8000-{value:012}");
+        delidev_desktop::browser::ProfileRecord {
+            id: id(1),
+            revision,
+            data: delidev_desktop::browser::Profile {
+                server_id: id(2),
+                device_id: id(3),
+                account_id: id(4),
+                deletion_request_id: if state == delidev_desktop::browser::ProfileState::Active {
+                    String::new()
+                } else {
+                    id(5)
+                },
+                state,
+            },
+        }
+    }
+
+    #[test]
+    fn profile_authority_accepts_only_the_exact_active_revision() {
+        use delidev_desktop::browser::ProfileState;
+        let admitted = profile_record(3, ProfileState::Active);
+        assert_eq!(
+            verify_profile_authority(&admitted, &profile_record(3, ProfileState::Active)),
+            Ok(())
+        );
+        for state in [ProfileState::RemovalPending, ProfileState::Removed] {
+            assert_eq!(
+                verify_profile_authority(&admitted, &profile_record(4, state)),
+                Err(NativeFailure::Stopped)
+            );
+        }
+        assert_eq!(
+            verify_profile_authority(&admitted, &profile_record(4, ProfileState::Active)),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        let mut other = profile_record(3, ProfileState::Active);
+        other.data.account_id = "00000000-0000-4000-8000-000000000009".into();
+        assert_eq!(
+            verify_profile_authority(&admitted, &other),
+            Err(NativeFailure::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn page_publication_rechecks_profile_authority_before_replacement() {
+        use delidev_desktop::browser::ProfileState;
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let admitted = profile_record(3, ProfileState::Active);
+        // The Go profile became removal-pending after the initial read: the
+        // publication fence rejects it and leaves the prior file untouched.
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        assert_eq!(
+            publish_browser_pages(
+                &windows,
+                &original,
+                || verify_profile_authority(
+                    &admitted,
+                    &profile_record(4, ProfileState::RemovalPending)
+                ),
+                staged,
+                &mut committed,
+            ),
+            Err(NativeFailure::Stopped)
+        );
+        assert!(!committed && !path.exists());
+        // An unchanged Active revision still publishes.
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        publish_browser_pages(
+            &windows,
+            &original,
+            || verify_profile_authority(&admitted, &profile_record(3, ProfileState::Active)),
+            staged,
+            &mut committed,
+        )
+        .unwrap();
+        assert!(committed && path.exists());
     }
 
     #[test]
@@ -3085,13 +3207,13 @@ mod product_window_tests {
         drop(registry);
         let (_temp, _path, staged) = staged_tabs();
         let mut committed = false;
-        publish_browser_pages(&windows, &original, staged, &mut committed).unwrap();
+        publish_browser_pages(&windows, &original, || Ok(()), staged, &mut committed).unwrap();
         assert!(committed);
         windows.registry.lock().unwrap().local_revision += 1;
         let (_temp, path, staged) = staged_tabs();
         let mut committed = false;
         assert_eq!(
-            publish_browser_pages(&windows, &original, staged, &mut committed),
+            publish_browser_pages(&windows, &original, || Ok(()), staged, &mut committed),
             Err(NativeFailure::InvalidEvidence)
         );
         assert!(!committed && !path.exists());
