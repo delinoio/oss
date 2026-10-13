@@ -1156,6 +1156,29 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
             .find(|c| c.starts_with(root) && c.is_file())
             .map(|c| c.to_string_lossy().into_owned())
     }
+    /// Whether an attribute whose raw value has an undecodable character
+    /// reference can hold code: an event handler, or a value that reads as a
+    /// `javascript:` URL once references and URL-stripped characters (ASCII
+    /// whitespace and control characters) are dropped from its scheme.
+    fn may_run_code(attribute: &str, raw: &str) -> bool {
+        if attribute.starts_with("on") {
+            return true;
+        }
+        let mut stripped = String::new();
+        let mut chars = raw.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '&' {
+                while chars
+                    .next_if(|n| n.is_ascii_alphanumeric() || *n == '#')
+                    .is_some()
+                {}
+                chars.next_if_eq(&';');
+            } else if !c.is_ascii_control() && c != ' ' {
+                stripped.push(c.to_ascii_lowercase());
+            }
+        }
+        stripped.starts_with("javascript:")
+    }
     fn walk(root: &std::path::Path, dir: &std::path::Path, found: &mut HtmlScripts) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
             let entry = entry?;
@@ -1204,6 +1227,19 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                 // Event handlers and `javascript:` URLs are inline code that
                 // can import chunks.
                 for (attribute, value) in &tag.attributes {
+                    // The browser decodes the value before it runs, so a
+                    // reference this parser cannot decode may hide an import
+                    // from the scan below: assume any chunk can be loaded.
+                    if tag.undecodable.contains(attribute) && may_run_code(attribute, value) {
+                        tracing::info!(
+                            page = %path.display(),
+                            attribute = %attribute,
+                            "an HTML executable attribute has an undecodable character reference; \
+                             every chunk is a public entry"
+                        );
+                        found.all_public = true;
+                        continue;
+                    }
                     let code = if attribute.starts_with("on") {
                         Some(value.as_str())
                     } else {
