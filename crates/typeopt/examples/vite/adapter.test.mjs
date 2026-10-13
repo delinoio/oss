@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  realpath,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -353,6 +360,24 @@ test("rejects output once an absent higher-priority resolution candidate appears
     await mkdir(absent);
     await assert.rejects(typeopt(out).buildStart(), /stale/);
     await rm(absent, { recursive: true });
+    await typeopt(out).buildStart();
+    // A dangling symlink candidate is still absent until its target appears.
+    const dangling = path.join(root, "dep.mts");
+    const target = path.join(root, "later-target.mts");
+    await symlink(target, dangling);
+    manifest.inputs.push({ path: dangling, kind: "absent" });
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    await typeopt(out).buildStart();
+    await writeFile(target, "export const f = 4;");
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(dangling));
+      return true;
+    });
+    await rm(target);
+    manifest.inputs.pop();
+    await rm(dangling);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
     await typeopt(out).buildStart();
     // A candidate below a regular file stays absent (ENOTDIR).
     manifest.inputs.push({

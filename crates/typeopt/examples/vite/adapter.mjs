@@ -1,6 +1,6 @@
 // Copyright 2026 Delino. SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
@@ -21,13 +21,15 @@ async function digestOf(file, { stripBom }) {
 const INPUT_KINDS = new Set(["configuration", "dependency", "absent"]);
 
 /**
- * Whether nothing exists at the path. The compiler recorded the path as a
- * resolution candidate that was missing, so anything appearing there (a file,
- * directory or symlink) can change resolution.
+ * Whether nothing resolves at the path. The compiler recorded the path as a
+ * resolution candidate that was missing, so a file or directory appearing
+ * there, or a symlink whose target now exists, can change resolution. Symlinks
+ * are followed because the compiler's probes follow them: a dangling symlink
+ * is still missing until its target appears.
  */
 async function isAbsent(file) {
   try {
-    await lstat(file);
+    await stat(file);
     return false;
   } catch (error) {
     if (error.code === "ENOENT" || error.code === "ENOTDIR") return true;

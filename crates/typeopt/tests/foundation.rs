@@ -186,6 +186,22 @@ fn snapshot_records_absent_higher_priority_resolution_candidates() {
 }
 
 #[test]
+fn dangling_symlink_resolution_candidates_are_recorded_as_absent() {
+    let temp = shadowed_dependency();
+    // `dep.ts` outranks `dep.tsx` but its target does not exist yet, so the
+    // compiler resolves past it. Creating the target would change resolution.
+    let candidate = temp.path().join("dep.ts");
+    std::os::unix::fs::symlink(temp.path().join("later-target.ts"), &candidate).unwrap();
+    assert!(candidate.symlink_metadata().is_ok() && !candidate.exists());
+    optimize(temp.path(), &[]);
+    let absent = absent_paths(&modules(temp.path()));
+    assert!(
+        absent.iter().any(|p| p.ends_with("/dep.ts")),
+        "dangling dep.ts missing from {absent:#?}"
+    );
+}
+
+#[test]
 fn absent_candidate_snapshot_is_deterministic() {
     let temp = shadowed_dependency();
     optimize(temp.path(), &[]);

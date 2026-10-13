@@ -646,9 +646,9 @@ impl Project {
         inputs.sort();
         inputs.dedup();
         // Negative resolution dependencies come after the positive inputs, in
-        // path order. A path is kept only when the filesystem still reports
-        // nothing there, so a probe that failed only because the path is a
-        // directory (or the reverse) never becomes a false absence.
+        // path order. A path is kept only when nothing resolves there (a
+        // dangling symlink counts), so a probe that failed only because the
+        // path is a directory (or the reverse) never becomes a false absence.
         let mut absent: Vec<String> = self
             .misses
             .lock()
@@ -1069,10 +1069,11 @@ fn wrapvfs_wrap(
     })
 }
 
-/// Whether nothing exists at `path`. Other failures, such as a permission
-/// error, are not proof of absence.
+/// Whether nothing resolves at `path`. The compiler probes follow symlinks, so
+/// a dangling symlink is missing too: creating its target changes resolution.
+/// Other failures, such as a permission error, are not proof of absence.
 fn is_absent_on_disk(path: &str) -> bool {
-    match std::fs::symlink_metadata(path) {
+    match std::fs::metadata(path) {
         Ok(_) => false,
         Err(error) => matches!(
             error.kind(),
