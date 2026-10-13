@@ -388,6 +388,7 @@ export function SessionForkProvider({
   const invalidatePreflight = () => {
     generation.current += 1;
     preflight.current = undefined;
+    local.discard();
     setChecking(false);
   };
   const show = (

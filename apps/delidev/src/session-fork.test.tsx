@@ -488,6 +488,30 @@ it("retains the original operation when hidden during a pending Local proof read
   });
 });
 
+it.each(["rejected", "changed-machine"])(
+  "keeps a replacement draft free of the failure from its stale Local proof (%s)",
+  async (failure) => {
+    const fixture = await localProofFixture();
+    fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+    fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Fork session" }),
+    );
+    const name = screen.getByRole("textbox", {
+      name: "Fork name",
+    }) as HTMLInputElement;
+    expect(name.value).toBe("Local B fork");
+    expect(name.disabled).toBe(true);
+    await act(async () => {
+      if (failure === "rejected") fixture.gate.reject(new Error("offline"));
+      else fixture.gate.resolve({ ...fixture.proof, machineId: newRequestId() });
+    });
+    await waitFor(() => expect(name.disabled).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fixture.fork).not.toHaveBeenCalled();
+  },
+);
+
 it("sends a replacement Sidechat once the hidden stale Local proof settles", async () => {
   const fixture = await localProofFixture({ sidechat: true });
   fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
