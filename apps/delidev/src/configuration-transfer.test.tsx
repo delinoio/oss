@@ -1156,7 +1156,9 @@ it("marks the transfer-owned fieldsets that carry the blocked disabled attribute
   expect(mapping!.hasAttribute("disabled")).toBe(true);
   expect(input!.querySelector("textarea")!.matches(":disabled")).toBe(true);
   // Inherited disablement leaves no own attribute on the control, which is why the styles anchor on the fieldset.
-  expect(input!.querySelector("textarea")!.hasAttribute("disabled")).toBe(false);
+  expect(input!.querySelector("textarea")!.hasAttribute("disabled")).toBe(
+    false,
+  );
 });
 
 it("styles controls under disabled transfer fieldsets without matching outer-only disablement", () => {
