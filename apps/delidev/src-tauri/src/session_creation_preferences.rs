@@ -5,9 +5,17 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
+
+const DOCUMENT_NAME: &str = "session-creation-preferences.json";
+// Persistent private sidecar; it is never unlinked or replaced because its
+// stable identity owns interprocess exclusion.
+const LEASE_NAME: &str = "session-creation-preferences.lock";
+const LEASE_ATTEMPTS: u32 = 10;
+const LEASE_RETRY_DELAY: Duration = Duration::from_millis(10);
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
@@ -133,7 +141,7 @@ impl State {
 impl Store {
     pub fn new(directory: Option<PathBuf>) -> Self {
         Self {
-            path: directory.map(|p| p.join("session-creation-preferences.json")),
+            path: directory.map(|p| p.join(DOCUMENT_NAME)),
             state: Mutex::new(State {
                 revision: 0,
                 selected: None,
@@ -191,15 +199,7 @@ impl Store {
         pair: Pair,
         expected_revision: u32,
     ) -> Snapshot {
-        let devices = self
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .devices
-            .clone();
-        self.update_with(scope, kind, pair, expected_revision, |path, records| {
-            persist_all(path, records, &devices)
-        })
+        self.update_with(scope, kind, pair, expected_revision, persist_all)
     }
 
     fn update_with(
@@ -208,7 +208,7 @@ impl Store {
         kind: CreationKind,
         pair: Pair,
         expected_revision: u32,
-        write: impl FnOnce(&Path, &[Record]) -> Result<(), Problem>,
+        write: impl FnOnce(&Path, &[Record], &[DeviceRecord]) -> Result<(), Problem>,
     ) -> Snapshot {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.revision != expected_revision
@@ -229,6 +229,9 @@ impl Store {
                 return Err(Problem::InvalidDocument);
             }
             let path = self.path.as_deref().ok_or(Problem::Unavailable)?;
+            // Hold the interprocess lease from reinspection through the
+            // synchronized publication so no other process can interleave.
+            let _lease = Lease::acquire(path)?;
             if inspect(path)? != (state.records.clone(), state.devices.clone()) {
                 return Err(Problem::Changed);
             }
@@ -248,7 +251,7 @@ impl Store {
                     pair,
                 });
             }
-            write(path, &records)?;
+            write(path, &records, &state.devices)?;
             Ok(records)
         })();
         match result {
@@ -317,6 +320,7 @@ impl Store {
                 return Err(Problem::InvalidDocument);
             }
             let path = self.path.as_deref().ok_or(Problem::Unavailable)?;
+            let _lease = Lease::acquire(path)?;
             if inspect(path)? != (state.records.clone(), state.devices.clone()) {
                 return Err(Problem::Changed);
             }
@@ -355,6 +359,121 @@ impl Store {
         state.advance();
         snapshot(&state, state.problem)
     }
+}
+/// Exclusive interprocess lease over the preferences document.
+struct Lease {
+    file: File,
+}
+
+impl Lease {
+    /// Acquires the lease without blocking indefinitely. Contention beyond a
+    /// short bounded retry window, an unsafe sidecar or any lock failure is
+    /// reported as `WriteFailed` so the caller never hangs or overwrites a
+    /// document it could not exclusively inspect.
+    fn acquire(path: &Path) -> Result<Self, Problem> {
+        let directory = path.parent().ok_or(Problem::WriteFailed)?;
+        fs::create_dir_all(directory).map_err(|_| Problem::WriteFailed)?;
+        let lock_path = directory.join(LEASE_NAME);
+        match fs::symlink_metadata(&lock_path) {
+            Ok(metadata) => validate_sidecar(&metadata)?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(Problem::WriteFailed),
+        }
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
+        let file = options.open(&lock_path).map_err(|_| {
+            tracing::warn!(
+                operation = "creation_preferences_lease",
+                code = "lease-open-failed"
+            );
+            Problem::WriteFailed
+        })?;
+        validate_sidecar(&file.metadata().map_err(|_| Problem::WriteFailed)?)?;
+        let mut attempt = 1;
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(fs::TryLockError::WouldBlock) if attempt < LEASE_ATTEMPTS => {
+                    attempt += 1;
+                    std::thread::sleep(LEASE_RETRY_DELAY);
+                }
+                Err(error) => {
+                    let code = match error {
+                        fs::TryLockError::WouldBlock => "lease-busy",
+                        fs::TryLockError::Error(_) => "lease-unavailable",
+                    };
+                    tracing::warn!(operation = "creation_preferences_lease", code);
+                    return Err(Problem::WriteFailed);
+                }
+            }
+        }
+        let lease = Self { file };
+        // The sidecar must still be the locked file; a replaced path would
+        // leave this lease excluding nobody.
+        lease.validate_identity(&lock_path)?;
+        Ok(lease)
+    }
+
+    fn validate_identity(&self, lock_path: &Path) -> Result<(), Problem> {
+        let linked = fs::symlink_metadata(lock_path).map_err(|_| Problem::WriteFailed)?;
+        validate_sidecar(&linked)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let opened = self.file.metadata().map_err(|_| Problem::WriteFailed)?;
+            if linked.dev() != opened.dev() || linked.ino() != opened.ino() {
+                tracing::warn!(
+                    operation = "creation_preferences_lease",
+                    code = "lease-replaced"
+                );
+                return Err(Problem::WriteFailed);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        // Explicit unlock also releases a lease inherited briefly across fork.
+        if self.file.unlock().is_err() {
+            tracing::warn!(
+                operation = "creation_preferences_lease",
+                code = "lease-release-failed"
+            );
+        }
+    }
+}
+
+fn validate_sidecar(metadata: &fs::Metadata) -> Result<(), Problem> {
+    if !metadata.is_file() {
+        return Err(Problem::WriteFailed);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.mode() & 0o077 != 0 || metadata.nlink() != 1 {
+            return Err(Problem::WriteFailed);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(Problem::WriteFailed);
+        }
+    }
+    Ok(())
 }
 fn inspect(path: &Path) -> Result<(Vec<Record>, Vec<DeviceRecord>), Problem> {
     let metadata = match fs::symlink_metadata(path) {
@@ -663,7 +782,7 @@ mod tests {
             CreationKind::Session,
             pair(),
             read.revision,
-            |_, _| Err(Problem::WriteFailed),
+            |_, _, _| Err(Problem::WriteFailed),
         );
         assert_eq!(failed.pair, Some(original.clone()));
         assert_eq!(failed.problem, Some(Problem::WriteFailed));
@@ -674,8 +793,8 @@ mod tests {
             CreationKind::Session,
             next.clone(),
             read.revision,
-            |path, rows| {
-                persist(path, rows)?;
+            |path, rows, devices| {
+                persist_all(path, rows, devices)?;
                 Err(Problem::OutcomeUnknown)
             },
         );
@@ -702,6 +821,248 @@ mod tests {
                 .problem,
             Some(Problem::Capacity)
         );
+    }
+    fn wait_for_marker(path: &Path) {
+        for _ in 0..1000 {
+            if path.exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for {}", path.display());
+    }
+
+    struct FixtureProcess(std::process::Child);
+    impl Drop for FixtureProcess {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    // Run only by the parent fixture below, in a separate OS process with its
+    // own independently opened handles.
+    #[test]
+    fn cooperating_process_child() {
+        let Some(directory) = std::env::var_os("DELIDEV_CREATION_LEASE_FIXTURE_DIR") else {
+            return;
+        };
+        let directory = PathBuf::from(directory);
+        let contender = Store::new(Some(directory.clone()));
+        let stale = Store::new(Some(directory.clone()));
+        let child_scope = Scope {
+            server_id: fs::read_to_string(directory.join("child-server")).unwrap(),
+            device_id: fs::read_to_string(directory.join("child-device")).unwrap(),
+        };
+        let child_pair = pair();
+        let first = contender.read(child_scope.clone(), CreationKind::Session);
+        let original = stale.read(child_scope.clone(), CreationKind::Session);
+        assert_eq!(first.problem, None);
+        assert_eq!(original.problem, None);
+        fs::write(directory.join("child-ready"), b"ready").unwrap();
+        wait_for_marker(&directory.join("attempt-while-locked"));
+        let started = std::time::Instant::now();
+        let refused = contender.update(
+            child_scope.clone(),
+            CreationKind::Session,
+            child_pair.clone(),
+            first.revision,
+        );
+        assert_eq!(refused.problem, Some(Problem::WriteFailed));
+        assert_eq!(refused.pair, None);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        fs::write(directory.join("child-refused"), b"refused").unwrap();
+        wait_for_marker(&directory.join("attempt-after-unlock"));
+        let changed = stale.update(
+            child_scope.clone(),
+            CreationKind::Session,
+            child_pair.clone(),
+            original.revision,
+        );
+        assert_eq!(changed.problem, Some(Problem::Changed));
+        assert_eq!(changed.pair, None);
+        let refreshed = stale.read(child_scope.clone(), CreationKind::Session);
+        assert_eq!(refreshed.problem, None);
+        let saved = stale.update(
+            child_scope,
+            CreationKind::Session,
+            child_pair.clone(),
+            refreshed.revision,
+        );
+        assert_eq!(saved.problem, None);
+        assert_eq!(saved.pair, Some(child_pair));
+    }
+
+    #[test]
+    fn cooperating_processes_keep_distinct_pairs_through_one_lease() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DOCUMENT_NAME);
+        let parent_scope = scope();
+        let child_scope = scope();
+        fs::write(
+            directory.path().join("child-server"),
+            &child_scope.server_id,
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("child-device"),
+            &child_scope.device_id,
+        )
+        .unwrap();
+        let store = Store::new(Some(directory.path().into()));
+        let initial = store.read(parent_scope.clone(), CreationKind::Session);
+        let parent_pair = pair();
+        let mut child = FixtureProcess(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "session_creation_preferences::tests::cooperating_process_child",
+                    "--nocapture",
+                ])
+                .env("DELIDEV_CREATION_LEASE_FIXTURE_DIR", directory.path())
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        wait_for_marker(&directory.path().join("child-ready"));
+        let committed = store.update_with(
+            parent_scope.clone(),
+            CreationKind::Session,
+            parent_pair.clone(),
+            initial.revision,
+            |path, records, devices| {
+                fs::write(directory.path().join("attempt-while-locked"), b"go").unwrap();
+                wait_for_marker(&directory.path().join("child-refused"));
+                // The child could neither inspect nor publish while this
+                // process retained its lease after original inspection.
+                assert!(!path.exists());
+                persist_all(path, records, devices)
+            },
+        );
+        assert_eq!(committed.problem, None);
+        assert_eq!(committed.pair, Some(parent_pair.clone()));
+        assert!(directory.path().join(LEASE_NAME).is_file());
+        fs::write(directory.path().join("attempt-after-unlock"), b"go").unwrap();
+        assert!(child.0.wait().unwrap().success());
+        let restarted = Store::new(Some(directory.path().into()));
+        assert_eq!(
+            restarted.read(parent_scope, CreationKind::Session).pair,
+            Some(parent_pair)
+        );
+        let child_read = restarted.read(child_scope, CreationKind::Session);
+        assert!(child_read.pair.is_some());
+        assert_eq!(inspect(&path).unwrap().0.len(), 2);
+        assert!(directory.path().join(LEASE_NAME).is_file());
+    }
+
+    #[test]
+    fn held_lease_refuses_updates_without_hanging_or_changing_document() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DOCUMENT_NAME);
+        let store = Store::new(Some(directory.path().into()));
+        let selected = scope();
+        let original = pair();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        assert_eq!(
+            store
+                .update(
+                    selected.clone(),
+                    CreationKind::Session,
+                    original.clone(),
+                    read.revision
+                )
+                .problem,
+            None
+        );
+        let before = fs::read(&path).unwrap();
+        let held = Lease::acquire(&path).unwrap();
+        let started = std::time::Instant::now();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        let refused = store.update(
+            selected.clone(),
+            CreationKind::Session,
+            pair(),
+            read.revision,
+        );
+        assert_eq!(refused.problem, Some(Problem::WriteFailed));
+        assert_eq!(refused.pair, Some(original.clone()));
+        let device_scope = selected.clone();
+        let read = store.read_device(device_scope.clone(), CreationKind::Schedule);
+        let refused_device = store.update_device(
+            device_scope,
+            CreationKind::Schedule,
+            uuid::Uuid::now_v7().to_string(),
+            read.revision,
+        );
+        assert_eq!(refused_device.problem, Some(Problem::WriteFailed));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        drop(held);
+        let read = store.read(selected.clone(), CreationKind::Session);
+        assert_eq!(read.problem, None);
+        let next = pair();
+        assert_eq!(
+            store
+                .update(selected, CreationKind::Session, next.clone(), read.revision)
+                .pair,
+            Some(next)
+        );
+        assert!(directory.path().join(LEASE_NAME).is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lease_sidecar_is_private_and_never_followed_through_links() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DOCUMENT_NAME);
+        let store = Store::new(Some(directory.path().into()));
+        let selected = scope();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        assert_eq!(
+            store
+                .update(
+                    selected.clone(),
+                    CreationKind::Session,
+                    pair(),
+                    read.revision
+                )
+                .problem,
+            None
+        );
+        let lock = directory.path().join(LEASE_NAME);
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::remove_file(&lock).unwrap();
+        let foreign = directory.path().join("foreign");
+        fs::write(&foreign, "foreign").unwrap();
+        std::os::unix::fs::symlink(&foreign, &lock).unwrap();
+        let before = fs::read(&path).unwrap();
+        let read = store.read(selected.clone(), CreationKind::Session);
+        let refused = store.update(selected, CreationKind::Session, pair(), read.revision);
+        assert_eq!(refused.problem, Some(Problem::WriteFailed));
+        assert_eq!(fs::read_to_string(&foreign).unwrap(), "foreign");
+        assert!(
+            fs::symlink_metadata(&lock)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn group_readable_lease_sidecar_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DOCUMENT_NAME);
+        let lock = directory.path().join(LEASE_NAME);
+        fs::write(&lock, "").unwrap();
+        fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(Lease::acquire(&path), Err(Problem::WriteFailed)));
     }
     #[cfg(unix)]
     #[test]
