@@ -194,6 +194,34 @@ export enum BudgetEvidence {
   Ready = "ready",
   Blocked = "blocked",
 }
+/**
+ * Classify budget evidence for startup Info hiding. Ready requires a view for
+ * this exact session whose state is a supported non-blocking value and that is
+ * not being reread. THRESHOLD_REACHED always blocks; failed reads stay Failed.
+ */
+export function classifyBudgetEvidence({
+  resourceId,
+  view,
+  failed,
+  fetching,
+}: {
+  resourceId: string;
+  view: SessionBudgetView | undefined;
+  failed: boolean;
+  fetching: boolean;
+}): BudgetEvidence {
+  if (view?.state === BudgetState.THRESHOLD_REACHED)
+    return BudgetEvidence.Blocked;
+  if (failed) return BudgetEvidence.Failed;
+  if (!view) return BudgetEvidence.Pending;
+  const nonBlockingState =
+    view.state === BudgetState.DISABLED ||
+    view.state === BudgetState.ALLOW_INCOMPLETE;
+  if (view.session?.id !== resourceId || !nonBlockingState)
+    return BudgetEvidence.Failed;
+  // A retained successful view is not current proof while a reread is in flight.
+  return fetching ? BudgetEvidence.Pending : BudgetEvidence.Ready;
+}
 export function SessionBudget({
   resource,
   changed,
@@ -217,14 +245,12 @@ export function SessionBudget({
   useEffect(() => {
     blocked(view?.state === BudgetState.THRESHOLD_REACHED);
   }, [view?.state, blocked]);
-  const status =
-    view?.state === BudgetState.THRESHOLD_REACHED
-      ? BudgetEvidence.Blocked
-      : result.error
-        ? BudgetEvidence.Failed
-        : view
-          ? BudgetEvidence.Ready
-          : BudgetEvidence.Pending;
+  const status = classifyBudgetEvidence({
+    resourceId: resource.id,
+    view,
+    failed: Boolean(result.error),
+    fetching: result.isFetching,
+  });
   useEffect(() => {
     evidence?.(resource.id, status);
   }, [resource.id, status, evidence]);

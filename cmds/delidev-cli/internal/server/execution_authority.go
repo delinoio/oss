@@ -154,6 +154,12 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 			// different request receipt. It must not become new quota admission.
 			stored, storedErr := tx.ExecutionGrant(grant.Digest)
 			if storedErr != nil || !sameExecutionGrantOwnership(stored, grant) {
+				// Dispatch requires the live managed Codex capability; a same-instance
+				// Worker reattachment may have withdrawn it since the job was claimed.
+				if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+					a.service.logger.Info("execution_quota_admission_denied", "job_id", grant.JobID, "account_id", input.AccountID, "reason", "managed_codex_capability_missing")
+					return empty, executionDenied()
+				}
 				admission := domain.ClassifyExecutionQuotaAdmission(account, input.Configuration.Harness, tx.ObservationTime())
 				a.service.logger.Info("execution_quota_admission", "job_id", grant.JobID, "account_id", input.AccountID, "classification", admission)
 				if admission == domain.QuotaAdmissionBlocked {
