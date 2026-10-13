@@ -310,11 +310,7 @@ function Shell({
     setSettingsEntry(undefined);
     if (destination !== surface) setProjectCreation(undefined);
   };
-  const openSession = (
-    id: string,
-    originalParent?: string,
-    name?: string,
-  ) => {
+  const openSession = (id: string, originalParent?: string, name?: string) => {
     setSessionNavigationActivation((value) => value + 1);
     const parent = tabs.parent(id) ?? originalParent;
     if (parent) {

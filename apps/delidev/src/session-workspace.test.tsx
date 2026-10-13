@@ -3013,12 +3013,14 @@ it.each([SessionTabKind.Sidechat, SessionTabKind.PendingSidechat] as const)(
     expect(body.hasAttribute("inert")).toBe(false);
     const child = newRequestId();
     act(() =>
-      f.tabs().open(
-        f.session.id,
-        kind === SessionTabKind.Sidechat
-          ? { kind, id: child, name: "Side question" }
-          : { kind, requestId: child, name: "Side question" },
-      ),
+      f
+        .tabs()
+        .open(
+          f.session.id,
+          kind === SessionTabKind.Sidechat
+            ? { kind, id: child, name: "Side question" }
+            : { kind, requestId: child, name: "Side question" },
+        ),
     );
     await waitFor(() => expect(body.hidden).toBe(true));
     // Trigger: the selected pane lives inside the sole region child, never as
@@ -3036,7 +3038,9 @@ it.each([SessionTabKind.Sidechat, SessionTabKind.PendingSidechat] as const)(
     const css = readFileSync("src/session.css", "utf8");
     const rule = (selector: string) =>
       css.match(
-        new RegExp(`(?:^|\n)${selector.replace(/[.\[\]]/g, "\\$&")} \\{([^}]*)\\}`),
+        new RegExp(
+          `(?:^|\n)${selector.replace(/[.\[\]]/g, "\\$&")} \\{([^}]*)\\}`,
+        ),
       )?.[1] ?? "";
     expect(rule(".session-tabbed .session-conversation-region")).toMatch(
       /width:\s*100%/,

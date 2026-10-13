@@ -1,6 +1,4 @@
-import {
-  createQueryOptions,
-} from "@connectrpc/connect-query";
+import { createQueryOptions } from "@connectrpc/connect-query";
 import type { Transport } from "@connectrpc/connect";
 import type { QueryClient } from "@tanstack/react-query";
 import {
@@ -69,7 +67,8 @@ export async function resolveSearchSession(
       retry: false,
       gcTime: 0,
       staleTime: 0,
-      queryFn: (context) => options.queryFn({ ...context, queryKey: options.queryKey }),
+      queryFn: (context) =>
+        options.queryFn({ ...context, queryKey: options.queryKey }),
     });
     const resource = response.resource;
     if (!resource || resource.id !== id || resource.kind !== EntityKind.SESSION)

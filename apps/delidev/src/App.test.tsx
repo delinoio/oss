@@ -4306,7 +4306,8 @@ async function searchRetained(view: ReturnType<typeof fixture>) {
   fireEvent.submit(input.closest("form")!);
   await waitFor(() => expect(view.searches).toHaveBeenCalled());
 }
-const sidechatTabs = () => screen.queryAllByRole("tab", { name: /Side question/ });
+const sidechatTabs = () =>
+  screen.queryAllByRole("tab", { name: /Side question/ });
 
 it("opens a never-visited Sidechat search result under its original parent without duplicates", async () => {
   const value = fixture([], [], [], false, true);
@@ -4325,13 +4326,17 @@ it("opens a never-visited Sidechat search result under its original parent witho
     `session-pane-${value.session.id}`,
   );
   expect(
-    screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected"),
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
   ).toBe("false");
   // Repeating the same result reuses the retained child tab under the parent.
   await searchRetained(value);
   fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
   await waitFor(() =>
-    expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull(),
+    expect(
+      screen.queryByRole("textbox", { name: "Search conversations" }),
+    ).toBeNull(),
   );
   expect(sidechatTabs()).toHaveLength(1);
 });
@@ -4357,7 +4362,9 @@ it("keeps ordinary sessions and independent Forks top-level when opened from sea
   expect(
     await screen.findByRole("heading", { name: "Independent fork" }),
   ).toBeTruthy();
-  expect(screen.queryAllByRole("tab", { name: /Independent fork/ })).toHaveLength(0);
+  expect(
+    screen.queryAllByRole("tab", { name: /Independent fork/ }),
+  ).toHaveLength(0);
 });
 
 it.each([
@@ -4366,7 +4373,10 @@ it.each([
     "malformed parent metadata",
     { source_session_id: "not-a-session", sidechat_parent_snapshot: { x: 1 } },
   ],
-  ["empty parent snapshot", { source_session_id: "", sidechat_parent_snapshot: {} }],
+  [
+    "empty parent snapshot",
+    { source_session_id: "", sidechat_parent_snapshot: {} },
+  ],
 ] as const)(
   "reports an unavailable Sidechat result without selecting a host (%s)",
   async (_name, fork) => {
@@ -4388,8 +4398,12 @@ it.each([
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/could not be opened/);
     expect(sidechatTabs()).toHaveLength(0);
-    expect(screen.queryByRole("heading", { name: "Retained session" })).toBeNull();
-    expect(screen.getByRole("textbox", { name: "Search conversations" })).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Retained session" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
     warn.mockRestore();
   },
 );
