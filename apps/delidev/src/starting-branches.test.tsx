@@ -643,3 +643,17 @@ it("clamps the existing popup at both viewport edges after anchor scrolling", as
   expect(f.discover).toHaveBeenCalledOnce();
   bounds.mockRestore();
 });
+
+it("settles an enclosing page entrance before the fixed popup opens", async () => {
+  const f = fixture();
+  const settled = vi.fn();
+  const host = document.createElement("div");
+  host.setAttribute("data-entrance", "y4");
+  host.addEventListener("delidev-entrance-settle", settled);
+  document.body.append(host);
+  render(f.view(), { container: host.appendChild(document.createElement("div")) });
+  await openFirst();
+  expect(document.querySelector(".starting-branch-popup")).not.toBeNull();
+  expect(settled).toHaveBeenCalled();
+  host.remove();
+});
