@@ -107,10 +107,15 @@ const emptyDefinition = (): Document => ({
   overlap: Overlap.Overlap,
 });
 
+function hasDuplicateIds(rows: readonly { id: string }[]) {
+  return new Set(rows.map((row) => row.id)).size !== rows.length;
+}
+
 function schedulePage(response: ListSchedulesResponse) {
   if (
     response.schedules.length > 50 ||
-    response.schedules.some((row) => !isEntityId(row.id))
+    response.schedules.some((row) => !isEntityId(row.id)) ||
+    hasDuplicateIds(response.schedules)
   )
     throw new ConnectError("Invalid schedule page", Code.DataLoss);
   return {
@@ -125,7 +130,8 @@ function schedulePage(response: ListSchedulesResponse) {
 function occurrencePage(response: ListScheduleOccurrencesResponse) {
   if (
     response.occurrences.length > 50 ||
-    response.occurrences.some((row) => !isEntityId(row.id))
+    response.occurrences.some((row) => !isEntityId(row.id)) ||
+    hasDuplicateIds(response.occurrences)
   )
     throw new ConnectError("Invalid schedule occurrence page", Code.DataLoss);
   return {
