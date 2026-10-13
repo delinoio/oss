@@ -351,7 +351,18 @@ with no Provider UUID. Missing, foreign and mixed identities reject atomically
 with the source observation. The immutable model key must match that source.
 Session/account and model groups expose the same service identity, and service
 filters read it from the retained unit body without a migration or synthetic
-Provider. Historical price selection and validation compare the complete
+Provider. A service filter is applied in the native accounting query before the
+25,000-unit read bound and the 500-price bound, so valid excluded units and
+historical prices of other sources never consume limits meant for the selected
+inventory; an excluded-only history gives the normal empty selected summary.
+Only provably valid excluded units are filtered: an API unit with a Provider
+and no service, or a Go unit with the Go service and no Provider. A row whose
+JSON service or source discriminator is missing, empty, foreign or malformed
+stays in the validation path and fails closed with `recovery_required` instead
+of being dropped. Selected units are still fully validated (source, relational columns and
+historical estimate) and fail closed, an oversized or unfiltered selection still
+returns `RESOURCE_EXHAUSTED` with no partial aggregate, and the combined
+native-family limits remain enforced. Historical price selection and validation compare the complete
 model/Provider/service identity. Exact source receipts, conflicting-unit
 rejection, category counts and original account/connection ownership remain
 unchanged; current configuration or price edits cannot reattribute retained units.
