@@ -1820,6 +1820,11 @@ impl BrowserHost {
         {
             view.closing = true;
             if view.creation_pending {
+                // The creation callback closes the child later, and the
+                // closing view is excluded from reconciliation, so attribute
+                // its exact generation to the in-flight operation before
+                // reporting Busy.
+                state.track_view_outstanding(window);
                 return Err(NativeFailure::Busy);
             }
             // CloseBrowser is asynchronous. Keep ownership on unmap failure;
@@ -6304,6 +6309,31 @@ esac
                 .awaiting_close
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn hide_racing_a_creating_child_awaits_it_before_returning_busy() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        assert_eq!(
+            host.hide_with("fixture", &record.id, &view_id, unmap_view)
+                .err(),
+            Some(NativeFailure::Busy)
+        );
+        assert_eq!(
+            host.state.lock().unwrap().page_operations[&key].awaiting_close,
+            BTreeSet::from([("fixture".to_string(), original.generation)])
+        );
+        // The closing view is excluded from reconciliation, yet the receipt
+        // must wait for the creating child's close callback.
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
     }
 
     #[test]
