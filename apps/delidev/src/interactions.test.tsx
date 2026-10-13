@@ -10,9 +10,15 @@ import {
   ResourceSchema,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { Interaction, advancesInteraction } from "./interactions";
 import {
+  Interaction,
+  PendingInteractionReceipt,
+  advancesInteraction,
+} from "./interactions";
+import {
+  InteractionClosure,
   InteractionPresentationStore,
+  QuestionResponseState,
   interactionProjection,
   type InteractionProjection,
 } from "./interaction-presentation";
@@ -516,4 +522,52 @@ it("keeps the Native approval heading for genuine approvals", () => {
   render(value.view());
   expect(screen.getByRole("heading", { name: "Native approval" })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Agent question" })).toBeNull();
+});
+
+it("renders bounded closure and response state values in compact receipts", async () => {
+  const value = fixture(question, true);
+  const base = interactionProjection(value.resource);
+  const receipt = (patch: Partial<InteractionProjection>) => (
+    <TransportProvider transport={createRouterTransport(() => {})}>
+      <QueryClientProvider client={new QueryClient()}>
+        <MutationIntents>
+          <PendingInteractionReceipt
+            projection={{ ...base, ...patch }}
+            accepted={() => {}}
+          />
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const recognized = render(
+    receipt({
+      closure: InteractionClosure.TurnEnded,
+      responseState: QuestionResponseState.Queued,
+    }),
+  );
+  expect(screen.getByText("turn-ended")).toBeTruthy();
+  expect(screen.getByText("Response: queued")).toBeTruthy();
+  recognized.unmount();
+  const empty = render(
+    receipt({
+      closure: InteractionClosure.Open,
+      responseState: QuestionResponseState.None,
+    }),
+  );
+  expect(screen.getByText("open")).toBeTruthy();
+  expect(screen.queryByText("Response: none")).toBeNull();
+  empty.unmount();
+  await i18n.changeLanguage("ko");
+  try {
+    render(
+      receipt({
+        closure: InteractionClosure.Unknown,
+        responseState: QuestionResponseState.Unknown,
+      }),
+    );
+    expect(screen.getByText("응답: 알 수 없음")).toBeTruthy();
+    expect(screen.getAllByText("알 수 없음").length).toBeGreaterThan(0);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

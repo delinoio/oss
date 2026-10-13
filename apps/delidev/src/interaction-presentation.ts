@@ -12,12 +12,64 @@ export enum InteractionPresentation {
   Pending = "pending",
   Retired = "retired",
 }
+/**
+ * Bounded closure values retained by a projection. Any unrecognized original
+ * string collapses to `Unknown` so no untrusted text outlives its payload page.
+ */
+export enum InteractionClosure {
+  Open = "open",
+  NativeClosed = "native-closed",
+  TurnEnded = "turn-ended",
+  Unknown = "unknown",
+}
+/**
+ * Bounded question response states retained by a projection. `None` marks an
+ * absent (or empty) response; unrecognized strings collapse to `Unknown`.
+ */
+export enum QuestionResponseState {
+  Queued = "queued",
+  Claimed = "claimed",
+  Transmitted = "transmitted",
+  Uncertain = "uncertain",
+  Canceled = "canceled",
+  Accepted = "accepted",
+  None = "none",
+  Unknown = "unknown",
+}
+const closureValues: ReadonlySet<string> = new Set([
+  InteractionClosure.Open,
+  InteractionClosure.NativeClosed,
+  InteractionClosure.TurnEnded,
+]);
+const responseStateValues: ReadonlySet<string> = new Set([
+  QuestionResponseState.Queued,
+  QuestionResponseState.Claimed,
+  QuestionResponseState.Transmitted,
+  QuestionResponseState.Uncertain,
+  QuestionResponseState.Canceled,
+  QuestionResponseState.Accepted,
+]);
+export function normalizeClosure(value: string): InteractionClosure {
+  return closureValues.has(value)
+    ? (value as InteractionClosure)
+    : InteractionClosure.Unknown;
+}
+export function normalizeResponseState(value: string): QuestionResponseState {
+  if (value === "") return QuestionResponseState.None;
+  return responseStateValues.has(value)
+    ? (value as QuestionResponseState)
+    : QuestionResponseState.Unknown;
+}
+/** Display text for a retained response state; an absent response is empty. */
+export function responseStateText(state: QuestionResponseState): string {
+  return state === QuestionResponseState.None ? "" : state;
+}
 export interface InteractionProjection {
   revision: bigint;
   presentation: InteractionPresentation;
   question: boolean;
-  responseState: string;
-  closure: string;
+  responseState: QuestionResponseState;
+  closure: InteractionClosure;
   mutationKey: string;
   unavailable: boolean;
 }
@@ -155,8 +207,10 @@ export function interactionProjection(row: Resource): InteractionProjection {
     revision: row.revision,
     question,
     presentation,
-    responseState,
-    closure,
+    // Validity and presentation above use the raw values; only bounded enum
+    // values are retained for the session lifetime.
+    responseState: normalizeResponseState(responseState),
+    closure: normalizeClosure(closure),
     mutationKey: questionMutationKey(row.id, data),
     unavailable,
   };
