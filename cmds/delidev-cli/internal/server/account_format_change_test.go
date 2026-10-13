@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -358,4 +359,150 @@ func TestAccountApiFormatChangePreservesSessionContinuation(t *testing.T) {
 		t.Fatal("continuation switched generation or configuration")
 	}
 	f.complete(t, domain.ExecutionSucceeded)
+}
+
+// legacyChangeAccountFormatInput mirrors the receipt input used before format
+// receipts were bound to the authenticated actor.
+type legacyChangeAccountFormatInput struct {
+	ID                                               domain.ID
+	Revision                                         uint64
+	Protocol                                         domain.APIProtocol
+	Alias                                            string
+	Enabled, ExcludeAutomatic, RecoveryNotifications bool
+}
+
+func formatTestClient(t *testing.T, f *oauthFixture) (context.Context, domain.ID) {
+	t.Helper()
+	device := domain.NewID()
+	_, err := f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture.format.client", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "Format client", Type: domain.ClientDevice, PairedAt: time.Now().UTC()})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: device}), device
+}
+
+func TestAccountApiFormatChangeReceiptIsBoundToActor(t *testing.T) {
+	f := newOAuthFixture(t)
+	account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{Alias: "Original", Type: domain.APIAccount, ProviderID: domain.ID(f.provider.Id), APIProtocol: domain.OpenAIChat, Enabled: true, Health: domain.AccountDisconnected}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connected, err := f.s.ConnectAccount(f.ctx, connect.NewRequest(&pb.ConnectAccountRequest{Mutation: acctMutation(account, domain.NewID()), ApiKey: []byte("fixture-actor-key")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	account = connected.Msg.Account
+	actorA, deviceA := formatTestClient(t, f)
+	actorB, _ := formatTestClient(t, f)
+
+	request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+	first, err := f.s.ChangeAccountApiFormat(actorA, connect.NewRequest(request))
+	if err != nil || first.Msg.Replayed {
+		t.Fatal("actor A fresh change failed", err)
+	}
+	puts, deletes, stored := f.vault.counts()
+	sameActor, err := f.s.ChangeAccountApiFormat(actorA, connect.NewRequest(proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)))
+	if err != nil || !sameActor.Msg.Replayed || sameActor.Msg.Account.Revision != first.Msg.Account.Revision {
+		t.Fatal("same actor exact replay was not accepted", err)
+	}
+	// A different actor, including the owner, cannot replay the receipt.
+	for name, ctx := range map[string]context.Context{"other client": actorB, "owner": f.ctx} {
+		_, err = f.s.ChangeAccountApiFormat(ctx, connect.NewRequest(proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)))
+		if rpc.ClientError(err).Code != domain.Conflict {
+			t.Fatalf("%s replayed another actor's receipt: %v", name, err)
+		}
+	}
+	// Same actor, changed input under the same request ID conflicts.
+	changedInput := proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)
+	changedInput.Alias = "Different retry"
+	if _, err = f.s.ChangeAccountApiFormat(actorA, connect.NewRequest(changedInput)); rpc.ClientError(err).Code != domain.Conflict {
+		t.Fatal("changed input replayed the receipt", err)
+	}
+	if p, d, s := f.vault.counts(); p != puts || d != deletes || s != stored {
+		t.Fatal("conflicting retries accessed protected storage")
+	}
+	current, err := f.s.accountRecord(f.ctx, domain.ID(account.Id))
+	if err != nil || current.Revision != first.Msg.Account.Revision {
+		t.Fatal("conflicting retries mutated the account", err)
+	}
+	// Missing or non-owner/client principals are rejected before receipt access.
+	for name, ctx := range map[string]context.Context{
+		"anonymous": context.Background(),
+		"worker":    domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice}),
+	} {
+		if _, err = f.s.ChangeAccountApiFormat(ctx, connect.NewRequest(proto.Clone(request).(*pb.ChangeAccountApiFormatRequest))); rpc.ClientError(err).Code != domain.PermissionDenied {
+			t.Fatalf("%s reached receipt lookup: %v", name, err)
+		}
+	}
+	// A revoked actor cannot replay its own receipt.
+	_, err = f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture.format.revoke", nil, func(tx *store.Tx) (any, error) {
+		r, err := tx.Get(domain.DeviceKind, deviceA)
+		if err != nil {
+			return nil, err
+		}
+		d, err := store.Decode[domain.Device](r)
+		if err != nil {
+			return nil, err
+		}
+		d.Revoked = true
+		return tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.s.ChangeAccountApiFormat(actorA, connect.NewRequest(proto.Clone(request).(*pb.ChangeAccountApiFormatRequest))); rpc.ClientError(err).Code != domain.Unauthenticated {
+		t.Fatal("revoked actor replayed its receipt", err)
+	}
+}
+
+func TestAccountApiFormatChangeLegacyActorlessReceiptFailsClosed(t *testing.T) {
+	f := newOAuthFixture(t)
+	account, err := saveAPIFormatConfiguration(f, domain.AccountKind, domain.Account{Alias: "Original", Type: domain.APIAccount, ProviderID: domain.ID(f.provider.Id), APIProtocol: domain.OpenAIChat, Enabled: true, Health: domain.AccountDisconnected}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connected, err := f.s.ConnectAccount(f.ctx, connect.NewRequest(&pb.ConnectAccountRequest{Mutation: acctMutation(account, domain.NewID()), ApiKey: []byte("fixture-legacy-key")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	account = connected.Msg.Account
+	actor, _ := formatTestClient(t, f)
+	request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+	legacy := legacyChangeAccountFormatInput{domain.ID(account.Id), account.Revision, domain.OpenAIResponses, request.Alias, request.Enabled, request.ExcludeAutomatic, request.RecoveryNotifications}
+	requestID := domain.ID(request.Mutation.RequestId)
+	saved, err := f.s.Store.Mutate(f.ctx, requestID, "account.change-format", legacy, func(*store.Tx) (any, error) {
+		return accountReceipt{ID: domain.ID(account.Id)}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	puts, deletes, stored := f.vault.counts()
+	for name, ctx := range map[string]context.Context{"owner": f.ctx, "client": actor} {
+		_, err = f.s.ChangeAccountApiFormat(ctx, connect.NewRequest(proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)))
+		got := rpc.ClientError(err)
+		if got.Code != domain.Conflict || !strings.Contains(got.Guidance, "new request ID") {
+			t.Fatalf("%s adopted a legacy actorless receipt: %v", name, err)
+		}
+	}
+	current, err := f.s.accountRecord(f.ctx, domain.ID(account.Id))
+	if err != nil || current.Revision != account.Revision || !bytes.Equal(current.Data, account.DocumentJson) {
+		t.Fatal("legacy receipt reuse mutated the account", err)
+	}
+	if p, d, s := f.vault.counts(); p != puts || d != deletes || s != stored {
+		t.Fatal("legacy receipt reuse accessed protected storage")
+	}
+	// The legacy receipt and its digest are preserved byte-for-byte.
+	again, found, err := f.s.Store.Replay(f.ctx, requestID, "account.change-format", legacy)
+	if err != nil || !found || !bytes.Equal(again.Data, saved.Data) {
+		t.Fatal("legacy receipt changed", err)
+	}
+	// An explicit fresh request ID is admitted and does not reuse the old ID.
+	fresh := proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)
+	fresh.Mutation.RequestId = string(domain.NewID())
+	result, err := f.s.ChangeAccountApiFormat(actor, connect.NewRequest(fresh))
+	if err != nil || result.Msg.Replayed || accountBody(t, result.Msg.Account).APIProtocol != domain.OpenAIResponses {
+		t.Fatal("explicit new request ID was not admitted", err)
+	}
 }

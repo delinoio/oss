@@ -265,6 +265,9 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 		seenParts := map[string]bool{}
 		userID := ""
 		completed := false
+		// Closure accumulates across every owned assistant record. A later
+		// assistant cannot overwrite an earlier unsettled predecessor.
+		unsettledPredecessor := false
 		var observedModel string
 		for _, row := range rows {
 			f, err := shape(row, []string{"info", "parts"}, nil)
@@ -310,6 +313,15 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 					phase = "child-message-agent"
 					return nil, observerProblem()
 				}
+				if unsettledPredecessor {
+					// A successor after an unclosed predecessor is contradictory inventory;
+					// missing or idle child status supplies no settlement.
+					phase = "child-unsettled-predecessor"
+					if s.logger != nil {
+						s.logger.WarnContext(ctx, "opencode_child_history_rejected", "owner_id", s.owner, "phase", phase, "code", domain.Unsupported)
+					}
+					return nil, observerProblem()
+				}
 				observedModel = a.Model
 				value.Status = domain.SubagentRunning
 				var decodedParts []NativePart
@@ -339,6 +351,7 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 					}
 				}
 				settled := childMessageSettled(a, decodedParts)
+				unsettledPredecessor = !settled
 				completed = settled && a.Finish != nil && (*a.Finish == FinishStop || *a.Finish == FinishLength)
 				if settled && a.Error != nil {
 					value.Status = domain.SubagentFailed

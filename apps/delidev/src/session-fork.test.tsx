@@ -35,10 +35,12 @@ import {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 async function openCodePreflightFixture(duplicateNames = false) {
@@ -289,6 +291,260 @@ it("submits once and retains the original Fork when hidden during profile valida
     ),
   ).not.toBeNull();
   expect(fixture.fork).toHaveBeenCalledTimes(1);
+});
+
+it("locks the draft controls while the OpenCode profile refresh is pending and submits the frozen name once", async () => {
+  const fixture = await openCodePreflightFixture();
+  const name = screen.getByRole("textbox", {
+    name: "Fork name",
+  }) as HTMLInputElement;
+  const workspace = screen.getByRole("combobox") as HTMLSelectElement;
+  expect(name.disabled).toBe(true);
+  expect(workspace.disabled).toBe(true);
+  await act(async () => {
+    fixture.gate.resolve();
+  });
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[0]!.id, expectedRevision: 8n },
+    name: "Source A fork",
+  });
+});
+
+async function localProofFixture(options: { sidechat?: boolean } = {}) {
+  const machineId = newRequestId();
+  const machine = create(ResourceSchema, {
+    kind: EntityKind.MACHINE,
+    id: machineId,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      worker_capabilities: ["codex-read-only-sidechat-v1"],
+    }),
+  });
+  const sources = ["Local A", "Local B"].map((name) =>
+    create(ResourceSchema, {
+      kind: EntityKind.SESSION,
+      id: newRequestId(),
+      revision: 8n,
+      schemaVersion: 1,
+      documentJson: encode({
+        name,
+        machine_id: machineId,
+        workspace: "local",
+        archive: "active",
+        recovery: "none",
+        outcome: "succeeded",
+        initial_execution: { configuration: { harness: "codex" } },
+        execution: {
+          native_turn_id: newRequestId(),
+          cleanup_verified: true,
+        },
+      }),
+    }),
+  );
+  const gate = deferred<{ machineId: string; token: string }>();
+  const read = vi.fn(() => gate.promise);
+  const proof = { machineId, token: `${"A".repeat(42)}A` };
+  const fork = vi.fn(async (request) => ({
+    job: create(ResourceSchema, {
+      kind: EntityKind.JOB,
+      id: newRequestId(),
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode({
+        state: "claimed",
+        input: { source_session_id: request.mutation?.id },
+      }),
+    }),
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [
+          SystemCapability.CODEX_SESSION_FORK_V1,
+          SystemCapability.NATIVE_SIDECHAT_V1,
+        ],
+      }),
+    });
+    router.service(ResourceService, {
+      getResource: (request) => ({
+        resource:
+          request.kind === EntityKind.MACHINE
+            ? machine
+            : sources.find((source) => source.id === request.id),
+      }),
+    });
+    router.service(SessionService, {
+      forkSession: fork,
+      getSessionFork: () => ({}),
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const view = (source = sources[0]!) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <MutationIntents>
+          <SessionForkProvider openSession={vi.fn()} readLocalWorker={read}>
+            <SessionForkAction source={source} />
+            {options.sidechat ? (
+              <SessionForkAction
+                source={source}
+                action={SessionCreationAction.Sidechat}
+              />
+            ) : null}
+          </SessionForkProvider>
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const rendered = render(view());
+  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+  fireEvent.change(screen.getByRole("combobox"), {
+    target: { value: String(ForkWorkspace.LOCAL) },
+  });
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  return { sources, gate, read, proof, fork, view, rendered, client };
+}
+
+it("locks the draft controls while the Local proof read is pending and submits the frozen request once", async () => {
+  const fixture = await localProofFixture();
+  const name = screen.getByRole("textbox", {
+    name: "Fork name",
+  }) as HTMLInputElement;
+  expect(name.disabled).toBe(true);
+  expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(
+    true,
+  );
+  expect(
+    (screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[0]!.id },
+    name: "Local A fork",
+    workspace: ForkWorkspace.LOCAL,
+  });
+});
+
+it("keeps Discard available during a pending Local proof read and drops the late proof", async () => {
+  const fixture = await localProofFixture();
+  fireEvent.click(screen.getByRole("button", { name: "Discard fork draft" }));
+  expect(screen.queryByRole("dialog", { name: "Fork session" })).toBeNull();
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
+  expect(fixture.fork).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole("button", { name: "Return to retained fork operation" }),
+  ).toBeNull();
+});
+
+it("allows source replacement during a pending Local proof read without submitting or populating from the late proof", async () => {
+  const fixture = await localProofFixture();
+  fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+  const name = screen.getByRole("textbox", {
+    name: "Fork name",
+  }) as HTMLInputElement;
+  expect(name.value).toBe("Local B fork");
+  // The stale read still owns the Local proof slot, so the draft stays locked.
+  expect(name.disabled).toBe(true);
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(name.disabled).toBe(false));
+  expect(fixture.fork).not.toHaveBeenCalled();
+  expect(name.value).toBe("Local B fork");
+  expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(
+    String(ForkWorkspace.UNSPECIFIED),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[1]!.id },
+    name: "Local B fork",
+    workspace: ForkWorkspace.UNSPECIFIED,
+  });
+});
+
+it("retains the original operation when hidden during a pending Local proof read", async () => {
+  const fixture = await localProofFixture();
+  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[0]!.id },
+    name: "Local A fork",
+    workspace: ForkWorkspace.LOCAL,
+  });
+});
+
+it.each(["rejected", "changed-machine"])(
+  "keeps a replacement draft free of the failure from its stale Local proof (%s)",
+  async (failure) => {
+    const fixture = await localProofFixture();
+    fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+    fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Fork session" }),
+    );
+    const name = screen.getByRole("textbox", {
+      name: "Fork name",
+    }) as HTMLInputElement;
+    expect(name.value).toBe("Local B fork");
+    expect(name.disabled).toBe(true);
+    await act(async () => {
+      if (failure === "rejected") fixture.gate.reject(new Error("offline"));
+      else
+        fixture.gate.resolve({ ...fixture.proof, machineId: newRequestId() });
+    });
+    await waitFor(() => expect(name.disabled).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fixture.fork).not.toHaveBeenCalled();
+  },
+);
+
+it("focuses the replacement fork name once the stale Local proof unlocks it", async () => {
+  const fixture = await localProofFixture();
+  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+  fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+  const name = screen.getByRole("textbox", {
+    name: "Fork name",
+  }) as HTMLInputElement;
+  expect(name.disabled).toBe(true);
+  expect(globalThis.document.activeElement).not.toBe(name);
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(name.disabled).toBe(false));
+  expect(globalThis.document.activeElement).toBe(name);
+});
+
+it("sends a replacement Sidechat once the hidden stale Local proof settles", async () => {
+  const fixture = await localProofFixture({ sidechat: true });
+  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Open Sidechat" }),
+  );
+  // The stale proof still owns the Local proof slot, so nothing is sent yet.
+  await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
+  expect(fixture.fork).not.toHaveBeenCalled();
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[0]!.id },
+    purpose: ForkPurpose.SIDECHAT,
+    workspace: ForkWorkspace.UNSPECIFIED,
+  });
+  expect(fixture.fork.mock.calls[0]?.[0].localWorkerToken).toBeFalsy();
 });
 
 it("retains exact fork retry and accepted job while navigation changes, publishing only the verified child", async () => {

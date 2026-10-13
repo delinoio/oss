@@ -23,6 +23,9 @@ type FrozenObservation struct {
 	always          []string
 	bytes           int
 	snapshot        bool
+	// delta is the already guarded text a live delta may publish. The original
+	// event bytes are never decoded again for publication.
+	delta *NativeTextDelta
 }
 
 // PublicationKey is private deduplication metadata. A reconciled read has no
@@ -47,6 +50,11 @@ func freezeObservation(event NativeEvent, value inputObservation) *FrozenObserva
 		for _, id := range group {
 			result.bytes += len(id) + 16
 		}
+	}
+	if value.Delta != nil {
+		delta := *value.Delta
+		result.delta = &delta
+		result.bytes += len(delta.Text)
 	}
 	if raw, err := json.Marshal(result.children); err == nil {
 		result.bytes += len(raw)
@@ -96,13 +104,12 @@ func (f *FrozenObservation) Thaw() (inputObservation, error) {
 		value, decodeErr := decodeNativeInteractionReply(event.Kind, event.Properties)
 		result.InteractionReply, err = &value, decodeErr
 	case MessagePartDeltaEvent:
-		message, _ := boundedString(fields["messageID"], 30, true)
-		part, _ := boundedString(fields["partID"], 30, true)
-		text, valid := boundedString(fields["delta"], maxHTTPBody, false)
-		if !valid || !nativeID(message, "msg") || !nativeID(part, "prt") {
+		// A live delta carries only its guarded release; a snapshot has none.
+		if f.delta == nil {
 			err = observerProblem()
 		} else {
-			result.Delta = &NativeTextDelta{MessageID: message, PartID: part, Text: text}
+			delta := *f.delta
+			result.Delta = &delta
 		}
 	case SessionErrorEvent:
 		result.Error, err = decodeNativeError(fields["error"])
