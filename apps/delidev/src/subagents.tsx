@@ -465,6 +465,7 @@ export function Subagents({
     50,
     validate,
     undefined,
+    undefined,
     safeRow,
   );
   // Native events invalidate only this read. No observation can issue a child

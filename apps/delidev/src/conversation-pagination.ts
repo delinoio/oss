@@ -2,7 +2,7 @@ import type { SubagentHarness } from "./subagent-record";
 import { useSessionActive } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
 import { conversationProjection } from "./tool-turn-projection";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { ConnectError, Code } from "@connectrpc/connect";
 import {
   EntityKind,
@@ -39,6 +39,7 @@ export function validateConversationPage(
 }
 
 /** Pagination retains identities/revisions and bounded tool owner/display projections outside its three payload pages.
+ * `accepted` receives every accepted read's rows, including pages whose payload is evicted, so callers can keep compact metadata projections current.
  * Generated query caches are request-local and never retain evicted documents. */
 export function useConversationPages(
   kind: EntityKind,
@@ -47,8 +48,13 @@ export function useConversationPages(
   pageSize = 50,
   validate?: (rows: Resource[]) => void,
   interval?: number,
+  accepted?: (rows: readonly Resource[]) => void,
   safeRow?: (row: Resource) => { harness?: SubagentHarness },
 ) {
+  // The callback is read through a ref so a changing closure never replaces
+  // the reader, which would suspend and restart the chain.
+  const acceptedRef = useRef(accepted);
+  acceptedRef.current = accepted;
   const surfaceActive = useSessionActive();
   active = active && surfaceActive;
   const request = useCallback(
@@ -78,6 +84,8 @@ export function useConversationPages(
         ),
         payload: rows,
         nextPageToken,
+        // Accepted reads reach domain projections before payload eviction.
+        accepted: () => acceptedRef.current?.(rows),
       };
     },
     [kind, sessionId, pageSize, validate, safeRow],
