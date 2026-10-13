@@ -94,6 +94,19 @@ pub struct Policy {
     blocked_runtime_port: Option<u16>,
 }
 impl Policy {
+    /// Restore a profile without granting an address or creating a page.
+    pub fn empty(endpoint: &str) -> Result<Self> {
+        Ok(Self {
+            product_origin: connection_origin(endpoint)?,
+            loopback_origins: vec![],
+            protected_product_port: url::Url::parse(endpoint)
+                .ok()
+                .filter(loopback)
+                .and_then(|u| u.port_or_known_default()),
+            blocked_runtime_port: None,
+        })
+    }
+
     pub fn new(endpoint: &str, url: &str) -> Result<Self> {
         let product_origin = connection_origin(endpoint)?;
         let parsed = url::Url::parse(url).map_err(|_| NativeFailure::InvalidInput)?;
@@ -384,6 +397,28 @@ pub fn profile_path(root: &Path, p: &ProfileRecord) -> Result<PathBuf> {
     }
     Ok(path)
 }
+/// Read-only inventory validates the ancestors that already exist without
+/// initializing a profile directory.
+pub fn inspect_profile_path(root: &Path, record: &ProfileRecord) -> Result<PathBuf> {
+    record.validate()?;
+    let mut path = root.to_path_buf();
+    for component in [
+        None,
+        Some(&record.data.server_id),
+        Some(&record.data.device_id),
+        Some(&record.data.account_id),
+    ] {
+        if let Some(component) = component {
+            path.push(component);
+        }
+        match fs::symlink_metadata(&path) {
+            Ok(_) => private_dir(&path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(NativeFailure::StorageUnavailable),
+        }
+    }
+    Ok(path)
+}
 pub fn write_private(path: &Path, value: &impl Serialize) -> Result<()> {
     stage_private(path, value)?.publish()
 }
@@ -396,13 +431,37 @@ pub struct PrivateWrite {
 }
 impl PrivateWrite {
     pub fn publish(self) -> Result<()> {
+        self.publish_with_commit(&mut false)
+    }
+
+    /// A directory fsync error can follow a successful replacement. Report the
+    /// replacement so observation never admits a duplicate mutation.
+    pub fn publish_with_commit(self, committed: &mut bool) -> Result<()> {
+        let target = self.path.clone();
+        self.replace_with_commit(committed)?;
+        sync_private_parent(&target)
+    }
+
+    pub fn target(&self) -> &Path {
+        &self.path
+    }
+
+    /// The caller's native admission fence covers replacement only, never
+    /// serialization, staging writes, directory reads or fsync.
+    pub fn replace_with_commit(self, committed: &mut bool) -> Result<()> {
         replace_file(&self.pending, &self.path).map_err(|_| NativeFailure::StorageUnavailable)?;
-        #[cfg(unix)]
-        File::open(self.path.parent().unwrap())
-            .and_then(|parent| parent.sync_all())
-            .map_err(|_| NativeFailure::StorageUnavailable)?;
+        *committed = true;
         Ok(())
     }
+}
+pub fn sync_private_parent(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    File::open(path.parent().ok_or(NativeFailure::InvalidEvidence)?)
+        .and_then(|parent| parent.sync_all())
+        .map_err(|_| NativeFailure::StorageUnavailable)?;
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 impl Drop for PrivateWrite {
     fn drop(&mut self) {
@@ -598,5 +657,62 @@ mod tests {
         assert_eq!(fs::read_dir(root).unwrap().count(), 1);
         assert!(!policy.resource("wss://product.test/socket"));
         assert!(Policy::new("https://remote-product.test", "http://127.0.0.1:46310/").is_err());
+    }
+
+    #[test]
+    fn read_only_profile_inspection_never_initializes_storage() {
+        let temp = tempfile::tempdir().unwrap();
+        let record = ProfileRecord {
+            id: uuid::Uuid::now_v7().to_string(),
+            revision: 1,
+            data: Profile {
+                server_id: uuid::Uuid::now_v7().to_string(),
+                device_id: uuid::Uuid::now_v7().to_string(),
+                account_id: uuid::Uuid::now_v7().to_string(),
+                state: ProfileState::Active,
+                deletion_request_id: String::new(),
+            },
+        };
+        let root = temp.path().join("profiles");
+        let path = inspect_profile_path(&root, &record).unwrap();
+        assert!(!root.exists());
+        assert!(!path.exists());
+        assert_eq!(profile_path(&root, &record).unwrap(), path);
+        assert_eq!(inspect_profile_path(&root, &record).unwrap(), path);
+        #[cfg(unix)]
+        {
+            fs::remove_dir(&path).unwrap();
+            std::os::unix::fs::symlink(temp.path(), &path).unwrap();
+            assert!(inspect_profile_path(&root, &record).is_err());
+        }
+    }
+
+    #[test]
+    fn restored_policy_grants_no_address_until_pages_are_listed() {
+        let policy = Policy::empty("https://product.test").unwrap();
+        assert!(policy.navigation("https://example.test/"));
+        assert!(!policy.navigation("http://127.0.0.1:40222/"));
+        assert!(
+            policy
+                .with_explicit("http://127.0.0.1:40222/")
+                .unwrap()
+                .navigation("http://127.0.0.1:40222/")
+        );
+    }
+
+    #[test]
+    fn atomic_publication_reports_replacement_before_directory_sync() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tabs.json");
+        let staged = stage_private(&path, &Tabs::default()).unwrap();
+        assert!(!path.exists());
+        assert_eq!(staged.target(), path);
+        let mut committed = false;
+        staged.publish_with_commit(&mut committed).unwrap();
+        assert!(committed);
+        let tabs: Tabs = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(tabs.tabs.is_empty());
+        assert!(tabs.selected.is_empty());
+        sync_private_parent(&path).unwrap();
     }
 }

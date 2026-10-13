@@ -732,7 +732,7 @@ it("keeps Info independent of all tabs with one active content region and retain
   const info = screen.getByRole("complementary", {
     name: "Session information",
   });
-  for (const name of ["Files", "Diff", "Browser", "Diagnostics"]) {
+  for (const name of ["Files", "Diff", "Diagnostics"]) {
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name }));
     expect(
@@ -764,20 +764,57 @@ it("keeps Info independent of all tabs with one active content region and retain
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.rename).not.toHaveBeenCalled();
 });
+it("opens the New browser page dialog from Open tool without creating a Browser tab", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const tabsBefore = screen.getAllByRole("tab").length;
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+  // The same dialog as the workspace + button; opening it selects no tab.
+  const dialog = await screen.findByRole("dialog", {
+    name: "New browser page",
+  });
+  expect(within(dialog).getByRole("textbox", { name: "Address" })).toBe(
+    document.activeElement,
+  );
+  expect(screen.queryByRole("tab", { name: "Browser" })).toBeNull();
+  expect(screen.getAllByRole("tab")).toHaveLength(tabsBefore);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "New browser page" }),
+    ).toBeNull(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "New browser page" }));
+  expect(
+    await screen.findByRole("dialog", { name: "New browser page" }),
+  ).toBeTruthy();
+  expect(screen.getAllByRole("tab")).toHaveLength(tabsBefore);
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+});
 it("replaces dock/split coexistence with exact selection and presentation-only close", async () => {
   const f = fixture();
   render(f.view());
   await screen.findByRole("heading", { name: "Original session" });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Diagnostics" }));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-  // The unsupported Terminals gesture creates no tab and keeps Browser selected.
+  // The unsupported Terminals gesture creates no tab and keeps Diagnostics selected.
   expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
   expect(
-    screen.getByRole("tab", { name: "Browser" }).getAttribute("aria-selected"),
+    screen
+      .getByRole("tab", { name: "Diagnostics" })
+      .getAttribute("aria-selected"),
   ).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close Diagnostics tab" }),
+  );
   expect(
     screen
       .getByRole("tab", { name: "Conversation" })

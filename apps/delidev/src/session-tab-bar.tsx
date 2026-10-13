@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useLayoutEffect, useRef } from "react";
-import { copy } from "./localization";
+import { copy, useLocale } from "./localization";
 import { Comparison } from "./session-diff-model";
 import {
   SessionTabKind,
@@ -30,8 +30,6 @@ export function tabName(tab: SessionTab): string {
       return copy("session.files_abc7e9");
     case SessionTabKind.Diff:
       return copy("session.diff_7ecf46");
-    case SessionTabKind.Browser:
-      return copy("session.browser_d31de1");
     case SessionTabKind.Diagnostics:
       return copy("session.diagnostics_268f14");
   }
@@ -43,14 +41,18 @@ export function SessionTabBar({
   close,
   id,
   closeAria,
+  newPage,
 }: {
   closeAria?: string;
+  /** Opens the New browser page dialog; an ordinary button, never a tab. */
+  newPage?: (opener: HTMLButtonElement) => void;
   tabs: readonly SessionTab[];
   selected: string;
   select: (key: string) => void;
   close: (key: string) => void;
   id: string;
 }) {
+  useLocale();
   const productLabel = useProductLabels();
   const terminals = useSessionTabsStore().terminalPresentation(id);
   const root = useRef<HTMLDivElement>(null);
@@ -60,92 +62,106 @@ export function SessionTabBar({
       ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [selected, tabs.length]);
   return (
-    <div
-      className="session-tabs"
-      ref={root}
-      role="tablist"
-      aria-label={copy("session-tabs.tabs")}
-    >
-      {tabs.map((tab, index) => {
-        const key = sessionTabKey(tab),
-          name =
-            tab.kind === SessionTabKind.Terminal
-              ? copy("session-terminals.terminalNumber", {
-                  number: terminals.number(tab.id),
-                })
-              : tabName(tab);
-        return (
-          <div
-            className={`session-tab${selected === key ? " is-selected" : ""}`}
-            key={key}
-            role="presentation"
-          >
-            <button
-              type="button"
-              id={`session-tab-${id}-${index}`}
-              role="tab"
-              aria-label={
-                tab.kind === SessionTabKind.Page
-                  ? (tab.label ?? name)
-                  : tab.kind === SessionTabKind.File ||
-                      tab.kind === SessionTabKind.Comparison
-                    ? `${name} · ${productLabel(PresentationKind.Repository, tab.repository)}`
-                    : name
-              }
-              title={
-                tab.kind === SessionTabKind.Page ? (tab.label ?? name) : name
-              }
-              aria-selected={selected === key}
-              aria-controls={`session-pane-${id}`}
-              aria-keyshortcuts={
-                index < 9
-                  ? bindingAria(
-                      { key: String(index + 1), primary: true },
-                      shortcutPlatform(),
-                    )
-                  : undefined
-              }
-              tabIndex={selected === key ? 0 : -1}
-              onClick={() => select(key)}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                const next =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? tabs.length - 1
-                      : event.key === "ArrowLeft"
-                        ? (index + tabs.length - 1) % tabs.length
-                        : event.key === "ArrowRight"
-                          ? (index + 1) % tabs.length
-                          : undefined;
-                if (next !== undefined) {
-                  event.preventDefault();
-                  select(sessionTabKey(tabs[next]!));
-                  root.current
-                    ?.querySelectorAll<HTMLButtonElement>("[role=tab]")
-                    [next]?.focus();
-                }
-              }}
+    <>
+      <div
+        className="session-tabs"
+        ref={root}
+        role="tablist"
+        aria-label={copy("session-tabs.tabs")}
+      >
+        {tabs.map((tab, index) => {
+          const key = sessionTabKey(tab),
+            name =
+              tab.kind === SessionTabKind.Terminal
+                ? copy("session-terminals.terminalNumber", {
+                    number: terminals.number(tab.id),
+                  })
+                : tabName(tab);
+          return (
+            <div
+              className={`session-tab${selected === key ? " is-selected" : ""}`}
+              key={key}
+              role="presentation"
             >
-              {name}
-            </button>
-            {index > 0 ? (
               <button
-                className="session-tab-close"
                 type="button"
-                aria-label={copy("session-tabs.close", { name })}
-                aria-keyshortcuts={
-                  selected === key ? closeAria || undefined : undefined
+                id={`session-tab-${id}-${index}`}
+                role="tab"
+                aria-label={
+                  tab.kind === SessionTabKind.Page
+                    ? (tab.label ?? name)
+                    : tab.kind === SessionTabKind.File ||
+                        tab.kind === SessionTabKind.Comparison
+                      ? `${name} · ${productLabel(PresentationKind.Repository, tab.repository)}`
+                      : name
                 }
-                onClick={() => close(key)}
+                title={
+                  tab.kind === SessionTabKind.Page ? (tab.label ?? name) : name
+                }
+                aria-selected={selected === key}
+                aria-controls={`session-pane-${id}`}
+                aria-keyshortcuts={
+                  index < 9
+                    ? bindingAria(
+                        { key: String(index + 1), primary: true },
+                        shortcutPlatform(),
+                      )
+                    : undefined
+                }
+                tabIndex={selected === key ? 0 : -1}
+                onClick={() => select(key)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  const next =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? tabs.length - 1
+                        : event.key === "ArrowLeft"
+                          ? (index + tabs.length - 1) % tabs.length
+                          : event.key === "ArrowRight"
+                            ? (index + 1) % tabs.length
+                            : undefined;
+                  if (next !== undefined) {
+                    event.preventDefault();
+                    select(sessionTabKey(tabs[next]!));
+                    root.current
+                      ?.querySelectorAll<HTMLButtonElement>("[role=tab]")
+                      [next]?.focus();
+                  }
+                }}
               >
-                ×
+                {name}
               </button>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
+              {index > 0 ? (
+                <button
+                  className="session-tab-close"
+                  type="button"
+                  aria-label={copy("session-tabs.close", { name })}
+                  aria-keyshortcuts={
+                    selected === key ? closeAria || undefined : undefined
+                  }
+                  onClick={() => close(key)}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {newPage ? (
+        <button
+          type="button"
+          className="session-new-page"
+          aria-label={copy("session-browser.newPage")}
+          title={copy("session-browser.newPage")}
+          aria-haspopup="dialog"
+          onClick={(event) => newPage(event.currentTarget)}
+        >
+          +
+        </button>
+      ) : null}
+    </>
   );
 }

@@ -19,7 +19,6 @@ export enum SessionTabKind {
   Diff = "diff",
   Comparison = "comparison",
   Terminal = "terminal",
-  Browser = "browser",
   Page = "page",
   Diagnostics = "diagnostics",
   Sidechat = "sidechat",
@@ -31,7 +30,6 @@ export type SessionTab =
         | SessionTabKind.Conversation
         | SessionTabKind.Files
         | SessionTabKind.Diff
-        | SessionTabKind.Browser
         | SessionTabKind.Diagnostics;
     }
   | { kind: SessionTabKind.File; repository: string; path: string }
@@ -175,17 +173,67 @@ export class SessionTabsStore {
     tabs[found] = { ...current, title: page.title, label: page.label };
     this.publish(id, { ...previous, tabs });
   }
-  /** Removes exactly one acknowledged Page descriptor by profile/page identity. */
+  /**
+   * Removes exactly one acknowledged Page descriptor by profile/page identity.
+   * Closing the final browser Page leaves the workspace on Conversation;
+   * otherwise the shared close rule selects the existing left neighbor.
+   */
   closePage(id: string, profile: string, pageId: string) {
-    this.close(
-      id,
-      sessionTabKey({
-        kind: SessionTabKind.Page,
-        profile,
-        id: pageId,
-        title: "",
-      }),
+    const key = sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile,
+      id: pageId,
+      title: "",
+    });
+    const previous = this.snapshot(id);
+    const last =
+      previous.selected === key &&
+      previous.tabs.filter((tab) => tab.kind === SessionTabKind.Page).length ===
+        1;
+    this.close(id, key);
+    if (last) this.select(id, SessionTabKind.Conversation);
+  }
+  /**
+   * Aligns the Page descriptors with one native inventory of the admitted
+   * profile. Pages already listed keep their order and selection and only
+   * refresh their label; newly discovered pages are appended in inventory
+   * order without being selected; descriptors the inventory no longer lists
+   * (and foreign-profile descriptors) are removed unless a pending close still
+   * owns them. A restoration never opens or selects a page.
+   */
+  reconcilePages(
+    id: string,
+    profile: string,
+    pages: readonly { id: string; title: string; label: string }[],
+    owned: ReadonlySet<string> = new Set(),
+  ) {
+    for (const page of pages) this.updatePage(id, { profile, ...page });
+    const listed = new Set(pages.map((page) => page.id));
+    for (const tab of this.snapshot(id).tabs) {
+      if (
+        tab.kind === SessionTabKind.Page &&
+        (tab.profile !== profile || !listed.has(tab.id)) &&
+        !(tab.profile === profile && owned.has(tab.id))
+      )
+        this.closePage(id, tab.profile, tab.id);
+    }
+    const previous = this.snapshot(id);
+    const known = new Set(
+      previous.tabs.flatMap((tab) =>
+        tab.kind === SessionTabKind.Page && tab.profile === profile
+          ? [tab.id]
+          : [],
+      ),
     );
+    const added = pages
+      .filter((page) => !known.has(page.id))
+      .map((page) => ({
+        kind: SessionTabKind.Page as const,
+        profile,
+        ...page,
+      }));
+    if (added.length)
+      this.publish(id, { ...previous, tabs: [...previous.tabs, ...added] });
   }
   position(id: string, number: number) {
     const tab = this.snapshot(id).tabs[number - 1];

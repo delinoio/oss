@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { StrictMode, type ComponentProps } from "react";
+import { StrictMode, useRef, useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -21,10 +22,25 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { MutationIntents } from "./mutation";
-import { SessionBrowser, browserProfile } from "./session-browser";
+import {
+  SessionBrowser,
+  browserProfile,
+  type BrowserHandle,
+} from "./session-browser";
 import { BrowserHostProvider } from "./host-capabilities";
+import { SessionTabBar } from "./session-tab-bar";
+import {
+  SessionTabKind,
+  SessionTabsProvider,
+  sessionTabKey,
+  useSessionTabs,
+} from "./session-tabs";
+
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
 beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
@@ -46,32 +62,40 @@ beforeEach(() => {
   });
   native.mockReset();
 });
-it("an unavailable browser host does not register a profile or call native code", () => {
-  const session = create(ResourceSchema, {
-    id: newRequestId(),
-    kind: EntityKind.SESSION,
-    revision: 1n,
-  });
-  render(
-    <BrowserHostProvider available={false}>
-      <SessionBrowser
-        session={session}
-        accountId={newRequestId()}
-        close={() => {}}
-      />
-    </BrowserHostProvider>,
-  );
-  expect(
-    screen.getByText(
-      "CEF browser profiles require the supported desktop host.",
-    ),
-  ).toBeTruthy();
-  expect(native).not.toHaveBeenCalled();
-});
-function fixture() {
+
+enum Phase {
+  Accepted = "accepted",
+  CleanupPending = "cleanup-pending",
+  Completed = "completed",
+  Failed = "failed",
+}
+interface Receipt {
+  operation_id: string;
+  page_id: string;
+  phase: Phase;
+  metadata_committed: boolean;
+  native_cleanup_complete: boolean;
+  failure: string | null;
+}
+interface Page {
+  id: string;
+  url: string;
+}
+type Request = {
+  action: "inventory" | "create" | "close" | "observe";
+  operation_id?: string;
+  url?: string;
+  page_id?: string;
+};
+
+/**
+ * A synthetic native-local page owner: it keeps one profile inventory and
+ * original operation receipts exactly as the native command contract does.
+ * Nothing here establishes CEF, account or platform acceptance.
+ */
+function fixture(options: { registered?: boolean; pages?: number } = {}) {
   const accountId = newRequestId(),
-    profileId = newRequestId(),
-    tabId = newRequestId();
+    profileId = newRequestId();
   const profile = create(BrowserProfileSchema, {
     id: profileId,
     revision: 1n,
@@ -85,149 +109,404 @@ function fixture() {
     kind: EntityKind.SESSION,
     revision: 7n,
   });
-  const register = vi.fn(async (_request: unknown) => ({ profile }));
+  let registered = options.registered ?? true;
+  const register = vi.fn(async (_request: unknown) => {
+    registered = true;
+    return { profile };
+  });
+  const list = vi.fn(async () => ({
+    profiles: registered ? [profile] : [],
+    nextPageToken: "",
+  }));
   const transport = createRouterTransport((router) =>
     router.service(BrowserService, {
       registerBrowserProfile: register,
+      listBrowserProfiles: list,
       getBrowserCapabilities: () => ({
         capabilities: [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1],
       }),
     }),
   );
-  const local = {
+  const model = {
+    pages: Array.from({ length: options.pages ?? 0 }, (_, index) => ({
+      id: newRequestId(),
+      url: `https://fixture.test/${index + 1}`,
+    })) as Page[],
+    selected: "",
+    receipts: new Map<string, Receipt>(),
+    requests: [] as Request[],
+    // Which outcome the next mutation reports.
+    outcome: "complete" as
+      "complete" | "lose-reply" | "cleanup-pending" | "fail" | "not-admitted",
+    // The receipt is settled by the next observation.
+    settleOnObserve: true,
+  };
+  model.selected = model.pages[0]?.id ?? "";
+  const state = () => ({
     tabs: {
-      tabs: [{ id: tabId, url: "https://fixture.test/page" }],
-      selected: tabId,
+      tabs: model.pages.map((page) => ({ ...page })),
+      selected: model.selected,
     },
     removal_pending: false,
+  });
+  const receipt = (
+    request: Request,
+    page_id: string,
+    phase: Phase,
+  ): Receipt => ({
+    operation_id: request.operation_id!,
+    page_id,
+    phase,
+    metadata_committed: phase !== Phase.Failed,
+    native_cleanup_complete: phase === Phase.Completed,
+    failure: phase === Phase.Failed ? "storage-unavailable" : null,
+  });
+  const pages = (request: Request) => {
+    model.requests.push(request);
+    if (request.action === "inventory")
+      return { state: state(), receipt: null };
+    if (request.action === "observe") {
+      const known = model.receipts.get(request.operation_id!);
+      if (known?.phase === Phase.CleanupPending && model.settleOnObserve) {
+        known.phase = Phase.Completed;
+        known.native_cleanup_complete = true;
+      }
+      return { state: state(), receipt: known ?? null };
+    }
+    if (model.receipts.has(request.operation_id!))
+      return {
+        state: state(),
+        receipt: model.receipts.get(request.operation_id!),
+      };
+    if (model.outcome === "not-admitted")
+      throw { kind: "not-admitted", failure: "busy" };
+    const phase =
+      model.outcome === "cleanup-pending"
+        ? Phase.CleanupPending
+        : model.outcome === "fail"
+          ? Phase.Failed
+          : Phase.Completed;
+    let page_id = request.page_id ?? newRequestId();
+    if (phase !== Phase.Failed) {
+      if (request.action === "create") {
+        model.pages.push({ id: page_id, url: request.url! });
+        model.selected = page_id;
+      } else {
+        const index = model.pages.findIndex((page) => page.id === page_id);
+        model.pages = model.pages.filter((page) => page.id !== page_id);
+        if (model.selected === page_id)
+          model.selected = model.pages[Math.max(0, index - 1)]?.id ?? "";
+      }
+    }
+    const made = receipt(request, page_id, phase);
+    model.receipts.set(request.operation_id!, made);
+    if (model.outcome === "lose-reply") {
+      // The mutation is committed but the reply is lost.
+      model.outcome = "complete";
+      throw new Error("reply lost");
+    }
+    return { state: state(), receipt: made };
   };
-  native.mockResolvedValue(local);
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "browser_pages") return pages(args.request);
+    if (operation === "control_browser" && args.action === "select-tab")
+      model.selected = args.tabId;
+    if (operation === "browser_tab_shortcuts") return undefined;
+    return state();
+  });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  function View(extra: Partial<ComponentProps<typeof SessionBrowser>> = {}) {
-    return (
-      <TransportProvider transport={transport}>
-        <QueryClientProvider client={client}>
-          <MutationIntents>
-            <SessionBrowser
-              session={session}
-              accountId={accountId}
-              close={() => {}}
-              {...extra}
-            />
-          </MutationIntents>
-        </QueryClientProvider>
-      </TransportProvider>
-    );
-  }
   return {
     accountId,
     profileId,
-    tabId,
     profile,
     session,
     register,
-    local,
-    View,
+    list,
+    model,
+    state,
+    transport,
+    client,
   };
 }
-async function open() {
-  const button = screen.getByRole("button", { name: "Open account browser" });
-  expect((button as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(screen.getByRole("textbox", { name: "Address" }), {
-    target: { value: "https://fixture.test/page" },
+type Fixture = ReturnType<typeof fixture>;
+
+/** Mirrors the SessionView wiring: shared tab bar, + button and page close. */
+function Workspace({ f, active = true }: { f: Fixture; active?: boolean }) {
+  const tabs = useSessionTabs(f.session.id);
+  const [dialog, setDialog] = useState(false);
+  const handle = useRef<BrowserHandle | undefined>(undefined);
+  return (
+    <>
+      <SessionTabBar
+        id={f.session.id}
+        tabs={tabs.tabs}
+        selected={tabs.selected}
+        select={(key) => tabs.store.select(f.session.id, key)}
+        close={(key) => {
+          const tab = tabs.tabs.find((value) => sessionTabKey(value) === key);
+          if (tab?.kind === SessionTabKind.Page)
+            handle.current?.closePage(tab.profile, tab.id);
+          else tabs.store.close(f.session.id, key);
+        }}
+        newPage={() => setDialog(true)}
+      />
+      <button type="button" onClick={() => setDialog(true)}>
+        Open tool Browser
+      </button>
+      <SessionBrowser
+        session={f.session}
+        accountId={f.accountId}
+        active={active}
+        dialogOpen={dialog && active}
+        dismissDialog={() => setDialog(false)}
+        handle={handle}
+        selectedPage={
+          tabs.tab.kind === SessionTabKind.Page ? tabs.tab : undefined
+        }
+      />
+    </>
+  );
+}
+function mount(f: Fixture, strict = false, active = true) {
+  const tree = (
+    <TransportProvider transport={f.transport}>
+      <QueryClientProvider client={f.client}>
+        <MutationIntents>
+          <SessionTabsProvider>
+            <Workspace f={f} active={active} />
+          </SessionTabsProvider>
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+}
+const calls = (operation: string) =>
+  native.mock.calls.filter(([name]) => name === operation);
+const pageCalls = (action: Request["action"]) =>
+  native.mock.calls
+    .filter(([name]) => name === "browser_pages")
+    .map(([, args]) => args.request as Request)
+    .filter((request) => request.action === action);
+const tabNames = () =>
+  screen.getAllByRole("tab").map((tab) => tab.getAttribute("title"));
+async function openDialog() {
+  fireEvent.click(screen.getByRole("button", { name: "New browser page" }));
+  return screen.findByRole("dialog", { name: "New browser page" });
+}
+async function submit(dialog: HTMLElement, address: string) {
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Address" }), {
+    target: { value: address },
   });
-  await waitFor(() =>
-    expect((button as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(button);
+  const open = within(dialog).getByRole("button", { name: "Open page" });
+  await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(open);
 }
-function retryView() {
-  const summary = screen.getByLabelText("More browser actions");
-  if (!(summary.closest("details") as HTMLDetailsElement).open)
-    fireEvent.click(summary);
-  fireEvent.click(screen.getByRole("button", { name: "Retry native view" }));
-}
-it("registers only metadata and preserves the original uncertain request without automatic retry", async () => {
-  const f = fixture();
-  f.register.mockRejectedValueOnce(
-    new ConnectError("uncertain", Code.Unavailable),
+
+it("an unavailable browser host does not register a profile or call native code", async () => {
+  const session = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.SESSION,
+    revision: 1n,
+  });
+  const view = render(
+    <BrowserHostProvider available={false}>
+      <SessionBrowser
+        session={session}
+        accountId={newRequestId()}
+        dialogOpen
+        dismissDialog={() => {}}
+      />
+    </BrowserHostProvider>,
   );
-  render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: "Retry the same registration" });
-  expect(f.register).toHaveBeenCalledTimes(1);
-  expect(native).not.toHaveBeenCalled();
-  const original = f.register.mock.calls[0][0];
-  fireEvent.click(
-    screen.getByRole("button", { name: "Retry the same registration" }),
-  );
-  await waitFor(() =>
-    expect(native).toHaveBeenCalledWith(
-      "open_browser",
-      expect.objectContaining({
-        profileId: f.profileId,
-        url: "https://fixture.test/page",
-      }),
+  const dialog = screen.getByRole("dialog", { name: "New browser page" });
+  expect(
+    within(dialog).getByText(
+      "CEF browser profiles require the supported desktop host.",
     ),
+  ).toBeTruthy();
+  expect(
+    within(dialog).getByRole("button", { name: "Open page" }),
+  ).toHaveProperty("disabled", true);
+  expect(native).not.toHaveBeenCalled();
+  view.unmount();
+});
+
+it("restores retained pages as peer tabs without registering, creating or presenting one", async () => {
+  const f = fixture({ pages: 2 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  expect(tabNames()).toEqual([
+    "Conversation",
+    "https://fixture.test/1",
+    "https://fixture.test/2",
+  ]);
+  // Conversation stays selected: restoration selects nothing and shows nothing.
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.queryByRole("tab", { name: "Browser" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Browser tabs" })).toBeNull();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+  expect(calls("open_browser")).toHaveLength(0);
+  // Repeated reads do not duplicate descriptors.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+  });
+  expect(tabNames()).toHaveLength(3);
+  expect(pageCalls("create")).toHaveLength(0);
+});
+
+it("never creates anything while the profile is absent or the inventory is empty", async () => {
+  const f = fixture({ registered: false });
+  mount(f);
+  await waitFor(() => expect(f.list).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(tabNames()).toEqual(["Conversation"]);
+  expect(f.register).not.toHaveBeenCalled();
+  expect(native).not.toHaveBeenCalled();
+});
+
+it("opens the same address dialog from + and the Open tool entry and creates nothing on dismissal", async () => {
+  const f = fixture({ registered: false });
+  mount(f);
+  const dialog = await openDialog();
+  expect(dialog.className).toContain("browser-new-page");
+  const address = within(dialog).getByRole("textbox", { name: "Address" });
+  expect(document.activeElement).toBe(address);
+  expect(
+    within(dialog).getByRole("button", { name: "Open page" }),
+  ).toHaveProperty("disabled", true);
+  expect(
+    within(dialog).getByText(/Shared with this account's sessions/),
+  ).toBeTruthy();
+  // Cancel, the X control and Escape all dismiss without any request.
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Open tool Browser" }));
+  const again = await screen.findByRole("dialog", { name: "New browser page" });
+  fireEvent.click(
+    within(again).getByRole("button", { name: "Close New browser page" }),
   );
-  expect(f.register.mock.calls[1][0]).toEqual(original);
-  expect(original).toMatchObject({
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await openDialog();
+  fireEvent(
+    screen.getByRole("dialog"),
+    new Event("cancel", { cancelable: true }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+  expect(tabNames()).toEqual(["Conversation"]);
+});
+
+it.each([
+  "file:///fixture",
+  "https://user:secret@fixture.test/",
+  "javascript:alert(1)",
+  "not an address",
+])(
+  "keeps Open page disabled without native authority for %s",
+  async (address) => {
+    const f = fixture({ registered: false });
+    mount(f);
+    const dialog = await openDialog();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Address" }), {
+      target: { value: address },
+    });
+    expect(
+      within(dialog).getByRole("button", { name: "Open page" }),
+    ).toHaveProperty("disabled", true);
+    fireEvent.submit(dialog.querySelector("form")!);
+    expect(f.register).not.toHaveBeenCalled();
+    expect(pageCalls("create")).toHaveLength(0);
+  },
+);
+
+it("registers a missing profile only on submission, then creates and selects exactly one page", async () => {
+  const f = fixture({ registered: false });
+  mount(f, true);
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/new");
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(f.register).toHaveBeenCalledTimes(1);
+  expect(f.register.mock.calls[0][0]).toMatchObject({
     accountId: f.accountId,
     session: { id: f.session.id, expectedRevision: 7n },
   });
-  expect(original).not.toHaveProperty("url");
+  expect(pageCalls("create")).toHaveLength(1);
+  expect(pageCalls("create")[0]).toMatchObject({
+    url: "https://fixture.test/new",
+  });
+  expect(pageCalls("create")[0].operation_id).toMatch(/^[0-9a-f-]{36}$/);
+  const tab = screen.getByRole("tab", { name: "https://fixture.test/new" });
+  expect(tab.getAttribute("aria-selected")).toBe("true");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // Presentation restores the created page by identity and never a URL.
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  expect(calls("open_browser")[0][1]).toMatchObject({
+    profileId: f.profileId,
+    pageId: f.model.pages[0].id,
+  });
+  expect(calls("open_browser")[0][1]).not.toHaveProperty("url");
+  expect(f.model.pages).toHaveLength(1);
 });
-it("uses distinct native presentation identities and never gives external content a DOM frame", async () => {
-  const f = fixture();
-  const view = render(
-    <StrictMode>
-      <f.View />
-    </StrictMode>,
-  );
-  await open();
-  await waitFor(() =>
-    expect(native.mock.calls.some(([op]) => op === "open_browser")).toBe(true),
-  );
-  const first = native.mock.calls.find(([op]) => op === "open_browser")![1];
-  retryView();
-  await waitFor(() =>
-    expect(
-      native.mock.calls.filter(([op]) => op === "open_browser"),
-    ).toHaveLength(2),
-  );
-  const second = native.mock.calls.filter(
-    ([op]) => op === "open_browser",
-  )[1][1];
-  expect(first.viewId).not.toBe(second.viewId);
+
+it("creates exactly one page in a restored nonempty profile and selects the confirmed identity", async () => {
+  const f = fixture({ pages: 2 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/third");
+  await waitFor(() => expect(tabNames()).toHaveLength(4));
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(1);
+  expect(tabNames().at(-1)).toBe("https://fixture.test/third");
   expect(
-    native.mock.calls.some(
-      ([op, args]) =>
-        op === "control_browser" &&
-        args.action === "hide" &&
-        args.viewId === first.viewId,
-    ),
-  ).toBe(true);
-  expect(view.container.querySelector("iframe,webview,script,a")).toBeNull();
-  view.unmount();
-  await waitFor(() =>
-    expect(
-      native.mock.calls.some(
-        ([op, args]) =>
-          op === "control_browser" &&
-          args.action === "hide" &&
-          args.viewId === second.viewId,
-      ),
-    ).toBe(true),
-  );
+    screen
+      .getByRole("tab", { name: "https://fixture.test/third" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(f.model.pages).toHaveLength(3);
 });
-it("rejects deleted or foreign profiles before native presentation", async () => {
-  const f = fixture();
+
+it("preserves the exact uncertain registration request and creates one page after its retry", async () => {
+  const f = fixture({ registered: false });
+  f.register.mockRejectedValueOnce(
+    new ConnectError("uncertain", Code.Unavailable),
+  );
+  mount(f);
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/new");
+  await within(dialog).findByRole("button", {
+    name: "Retry the same registration",
+  });
+  expect(f.register).toHaveBeenCalledTimes(1);
+  expect(pageCalls("create")).toHaveLength(0);
+  const original = f.register.mock.calls[0][0];
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Retry the same registration" }),
+  );
+  await waitFor(() => expect(pageCalls("create")).toHaveLength(1));
+  expect(f.register.mock.calls[1][0]).toEqual(original);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(pageCalls("create")).toHaveLength(1);
+});
+
+it("rejects a foreign or deleted profile before any native page operation", async () => {
+  const f = fixture({ registered: false });
   f.profile.accountId = newRequestId();
-  render(<f.View />);
-  await open();
-  await screen.findByText(
+  mount(f);
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/new");
+  await within(dialog).findByText(
     "Browser profile ownership is unavailable. Refresh the session.",
   );
   expect(native).not.toHaveBeenCalled();
@@ -243,8 +522,353 @@ it("rejects deleted or foreign profiles before native presentation", async () =>
     ),
   ).toThrow();
 });
+
+it("settles a lost Create reply by observing the original operation and never creates a second page", async () => {
+  const f = fixture({ pages: 1 });
+  f.model.outcome = "lose-reply";
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/lost");
+  const check = await within(dialog).findByRole("button", {
+    name: "Check status",
+  });
+  expect(pageCalls("create")).toHaveLength(1);
+  const original = pageCalls("create")[0].operation_id;
+  // Dismissal does not drop ownership; reopening resumes the same recovery and
+  // never offers a fresh creation while the original outcome is unsettled.
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  const reopened = await openDialog();
+  expect(
+    within(reopened).getByRole("button", { name: "Open page" }),
+  ).toHaveProperty("disabled", true);
+  fireEvent.click(
+    within(reopened).getByRole("button", { name: "Check status" }),
+  );
+  expect(check).toBeTruthy();
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const observed = pageCalls("observe");
+  expect(observed.length).toBeGreaterThan(0);
+  expect(observed.every((request) => request.operation_id === original)).toBe(
+    true,
+  );
+  expect(pageCalls("create")).toHaveLength(1);
+  expect(f.model.pages).toHaveLength(2);
+  expect(
+    screen
+      .getByRole("tab", { name: "https://fixture.test/lost" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("treats a rejection before admission as a safe failure and sends a fresh identity on retry", async () => {
+  const f = fixture({ pages: 1 });
+  f.model.outcome = "not-admitted";
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/rejected");
+  await within(dialog).findByText(
+    "The browser action failed. Check its address and the current server and account authorization.",
+  );
+  expect(tabNames()).toHaveLength(2);
+  expect(
+    within(dialog).queryByRole("button", { name: "Check status" }),
+  ).toBeNull();
+  f.model.outcome = "complete";
+  await submit(dialog, "https://fixture.test/rejected");
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const creates = pageCalls("create");
+  expect(creates).toHaveLength(2);
+  expect(creates[0].operation_id).not.toBe(creates[1].operation_id);
+  expect(f.model.pages).toHaveLength(2);
+});
+
+it("reports a failed Create without a descriptor and allows an explicit retry", async () => {
+  const f = fixture({ pages: 1 });
+  f.model.outcome = "fail";
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const dialog = await openDialog();
+  await submit(dialog, "https://fixture.test/failed");
+  await within(dialog).findByRole("alert");
+  expect(tabNames()).toHaveLength(2);
+  expect(f.model.pages).toHaveLength(1);
+});
+
+it("disables creation with guidance at the 16-page limit", async () => {
+  const f = fixture({ pages: 16 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(17));
+  const dialog = await openDialog();
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Address" }), {
+    target: { value: "https://fixture.test/seventeen" },
+  });
+  expect(
+    within(dialog).getByText(
+      "A profile holds at most 16 browser pages. Close one to open another.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(dialog).getByRole("button", { name: "Open page" }),
+  ).toHaveProperty("disabled", true);
+  expect(pageCalls("create")).toHaveLength(0);
+});
+
+it("closes the actual native page for an inactive tab, keeping the selection and showing nothing", async () => {
+  const f = fixture({ pages: 2 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const [first] = f.model.pages;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(pageCalls("close")).toHaveLength(1);
+  expect(pageCalls("close")[0]).toMatchObject({ page_id: first.id });
+  expect(f.model.pages.map((page) => page.url)).toEqual([
+    "https://fixture.test/2",
+  ]);
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  // The inactive page was never presented before or after its closure.
+  expect(calls("open_browser")).toHaveLength(0);
+  expect(
+    native.mock.calls.filter(
+      ([name, args]) => name === "control_browser" && args.action !== "hide",
+    ),
+  ).toHaveLength(0);
+});
+
+it("keeps the page descriptor until the original close is confirmed, then selects and focuses the left neighbor", async () => {
+  const f = fixture({ pages: 2 });
+  let release!: () => void;
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "browser_pages" && args.request.action === "close")
+      await new Promise<void>((resolve) => (release = resolve));
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/2 tab" }),
+  );
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  // Pending: the descriptor and its selection remain, with inline progress.
+  expect(tabNames()).toHaveLength(3);
+  expect(
+    screen
+      .getByRole("tab", { name: "https://fixture.test/2" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.getByRole("status").textContent).toContain("Closing the page");
+  await act(async () => release());
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const neighbor = screen.getByRole("tab", { name: "https://fixture.test/1" });
+  expect(neighbor.getAttribute("aria-selected")).toBe("true");
+  await waitFor(() => expect(document.activeElement).toBe(neighbor));
+  expect(pageCalls("close")).toHaveLength(1);
+});
+
+it("keeps the descriptor with recovery for an unconfirmed close and settles it by observation only", async () => {
+  const f = fixture({ pages: 2 });
+  f.model.outcome = "cleanup-pending";
+  f.model.settleOnObserve = false;
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("native view cleanup is not confirmed");
+  // Metadata is committed but the descriptor remains until native proof.
+  expect(f.model.pages).toHaveLength(1);
+  expect(tabNames()).toHaveLength(3);
+  const original = pageCalls("close")[0].operation_id;
+  f.model.settleOnObserve = true;
+  fireEvent.click(within(alert).getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(pageCalls("close")).toHaveLength(1);
+  expect(
+    pageCalls("observe").every((request) => request.operation_id === original),
+  ).toBe(true);
+});
+
+it("keeps the descriptor and shows a failure when the native close failed", async () => {
+  const f = fixture({ pages: 1 });
+  f.model.outcome = "fail";
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("The browser action failed");
+  expect(tabNames()).toHaveLength(2);
+  expect(f.model.pages).toHaveLength(1);
+  // Dismissal clears the notice, and a later close is a fresh operation.
+  fireEvent.click(within(alert).getByRole("button", { name: "Dismiss" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  f.model.outcome = "complete";
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toHaveLength(1));
+  const closes = pageCalls("close");
+  expect(closes).toHaveLength(2);
+  expect(closes[0].operation_id).not.toBe(closes[1].operation_id);
+});
+
+it("settles a lost Close reply without replaying the closure", async () => {
+  const f = fixture({ pages: 2 });
+  f.model.outcome = "lose-reply";
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const alert = await screen.findByRole("alert");
+  expect(tabNames()).toHaveLength(3);
+  fireEvent.click(within(alert).getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(pageCalls("close")).toHaveLength(1);
+  expect(pageCalls("observe").length).toBeGreaterThan(0);
+});
+
+it("closing the last page selects Conversation, keeps the profile and leaves zero pages", async () => {
+  const f = fixture({ pages: 1 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(f.model.pages).toHaveLength(0);
+  expect(f.register).not.toHaveBeenCalled();
+  // Subsequent observation restores nothing and creates nothing.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+  });
+  expect(tabNames()).toEqual(["Conversation"]);
+  expect(pageCalls("create")).toHaveLength(0);
+  expect(f.model.pages).toHaveLength(0);
+});
+
+it("aligns this workspace with pages opened or closed by another owner", async () => {
+  const f = fixture({ pages: 2 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const added = { id: newRequestId(), url: "https://other.test/" };
+  await act(async () => {
+    f.model.pages.push(added);
+    f.model.pages = f.model.pages.filter(
+      (page) => page.url !== "https://fixture.test/1",
+    );
+    f.model.selected = f.model.pages[0].id;
+  });
+  await waitFor(
+    () =>
+      expect(tabNames()).toEqual([
+        "Conversation",
+        "https://fixture.test/2",
+        "https://other.test/",
+      ]),
+    { timeout: 6000 },
+  );
+  // Observation only aligned descriptors; it issued no mutation.
+  expect(pageCalls("create")).toHaveLength(0);
+  expect(pageCalls("close")).toHaveLength(0);
+});
+
+it("presents the selected page by identity, hides it when leaving and uses a new view when returning", async () => {
+  const f = fixture({ pages: 1 });
+  const view = mount(f, true);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const first = calls("open_browser")[0][1];
+  expect(first).toMatchObject({
+    profileId: f.profileId,
+    pageId: f.model.pages[0].id,
+  });
+  expect(first).not.toHaveProperty("url");
+  expect(view.container.querySelector("iframe,webview,script,a")).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  await waitFor(() =>
+    expect(native).toHaveBeenCalledWith(
+      "control_browser",
+      expect.objectContaining({ action: "hide", viewId: first.viewId }),
+    ),
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
+  expect(calls("open_browser")[1][1].viewId).not.toBe(first.viewId);
+  view.unmount();
+  await waitFor(() =>
+    expect(
+      native.mock.calls.some(
+        ([, args]) =>
+          args.action === "hide" &&
+          args.viewId === calls("open_browser")[1][1].viewId,
+      ),
+    ).toBe(true),
+  );
+});
+
+it("retains the exact view after failed hide and blocks reopening until closure", async () => {
+  const f = fixture({ pages: 1 });
+  const base = native.getMockImplementation()!;
+  let attempts = 0,
+    finish!: () => void;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "control_browser" && args.action === "hide") {
+      if (++attempts === 1) throw new Error("busy");
+      if (attempts === 2)
+        await new Promise<void>((resolve) => (finish = resolve));
+    }
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const original = calls("open_browser")[0][1];
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  await screen.findByText(
+    "The browser view could not be hidden. Retrying native closure.",
+  );
+  await waitFor(() => expect(attempts).toBe(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await act(async () => {
+    fireEvent.resize(window);
+  });
+  expect(calls("open_browser")).toHaveLength(1);
+  expect(
+    native.mock.calls
+      .filter(([, args]) => args.action === "hide")
+      .every(([, args]) => args.viewId === original.viewId),
+  ).toBe(true);
+  await act(async () => finish());
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
+  expect(calls("open_browser")[1][1].viewId).not.toBe(original.viewId);
+});
+
 it("retries identical geometry after a failed native resize and caches only success", async () => {
-  const f = fixture();
+  const f = fixture({ pages: 1 });
+  const base = native.getMockImplementation()!;
   let top = 100,
     attempts = 0;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
@@ -260,14 +884,19 @@ it("retries identical geometry after a failed native resize and caches only succ
       toJSON: () => ({}),
     }),
   );
-  native.mockImplementation(async (_operation, args) => {
-    if (args.action === "resize" && ++attempts === 1)
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (
+      operation === "control_browser" &&
+      args.action === "resize" &&
+      ++attempts === 1
+    )
       throw new Error("transient native resize failure");
-    return f.local;
+    return base(operation, args);
   });
-  render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
   top = 125;
   fireEvent.resize(window);
   await screen.findByText("The browser view could not be updated.");
@@ -282,275 +911,66 @@ it("retries identical geometry after a failed native resize and caches only succ
   });
   expect(attempts).toBe(2);
 });
+
 it("surfaces a delayed native child failure and reopens only after explicit retry", async () => {
-  const f = fixture();
-  native.mockImplementation(async (operation) => {
+  const f = fixture({ pages: 1 });
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
     if (operation === "browser_state") throw new Error("sidecar-failed");
-    return f.local;
+    return base(operation, args);
   });
-  render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  const first = native.mock.calls.find(
-    ([operation]) => operation === "open_browser",
-  )![1];
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const first = calls("open_browser")[0][1];
   await screen.findByText(
     "The local browser state is unavailable.",
     {},
     { timeout: 2500 },
   );
-  expect(
-    native.mock.calls.filter(([operation]) => operation === "open_browser"),
-  ).toHaveLength(1);
-  retryView();
-  await waitFor(() =>
-    expect(
-      native.mock.calls.filter(([operation]) => operation === "open_browser"),
-    ).toHaveLength(2),
-  );
-  expect(
-    native.mock.calls.filter(
-      ([operation]) => operation === "open_browser",
-    )[1][1].viewId,
-  ).not.toBe(first.viewId);
+  expect(calls("open_browser")).toHaveLength(1);
+  const summary = screen.getByLabelText("More browser actions");
+  fireEvent.click(summary);
+  fireEvent.click(screen.getByRole("button", { name: "Retry native view" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
+  expect(calls("open_browser")[1][1].viewId).not.toBe(first.viewId);
 });
-it("retains the exact view after failed hide and blocks resize or reopening until closure", async () => {
-  const f = fixture();
-  let attempts = 0,
-    finish!: (value: typeof f.local) => void;
-  native.mockImplementation(async (_operation, args) => {
-    if (args.action === "hide") {
-      if (++attempts === 1) throw new Error("busy");
-      if (attempts === 2)
-        return new Promise((resolve) => {
-          finish = resolve;
-        });
-    }
-    return f.local;
-  });
-  const view = render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  const original = native.mock.calls.find(([op]) => op === "open_browser")![1];
+
+it("hides only for a visible modal and reopens afterwards", async () => {
+  const f = fixture({ pages: 1 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const first = calls("open_browser")[0][1];
   const modal = document.createElement("dialog");
   modal.setAttribute("open", "");
   try {
     await act(async () => {
       document.body.append(modal);
     });
-    await screen.findByText(
-      "The browser view could not be hidden. Retrying native closure.",
+    await waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        "control_browser",
+        expect.objectContaining({ action: "hide", viewId: first.viewId }),
+      ),
     );
-    await waitFor(() => expect(attempts).toBe(2));
     await act(async () => {
       modal.remove();
-      fireEvent.resize(window);
     });
-    expect(
-      native.mock.calls.filter(([op]) => op === "open_browser"),
-    ).toHaveLength(1);
-    expect(
-      native.mock.calls.filter(([, args]) => args.action === "resize"),
-    ).toHaveLength(0);
-    expect(
-      native.mock.calls
-        .filter(([, args]) => args.action === "hide")
-        .every(([, args]) => args.viewId === original.viewId),
-    ).toBe(true);
-    await act(async () => {
-      finish(f.local);
-    });
-    await waitFor(() =>
-      expect(
-        native.mock.calls.filter(([op]) => op === "open_browser"),
-      ).toHaveLength(2),
-    );
-    expect(
-      native.mock.calls.filter(([op]) => op === "open_browser")[1][1].viewId,
-    ).not.toBe(original.viewId);
+    await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
   } finally {
     modal.remove();
-    view.unmount();
   }
 });
-it("retries failed cleanup after unmount with only its original view identity", async () => {
-  const f = fixture();
-  let attempts = 0;
-  native.mockImplementation(async (_operation, args) => {
-    if (args.action === "hide" && ++attempts === 1) throw new Error("busy");
-    return f.local;
-  });
-  const view = render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  const original = native.mock.calls.find(([op]) => op === "open_browser")![1];
-  view.unmount();
-  await waitFor(() => expect(attempts).toBe(2));
-  expect(
-    native.mock.calls
-      .filter(([, args]) => args.action === "hide")
-      .every(([, args]) => args.viewId === original.viewId),
-  ).toBe(true);
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  expect(attempts).toBe(2);
-  expect(
-    native.mock.calls.filter(([op]) => op === "open_browser"),
-  ).toHaveLength(1);
-});
-it("closes only the earlier instance when its native open resolves after replacement", async () => {
-  const f = fixture();
-  let finish!: (value: typeof f.local) => void;
-  native.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  render(<f.View />);
-  await open();
-  await waitFor(() => expect(native).toHaveBeenCalledTimes(1));
-  const first = native.mock.calls[0][1];
-  retryView();
-  await waitFor(() =>
-    expect(
-      native.mock.calls.filter(([op]) => op === "open_browser"),
-    ).toHaveLength(2),
-  );
-  const second = native.mock.calls.filter(
-    ([op]) => op === "open_browser",
-  )[1][1];
-  await act(async () => finish(f.local));
-  await waitFor(() =>
-    expect(
-      native.mock.calls.some(
-        ([op, args]) =>
-          op === "control_browser" &&
-          args.action === "hide" &&
-          args.viewId === first.viewId,
-      ),
-    ).toBe(true),
-  );
-  expect(
-    native.mock.calls.some(
-      ([op, args]) =>
-        op === "control_browser" &&
-        args.action === "hide" &&
-        args.viewId === second.viewId,
-    ),
-  ).toBe(false);
-});
-it.each(["closed drawer", "wide region", "hidden popup"])(
-  "opens beside the persistent %s and hides only for an active modal",
-  async (surface) => {
-    const f = fixture();
-    const sidebar = document.createElement(
-      surface === "hidden popup" ? "div" : "dialog",
-    );
-    sidebar.setAttribute(
-      "role",
-      surface === "wide region" ? "region" : "dialog",
-    );
-    if (surface === "wide region") sidebar.setAttribute("open", "");
-    if (surface === "hidden popup") sidebar.hidden = true;
-    document.body.append(sidebar);
-    try {
-      render(<f.View />);
-      await open();
-      await waitFor(() =>
-        expect(
-          native.mock.calls.filter(([op]) => op === "open_browser"),
-        ).toHaveLength(1),
-      );
-      const first = native.mock.calls.find(([op]) => op === "open_browser")![1];
-      await act(async () => {
-        sidebar.setAttribute("role", "dialog");
-        sidebar.setAttribute("open", "");
-        sidebar.hidden = false;
-      });
-      await waitFor(() =>
-        expect(native).toHaveBeenCalledWith(
-          "control_browser",
-          expect.objectContaining({ action: "hide", viewId: first.viewId }),
-        ),
-      );
-      await act(async () => {
-        sidebar.removeAttribute("open");
-        sidebar.hidden = true;
-      });
-      await waitFor(() =>
-        expect(
-          native.mock.calls.filter(([op]) => op === "open_browser"),
-        ).toHaveLength(2),
-      );
-      const second = native.mock.calls.filter(
-        ([op]) => op === "open_browser",
-      )[1][1];
-      expect(second.viewId).not.toBe(first.viewId);
-    } finally {
-      sidebar.remove();
-    }
-  },
-);
 
-it("rechecks failed browser capabilities locally without registration or clearing the address", async () => {
-  const session = create(ResourceSchema, {
-    id: newRequestId(),
-    kind: EntityKind.SESSION,
-    schemaVersion: 1,
-    revision: 7n,
-  });
-  const capabilities = vi
-    .fn()
-    .mockRejectedValueOnce(
-      new ConnectError("private-native-capability", Code.PermissionDenied),
-    )
-    .mockResolvedValue({ capabilities: [] });
-  const register = vi.fn();
-  const transport = createRouterTransport((router) =>
-    router.service(BrowserService, {
-      getBrowserCapabilities: capabilities,
-      registerBrowserProfile: register,
-    }),
-  );
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          <SessionBrowser
-            session={session}
-            accountId={newRequestId()}
-            close={() => {}}
-          />
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>,
-  );
-  const address = screen.getByRole("textbox", { name: "Address" });
-  fireEvent.change(address, {
-    target: { value: "https://fixture.test/original" },
-  });
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Retry browser capability read",
-    }),
-  );
-  await waitFor(() => expect(capabilities).toHaveBeenCalledTimes(2));
-  expect(address).toHaveProperty("value", "https://fixture.test/original");
-  expect(register).not.toHaveBeenCalled();
-  expect(native).not.toHaveBeenCalled();
-});
-
-it("opens an information modal through the original native hide owner without registering again", async () => {
-  const f = fixture();
-  render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  const original = native.mock.calls.find(
-    ([operation]) => operation === "open_browser",
-  )![1];
+it("opens the information modal over the retained page without registering again", async () => {
+  const f = fixture({ pages: 1 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
   const information = screen.getByRole("button", {
     name: "Browser information",
   });
@@ -563,41 +983,33 @@ it("opens an information modal through the original native hide owner without re
   await waitFor(() =>
     expect(native).toHaveBeenCalledWith(
       "control_browser",
-      expect.objectContaining({ action: "hide", viewId: original.viewId }),
+      expect.objectContaining({
+        action: "hide",
+        viewId: calls("open_browser")[0][1].viewId,
+      }),
     ),
   );
   fireEvent.click(
     screen.getByRole("button", { name: "Close Browser information" }),
   );
-  await waitFor(() =>
-    expect(
-      native.mock.calls.filter(([operation]) => operation === "open_browser"),
-    ).toHaveLength(2),
-  );
-  expect(f.register).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(2));
+  expect(f.register).not.toHaveBeenCalled();
   expect(document.activeElement).toBe(information);
-  expect(native.mock.calls.some(([, args]) => args.action === "navigate")).toBe(
-    false,
-  );
 });
 
-it("keeps local tab and navigation commands on the original profile/view and enforces the 16-tab cap", async () => {
-  const f = fixture();
-  for (let n = 1; n < 16; n++)
-    f.local.tabs.tabs.push({
-      id: newRequestId(),
-      url: `https://fixture.test/${n}`,
-    });
-  render(<f.View />);
-  await open();
-  await screen.findByRole("button", { name: /Tab 16/ });
-  const original = native.mock.calls.find(
-    ([operation]) => operation === "open_browser",
-  )![1];
-  expect(screen.getByRole("button", { name: "New tab" })).toHaveProperty(
-    "disabled",
-    true,
-  );
+it("keeps navigation commands on the original profile and view and exposes no page picker or pane close", async () => {
+  const f = fixture({ pages: 2 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  const original = calls("open_browser")[0][1];
+  // The pane has no inner page row, + control or header close.
+  expect(screen.queryByRole("button", { name: "New tab" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Close browser" })).toBeNull();
+  expect(
+    screen.getAllByRole("button", { name: /^Close .* tab$/ }),
+  ).toHaveLength(2);
   for (const name of ["Back", "Forward", "Reload"]) {
     fireEvent.click(screen.getByRole("button", { name }));
     await waitFor(() =>
@@ -607,23 +1019,12 @@ it("keeps local tab and navigation commands on the original profile/view and enf
       ),
     );
   }
-  fireEvent.click(screen.getByRole("button", { name: /Tab 2 ·/ }));
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Go" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
+  fireEvent.change(
+    screen.getAllByRole("textbox", { name: "Address" }).at(-1)!,
+    {
+      target: { value: "https://fixture.test/explicit" },
+    },
   );
-  fireEvent.click(screen.getByRole("button", { name: "Close tab 2" }));
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Go" })).toHaveProperty(
-      "disabled",
-      false,
-    ),
-  );
-  fireEvent.change(screen.getByRole("textbox", { name: "Address" }), {
-    target: { value: "https://fixture.test/explicit" },
-  });
   fireEvent.click(screen.getByRole("button", { name: "Go" }));
   await waitFor(() =>
     expect(native).toHaveBeenCalledWith(
@@ -645,8 +1046,6 @@ it("keeps local tab and navigation commands on the original profile/view and enf
     "back",
     "forward",
     "reload",
-    "select-tab",
-    "close-tab",
     "navigate",
   ]);
   expect(
@@ -655,294 +1054,139 @@ it("keeps local tab and navigation commands on the original profile/view and enf
         args.profileId === f.profileId && args.viewId === original.viewId,
     ),
   ).toBe(true);
-  expect(f.register).toHaveBeenCalledTimes(1);
+  expect(f.register).not.toHaveBeenCalled();
 });
 
-it.each(["file:///fixture", "https://user:secret@fixture.test/"])(
-  "blocks invalid initial addresses without native authority: %s",
-  async (address) => {
-    const f = fixture();
-    render(<f.View />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Address" }), {
-      target: { value: address },
-    });
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Open account browser" }),
-      ).toHaveProperty("disabled", true),
-    );
-    expect(document.querySelector(".browser-viewport")).toBeNull();
-    expect(f.register).not.toHaveBeenCalled();
-    expect(native).not.toHaveBeenCalled();
-  },
-);
-
-it("fences a retained Browser under the maximized upper inert region through exact Hide uncertainty", async () => {
-  const f = fixture();
-  let attempts = 0,
-    finish!: (value: typeof f.local) => void;
-  native.mockImplementation(async (_operation, args) => {
-    if (args.action === "hide") {
-      if (++attempts === 1) throw new Error("busy");
-      if (attempts === 2)
-        return new Promise((resolve) => {
-          finish = resolve;
-        });
-    }
-    return f.local;
+it("reconciles only the latest shared selection once after a busy action settles", async () => {
+  const f = fixture({ pages: 3 });
+  const base = native.getMockImplementation()!;
+  let release!: () => void;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "control_browser" && args.action === "reload")
+      await new Promise<void>((resolve) => (release = resolve));
+    return base(operation, args);
   });
-  const view = render(
-      <div data-upper>
-        <f.View />
-      </div>,
-    ),
-    upper = view.container.querySelector("[data-upper]")!;
-  await open();
-  await screen.findByRole("button", { name: /Tab 1/ });
-  const original = native.mock.calls.find(
-    ([operation]) => operation === "open_browser",
-  )![1];
-  try {
-    await act(async () => {
-      upper.setAttribute("inert", "");
-      upper.setAttribute("aria-hidden", "true");
-    });
-    await waitFor(() => expect(attempts).toBe(2));
-    await act(async () => {
-      upper.removeAttribute("inert");
-      upper.removeAttribute("aria-hidden");
-      fireEvent.resize(window);
-    });
-    expect(
-      native.mock.calls.filter(([operation]) => operation === "open_browser"),
-    ).toHaveLength(1);
-    expect(
-      native.mock.calls
-        .filter(([, args]) => args.action === "hide")
-        .every(([, args]) => args.viewId === original.viewId),
-    ).toBe(true);
-    expect(
-      native.mock.calls.filter(([, args]) => args.action === "resize"),
-    ).toHaveLength(0);
-    await act(async () => {
-      finish(f.local);
-    });
-    await waitFor(() =>
-      expect(
-        native.mock.calls.filter(([operation]) => operation === "open_browser"),
-      ).toHaveLength(2),
-    );
-    expect(f.register).toHaveBeenCalledTimes(1);
-    expect(
-      native.mock.calls.filter(
-        ([operation]) => operation === "open_browser",
-      )[1][1].profileId,
-    ).toBe(original.profileId);
-  } finally {
-    view.unmount();
-  }
-});
-
-// Shared-tab reconciliation fixtures: three native pages A (selected), B and C.
-function pagesFixture() {
-  const f = fixture();
-  const b = newRequestId(),
-    c = newRequestId();
-  const tabs = [
-    { id: f.tabId, url: "https://fixture.test/a" },
-    { id: b, url: "https://fixture.test/b" },
-    { id: c, url: "https://fixture.test/c" },
-  ];
-  const state = (selected: string, list = tabs) => ({
-    tabs: { tabs: list, selected },
-    removal_pending: false,
-  });
-  const page = (id: string) => ({
-    profile: f.profileId,
-    id,
-    title: id,
-    label: id,
-  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(4));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
   const selects = () =>
     native.mock.calls.filter(
       ([operation, args]) =>
         operation === "control_browser" && args.action === "select-tab",
     );
-  return { ...f, a: f.tabId, b, c, tabs, state, page, selects };
-}
-it("reconciles only the latest shared selection once after a busy action settles", async () => {
-  const f = pagesFixture();
-  let release!: () => void;
-  native.mockImplementation(async (operation, args) => {
-    if (operation === "control_browser" && args.action === "reload")
-      await new Promise<void>((resolve) => (release = resolve));
-    if (operation === "control_browser" && args.action === "select-tab")
-      return f.state(args.tabId);
-    return f.state(f.a);
-  });
-  const openPage = vi.fn();
-  const view = render(
-    <f.View openPage={openPage} selectedPage={f.page(f.a)} />,
-  );
-  await open();
-  await screen.findByRole("button", { name: "https://fixture.test/c" });
   fireEvent.click(screen.getByRole("button", { name: "Reload" }));
   await waitFor(() => expect(release).toBeTypeOf("function"));
-  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.b)} />);
-  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.c)} />);
-  expect(f.selects()).toHaveLength(0);
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/3" }));
+  expect(selects()).toHaveLength(0);
   await act(async () => release());
-  await waitFor(() => expect(f.selects()).toHaveLength(1));
-  expect(f.selects()[0][1]).toMatchObject({ tabId: f.c });
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  expect(selects()[0][1]).toMatchObject({ tabId: f.model.pages[2].id });
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(f.selects()).toHaveLength(1);
+  expect(selects()).toHaveLength(1);
 });
-it("does not send a stale reconciliation after the view became inactive or the page already matches", async () => {
-  const f = pagesFixture();
+
+it("defers shared selection until the pending native open completes", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
   let release!: () => void;
-  native.mockImplementation(async (operation, args) => {
-    if (operation === "control_browser" && args.action === "reload")
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "open_browser")
       await new Promise<void>((resolve) => (release = resolve));
-    return f.state(f.a);
+    return base(operation, args);
   });
-  const openPage = vi.fn();
-  const view = render(
-    <f.View openPage={openPage} selectedPage={f.page(f.a)} />,
-  );
-  await open();
-  await screen.findByRole("button", { name: "https://fixture.test/c" });
-  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  // The opened page is already the native selection, so completion leaves the
+  // observed selection unchanged.
+  f.model.selected = f.model.pages[0].id;
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
   await waitFor(() => expect(release).toBeTypeOf("function"));
-  view.rerender(
-    <f.View openPage={openPage} selectedPage={f.page(f.b)} active={false} />,
-  );
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(0);
   await act(async () => release());
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  expect(selects()[0][1]).toMatchObject({ tabId: f.model.pages[1].id });
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(f.selects()).toHaveLength(0);
-  // Nearest counterexample: selecting the already visible page sends nothing.
-  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.a)} />);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(f.selects()).toHaveLength(0);
+  expect(selects()).toHaveLength(1);
 });
-it("does not retry a failed reconciliation without a new selection", async () => {
-  const f = pagesFixture();
-  native.mockImplementation(async (operation, args) => {
+
+it("does not retry a failed shared-selection reconciliation without a new selection", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
     if (operation === "control_browser" && args.action === "select-tab")
       throw new Error("rejected");
-    return f.state(f.a);
+    return base(operation, args);
   });
-  const openPage = vi.fn();
-  const view = render(
-    <f.View openPage={openPage} selectedPage={f.page(f.a)} />,
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(calls("open_browser")).toHaveLength(1));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  await screen.findByText(
+    "The browser action failed. Check its address and the current server and account authorization.",
   );
-  await open();
-  await screen.findByRole("button", { name: "https://fixture.test/c" });
-  view.rerender(<f.View openPage={openPage} selectedPage={f.page(f.b)} />);
-  await waitFor(() => expect(f.selects()).toHaveLength(1));
-  await screen.findByRole("alert");
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(f.selects()).toHaveLength(1);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  expect(selects()).toHaveLength(1);
 });
+
 it("refreshes owned shared labels from observed URLs without selecting or navigating", async () => {
-  const f = pagesFixture();
-  const moved = f.tabs.map((tab) =>
-    tab.id === f.a ? { ...tab, url: "https://redirect.test/landed" } : tab,
-  );
-  native.mockImplementation(async (operation, args) => {
-    if (operation === "control_browser" && args.action === "back")
-      return f.state(f.a, moved);
-    return f.state(f.a);
+  const f = fixture({ pages: 2 });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const selected = screen
+    .getByRole("tab", { name: "Conversation" })
+    .getAttribute("aria-selected");
+  await act(async () => {
+    f.model.pages[0] = {
+      ...f.model.pages[0],
+      url: "https://redirect.test/landed",
+    };
   });
-  const openPage = vi.fn(),
-    refreshPage = vi.fn();
-  render(
-    <f.View
-      openPage={openPage}
-      refreshPage={refreshPage}
-      selectedPage={f.page(f.a)}
-    />,
-  );
-  await open();
-  await screen.findByRole("button", { name: "https://fixture.test/c" });
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  await waitFor(() =>
-    expect(refreshPage).toHaveBeenCalledWith({
-      profile: f.profileId,
-      id: f.a,
-      title: "redirect.test/landed",
-      label: "https://redirect.test/landed",
-    }),
+  await waitFor(
+    () => expect(tabNames()[1]).toBe("https://redirect.test/landed"),
+    {
+      timeout: 6000,
+    },
   );
   expect(
-    refreshPage.mock.calls.every(([page]) => page.profile === f.profileId),
-  ).toBe(true);
-  expect(f.selects()).toHaveLength(0);
-  const sent = native.mock.calls.filter(
-    ([operation, args]) =>
-      operation === "control_browser" &&
-      !["resize", "hide", "back"].includes(args.action),
-  );
-  expect(sent).toHaveLength(0);
+    screen.getByRole("tab", { name: "https://redirect.test/landed" })
+      .textContent,
+  ).toBe("redirect.test/landed");
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe(selected);
+  expect(
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action !== "hide",
+    ),
+  ).toHaveLength(0);
 });
-it("removes only the exact shared descriptor after an acknowledged close", async () => {
-  const f = pagesFixture();
-  native.mockImplementation(async (operation, args) => {
-    if (operation === "control_browser" && args.action === "close-tab")
-      return f.state(
-        f.a,
-        f.tabs.filter((tab) => tab.id !== args.tabId),
-      );
-    return f.state(f.a);
+
+it("sends no page operation or presentation while the session is inactive", async () => {
+  const f = fixture({ pages: 1 });
+  mount(f, false, false);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
   });
-  const closePage = vi.fn();
-  render(
-    <f.View
-      openPage={vi.fn()}
-      closePage={closePage}
-      selectedPage={f.page(f.a)}
-    />,
-  );
-  await open();
-  await screen.findByRole("button", { name: "https://fixture.test/c" });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Close tab https://fixture.test/b" }),
-  );
-  await waitFor(() => expect(closePage).toHaveBeenCalledTimes(1));
-  expect(closePage).toHaveBeenCalledWith({ profile: f.profileId, id: f.b });
+  expect(native).not.toHaveBeenCalled();
+  expect(f.list).not.toHaveBeenCalled();
+  expect(tabNames()).toEqual(["Conversation"]);
 });
-it.each(["rejected", "unacknowledged"])(
-  "keeps the shared descriptor when the native close is %s",
-  async (outcome) => {
-    const f = pagesFixture();
-    native.mockImplementation(async (operation, args) => {
-      if (operation === "control_browser" && args.action === "close-tab") {
-        if (outcome === "rejected") throw new Error("rejected");
-        return f.state(f.a);
-      }
-      return f.state(f.a);
-    });
-    const closePage = vi.fn();
-    render(
-      <f.View
-        openPage={vi.fn()}
-        closePage={closePage}
-        selectedPage={f.page(f.a)}
-      />,
-    );
-    await open();
-    await screen.findByRole("button", { name: "https://fixture.test/c" });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Close tab https://fixture.test/b" }),
-    );
-    await waitFor(() =>
-      expect(
-        native.mock.calls.some(
-          ([operation, args]) =>
-            operation === "control_browser" && args.action === "close-tab",
-        ),
-      ).toBe(true),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(closePage).not.toHaveBeenCalled();
-  },
-);

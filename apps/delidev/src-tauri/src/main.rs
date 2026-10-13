@@ -744,6 +744,71 @@ fn recheck_record(
     }
     Ok(())
 }
+// The Go profile record authorizes page metadata only while it is the exact
+// Active revision admitted at the start of the operation. Removal-pending or
+// removed state, or any other revision, is account-deletion authority that
+// supersedes the stale record.
+fn verify_profile_authority(
+    admitted: &delidev_desktop::browser::ProfileRecord,
+    current: &delidev_desktop::browser::ProfileRecord,
+) -> Result<(), NativeFailure> {
+    if current.id != admitted.id
+        || current.data.server_id != admitted.data.server_id
+        || current.data.device_id != admitted.data.device_id
+        || current.data.account_id != admitted.data.account_id
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    if current.data.state != delidev_desktop::browser::ProfileState::Active {
+        return Err(NativeFailure::Stopped);
+    }
+    if current.revision != admitted.revision {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(())
+}
+// Re-read the authoritative Go profile at the publication boundary, before the
+// short native admission locks are taken, so the blocking sidecar read never
+// runs under them. Retain the original native admission locks through atomic
+// metadata replacement. Registry/connection retirement cannot cross the
+// captured publication boundary.
+fn publish_browser_pages(
+    windows: &ProductWindows,
+    original: &WindowAuthority,
+    profile_fence: impl FnOnce() -> Result<(), NativeFailure>,
+    staged: delidev_desktop::browser::PrivateWrite,
+    committed: &mut bool,
+) -> Result<(), NativeFailure> {
+    profile_fence()?;
+    let target = staged.target().to_path_buf();
+    let barriers = windows.removals.lock().map_err(|_| NativeFailure::Busy)?;
+    let registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+    let current = registry.admitted(&original.entry.label)?;
+    if current.instance != original.entry.instance
+        || current.role != original.entry.role
+        || (original.saved.is_none() && registry.local_revision != original.local_revision)
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    let bindings = windows.bindings.lock().map_err(|_| NativeFailure::Busy)?;
+    if let Some(expected) = &original.saved
+        && (barriers.contains_key(&expected.id)
+            || !bindings.get(&current.label).is_some_and(|binding| {
+                !binding.closing
+                    && binding.instance == current.instance
+                    && binding.profile.same_authority(expected)
+            }))
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    staged.replace_with_commit(committed)?;
+    drop(bindings);
+    drop(registry);
+    drop(barriers);
+    // Directory durability stays on this worker after the short admission
+    // fence.
+    delidev_desktop::browser::sync_private_parent(&target)
+}
 fn adopt_local(
     window: &WebviewWindow<CefRuntime>,
     original: &WindowAuthority,
@@ -1570,6 +1635,156 @@ async fn open_connection(
     result
 }
 
+/// A page command either was never admitted (nothing can have changed) or its
+/// outcome is uncertain and must be settled by observing the original
+/// operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum PageCommandFailure {
+    NotAdmitted { failure: NativeFailure },
+    Uncertain { failure: NativeFailure },
+}
+
+// Resource operations use a native-created original window identity, never a
+// renderer-supplied path or presentation handle.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
+#[tauri::command]
+async fn browser_pages(
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    request: browser_host::PageRequest,
+) -> Result<browser_host::PageInventory, PageCommandFailure> {
+    let not_admitted = |failure| PageCommandFailure::NotAdmitted { failure };
+    let uncertain = |failure| PageCommandFailure::Uncertain { failure };
+    let authority = capture_authority(&window).map_err(not_admitted)?;
+    canonical_id(&profile_id).map_err(not_admitted)?;
+    let scope = authority.saved.clone();
+    // Saved windows are not affected by the local connection revision.
+    let owner = format!(
+        "{}:{}:{}",
+        authority.entry.label,
+        authority.entry.instance,
+        if scope.is_some() {
+            0
+        } else {
+            authority.local_revision
+        }
+    );
+    let windows = Arc::clone(app.state::<Arc<ProductWindows>>().inner());
+    let worker_connector = Arc::clone(connector.inner());
+    let worker_host = Arc::clone(host.inner());
+    let worker_request = request.clone();
+    let worker_authority = authority.clone();
+    let worker_owner = owner.clone();
+    let id = profile_id.clone();
+    let mutating = matches!(
+        request.action,
+        browser_host::PageAction::Create | browser_host::PageAction::Close
+    );
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        let record = worker_connector.browser_profile(scope.as_ref(), &id)?;
+        recheck_record(&windows, &worker_authority)?;
+        if !mutating {
+            let inventory =
+                worker_host.read_pages(&worker_owner, scope.as_ref(), &record, &worker_request)?;
+            recheck_record(&windows, &worker_authority)?;
+            return Ok(Some(inventory));
+        }
+        if record.data.state != delidev_desktop::browser::ProfileState::Active {
+            return Err(NativeFailure::Stopped);
+        }
+        let admission = worker_host.prepare_pages(
+            &worker_owner,
+            scope.clone(),
+            &record,
+            &worker_request,
+            |staged, committed| {
+                publish_browser_pages(
+                    &windows,
+                    &worker_authority,
+                    || {
+                        let current = worker_connector.browser_profile(scope.as_ref(), &id)?;
+                        verify_profile_authority(&record, &current)
+                    },
+                    staged,
+                    committed,
+                )
+            },
+        )?;
+        if admission == browser_host::PageAdmission::Replayed {
+            // The original operation owns its result; read it without
+            // repeating the mutation.
+            let observe = browser_host::PageRequest {
+                action: browser_host::PageAction::Observe,
+                operation_id: worker_request.operation_id.clone(),
+                url: None,
+                page_id: None,
+            };
+            let inventory =
+                worker_host.read_pages(&worker_owner, scope.as_ref(), &record, &observe)?;
+            return Ok(Some(inventory));
+        }
+        Ok(None)
+    })
+    .await
+    .map_err(|_| not_admitted(NativeFailure::SidecarFailed))?
+    .map_err(not_admitted)?;
+    let inventory = prepared;
+    let operation_id = request.operation_id.clone().unwrap_or_default();
+    // A fresh mutation and a retried native cleanup finish on the UI loop. A
+    // pure read, or a receipt whose cleanup completed, returns directly.
+    let needs_finish = inventory.as_ref().is_none_or(|inventory| {
+        inventory
+            .receipt
+            .as_ref()
+            .is_some_and(|receipt| receipt.metadata_committed && !receipt.native_cleanup_complete)
+    });
+    let result = if needs_finish {
+        let ui_host = Arc::clone(host.inner());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let copy = app.clone();
+        let original = authority.clone();
+        let finish_owner = owner.clone();
+        let finish_profile = profile_id.clone();
+        let finish_operation = operation_id.clone();
+        if app
+            .run_on_main_thread(move || {
+                let result = match recheck_registered(&copy, &original) {
+                    Ok(()) => ui_host.finish_pages(
+                        &copy,
+                        &finish_owner,
+                        &finish_profile,
+                        &finish_operation,
+                    ),
+                    Err(code) => Err(code),
+                };
+                if result.is_err() {
+                    ui_host.release_pages(&finish_owner, &finish_profile, &finish_operation);
+                }
+                let _ = send.send(result);
+            })
+            .is_err()
+        {
+            host.release_pages(&owner, &profile_id, &operation_id);
+            return Err(uncertain(NativeFailure::SidecarFailed));
+        }
+        receive
+            .await
+            .map_err(|_| uncertain(NativeFailure::SidecarFailed))?
+            .map_err(uncertain)?
+    } else {
+        inventory.ok_or_else(|| uncertain(NativeFailure::InvalidEvidence))?
+    };
+    recheck_authority(&window, &authority).map_err(uncertain)?;
+    Ok(result)
+}
+
 // Tauri injects trusted framework state separately from the closed IPC fields.
 // Keep this exception on the command; remove it if those injected states are
 // consolidated.
@@ -1586,7 +1801,7 @@ async fn open_browser(
     host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     profile_id: String,
     view_id: String,
-    url: String,
+    page_id: String,
     bounds: browser_host::Bounds,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
     let response_window = window.clone();
@@ -1631,7 +1846,13 @@ async fn open_browser(
         let label = window.label().to_string();
         let storage_view = view_id.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
+            storage_host.prepare_open(
+                &label,
+                &storage_view,
+                storage_scope,
+                storage_record,
+                &page_id,
+            )
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
@@ -1969,6 +2190,7 @@ fn run() -> Result<(), NativeFailure> {
                 open_browser,
                 control_browser,
                 browser_state,
+                browser_pages,
                 browser_tab_shortcuts,
                 open_github,
                 open_provider_guidance,
@@ -2809,6 +3031,210 @@ mod product_window_tests {
         forged.entry.role = Role::Local;
         forged.saved = None;
         assert!(recheck_record(&windows, &forged).is_err());
+    }
+
+    fn staged_tabs() -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        delidev_desktop::browser::PrivateWrite,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tabs.json");
+        let staged = delidev_desktop::browser::stage_private(
+            &path,
+            &delidev_desktop::browser::Tabs::default(),
+        )
+        .unwrap();
+        (temp, path, staged)
+    }
+
+    #[test]
+    fn page_publication_fence_replaces_only_for_the_original_authority() {
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        publish_browser_pages(&windows, &original, || Ok(()), staged, &mut committed).unwrap();
+        assert!(committed && path.exists());
+
+        // A changed window instance, binding identity or removal barrier is
+        // rejected before replacement, leaving the prior file untouched.
+        for stale in ["instance", "binding", "barrier", "closing"] {
+            let windows = ProductWindows::default();
+            let first = saved(&windows, "profile");
+            match stale {
+                "instance" => {
+                    let mut registry = windows.registry.lock().unwrap();
+                    registry.begin_close(&first.entry.label, false).unwrap();
+                }
+                "binding" => {
+                    windows
+                        .bindings
+                        .lock()
+                        .unwrap()
+                        .get_mut(&first.entry.label)
+                        .unwrap()
+                        .profile
+                        .device_id = "replacement".into();
+                }
+                "barrier" => {
+                    windows.removals.lock().unwrap().insert(
+                        "profile".into(),
+                        SavedBinding {
+                            profile: first.saved.clone().unwrap(),
+                            instance: "removal".into(),
+                            closing: true,
+                        },
+                    );
+                }
+                _ => {
+                    windows
+                        .bindings
+                        .lock()
+                        .unwrap()
+                        .get_mut(&first.entry.label)
+                        .unwrap()
+                        .closing = true;
+                }
+            }
+            let (_temp, path, staged) = staged_tabs();
+            let mut committed = false;
+            assert!(
+                publish_browser_pages(&windows, &first, || Ok(()), staged, &mut committed).is_err(),
+                "{stale}"
+            );
+            assert!(!committed && !path.exists(), "{stale}");
+        }
+    }
+
+    fn profile_record(
+        revision: u64,
+        state: delidev_desktop::browser::ProfileState,
+    ) -> delidev_desktop::browser::ProfileRecord {
+        let id = |value: u8| format!("00000000-0000-4000-8000-{value:012}");
+        delidev_desktop::browser::ProfileRecord {
+            id: id(1),
+            revision,
+            data: delidev_desktop::browser::Profile {
+                server_id: id(2),
+                device_id: id(3),
+                account_id: id(4),
+                deletion_request_id: if state == delidev_desktop::browser::ProfileState::Active {
+                    String::new()
+                } else {
+                    id(5)
+                },
+                state,
+            },
+        }
+    }
+
+    #[test]
+    fn profile_authority_accepts_only_the_exact_active_revision() {
+        use delidev_desktop::browser::ProfileState;
+        let admitted = profile_record(3, ProfileState::Active);
+        assert_eq!(
+            verify_profile_authority(&admitted, &profile_record(3, ProfileState::Active)),
+            Ok(())
+        );
+        for state in [ProfileState::RemovalPending, ProfileState::Removed] {
+            assert_eq!(
+                verify_profile_authority(&admitted, &profile_record(4, state)),
+                Err(NativeFailure::Stopped)
+            );
+        }
+        assert_eq!(
+            verify_profile_authority(&admitted, &profile_record(4, ProfileState::Active)),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        let mut other = profile_record(3, ProfileState::Active);
+        other.data.account_id = "00000000-0000-4000-8000-000000000009".into();
+        assert_eq!(
+            verify_profile_authority(&admitted, &other),
+            Err(NativeFailure::InvalidEvidence)
+        );
+    }
+
+    #[test]
+    fn page_publication_rechecks_profile_authority_before_replacement() {
+        use delidev_desktop::browser::ProfileState;
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let admitted = profile_record(3, ProfileState::Active);
+        // The Go profile became removal-pending after the initial read: the
+        // publication fence rejects it and leaves the prior file untouched.
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        assert_eq!(
+            publish_browser_pages(
+                &windows,
+                &original,
+                || verify_profile_authority(
+                    &admitted,
+                    &profile_record(4, ProfileState::RemovalPending)
+                ),
+                staged,
+                &mut committed,
+            ),
+            Err(NativeFailure::Stopped)
+        );
+        assert!(!committed && !path.exists());
+        // An unchanged Active revision still publishes.
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        publish_browser_pages(
+            &windows,
+            &original,
+            || verify_profile_authority(&admitted, &profile_record(3, ProfileState::Active)),
+            staged,
+            &mut committed,
+        )
+        .unwrap();
+        assert!(committed && path.exists());
+    }
+
+    #[test]
+    fn local_page_publication_rejects_a_changed_local_connection_revision() {
+        let windows = ProductWindows::default();
+        let mut registry = windows.registry.lock().unwrap();
+        let entry = registry.reserve(Role::Local, true).unwrap();
+        registry.ready(&entry).unwrap();
+        let original = WindowAuthority {
+            entry,
+            local_revision: registry.local_revision,
+            saved: None,
+        };
+        drop(registry);
+        let (_temp, _path, staged) = staged_tabs();
+        let mut committed = false;
+        publish_browser_pages(&windows, &original, || Ok(()), staged, &mut committed).unwrap();
+        assert!(committed);
+        windows.registry.lock().unwrap().local_revision += 1;
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        assert_eq!(
+            publish_browser_pages(&windows, &original, || Ok(()), staged, &mut committed),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert!(!committed && !path.exists());
+    }
+
+    #[test]
+    fn page_command_failures_distinguish_unadmitted_from_uncertain() {
+        assert_eq!(
+            serde_json::to_value(PageCommandFailure::NotAdmitted {
+                failure: NativeFailure::Busy
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "not-admitted", "failure": "busy"})
+        );
+        assert_eq!(
+            serde_json::to_value(PageCommandFailure::Uncertain {
+                failure: NativeFailure::SidecarFailed
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "uncertain", "failure": "sidecar-failed"})
+        );
     }
 
     #[test]

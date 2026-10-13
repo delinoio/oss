@@ -47,9 +47,7 @@ pub enum Action {
     Back,
     Forward,
     Reload,
-    NewTab,
     SelectTab,
-    CloseTab,
     Resize,
     Hide,
 }
@@ -57,6 +55,73 @@ pub enum Action {
 pub struct BrowserState {
     pub tabs: Tabs,
     pub removal_pending: bool,
+}
+/// Native-local page operations. Create and Close are explicit resource
+/// mutations; Inventory and Observe are read-only and never add a page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PageAction {
+    Inventory,
+    Create,
+    Close,
+    Observe,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PageRequest {
+    pub action: PageAction,
+    #[serde(default)]
+    pub operation_id: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub page_id: Option<String>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PagePhase {
+    Accepted,
+    CleanupPending,
+    Completed,
+    Failed,
+}
+/// The original operation's retained result. `metadata_committed` and
+/// `native_cleanup_complete` are separate facts: a committed removal can still
+/// await native child cleanup.
+#[derive(Clone, Debug, Serialize)]
+pub struct PageReceipt {
+    pub operation_id: String,
+    pub page_id: String,
+    pub phase: PagePhase,
+    pub metadata_committed: bool,
+    pub native_cleanup_complete: bool,
+    pub failure: Option<NativeFailure>,
+}
+#[derive(Clone, Serialize)]
+pub struct PageInventory {
+    pub state: BrowserState,
+    pub receipt: Option<PageReceipt>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageAdmission {
+    Admitted,
+    Replayed,
+}
+#[derive(Clone)]
+struct PageOperation {
+    request: PageRequest,
+    receipt: PageReceipt,
+    // Inventory after the operation, for a profile that was never loaded.
+    tabs: Tabs,
+    order: u64,
+    // A directory fsync failed after replacement. Observation retries only
+    // the durability step, never the mutation.
+    durability: Option<PathBuf>,
+}
+const PAGE_LIMIT: usize = 16;
+const OPERATION_LIMIT: usize = 64;
+fn operation_key(owner: &str, profile: &str, operation_id: &str) -> String {
+    format!("{owner}|{profile}|{operation_id}")
 }
 pub struct Control {
     pub profile: String,
@@ -115,6 +180,12 @@ struct State {
     live: usize,
     exit_code: Option<i32>,
     discovery_pending: bool,
+    // Native-local page operations are retained by original window owner,
+    // profile and operation identity. At most one mutation per profile is in
+    // flight.
+    page_operations: BTreeMap<String, PageOperation>,
+    page_busy: BTreeMap<String, String>,
+    page_order: u64,
     tab_shortcuts: BTreeMap<String, (String, String, u64, u8, Instant, String)>,
 }
 impl State {
@@ -478,7 +549,8 @@ impl BrowserHost {
         }
     }
 
-    pub fn prepare_open(
+    #[cfg(test)]
+    fn prepare_fixture_open(
         &self,
         window: &str,
         view_id: &str,
@@ -486,32 +558,59 @@ impl BrowserHost {
         record: ProfileRecord,
         url: &str,
     ) -> Result<()> {
+        // Fixtures request their page explicitly, as production does through
+        // Create; presentation and restoration never do.
+        let request = PageRequest {
+            action: PageAction::Create,
+            operation_id: Some(uuid::Uuid::now_v7().to_string()),
+            url: Some(url.into()),
+            page_id: None,
+        };
+        self.prepare_pages(
+            "fixture-owner",
+            scope.clone(),
+            &record,
+            &request,
+            |staged, committed| staged.publish_with_commit(committed),
+        )?;
+        let key = operation_key(
+            "fixture-owner",
+            &record.id,
+            request.operation_id.as_deref().unwrap(),
+        );
+        let page_id = {
+            let mut state = self.state.lock().unwrap();
+            state.page_busy.remove(&record.id);
+            state.page_operations[&key].receipt.page_id.clone()
+        };
+        self.prepare_open(window, view_id, scope, record, &page_id)
+    }
+
+    /// Prepares presentation of one retained page. Presentation never creates
+    /// a page: an unknown page or an empty inventory is rejected, and the
+    /// shared profile selection moves to the requested page.
+    pub fn prepare_open(
+        &self,
+        window: &str,
+        view_id: &str,
+        scope: Option<SavedConnection>,
+        record: ProfileRecord,
+        page_id: &str,
+    ) -> Result<()> {
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
         record.validate()?;
+        canonical_id(page_id)?;
         if self.stopping.load(Ordering::Acquire) || record.data.state != ProfileState::Active {
             return Err(NativeFailure::Stopped);
         }
-        if self
-            .forgotten_path(&record.data.server_id, &record.data.device_id)?
-            .exists()
-            || self
-                .root
-                .join("removals")
-                .join(format!("{}.json", record.id))
-                .exists()
-        {
-            return Err(NativeFailure::Stopped);
-        }
+        self.check_profile_retained(&record)?;
         let local_endpoint = self.connector.current_runtime_endpoint()?;
         let endpoint = scope
             .as_ref()
             .map(|s| s.endpoint.as_str())
             .unwrap_or(&local_endpoint);
-        let mut policy = Policy::new(endpoint, url)?;
+        let mut policy = Policy::empty(endpoint)?;
         policy.protect_local_runtime(&local_endpoint)?;
-        if !policy.navigation(url) {
-            return Err(NativeFailure::InvalidInput);
-        }
         let existing = {
             let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
             if state.reservations.get(window).map(String::as_str) != Some(view_id) {
@@ -545,7 +644,7 @@ impl BrowserHost {
         let (path, mut tabs) = if let Some(existing) = existing {
             existing
         } else {
-            let path = browser::profile_path(&self.root.join("profiles"), &record)?;
+            let path = browser::inspect_profile_path(&self.root.join("profiles"), &record)?;
             let tabs = if path.join("tabs.json").exists() {
                 read_json(&path.join("tabs.json"))?
             } else {
@@ -556,15 +655,17 @@ impl BrowserHost {
         for tab in &tabs.tabs {
             policy = policy.with_explicit(&tab.url)?;
         }
-        policy = policy.with_explicit(url)?;
         tabs.validate(&policy)?;
-        let staged = if tabs.tabs.is_empty() {
-            let id = uuid::Uuid::now_v7().to_string();
-            tabs.tabs.push(Tab {
-                id: id.clone(),
-                url: url.into(),
-            });
-            tabs.selected = id;
+        if !tabs.tabs.iter().any(|tab| tab.id == page_id) {
+            return Err(NativeFailure::InvalidInput);
+        }
+        // Only a retained page can reach here, so its private directories
+        // exist.
+        browser::profile_path(&self.root.join("profiles"), &record)?;
+        // Moving the shared selection is the only metadata a presentation may
+        // write; it never adds a page.
+        let staged = if tabs.selected != page_id {
+            tabs.selected = page_id.into();
             Some(browser::stage_private(&path.join("tabs.json"), &tabs)?)
         } else {
             None
@@ -618,6 +719,527 @@ impl BrowserHost {
             );
         }
         Ok(())
+    }
+
+    // A forgotten scope or a persisted removal intent permanently denies
+    // restoration, presentation and page operations for the profile.
+    fn check_profile_retained(&self, record: &ProfileRecord) -> Result<()> {
+        if self
+            .forgotten_path(&record.data.server_id, &record.data.device_id)?
+            .exists()
+            || self
+                .root
+                .join("removals")
+                .join(format!("{}.json", record.id))
+                .exists()
+        {
+            return Err(NativeFailure::Stopped);
+        }
+        Ok(())
+    }
+
+    // Native-local page operations. They never present a child: Inventory and
+    // Observe read, Create and Close change the profile's local page metadata
+    // under one serialized, receipt-backed operation.
+    fn page_policy(&self, scope: Option<&SavedConnection>, tabs: &Tabs) -> Result<Policy> {
+        let local_endpoint = self.connector.current_runtime_endpoint()?;
+        let endpoint = scope
+            .map(|s| s.endpoint.as_str())
+            .unwrap_or(&local_endpoint);
+        let mut policy = Policy::empty(endpoint)?;
+        policy.protect_local_runtime(&local_endpoint)?;
+        for tab in &tabs.tabs {
+            policy = policy.with_explicit(&tab.url)?;
+        }
+        tabs.validate(&policy)?;
+        Ok(policy)
+    }
+
+    fn same_scope(profile: &RuntimeProfile, scope: Option<&SavedConnection>) -> bool {
+        profile
+            .scope
+            .as_ref()
+            .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
+            == scope.map(|s| (&s.server_id, &s.device_id, &s.endpoint))
+    }
+
+    fn inventory_state(
+        &self,
+        scope: Option<&SavedConnection>,
+        record: &ProfileRecord,
+    ) -> Result<BrowserState> {
+        {
+            let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            if let Some(profile) = state.profiles.get(&record.id) {
+                if !Self::same_scope(profile, scope) {
+                    return Err(NativeFailure::Stopped);
+                }
+                return Ok(BrowserState {
+                    tabs: profile.tabs.clone(),
+                    removal_pending: profile.removing,
+                });
+            }
+        }
+        let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
+        self.check_profile_retained(record)?;
+        // Restoration is read-only: it neither creates directories nor seeds
+        // an empty inventory.
+        let path = browser::inspect_profile_path(&self.root.join("profiles"), record)?;
+        let file = path.join("tabs.json");
+        let tabs = if file.exists() {
+            read_json(&file)?
+        } else {
+            Tabs::default()
+        };
+        self.page_policy(scope, &tabs)?;
+        Ok(BrowserState {
+            tabs,
+            removal_pending: false,
+        })
+    }
+
+    fn page_receipt(&self, key: &str) -> Option<PageReceipt> {
+        self.state
+            .lock()
+            .ok()?
+            .page_operations
+            .get(key)
+            .map(|operation| operation.receipt.clone())
+    }
+
+    fn settle_page_operation(operation: &mut PageOperation) {
+        let receipt = &mut operation.receipt;
+        if !receipt.metadata_committed {
+            receipt.phase = PagePhase::Failed;
+        } else if operation.durability.is_none() && receipt.native_cleanup_complete {
+            receipt.phase = PagePhase::Completed;
+            receipt.failure = None;
+        } else {
+            receipt.phase = PagePhase::CleanupPending;
+        }
+    }
+
+    // Retry only the directory fsync that followed a successful replacement.
+    fn settle_durability(&self, key: &str) {
+        let Some(path) = self.state.lock().ok().and_then(|state| {
+            state
+                .page_operations
+                .get(key)
+                .and_then(|operation| operation.durability.clone())
+        }) else {
+            return;
+        };
+        if browser::sync_private_parent(&path).is_ok()
+            && let Ok(mut state) = self.state.lock()
+            && let Some(operation) = state.page_operations.get_mut(key)
+        {
+            operation.durability = None;
+            Self::settle_page_operation(operation);
+        }
+    }
+
+    /// Blocking worker only. Inventory reads local pages without creating
+    /// storage; Observe also returns the original operation's retained receipt
+    /// and never repeats its mutation.
+    pub fn read_pages(
+        &self,
+        owner: &str,
+        scope: Option<&SavedConnection>,
+        record: &ProfileRecord,
+        request: &PageRequest,
+    ) -> Result<PageInventory> {
+        record.validate()?;
+        if self.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let key = match request.action {
+            PageAction::Inventory => None,
+            PageAction::Observe => {
+                let operation = request
+                    .operation_id
+                    .as_deref()
+                    .ok_or(NativeFailure::InvalidInput)?;
+                canonical_id(operation)?;
+                Some(operation_key(owner, &record.id, operation))
+            }
+            PageAction::Create | PageAction::Close => return Err(NativeFailure::InvalidInput),
+        };
+        if let Some(key) = &key {
+            self.settle_durability(key);
+        }
+        let state = if record.data.state == ProfileState::Active {
+            self.inventory_state(scope, record)?
+        } else {
+            BrowserState {
+                tabs: Tabs::default(),
+                removal_pending: true,
+            }
+        };
+        Ok(PageInventory {
+            state,
+            receipt: key.and_then(|key| self.page_receipt(&key)),
+        })
+    }
+
+    /// Blocking worker only. Admission records the original operation before
+    /// any storage work; every later failure is retained on its receipt, so a
+    /// lost reply is settled by observation rather than a repeated mutation.
+    /// `publish` is called under the native publication fence.
+    pub fn prepare_pages(
+        &self,
+        owner: &str,
+        scope: Option<SavedConnection>,
+        record: &ProfileRecord,
+        request: &PageRequest,
+        publish: impl FnOnce(browser::PrivateWrite, &mut bool) -> Result<()>,
+    ) -> Result<PageAdmission> {
+        record.validate()?;
+        let operation_id = request
+            .operation_id
+            .as_deref()
+            .ok_or(NativeFailure::InvalidInput)?;
+        canonical_id(operation_id)?;
+        match request.action {
+            PageAction::Create => {
+                if request.page_id.is_some()
+                    || request
+                        .url
+                        .as_deref()
+                        .is_none_or(|url| url.is_empty() || url.len() > 8192)
+                {
+                    return Err(NativeFailure::InvalidInput);
+                }
+            }
+            PageAction::Close => {
+                if request.url.is_some() {
+                    return Err(NativeFailure::InvalidInput);
+                }
+                canonical_id(
+                    request
+                        .page_id
+                        .as_deref()
+                        .ok_or(NativeFailure::InvalidInput)?,
+                )?;
+            }
+            PageAction::Inventory | PageAction::Observe => {
+                return Err(NativeFailure::InvalidInput);
+            }
+        }
+        let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
+        if self.stopping.load(Ordering::Acquire) || record.data.state != ProfileState::Active {
+            return Err(NativeFailure::Stopped);
+        }
+        self.check_profile_retained(record)?;
+        let key = operation_key(owner, &record.id, operation_id);
+        let loaded = {
+            let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            if let Some(existing) = state.page_operations.get(&key) {
+                if existing.request != *request {
+                    return Err(NativeFailure::InvalidInput);
+                }
+                return Ok(PageAdmission::Replayed);
+            }
+            match state.profiles.get(&record.id) {
+                Some(profile) if profile.removing || !Self::same_scope(profile, scope.as_ref()) => {
+                    return Err(NativeFailure::Stopped);
+                }
+                Some(profile) => Some((
+                    profile.path.clone(),
+                    profile.tabs.clone(),
+                    profile
+                        .policy
+                        .lock()
+                        .map_err(|_| NativeFailure::Busy)?
+                        .clone(),
+                )),
+                None => None,
+            }
+        };
+        let (path, mut tabs, mut policy) = if let Some(loaded) = loaded {
+            loaded
+        } else {
+            // Only an explicit Create may initialize storage.
+            let profiles = self.root.join("profiles");
+            let path = if request.action == PageAction::Create {
+                browser::profile_path(&profiles, record)?
+            } else {
+                browser::inspect_profile_path(&profiles, record)?
+            };
+            let file = path.join("tabs.json");
+            let tabs = if file.exists() {
+                read_json(&file)?
+            } else {
+                Tabs::default()
+            };
+            let policy = self.page_policy(scope.as_ref(), &tabs)?;
+            (path, tabs, policy)
+        };
+        let page_id = request
+            .page_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+        {
+            let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            if state.page_busy.contains_key(&record.id) {
+                return Err(NativeFailure::Busy);
+            }
+            if state.page_operations.len() >= OPERATION_LIMIT {
+                let oldest = state
+                    .page_operations
+                    .iter()
+                    .filter(|(_, operation)| {
+                        matches!(
+                            operation.receipt.phase,
+                            PagePhase::Completed | PagePhase::Failed
+                        )
+                    })
+                    .min_by_key(|(_, operation)| operation.order)
+                    .map(|(key, _)| key.clone())
+                    .ok_or(NativeFailure::Busy)?;
+                state.page_operations.remove(&oldest);
+            }
+            state.page_order = state
+                .page_order
+                .checked_add(1)
+                .ok_or(NativeFailure::Stopped)?;
+            let order = state.page_order;
+            state.page_operations.insert(
+                key.clone(),
+                PageOperation {
+                    request: request.clone(),
+                    receipt: PageReceipt {
+                        operation_id: operation_id.into(),
+                        page_id: page_id.clone(),
+                        phase: PagePhase::Accepted,
+                        metadata_committed: false,
+                        native_cleanup_complete: false,
+                        failure: None,
+                    },
+                    tabs: tabs.clone(),
+                    order,
+                    durability: None,
+                },
+            );
+            state.page_busy.insert(record.id.clone(), key.clone());
+        }
+        let outcome = self.mutate_pages(
+            &record.id,
+            request,
+            &page_id,
+            &path,
+            &mut tabs,
+            &mut policy,
+            publish,
+        );
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let committed = outcome.as_ref().is_ok_and(|committed| committed.is_some());
+        if committed
+            && let Some(profile) = state.profiles.get_mut(&record.id)
+            && !profile.removing
+        {
+            profile.tabs = tabs.clone();
+            if let Ok(mut current) = profile.policy.lock() {
+                *current = policy;
+            }
+            profile.storage_revision = profile.storage_revision.saturating_add(1);
+        }
+        if let Some(operation) = state.page_operations.get_mut(&key) {
+            match outcome {
+                Ok(durability) => {
+                    operation.receipt.metadata_committed = true;
+                    if let Some((target, code)) = durability.flatten() {
+                        operation.durability = Some(target);
+                        operation.receipt.failure = Some(code);
+                    }
+                    operation.tabs = tabs;
+                }
+                Err(code) => operation.receipt.failure = Some(code),
+            }
+            Self::settle_page_operation(operation);
+        }
+        Ok(PageAdmission::Admitted)
+    }
+
+    // Returns Ok(Some(None)) for a replaced file, Ok(Some(Some(..))) when the
+    // directory fsync failed after replacement, and Ok(None) for an idempotent
+    // Close of an already absent page (committed, nothing to write).
+    #[allow(
+        clippy::type_complexity,
+        clippy::too_many_arguments,
+        reason = "Private helper keeps the three publication outcomes explicit"
+    )]
+    fn mutate_pages(
+        &self,
+        profile: &str,
+        request: &PageRequest,
+        page_id: &str,
+        path: &std::path::Path,
+        tabs: &mut Tabs,
+        policy: &mut Policy,
+        publish: impl FnOnce(browser::PrivateWrite, &mut bool) -> Result<()>,
+    ) -> Result<Option<Option<(PathBuf, NativeFailure)>>> {
+        match request.action {
+            PageAction::Create => {
+                if tabs.tabs.len() >= PAGE_LIMIT {
+                    return Err(NativeFailure::InvalidInput);
+                }
+                let url = request.url.as_deref().ok_or(NativeFailure::InvalidInput)?;
+                *policy = policy.with_explicit(url)?;
+                tabs.tabs.push(Tab {
+                    id: page_id.into(),
+                    url: url.into(),
+                });
+                tabs.selected = page_id.into();
+            }
+            PageAction::Close => {
+                let Some(index) = tabs.tabs.iter().position(|tab| tab.id == page_id) else {
+                    // Closure is idempotent: the page is already absent.
+                    return Ok(None);
+                };
+                tabs.tabs.remove(index);
+                if tabs.selected == page_id {
+                    tabs.selected = tabs
+                        .tabs
+                        .get(index.saturating_sub(1))
+                        .map(|tab| tab.id.clone())
+                        .unwrap_or_default();
+                }
+            }
+            PageAction::Inventory | PageAction::Observe => {
+                return Err(NativeFailure::InvalidInput);
+            }
+        }
+        let file = path.join("tabs.json");
+        let staged = browser::stage_private(&file, tabs)?;
+        let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
+        {
+            let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+            if self.stopping.load(Ordering::Acquire)
+                || state.profiles.get(profile).is_some_and(|p| p.removing)
+            {
+                return Err(NativeFailure::Stopped);
+            }
+        }
+        let mut committed = false;
+        match publish(staged, &mut committed) {
+            Ok(()) => Ok(Some(None)),
+            Err(code) if committed => Ok(Some(Some((file, code)))),
+            Err(code) => Err(code),
+        }
+    }
+
+    /// UI loop only. Reconciles live shared children with the committed page
+    /// selection and settles the original receipt. It performs no filesystem
+    /// operation and never repeats the metadata mutation.
+    pub fn finish_pages(
+        self: &Arc<Self>,
+        app: &AppHandle<CefRuntime>,
+        owner: &str,
+        profile: &str,
+        operation_id: &str,
+    ) -> Result<PageInventory> {
+        let key = operation_key(owner, profile, operation_id);
+        let committed = self
+            .state
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .page_operations
+            .get(&key)
+            .ok_or(NativeFailure::InvalidEvidence)?
+            .receipt
+            .metadata_committed;
+        let cleanup = if committed {
+            self.reconcile_children(app, profile)
+        } else {
+            Ok(())
+        };
+        self.complete_page_cleanup(&key, profile, committed, cleanup)
+    }
+
+    // Records the result of native child reconciliation on the original
+    // receipt, releases the profile's mutation slot and returns the inventory.
+    fn complete_page_cleanup(
+        &self,
+        key: &str,
+        profile: &str,
+        committed: bool,
+        cleanup: Result<()>,
+    ) -> Result<PageInventory> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        if state.page_busy.get(profile).map(String::as_str) == Some(key) {
+            state.page_busy.remove(profile);
+        }
+        let removing = state.profiles.get(profile).is_some_and(|p| p.removing);
+        let loaded = state.profiles.get(profile).map(|p| p.tabs.clone());
+        let operation = state
+            .page_operations
+            .get_mut(key)
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        if committed {
+            operation.receipt.native_cleanup_complete = cleanup.is_ok();
+            if let Err(code) = cleanup {
+                operation.receipt.failure = Some(code);
+            }
+            Self::settle_page_operation(operation);
+        }
+        Ok(PageInventory {
+            state: BrowserState {
+                tabs: loaded.unwrap_or_else(|| operation.tabs.clone()),
+                removal_pending: removing,
+            },
+            receipt: Some(operation.receipt.clone()),
+        })
+    }
+
+    /// Releases the profile's mutation slot when the UI loop is unavailable. A
+    /// committed operation keeps its receipt and awaits native cleanup.
+    pub fn release_pages(&self, owner: &str, profile: &str, operation_id: &str) {
+        let key = operation_key(owner, profile, operation_id);
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state.page_busy.get(profile) == Some(&key) {
+            state.page_busy.remove(profile);
+        }
+        if let Some(operation) = state.page_operations.get_mut(&key)
+            && operation.receipt.phase == PagePhase::Accepted
+        {
+            operation.receipt.failure = Some(NativeFailure::SidecarFailed);
+            Self::settle_page_operation(operation);
+        }
+    }
+
+    // Replace only the children that no longer show the shared selection; a
+    // child already on it keeps its page state. An inactive page has no child.
+    fn reconcile_children(
+        self: &Arc<Self>,
+        app: &AppHandle<CefRuntime>,
+        profile: &str,
+    ) -> Result<()> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let Some(p) = state.profiles.get(profile).filter(|p| !p.removing) else {
+            return Ok(());
+        };
+        let selected = p.tabs.selected.clone();
+        let context = p.context.clone();
+        if !state
+            .views
+            .values()
+            .any(|v| v.profile == profile && !v.closing && v.request.tab != selected)
+        {
+            return Ok(());
+        }
+        let context = context.ok_or(NativeFailure::Busy)?;
+        let replacement = state.select_tab(profile, &selected, unmap_view)?;
+        drop(state);
+        for browser in replacement.closing {
+            if let Some(host) = browser.host() {
+                host.close_browser(1);
+            }
+        }
+        self.recreate_children(profile, &replacement.requests, |request| {
+            create_child(self, app, profile.into(), request.clone(), context.clone())
+        })
     }
 
     // Called on the UI thread only after worker preparation and a second
@@ -677,6 +1299,10 @@ impl BrowserHost {
             return Err(NativeFailure::Stopped);
         };
         let tab = p.tabs.selected.clone();
+        // Presentation restores an existing page; an empty inventory has none.
+        if tab.is_empty() || !p.tabs.tabs.iter().any(|page| page.id == tab) {
+            return Err(NativeFailure::InvalidInput);
+        }
         state.generation = state
             .generation
             .checked_add(1)
@@ -774,41 +1400,22 @@ impl BrowserHost {
             )
         };
         match action {
-            Action::Navigate | Action::NewTab => {
+            Action::Navigate => {
                 let url = url.ok_or(NativeFailure::InvalidInput)?;
                 policy = policy.with_explicit(url)?;
-                if matches!(action, Action::NewTab) {
-                    if tabs.tabs.len() >= 16 {
-                        return Err(NativeFailure::InvalidInput);
-                    }
-                    let id = uuid::Uuid::now_v7().to_string();
-                    tabs.tabs.push(Tab {
-                        id: id.clone(),
-                        url: url.into(),
-                    });
-                    tabs.selected = id;
-                }
             }
-            Action::SelectTab | Action::CloseTab => {
+            Action::SelectTab => {
                 let id = tab.ok_or(NativeFailure::InvalidInput)?;
                 if !tabs.tabs.iter().any(|t| t.id == id) {
                     return Err(NativeFailure::InvalidInput);
                 }
-                if matches!(action, Action::SelectTab) {
-                    tabs.selected = id.into();
-                } else {
-                    tabs.tabs.retain(|t| t.id != id);
-                    if tabs.selected == id {
-                        tabs.selected = tabs.tabs.first().map(|t| t.id.clone()).unwrap_or_default();
-                    }
-                }
+                tabs.selected = id.into();
             }
+            // Page creation and closure are explicit receipt-backed
+            // operations; no presentation control can add or remove a page.
             _ => {}
         }
-        let staged = if matches!(
-            action,
-            Action::NewTab | Action::SelectTab | Action::CloseTab
-        ) {
+        let staged = if matches!(action, Action::SelectTab) {
             Some(browser::stage_private(&path.join("tabs.json"), &tabs)?)
         } else {
             None
@@ -947,13 +1554,12 @@ impl BrowserHost {
             Action::Hide => {
                 unreachable!("Hide uses exact idempotent cleanup before ordinary controls")
             }
-            Action::NewTab | Action::SelectTab | Action::CloseTab => {
+            Action::SelectTab => {
                 let p = state.profiles.get_mut(profile).unwrap();
                 let context = p.context.clone().ok_or(NativeFailure::Busy)?;
                 let selected = p.tabs.selected.clone();
                 // Profile tabs are shared: every live user observes the same
-                // selected tab, including closing the last tab
-                // without deleting the profile.
+                // selected tab.
                 let replacement = state.select_tab(profile, &selected, unmap_view)?;
                 drop(state);
                 for browser in replacement.closing {
@@ -2474,7 +3080,7 @@ mod tests {
         fs::write(original.join("Cookies"), b"original cookie fixture").unwrap();
         let view = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &view).unwrap();
-        host.prepare_open(
+        host.prepare_fixture_open(
             "fixture",
             &view,
             None,
@@ -2616,6 +3222,58 @@ exec /bin/cat "$2/desktop-client/pending.json"
         );
         assert!(host.numeric_selection(&record.id, &request, 1).is_none());
     }
+    const OWNER: &str = "fixture-owner";
+
+    fn page_request(action: PageAction, url: Option<&str>, page: Option<&str>) -> PageRequest {
+        PageRequest {
+            action,
+            operation_id: Some(uuid::Uuid::now_v7().to_string()),
+            url: url.map(Into::into),
+            page_id: page.map(Into::into),
+        }
+    }
+
+    fn commit_fixture(staged: browser::PrivateWrite, committed: &mut bool) -> Result<()> {
+        staged.publish_with_commit(committed)
+    }
+
+    // Runs one admitted page operation and settles its native cleanup the way
+    // the UI loop would, without a CEF application handle.
+    fn settle_page(
+        host: &BrowserHost,
+        record: &ProfileRecord,
+        request: &PageRequest,
+    ) -> PageReceipt {
+        host.prepare_pages(OWNER, None, record, request, commit_fixture)
+            .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let committed = host.state.lock().unwrap().page_operations[&key]
+            .receipt
+            .metadata_committed;
+        host.complete_page_cleanup(&key, &record.id, committed, Ok(()))
+            .unwrap()
+            .receipt
+            .unwrap()
+    }
+
+    fn create_page(host: &BrowserHost, record: &ProfileRecord, url: &str) -> String {
+        let receipt = settle_page(
+            host,
+            record,
+            &page_request(PageAction::Create, Some(url), None),
+        );
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        receipt.page_id
+    }
+
+    fn close_page(host: &BrowserHost, record: &ProfileRecord, page: &str) -> PageReceipt {
+        settle_page(
+            host,
+            record,
+            &page_request(PageAction::Close, None, Some(page)),
+        )
+    }
+
     fn active_storage_fixture() -> (
         tempfile::TempDir,
         Arc<BrowserHost>,
@@ -2626,7 +3284,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         let (temp, host, record) = storage_fixture();
         let view_id = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &view_id).unwrap();
-        host.prepare_open(
+        host.prepare_fixture_open(
             "fixture",
             &view_id,
             None,
@@ -2681,91 +3339,73 @@ exec /bin/cat "$2/desktop-client/pending.json"
 
     #[test]
     fn superseded_tab_controls_discard_staged_files_before_publication() {
-        for action in [Action::NewTab, Action::SelectTab, Action::CloseTab] {
-            let (_temp, host, record, view_id, request) = active_storage_fixture();
-            host.prepare_control(
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        create_page(&host, &record, "https://fixture.test/second");
+        let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
+        let before = fs::read(path.join("tabs.json")).unwrap();
+        // The reservation callback owns the publication fence while a
+        // worker completes slow staging. UI state remains available.
+        let publication = host.publication.lock().unwrap();
+        let copy = Arc::clone(&host);
+        let profile = record.id.clone();
+        let worker = thread::spawn(move || {
+            copy.prepare_control(
                 "fixture",
-                &record.id,
+                &profile,
                 &view_id,
-                Action::NewTab,
-                Some("https://fixture.test/second"),
-                None,
+                Action::SelectTab,
+                Some("https://fixture.test/stale"),
+                Some(&request.tab),
             )
+        });
+        wait_for_staged_tabs(&path);
+        assert!(host.state.try_lock().is_ok());
+        host.reserve("fixture", &uuid::Uuid::now_v7().to_string())
             .unwrap();
-            let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
-            let before = fs::read(path.join("tabs.json")).unwrap();
-            // The reservation callback owns the publication fence while a
-            // worker completes slow staging. UI state remains available.
-            let publication = host.publication.lock().unwrap();
-            let copy = Arc::clone(&host);
-            let profile = record.id.clone();
-            let worker = thread::spawn(move || {
-                copy.prepare_control(
-                    "fixture",
-                    &profile,
-                    &view_id,
-                    action,
-                    Some("https://fixture.test/stale"),
-                    Some(&request.tab),
-                )
-            });
-            wait_for_staged_tabs(&path);
-            assert!(host.state.try_lock().is_ok());
-            host.reserve("fixture", &uuid::Uuid::now_v7().to_string())
-                .unwrap();
-            drop(publication);
-            assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
-            assert_eq!(fs::read(path.join("tabs.json")).unwrap(), before);
-            assert_eq!(
-                serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
-                before
-            );
-            assert!(!fs::read_dir(path).unwrap().any(|entry| {
-                entry
-                    .unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .ends_with(".pending")
-            }));
-        }
+        drop(publication);
+        assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
+        assert_eq!(fs::read(path.join("tabs.json")).unwrap(), before);
+        assert_eq!(
+            serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
+            before
+        );
+        assert!(!fs::read_dir(path).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".pending")
+        }));
     }
 
     #[test]
-    fn superseded_initial_open_discards_its_staged_first_tab() {
+    fn superseded_presentation_selection_discards_its_staged_write() {
         let (_temp, host, record) = storage_fixture();
+        let first = create_page(&host, &record, "https://fixture.test/first");
+        create_page(&host, &record, "https://fixture.test/second");
+        let path = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
+        let before = fs::read(path.join("tabs.json")).unwrap();
         let original = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &original).unwrap();
-        let path = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
         let publication = host.publication.lock().unwrap();
         let copy = Arc::clone(&host);
         let prepared = record.clone();
-        let worker = thread::spawn(move || {
-            copy.prepare_open(
-                "fixture",
-                &original,
-                None,
-                prepared,
-                "https://fixture.test/stale",
-            )
-        });
+        let page = first.clone();
+        let worker =
+            thread::spawn(move || copy.prepare_open("fixture", &original, None, prepared, &page));
         wait_for_staged_tabs(&path);
         assert!(host.state.try_lock().is_ok());
         let replacement = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &replacement).unwrap();
         drop(publication);
         assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
-        assert!(!path.join("tabs.json").exists());
+        assert_eq!(fs::read(path.join("tabs.json")).unwrap(), before);
         assert!(host.state.lock().unwrap().profiles.is_empty());
-        host.prepare_open(
-            "fixture",
-            &replacement,
-            None,
-            record.clone(),
-            "https://fixture.test/current",
-        )
-        .unwrap();
+        host.prepare_open("fixture", &replacement, None, record.clone(), &first)
+            .unwrap();
         let restored: Tabs = read_json(&path.join("tabs.json")).unwrap();
-        assert_eq!(restored.tabs[0].url, "https://fixture.test/current");
+        assert_eq!(restored.tabs.len(), 2);
+        assert_eq!(restored.selected, first);
     }
 
     #[test]
@@ -2798,6 +3438,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         let (_temp, host, record, _view_id, request) = active_storage_fixture();
         let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
         let before = fs::read(path.join("tabs.json")).unwrap();
+        let page = request.tab.clone();
         let publication = host.publication.lock().unwrap();
         let copy = Arc::clone(&host);
         let profile = record.id.clone();
@@ -2811,14 +3452,8 @@ exec /bin/cat "$2/desktop-client/pending.json"
         drop(publication);
         assert_eq!(worker.join().unwrap(), Err(NativeFailure::Stopped));
         assert_eq!(fs::read(path.join("tabs.json")).unwrap(), before);
-        host.prepare_open(
-            "fixture",
-            &replacement,
-            None,
-            record.clone(),
-            "https://fixture.test/new",
-        )
-        .unwrap();
+        host.prepare_open("fixture", &replacement, None, record.clone(), &page)
+            .unwrap();
         assert_eq!(
             serde_json::to_vec(&host.state.lock().unwrap().profiles[&record.id].tabs).unwrap(),
             before
@@ -2827,16 +3462,8 @@ exec /bin/cat "$2/desktop-client/pending.json"
 
     #[test]
     fn background_tab_close_preserves_selected_child_generation() {
-        let (_temp, host, record, view_id, original) = active_storage_fixture();
-        host.prepare_control(
-            "fixture",
-            &record.id,
-            &view_id,
-            Action::NewTab,
-            Some("https://fixture.test/selected"),
-            None,
-        )
-        .unwrap();
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        create_page(&host, &record, "https://fixture.test/selected");
         let selected = host.state.lock().unwrap().profiles[&record.id]
             .tabs
             .selected
@@ -2850,15 +3477,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
             .requests;
         assert_eq!(requests.len(), 1);
         let generation = requests[0].generation;
-        host.prepare_control(
-            "fixture",
-            &record.id,
-            &view_id,
-            Action::CloseTab,
-            None,
-            Some(&original.tab),
-        )
-        .unwrap();
+        close_page(&host, &record, &original.tab);
         let path = host.state.lock().unwrap().profiles[&record.id].path.clone();
         let tabs: Tabs = read_json(&path.join("tabs.json")).unwrap();
         assert_eq!(tabs.selected, selected);
@@ -2875,15 +3494,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         assert_eq!(state.views["fixture"].request.tab, selected);
         assert_eq!(state.views["fixture"].failure, None);
         drop(state);
-        host.prepare_control(
-            "fixture",
-            &record.id,
-            &view_id,
-            Action::CloseTab,
-            None,
-            Some(&selected),
-        )
-        .unwrap();
+        close_page(&host, &record, &selected);
         let mut state = host.state.lock().unwrap();
         assert!(
             state
@@ -3102,7 +3713,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
                     _ => {}
                 }
                 host.reserve(window, &view_id).unwrap();
-                host.prepare_open(
+                host.prepare_fixture_open(
                     window,
                     &view_id,
                     None,
@@ -3327,7 +3938,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
                 "fixture",
                 &record.id,
                 &view_id,
-                Action::NewTab,
+                Action::Navigate,
                 Some("https://fixture.test/late"),
                 None
             ),
@@ -3611,7 +4222,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         let copy = Arc::clone(&host);
         let worker = thread::spawn(move || {
             started.send(()).unwrap();
-            copy.prepare_open("fixture", &original, None, record, "https://fixture.test/")
+            copy.prepare_fixture_open("fixture", &original, None, record, "https://fixture.test/")
         });
         wait.recv_timeout(Duration::from_secs(2)).unwrap();
         assert!(host.state.try_lock().is_ok());
@@ -3657,7 +4268,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         host.reserve("fixture", &replacement).unwrap();
         assert!(host.state.lock().unwrap().views.is_empty());
         assert!(
-            host.prepare_open("fixture", &replacement, None, record, "javascript:alert(1)")
+            host.prepare_fixture_open("fixture", &replacement, None, record, "javascript:alert(1)")
                 .is_err()
         );
         let state = host.state.lock().unwrap();
@@ -3796,7 +4407,7 @@ esac
         }
         drop(storage);
         assert_eq!(
-            host.prepare_open(
+            host.prepare_fixture_open(
                 "fixture",
                 &view_id,
                 None,
@@ -3852,7 +4463,7 @@ esac
         let (_temp, host, mut record) = storage_fixture();
         let view = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &view).unwrap();
-        host.prepare_open(
+        host.prepare_fixture_open(
             "fixture",
             &view,
             None,
@@ -3890,15 +4501,7 @@ esac
             );
             request
         };
-        host.prepare_control(
-            "fixture",
-            &record.id,
-            &view,
-            Action::NewTab,
-            Some("https://fixture.test/second"),
-            None,
-        )
-        .unwrap();
+        create_page(&host, &record, "https://fixture.test/second");
         let path = host.state.lock().unwrap().profiles[&record.id]
             .path
             .join("tabs.json");
@@ -3917,7 +4520,7 @@ esac
         record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
         host.prepare_removal(record.clone(), None).unwrap();
         assert_eq!(
-            host.prepare_open(
+            host.prepare_fixture_open(
                 "other",
                 &view,
                 None,
@@ -4245,6 +4848,428 @@ esac
         host.finish_removals().unwrap();
         assert!(!cache.exists());
         assert_eq!(fs::read_dir(host.root.join("removals")).unwrap().count(), 0);
+    }
+
+    fn inventory(host: &BrowserHost, record: &ProfileRecord) -> BrowserState {
+        host.read_pages(
+            OWNER,
+            None,
+            record,
+            &page_request(PageAction::Inventory, None, None),
+        )
+        .unwrap()
+        .state
+    }
+
+    #[test]
+    fn inventory_and_presentation_never_create_or_initialize_a_page() {
+        let (_temp, host, record) = storage_fixture();
+        let profiles = host.root.join("profiles");
+        let state = inventory(&host, &record);
+        assert!(state.tabs.tabs.is_empty());
+        assert!(state.tabs.selected.is_empty());
+        assert!(!state.removal_pending);
+        // Read-only restoration creates neither storage nor runtime state.
+        assert_eq!(fs::read_dir(&profiles).unwrap().count(), 0);
+        assert!(host.state.lock().unwrap().profiles.is_empty());
+        let view = uuid::Uuid::now_v7().to_string();
+        host.reserve("fixture", &view).unwrap();
+        assert_eq!(
+            host.prepare_open(
+                "fixture",
+                &view,
+                None,
+                record.clone(),
+                &uuid::Uuid::now_v7().to_string()
+            ),
+            Err(NativeFailure::InvalidInput)
+        );
+        assert_eq!(fs::read_dir(&profiles).unwrap().count(), 0);
+        assert!(host.state.lock().unwrap().profiles.is_empty());
+        assert!(inventory(&host, &record).tabs.tabs.is_empty());
+        // Observation of an unknown operation never admits it either.
+        let observed = host
+            .read_pages(
+                OWNER,
+                None,
+                &record,
+                &page_request(PageAction::Observe, None, None),
+            )
+            .unwrap();
+        assert!(observed.receipt.is_none());
+    }
+
+    #[test]
+    fn explicit_create_adds_exactly_one_page_and_replays_its_original_receipt() {
+        let (_temp, host, record) = storage_fixture();
+        let request = page_request(PageAction::Create, Some("https://fixture.test/a"), None);
+        assert_eq!(
+            host.prepare_pages(OWNER, None, &record, &request, commit_fixture),
+            Ok(PageAdmission::Admitted)
+        );
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        // A second profile mutation is serialized until the first settles.
+        let other = page_request(PageAction::Create, Some("https://fixture.test/b"), None);
+        assert_eq!(
+            host.prepare_pages(OWNER, None, &record, &other, commit_fixture),
+            Err(NativeFailure::Busy)
+        );
+        // A lost reply is observed, then replayed without a second page.
+        let pending = host
+            .read_pages(
+                OWNER,
+                None,
+                &record,
+                &PageRequest {
+                    action: PageAction::Observe,
+                    operation_id: request.operation_id.clone(),
+                    url: None,
+                    page_id: None,
+                },
+            )
+            .unwrap();
+        let receipt = pending.receipt.unwrap();
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        assert_eq!(pending.state.tabs.tabs.len(), 1);
+        assert_eq!(
+            host.prepare_pages(OWNER, None, &record, &request, commit_fixture),
+            Ok(PageAdmission::Replayed)
+        );
+        let settled = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap();
+        let receipt = settled.receipt.unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert_eq!(settled.state.tabs.tabs.len(), 1);
+        assert_eq!(settled.state.tabs.selected, receipt.page_id);
+        assert_eq!(
+            host.prepare_pages(OWNER, None, &record, &request, commit_fixture),
+            Ok(PageAdmission::Replayed)
+        );
+        assert_eq!(inventory(&host, &record).tabs.tabs.len(), 1);
+        // The same operation identity cannot carry a different request.
+        let mut changed = request.clone();
+        changed.url = Some("https://fixture.test/changed".into());
+        assert_eq!(
+            host.prepare_pages(OWNER, None, &record, &changed, commit_fixture),
+            Err(NativeFailure::InvalidInput)
+        );
+        // A different window instance owns no part of the operation.
+        assert!(
+            host.read_pages(
+                "other-owner",
+                None,
+                &record,
+                &PageRequest {
+                    action: PageAction::Observe,
+                    operation_id: request.operation_id.clone(),
+                    url: None,
+                    page_id: None,
+                },
+            )
+            .unwrap()
+            .receipt
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn close_removes_only_the_requested_page_and_last_close_keeps_the_profile() {
+        let (_temp, host, record) = storage_fixture();
+        let first = create_page(&host, &record, "https://fixture.test/first");
+        let second = create_page(&host, &record, "https://fixture.test/second");
+        let third = create_page(&host, &record, "https://fixture.test/third");
+        // Closing an inactive page preserves the others, in order.
+        let receipt = close_page(&host, &record, &second);
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.metadata_committed && receipt.native_cleanup_complete);
+        let state = inventory(&host, &record);
+        assert_eq!(
+            state
+                .tabs
+                .tabs
+                .iter()
+                .map(|tab| tab.id.as_str())
+                .collect::<Vec<_>>(),
+            [first.as_str(), third.as_str()]
+        );
+        assert_eq!(state.tabs.selected, third);
+        // Closing the selected page falls back to its left neighbor.
+        close_page(&host, &record, &third);
+        assert_eq!(inventory(&host, &record).tabs.selected, first);
+        // Closing the final page leaves the profile with zero pages.
+        close_page(&host, &record, &first);
+        let path = browser::inspect_profile_path(&host.root.join("profiles"), &record).unwrap();
+        assert!(path.is_dir());
+        let stored: Tabs = read_json(&path.join("tabs.json")).unwrap();
+        assert!(stored.tabs.is_empty() && stored.selected.is_empty());
+        // Closing an absent page is an idempotent completed operation.
+        let absent = close_page(&host, &record, &first);
+        assert_eq!(absent.phase, PagePhase::Completed);
+        assert!(inventory(&host, &record).tabs.tabs.is_empty());
+        // Restoration reads the same durable empty inventory and creates
+        // nothing.
+        let stored: Tabs = read_json(&path.join("tabs.json")).unwrap();
+        assert!(stored.tabs.is_empty() && stored.selected.is_empty());
+    }
+
+    #[test]
+    fn page_limit_rejects_creation_without_changing_the_inventory() {
+        let (_temp, host, record) = storage_fixture();
+        for index in 0..PAGE_LIMIT {
+            create_page(&host, &record, &format!("https://fixture.test/{index}"));
+        }
+        let receipt = settle_page(
+            &host,
+            &record,
+            &page_request(PageAction::Create, Some("https://fixture.test/extra"), None),
+        );
+        assert_eq!(receipt.phase, PagePhase::Failed);
+        assert_eq!(receipt.failure, Some(NativeFailure::InvalidInput));
+        assert!(!receipt.metadata_committed);
+        assert_eq!(inventory(&host, &record).tabs.tabs.len(), PAGE_LIMIT);
+    }
+
+    #[test]
+    fn invalid_addresses_and_missing_identity_are_not_admitted() {
+        let (_temp, host, record) = storage_fixture();
+        for request in [
+            PageRequest {
+                operation_id: None,
+                ..page_request(PageAction::Create, Some("https://fixture.test/"), None)
+            },
+            page_request(PageAction::Create, None, None),
+            page_request(PageAction::Create, Some(""), None),
+            page_request(PageAction::Close, None, None),
+            page_request(PageAction::Close, None, Some("not-a-page")),
+            page_request(PageAction::Inventory, None, None),
+        ] {
+            assert!(
+                host.prepare_pages(OWNER, None, &record, &request, commit_fixture)
+                    .is_err()
+            );
+        }
+        // An unsafe address is admitted as a failed operation, never stored.
+        for url in [
+            "javascript:alert(1)",
+            "https://user:secret@fixture.test/",
+            "file:///etc/passwd",
+        ] {
+            let receipt = settle_page(
+                &host,
+                &record,
+                &page_request(PageAction::Create, Some(url), None),
+            );
+            assert_eq!(receipt.phase, PagePhase::Failed);
+            assert!(!receipt.metadata_committed);
+        }
+        assert!(inventory(&host, &record).tabs.tabs.is_empty());
+        assert!(host.state.lock().unwrap().page_busy.is_empty());
+    }
+
+    #[test]
+    fn publication_failure_before_replacement_keeps_the_inventory_and_releases_the_profile() {
+        let (_temp, host, record) = storage_fixture();
+        let existing = create_page(&host, &record, "https://fixture.test/existing");
+        let request = page_request(PageAction::Close, None, Some(&existing));
+        host.prepare_pages(OWNER, None, &record, &request, |_staged, _committed| {
+            Err(NativeFailure::InvalidEvidence)
+        })
+        .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let failed = host.page_receipt(&key).unwrap();
+        assert_eq!(failed.phase, PagePhase::Failed);
+        assert_eq!(failed.failure, Some(NativeFailure::InvalidEvidence));
+        assert!(!failed.metadata_committed);
+        // The profile stays serialized until the original operation settles.
+        assert_eq!(
+            host.prepare_pages(
+                OWNER,
+                None,
+                &record,
+                &page_request(PageAction::Close, None, Some(&existing)),
+                commit_fixture
+            ),
+            Err(NativeFailure::Busy)
+        );
+        let settled = host
+            .complete_page_cleanup(&key, &record.id, false, Ok(()))
+            .unwrap();
+        assert_eq!(settled.receipt.unwrap().phase, PagePhase::Failed);
+        assert_eq!(settled.state.tabs.tabs.len(), 1);
+        assert_eq!(inventory(&host, &record).tabs.tabs.len(), 1);
+        // A fresh operation may now close the page.
+        assert_eq!(
+            close_page(&host, &record, &existing).phase,
+            PagePhase::Completed
+        );
+        assert!(inventory(&host, &record).tabs.tabs.is_empty());
+    }
+
+    #[test]
+    fn durability_failure_after_replacement_is_settled_by_observation_only() {
+        let (_temp, host, record) = storage_fixture();
+        let existing = create_page(&host, &record, "https://fixture.test/existing");
+        let request = page_request(PageAction::Close, None, Some(&existing));
+        host.prepare_pages(OWNER, None, &record, &request, |staged, committed| {
+            staged.replace_with_commit(committed)?;
+            Err(NativeFailure::StorageUnavailable)
+        })
+        .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let receipt = host.page_receipt(&key).unwrap();
+        // Metadata is committed, but the original proof is incomplete.
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        assert_eq!(receipt.failure, Some(NativeFailure::StorageUnavailable));
+        assert!(inventory(&host, &record).tabs.tabs.is_empty());
+        // Native child cleanup completes, but durability keeps it pending.
+        host.complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap();
+        assert_eq!(
+            host.page_receipt(&key).unwrap().phase,
+            PagePhase::CleanupPending
+        );
+        // Observation retries only the directory sync; the page is not closed
+        // or recreated again.
+        let observed = host
+            .read_pages(
+                OWNER,
+                None,
+                &record,
+                &PageRequest {
+                    action: PageAction::Observe,
+                    operation_id: request.operation_id.clone(),
+                    url: None,
+                    page_id: None,
+                },
+            )
+            .unwrap();
+        let receipt = observed.receipt.unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert_eq!(receipt.failure, None);
+        assert!(observed.state.tabs.tabs.is_empty());
+    }
+
+    #[test]
+    fn incomplete_native_cleanup_keeps_the_committed_receipt_pending() {
+        let (_temp, host, record) = storage_fixture();
+        let existing = create_page(&host, &record, "https://fixture.test/existing");
+        let request = page_request(PageAction::Close, None, Some(&existing));
+        host.prepare_pages(OWNER, None, &record, &request, commit_fixture)
+            .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let pending = host
+            .complete_page_cleanup(&key, &record.id, true, Err(NativeFailure::SidecarFailed))
+            .unwrap();
+        let receipt = pending.receipt.unwrap();
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        assert_eq!(receipt.failure, Some(NativeFailure::SidecarFailed));
+        assert!(pending.state.tabs.tabs.is_empty());
+        // The profile is no longer in flight, so a retried cleanup completes
+        // the same receipt without another mutation.
+        assert!(host.state.lock().unwrap().page_busy.is_empty());
+        let settled = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap();
+        let receipt = settled.receipt.unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert_eq!(receipt.failure, None);
+    }
+
+    #[test]
+    fn released_operation_keeps_its_receipt_and_frees_the_profile() {
+        let (_temp, host, record) = storage_fixture();
+        let request = page_request(PageAction::Create, Some("https://fixture.test/a"), None);
+        host.prepare_pages(OWNER, None, &record, &request, commit_fixture)
+            .unwrap();
+        host.release_pages(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        assert!(host.state.lock().unwrap().page_busy.is_empty());
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        assert_eq!(
+            host.page_receipt(&key).unwrap().phase,
+            PagePhase::CleanupPending
+        );
+        create_page(&host, &record, "https://fixture.test/b");
+        assert_eq!(inventory(&host, &record).tabs.tabs.len(), 2);
+    }
+
+    #[test]
+    fn page_operations_deny_removal_pending_and_stopped_profiles() {
+        let (_temp, host, mut record) = storage_fixture();
+        let page = create_page(&host, &record, "https://fixture.test/a");
+        record.revision = 2;
+        record.data.state = ProfileState::RemovalPending;
+        record.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+        let pending = host
+            .read_pages(
+                OWNER,
+                None,
+                &record,
+                &page_request(PageAction::Inventory, None, None),
+            )
+            .unwrap();
+        assert!(pending.state.removal_pending);
+        assert!(pending.state.tabs.tabs.is_empty());
+        for request in [
+            page_request(PageAction::Create, Some("https://fixture.test/b"), None),
+            page_request(PageAction::Close, None, Some(&page)),
+        ] {
+            assert_eq!(
+                host.prepare_pages(OWNER, None, &record, &request, commit_fixture),
+                Err(NativeFailure::Stopped)
+            );
+        }
+        record.data.state = ProfileState::Active;
+        record.data.deletion_request_id.clear();
+        host.begin_exit(0);
+        assert_eq!(
+            host.prepare_pages(
+                OWNER,
+                None,
+                &record,
+                &page_request(PageAction::Close, None, Some(&page)),
+                commit_fixture
+            ),
+            Err(NativeFailure::Stopped)
+        );
+        assert!(
+            host.read_pages(
+                OWNER,
+                None,
+                &record,
+                &page_request(PageAction::Inventory, None, None),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn loaded_profile_pages_follow_create_and_close_without_a_presentation() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        let second = create_page(&host, &record, "https://fixture.test/second");
+        {
+            let state = host.state.lock().unwrap();
+            let profile = &state.profiles[&record.id];
+            assert_eq!(profile.tabs.tabs.len(), 2);
+            assert_eq!(profile.tabs.selected, second);
+            assert_eq!(profile.storage_revision, 2);
+        }
+        // The in-memory inventory is authoritative for a loaded profile and
+        // includes observed addresses.
+        host.persist_address(&record.id, &original, "https://fixture.test/visited")
+            .unwrap();
+        let state = inventory(&host, &record);
+        assert_eq!(state.tabs.tabs[0].url, "https://fixture.test/visited");
+        close_page(&host, &record, &second);
+        let state = inventory(&host, &record);
+        assert_eq!(state.tabs.tabs.len(), 1);
+        assert_eq!(state.tabs.selected, original.tab);
     }
 }
 

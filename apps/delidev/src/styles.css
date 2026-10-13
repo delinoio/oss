@@ -4996,36 +4996,6 @@ dialog nav {
 .browser-address input {
   width: 100%;
 }
-.browser-tab-bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-block: 8px;
-}
-.browser-tabs {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  overflow: auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.browser-tabs li {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  max-width: 240px;
-  gap: 2px;
-}
-.browser-tabs li > button:first-child {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
 .browser-overflow {
   padding: 0;
   border: 0;
@@ -5049,34 +5019,6 @@ dialog nav {
 .browser-overflow > button {
   margin-top: 4px;
 }
-.browser-opening {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  display: grid;
-  padding: 12px;
-  align-items: center;
-  justify-items: center;
-}
-.browser-opening > div {
-  max-width: 360px;
-  width: 100%;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-.browser-opening p {
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.browser-opening label {
-  margin-block: 12px;
-}
-.browser-opening button {
-  width: 100%;
-  margin-top: 8px;
-}
 .browser-viewport {
   flex: 1;
   min-height: 0;
@@ -5085,6 +5027,51 @@ dialog nav {
 }
 .browser-information {
   max-width: 480px;
+}
+/* New browser page: a compact, viewport-bounded address-entry dialog. */
+.browser-new-page {
+  width: min(480px, calc(100vw - 32px));
+  max-width: 480px;
+  padding: 20px;
+  border-radius: 8px;
+}
+.browser-new-page form {
+  display: grid;
+  gap: 12px;
+}
+.browser-new-page p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.browser-new-page label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.browser-new-page input,
+.browser-new-page button {
+  min-height: 40px;
+  border-radius: 8px;
+}
+.browser-new-page footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.browser-operation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.browser-operation p {
+  flex: 1;
+  min-width: 0;
+}
+.browser-operation button {
+  min-height: 40px;
+  border-radius: 8px;
 }
 .browser-information p {
   overflow-wrap: anywhere;

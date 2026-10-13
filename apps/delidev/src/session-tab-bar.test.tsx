@@ -14,7 +14,7 @@ it("roves focus and selection without an absent-position alias and leaves pinned
         tabs={[
           { kind: SessionTabKind.Conversation },
           { kind: SessionTabKind.Files },
-          { kind: SessionTabKind.Browser },
+          { kind: SessionTabKind.Diagnostics },
         ]}
         selected={selected}
         select={select}
@@ -74,5 +74,44 @@ it("labels each direct terminal tab with a friendly number and no internal ID", 
     for (const value of attributes) expect(value).not.toContain(id.slice(0, 8));
   expect(
     screen.getByRole("button", { name: "Close Terminal 2 tab" }),
+  ).toBeTruthy();
+});
+
+it("renders the New browser page button after the tab items, outside the tablist and numeric positions", () => {
+  const newPage = vi.fn();
+  render(
+    <SessionTabBar
+      id="original"
+      tabs={[
+        { kind: SessionTabKind.Conversation },
+        {
+          kind: SessionTabKind.Page,
+          profile: "profile",
+          id: "page",
+          title: "example.test",
+          label: "https://example.test/",
+        },
+      ]}
+      selected={SessionTabKind.Conversation}
+      select={() => {}}
+      close={() => {}}
+      newPage={newPage}
+    />,
+  );
+  const add = screen.getByRole("button", { name: "New browser page" });
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(screen.getByRole("tablist").contains(add)).toBe(false);
+  expect(add.getAttribute("role")).toBeNull();
+  expect(add.hasAttribute("aria-keyshortcuts")).toBe(false);
+  expect(
+    screen.getByRole("tablist").compareDocumentPosition(add) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  fireEvent.click(add);
+  expect(newPage).toHaveBeenCalledWith(add);
+  // No Browser singleton tab exists; the page is a peer of Conversation.
+  expect(screen.queryByRole("tab", { name: "Browser" })).toBeNull();
+  expect(
+    screen.getByRole("tab", { name: "https://example.test/" }),
   ).toBeTruthy();
 });
