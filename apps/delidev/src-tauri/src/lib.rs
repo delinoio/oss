@@ -37,6 +37,7 @@ pub mod session_tab_shortcuts;
 pub mod shortcut_capture;
 pub mod shortcut_preferences;
 pub mod updater;
+pub mod updater_outcome;
 pub mod widget_writer;
 pub mod window_registry;
 

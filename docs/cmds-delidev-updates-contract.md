@@ -39,6 +39,64 @@ A lost reply retries the same phase; it never invokes installation or creates a
 generation. Failed persistence retains original retry/inspection ownership and
 logs uncertainty without claiming terminal publication.
 
+Before the first settlement attempt, the native host durably retains the exact
+observed outcome in a private per-operation record at
+`<root>/desktop-updates/native-outcomes/<operation-id>.json`, beside the
+Go-owned journal in the original connector root scope. The record is a closed
+`outcome` kind with the phase (`installed`, `failed` or `uncertain` only),
+server ID, operation ID, revision, native generation and optional
+saved-connection ID. The directory is owner-only and never repaired or created
+outside an existing `desktop-updates` scope, which is validated (a real
+directory without symlink ancestors) before the store directory is created. On
+Unix the store directory is created 0700 and an existing one must keep the same
+owner as its parent with no group or other permission bits. On Windows the
+native store creates no descriptor of its own: the `desktop-updates` scope is
+created and validated by the Go `security.PrivateDir` policy as a protected
+single-owner full-control DACL with object and container inheritance, and every
+`native-begin`, `native-inspect` and `native-outcome` revalidates it. The store
+directory is only ever created below that scope, so it inherits exactly the
+owner-only ACE, and no other principal can pre-create, replace or inject entries
+in it; changing its ACL requires the same owner principal that already owns all
+update state. Native therefore rejects symlinked ancestors but performs no
+separate DACL comparison, matching the other native private directories.
+Fixtures and cross-compilation do not establish installed Windows ACL
+acceptance. Files are written owner-only through a fsynced temporary file (the
+`desktop-updates` parent is fsynced before every persistence so a newly created
+store directory is durable) and published with a no-replace hard link (a
+destination created after the preceding read is reread and accepted only when
+identical), bounded to 4 KiB, and an existing record for the same operation is
+never replaced with different content. The record is retired only after the
+offline `native-outcome` response echoes the recorded phase for the same
+identities, and only when the stored bytes still equal, byte for byte, the bytes
+written for the verified record: the name is atomically claimed, the claimed
+bytes are verified, and only then is the claim unlinked. A differently encoded
+or replaced file is restored and retained; when another writer has already
+published the canonical name, the claimed file is renamed to a visible
+`<operation-id>.<uuid>.conflict.json` quarantine name instead of staying under its
+hidden dot-prefixed claim name, so the next listing reports both records as
+retained evidence. On the next launch a bounded
+background pass, and each original-scope `native-inspect` for the exact server,
+operation, revision and saved scope, replays the retained phase through the same
+offline writer with a settlement-only token. That token has no installer entry
+point, so replay never invokes installation and never changes the journal phase
+or generation. Launch keeps fresh installation admission busy until the pass
+ends, and Quit stops the pass between records. The launch pass streams the store in a single directory
+pass that reads entries lazily and visits each one as it is read, so memory stays
+constant and the work stays linear however many corrupt or retained entries the
+store holds. Retained records that stay unresolved (missing journal, rejected
+identity, failed settlement) cannot starve a later valid record on any launch,
+unreadable entries are reported without being deleted, and each entry is
+attempted once per pass. Quit is checked before every entry, so a very large
+damaged store cannot delay shutdown. An original-scope
+inspection reads only the record keyed by its own operation ID and never
+enumerates the directory. Corrupt, oversized, symlinked, misnamed,
+unknown-field, foreign-identity or rejected records stay on disk, are logged
+with typed outcomes and never authorize installation. A missing journal or
+record is never inferred as Installed. Fixture sidecars cover Installed, Failed
+and Uncertain replay, lost replies, foreign scope and corrupt evidence; they do
+not establish installed-platform acceptance. The record kind enum is the
+extension point for later retained native evidence.
+
 The retained worker holds no window handle. After the durable begin it rechecks
 the exact original authority from retained native state only: the OAuth window
 epoch, then the product-window registry instance, role, Local revision, saved
