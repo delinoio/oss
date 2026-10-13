@@ -5953,6 +5953,8 @@ Show “A project with this name already exists. Choose another name.” beneath
 
 A verified asynchronous repository name collision releases only its original settled request and returns to the retained draft. A completed clone collision retains the reported existing Local checkout and allows corrected registration without cloning or deleting that checkout. Narrow widths and effective 200% layout retain readable, wrapping guidance.
 
+A definitive Repository name rejection belongs to the draft that submitted it. The still-mounted editor keeps the submitted spelling and guidance until correction. A newly constructed existing-Repository editor shows the saved document and clears a connection-owned definitive rejection that predates it, because the rejected request document no longer exists. That cleanup never discards busy, uncertain or retained-input state or an accepted job, and a rejection that arrives after the new editor mounted is presented normally.
+
 ## Sidebar response attention
 
 Home navigation retains only the literal boolean true from the supported
