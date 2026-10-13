@@ -7,6 +7,8 @@ import {
   useRef,
 } from "react";
 
+import { EntranceTarget } from "./entrance-motion";
+
 export enum SettingsDialogSize {
   Confirmation = "confirmation",
   Form = "form",
@@ -36,6 +38,15 @@ export interface SettingsTaskContextValue {
   present: (id: string, presentation?: SettingsTaskPresentation) => void;
   retireOpener: (removed: (opener: HTMLElement) => boolean) => void;
 }
+/**
+ * Set by a Settings category that opted in to task entrance motion. Every
+ * Settings task opened inside that category plays one entrance per opening.
+ * Tasks owned by the desktop shell sit outside this tree and opt in through
+ * their own Modal heading entrance instead.
+ */
+export const SettingsTaskEntranceContext = createContext<
+  EntranceTarget | undefined
+>(undefined);
 export const SettingsTaskContext = createContext<
   SettingsTaskContextValue | undefined
 >(undefined);

@@ -112,6 +112,8 @@ export function SessionTerminals({
     session,
     finishOpenIntent,
     openTerminal,
+    selected: "",
+    createdTerminal: undefined as Resource | undefined,
   });
   latest.current = {
     active,
@@ -119,6 +121,8 @@ export function SessionTerminals({
     session,
     finishOpenIntent,
     openTerminal,
+    selected: latest.current.selected,
+    createdTerminal: latest.current.createdTerminal,
   };
   const terminalInput = useRef<HTMLDivElement>(null);
   const [openError, setOpenError] = useState<unknown>();
@@ -140,7 +144,7 @@ export function SessionTerminals({
   );
   const [, redraw] = useState(0);
   const visibleBefore = useRef<string[]>([]);
-  const observeRef = useRef<(value: Resource) => void>(() => {});
+  const observeRef = useRef<(values: Resource[]) => void>(() => {});
   const dock = useRef<HTMLElement>(null);
   const [maximized, setMaximized] = useState(false),
     [height, setHeight] = useState<number>();
@@ -185,8 +189,12 @@ export function SessionTerminals({
       ?.closest<HTMLElement>(".session-content")
       ?.style.setProperty("--terminal-dock-height", `${actualHeight}px`);
   }, [actualHeight]);
-  // A failed explicit-open read may be retried while no terminal pane is selected.
+  // A failed explicit-open read may be retried while no terminal pane is
+  // selected. The flag bounds exactly one inventory attempt: it is cleared as
+  // soon as that attempt settles (see the settle effect below), so it can never
+  // keep interval-driven reads alive behind a non-terminal pane.
   const [readRetry, setReadRetry] = useState(false);
+  const retryObserved = useRef(false);
   const [internalSelected, setSelected] = useState("");
   const selected = selectedId ?? internalSelected;
   // Content-tab selection is owned by SessionTabBar. Retain it before the
@@ -195,6 +203,8 @@ export function SessionTerminals({
     if (selectedId) setSelected(selectedId);
   }, [selectedId]);
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
+  latest.current.selected = selected;
+  latest.current.createdTerminal = createdTerminal;
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
   // Presentation only: reveal the selected terminal in the scrolling strip.
@@ -222,15 +232,84 @@ export function SessionTerminals({
     undefined,
     1000,
   );
+  // Read-only retry settlement: once the single attempt finished (success or
+  // failure), the chain suspends again. Departure, a selected terminal pane or
+  // missing capability also end the attempt, so a late retry cannot poll.
+  useEffect(() => {
+    if (!readRetry) {
+      retryObserved.current = false;
+      return;
+    }
+    if (active || !sessionActive || !supported) {
+      retryObserved.current = false;
+      setReadRetry(false);
+      return;
+    }
+    if (list.isFetching) {
+      retryObserved.current = true;
+      return;
+    }
+    if (retryObserved.current) {
+      retryObserved.current = false;
+      setReadRetry(false);
+    }
+  }, [readRetry, active, sessionActive, supported, list.isFetching]);
+  // A later Retry after a failed attempt finds the suspended chain holding that
+  // failure; a plain refresh would be a no-op, so start the explicit retry.
+  useEffect(() => {
+    if (readRetry && list.error) void list.refetch();
+  }, [readRetry]);
+  // Pane navigation counter local to this presenter. Together with the tab
+  // store's per-Session generation it detects any newer selection, including an
+  // away-and-back move that leaves the selected key unchanged.
+  const localNavigation = useRef(0);
+  useLayoutEffect(() => {
+    localNavigation.current += 1;
+  }, [selected]);
+  // The navigation snapshot captured when the single additional creation was
+  // sent. Only the original request identity may consume it.
+  const creationOrigin = useRef<{
+    requestId: string;
+    store: number;
+    local: number;
+  }>(undefined);
   const create = useRetainedMutation(
     `terminal-create:${session.id}`,
     TerminalQuery.createTerminal,
-    (value) => {
+    (value, request) => {
       if (value.terminal && !presentationRecords.hidden(value.terminal.id)) {
-        setCreatedTerminal(value.terminal);
-        setSelectedTerminal(undefined);
-        setSelected(value.terminal.id);
-        if (latest.current.sessionActive) openTerminal?.(value.terminal.id);
+        const origin = creationOrigin.current;
+        // Explicit reuse-or-create admission always selects its admitted
+        // terminal. Additional creation (+ and primary+T) selects only when no
+        // newer navigation happened after it was sent; a request without its
+        // origin (for example after a remount) conservatively does not select.
+        const select =
+          request.creationMode === TerminalCreationMode.REUSE_OR_CREATE ||
+          (origin !== undefined &&
+            origin.requestId === request.mutation?.requestId &&
+            origin.store === tabsStore.navigation(session.id) &&
+            origin.local === localNavigation.current);
+        if (select) {
+          setCreatedTerminal(value.terminal);
+          setSelectedTerminal(undefined);
+          setSelected(value.terminal.id);
+          if (latest.current.sessionActive)
+            latest.current.openTerminal?.(value.terminal.id);
+        } else {
+          // Keep the acknowledged terminal listed for later explicit opening;
+          // the user's newer selection survives. A displaced created terminal
+          // that is still selected moves to the explicit selection slot.
+          const previous = latest.current.createdTerminal;
+          if (
+            previous &&
+            previous.id !== value.terminal.id &&
+            previous.id === latest.current.selected
+          )
+            setSelectedTerminal(previous);
+          setCreatedTerminal(value.terminal);
+          presentationRecords.number(value.terminal.id);
+        }
+        creationOrigin.current = undefined;
       }
       if (supported) void list.refresh();
     },
@@ -244,10 +323,16 @@ export function SessionTerminals({
     text(document(session).archive) !== "active";
   // The single additional-creation callback shared by + and the terminal-input
   // shortcut: Worker default shell, original session revision, fresh request.
-  const createAdditional = () =>
+  const createAdditional = () => {
+    const requestId = newRequestId();
+    creationOrigin.current = {
+      requestId,
+      store: tabsStore.navigation(session.id),
+      local: localNavigation.current,
+    };
     void create.send({
       mutation: {
-        requestId: newRequestId(),
+        requestId,
         id: session.id,
         expectedRevision: session.revision,
       },
@@ -255,6 +340,7 @@ export function SessionTerminals({
       rows: 24,
       columns: 80,
     });
+  };
   const shortcuts = useShortcuts([
     {
       id: ShortcutId.TerminalCreate,
@@ -375,6 +461,11 @@ export function SessionTerminals({
           tokens.add(token);
         } while (token);
         if (!current()) return;
+        // Register presentation numbers for the whole validated inventory in
+        // authenticated encounter order before any admission can number its
+        // own result. Invalid or aborted reads never reach this point, and the
+        // allocation grants no lifecycle (tombstone) authority.
+        for (const row of records) presentationRecords.number(row.id);
         const retained = [createdTerminal, selectedTerminal].filter(
           (value): value is Resource => Boolean(value),
         );
@@ -505,75 +596,133 @@ export function SessionTerminals({
         : undefined));
   if (resource && !tabs.some((row) => row.id === resource.id))
     tabs.push({ id: resource.id, revision: resource.revision });
-  // A disappeared payload is not exit evidence. Only original authenticated
-  // resources advance this connection's monotonic presentation record.
-  observeRef.current = (value) => {
+  // The original creation receipt fences final dismissal: an admitted but
+  // unsettled CreateTerminal may still resolve to a live terminal.
+  const creationUnsettled = create.busy || create.uncertain;
+  // A final hide skipped while creation was unsettled is replayed once when
+  // the original receipt settles. Tombstoning itself is never deferred.
+  const pendingHide = useRef(false);
+  // Latest rendered selection, read by deferred focus callbacks.
+  const selectedNow = useRef(selected);
+  selectedNow.current = selected;
+  // Final automatic dismissal proceeds only when no live terminal remains in
+  // the visible inventory or among the Session-owned terminal content tabs.
+  const finalHide = () => {
+    pendingHide.current = false;
+    if (!active) return;
     if (
-      !presentationRecords.observe(session.id, value, unsettled.has(value.id))
+      tabs.some((row) => !presentationRecords.hidden(row.id)) ||
+      tabsStore.liveTerminals(session.id).length
     )
       return;
+    console.info("delidev.terminals.final_dismissal", {
+      sessionId: session.id,
+    });
+    (hideEmpty ?? close)();
+  };
+  // A disappeared payload is not exit evidence. Only original authenticated
+  // resources advance this connection's monotonic presentation record. One
+  // observation batch tombstones every verified exit first, then derives the
+  // surviving selection once so later exits never read a stale selection.
+  // Selection that earlier observations of the same commit already chose; the
+  // render closure's `selected` stays stale until React re-renders.
+  const selection = useRef({ rendered: selected, effective: selected });
+  if (selection.current.rendered !== selected)
+    selection.current = { rendered: selected, effective: selected };
+  observeRef.current = (values) => {
     const previous = visibleBefore.current;
+    const dismissed: string[] = [];
+    // Every observation also covers the current inventory and selected read, so
+    // a lone stream observation cannot pick a fallback that a sibling exit in
+    // the same refresh dismisses a moment later.
+    for (const value of [
+      ...values,
+      ...(list.data?.resources ?? []),
+      ...(resource ? [resource] : []),
+    ])
+      if (
+        presentationRecords.observe(session.id, value, unsettled.has(value.id))
+      )
+        dismissed.push(value.id);
+    if (!dismissed.length) return;
     const remaining = previous.filter((id) => !presentationRecords.hidden(id));
     visibleBefore.current = remaining;
-    const next =
-      selected === value.id
-        ? terminalFallback(
-            previous.filter(
-              (id) => id === value.id || !presentationRecords.hidden(id),
-            ),
-            value.id,
-          )
-        : "";
-    dismissTerminal?.(value.id, next);
-    if (selected === value.id) {
-      setSelected(next);
-      // Session owns original terminal content-tab order and focus.
-      if (next && !tabbed) openTerminal?.(next);
-      if (!tabbed && next)
-        requestAnimationFrame(() =>
-          dock.current
-            ?.querySelector<HTMLButtonElement>(`[id="terminal-tab-${next}"]`)
-            ?.focus({ preventScroll: true }),
-        );
+    const initial = selection.current.effective;
+    let effective = initial;
+    for (const id of dismissed) {
+      const next =
+        effective === id
+          ? terminalFallback(
+              previous.filter(
+                (value) => value === id || !presentationRecords.hidden(value),
+              ),
+              id,
+            )
+          : "";
+      dismissTerminal?.(id, next);
+      if (effective === id) effective = next;
     }
-    if (active && previous.includes(value.id) && !remaining.length)
-      (hideEmpty ?? close)();
+    selection.current.effective = effective;
+    if (effective !== initial) {
+      setSelected(effective);
+      // Session owns original terminal content-tab order and focus.
+      if (effective && !tabbed) openTerminal?.(effective);
+      if (!tabbed && effective) {
+        const target = effective;
+        requestAnimationFrame(() => {
+          // A user selection made before this frame wins over the batch result.
+          if (selectedNow.current !== target) return;
+          dock.current
+            ?.querySelector<HTMLButtonElement>(`[id="terminal-tab-${target}"]`)
+            ?.focus({ preventScroll: true });
+        });
+      }
+    }
+    if (dismissed.some((id) => previous.includes(id)) && !remaining.length) {
+      if (creationUnsettled) {
+        pendingHide.current = true;
+        console.info("delidev.terminals.final_dismissal_deferred", {
+          sessionId: session.id,
+          busy: create.busy,
+          uncertain: create.uncertain,
+        });
+      } else finalHide();
+    }
     redraw((value) => value + 1);
   };
   useEffect(() => {
     // Keep known rows through payload eviction; an initial exited-only read
     // does not close the explicitly opened creation surface.
-    for (const value of [
-      ...(list.data?.resources ?? []),
-      ...(resource ? [resource] : []),
-    ])
-      observeRef.current(value);
+    observeRef.current([]);
     visibleBefore.current = tabs
       .filter((row) => !presentationRecords.hidden(row.id))
       .map((row) => row.id);
   }, [list.data, resource, intents, active]);
+  useEffect(() => {
+    if (creationUnsettled || !pendingHide.current) return;
+    finalHide();
+    redraw((value) => value + 1);
+  }, [creationUnsettled]);
   // Opening, capability, read and creation-recovery notices stay reachable
   // below the tab row even while no terminal pane is selected.
+  const retryInventory = (
+    <button
+      disabled={!sessionActive || list.isFetching}
+      onClick={() => {
+        setOpenError(undefined);
+        if (active) void list.refetch();
+        else setReadRetry(true);
+      }}
+    >
+      {copy("session-terminals.retryInventory")}
+    </button>
+  );
   const strip = (
     <div className="terminal-status-strip">
       {openIntent || create.busy ? (
         <p role="status">{copy("session-terminals.openingTerminal")}</p>
       ) : null}
-      <Problem
-        error={openError}
-        actions={
-          <button
-            disabled={!sessionActive || list.isFetching}
-            onClick={() => {
-              setOpenError(undefined);
-              if (active) void list.refetch();
-              else setReadRetry(true);
-            }}
-          >
-            {copy("session-terminals.retryInventory")}
-          </button>
-        }
-      />
+      <Problem error={openError} actions={retryInventory} />
       {!supported && !status.error ? (
         <p role="status">
           {copy("session-terminals.waitingForAServerThatSupports_e0becc")}
@@ -591,7 +740,10 @@ export function SessionTerminals({
         }
       />
       <Problem error={create.error} />
-      <Failure failure={supported ? list.error?.failure : undefined} />
+      <Failure
+        failure={supported ? list.error?.failure : undefined}
+        actions={!active && !openError ? retryInventory : undefined}
+      />
       {create.uncertain ? (
         <button disabled={create.busy} onClick={create.retry}>
           {copy("session-terminals.retryTheSameTerminalCreation_bc3946")}
@@ -787,7 +939,7 @@ export function SessionTerminals({
           refresh={() => {
             if (supported) void list.refresh();
           }}
-          observe={(value) => observeRef.current(value)}
+          observe={(value) => observeRef.current([value])}
         />
       ) : null}
     </aside>

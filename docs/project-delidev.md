@@ -472,6 +472,8 @@ separate history and response boundaries. The desktop uses the original tool
 disclosure with independent reply and request rows. No backend, registry,
 automatic replay or storage migration is introduced.
 
+Server reset credits V2 uses System 101 under the [subscription contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2). Manual and automatic consumption run on the selected server with a distinct access-only native profile, independent of Runner registration, connectivity, verified installation or an active Execute. Execute and credential ownership are untouched; explicit-machine and historical operations keep their lanes. No migration or Worker protocol change.
+
 - Settings > System > Browser stores device-local General and Local browser destinations for external HTTP(S) links (native identities, natively discovered handlers, revisioned preference store), routes Provider guidance, App information, validated GitHub opening and activatable message/terminal URLs through them, and keeps OAuth/subscription authorization on the system default. No server RPC, capability number or migration is added. See the [desktop contract](apps-delidev-desktop-contract.md#browser-destinations-for-external-links), [localization contract](apps-delidev-localization-contract.md#browser-destination-copy), [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [browser contract](cmds-delidev-browser-contract.md#external-link-browser-destinations).
 
 ## Worker-owned managed MCP

@@ -79,10 +79,25 @@ never clear on a later rejection. Protected write failure retains the request
 and reports recovery. Exact profile credentials/identity and operation/request/
 target checks fence replacements; correction drafts and other profiles stay
 unchanged. No RPC, capability or storage-version migration is added.
+Conversation composer drafts are owned per profile and session outside the
+conversation screen. A draft is cleared only after the original Send is confirmed
+successful (including success through the explicit original-request retry),
+even when the conversation is unmounted at that time, and only when its prompt
+still equals the submitted text; later edits and the selected Plan or Execute
+mode survive. Unconfirmed outcomes keep the draft and the exact pending request.
+Prompt text is never logged.
 Foreground return and connection refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
 Steer operates on an already queued input and its original revision, execution
-and native turn. Stop and Resume require current observations and confirmation.
+and native turn. Inspecting a pending Steer reads the original queue input
+(EntityKind.QUEUE at the retained request's mutation ID), never the session, and
+enables retry only when the observed resource has the same ID, queue kind,
+supported schema, original session ID and original expected revision. A missing,
+foreign-session or revised input keeps retry disabled, shows localized guidance
+and leaves the retained request unchanged; no replacement request is generated.
+Existing pending records need no migration because the ID is derived from the
+retained request, not its stored target. Stop and Resume require current
+observations and confirmation.
 Question and approval responses retain the original interaction revision.
 Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before

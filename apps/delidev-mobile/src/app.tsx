@@ -9,11 +9,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { create, type Message } from "@bufbuild/protobuf";
+import { create, fromJsonString, type Message } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import {
   QueryClient,
@@ -58,6 +59,7 @@ import {
   uuid,
   documentBytes,
   documentOf,
+  type Pending,
   type State,
 } from "./state";
 import { Connection, Status } from "./connection";
@@ -250,6 +252,27 @@ function Modal({
     </dialog>
   );
 }
+enum DraftSettleOutcome {
+  Cleared = "cleared",
+  NewerEditKept = "newer-edit-kept",
+  NoDraft = "no-draft",
+}
+type SettleSend = (sessionId: string, submittedPrompt: string) => void;
+// Reads the session and prompt of a retained Send request without logging it.
+function pendingSendDraft(
+  pending?: Pending,
+): { sessionId: string; prompt: string } | undefined {
+  if (pending?.operation !== Operation.Send) return undefined;
+  try {
+    const request = fromJsonString(EnqueueInputRequestSchema, pending.request);
+    const prompt = documentOf(request.documentJson).prompt;
+    return typeof prompt === "string" && request.sessionId
+      ? { sessionId: request.sessionId, prompt }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 interface ConversationDraft {
   prompt: string;
   mode: string;
@@ -267,6 +290,26 @@ export function App({ state = owner }: { state?: ProtectedState }) {
     [active, setActive] = useState(document.visibilityState === "visible");
   // Composer drafts belong to the original profile/session, outside tab presentation.
   const drafts = useRef(new Map<string, Map<string, ConversationDraft>>());
+  // Clears a retained composer draft only after the original Send is confirmed.
+  // The draft is looked up by profile and session so completion that lands while
+  // the conversation is unmounted still reaches the application-owned draft, and
+  // text edited after capture is preserved. Prompt text is never logged.
+  const settleSend = (
+    profileId: string,
+    sessionId: string,
+    submittedPrompt: string,
+  ) => {
+    const draft = drafts.current.get(profileId)?.get(sessionId);
+    const cleared = !!draft && draft.prompt === submittedPrompt;
+    if (draft && cleared) draft.prompt = "";
+    console.info("mobile_composer_draft_settled", {
+      outcome: cleared
+        ? DraftSettleOutcome.Cleared
+        : draft
+          ? DraftSettleOutcome.NewerEditKept
+          : DraftSettleOutcome.NoDraft,
+    });
+  };
   const changed = () => {
     for (const id of drafts.current.keys())
       if (!state.state.profiles.some((profile) => profile.id === id))
@@ -340,6 +383,9 @@ export function App({ state = owner }: { state?: ProtectedState }) {
                 setConversation({ profileId: profile.id, id, draft });
               }}
               back={() => setConversation(undefined)}
+              settleSend={(sessionId, submittedPrompt) =>
+                settleSend(profile.id, sessionId, submittedPrompt)
+              }
               draft={
                 conversation?.profileId === profile.id
                   ? conversation.draft
@@ -794,6 +840,7 @@ function Connected({
   open,
   back,
   draft,
+  settleSend,
   changed,
 }: {
   state: ProtectedState;
@@ -804,6 +851,7 @@ function Connected({
   open: (id: string) => void;
   back: () => void;
   draft?: ConversationDraft;
+  settleSend: SettleSend;
   changed: () => void;
 }) {
   const c = useCopy(),
@@ -869,6 +917,7 @@ function Connected({
   async function inspect() {
     if (!pending || !enabled) return;
     setBusy(true);
+    setError("");
     try {
       const kind =
         pending.operation === Operation.Question ||
@@ -879,7 +928,52 @@ function Connected({
             : pending.operation === Operation.Revoke
               ? EntityKind.DEVICE
               : EntityKind.SESSION;
-      if (pending.operation === Operation.Create) {
+      if (pending.operation === Operation.Steer) {
+        // Steer acts on the queued input, so inspect that exact entity (the retained
+        // target is only the session ID) and never accept a session read as proof.
+        const request = fromJsonString(
+          SteerQueuedInputRequestSchema,
+          pending.request,
+        );
+        const original = request.mutation;
+        if (!original) throw new Error("steer-request-invalid");
+        let observed: Resource | undefined;
+        try {
+          observed = (
+            await createClient(ResourceService, transport).getResource({
+              kind: EntityKind.QUEUE,
+              id: original.id,
+            })
+          ).resource;
+        } catch (error) {
+          if (clientFailure(error).code === FailureCode.NotFound) {
+            console.warn("mobile_steer_inspect", {
+              operation: Operation.Steer,
+              outcome: "original_input_missing",
+            });
+            setInspected("");
+            setError(c.steerTargetMissing);
+            return;
+          }
+          throw error;
+        }
+        if (
+          !observed ||
+          !supportsResourceSchema(observed) ||
+          observed.kind !== EntityKind.QUEUE ||
+          observed.id !== original.id ||
+          observed.sessionId !== request.sessionId ||
+          observed.revision !== original.expectedRevision
+        ) {
+          console.warn("mobile_steer_inspect", {
+            operation: Operation.Steer,
+            outcome: "original_input_changed",
+          });
+          setInspected("");
+          setError(c.steerTargetChanged);
+          return;
+        }
+      } else if (pending.operation === Operation.Create) {
         await createClient(ResourceService, transport).listResources({
           filter: { kind: EntityKind.SESSION, pageSize: 50 },
         });
@@ -905,6 +999,7 @@ function Connected({
       }
       setInspected(pending.request);
     } catch {
+      setInspected("");
       setError(c.error);
     } finally {
       setBusy(false);
@@ -960,7 +1055,12 @@ function Connected({
                     setConfirm(() => async () => {
                       setBusy(true);
                       try {
+                        // Capture the retained request before the retry clears it.
+                        const sent = pendingSendDraft(
+                          state.profile(id).pending,
+                        );
                         await state.retry(id);
+                        if (sent) settleSend(sent.sessionId, sent.prompt);
                         changed();
                         await connection.cache.invalidateQueries();
                       } catch {
@@ -990,6 +1090,7 @@ function Connected({
                 key={sessionId}
                 id={sessionId}
                 draft={draft}
+                settleSend={settleSend}
                 enabled={enabled}
                 busy={busy || !!pending}
                 mutate={mutate}
@@ -1074,6 +1175,7 @@ type Mutate = (
   operation: Operation,
   request: Message,
   target: string,
+  accepted?: () => void,
 ) => Promise<void>;
 function Choices({
   kind,
@@ -1474,6 +1576,7 @@ function ConversationPageControls({
 function Conversation({
   id,
   draft,
+  settleSend,
   enabled,
   busy,
   mutate,
@@ -1485,15 +1588,17 @@ function Conversation({
   mutate: Mutate;
   back: () => void;
   draft: ConversationDraft;
+  settleSend: SettleSend;
 }) {
   const productLabel = useMobileIdentity();
   const transport = useTransport();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [history, setHistory] = useState<Resource[]>([]),
-    [prompt, setPrompt] = useState(draft.prompt),
-    [mode, setMode] = useState(draft.mode),
+    // The shared draft owns the composer text so confirmed completion clears it.
+    [, redraw] = useReducer((n: number) => n + 1, 0),
     [confirmation, setConfirmation] = useState<SessionAction>();
+  const { prompt, mode } = draft;
   const session = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.SESSION, id },
@@ -1647,14 +1752,16 @@ function Conversation({
             new TextEncoder().encode(prompt).length > 256 << 10
           )
             return;
+          const submitted = prompt;
           void mutate(
             Operation.Send,
             create(EnqueueInputRequestSchema, {
               requestId: uuid(),
               sessionId: id,
-              documentJson: documentBytes({ prompt, mode }),
+              documentJson: documentBytes({ prompt: submitted, mode }),
             }),
             id,
+            () => settleSend(id, submitted),
           );
         }}
       >
@@ -1665,7 +1772,7 @@ function Conversation({
               value={prompt}
               onChange={(e) => {
                 draft.prompt = e.target.value;
-                setPrompt(e.target.value);
+                redraw();
               }}
             />
           </label>
@@ -1675,7 +1782,7 @@ function Conversation({
               value={mode}
               onChange={(e) => {
                 draft.mode = e.target.value;
-                setMode(e.target.value);
+                redraw();
               }}
             >
               <option value="execute">{c.execute}</option>

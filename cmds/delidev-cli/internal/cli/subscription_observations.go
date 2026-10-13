@@ -32,8 +32,12 @@ func subscriptionObservationCommand(ctx context.Context, c client, o options, ar
 	if args[0] == "consume-reset-credit" || args[0] == "reconcile-reset-credit" {
 		capability = pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1
 	}
-	serverCredits := slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
-	if !slices.Contains(status.Msg.Capabilities, capability) && !((args[0] == "consume-reset-credit" && *machine == "" || args[0] == "reconcile-reset-credit") && serverCredits) && !((args[0] == "refresh-quota" && *machine == "" || args[0] == "refresh-all-quotas") && slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2)) {
+	// System 101 is the only lane for a new omitted-machine consumption. The
+	// historical System 49 server lane remains available to reconcile an already
+	// accepted operation; neither ever falls back to a Runner Device.
+	serverCreditsV2 := slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2)
+	serverCredits := serverCreditsV2 || slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
+	if !slices.Contains(status.Msg.Capabilities, capability) && !((args[0] == "consume-reset-credit" && *machine == "" && serverCreditsV2 || args[0] == "reconcile-reset-credit") && serverCredits) && !((args[0] == "refresh-quota" && *machine == "" || args[0] == "refresh-all-quotas") && slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2)) {
 		return nil, domain.Fail(domain.Unsupported, "The server lacks this native subscription capability.", "Update the selected server and Runner Device before requesting quota or credit operations.")
 	}
 	if args[0] == "refresh-all-quotas" {
@@ -68,8 +72,8 @@ func subscriptionObservationCommand(ctx context.Context, c client, o options, ar
 			return nil, domain.Fail(domain.Unsupported, "The server cannot observe quota without a Runner Device.", "Update the selected server.")
 		}
 	} else if *machine == "" && args[0] == "consume-reset-credit" {
-		if !serverCredits {
-			return nil, domain.Fail(domain.Unsupported, "The server cannot consume reset credits without a Runner Device.", "Update the server or select the original Runner Device.")
+		if !serverCreditsV2 {
+			return nil, domain.Fail(domain.Unsupported, "The server cannot consume reset credits without a Runner Device.", "Update the selected server; no Runner Device is used unless you pass --machine-id explicitly.")
 		}
 	} else if domain.ID(*machine).Validate() != nil {
 		return nil, domain.InvalidSubscriptionObservation()

@@ -532,3 +532,7 @@ grant no dispatch, media retrieval, reply retry or continuation authority.
 ## Managed MCP clients
 
 The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns typed Worker-scoped management, write-only credential inputs and original-operation reads. Export `ManagedMCPQuery` with the generated service/message/enum bindings. Management capability does not grant runtime MCP authority. Retained uncertain mutations can be acknowledged only through the original read response and verifier; the desktop does not resend authentication exchanges automatically.
+
+## Server reset credits V2 negotiation
+
+The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`. Clients require it before a new omitted-machine reset-credit consumption and never send a Runner selector with that request. Servers without it receive existing update guidance. Historical System 19 and 49 capabilities remain only for reconciling operations already accepted on those lanes. Regenerate both bindings from the reconciled schema; no new RPC or Worker capability exists.

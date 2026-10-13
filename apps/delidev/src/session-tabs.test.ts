@@ -7,7 +7,107 @@ import {
   SessionTabKind,
   sessionTabKey,
 } from "./session-tabs";
-import { Comparison } from "./session-diff-model";
+import { Comparison, type BaseReference } from "./session-diff-model";
+describe("comparison tab dropped bases", () => {
+  const a: BaseReference = { type: "local-branch", name: "a" },
+    b: BaseReference = { type: "local-branch", name: "b" },
+    tab = (comparison: Comparison, dropped_base?: BaseReference) => ({
+      kind: SessionTabKind.Comparison as const,
+      repository: "repo",
+      comparison,
+      path: ".",
+      ...(dropped_base ? { dropped_base } : {}),
+    });
+  const dropped = (store: SessionTabsStore, comparison: Comparison) =>
+    store
+      .snapshot("s")
+      .tabs.find(
+        (value) =>
+          value.kind === SessionTabKind.Comparison &&
+          value.comparison === comparison,
+      ) as { dropped_base?: unknown } | undefined;
+  it("keeps the record out of the tab identity", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.Staged, a));
+    store.open("s", tab(Comparison.Staged));
+    expect(store.snapshot("s").tabs).toHaveLength(2);
+  });
+  it("replaces the record on an ordinary open and ends it with the tab", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.Staged, a));
+    store.open("s", tab(Comparison.Staged, b));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toEqual(b);
+    store.open("s", tab(Comparison.Staged));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toBeUndefined();
+    store.open("s", tab(Comparison.Staged, a));
+    store.close("s", sessionTabKey(tab(Comparison.Staged)));
+    store.open("s", tab(Comparison.Staged));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toBeUndefined();
+  });
+  it("never overwrites the record an open destination owns when inheriting", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.WorkingTree, b));
+    store.openComparison("s", tab(Comparison.WorkingTree, a), true);
+    expect(dropped(store, Comparison.WorkingTree)?.dropped_base).toEqual(b);
+    store.openComparison("s", tab(Comparison.Creation, a), true);
+    expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
+    store.openComparison("s", tab(Comparison.Creation), true);
+    expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
+  });
+});
+describe("clearing dropped bases on explicit reselection", () => {
+  const a: BaseReference = { type: "local-branch", name: "a" },
+    b: BaseReference = { type: "local-branch", name: "b" },
+    comparison = (
+      repository: string,
+      kind: Comparison,
+      dropped_base?: BaseReference,
+    ) => ({
+      kind: SessionTabKind.Comparison as const,
+      repository,
+      comparison: kind,
+      path: ".",
+      ...(dropped_base ? { dropped_base } : {}),
+    });
+  const records = (store: SessionTabsStore) =>
+    store
+      .snapshot("s")
+      .tabs.map((value) =>
+        value.kind === SessionTabKind.Comparison
+          ? [value.repository, value.comparison, value.dropped_base?.name]
+          : [value.kind],
+      );
+  it("ends only the matching records of the same repository and keeps order and selection", () => {
+    const store = new SessionTabsStore();
+    store.open("s", comparison("repo", Comparison.Staged, a));
+    store.open("s", comparison("repo", Comparison.WorkingTree, b));
+    store.open("s", comparison("other", Comparison.Staged, a));
+    store.open("s", comparison("repo", Comparison.Creation));
+    store.select(
+      "s",
+      sessionTabKey(comparison("repo", Comparison.WorkingTree)),
+    );
+    const before = store.snapshot("s");
+    store.clearDroppedBase("s", "repo", a);
+    expect(records(store)).toEqual([
+      [SessionTabKind.Conversation],
+      ["repo", Comparison.Staged, undefined],
+      ["repo", Comparison.WorkingTree, "b"],
+      ["other", Comparison.Staged, "a"],
+      ["repo", Comparison.Creation, undefined],
+    ]);
+    expect(store.snapshot("s").selected).toBe(before.selected);
+  });
+  it("matches the exact reference and publishes nothing without a match", () => {
+    const store = new SessionTabsStore();
+    store.open("s", comparison("repo", Comparison.Staged, a));
+    const before = store.snapshot("s");
+    store.clearDroppedBase("s", "repo", b);
+    store.clearDroppedBase("s", "other", a);
+    store.clearDroppedBase("missing", "repo", a);
+    expect(store.snapshot("s")).toBe(before);
+  });
+});
 describe("connection session tab descriptors", () => {
   it("pins Conversation and preserves append order with exact resource identities", () => {
     const store = new SessionTabsStore();
@@ -115,6 +215,39 @@ it("keeps inactive terminal dismissal selection and uses inventory only without 
   expect(store.snapshot("session").selected).toBe(
     sessionTabKey({ kind: SessionTabKind.Terminal, id: "remaining" }),
   );
+});
+
+it("dismissal skips tombstoned terminal tabs and liveTerminals excludes them", () => {
+  const store = new SessionTabsStore();
+  const exited = (id: string) =>
+    create(ResourceSchema, {
+      id,
+      sessionId: "session",
+      kind: EntityKind.TERMINAL,
+      schemaVersion: 1,
+      revision: 5n,
+      documentJson: encode({ state: "exited", cleanup_verified: true }),
+    });
+  for (const id of ["a", "b", "c"])
+    store.open("session", { kind: SessionTabKind.Terminal, id });
+  store.select(
+    "session",
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "c" }),
+  );
+  // C and B exit in one refresh while C is selected: A is the live survivor.
+  store.terminalPresentation("session").observe("session", exited("c"));
+  store.terminalPresentation("session").observe("session", exited("b"));
+  expect(store.liveTerminals("session")).toEqual(["a"]);
+  store.dismissTerminal("session", "c", "inventory");
+  expect(store.snapshot("session").selected).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "a" }),
+  );
+  store.dismissTerminal("session", "b");
+  expect(store.snapshot("session").selected).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "a" }),
+  );
+  expect(store.liveTerminals("session")).toEqual(["a"]);
+  expect(store.liveTerminals("other")).toEqual([]);
 });
 
 it("late original creation receipts cannot reopen a dismissed content tab", () => {
@@ -416,6 +549,27 @@ describe("terminal presentation numbers", () => {
       expect(store.sidechats("child")).toEqual([]);
       expect(store.parent("root")).toBeUndefined();
       expect(store.snapshot("child").tabs).toHaveLength(1);
+    });
+  });
+  describe("navigation generation", () => {
+    it("increments only when the selected tab changes and counts away-and-back moves", () => {
+      const store = new SessionTabsStore();
+      const terminal = { kind: SessionTabKind.Terminal as const, id: "t" };
+      expect(store.navigation("s")).toBe(0);
+      store.open("s", terminal);
+      expect(store.navigation("s")).toBe(1);
+      // Reopening or reselecting the selected tab is not navigation.
+      store.open("s", terminal);
+      store.select("s", sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(1);
+      store.open("s", { kind: SessionTabKind.Files });
+      store.open("s", terminal);
+      expect(store.snapshot("s").selected).toBe(sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(3);
+      store.close("s", sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(4);
+      // Sessions count independently.
+      expect(store.navigation("other")).toBe(0);
     });
   });
 });
