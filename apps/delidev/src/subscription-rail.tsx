@@ -240,7 +240,10 @@ export function SubscriptionRail({
     enabled && !authenticationLost && capable && !status.error
       ? query.rows.filter((row) => row.connected)
       : [];
-  const unavailable = !allowed || Boolean(query.error) || unconfirmedRead;
+  // A real saved-read failure or an unconfirmed retry is distinct from a pause
+  // (stopping server or hidden document) that merely stops admitting new reads.
+  const readFailed = Boolean(query.error) || unconfirmedRead;
+  const unavailable = !allowed || readFailed;
   const limited = query.pages.length >= 200 && Boolean(query.nextPageToken);
   const brand = (value: RailAccount) =>
     subscriptionCatalog.find((item) => item.brand === value.service)!;
@@ -406,7 +409,7 @@ export function SubscriptionRail({
                               SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1,
                             )
                           ? PaidCreditState.Unsupported
-                          : unavailable
+                          : readFailed
                             ? PaidCreditState.Failed
                             : account.paidCreditState
                     }
