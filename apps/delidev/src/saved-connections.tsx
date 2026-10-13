@@ -175,6 +175,7 @@ function SavedConnectionTask({
         close={() => setPresented(false)}
         focusClose
         trapFocus
+        headingEntrance
       >
         <div ref={setTarget} />
       </Modal>

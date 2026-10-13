@@ -244,6 +244,7 @@ export function LocalRegistrationRecovery({
         title={copy("local-registration.reRegisterThisDesktop_405621")}
         visible={confirm && active}
         close={() => setConfirm(false)}
+        headingEntrance
       >
         <p>
           {copy("local-registration.thisCreatesANewDesktopRegistration_0adc71")}

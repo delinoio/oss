@@ -18,6 +18,16 @@ export enum EntranceMotion {
   // 120ms translateX(4px).
   X4 = "x4",
 }
+/**
+ * Which element of an opted-in surface receives the entrance. `Surface` moves
+ * the whole category content column or task dialog. `Heading` moves only the
+ * static heading, for surfaces whose body contains persistent portal hosts or
+ * native controllers that no ancestor transform may touch.
+ */
+export enum EntranceTarget {
+  Surface = "surface",
+  Heading = "heading",
+}
 const entranceAnimationNames: Record<EntranceMotion, string> = {
   [EntranceMotion.Y4]: "entrance-y4",
   [EntranceMotion.Y2]: "entrance-y2",

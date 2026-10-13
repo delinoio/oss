@@ -4,6 +4,8 @@ import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
 import {
   settleEnclosingEntrances,
+  useActivationCount,
+  useEntranceActivation,
   type EntranceProps,
 } from "./entrance-motion";
 import {
@@ -142,6 +144,7 @@ export function Modal({
   focusClose = false,
   trapFocus = false,
   entrance,
+  headingEntrance = false,
 }: {
   title: string;
   close: () => void;
@@ -153,8 +156,19 @@ export function Modal({
   trapFocus?: boolean;
   /** Optional activation-scoped entrance from useEntranceActivation. */
   entrance?: EntranceProps;
+  /**
+   * Plays the 160ms entrance on this dialog's static heading only, once per
+   * explicit presentation. For tasks whose body may contain persistent portal
+   * hosts, which no ancestor transform may touch.
+   */
+  headingEntrance?: boolean;
 }) {
   useLocale();
+  const presentations = useActivationCount(visible);
+  const heading = useEntranceActivation(
+    String(presentations),
+    headingEntrance && visible,
+  );
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -174,7 +188,7 @@ export function Modal({
   }, [visible, initialFocus, focusClose]);
   const content = (
     <>
-      <header>
+      <header ref={heading.ref} data-entrance={heading["data-entrance"]}>
         <h2 id={id}>{title}</h2>
         <SettingsActionButton
           icon={SettingsActionIcon.Cancel}

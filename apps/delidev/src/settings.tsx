@@ -164,7 +164,12 @@ import {
 } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
-import { useEntranceActivation, type EntranceProps } from "./entrance-motion";
+import {
+  EntranceTarget,
+  useEntranceActivation,
+  type EntranceProps,
+} from "./entrance-motion";
+import { SettingsTaskEntranceContext } from "./settings-task-context";
 import { ShortcutSettings } from "./shortcut-settings";
 import { BrowserSettings } from "./browser-settings";
 import { DateFormatSettings } from "./date-format";
@@ -2047,9 +2052,22 @@ type NavigateSettings = (
 
 // Categories that opted in to the shared 160ms Y4 entrance. Each category adds
 // itself only with its own approved contract text.
-const entranceCategories: ReadonlySet<SettingsCategory> = new Set([
-  SettingsCategory.Appearance,
-]);
+// Surface categories move their whole content column and every task opened in
+// them. Heading categories contain persistent portal hosts or native controllers
+// (Connections, App information), so only the static category heading moves and
+// tasks present their own heading entrance.
+const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
+  new Map([
+    [SettingsCategory.Appearance, EntranceTarget.Surface],
+    [SettingsCategory.KeyboardShortcuts, EntranceTarget.Surface],
+    [SettingsCategory.ServerPreferences, EntranceTarget.Surface],
+    [SettingsCategory.PairedDevices, EntranceTarget.Surface],
+    [SettingsCategory.Notifications, EntranceTarget.Surface],
+    [SettingsCategory.Transfer, EntranceTarget.Surface],
+    [SettingsCategory.Backups, EntranceTarget.Surface],
+    [SettingsCategory.Diagnostics, EntranceTarget.Heading],
+    [SettingsCategory.AppInformation, EntranceTarget.Heading],
+  ]);
 
 function entrySelection(
   destination?: SettingsNavigationEntry,
@@ -2119,9 +2137,10 @@ function SettingsVisit({
   );
   // The activation key is the category opening, so rendering, reads, edits and
   // preference changes inside the opening cannot replay the entrance.
+  const entranceTarget = entranceCategories.get(selection.category);
   const entrance = useEntranceActivation(
     selection.key,
-    entranceCategories.has(selection.category),
+    entranceTarget !== undefined,
   );
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(
@@ -2237,6 +2256,7 @@ function SettingsVisit({
               selectedCategory={selection.category}
               entry={selection.entry}
               entrance={entrance}
+              entranceTarget={entranceTarget}
               navigate={navigate}
               controlLocalWorker={
                 props.controlLocalWorker
@@ -2271,12 +2291,14 @@ function SettingsWorkspace({
   searchRequest,
   entry,
   entrance,
+  entranceTarget,
   navigate,
 }: SettingsProps & {
   searchRequest?: SettingsSearchRequest;
   selectedCategory: SettingsCategory;
   entry?: SettingsCategoryEntry;
   entrance: EntranceProps;
+  entranceTarget?: EntranceTarget;
   navigate: NavigateSettings;
 }) {
   const productLabel = useProductLabels();
@@ -2292,16 +2314,22 @@ function SettingsWorkspace({
   const deviceContent = useRef<HTMLDivElement>(null),
     refreshDevices = useRef<HTMLButtonElement>(null);
   const attachEntrance = entrance.ref;
+  const surfaceEntrance = entranceTarget === EntranceTarget.Surface;
   const contentRef = useCallback(
     (node: HTMLDivElement | null) => {
       deviceContent.current = node;
-      const detach = attachEntrance?.(node);
+      const detach = surfaceEntrance ? attachEntrance?.(node) : undefined;
       return () => {
         deviceContent.current = null;
         detach?.();
       };
     },
-    [attachEntrance],
+    [attachEntrance, surfaceEntrance],
+  );
+  const headingRef = useCallback(
+    (node: HTMLDivElement | null) =>
+      surfaceEntrance ? undefined : attachEntrance?.(node),
+    [attachEntrance, surfaceEntrance],
   );
   const deviceReturnFocus = useRef<
     { id: string; exit: DeviceRevocationExit } | undefined
@@ -2779,6 +2807,7 @@ function SettingsWorkspace({
           ? SettingsDialogSize.Wide
           : SettingsDialogSize.Form;
   return (
+    <SettingsTaskEntranceContext.Provider value={entranceTarget}>
     <SettingsTasks>
       <SettingsSearchFocus
         request={searchRequest}
@@ -2811,7 +2840,9 @@ function SettingsWorkspace({
           <div className="settings-content-column">
             <div
               ref={contentRef}
-              data-entrance={entrance["data-entrance"]}
+              data-entrance={
+                surfaceEntrance ? entrance["data-entrance"] : undefined
+              }
               className={
                 isAgentWorkers
                   ? "settings-agent-column"
@@ -2834,7 +2865,13 @@ function SettingsWorkspace({
               {area !== SettingsArea.Backups &&
               !isApiAccounts &&
               !isApiProviders ? (
-                <div className="settings-category-heading">
+                <div
+                  className="settings-category-heading"
+                  ref={headingRef}
+                  data-entrance={
+                    surfaceEntrance ? undefined : entrance["data-entrance"]
+                  }
+                >
                   <div className="settings-category-title">
                     <h1
                       data-settings-search-target="category"
@@ -3781,6 +3818,7 @@ function SettingsWorkspace({
         </SettingsTaskDialog>
       ) : null}
     </SettingsTasks>
+    </SettingsTaskEntranceContext.Provider>
   );
 }
 

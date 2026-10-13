@@ -22,6 +22,7 @@ import {
   SettingsDialogFocus,
   SettingsDialogSize,
   SettingsTaskContext,
+  SettingsTaskEntranceContext,
   useSettingsTaskDismiss,
   type SettingsTaskPresentation,
 } from "./settings-task-context";
@@ -30,6 +31,7 @@ import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
 import { MutationIntents } from "./mutation";
 import "./settings-task.css";
 import { DialogSurface } from "./ui";
+import { EntranceTarget, useEntranceActivation } from "./entrance-motion";
 import { copy, useLocale } from "./localization";
 
 export {
@@ -291,6 +293,28 @@ function SettingsTaskWindow({
   const categoryContent = useRef(
     document.querySelector<HTMLElement>(".settings-content"),
   );
+  // One mounted task window is one explicit opening. Only tasks opened inside a
+  // category that opted in play the entrance; it never gates focus or dismissal.
+  const entranceTarget = useContext(SettingsTaskEntranceContext);
+  const entrance = useEntranceActivation(id, entranceTarget !== undefined);
+  const attachEntrance = entrance.ref;
+  const surfaceEntrance = entranceTarget === EntranceTarget.Surface;
+  const dialogRef = useCallback(
+    (node: HTMLDialogElement | null) => {
+      dialog.current = node;
+      const detach = surfaceEntrance ? attachEntrance?.(node) : undefined;
+      return () => {
+        if (dialog.current === node) dialog.current = null;
+        detach?.();
+      };
+    },
+    [attachEntrance, surfaceEntrance],
+  );
+  const headerRef = useCallback(
+    (node: HTMLElement | null) =>
+      surfaceEntrance ? undefined : attachEntrance?.(node),
+    [attachEntrance, surfaceEntrance],
+  );
   const [actions, setActions] = useState<HTMLDivElement | null>(null);
   const [presentation, setPresentation] = useState<SettingsTaskPresentation>();
   const [activeStep, setActiveStep] = useState<string>();
@@ -501,7 +525,10 @@ function SettingsTaskWindow({
         ? createPortal(
             <>
               <DialogSurface
-                ref={dialog}
+                ref={dialogRef}
+                data-entrance={
+                  surfaceEntrance ? entrance["data-entrance"] : undefined
+                }
                 onKeyDown={(event) => {
                   containTab(event);
                   if (ancestorDialogs.length) event.stopPropagation();
@@ -516,7 +543,13 @@ function SettingsTaskWindow({
                   dismiss();
                 }}
               >
-                <header className="settings-task-header">
+                <header
+                  className="settings-task-header"
+                  ref={headerRef}
+                  data-entrance={
+                    surfaceEntrance ? undefined : entrance["data-entrance"]
+                  }
+                >
                   <div>
                     <h2 ref={heading} tabIndex={-1} id={`${id}-title`}>
                       {current.title}
