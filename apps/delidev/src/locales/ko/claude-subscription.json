@@ -34,7 +34,7 @@
   "claude-subscription.browserFailed": "브라우저를 열지 못했습니다. 원래 로그인 페이지를 다시 여세요.",
   "claude-subscription.codeUnconfirmed": "코드 제출 결과가 불확실합니다. 원래 로그인 또는 정리 확인을 기다리세요. 코드를 다시 제출하지 마세요.",
   "claude-subscription.canceling": "취소를 요청했습니다. 원래 네이티브 정리 확인을 기다리고 있습니다.",
-  "claude-subscription.cancelUnconfirmed": "원래 취소 요청 결과를 확인하지 못했습니다. 실행 장치 상태를 기다리세요.",
+  "claude-subscription.cancelUnconfirmed": "원래 취소 요청 결과를 확인하지 못했습니다. 로그인 상태를 기다리세요.",
   "claude-subscription.nameUnconfirmed": "계정 이름을 저장하지 못했습니다. 연결된 계정은 유지됩니다.",
   "claude-subscription.retryOriginal": "원래 요청 다시 확인",
   "claude-subscription.version": "Claude Code 버전",
@@ -77,5 +77,18 @@
   "claude-subscription.excluded.version": "이 Claude Code 버전은 지원되지 않습니다. Runner에 Claude Code 2.1.236을 설치하고 필요하면 실행 파일을 선택한 뒤 다시 검사하세요.",
   "claude-subscription.excluded.protocol": "네이티브 Claude 프로토콜이 검증되지 않았습니다. 실행 장치에서 네이티브 프로토콜 검증을 켜고 설치를 검사하세요. 버전 감지만으로 실행 준비가 확인되지는 않습니다.",
   "claude-subscription.excluded.protocolFailed": "네이티브 프로토콜 검증에 실패했습니다. 이 Runner의 설치를 확인한 뒤 네이티브 프로토콜 검증을 다시 명시적으로 실행하세요.",
-  "claude-subscription.excluded.protocolUnsupported": "이 설치에는 지원되는 네이티브 프로토콜이 없습니다. Runner에 지원되는 하네스 버전을 설치한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요."
+  "claude-subscription.excluded.protocolUnsupported": "이 설치에는 지원되는 네이티브 프로토콜이 없습니다. Runner에 지원되는 하네스 버전을 설치한 뒤 네이티브 프로토콜 검증을 명시적으로 실행하세요.",
+  "claude-subscription.server.subtitle": "선택한 서버에 저장됩니다.",
+  "claude-subscription.server.heading": "브라우저에서 로그인을 완료하세요",
+  "claude-subscription.server.body": "브라우저 창에서 Claude 계정에 로그인하세요.",
+  "claude-subscription.server.preparing": "로그인을 준비하는 중…",
+  "claude-subscription.server.waiting": "로그인을 기다리는 중…",
+  "claude-subscription.server.canceled": "로그인이 취소되었습니다. 서버가 정리를 확인했습니다.",
+  "claude-subscription.server.expired": "로그인이 만료되었습니다. 서버가 정리를 확인한 뒤 새 계정으로 다시 시작하세요.",
+  "claude-subscription.server.unsupported": "이 서버에서는 필요한 Claude Code 버전(2.1.236)을 실행할 수 없습니다. 서버의 Claude Code를 업데이트한 뒤 다시 시도하세요.",
+  "claude-subscription.server.recovery": "다른 로그인을 시작하려면 서버가 먼저 정리를 확인해야 합니다.",
+  "claude-subscription.server.failed": "Claude 로그인에 실패했습니다. 연결된 계정이 없습니다. 새 계정으로 다시 시도하세요.",
+  "claude-subscription.server.tokenLimits": "이 계정은 선택한 서버에 저장된 Claude 로그인 토큰을 사용합니다. 토큰은 만료되며 원격 제어나 Claude 커넥터를 사용할 수 없고 여기에서 갱신할 수 없습니다. 다시 연결하려면 새 Claude 계정을 추가하세요.",
+  "claude-subscription.server.updateServer": "이 서버는 실행 장치 없이 Claude 계정을 만들 수 없습니다. 서버를 업데이트한 뒤 다시 시도하세요.",
+  "claude-subscription.server.account": "서버에 저장됨"
 }

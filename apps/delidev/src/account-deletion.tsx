@@ -183,7 +183,12 @@ export function ChatGPTAccountDeletion({
   const hasReturnAction = !task || Boolean(task.stepId);
   useLocale();
   const service = subscriptionService(document(initial).subscription_service)!;
-  const claude = service === SubscriptionServiceId.Claude;
+  // Only a device-owned Claude account has a Runner profile. A server-token
+  // account is logged out and cleaned up through the server, like ChatGPT.
+  const managedClaude =
+    object(document(initial).subscription).claude_credential ===
+    "server-token";
+  const claude = service === SubscriptionServiceId.Claude && !managedClaude;
   const operationOf = (state: ReturnType<typeof object>) =>
     object(claude ? state.native_operation : state.server_operation);
   const transport = useTransport(),
@@ -502,7 +507,9 @@ export function ChatGPTAccountDeletion({
         !status.capabilities.includes(
           claude
             ? SystemCapability.CLAUDE_SUBSCRIPTIONS_V1
-            : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
+            : managedClaude
+              ? SystemCapability.CLAUDE_SERVER_LOGIN_V1
+              : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,
         )
       ) {
         pause(

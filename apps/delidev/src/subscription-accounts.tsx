@@ -181,12 +181,23 @@ function NativeManagedSubscriptionAccount({
   const serviceSupported =
     service === SubscriptionServiceId.ChatGPT ||
     service === SubscriptionServiceId.Claude;
+  // A server-token Claude account depends only on the server capability; a
+  // device-owned account keeps the Runner-bound native capability.
+  const managedClaude =
+    service === SubscriptionServiceId.Claude &&
+    state.claude_credential === "server-token";
+  const claudeServerLogin =
+    status.data?.capabilities.includes(
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ) === true;
   const supported =
     serviceSupported &&
     (service === SubscriptionServiceId.Claude
-      ? status.data?.capabilities.includes(
-          SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
-        ) === true
+      ? managedClaude
+        ? claudeServerLogin
+        : status.data?.capabilities.includes(
+            SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+          ) === true
       : capable);
   const ownerMachine = text(state.owner_machine_id);
   const owner = useQuery(
@@ -227,7 +238,7 @@ function NativeManagedSubscriptionAccount({
         requestId: newRequestId(),
       },
       action,
-      ...(service === SubscriptionServiceId.Claude
+      ...(service === SubscriptionServiceId.Claude && !managedClaude
         ? { machineId: text(state.owner_machine_id) }
         : {}),
     });
@@ -327,6 +338,12 @@ function NativeManagedSubscriptionAccount({
           ? copy("subscription-accounts.connected_229655")
           : copy("subscription-accounts.disconnected_04dfac")}
       </p>
+      {managedClaude ? (
+        <>
+          <p>{copy("claude-subscription.server.account")}</p>
+          <p>{copy("claude-subscription.server.tokenLimits")}</p>
+        </>
+      ) : null}
       {service === SubscriptionServiceId.Claude && ownerMachine ? (
         <p>
           {copy("claude-subscription.ownerRunner", {
@@ -374,7 +391,12 @@ function NativeManagedSubscriptionAccount({
             disabled={!ready || !flow.available}
             onClick={() => {
               if (!ready || !flow.available || refreshLock.current) return;
-              flow.begin(service, current);
+              flow.begin(
+                service,
+                current,
+                false,
+                claudeServerLogin && !text(state.native_profile_id),
+              );
             }}
           >
             <LocalizedText
@@ -384,23 +406,25 @@ function NativeManagedSubscriptionAccount({
           </SettingsActionButton>
         ) : (
           <>
-            <SettingsActionButton
-              icon={SettingsActionIcon.Inspect}
-              type="button"
-              disabled={!ready}
-              onClick={() => {
-                if (!ready || refreshLock.current) return;
-                if (service === SubscriptionServiceId.Claude)
-                  flow.begin(service, current, true);
-                else request(SubscriptionAction.REFRESH);
-              }}
-            >
-              {copy(
-                service === SubscriptionServiceId.Claude
-                  ? "claude-subscription.reauth"
-                  : "subscription-accounts.refreshLogin_85188a",
-              )}
-            </SettingsActionButton>
+            {managedClaude ? null : (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Inspect}
+                type="button"
+                disabled={!ready}
+                onClick={() => {
+                  if (!ready || refreshLock.current) return;
+                  if (service === SubscriptionServiceId.Claude)
+                    flow.begin(service, current, true);
+                  else request(SubscriptionAction.REFRESH);
+                }}
+              >
+                {copy(
+                  service === SubscriptionServiceId.Claude
+                    ? "claude-subscription.reauth"
+                    : "subscription-accounts.refreshLogin_85188a",
+                )}
+              </SettingsActionButton>
+            )}
             <SettingsActionButton
               icon={SettingsActionIcon.Delete}
               type="button"
@@ -1014,7 +1038,16 @@ export function SubscriptionAccounts({
                 ) {
                   setGoIntent(true);
                   setGoCreate(true);
-                } else if (service && flow.available) flow.begin(service);
+                } else if (service && flow.available)
+                  flow.begin(
+                    service,
+                    undefined,
+                    false,
+                    service === SubscriptionServiceId.Claude &&
+                      status.data?.capabilities.includes(
+                        SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+                      ) === true,
+                  );
               }
             : undefined
         }
@@ -1027,9 +1060,12 @@ export function SubscriptionAccounts({
               ? loginCapable && flow.available
               : brand === SubscriptionBrand.Claude &&
                 flow.available &&
-                status.data?.capabilities.includes(
+                (status.data?.capabilities.includes(
                   SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
-                ) === true
+                ) === true ||
+                  status.data?.capabilities.includes(
+                    SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+                  ) === true)
         }
         pagination={
           <ScrollContinuation
