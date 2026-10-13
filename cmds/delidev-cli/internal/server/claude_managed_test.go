@@ -890,6 +890,8 @@ func TestManagedClaudeLogoutDeadlineStartsAfterTheOriginalLeaseClears(t *testing
 		if err != nil {
 			return nil, err
 		}
+		// The accepted window is the full 15 minutes and has already elapsed.
+		account.Subscription.ServerOperation.StartedAt = time.Now().UTC().Add(-managedClaudeOperationWindow - time.Minute)
 		account.Subscription.ServerOperation.ExpiresAt = time.Now().UTC().Add(-time.Minute)
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
 		return nil, err
@@ -906,6 +908,11 @@ func TestManagedClaudeLogoutDeadlineStartsAfterTheOriginalLeaseClears(t *testing
 	_, account := f.record()
 	if !managedClaudeCandidate(account) || !account.Subscription.ServerOperation.ExpiresAt.After(time.Now().UTC().Add(10*time.Minute)) {
 		t.Fatal("the logout deadline did not restart when the original lease cleared")
+	}
+	// The restarted window is a whole operation window, so the persisted account
+	// still satisfies its own domain validator.
+	if o := account.Subscription.ServerOperation; o.ExpiresAt.Sub(o.StartedAt) > managedClaudeOperationWindow || account.Validate() != nil {
+		t.Fatalf("the restarted logout window exceeds the operation bound: %v", account.Validate())
 	}
 	awaitServerFixture(t, f.run())
 	_, account = f.record()
