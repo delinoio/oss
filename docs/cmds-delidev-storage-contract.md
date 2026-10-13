@@ -338,7 +338,8 @@ own process-owner maintenance locks (`processes/<id>.recovery.lock`) are created
 owner reconciliation after capture, so they alone are adopted, and only for exact
 owners: each job owner's lock right after job validation, and the session owner's
 lock right after workspace retirement, in both cases only as empty private regular
-files. A lock at any other name, or one that appears after adoption, keeps cleanup
+files and only in the attempt that starts removal (a retry restores the retained
+inventory and never adopts a lock that appeared since). A lock at any other name, or one that appears after adoption, keeps cleanup
 pending. The identity inventory (present objects only; every other
 inventoried path was proven absent) is retained, content-free, at
 `session-deletions/<session>-<deletion>-<device>-identities.json` before the

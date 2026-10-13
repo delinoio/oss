@@ -317,9 +317,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			locks = nil
 			// Workspace retirement just reconciled the session owner, which may
-			// have created its maintenance lock. It is the only name adopted here.
-			if e := adoptMaintenanceLocks(root, validated, []domain.ID{w.SessionID}); e != nil {
-				return e
+			// have created its maintenance lock. It is the only name adopted, and
+			// only in the attempt that starts removal: a retry restores the
+			// retained inventory and has no legitimate new lock to acquire, so a
+			// lock that appeared since stays foreign.
+			if !proof.RemovalStarted {
+				if e := adoptMaintenanceLocks(root, validated, []domain.ID{w.SessionID}); e != nil {
+					return e
+				}
 			}
 			if e := startRemoval(); e != nil {
 				return e

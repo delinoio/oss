@@ -251,3 +251,38 @@ func TestSessionDeletionRetryKeepsProvenAbsence(t *testing.T) {
 		t.Fatal("retry removed a copy restored after absence was proven", err)
 	}
 }
+
+// pendThenPersist drives a first attempt that persists removal_started and the
+// identity inventory, then stays pending because a process directory was swapped.
+func pendThenPersist(t *testing.T) (Config, domain.SessionDeletionWork, string) {
+	t.Helper()
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	original := filepath.Join(c.Root, "processes", string(w.Copies[0].JobID))
+	if err := os.MkdirAll(original, 0700); err != nil {
+		t.Fatal(err)
+	}
+	installDeletionHook(t, func() {
+		if err := os.Rename(original, filepath.Join(c.Root, "moved-original")); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, filepath.Join(original, "sentinel"), "foreign sentinel")
+	})
+	expectPendingDeletion(t, c, w)
+	sessionDeletionBeforeRemovalHook = nil
+	return c, w, original
+}
+
+// A retry has no legitimate new session lock: a foreign empty private file that
+// appeared after the inventory proved the name absent must stay foreign.
+func TestSessionDeletionRetryDoesNotAdoptSessionLock(t *testing.T) {
+	c, w, _ := pendThenPersist(t)
+	lock := filepath.Join(c.Root, "processes", string(w.SessionID)+".recovery.lock")
+	if _, err := os.Lstat(lock); err == nil {
+		t.Skip("owner reconciliation created the lock in this fixture")
+	}
+	mustWrite(t, lock, "")
+	expectPendingDeletion(t, c, w)
+	if _, err := os.Lstat(lock); err != nil {
+		t.Fatal("retry adopted and removed a foreign session lock", err)
+	}
+}
