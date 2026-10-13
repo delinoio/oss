@@ -42,6 +42,29 @@ func transferLimit() error {
 // Observed readiness/provenance cannot cross a server boundary. In particular,
 // even keyless accounts require a fresh explicit connection and validation.
 func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, error) {
+	return portableValueWithMarkers(kind, raw, incoming, false)
+}
+
+// portableChangeValue parses a normalized plan document. Unlike a bundle entry,
+// a plan document may carry the server-added reconfiguration marker that an
+// Agent with managed skill selections receives during preview.
+func portableChangeValue(kind domain.Kind, raw []byte) (validatable, error) {
+	return portableValueWithMarkers(kind, raw, true, true)
+}
+
+// validateImportedRelationships applies ordinary relationship validation to a
+// normalized plan document. The server-added reconfiguration marker is valid
+// only here: it blocks execution until the Agent is explicitly reconfigured, so
+// it is validated as the unmarked document that a user would otherwise save.
+func validateImportedRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
+	if agent, ok := value.(*domain.Agent); ok && agent.ReconfigurationRequired && agent.ManagedSkills != nil && len(agent.ManagedSkills.Selections) > 0 {
+		unmarked := *agent
+		unmarked.ReconfigurationRequired = false
+		return validateRelationships(tx, kind, id, expected, &unmarked)
+	}
+	return validateRelationships(tx, kind, id, expected, value)
+}
+func portableValueWithMarkers(kind domain.Kind, raw []byte, incoming, serverMarkers bool) (validatable, error) {
 	value, err := configurationValue(kind, raw, incoming)
 	if err != nil {
 		return nil, err
@@ -78,7 +101,9 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 				v.ManagedMCP.Selections[i].Unresolved = true
 			}
 		}
-		if v.ReconfigurationRequired {
+		// Only the server adds the marker, and only for managed skill selections
+		// that were not authorized on this server. Incoming bundles never carry it.
+		if v.ReconfigurationRequired && !(serverMarkers && v.ManagedSkills != nil && len(v.ManagedSkills.Selections) > 0) {
 			return nil, domain.AgentReconfigurationRequired()
 		}
 	case *domain.Provider:
@@ -632,7 +657,7 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		default:
 			return transferInvalid()
 		}
-		value, err := portableValue(change.Kind, change.After, true)
+		value, err := portableChangeValue(change.Kind, change.After)
 		if err != nil {
 			return err
 		}
@@ -676,7 +701,7 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		if change.Action == domain.ConfigurationReuse {
 			continue
 		}
-		value, err := portableValue(change.Kind, change.After, true)
+		value, err := portableChangeValue(change.Kind, change.After)
 		if err != nil {
 			return err
 		}
@@ -686,7 +711,7 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		if err = validateNewProviderSelections(overlay, ConfigurationMutation{Kind: change.Kind, ID: change.ID, ExpectedRevision: change.ExpectedRevision}, change.ID, value); err != nil {
 			return err
 		}
-		if err = validateRelationships(overlay, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
+		if err = validateImportedRelationships(overlay, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
 			return err
 		}
 	}

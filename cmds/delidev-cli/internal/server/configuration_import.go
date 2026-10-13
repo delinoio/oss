@@ -54,14 +54,14 @@ func writeConfigurationImport(tx *store.Tx, plan domain.ConfigurationImportPlan)
 	for _, change := range plan.Changes {
 		revision := change.ExpectedRevision
 		if change.Action != domain.ConfigurationReuse {
-			value, err := portableValue(change.Kind, change.After, true)
+			value, err := portableChangeValue(change.Kind, change.After)
 			if err != nil {
 				return nil, err
 			}
 			if err = validateNewProviderSelections(tx, ConfigurationMutation{Kind: change.Kind, ID: change.ID, ExpectedRevision: change.ExpectedRevision}, change.ID, value); err != nil {
 				return nil, err
 			}
-			if err = validateRelationships(tx, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
+			if err = validateImportedRelationships(tx, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
 				return nil, err
 			}
 			record, err := tx.Put(change.Kind, change.ID, change.ExpectedRevision, "", "", value)
@@ -125,7 +125,7 @@ func (s *Service) ApplyConfigurationImport(ctx context.Context, req *connect.Req
 				if change.Kind != domain.RepositoryKind || change.Action == domain.ConfigurationReuse {
 					continue
 				}
-				value, err := portableValue(change.Kind, change.After, true)
+				value, err := portableChangeValue(change.Kind, change.After)
 				if err != nil {
 					return nil, err
 				}

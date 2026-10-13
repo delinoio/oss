@@ -874,3 +874,71 @@ func assertRejectedPortableVersion(t *testing.T, s *Service, selection domain.Co
 	default:
 	}
 }
+
+func TestConfigurationImportMarksManagedSkillAgentsForReconfigurationAndRejectsIncomingMarker(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	var agentEntry *domain.ConfigurationEntry
+	for i := range selection.Bundle.Entries {
+		if selection.Bundle.Entries[i].Kind == domain.AgentKind {
+			agentEntry = &selection.Bundle.Entries[i]
+		}
+	}
+	var agent domain.Agent
+	if err := domain.Decode(agentEntry.Document, &agent); err != nil {
+		t.Fatal(err)
+	}
+	agent.ManagedSkills = &domain.ManagedSkillSelectionList{Selections: []domain.ManagedSkillSelection{{WorkerDeviceID: domain.NewID(), PackageID: domain.NewID(), ContentRevision: strings.Repeat("ab", 32)}}}
+	agentEntry.Document, _ = json.Marshal(agent)
+	// An exported bundle never carries the server-owned marker.
+	marked := agent
+	marked.ReconfigurationRequired = true
+	markedRaw, _ := json.Marshal(marked)
+	forged := selection
+	forged.Bundle.Entries = append([]domain.ConfigurationEntry(nil), selection.Bundle.Entries...)
+	for i := range forged.Bundle.Entries {
+		if forged.Bundle.Entries[i].Kind == domain.AgentKind {
+			forged.Bundle.Entries[i].Document = markedRaw
+		}
+	}
+	forgedRaw, _ := json.Marshal(forged)
+	if _, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: forgedRaw})); err == nil {
+		t.Fatal("incoming bundle supplied the server-owned reconfiguration marker")
+	}
+	preview := transferPreview(t, s, selection)
+	var plan domain.ConfigurationImportPreview
+	if err := domain.Decode(preview, &plan); err != nil {
+		t.Fatal(err)
+	}
+	normalized := false
+	for _, change := range plan.Plan.Changes {
+		if change.Kind != domain.AgentKind {
+			continue
+		}
+		var planned domain.Agent
+		if err := domain.Decode(change.After, &planned); err != nil || !planned.ReconfigurationRequired {
+			t.Fatal("managed skill Agent was not marked for reconfiguration", err)
+		}
+		normalized = true
+	}
+	if !normalized {
+		t.Fatal("preview omitted the Agent")
+	}
+	report := transferApply(t, s, preview, domain.NewID())
+	if report.State != domain.JobSucceeded {
+		t.Fatal(report)
+	}
+	for _, resource := range report.Resources {
+		if resource.Kind != domain.AgentKind {
+			continue
+		}
+		row, err := s.Store.Get(context.Background(), domain.AgentKind, resource.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		imported, _ := store.Decode[domain.Agent](row)
+		if !imported.ReconfigurationRequired || imported.ManagedSkills == nil || len(imported.ManagedSkills.Selections) != 1 {
+			t.Fatal("imported Agent did not require reconfiguration")
+		}
+	}
+}
