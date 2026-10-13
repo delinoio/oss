@@ -4496,6 +4496,43 @@ it("discards a pending Search read after the connection is replaced", async () =
   info.mockRestore();
 });
 
+it("keeps the chosen destination when a pending Search read settles after leaving Search", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  value.readHook.current = async (request) => {
+    if (request.id === child.id) await gate;
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  // Navigation away from Search supersedes the opening in the same handler.
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  expect(sidechatTabs()).toHaveLength(0);
+  expect(
+    screen.queryByRole("textbox", { name: "Search conversations" }),
+  ).toBeNull();
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  info.mockRestore();
+});
+
 it("discards a pending Search read after another target is opened", async () => {
   const info = vi.spyOn(console, "info").mockImplementation(() => {});
   const value = fixture([], [], [], false, true);

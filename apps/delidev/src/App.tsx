@@ -145,7 +145,7 @@ function Shell({
     [queryClient],
   );
   useLocale();
-  const [surface, setSurface] = useState(Surface.Sessions);
+  const [surface, setSurfaceState] = useState(Surface.Sessions);
   useShortcutSurface(surface);
   const openHelp = useShortcutHelp();
   const holdHelp = useHeldShortcutHelp();
@@ -199,6 +199,13 @@ function Shell({
       searchIntent.current += 1;
     };
   }, []);
+  // Leaving Search supersedes a pending result opening synchronously, in the
+  // navigation path itself: a read can settle after the new surface commits but
+  // before passive effects flush, and must not override the chosen destination.
+  const setSurface = (next: Surface) => {
+    if (next !== Surface.Search) searchIntent.current += 1;
+    setSurfaceState(next);
+  };
   useEffect(() => {
     if (surface === Surface.Search) return;
     searchIntent.current += 1;
