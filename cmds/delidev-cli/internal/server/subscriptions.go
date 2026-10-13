@@ -552,7 +552,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				}
 				sr, session, err := sessionRecord(tx, jr.SessionID)
 				_, machine, machineErr := activeMachine(tx, input.Machine)
-				if err != nil || machineErr != nil || !machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
+				if err != nil || machineErr != nil || !compactionLeaseCapabilities(machine.WorkerCapabilities, compact) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
 					return nil, subscriptionDenied()
 				}
 				if err := checkedExecutionSource(tx, sr, session, machine, compact.Assignment); err != nil {
@@ -1197,4 +1197,16 @@ func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
 		return st.ServerQuota.Generation
 	}
 	return ""
+}
+
+// compactionLeaseCapabilities reports whether a Worker advertises the exact
+// capability set for the validated compaction context-input kind. Revert
+// (version 4) is an independent operation gated only by CodexSessionRevertV1;
+// every other kind keeps the original native/Codex compaction pair. Neither
+// set authorizes the other operation.
+func compactionLeaseCapabilities(capabilities []domain.WorkerCapability, compact domain.SessionCompactionInput) bool {
+	if compact.Revert != nil {
+		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1)
+	}
+	return machineCapabilityContains(capabilities, domain.NativeSessionCompactionV1) && machineCapabilityContains(capabilities, domain.CodexSessionCompactionV1)
 }
