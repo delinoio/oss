@@ -9,6 +9,7 @@ import { NativeGrokTerminal, NativeGrokStop } from "./native-grok";
 import {
   isEntityId,
   subscriptionService,
+  subscriptionServiceHarnesses,
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { memo, type ReactNode } from "react";
@@ -106,6 +107,23 @@ function canonicalSourceModelKey(identity: Document): string {
 }
 
 /**
+ * Mirrors the server `SubscriptionService.Harness()` check: a saved
+ * subscription service must be a known service whose native harness equals
+ * the saved harness (for example `chatgpt` only runs on `codex`).
+ */
+function isSubscriptionServiceOfHarness(
+  service: unknown,
+  harness: unknown,
+): boolean {
+  const known = subscriptionService(service);
+  return (
+    known !== undefined &&
+    typeof harness === "string" &&
+    subscriptionServiceHarnesses[known] === harness
+  );
+}
+
+/**
  * Validates the internal source-scoped model key of a saved execution
  * configuration. The server never stores a resource UUID here: the key is
  * `source:` followed by the unpadded base64url JSON of the exact source
@@ -167,7 +185,7 @@ function sourceModelKeyMatches(
         provider === configuration.provider_id &&
         configuration.subscription_service === undefined)) &&
     (!hasService ||
-      (subscriptionService(service) !== undefined &&
+      (isSubscriptionServiceOfHarness(service, configuration.harness) &&
         service === configuration.subscription_service &&
         configuration.provider_id === undefined))
   );

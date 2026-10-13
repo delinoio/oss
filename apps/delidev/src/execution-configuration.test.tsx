@@ -218,6 +218,18 @@ const invalidSnapshots: [string, Mutation][] = [
     },
   ],
   [
+    "a subscription service whose harness differs from the saved harness",
+    (_, configuration) => {
+      delete configuration.provider_id;
+      configuration.harness = "claude-code";
+      configuration.subscription_service = "chatgpt";
+      configuration.model_key = sourceModelKey({
+        subscription_service: "chatgpt",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
     "a source model key naming both a provider and a subscription service",
     (_, configuration) => {
       configuration.model_key = sourceModelKey({
