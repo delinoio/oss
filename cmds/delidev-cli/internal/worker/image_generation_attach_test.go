@@ -68,6 +68,14 @@ func TestDynamicToolsAttachmentRenegotiatesProfileWhenSupportChanges(t *testing.
 	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1)
 }
 
+func TestManagedMCPAttachmentNegotiatesBeforeAdvertising(t *testing.T) {
+	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_MCP_V1)
+}
+
+func TestCodexManagedMCPAttachmentNegotiatesBeforeAdvertising(t *testing.T) {
+	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_MANAGED_MCP_V1)
+}
+
 func assertCapabilityAttachmentRenegotiatesProfile(t *testing.T, capability pb.WorkerCapability) {
 	t.Helper()
 	for _, tc := range []struct {
