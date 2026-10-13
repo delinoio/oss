@@ -887,7 +887,9 @@ function rowStates() {
   }));
 }
 async function expectRows(count: number) {
-  await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(count));
+  await waitFor(() =>
+    expect(screen.getAllByRole("option")).toHaveLength(count),
+  );
 }
 it("leaves plain Tab to native focus navigation when only unavailable rows remain", async () => {
   const f = mutableFixture([entries[0]!]);
@@ -1018,7 +1020,9 @@ it("matches identical fingerprints by count and keeps differing provenance or co
   await expectRows(5);
   expect(rowStates().some((row) => row.unavailable)).toBe(false);
   // Two indistinguishable duplicates become one: exactly one unavailable row.
-  await f.refresh(generation(f.state.current.filter((_, index) => index !== 1)));
+  await f.refresh(
+    generation(f.state.current.filter((_, index) => index !== 1)),
+  );
   await expectRows(5);
   expect(rowStates().filter((row) => row.unavailable)).toEqual([
     { name: "dup", unavailable: true },
@@ -1030,7 +1034,9 @@ it("matches identical fingerprints by count and keeps differing provenance or co
   // Dropping one provenance variant retains only that variant as unavailable.
   await f.refresh(
     generation(
-      f.state.current.filter((entry) => entry.provenance !== SkillProvenance.PROJECT),
+      f.state.current.filter(
+        (entry) => entry.provenance !== SkillProvenance.PROJECT,
+      ),
     ),
   );
   await expectRows(5);
