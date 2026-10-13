@@ -352,6 +352,67 @@ it("keeps native subscription service attribution independent from API providers
   }
 });
 
+it("accepts OpenCode Go proxy HTTP diagnostics and rejects other subscription proxy records", () => {
+  const f = fixture();
+  const proxyRow = (overrides: Record<string, unknown> = {}) => {
+    const id = newRequestId();
+    return create(RequestDiagnosticSchema, {
+      ...f.row,
+      id,
+      providerId: "",
+      subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+      model: create(ModelIdentitySchema, {
+        providerId: "",
+        nativeId: "exact-original-native",
+        subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+      }),
+      source: Source.PROXY_HTTP,
+      operation: Operation.RESPONSE,
+      harness: "opencode",
+      correlationId: id,
+      ...overrides,
+    });
+  };
+  const page = (row: ReturnType<typeof proxyRow>) =>
+    create(ListRequestDiagnosticsResponseSchema, { records: [row] });
+  const accepted = [
+    proxyRow(),
+    proxyRow({
+      state: State.IN_PROGRESS,
+      finishedAt: undefined,
+      httpAttempted: false,
+      httpStatus: undefined,
+      durationMs: undefined,
+    }),
+  ];
+  for (const row of accepted)
+    expect(
+      validateDiagnosticPage(page(row), f.session, "").records[0]
+        .subscriptionService,
+    ).toBe(SubscriptionServiceIdentity.OPENCODE_GO);
+  const rejected: Record<string, unknown>[] = [
+    {
+      subscriptionService: SubscriptionServiceIdentity.CHATGPT,
+      harness: "codex",
+      model: create(ModelIdentitySchema, {
+        providerId: "",
+        nativeId: "exact-original-native",
+        subscriptionService: SubscriptionServiceIdentity.CHATGPT,
+      }),
+    },
+    { harness: "codex" },
+    { providerId: newRequestId() },
+    { correlationId: newRequestId() },
+    { httpAttempted: undefined },
+    { operation: Operation.INPUT },
+    { state: State.SUCCEEDED, httpStatus: 500 },
+  ];
+  for (const wrong of rejected)
+    expect(() =>
+      validateDiagnosticPage(page(proxyRow(wrong)), f.session, ""),
+    ).toThrow("unavailable");
+});
+
 it("accepts Fast only from original Codex native diagnostic evidence", () => {
   const f = fixture(),
     row = create(RequestDiagnosticSchema, {

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   FailureCode,
+  SubscriptionServiceId,
   subscriptionServiceFromWire,
   subscriptionServiceLabel,
   subscriptionServiceHarnesses,
@@ -144,7 +145,12 @@ export function validateDiagnosticPage(
       value.subscriptionService
         ? !service ||
           value.providerId ||
-          value.source !== Source.NATIVE_INPUT ||
+          // OpenCode Go is the only subscription service relayed through the API proxy.
+          (value.source !== Source.NATIVE_INPUT &&
+            !(
+              value.source === Source.PROXY_HTTP &&
+              service === SubscriptionServiceId.OpenCodeGo
+            )) ||
           subscriptionServiceHarnesses[service] !== value.harness
         : !isEntityId(value.providerId)
     )
