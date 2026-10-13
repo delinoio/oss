@@ -396,6 +396,23 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}()
 		}
 	}
+	if managed == nil && ownedProxy == nil {
+		// A Local desktop Worker that follows a relocated runtime must not hand
+		// Codex the retired pairing address. The forwarder is joined after the
+		// native process (deferred earlier than its close) and before success.
+		forwarder, err := openCodexNativeForwarder(nativeCtx, config, input.ExecutionID, token, false)
+		if err != nil {
+			return nil, err
+		}
+		if forwarder != nil {
+			nativeConfig.API.ForwarderOrigin = forwarder.NativeOrigin()
+			defer func() {
+				if err := forwarder.Close(); err != nil {
+					output, returned = nil, config.startup.cleanupFailure(returned, err)
+				}
+			}()
+		}
+	}
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
