@@ -29,6 +29,73 @@ export function questionMutationKey(id: string, data: Document): string {
         : "answer";
   return `${family}:${id}`;
 }
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const RFC3339 =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+const validId = (value: unknown): boolean =>
+  typeof value === "string" && UUID_V7.test(value);
+const validTimestamp = (value: unknown): boolean =>
+  typeof value === "string" &&
+  RFC3339.test(value) &&
+  Number.isFinite(Date.parse(value));
+// Go encodes uint64 sequences as JSON numbers. A value outside the safe
+// integer range cannot be compared exactly, so it is an invalid envelope.
+const validSequence = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const hasOnlyKeys = (value: Document, keys: string[]): boolean =>
+  Object.keys(value).every((key) => keys.includes(key));
+function validGenericAnswers(input: unknown): boolean {
+  if (input == null || typeof input !== "object" || Array.isArray(input))
+    return false;
+  const wrapper = input as Document;
+  if (!hasOnlyKeys(wrapper, ["answers"])) return false;
+  const answers = wrapper.answers;
+  if (answers == null || typeof answers !== "object" || Array.isArray(answers))
+    return false;
+  return Object.values(answers as Document).every(
+    (values) =>
+      Array.isArray(values) && values.every((v) => typeof v === "string"),
+  );
+}
+/**
+ * Validates the complete accepted QuestionResponse envelope that Go persists:
+ * response id/input/accepted_at, the full claim identity, a delivery
+ * observation and an acceptance observation whose sequence strictly follows
+ * delivery. An incomplete envelope must never retire a question.
+ */
+function validAcceptedEnvelope(
+  response: Document,
+  expectedEvidence: string,
+): boolean {
+  const claim = object(response.claim),
+    delivery = object(response.delivery),
+    acceptance = object(response.acceptance);
+  return (
+    response.state === "accepted" &&
+    validId(response.id) &&
+    validTimestamp(response.accepted_at) &&
+    validGenericAnswers(response.input) &&
+    response.claim != null &&
+    [
+      claim.id,
+      claim.job_id,
+      claim.machine_id,
+      claim.instance_id,
+      claim.device_id,
+    ].every(validId) &&
+    validTimestamp(claim.claimed_at) &&
+    response.delivery != null &&
+    hasOnlyKeys(delivery, ["state", "sequence"]) &&
+    ["transmitted", "uncertain"].includes(text(delivery.state)) &&
+    validSequence(delivery.sequence) &&
+    response.acceptance != null &&
+    hasOnlyKeys(acceptance, ["evidence", "sequence"]) &&
+    acceptance.evidence === expectedEvidence &&
+    validSequence(acceptance.sequence) &&
+    acceptance.sequence > delivery.sequence
+  );
+}
 function validQuestion(data: Document): boolean {
   if (Object.hasOwn(data, "grok")) return validGrokInteraction(data);
   if (data.claude != null) return validClaudeInteraction(data);
@@ -58,15 +125,9 @@ function validQuestion(data: Document): boolean {
     return false;
   const response = object(data.response);
   if (response.state === "accepted") {
-    const acceptance = object(response.acceptance),
-      delivery = object(response.delivery);
     return (
       data.closure === "native-closed" &&
-      response.claim != null &&
-      ["transmitted", "uncertain"].includes(text(delivery.state)) &&
-      acceptance.evidence === "native-question-output" &&
-      Number.isSafeInteger(acceptance.sequence) &&
-      Number(acceptance.sequence) > Number(delivery.sequence)
+      validAcceptedEnvelope(response, "native-question-output")
     );
   }
   return response.acceptance == null;
