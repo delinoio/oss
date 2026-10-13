@@ -11,7 +11,11 @@ import { genericResponseBytes } from "./generic-question-response";
 import {
   interactionProjection,
   InteractionPresentation,
+  InteractionClosure,
   InteractionPresentationStore,
+  QuestionResponseState,
+  REMOVED_INTERACTION_LIMIT,
+  responseStateText,
   displayedInteraction,
   completeEmptyInteractionTray,
   missingQuestionReceipts,
@@ -728,4 +732,186 @@ it("matches the Go encoding/json byte size of the complete response", () => {
     accepting(free, { original: [bytes(256 * 1024 - 28)] }),
     "one over",
   );
+});
+
+const retainedStringBytes = (value: unknown): number =>
+  typeof value === "string"
+    ? value.length
+    : value && typeof value === "object"
+      ? Object.values(value).reduce<number>(
+          (total, entry) => total + retainedStringBytes(entry),
+          0,
+        )
+      : 0;
+const oversized = "x".repeat(256 * 1024);
+it("normalizes recognized closure and response states to bounded enums", () => {
+  for (const closure of ["open", "native-closed", "turn-ended"])
+    expect(interactionProjection(row({ ...original, closure })).closure).toBe(
+      closure,
+    );
+  for (const state of [
+    "queued",
+    "claimed",
+    "transmitted",
+    "uncertain",
+    "canceled",
+    "accepted",
+  ])
+    expect(
+      interactionProjection(row({ ...original, response: { state } }))
+        .responseState,
+    ).toBe(state);
+  expect(interactionProjection(row(original)).responseState).toBe(
+    QuestionResponseState.None,
+  );
+  expect(
+    interactionProjection(row({ ...original, response: {} })).responseState,
+  ).toBe(QuestionResponseState.None);
+  expect(responseStateText(QuestionResponseState.None)).toBe("");
+  expect(responseStateText(QuestionResponseState.Queued)).toBe("queued");
+  // Unrecognized values, including near-misses, share one fixed unknown value.
+  for (const value of ["failed", "unknown", "Open", "mystery"]) {
+    expect(
+      interactionProjection(row({ ...original, closure: value })).closure,
+    ).toBe(InteractionClosure.Unknown);
+    expect(
+      interactionProjection(row({ ...original, response: { state: value } }))
+        .responseState,
+    ).toBe(QuestionResponseState.Unknown);
+  }
+});
+it("retains no oversized closure or response state string in the store", () => {
+  const variants: Record<string, unknown>[] = [
+    { ...original, closure: oversized },
+    { ...original, response: { state: oversized } },
+    { ...original, closure: oversized, response: { state: oversized } },
+  ];
+  for (const data of variants) {
+    const store = new InteractionPresentationStore();
+    const observed = store.observe(row(data));
+    expect(observed.presentation).toBe(InteractionPresentation.Pending);
+    // Classification still uses the raw values: only an unrecognized closure
+    // makes the question unavailable.
+    expect(observed.unavailable).toBe(data.closure === oversized);
+    const retained = [...store.entries()].map(([, projection]) => projection);
+    expect(retained).toEqual([observed]);
+    // Only fixed per-record metadata (UUID mutation key plus enum values).
+    expect(retainedStringBytes(retained)).toBeLessThan(256);
+    expect(
+      JSON.stringify(retained, (_, v) => (typeof v === "bigint" ? "0" : v)),
+    ).not.toContain("xxxx");
+  }
+  // Many distinct oversized records scale with record count, not payload size.
+  const many = new InteractionPresentationStore();
+  let total = 0;
+  for (let index = 0; index < 8; index += 1) {
+    const distinct = create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId: newRequestId(),
+      kind: EntityKind.INTERACTION,
+      schemaVersion: 1,
+      revision: 9n,
+      documentJson: encode({
+        ...original,
+        closure: oversized + index,
+        response: { state: oversized + index },
+      }),
+    });
+    many.observe(distinct);
+    total += 1;
+  }
+  expect(total).toBe(8);
+  expect(
+    retainedStringBytes(
+      [...many.entries()].map(([, projection]) => projection),
+    ),
+  ).toBeLessThan(8 * 256);
+});
+it("keeps revision ordering and classification with normalized values", () => {
+  const store = new InteractionPresentationStore();
+  const first = store.observe(row({ ...original, closure: oversized }, 10n));
+  expect(first.closure).toBe(InteractionClosure.Unknown);
+  expect(first.unavailable).toBe(true);
+  // Equal and older revisions never overwrite.
+  expect(store.observe(row(original, 10n))).toBe(first);
+  expect(store.observe(row(original, 9n))).toBe(first);
+  const next = store.observe(row(original, 11n));
+  expect(next.closure).toBe(InteractionClosure.Open);
+  expect(next.unavailable).toBe(false);
+  expect(next.mutationKey).toBe(`answer:${id}`);
+  // A canceled response keeps retiring closed questions with no evidence.
+  const canceled = interactionProjection(
+    row({
+      ...original,
+      closure: "turn-ended",
+      response: { state: "canceled" },
+    }),
+  );
+  expect(canceled.presentation).toBe(InteractionPresentation.Retired);
+  expect(canceled.responseState).toBe(QuestionResponseState.Canceled);
+});
+
+it("keeps an authoritatively removed question absent through snapshots and older page restoration", () => {
+  const store = new InteractionPresentationStore();
+  const queued = row({ ...original, response: { state: "queued" } }, 10n);
+  store.observe(queued);
+  // Receipt counts 1, 0, 0: resident leave, Remove, older page restoration.
+  expect(receiptIds(store)).toEqual([id]);
+  store.remove(id);
+  expect(store.isRemoved(id)).toBe(true);
+  // The stream's removed set is empty after a Snapshot; the store still fences.
+  expect(receiptIds(store, [], [])).toEqual([]);
+  store.observe(row(original, 9n));
+  store.observe(queued);
+  store.observe(row(original, 12n));
+  expect(receiptIds(store, [], [])).toEqual([]);
+  expect([...store.entries()]).toEqual([]);
+  // A retained original answer mutation cannot revive the removed question.
+  expect(receiptIds(store, [], [], [`answer:${id}`])).toEqual([]);
+});
+it("keeps a question that only left the payload page after a Snapshot without Remove", () => {
+  const store = new InteractionPresentationStore();
+  store.observe(row({ ...original, response: { state: "queued" } }, 10n));
+  expect(store.isRemoved(id)).toBe(false);
+  expect(receiptIds(store, [], [])).toEqual([id]);
+  // Retired-without-pending and unrelated controls keep existing behavior.
+  store.observe(row(accepted, 11n));
+  expect(receiptIds(store)).toEqual([]);
+  expect(receiptIds(store, [], [], [`answer:${id}`])).toEqual([id]);
+});
+it("scopes removal tombstones to the owning store and to the removed id", () => {
+  const owner = new InteractionPresentationStore();
+  const other = new InteractionPresentationStore();
+  owner.observe(row(original));
+  other.observe(row(original));
+  owner.remove(id);
+  expect(owner.isRemoved(id)).toBe(true);
+  expect(other.isRemoved(id)).toBe(false);
+  expect(receiptIds(other)).toEqual([id]);
+  const unrelated = newRequestId();
+  expect(owner.isRemoved(unrelated)).toBe(false);
+  // An approval projection keeps its existing non-question behavior.
+  const approval = new InteractionPresentationStore();
+  approval.observe(row({ type: "native-approval", closure: "open" }));
+  expect(receiptIds(approval)).toEqual([]);
+  // A tombstone for an unseen identity still fences a later observation.
+  const unseen = new InteractionPresentationStore();
+  unseen.remove(id);
+  unseen.observe(row(original));
+  expect(receiptIds(unseen)).toEqual([]);
+});
+it("bounds removal tombstones to identities only", () => {
+  const store = new InteractionPresentationStore();
+  const ids = Array.from({ length: REMOVED_INTERACTION_LIMIT + 5 }, () =>
+    newRequestId(),
+  );
+  for (const removed of ids) store.remove(removed);
+  const fenced = store.removed();
+  expect(fenced.size).toBe(REMOVED_INTERACTION_LIMIT);
+  // The oldest identities are forgotten first; the newest stay fenced.
+  expect(store.isRemoved(ids[0])).toBe(false);
+  expect(store.isRemoved(ids[ids.length - 1])).toBe(true);
+  // The published snapshot is a copy and holds strings (ids) only.
+  expect([...fenced].every((entry) => typeof entry === "string")).toBe(true);
+  expect(store.removed()).not.toBe(fenced);
 });

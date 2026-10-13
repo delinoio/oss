@@ -25,7 +25,13 @@ export enum ConnectionState {
 export type SyncUpdate =
   | { kind: SyncKind.Snapshot; resources: readonly Resource[] }
   | { kind: SyncKind.Upsert; resource: Resource; eventId: string }
-  | { kind: SyncKind.Remove; id: string; eventId: string }
+  | {
+      kind: SyncKind.Remove;
+      id: string;
+      // The watched kind of the removed entity, from the originating event.
+      entityKind: EntityKind;
+      eventId: string;
+    }
   | {
       kind: SyncKind.Connection;
       state: ConnectionState;
@@ -247,6 +253,7 @@ export async function* synchronizeResources(
             yield {
               kind: SyncKind.Remove,
               id: event.entityId,
+              entityKind: event.kind,
               eventId: event.id,
             };
           } else {
@@ -281,6 +288,7 @@ export async function* synchronizeResources(
               yield {
                 kind: SyncKind.Remove,
                 id: event.entityId,
+                entityKind: event.kind,
                 eventId: event.id,
               };
             }
