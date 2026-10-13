@@ -504,7 +504,8 @@ it.each(["rejected", "changed-machine"])(
     expect(name.disabled).toBe(true);
     await act(async () => {
       if (failure === "rejected") fixture.gate.reject(new Error("offline"));
-      else fixture.gate.resolve({ ...fixture.proof, machineId: newRequestId() });
+      else
+        fixture.gate.resolve({ ...fixture.proof, machineId: newRequestId() });
     });
     await waitFor(() => expect(name.disabled).toBe(false));
     expect(screen.queryByRole("alert")).toBeNull();
