@@ -92,6 +92,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 		queued bool
 	}{
 		{"ordinary-small", domain.HarnessDiscoveryJob, 512, false},
+		{"branches-small", domain.DiscoverRepositoryBranchesJob, 512, false},
 		{"compaction-small", domain.CompactSessionJob, 512 << 10, false},
 		{"compaction-input-bound", domain.CompactSessionJob, domain.MaxCompactionInputBytes, false},
 		{"compaction-large", domain.CompactSessionJob, 2 << 20, false},
@@ -199,7 +200,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 }
 
 func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t *testing.T) {
-	for _, mode := range []string{"ordinary-size", "compaction-size", "compaction-input-size", "compaction-input-unknown", "compaction-input-duplicate", "compaction-input-malformed", "compaction-input-invariant", "compaction-job-state", "recovery-size", "unknown", "duplicate", "utf8"} {
+	for _, mode := range []string{"ordinary-size", "compaction-size", "compaction-input-size", "compaction-input-unknown", "compaction-input-duplicate", "compaction-input-malformed", "compaction-input-invariant", "compaction-job-state", "recovery-size", "branches-invalid-size", "branches-valid-size", "branches-max-size", "unknown", "duplicate", "utf8"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root, ctx, in, session := restoreFixture(t)
 			id := domain.NewID()
@@ -258,6 +259,24 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 				raw, err = json.Marshal(job)
 				if err != nil || len(raw) >= domain.MaxCompactionJobBytes {
 					t.Fatal("invalid bounded compaction rejection fixture", err)
+				}
+			case "branches-invalid-size", "branches-valid-size", "branches-max-size":
+				// Live branch Jobs keep a 9 MiB typed allowance; restore must
+				// not borrow it for history above the ordinary 1 MiB bound.
+				job.Type = domain.DiscoverRepositoryBranchesJob
+				size := 2 << 20
+				if mode == "branches-max-size" {
+					size = domain.MaxRepositoryBranchesJobBytes - 1<<10
+				}
+				if mode == "branches-invalid-size" {
+					job.Input, _ = json.Marshal(strings.Repeat("x", size))
+				} else {
+					job.Input = validRepositoryBranchesInput(t)
+					job.Output, _ = json.Marshal(strings.Repeat("x", size))
+				}
+				raw, _ = json.Marshal(job)
+				if len(raw) <= 1<<20 || len(raw) > domain.MaxRepositoryBranchesJobBytes {
+					t.Fatal("invalid branch rejection fixture size", len(raw))
 				}
 			case "recovery-size":
 				job.Type = domain.WorkspaceStorageJob
@@ -340,5 +359,52 @@ func TestRestoreJobDecoderRejectsTrailingCompaction(t *testing.T) {
 	}
 	if _, err := decodeRestoreJob(append(raw, []byte(` {}`)...)); err == nil {
 		t.Fatal("trailing compaction document was accepted")
+	}
+}
+
+func validRepositoryBranchesInput(t *testing.T) json.RawMessage {
+	t.Helper()
+	source := "https://github.com/fixture/repo.git"
+	identity, err := domain.RepositoryCloneSourceIdentity(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := domain.RepositoryBranchesInput{ProjectID: domain.NewID(), ProjectRevision: 1, RepositoryID: domain.NewID(), RepositoryRevision: 1, MachineID: domain.NewID(), MachineRevision: 1, Source: source, SourceIdentity: identity, Remote: "origin"}
+	if err := input.Validate(); err != nil {
+		t.Fatal("invalid branch input fixture", err)
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// Restore uses the strict generic bound for branch history, while live typed
+// reads keep the separate 9 MiB branch allowance.
+func TestRestoreJobDecoderKeepsLiveBranchAllowanceSeparate(t *testing.T) {
+	now := time.Now().UTC()
+	job := domain.Job{Type: domain.DiscoverRepositoryBranchesJob, State: domain.JobSucceeded, MachineID: domain.NewID(), InstanceID: domain.NewID(), Input: validRepositoryBranchesInput(t), AcceptedAt: now, FinishedAt: &now}
+	small, err := json.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeRestoreJob(small); err != nil {
+		t.Fatal("ordinary branch history was rejected", err)
+	}
+	job.Output, _ = json.Marshal(strings.Repeat("x", 2<<20))
+	large, err := json.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeRestoreJob(large); err == nil {
+		t.Fatal("restore admitted 1-9 MiB branch history")
+	}
+	if _, err := Decode[domain.Job](Record{Kind: domain.JobKind, Data: large}); err != nil {
+		t.Fatal("live generic read lost the branch allowance", err)
+	}
+	var typed domain.Job
+	if err := domain.DecodeRepositoryBranchesJob(large, &typed); err != nil {
+		t.Fatal("live typed branch decoder lost its allowance", err)
 	}
 }

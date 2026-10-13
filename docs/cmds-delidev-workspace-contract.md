@@ -571,7 +571,7 @@ inventory to 8 MiB and 10,000 branches; overflow fails instead of publishing a
 partial list. This job alone has 9 MiB JSON/journal envelope headroom. Its report
 receipt, bounded transport and single-resource reader support the complete result;
 other job inputs/outputs, page/event bounds and native Git output limits remain
-unchanged. A dedicated branch reader must not widen the general document parser.
+unchanged. A dedicated branch reader must not widen the general document parser. The allowance covers live branch Job reads and writes only: backup restore decodes `discover-repository-branches` history under the ordinary 1 MiB document bound and rejects larger documents before publication.
 
 ## Project behavior settings
 
