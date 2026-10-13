@@ -14,7 +14,13 @@ import {
 } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { settleEnclosingEntrances } from "./entrance-motion";
-import { copy, useLocale } from "./localization";
+import {
+  copy,
+  i18n,
+  SupportedLanguage,
+  useLocale,
+  type MessageKey,
+} from "./localization";
 
 export enum SessionIconKind {
   Diff = "diff",
@@ -90,6 +96,13 @@ export enum SessionNoticeSeverity {
   Error = "error",
 }
 
+/** True when the text equals this catalog entry in any supported locale, independent of the active one. */
+function matchesCatalogCopy(value: string, key: MessageKey): boolean {
+  return Object.values(SupportedLanguage).some(
+    (lng) => i18n.t(key, { lng }) === value,
+  );
+}
+
 /** Presentation only: callers retain actions, confirmations and request identity. */
 export function SessionProblemNotice({
   code,
@@ -112,8 +125,6 @@ export function SessionProblemNotice({
 }) {
   useLocale();
   const quota = failureCause(code, cause) === FailureCause.QuotaExhausted;
-  const quotaExplanation = quota ? copy("session.quotaExplanation") : "";
-  const quotaGuidance = quota ? copy("session.quotaGuidance") : "";
   const title = quota
     ? copy("session.quotaTitle")
     : code === FailureCode.Unauthenticated
@@ -130,11 +141,19 @@ export function SessionProblemNotice({
     <SessionNotice title={title} details={details}>
       {quota ? (
         <>
-          <p>{quotaExplanation}</p>
-          <p>{quotaGuidance}</p>
-          {/* Original safe evidence stays exact and visible after the localized catalog copy. */}
-          {message && message !== quotaExplanation ? <p>{message}</p> : null}
-          {guidance && guidance !== quotaGuidance ? <p>{guidance}</p> : null}
+          <p>{copy("session.quotaExplanation")}</p>
+          <p>{copy("session.quotaGuidance")}</p>
+          {/* Original safe evidence stays exact and visible after the localized catalog copy.
+              Catalog-identical originals are skipped in every supported locale so the
+              paragraph count never depends on the active display language. */}
+          {message &&
+          !matchesCatalogCopy(message, "session.quotaExplanation") ? (
+            <p>{message}</p>
+          ) : null}
+          {guidance &&
+          !matchesCatalogCopy(guidance, "session.quotaGuidance") ? (
+            <p>{guidance}</p>
+          ) : null}
         </>
       ) : (
         <>

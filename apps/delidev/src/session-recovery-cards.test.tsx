@@ -171,6 +171,46 @@ it("renders no empty or duplicate quota paragraph when guidance is missing or em
   ).toEqual([quotaExplanationEn, quotaGuidanceEn]);
 });
 
+it("skips an original that equals the catalog copy of any supported locale in every active locale", async () => {
+  const koreanExplanation = i18n.t("session.quotaExplanation", { lng: "ko" });
+  const koreanGuidance = i18n.t("session.quotaGuidance", { lng: "ko" });
+  expect(koreanExplanation).not.toBe(quotaExplanationEn);
+  const originals = [
+    { message: quotaExplanationEn, guidance: quotaGuidanceEn },
+    { message: koreanExplanation, guidance: koreanGuidance },
+  ];
+  try {
+    for (const lng of ["en", "ko"]) {
+      await act(async () => {
+        await i18n.changeLanguage(lng);
+      });
+      for (const { message, guidance } of originals) {
+        const { container, unmount } = render(
+          <SessionProblemNotice
+            code="missing_input"
+            cause="quota_exhausted"
+            message={message}
+            guidance={guidance}
+          />,
+        );
+        expect(
+          Array.from(container.querySelectorAll("p")).map(
+            (node) => node.textContent,
+          ),
+        ).toEqual([
+          i18n.t("session.quotaExplanation", { lng }),
+          i18n.t("session.quotaGuidance", { lng }),
+        ]);
+        unmount();
+      }
+    }
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  }
+});
+
 it("keeps nonquota cards on their original message and guidance", () => {
   const { container } = render(
     <SessionProblemNotice

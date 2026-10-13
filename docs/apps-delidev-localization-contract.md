@@ -314,8 +314,10 @@ these cards. Only secondary codes, versions and opaque references are disclosed.
 The closed quota pair selects localized copy; translated or raw message text
 cannot establish the cause. The quota card renders the localized explanation and
 guidance first, then the supplied safe message and guidance as exact inert text
-in that order, skipping an empty or catalog-identical original so no empty or
-duplicate paragraph appears. Locale changes retain the original Session,
+in that order, skipping an empty original or one identical to the catalog copy
+of any supported locale, independent of the active display language, so no empty
+or duplicate paragraph appears and the paragraph count never depends on the
+active locale. Locale changes retain the original Session,
 composer, Info and operation identities without replay or focus movement.
 
 ## Browser destination copy
