@@ -2683,6 +2683,96 @@ it("does not republish a dropped invalidated base for a recreated base-free tab 
   );
 });
 
+it("unmounts an open review editor when its explicit base is invalidated and never revives it on reappearance", async () => {
+  const setup = inventoryFixture([{ name: "main" }, { name: "other" }], "main");
+  const { f, state, operations } = setup;
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:other"),
+  );
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  fireEvent.click(addReviewComment());
+  const editor = () =>
+    screen.queryByRole("form", { name: "New local review comment" });
+  expect(editor()).not.toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const contextReads = f.readContext.mock.calls.length;
+  // The base disappears: the comparison, the editor and its review context
+  // read all end together, so no retained form can submit or retry.
+  state.choices = [{ name: "main" }];
+  refreshDiff();
+  await screen.findByText(/No available default base/);
+  expect(comparisonRegion()).toBeNull();
+  expect(editor()).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Add review comment" }),
+  ).toBeNull();
+  // The reference reappears, but nothing is restored without a selection.
+  state.choices = [{ name: "main" }, { name: "other" }];
+  refreshDiff();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(editor()).toBeNull();
+  expect(comparisonRegion()).toBeNull();
+  expect(f.readContext.mock.calls.length).toBe(contextReads);
+  expect(f.deleteLocalReviewComment).not.toHaveBeenCalled();
+});
+
+it("reads a fresh diff after an invalidated base is explicitly reselected", async () => {
+  const setup = inventoryFixture([{ name: "main" }, { name: "other" }], "main");
+  const { f, state, operations } = setup;
+  // Every diff read observes a different commit for the recreated reference.
+  const inner = f.read.getMockImplementation()!;
+  let generation = 0;
+  f.read.mockImplementation(async (request) => {
+    const q = JSON.parse(new TextDecoder().decode(request.queryJson));
+    if (q.operation !== "git-diff" || q.base_ref?.name !== "other")
+      return inner(request);
+    generation += 1;
+    const response = await inner(request),
+      value = JSON.parse(new TextDecoder().decode(response.documentJson));
+    value.diff.revision = String(generation).repeat(64).slice(0, 64);
+    value.diff.patch = `+generation-${generation}\n`;
+    return { documentJson: encode(value) };
+  });
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await screen.findByText("+generation-1");
+  state.choices = [{ name: "main" }];
+  refreshDiff();
+  await screen.findByText(/No available default base/);
+  expect(screen.queryByText("+generation-1")).toBeNull();
+  state.choices = [{ name: "main" }, { name: "other" }];
+  refreshDiff();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByText("+generation-1")).toBeNull();
+  expect(operations().filter((op) => op === "git-diff:branch:other")).toEqual([
+    "git-diff:branch:other",
+  ]);
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  // Explicit reselection never shows the pre-deletion observation.
+  await screen.findByText("+generation-2");
+  expect(screen.queryByText("+generation-1")).toBeNull();
+  expect(operations().filter((op) => op === "git-diff:branch:other")).toEqual([
+    "git-diff:branch:other",
+    "git-diff:branch:other",
+  ]);
+});
+
 it("ends a retained base-free tab's dropped base record when the reference is explicitly reselected", async () => {
   const state = { names: ["main", "other"] };
   const f = tabsFixture({ options: namedInventory(state) });
