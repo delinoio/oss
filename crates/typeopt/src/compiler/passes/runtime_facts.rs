@@ -1722,7 +1722,7 @@ fn escapes_as_value(node: Node) -> bool {
 /// Checker-type kind classification for type neutrality decisions.
 pub(super) fn type_constituents(ctx: &mut Ctx, t: TypeId) -> Vec<TypeId> {
     if ctx.checker.ty(t).flags().intersects(TypeFlags::Union) {
-        ctx.checker.ty(t).types_list().iter().copied().collect()
+        ctx.checker.ty(t).types_list().to_vec()
     } else {
         vec![t]
     }

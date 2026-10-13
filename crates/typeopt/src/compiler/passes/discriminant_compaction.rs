@@ -688,7 +688,7 @@ impl<'d> Proof<'d> {
             return Ok(false);
         }
         let parts: Vec<TypeId> = if ctx.checker.ty(ty).flags().intersects(TypeFlags::Union) {
-            ctx.checker.ty(ty).types_list().iter().copied().collect()
+            ctx.checker.ty(ty).types_list().to_vec()
         } else {
             vec![ty]
         };

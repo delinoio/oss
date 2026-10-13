@@ -156,7 +156,7 @@ fn plan_enum(
         }
         let value = match ctx.checker.get_constant_value(member) {
             Some(LiteralValue::Number(number)) => number_text(number.0),
-            Some(LiteralValue::String(text)) => string_text(&text),
+            Some(LiteralValue::String(text)) => string_text(text),
             _ => None,
         };
         members.push(Member {

@@ -213,7 +213,7 @@ impl Project {
         let mut config = config.with_file_names(roots);
         config.set_compiler_options(P::new(options));
         let config = P::new(config);
-        let version = build(config.clone(), fs.clone(), &cwd);
+        let version = build(config, fs.clone(), &cwd);
         drop(region_scope);
         Ok(Self {
             region,
@@ -636,7 +636,7 @@ impl Project {
     }
 
     fn build_with(&self, texts: &BTreeMap<String, String>) -> Rc<CompilerProgram> {
-        self.build_with_config(self.config.clone(), texts)
+        self.build_with_config(self.config, texts)
     }
 
     fn build_with_config(
