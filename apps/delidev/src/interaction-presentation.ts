@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
+import { validGenericQuestionResponse } from "./generic-question-response";
+import { rfc3339Instant } from "./rfc3339";
 import { validOpenCodeInteraction } from "./native-interaction";
 import { validClaudeInteraction } from "./native-claude-interaction";
 import { validGrokInteraction } from "./native-grok-interactions";
@@ -31,32 +33,19 @@ export function questionMutationKey(id: string, data: Document): string {
 }
 const UUID_V7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const RFC3339 =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
 const validId = (value: unknown): boolean =>
   typeof value === "string" && UUID_V7.test(value);
 const validTimestamp = (value: unknown): boolean =>
-  typeof value === "string" &&
-  RFC3339.test(value) &&
-  Number.isFinite(Date.parse(value));
+  typeof value === "string" && rfc3339Instant(value) !== undefined;
 // Go encodes uint64 sequences as JSON numbers. A value outside the safe
 // integer range cannot be compared exactly, so it is an invalid envelope.
 const validSequence = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const hasOnlyKeys = (value: Document, keys: string[]): boolean =>
   Object.keys(value).every((key) => keys.includes(key));
-function validGenericAnswers(input: unknown): boolean {
-  if (input == null || typeof input !== "object" || Array.isArray(input))
-    return false;
-  const wrapper = input as Document;
-  if (!hasOnlyKeys(wrapper, ["answers"])) return false;
-  const answers = wrapper.answers;
-  if (answers == null || typeof answers !== "object" || Array.isArray(answers))
-    return false;
-  return Object.values(answers as Document).every(
-    (values) =>
-      Array.isArray(values) && values.every((v) => typeof v === "string"),
-  );
+function genericAnswers(input: unknown): unknown {
+  const wrapper = object(input);
+  return hasOnlyKeys(wrapper, ["answers"]) ? wrapper.answers : undefined;
 }
 /**
  * Validates the complete accepted QuestionResponse envelope that Go persists:
@@ -67,6 +56,7 @@ function validGenericAnswers(input: unknown): boolean {
 function validAcceptedEnvelope(
   response: Document,
   expectedEvidence: string,
+  request: unknown,
 ): boolean {
   const claim = object(response.claim),
     delivery = object(response.delivery),
@@ -75,7 +65,7 @@ function validAcceptedEnvelope(
     response.state === "accepted" &&
     validId(response.id) &&
     validTimestamp(response.accepted_at) &&
-    validGenericAnswers(response.input) &&
+    validGenericQuestionResponse(request, genericAnswers(response.input)) &&
     response.claim != null &&
     [
       claim.id,
@@ -127,7 +117,7 @@ function validQuestion(data: Document): boolean {
   if (response.state === "accepted") {
     return (
       data.closure === "native-closed" &&
-      validAcceptedEnvelope(response, "native-question-output")
+      validAcceptedEnvelope(response, "native-question-output", data.questions)
     );
   }
   return response.acceptance == null;
