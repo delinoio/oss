@@ -63,11 +63,14 @@ const settled = (resource: Resource) => {
     execution = object(data.execution),
     initial = object(data.initial_execution);
   const harness = text(object(initial.configuration).harness);
+  // The server rejects every Fork whose source observed native subagents, so a
+  // nonempty inventory is never offered for any harness.
+  const noSubagents = !Object.keys(object(execution.subagents)).length;
   const profile =
-    harness === "codex" ||
+    (harness === "codex" && noSubagents) ||
     (harness === "opencode" &&
       data.workspace === "general-chat" &&
-      !Object.keys(object(execution.subagents)).length &&
+      noSubagents &&
       !Object.keys(object(execution.native_compactions)).length &&
       !execution.latest_workspace_event_id &&
       !execution.latest_todo_id &&

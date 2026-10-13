@@ -735,6 +735,70 @@ it("offers a completed root but refuses a completed forked child", async () => {
   expect(fork).not.toHaveBeenCalled();
 });
 
+it.each([
+  { name: "a completed native subagent", subagents: { child: { state: "completed" } }, forkable: false },
+  { name: "an empty subagent inventory", subagents: {}, forkable: true },
+  { name: "no subagent inventory", subagents: undefined, forkable: true },
+])(
+  "offers independent Fork for a settled Codex source with $name only when none were observed",
+  async ({ subagents, forkable }) => {
+    const source = create(ResourceSchema, {
+      kind: EntityKind.SESSION,
+      id: newRequestId(),
+      revision: 8n,
+      schemaVersion: 1,
+      documentJson: encode({
+        name: "Original",
+        workspace: "general-chat",
+        archive: "active",
+        recovery: "none",
+        outcome: "succeeded",
+        initial_execution: { configuration: { harness: "codex" } },
+        execution: {
+          native_turn_id: newRequestId(),
+          cleanup_verified: true,
+          subagents,
+        },
+      }),
+    });
+    const fork = vi.fn();
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.CODEX_SESSION_FORK_V1],
+        }),
+      });
+      router.service(SessionService, { forkSession: fork });
+    });
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <SessionForkProvider openSession={vi.fn()}>
+              <SessionForkAction source={source} />
+            </SessionForkProvider>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    if (forkable) {
+      await screen.findByRole("button", { name: "Fork session" });
+    } else {
+      await waitFor(() => expect(client.isFetching()).toBe(0));
+      expect(
+        screen.queryByRole("button", { name: "Fork session" }),
+      ).toBeNull();
+    }
+    expect(fork).not.toHaveBeenCalled();
+  },
+);
+
 it.each(["worktree", "local"] as const)(
   "offers Local sharing only for a user-owned Local source (%s)",
   async (workspace) => {
