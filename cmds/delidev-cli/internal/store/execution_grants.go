@@ -73,6 +73,24 @@ func (t *Tx) ExecutionGrantForJob(job domain.ID) (ExecutionGrant, error) {
 	return result, storageError(err)
 }
 
+// FindExecutionGrantForJob reports whether a grant was ever registered for the
+// immutable job. Unlike ExecutionGrantForJob, a missing grant is not an error:
+// pre-registration startup failures legitimately have no grant to compare.
+func (t *Tx) FindExecutionGrantForJob(job domain.ID) (ExecutionGrant, bool, error) {
+	result := ExecutionGrant{JobID: job}
+	if err := job.Validate(); err != nil {
+		return result, false, err
+	}
+	err := t.tx.QueryRowContext(t.ctx, "SELECT execution_id,machine_id,instance_id,device_id,server_epoch FROM execution_grants WHERE job_id=?", job).Scan(&result.ExecutionID, &result.MachineID, &result.InstanceID, &result.DeviceID, &result.ServerEpoch)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExecutionGrant{JobID: job}, false, nil
+	}
+	if err != nil {
+		return result, false, storageError(err)
+	}
+	return result, true, nil
+}
+
 type ExecutionReference struct {
 	Reviewer                                    bool
 	SessionID, AccountID, ConnectionID, ModelID domain.ID
