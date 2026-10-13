@@ -1217,9 +1217,9 @@ describe("Inbox detail entrance", () => {
     // The scroll-root pane, list and rows never carry the transform.
     expect(detailPane().hasAttribute("data-entrance")).toBe(false);
     expect(entrance()!.parentElement).toBe(detailPane());
-    expect(
-      globalThis.document.querySelectorAll("[data-entrance]").length,
-    ).toBe(1);
+    expect(globalThis.document.querySelectorAll("[data-entrance]").length).toBe(
+      1,
+    );
     expect(entrance()!.querySelector(".inbox-detail-top")).not.toBeNull();
     expect(entrance()!.querySelector(".inbox-detail-content")).not.toBeNull();
     finish();
@@ -1231,7 +1231,9 @@ describe("Inbox detail entrance", () => {
   it("does not replay for draft edits, read retries or a re-click of the open row", async () => {
     const value = fixture();
     render(value.renderInbox());
-    fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
     const answer = await screen.findByRole("textbox", { name: "Your answer" });
     const wrapper = entrance();
     finish();
@@ -1249,7 +1251,9 @@ describe("Inbox detail entrance", () => {
   it("plays again for a different row and for keyboard-originated selection", async () => {
     const value = fixture();
     render(value.renderInbox());
-    fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
     await screen.findByText("Which methods should be supported?");
     expect(entering()).toBe("x4");
     // A selection while the first entrance still runs restarts the same wrapper.
@@ -1323,7 +1327,9 @@ describe("Inbox detail entrance", () => {
   it("removes the detail immediately on close with no exit animation, and reopening plays again", async () => {
     const value = fixture();
     render(value.renderInbox());
-    fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
     await screen.findByText("Which methods should be supported?");
     fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
     expect(entrance()).toBeNull();
@@ -1339,14 +1345,18 @@ describe("Inbox detail entrance", () => {
     const change = reducedMotion(false);
     const value = fixture();
     const rendered = render(value.renderInbox());
-    fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
     await screen.findByText("Which methods should be supported?");
     expect(entering()).toBe("x4");
     change(true);
     expect(entering()).toBeNull();
     change(false);
     expect(entering()).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Execution succeeded/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Execution succeeded/ }),
+    );
     expect(entering()).toBe("x4");
     await act(async () => {
       globalThis.document.documentElement.dataset.animation = "false";
@@ -1365,7 +1375,9 @@ describe("Inbox detail entrance", () => {
     globalThis.document.documentElement.dataset.animation = "false";
     const value = fixture();
     const rendered = render(value.renderInbox());
-    fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
     await screen.findByText("Which methods should be supported?");
     expect(entering()).toBeNull();
     rendered.unmount();
@@ -1373,7 +1385,9 @@ describe("Inbox detail entrance", () => {
     reducedMotion(true);
     const reduced = fixture();
     render(reduced.renderInbox());
-    fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
     await screen.findByText("Which methods should be supported?");
     expect(entering()).toBeNull();
   });
