@@ -180,7 +180,9 @@ try {
           const geometry = () =>
             popup.evaluate((node) => {
               const rect = (selector) => {
-                const bounds = node.querySelector(selector)?.getBoundingClientRect();
+                const bounds = node
+                  .querySelector(selector)
+                  ?.getBoundingClientRect();
                 return bounds
                   ? [bounds.x, bounds.y, bounds.width, bounds.height]
                   : null;
@@ -208,7 +210,10 @@ try {
                 b = [right[key]].flat();
               assert.equal(a.length, b.length, key);
               a.forEach((value, index) =>
-                assert(Math.abs(value - b[index]) <= 1, `${key}: ${value} ${b[index]}`),
+                assert(
+                  Math.abs(value - b[index]) <= 1,
+                  `${key}: ${value} ${b[index]}`,
+                ),
               );
             }
           };

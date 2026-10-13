@@ -120,7 +120,9 @@ function anchorLost(anchor: HTMLElement) {
     node = node.parentElement
   ) {
     const style = getComputedStyle(node);
-    if (/(auto|scroll|hidden|clip)/.test(`${style.overflowX}${style.overflowY}`))
+    if (
+      /(auto|scroll|hidden|clip)/.test(`${style.overflowX}${style.overflowY}`)
+    )
       if (outside(node.getBoundingClientRect())) return true;
   }
   return false;
