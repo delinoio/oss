@@ -1303,6 +1303,55 @@ describe("paid credits while saved reads are paused", () => {
     expect(f.requests).toHaveBeenCalledOnce();
     visibility.mockRestore();
   });
+  it.each([
+    { name: "the server is stopping", pause: "stopping" },
+    { name: "the document is hidden", pause: "hidden" },
+  ])(
+    "keeps ageing retained credits to stale while $name",
+    async ({ pause }) => {
+      let stopping = false;
+      const f = mount(
+        () => ({ resources: [withCredits()] }),
+        true,
+        true,
+        () => stopping,
+      );
+      const { popup } = await openPersonal();
+      const paidStatus = () =>
+        popup.querySelector(".subscription-paid-observation")?.textContent ??
+        "";
+      expect(paidStatus()).toMatch(/^Observed/);
+      const visibility = vi.spyOn(document, "visibilityState", "get");
+      if (pause === "stopping") {
+        stopping = true;
+        await refreshStatus(f);
+      } else {
+        visibility.mockReturnValue("hidden");
+        fireEvent(document, new Event("visibilitychange"));
+      }
+      await waitFor(() =>
+        expect(
+          within(popup)
+            .getByRole("button", { name: "Recheck saved quota evidence" })
+            .hasAttribute("disabled"),
+        ).toBe(true),
+      );
+      // Only the wall clock advances; no saved read is admitted by the pause.
+      const real = Date.now.bind(Date);
+      const clock = vi
+        .spyOn(Date, "now")
+        .mockImplementation(() => real() + 301000);
+      await waitFor(() => expect(paidStatus()).toMatch(/^Stale observation/), {
+        timeout: 3000,
+      });
+      expect(
+        within(popup).queryByText(/Refresh failed; retained observation/),
+      ).toBeNull();
+      expect(f.requests).toHaveBeenCalledOnce();
+      clock.mockRestore();
+      visibility.mockRestore();
+    },
+  );
   it("keeps the failure label for a real saved-read failure through a later pause", async () => {
     let failed = false;
     let stopping = false;

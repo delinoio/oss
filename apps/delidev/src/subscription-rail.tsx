@@ -180,15 +180,22 @@ export function SubscriptionRail({
       refresh,
       appInUse ? subscriptionForegroundRefreshInterval : 60000,
     );
-    // Staleness advances independently of requests; failed reads never keep a current badge.
-    const clock = window.setInterval(() => setNow(Date.now()), 1000);
     window.addEventListener("focus", refresh);
     return () => {
       clearInterval(timer);
-      clearInterval(clock);
       window.removeEventListener("focus", refresh);
     };
   }, [allowed, query.refresh, appInUse]);
+  // Staleness advances independently of requests and of read admission, so
+  // retained evidence keeps aging while reads are paused (stopping server or
+  // hidden document) without admitting another read; failed reads never keep a
+  // current badge.
+  useEffect(() => {
+    if (!enabled) return;
+    setNow(Date.now());
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(clock);
+  }, [enabled]);
   useEffect(() => {
     if (selection && (!enabled || !account)) close();
   }, [enabled, account, selection, close]);
