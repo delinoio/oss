@@ -160,7 +160,10 @@ function taskHarness(target?: EntranceTarget) {
         <SettingsTasks>
           <button onClick={() => setOpen(true)}>Open task</button>
           {open ? (
-            <SettingsTaskDialog title="Entrance task" close={() => setOpen(false)}>
+            <SettingsTaskDialog
+              title="Entrance task"
+              close={() => setOpen(false)}
+            >
               <input
                 aria-label="Draft"
                 value={text}
@@ -308,7 +311,9 @@ it("animates the Map and Review stage surfaces only for explicit user requests",
       previewConfigurationImport: async () => ({ previewJson: previewBytes }),
     });
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
-    router.service(ResourceService, { listResources: () => ({ resources: [] }) });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+    });
   });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
