@@ -291,7 +291,10 @@ export function RepositoryDiff({
     if (initial) {
       setComparison(initial.comparison);
       setPath(initial.path);
-      setPathDraft(initial.path);
+      // A descriptor that keeps the applied path (for example the one a
+      // negotiation or an explicit base selection publishes) must not discard
+      // a draft the user typed for later submission.
+      setPathDraft((draft) => (initial.path === path ? draft : initial.path));
       setBaseRef(initial.base_ref);
     }
   }, [
