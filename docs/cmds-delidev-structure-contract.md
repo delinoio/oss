@@ -208,12 +208,14 @@ the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ### Repository addition prerequisites
 
-The approved remote-first extension reserves System 37
-(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) in the
-owning feature PR. It follows the Add repository implementation
-in the originating change and preserves its immediate-clone/listing allocations. Reservations
-alone grant no URL registration or managed workspace clone and add no migration.
-The complete feature must compose repository saving, session/schedule admission,
+The approved remote-first extension allocates System 37
+(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`), which are
+active in `protos/delidev/allocations.json`. It follows the Add repository
+implementation in the originating change and preserves its immediate-clone/listing
+allocations (System 31/32 and Worker 18). URL-only registration requires no Worker
+admission, Worktree execution clones the configured source on the selected Worker,
+and explicit Local execution requires the original machine checkout. The allocations
+add no migration. The feature composes repository saving, session/schedule admission,
 Worker preparation, native ownership, recovery, snapshots, Fork, Sidechat and
 deletion; a URL-only form without remote Worker preparation is incomplete.
 
@@ -514,7 +516,7 @@ The feature records System 75 `WAITING_QUEUE_ORDER_V1`, complete owner/client mo
 
 - Trusted main DeliDev desktops automatically pair/start the fixed local Worker after authenticated local connection and own one joined native supervision task. Fresh launch or explicit Start may reopen ordinary stopped intent; ensure/retry preserve Stop, pending admission and updater ownership. Share current-user Worker service admission without manager writes. Retain original native child/control handles before readiness, recover only confirmed original exits (including fresh-launch durable generation/scope/desktop-client/PID/kernel-birth proof for newly recorded controllers), and stop only app-owned children on normal Quit under the existing 35-second grace. Preserve borrowed CLI/service Workers, saved connections, crash/EOF survival and all native execution uncertainty. Follow the desktop, CLI and user-service contracts; no protocol allocation or database migration.
 
-- DeliDev remote-first repositories record System capability 37 and Worker capability 19 in the owning feature PR. The current folder-first flow remains checkout-based. Future URL-only owner/client registration requires no Worker admission; the configured remote URL is the immutable Worktree source cloned on the selected Worker, and optional checkout connections authorize only explicit Local execution with its original machine authority. Configured source metadata does not permit exposing raw inspected URLs or credentials or deleting original Local checkouts. System 31/32 and Worker 18 retain separate immediate-clone/listing ownership. Reservations grant no URL registration or managed-clone capability and add no migration. Follow the project index and desktop, workspace, protocol and structure contracts.
+- DeliDev remote-first repositories use System capability 37 and Worker capability 19, active in the allocation ledger and recorded in the owning feature PR. URL-only owner/client registration requires no Worker admission; the configured credential-free remote URL is the immutable Worktree source cloned on the selected Worker, and optional checkout connections authorize only explicit Local execution with its original machine authority. Existing checkout-backed registration and imports remain supported. Configured source metadata is distinct from inspected raw URLs: the configured URL is saved source metadata, while inspection never returns raw URLs or credentials, and no flow may expose them or delete original Local checkouts. System 31/32 and Worker 18 retain separate immediate-clone/listing ownership. The allocations grant no migration. Follow the project index and desktop, workspace, protocol and structure contracts.
 
 - DeliDev Agent Worker wizard follows the desktop/catalog/protocol contracts: remove standalone Models settings, use same-source multiple accounts and atomic model/Worker saving, and expose Token pricing through Usage. Preserve legacy APIs, historical attribution, recorded allocations and independent execution eligibility.
 
