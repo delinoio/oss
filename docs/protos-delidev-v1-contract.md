@@ -1560,3 +1560,7 @@ produce a continuation checkpoint or later input authority.
 ## Server reset credits V2 allocation
 
 System `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101` is recorded and activated in the complete owning feature PR. Collision-check `allocations.json` against other unmerged System allocations and preserve 19/30/46/49/50. Reuse RequestSubscriptionObservation, ReconcileSubscriptionCredit, SetAutomaticResetCreditConsent and PublishSubscriptionObservation; omitted-machine RESET_CREDIT selects the server even during Execute, and an explicit machine keeps the Worker lane. No Worker capability, field, RPC or migration is allocated. Declaration alone grants no native, account or platform acceptance. Follow the [credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2).
+
+## Server-owned Claude token capabilities
+
+System `CLAUDE_SERVER_LOGIN_V1 = 67`, System `CLAUDE_MANAGED_EXECUTION_V1 = 68` and Worker `MANAGED_CLAUDE_EXECUTION_V1 = 41` are reserved in `allocations.json` (issue 2893), declared, advertised and regenerated for Go and TypeScript. They are independent of System 38 and 30 and Worker 20. No message, field or RPC is added: the existing SubscriptionService request, progress, cancel, code submission, protected Take and Finish carry the server-owned flow, and the Take response bundle carries the sealed envelope only to a Worker advertising 41. Unsupported servers show update guidance; unsupported Workers affect execution eligibility only. No SQLite migration is added.

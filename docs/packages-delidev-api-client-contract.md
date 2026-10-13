@@ -532,3 +532,7 @@ grant no dispatch, media retrieval, reply retry or continuation authority.
 ## Server reset credits V2 negotiation
 
 The generated System enum includes `SERVER_SUBSCRIPTION_RESET_CREDITS_V2 = 101`. Clients require it before a new omitted-machine reset-credit consumption and never send a Runner selector with that request. Servers without it receive existing update guidance. Historical System 19 and 49 capabilities remain only for reconciling operations already accepted on those lanes. Regenerate both bindings from the reconciled schema; no new RPC or Worker capability exists.
+
+## Server-owned Claude token client
+
+The generated Go and TypeScript bindings expose `SystemCapability.CLAUDE_SERVER_LOGIN_V1`, `SystemCapability.CLAUDE_MANAGED_EXECUTION_V1` and `WorkerCapability.MANAGED_CLAUDE_EXECUTION_V1`. The desktop starts a Runner-free Claude sign-in only when the server status advertises the first; it omits `machineId` from the request, treats the account document field `subscription.claude_credential = "server-token"` as the managed mode and never receives the token in any response.
