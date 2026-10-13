@@ -18,6 +18,17 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
+### Cross-fragment protected value guard
+
+Per-frame protected-value checks (`security.ProtectedJSON.Safe`) cannot see a value split across ordered streamed fragments. `security.ProtectedStream` is the shared bounded matcher for one independent logical stream: it matches the same finite literal and Base64 forms across fragment boundaries, keeps only the trailing bytes that are still a proper prefix of a protected form (never the whole stream), and returns `ErrProtectedStreamValue` before the fragment that would complete a form is released. It is finite reflection protection like `ProtectedJSON`, not a guarantee against arbitrary native transformations.
+
+- Matching state is scoped to the exact original stream identity (Claude content block, OpenCode session/message/part, Grok response message). Independent blocks, parts, parents and children never share state, and a new stream starts empty.
+- Fragments keep their original order. A safe prefix is released immediately, the unresolved suffix is folded into the next released fragment, and nothing is rewritten, redacted or replaced.
+- A refusal, protocol failure, cancellation, interruption or ownership replacement clears the holdback without publishing it. Only a clean completion whose full text is proven free of protected forms may release the remaining suffix, because nothing can extend it any more; the later full snapshot is never relied on for privacy.
+- Adapters log structural context only (owner, phase, block kind); they never log withheld bytes.
+
+Claude Code applies this guard to text, thinking and tool-input (`partial_json`, including JSON-escaped spellings) deltas of each original content block. The block start text primes the matcher without being republished. A delta whose bytes are all withheld is returned as a `Withheld` content change without text; the Worker records its native identity and publishes nothing. A clean text/thinking completion carries the suffix as `Held`; the Worker publishes it as the final ordered append immediately before the exact completion so the published block equals the native block. A tool-input block ends with its closing brace, so an unresolved suffix at completion is refused. An interrupted stream or interrupted assistant discards its holdback; its worker-side exact-text comparison then fails closed.
+
 ### Codex private thread lifecycle and metadata
 
 Thread binding and later native state observations share closed history-mode
