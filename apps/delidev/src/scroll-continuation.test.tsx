@@ -229,3 +229,58 @@ it("keeps identical refresh inputs isolated from an inactive mounted owner", asy
   expect(active).toHaveBeenCalledTimes(1);
   expect(inactive).not.toHaveBeenCalled();
 });
+
+it("applies a marker invalidation that arrived during an active read once that read settles", async () => {
+  const client = new QueryClient();
+  const releases: (() => void)[] = [];
+  let version = 0;
+  const read = vi.fn<PaginationReader<Row>>(
+    () =>
+      new Promise((resolve) => {
+        const current = ++version;
+        releases.push(() =>
+          resolve({
+            rows: [{ id: `row-${current}`, revision: BigInt(current) }],
+            nextPageToken: "",
+          }),
+        );
+      }),
+  );
+  function Owner() {
+    const chain = usePaginationChain("queued-invalidation", true, read);
+    usePaginationRefresh(
+      ResourceQuery.listResources,
+      { filter: { kind: EntityKind.PROJECT, pageSize: 50 } },
+      true,
+      chain.refresh,
+    );
+    return (
+      <>
+        {chain.rows.map((row) => (
+          <p key={row.id}>{row.id}</p>
+        ))}
+      </>
+    );
+  }
+  render(
+    <TransportProvider transport={createRouterTransport(() => {})}>
+      <QueryClientProvider client={client}>
+        <Owner />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  expect(read).toHaveBeenCalledTimes(1);
+  // Two invalidations while the initial read is open coalesce into one refresh.
+  await act(() => client.invalidateQueries({ refetchType: "active" }));
+  await act(() => client.invalidateQueries({ refetchType: "active" }));
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    releases.shift()!();
+  });
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    releases.shift()!();
+  });
+  await waitFor(() => expect(screen.getByText("row-2")).toBeTruthy());
+  expect(read).toHaveBeenCalledTimes(2);
+});

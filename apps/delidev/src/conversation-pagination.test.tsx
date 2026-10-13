@@ -252,8 +252,14 @@ it.each(["initial", "additional"])(
       screen.getByRole("button", { name: "Refresh conversation" }),
     );
     await screen.findByText(`${stage === "initial" ? 1 : 2}:ready`);
-    expect(read).toHaveBeenCalledTimes(before + 1);
-    expect(read.mock.calls.at(-1)?.[0]).toEqual(read.mock.calls[before - 1][0]);
+    // The explicit recovery re-reads the failed token. The automatic refresh
+    // that arrived while the error was held is retained and runs exactly once
+    // afterwards over the accepted pages; nothing retries on its own.
+    const reached = stage === "initial" ? 1 : 2;
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(before + 1 + reached));
+    expect(read.mock.calls[before][0]).toEqual(read.mock.calls[before - 1][0]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(read).toHaveBeenCalledTimes(before + 1 + reached);
   },
 );
 
