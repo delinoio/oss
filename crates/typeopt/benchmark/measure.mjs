@@ -53,32 +53,138 @@ async function measure(root) {
     throw new Error("No production JavaScript assets found");
   return result;
 }
-// A chunk reference is any quoted relative or root-relative `.js` path in an
-// HTML entry or JS chunk. References that name a logical asset of any build
-// must resolve to a file of this build; otherwise a removed chunk is still
-// loaded somewhere. Unrelated strings that name no asset are ignored.
-const REFERENCE =
-  /["'`(=]((?:\.{1,2}\/|\/)?(?:[\w.@-]+\/)*[\w.@-]+\.m?js)(?=["'`)\s>])/g;
-function brokenReferences(build, knownLogical) {
-  const present = new Set(build.files.map((f) => f.path));
-  const broken = new Set();
-  for (const [file, text] of build.texts) {
-    for (const match of text.matchAll(REFERENCE)) {
-      const reference = match[1];
-      const candidates = reference.startsWith("/")
-        ? [reference.slice(1)]
-        : reference.startsWith(".")
-          ? [
-              path.posix.normalize(
-                path.posix.join(path.posix.dirname(file), reference),
-              ),
-            ]
-          : [reference, path.posix.join(path.posix.dirname(file), reference)];
-      if (candidates.some((c) => present.has(c))) continue;
-      if (candidates.some((c) => knownLogical.has(logical(c))))
-        broken.add(`${file} -> ${reference}`);
+// Loading references are the local module edges a browser follows: module
+// scripts and modulepreload links in HTML, and static `import`/`export ...
+// from` specifiers and literal `import()` arguments in JavaScript. Each one
+// must resolve to a file of its own build, whether or not any other build
+// emits an asset with the same logical name. Other quoted `.js` strings,
+// remote URLs and bare specifiers are not loading references.
+const SCRIPT_FILE = /\.(?:js|mjs|cjs)$/;
+const URL_SCHEME = /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/)/;
+function isIdentifierCharacter(character) {
+  return character !== undefined && /[\w$]/.test(character);
+}
+// Scan JavaScript for module specifiers. Comments, string literals and
+// template literals are skipped so quoted text never counts as an import.
+function scanModuleSpecifiers(text) {
+  const specifiers = [];
+  // The two most recent significant tokens, most recent last.
+  let previous = ["", ""];
+  const remember = (token) => {
+    previous = [previous[1], token];
+  };
+  let i = 0;
+  while (i < text.length) {
+    const character = text[i];
+    if (/\s/.test(character)) {
+      i++;
+    } else if (character === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (character === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end === -1 ? text.length : end + 2;
+    } else if (character === '"' || character === "'") {
+      let value = "";
+      i++;
+      while (i < text.length && text[i] !== character && text[i] !== "\n") {
+        if (text[i] === "\\") {
+          value += text[i];
+          i++;
+        }
+        value += text[i] ?? "";
+        i++;
+      }
+      i++;
+      const [before, last] = previous;
+      if (last === "from" || last === "import")
+        specifiers.push(value);
+      else if (last === "(" && before === "import") specifiers.push(value);
+      remember('"');
+    } else if (character === "`") {
+      // Skip the template, including nested `${...}` expressions.
+      let depth = 0;
+      i++;
+      while (i < text.length && !(text[i] === "`" && depth === 0)) {
+        if (text[i] === "\\") i++;
+        else if (text[i] === "$" && text[i + 1] === "{") {
+          depth++;
+          i++;
+        } else if (text[i] === "}" && depth > 0) depth--;
+        i++;
+      }
+      i++;
+      remember("`");
+    } else if (isIdentifierCharacter(character)) {
+      let end = i;
+      while (isIdentifierCharacter(text[end])) end++;
+      // A property access such as `module.import(` is not a module edge.
+      const word = text[i - 1] === "." ? "." + text.slice(i, end) : text.slice(i, end);
+      remember(word);
+      i = end;
+    } else {
+      remember(character);
+      i++;
     }
   }
+  return specifiers;
+}
+function htmlAttributes(tag) {
+  const attributes = new Map();
+  for (const match of tag.matchAll(
+    /([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g,
+  ))
+    attributes.set(
+      match[1].toLowerCase(),
+      match[2] ?? match[3] ?? match[4] ?? "",
+    );
+  return attributes;
+}
+// Local specifiers of a file, in order, with inline module scripts included.
+function loadingSpecifiers(file, text) {
+  if (!file.endsWith(".html")) return scanModuleSpecifiers(text);
+  const specifiers = [];
+  const markup = text.replace(/<!--[\s\S]*?-->/g, "");
+  for (const match of markup.matchAll(
+    /<script\b([^>]*)>([\s\S]*?)<\/script\s*>|<link\b([^>]*)>/gi,
+  )) {
+    if (match[3] !== undefined) {
+      const attributes = htmlAttributes(match[3]);
+      const relations = (attributes.get("rel") ?? "")
+        .toLowerCase()
+        .split(/\s+/);
+      if (relations.includes("modulepreload") && attributes.has("href"))
+        specifiers.push(attributes.get("href"));
+      continue;
+    }
+    const attributes = htmlAttributes(match[1]);
+    if ((attributes.get("type") ?? "").toLowerCase() !== "module") continue;
+    if (attributes.has("src")) specifiers.push(attributes.get("src"));
+    else specifiers.push(...scanModuleSpecifiers(match[2]));
+  }
+  return specifiers;
+}
+// Resolve a specifier against the importing file. Returns null for
+// references that are not local script files (remote URLs, bare specifiers,
+// non-script assets).
+function localTarget(file, specifier) {
+  const bare = specifier.trim().split(/[?#]/)[0];
+  if (!bare || URL_SCHEME.test(bare)) return null;
+  if (!bare.startsWith("/") && !bare.startsWith("./") && !bare.startsWith("../"))
+    return null;
+  if (!SCRIPT_FILE.test(bare)) return null;
+  return bare.startsWith("/")
+    ? path.posix.normalize(bare.slice(1))
+    : path.posix.normalize(path.posix.join(path.posix.dirname(file), bare));
+}
+function brokenReferences(build) {
+  const present = new Set(build.files.map((f) => f.path));
+  const broken = new Set();
+  for (const [file, text] of build.texts)
+    for (const specifier of loadingSpecifiers(file, text)) {
+      const target = localTarget(file, specifier);
+      if (target !== null && !present.has(target))
+        broken.add(`${file} -> ${specifier}`);
+    }
   return [...broken].sort();
 }
 const usage =
@@ -150,11 +256,8 @@ if (builds.length === 3) {
     mismatches.push("extended.optimizer.revision");
 }
 const measured = await Promise.all(roots.map(measure));
-const knownLogical = new Set(
-  measured.flatMap((m) => m.files.map((f) => logical(f.path))),
-);
 const broken = Object.fromEntries(
-  measured.map((m, i) => [names[i], brokenReferences(m, knownLogical)]),
+  measured.map((m, i) => [names[i], brokenReferences(m)]),
 );
 const smaller = (a, b) =>
   ["raw", "gzip", "brotli"].every((key) => a[key] < b[key]);
