@@ -1495,33 +1495,43 @@ it.each([
   { delivery: "rejected-before-start", hidden: false },
   { delivery: "removed", hidden: false },
   { delivery: "claimed", execution: "foreign", hidden: false },
+  { delivery: "claimed", execution: "empty-queue", hidden: false },
 ])(
   "keeps Info availability tied to the original queue row while Starting (%j)",
   async ({ delivery, execution, hidden }) => {
     const startup = initialResponseWaiting();
     const { execution: _observed, ...starting } = startup;
-    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, starting, (id) => [
-      create(ResourceSchema, {
-        id: starting.initial_execution.input_id,
-        sessionId: id,
-        kind: EntityKind.QUEUE,
-        revision: 1n,
-        schemaVersion: 1,
-        documentJson: encode({
-          delivery,
-          prompt: "Original queued input",
-          mode: "execute",
-          sequence: 1,
-          content_revision: 1,
-          execution_id:
-            execution === "foreign"
-              ? newRequestId()
-              : starting.initial_execution.id,
-        }),
-      }),
-    ]);
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, starting, (id) =>
+      // A successful current queue read with no rows is not original-input proof.
+      execution === "empty-queue"
+        ? []
+        : [
+            create(ResourceSchema, {
+              id: starting.initial_execution.input_id,
+              sessionId: id,
+              kind: EntityKind.QUEUE,
+              revision: 1n,
+              schemaVersion: 1,
+              documentJson: encode({
+                delivery,
+                prompt: "Original queued input",
+                mode: "execute",
+                sequence: 1,
+                content_revision: 1,
+                execution_id:
+                  execution === "foreign"
+                    ? newRequestId()
+                    : starting.initial_execution.id,
+              }),
+            }),
+          ],
+    );
     const { container } = render(f.view("Retained startup draft"));
     await screen.findByText("Starting agent");
+    if (!hidden) {
+      await waitFor(() => expect(f.listQueue).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     const info = container.querySelector(".session-information")!;
     expect(info).toHaveProperty("hidden", hidden);
     const composer = screen.getByRole("textbox", { name: "Message" });

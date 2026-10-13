@@ -5889,7 +5889,8 @@ compact row after initial input publication. Every hiding path requires the
 durable first-input counter to equal exactly one; an omitted or later counter
 retains Info. Starting agent additionally requires a current queue read whose only
 row is the original input (sequence one, delivery queued, claimed or accepted,
-execution absent or the original execution); a rejected-before-start, removed,
+execution absent or the original execution); a current empty queue is missing
+proof and retains Info, as do a rejected-before-start, removed,
 uncertain, foreign or later row, or a stale queue read, retains Info. A later
 follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
