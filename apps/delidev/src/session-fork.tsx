@@ -395,6 +395,42 @@ export function SessionForkProvider({
     local.discard();
     setChecking(false);
   };
+  // Reopening routes to the original parent first, then selects the original
+  // pending descriptor. Focus is deferred and fenced by a token so a later
+  // navigation or another reopen gesture cannot be overtaken by a stale callback.
+  const reopenToken = useRef(0);
+  useEffect(
+    () => () => {
+      reopenToken.current += 1;
+    },
+    [],
+  );
+  const reopenRetained = (retained: DirectSidechat) => {
+    const token = ++reopenToken.current;
+    const key = sessionTabKey({
+      kind: SessionTabKind.PendingSidechat,
+      requestId: retained.requestId,
+      name: retained.name,
+    });
+    console.info("delidev.sidechat.preparation", {
+      requestId: retained.requestId,
+      phase: "reopen",
+    });
+    openSession(retained.parent);
+    tabs.open(retained.parent, {
+      kind: SessionTabKind.PendingSidechat,
+      requestId: retained.requestId,
+      name: retained.name,
+    });
+    requestAnimationFrame(() => {
+      if (reopenToken.current !== token) return;
+      if (tabs.snapshot(retained.parent).selected !== key) return;
+      const input = globalThis.document.getElementById(
+        `pending-sidechat-${retained.requestId}`,
+      );
+      if (input && !input.closest("[hidden], [inert]")) input.focus();
+    });
+  };
   const show = (
     resource: Resource,
     requestedPurpose = ForkPurpose.UNSPECIFIED,
@@ -402,24 +438,7 @@ export function SessionForkProvider({
     // Ref ownership fences repeated gestures before React publishes state.
     const retained = directOwner.current;
     if (retained) {
-      tabs.open(retained.parent, {
-        kind: SessionTabKind.PendingSidechat,
-        requestId: retained.requestId,
-        name: retained.name,
-      });
-      requestAnimationFrame(() => {
-        if (
-          tabs.snapshot(retained.parent).selected ===
-          sessionTabKey({
-            kind: SessionTabKind.PendingSidechat,
-            requestId: retained.requestId,
-            name: retained.name,
-          })
-        )
-          globalThis.document
-            .getElementById(`pending-sidechat-${retained.requestId}`)
-            ?.focus();
-      });
+      reopenRetained(retained);
       return;
     }
     if (
@@ -465,27 +484,8 @@ export function SessionForkProvider({
         name: value.name,
       });
       setVisible(false);
-    } else if (directOwner.current) {
-      const original = directOwner.current;
-      tabs.open(original.parent, {
-        kind: SessionTabKind.PendingSidechat,
-        requestId: original.requestId,
-        name: original.name,
-      });
-      requestAnimationFrame(() => {
-        if (
-          tabs.snapshot(original.parent).selected ===
-          sessionTabKey({
-            kind: SessionTabKind.PendingSidechat,
-            requestId: original.requestId,
-            name: original.name,
-          })
-        )
-          globalThis.document
-            .getElementById(`pending-sidechat-${original.requestId}`)
-            ?.focus();
-      });
-    } else {
+    } else if (directOwner.current) reopenRetained(directOwner.current);
+    else {
       focusNameOnUnlock.current = controlsLocked;
       setVisible(true);
     }
@@ -550,10 +550,20 @@ export function SessionForkProvider({
   const resultJob = verifiedJob ?? job;
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
+  // A published child must be a distinct, nonempty Session; an empty or
+  // source-equal readback id would corrupt tab ownership of the original parent.
+  const returnedId = text(fork.data?.session?.id);
+  const returnedIdValid = Boolean(returnedId) && returnedId !== source?.id;
+  const malformedChild =
+    Boolean(verifiedJob) &&
+    state === JobState.Succeeded &&
+    fork.data?.session?.kind === EntityKind.SESSION &&
+    !returnedIdValid;
   const child =
     Boolean(verifiedJob) &&
     state === JobState.Succeeded &&
     fork.data?.session?.kind === EntityKind.SESSION &&
+    returnedIdValid &&
     text(object(document(fork.data.session).fork).source_session_id) ===
       source?.id &&
     (!sidechat ||
@@ -627,7 +637,7 @@ export function SessionForkProvider({
     const input = focused
       ? (globalThis.document.activeElement as HTMLTextAreaElement)
       : undefined;
-    tabs.publishSidechat(
+    const published = tabs.publishSidechat(
       original.parent,
       original.requestId,
       {
@@ -642,6 +652,14 @@ export function SessionForkProvider({
         focus: focused,
       },
     );
+    if (!published) {
+      console.warn("delidev.sidechat.preparation", {
+        requestId: original.requestId,
+        jobId: job?.id,
+        phase: "publication-rejected",
+      });
+      return;
+    }
     console.info("delidev.sidechat.preparation", {
       requestId: original.requestId,
       jobId: job?.id,
@@ -668,7 +686,10 @@ export function SessionForkProvider({
               !settled(current.data.resource)),
           ),
         error: mutation.error ?? current.error ?? fork.error,
-        invalid: invalid || Boolean(fork.data && !verifiedJob),
+        // Only a failed original parent read can be recovered by re-reading it.
+        readError: current.error,
+        invalid:
+          invalid || Boolean(fork.data && (!verifiedJob || malformedChild)),
         state,
         problem,
         busy: mutation.busy || checking,
@@ -930,6 +951,7 @@ interface DirectSidechat {
 interface PendingSidechat extends DirectSidechat {
   stale: boolean;
   error: unknown;
+  readError: unknown;
   invalid: boolean;
   state: string;
   problem: Record<string, unknown>;
@@ -1003,7 +1025,7 @@ export function PendingSidechatPane({
               {copy("session-fork.retrySameSidechatRequest")}
             </button>
           ) : null}
-          {pending.error && !pending.state && !pending.uncertain ? (
+          {pending.readError && !pending.state && !pending.uncertain ? (
             <button disabled={pending.reading} onClick={pending.retryRead}>
               {copy("ui.retryCurrentRead")}
             </button>
