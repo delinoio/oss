@@ -131,7 +131,12 @@ pub async fn read_tray_status(
 ) -> Result<Snapshot, NativeFailure> {
     admitted(&window, &instance)?;
     let (windows, more, recent) = super::tray_host::panel_snapshot(&app)?;
-    let appearance = app.state::<Arc<AppearanceStore>>().current();
+    // Startup initialization inspects the saved presentation before the tray
+    // exists; refuse rather than project placeholder defaults as a success.
+    let appearance = app
+        .state::<Arc<AppearanceStore>>()
+        .inspected()
+        .ok_or(NativeFailure::StorageUnavailable)?;
     let result = Snapshot {
         instance: instance.clone(),
         windows,

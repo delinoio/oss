@@ -3376,6 +3376,17 @@ Brief saved-window binding contention receives bounded event-admission retries.
 A healthy retained window reinspects when focused or made visible to reconcile a
 missed event; an error or uncertain save still requires explicit Reload appearance.
 
+The original native controller inspects `appearance.json` once during startup
+setup, before any product window or the tray is created or admitted, using the
+same read semantics as `read_appearance` (missing file: System and default
+palette; invalid, newer, linked or unreadable file: default presentation, the
+problem recorded and no write authority). The auxiliary tray view never
+inspects the file. `read_tray_status` projects only that retained snapshot and
+fails with `StorageUnavailable` when the store has never been inspected (process
+revision 0), so placeholder defaults are never reported as a saved palette. The
+first product read of an unchanged document keeps the startup revision, and a
+later `update_appearance` publication still refreshes the tray.
+
 Read/write failures are visible with stable typed messages, without raw OS errors
 or paths. Failed writes retain the prior committed selection. An uncertain IPC or
 post-publication synchronization outcome disables another write until a deliberate

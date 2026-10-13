@@ -336,6 +336,29 @@ impl AppearanceStore {
             .clone()
     }
 
+    /// Retained presentation for auxiliary views, available only after the
+    /// native startup lifecycle or a product read inspected the document.
+    /// A store that was never inspected still holds placeholder defaults, so
+    /// it must not be projected as a successful saved presentation.
+    pub fn inspected(&self) -> Option<AppearanceSnapshot> {
+        let snapshot = self.current();
+        (snapshot.revision != 0).then_some(snapshot)
+    }
+
+    /// Inspect the persisted document once in the native startup lifecycle,
+    /// before any window or tray surface can read the retained snapshot. The
+    /// outcome keeps the ordinary `read` semantics, so the first product read
+    /// of an unchanged document keeps this revision.
+    pub fn initialize(&self) -> AppearanceSnapshot {
+        let snapshot = self.read();
+        tracing::info!(
+            operation = "appearance_initialize",
+            revision = snapshot.revision,
+            problem = ?snapshot.problem,
+        );
+        snapshot
+    }
+
     pub fn read(&self) -> AppearanceSnapshot {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         let previous = state.clone();
@@ -932,6 +955,111 @@ mod tests {
             store.update(Theme::System, inspected.revision).problem,
             None
         );
+    }
+
+    /// Persist a non-default palette selection: a bundled light palette and a
+    /// custom dark theme, then return the saved preferences.
+    fn persisted_palette_preferences(directory: &Path) -> Preferences {
+        let bundled: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let custom = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Startup palette".into(),
+            light: serde_json::from_value(bundled["dracula"]["light"].clone()).unwrap(),
+            dark: serde_json::from_value(bundled["dracula"]["dark"].clone()).unwrap(),
+        };
+        let preferences = Preferences {
+            light_palette: "nord".into(),
+            dark_palette: custom.id.clone(),
+            custom_themes: vec![custom],
+            ..Preferences::default()
+        };
+        let store = AppearanceStore::new(Some(directory.into()));
+        let initial = store.read();
+        assert_eq!(
+            store
+                .update_preferences(Theme::Dark, preferences.clone(), initial.revision)
+                .problem,
+            None
+        );
+        preferences
+    }
+
+    #[test]
+    fn startup_initialization_projects_saved_presentation_before_any_product_read() {
+        let directory = tempfile::tempdir().unwrap();
+        let saved = persisted_palette_preferences(directory.path());
+        let expected = saved.palette_colors().unwrap();
+        let default_colors = Preferences::default().palette_colors().unwrap();
+        assert_ne!(expected.light, default_colors.light);
+        assert_ne!(expected.dark, default_colors.dark);
+
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        assert_eq!(store.current().revision, 0);
+        assert_eq!(store.inspected(), None);
+        let initialized = store.initialize();
+        assert_eq!(initialized.problem, None);
+        assert_eq!(initialized.theme, Theme::Dark);
+        assert_eq!(initialized.preferences, saved);
+        assert_eq!(store.inspected(), Some(initialized.clone()));
+        let projected = store
+            .inspected()
+            .unwrap()
+            .preferences
+            .palette_colors()
+            .unwrap();
+        assert_eq!(projected.light, expected.light);
+        assert_eq!(projected.dark, expected.dark);
+        // The first product read finds the same document and keeps the
+        // revision.
+        assert_eq!(store.read(), initialized);
+        // A later normal publication still commits from the startup revision.
+        let updated = store.update(Theme::Light, initialized.revision);
+        assert_eq!(updated.problem, None);
+        assert_eq!(updated.theme, Theme::Light);
+        assert!(updated.revision > initialized.revision);
+    }
+
+    #[test]
+    fn startup_initialization_of_missing_file_yields_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        let initialized = store.initialize();
+        assert_eq!(initialized.theme, Theme::System);
+        assert_eq!(initialized.preferences, Preferences::default());
+        assert_eq!(initialized.problem, None);
+        assert_ne!(initialized.revision, 0);
+        assert_eq!(store.read(), initialized);
+    }
+
+    #[test]
+    fn startup_initialization_keeps_problem_semantics_for_unusable_documents() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("appearance.json");
+        for bytes in [b"broken".as_slice(), br#"{"version":3,"theme":"dark"}"#] {
+            fs::write(&path, bytes).unwrap();
+            let store = AppearanceStore::new(Some(directory.path().into()));
+            let initialized = store.initialize();
+            assert_eq!(initialized.theme, Theme::System);
+            assert_eq!(initialized.preferences, Preferences::default());
+            assert!(initialized.problem.is_some());
+            assert_ne!(initialized.revision, 0);
+            // No write authority: the update is refused and the file is intact.
+            let refused = store.update(Theme::Light, initialized.revision);
+            assert_eq!(refused.theme, Theme::System);
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            assert_eq!(store.read(), initialized);
+        }
+    }
+
+    #[test]
+    fn startup_initialization_without_storage_stays_unavailable() {
+        let store = AppearanceStore::new(None);
+        let initialized = store.initialize();
+        assert_eq!(initialized.problem, Some(AppearanceProblem::Unavailable));
+        assert_eq!(initialized.preferences, Preferences::default());
+        assert_eq!(store.read(), initialized);
     }
 
     #[test]
