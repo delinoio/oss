@@ -877,7 +877,10 @@ export function ScheduleHistory({
     request,
     occurrencePage,
   );
-  const result = usePaginationChain(id, active, reader);
+  // Inactive presentation (a blocked mutation, a notification review, a hidden
+  // Schedules destination) keeps the resident payload and its mounted
+  // Occurrence disclosures; reads stay suspended and activation refreshes.
+  const result = usePaginationChain(id, active, reader, true, true);
   usePaginationRefresh(
     ScheduleQuery.listScheduleOccurrences,
     request(""),

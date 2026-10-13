@@ -441,6 +441,37 @@ it("defers the schedule detail refetch after an accepted control until the view 
   );
 });
 
+it("keeps loaded occurrence history mounted during notification review", async () => {
+  const value = fixture();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  const heading = await screen.findByRole("button", { name: "Run now" });
+  const workspace = heading.closest(".schedule-workspace") as HTMLElement;
+  const history = await waitFor(() => {
+    const row = workspace.querySelector("article.result");
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  });
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  expect(history.isConnected).toBe(true);
+  expect(workspace.contains(history)).toBe(true);
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  expect(history.isConnected).toBe(true);
+  expect(workspace.querySelector("article.result")).toBe(history);
+});
+
 it("hides selected schedule details without writes during notification review and restores the same instance", async () => {
   const value = fixture();
   const rendered = render(value.view(<Schedules active open={() => {}} />));
