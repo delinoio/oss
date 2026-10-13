@@ -273,9 +273,204 @@ try {
         }
     }
   }
+  // Flat dt/dd request facts (as rendered by RequestDiagnostics) and the
+  // request panel separator with an empty versus populated portal host.
+  let flatChecks = 0;
+  for (const viewport of [
+    { width: 320, height: 240 },
+    { width: 500, height: 640 },
+    { width: 639, height: 640 },
+    { width: 640, height: 640 },
+    { width: 1000, height: 640 },
+  ]) {
+    for (const language of ["en", "ko"])
+      for (const theme of ["light", "dark"])
+        for (const populated of [true, false]) {
+          const page = await browser.newPage({ viewport });
+          const labels =
+            language === "en"
+              ? ["Request", "Revision", "Execution", "Account at request time"]
+              : ["요청", "리비전", "실행", "요청 시점 계정"];
+          const pairs = labels
+            .map(
+              (label, i) =>
+                `<dt>${label}</dt><dd>${i === 2 ? reference : `value-${i}`}</dd>`,
+            )
+            .join("");
+          const hostContent = populated
+            ? `<section class="session-information-section"><h3>Session details</h3><dl><div><dt>${labels[0]}</dt><dd>wrapped</dd></div></dl></section>`
+            : "";
+          await page.setContent(
+            `<html lang="${language}" data-theme="${theme}"><style>${styles.join("\n")}</style><body><main class="session-workspace session-tabbed" style="display:block;height:100vh;width:${viewport.width}px"><div class="session-app-panel session-diagnostics-panel"><div class="session-diagnostics"><div id="host">${hostContent}</div><aside class="session-files"><header><h2>Model request diagnostics</h2><button>Close diagnostics</button></header><article class="result"><h3>Native input</h3><dl id="flat">${pairs}</dl><button id="after-facts">Load more</button></article></aside></div></div></main></body></html>`,
+          );
+          const measure = () =>
+            page.evaluate(() => {
+              const content = document.querySelector(".session-diagnostics"),
+                host = document.querySelector("#host"),
+                request = document.querySelector("aside"),
+                flat = document.querySelector("#flat");
+              const rect = (e) => e.getBoundingClientRect();
+              const style = getComputedStyle(request);
+              const flatStyle = getComputedStyle(flat);
+              const dts = [...flat.querySelectorAll("dt")].map(rect),
+                dds = [...flat.querySelectorAll("dd")].map(rect);
+              return {
+                hostChildCount: host.childNodes.length,
+                inset: parseFloat(getComputedStyle(content).paddingLeft),
+                borderTop: style.borderTopWidth,
+                marginTop: style.marginTop,
+                paddingTop: style.paddingTop,
+                requestX: rect(request).x,
+                hostX: rect(host).x,
+                requestTop: rect(request).y,
+                hostBottom: rect(host).bottom,
+                contentTop: rect(content).y,
+                contentPaddingTop: parseFloat(
+                  getComputedStyle(content).paddingTop,
+                ),
+                columns: flatStyle.gridTemplateColumns.split(" ").length,
+                columnGap: flatStyle.columnGap,
+                rowGap: flatStyle.rowGap,
+                dts,
+                dds,
+                ddMarginBottoms: [...flat.querySelectorAll("dd")].map(
+                  (e) => getComputedStyle(e).marginBottom,
+                ),
+                flatBottom: rect(flat).bottom,
+                afterFactsTop: rect(document.querySelector("#after-facts")).y,
+                pageOverflow:
+                  document.documentElement.scrollWidth > window.innerWidth,
+              };
+            });
+          const scenario = `flat/${viewport.width}/${language}/${theme}/${populated ? "populated" : "empty"}`;
+          const narrow = viewport.width < 640;
+          const verify = (geometry, state) => {
+            const fail = (name, callback) => {
+              try {
+                callback();
+              } catch (error) {
+                geometryFailures.push({
+                  scenario: `${scenario}/${state}`,
+                  name,
+                  error: error.message,
+                  geometry,
+                });
+              }
+            };
+            const hostPopulated = state === "populated";
+            fail("shared outer inset", () => {
+              assert.equal(geometry.inset, narrow ? 16 : 32);
+              assert.equal(geometry.requestX, geometry.hostX);
+            });
+            fail("request separator", () => {
+              if (hostPopulated) {
+                assert.equal(geometry.borderTop, "1px");
+                assert.equal(geometry.marginTop, "16px");
+                assert.equal(geometry.paddingTop, "16px");
+              } else {
+                assert.equal(geometry.borderTop, "0px");
+                assert.equal(geometry.marginTop, "0px");
+                assert.equal(geometry.paddingTop, "0px");
+              }
+            });
+            fail("request panel starts at the inset when host is empty", () => {
+              if (!hostPopulated)
+                assert.equal(
+                  geometry.requestTop,
+                  geometry.contentTop + geometry.contentPaddingTop,
+                );
+              else
+                assert.equal(geometry.requestTop - geometry.hostBottom, 16);
+            });
+            fail("flat pair count", () => {
+              assert.equal(geometry.dts.length, 4);
+              assert.equal(geometry.dds.length, 4);
+            });
+            for (let i = 0; i < geometry.dts.length; i++) {
+              const label = geometry.dts[i],
+                value = geometry.dds[i];
+              if (narrow) {
+                fail(`flat label/value alignment ${i}`, () =>
+                  assert.equal(value.x, label.x),
+                );
+                fail(`flat label/value gap ${i}`, () =>
+                  assert.equal(value.y - label.bottom, 4),
+                );
+                if (i + 1 < geometry.dts.length)
+                  fail(`flat between-pair gap ${i}`, () =>
+                    assert.equal(geometry.dts[i + 1].y - value.bottom, 12),
+                  );
+              } else {
+                fail(`flat wide column offset ${i}`, () => {
+                  assert.equal(value.x - label.x, 224);
+                  assert.equal(label.width, 200);
+                  assert.equal(value.y, label.y);
+                });
+                if (i + 1 < geometry.dts.length)
+                  fail(`flat wide row gap ${i}`, () =>
+                    assert.equal(
+                      geometry.dts[i + 1].y -
+                        Math.max(label.bottom, value.bottom),
+                      12,
+                    ),
+                  );
+              }
+            }
+            fail("no trailing compensating gap", () => {
+              assert.equal(geometry.ddMarginBottoms.at(-1), "0px");
+              assert.equal(geometry.flatBottom, geometry.dds.at(-1).bottom);
+            });
+            fail("flat grid tracks", () => {
+              assert.equal(geometry.columns, narrow ? 1 : 2);
+              assert.equal(geometry.columnGap, "24px");
+              assert.equal(geometry.rowGap, narrow ? "4px" : "12px");
+            });
+            fail("long reference overflow", () =>
+              assert(!geometry.pageOverflow),
+            );
+          };
+          verify(await measure(), populated ? "populated" : "empty");
+          // Empty -> populated -> empty transitions reuse the same request
+          // panel and portal host nodes. Only the host content changes.
+          await page.evaluate(() => {
+            window.__nodes = {
+              host: document.querySelector("#host"),
+              request: document.querySelector("aside"),
+              button: document.querySelector("#after-facts"),
+            };
+            document.querySelector("#after-facts").focus();
+          });
+          const toggled = async (html) => {
+            await page.evaluate((markup) => {
+              document.querySelector("#host").innerHTML = markup;
+            }, html);
+            return measure();
+          };
+          verify(
+            await toggled(
+              `<section class="session-information-section"><h3>Session details</h3><dl><div><dt>${labels[0]}</dt><dd>wrapped</dd></div></dl></section>`,
+            ),
+            "populated",
+          );
+          verify(await toggled(""), "empty");
+          assert.equal((await measure()).hostChildCount, 0);
+          assert(
+            await page.evaluate(
+              () =>
+                window.__nodes.host === document.querySelector("#host") &&
+                window.__nodes.request === document.querySelector("aside") &&
+                window.__nodes.button === document.activeElement,
+            ),
+            "host and request nodes and focus are retained across transitions",
+          );
+          flatChecks++;
+          await page.close();
+        }
+  }
   console.log(
     JSON.stringify({
       checks,
+      flatChecks,
       fixture: "synthetic-session-diagnostics",
       nativeAcceptance: false,
       geometryFailures,

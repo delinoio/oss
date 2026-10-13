@@ -1429,7 +1429,7 @@
   border: 0;
 }
 .session-diagnostics > div > :not(:first-child),
-.session-diagnostics > .session-files {
+.session-diagnostics > div:not(:empty) + .session-files {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-subtle);
@@ -1481,6 +1481,7 @@
 .session-diagnostics > .session-files {
   height: auto;
   padding-inline: 0;
+  padding-top: 0;
   padding-bottom: 0;
   gap: 16px;
 }
@@ -1517,7 +1518,8 @@
     grid-template-columns: minmax(0, 1fr);
     row-gap: 4px;
   }
-  .session-diagnostics dl > div:not(:last-child) > dd {
+  .session-diagnostics dl > div:not(:last-child) > dd,
+  .session-diagnostics dl > dd:not(:last-child) {
     margin-bottom: 8px;
   }
   .session-diagnostics ol {
