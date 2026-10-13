@@ -270,17 +270,40 @@ fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
     let Ok(entries) = std::fs::read_dir(out_dir) else {
         return Vec::new();
     };
-    let mut runs: Vec<RunSummary> = entries
+    // UUID v7 names sort by creation time: select the newest 200 run
+    // directories before reading anything inside them.
+    let mut names: Vec<String> = entries
         .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            uuid::Uuid::parse_str(&name).ok()?;
-            // Saved runs are untrusted: read only bounded regular files.
-            let bytes = bundle::read_bundle_bytes(&entry.path().join(BUNDLE_FILE)).ok()?;
-            let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-            let analysis = value.get("analysis")?;
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| uuid::Uuid::parse_str(name).is_ok())
+        .collect();
+    names.sort_by(|left, right| right.cmp(left));
+    names.truncate(200);
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let run_dir = out_dir.join(&name);
+            // Prefer the small summary; fall back to the bounded full bundle
+            // for runs saved without one.
+            let summary = bundle::read_summary_bytes(&run_dir.join(bundle::SUMMARY_FILE))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+            let value = match summary {
+                Some(summary) => summary,
+                None => {
+                    let bytes = bundle::read_bundle_bytes(&run_dir.join(BUNDLE_FILE)).ok()?;
+                    let full: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+                    let analysis = full.get("analysis")?;
+                    serde_json::json!({
+                        "status": analysis.get("status"),
+                        "projectName": analysis.get("projectName"),
+                        "bundler": analysis.get("engine").and_then(|engine| engine.get("bundler")),
+                        "startedAt": analysis.get("startedAt"),
+                    })
+                }
+            };
             let field = |key: &str| {
-                analysis
+                value
                     .get(key)
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or_default()
@@ -288,26 +311,24 @@ fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
             };
             Some(RunSummary {
                 run_id: name.clone(),
-                // Apply the same interrupted/incomplete normalization as
-                // opening the run, so the list and the opened report agree.
+                // Same interrupted/incomplete normalization as opening the run.
                 status: bundle::normalized_status(
-                    serde_json::from_value(analysis.get("status")?.clone()).unwrap_or_default(),
-                    &entry.path(),
+                    value
+                        .get("status")
+                        .and_then(|status| serde_json::from_value(status.clone()).ok())
+                        .unwrap_or_default(),
+                    &run_dir,
                 ),
                 project_name: field("projectName"),
-                bundler: analysis
-                    .get("engine")
-                    .and_then(|engine| engine.get("bundler"))
+                bundler: value
+                    .get("bundler")
                     .and_then(|bundler| serde_json::from_value(bundler.clone()).ok())
                     .unwrap_or_default(),
                 started_at: field("startedAt"),
                 active: name == active,
             })
         })
-        .collect();
-    runs.sort_by(|left, right| right.run_id.cmp(&left.run_id));
-    runs.truncate(200);
-    runs
+        .collect()
 }
 
 async fn read_body<T: serde::de::DeserializeOwned + Default>(

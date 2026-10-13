@@ -287,3 +287,22 @@ test("rspack configuration functions that throw are configuration load failures"
   assert.equal(error.code, "BW_CONFIG_LOAD_FAILED");
   assert.match(error.message, /factory broke/);
 });
+
+test("vite configuration errors are configuration load failures", () => {
+  const projectRoot = path.join(root, "fixtures/vite-app");
+  const { dir, file } = writeConfig("vite.config.mjs", 'export default async () => { throw new Error("vite factory broke"); };\n');
+  const { status, events } = runAdapter("vite", "vite-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error.code, "BW_CONFIG_LOAD_FAILED");
+  assert.match(error.message, /vite factory broke/);
+});
+
+test("rspack adapter records providedExports in the configuration summary", () => {
+  const { dir, relative } = rspackConfig('entry: "./src/esm/value.js", optimization: { providedExports: false }');
+  const { status, collection } = runAdapter("rspack", "rspack-app", relative);
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.configSummary["optimization.providedExports"], "false");
+});

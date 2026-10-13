@@ -86,6 +86,15 @@ impl Chunk {
                         None
                     }
                 });
+        // A map without any source-bearing token cannot map anything; treat
+        // it as missing so coverage and problems reflect generated-only data.
+        let map = map.filter(|map| {
+            let usable = map.tokens().any(|token| token.has_source());
+            if !usable {
+                tracing::warn!(chunk = file, "source map has no usable mappings");
+            }
+            usable
+        });
         let map_dir = map_path
             .parent()
             .map_or_else(|| build_dir.to_path_buf(), Path::to_path_buf);
@@ -324,6 +333,15 @@ mod tests {
         let total: u32 = per_source.values().sum::<u32>() + unmapped;
         assert_eq!(total, 20);
         assert_eq!(unmapped, 0);
+    }
+
+    #[test]
+    fn maps_without_mappings_are_unusable() {
+        let (_dir, chunk) = chunk_with_map(
+            "const a=1;",
+            r#"{"version":3,"sources":["a.js"],"names":[],"mappings":""}"#,
+        );
+        assert!(chunk.map.is_none());
     }
 
     #[test]

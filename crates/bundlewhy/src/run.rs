@@ -259,13 +259,17 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     .await;
     log.event("stage", json!({ "stage": current_stage.as_str(), "durationMs": stage_started.elapsed().as_millis() as u64 }));
 
+    // Analysis and measurement can take substantial CPU time; cancellation
+    // stays available until saving starts.
     let set_stage = |stage: RunStage, message: &str| {
         state.update(|served| {
             served.progress.stage = stage;
             served.progress.message = message.to_owned();
-            served.progress.cancellable = false;
+            served.progress.cancellable =
+                matches!(stage, RunStage::Analyzing | RunStage::Measuring);
         });
     };
+    let is_cancelled = || cancel.is_cancelled();
 
     let (mut result_bundle, mut error) = match result {
         // Detectors are verified for client builds only; reject other builds
@@ -275,6 +279,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &run_id,
             &started_at,
             &log,
+            options.exclude_sources,
             BwError::new(
                 ErrorCode::UnsupportedBuild,
                 "The selected configuration is a library, SSR or Node-target build",
@@ -316,6 +321,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 include_sources: !options.exclude_sources,
                 started_at: started_at.clone(),
                 on_measuring: Some(&on_measuring),
+                cancelled: Some(&is_cancelled),
             });
             let measuring_ms = measuring_started
                 .lock()
@@ -352,7 +358,14 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 None,
             )
         }
-        Err(error) => incomplete_bundle(&selection, &run_id, &started_at, &log, error),
+        Err(error) => incomplete_bundle(
+            &selection,
+            &run_id,
+            &started_at,
+            &log,
+            options.exclude_sources,
+            error,
+        ),
     };
     // Ctrl+C can arrive after the adapter finished, while analysis or size
     // measurement ran. Never save such a run as complete.
@@ -367,6 +380,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             &run_id,
             &started_at,
             &log,
+            options.exclude_sources,
             adapter::cancelled_error(),
         );
     }
@@ -413,6 +427,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     result_bundle.analysis.finished_at = now();
     result_bundle.analysis.duration_ms =
         u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+    bundle::fit_within_limit(&mut result_bundle)?;
     bundle::save(&run_dir, &result_bundle)?;
     let status = result_bundle.analysis.status;
     if matches!(status, RunStatus::Complete) {
@@ -465,6 +480,26 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     Ok(AnalyzeOutcome { status, error })
 }
 
+/// The problem persisted for a failed run. Build and adapter errors can quote
+/// source code (code frames, stderr tails); with `--exclude-sources` only the
+/// code and a generic message are saved, and the details stay on the terminal.
+fn saved_problem(error: &BwError, exclude_sources: bool) -> crate::model::Problem {
+    let quotes_output = matches!(
+        error.code,
+        ErrorCode::BuildFailed | ErrorCode::CollectionFailed | ErrorCode::ConfigLoadFailed
+    );
+    if exclude_sources && quotes_output {
+        return problem(
+            error.code,
+            ProblemSeverity::Error,
+            "The diagnostic build failed. Details were not saved because sources are excluded; \
+             see the terminal output of `bundlewhy analyze`.",
+            error.recovery.clone(),
+        );
+    }
+    error.problem(ProblemSeverity::Error)
+}
+
 /// Result bundle for a run that failed or was cancelled before analysis
 /// finished. Coverage is unavailable everywhere and the error is a problem.
 fn incomplete_bundle(
@@ -472,6 +507,7 @@ fn incomplete_bundle(
     run_id: &str,
     started_at: &str,
     log: &RunLog,
+    exclude_sources: bool,
     error: BwError,
 ) -> (ResultBundle, Option<BwError>) {
     let status = if error.code == ErrorCode::RunCancelled {
@@ -491,7 +527,7 @@ fn incomplete_bundle(
             .map(|path| crate::sources::classify(&selection.project_root, path).display)
             .unwrap_or_default(),
         status,
-        problems: vec![error.problem(ProblemSeverity::Error)],
+        problems: vec![saved_problem(&error, exclude_sources)],
         started_at: started_at.to_owned(),
         mode: ReportMode::Live,
         tool_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -638,6 +674,19 @@ pub fn export_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_excluded_runs_do_not_save_build_error_excerpts() {
+        let error = BwError::new(
+            ErrorCode::BuildFailed,
+            "src/secret.ts:3:1 const apiKey = \"sk-live\"",
+            "Fix it.",
+        );
+        let saved = saved_problem(&error, true);
+        assert!(!saved.message.contains("apiKey"));
+        assert_eq!(saved.code, "BW_BUILD_FAILED");
+        assert!(saved_problem(&error, false).message.contains("apiKey"));
+    }
 
     #[test]
     fn workspace_lockfiles_above_the_project_are_protected() {

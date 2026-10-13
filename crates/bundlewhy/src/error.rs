@@ -36,6 +36,7 @@ pub enum ErrorCode {
     AccessDenied,
     SourceStale,
     SourceNotFound,
+    ResultTooLarge,
 }
 
 impl ErrorCode {
@@ -71,6 +72,7 @@ impl ErrorCode {
             Self::AccessDenied => "BW_ACCESS_DENIED",
             Self::SourceStale => "BW_SOURCE_STALE",
             Self::SourceNotFound => "BW_SOURCE_NOT_FOUND",
+            Self::ResultTooLarge => "BW_RESULT_TOO_LARGE",
         }
     }
 

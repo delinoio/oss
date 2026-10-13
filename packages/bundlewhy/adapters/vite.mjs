@@ -162,11 +162,33 @@ await runAdapter(async (request) => {
     "build.watch=null",
   ];
 
+  // Load the configuration once on its own so that evaluation errors and
+  // rejecting configuration factories are reported as configuration
+  // problems, not build failures. The loaded config is then built inline.
+  let userConfig = {};
+  if (request.configFile) {
+    try {
+      const loaded = await vite.loadConfigFromFile(
+        { command: "build", mode: "production", isSsrBuild: false, isPreview: false },
+        request.configFile,
+        request.projectRoot,
+        "silent",
+      );
+      userConfig = loaded?.config ?? {};
+    } catch (error) {
+      throw new AdapterError(
+        AdapterErrorCode.ConfigLoadFailed,
+        `Could not load ${path.basename(request.configFile)}: ${error?.message ?? error}`,
+        "Fix the error in the Vite configuration (or its configuration function), then start a new run.",
+      );
+    }
+  }
+
   progress("building", `Running vite build with Vite ${vite.version}`);
   try {
-    await vite.build({
+    await vite.build(vite.mergeConfig(userConfig, {
       root: request.projectRoot,
-      configFile: request.configFile ?? false,
+      configFile: false,
       mode: "production",
       logLevel: "warn",
       clearScreen: false,
@@ -187,7 +209,7 @@ await runAdapter(async (request) => {
         watch: null,
       },
       plugins: [collectorPlugin(state)],
-    });
+    }));
   } catch (error) {
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,

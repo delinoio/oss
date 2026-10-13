@@ -28,6 +28,9 @@ pub struct AnalysisInput<'a> {
     /// Called once before chunk size measurement starts, so callers can
     /// publish the `MEASURING` stage and time it separately.
     pub on_measuring: Option<&'a (dyn Fn() + Sync)>,
+    /// Polled between chunks during measurement; true stops early. The caller
+    /// then discards the partial output and saves a cancelled result.
+    pub cancelled: Option<&'a (dyn Fn() -> bool + Sync)>,
 }
 
 pub struct AnalysisOutput {
@@ -95,8 +98,14 @@ fn coverage(
                 {
                     (
                         CoverageState::NotApplicable,
-                        "Used-exports analysis is disabled by optimization.usedExports: false."
-                            .to_owned(),
+                        format!(
+                            "Tree-shaking analysis is disabled by {}.",
+                            rules::rspack::disabled_tree_shaking_options(collection)
+                                .iter()
+                                .map(|option| format!("{option}: false"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
                     )
                 }
                 OptimizationCategory::ModuleConcatenation
@@ -428,6 +437,7 @@ mod tests {
             include_sources,
             started_at: String::new(),
             on_measuring: None,
+            cancelled: None,
         });
         Fixture { _dir: dir, output }
     }
@@ -576,6 +586,8 @@ mod tests {
             "vite/side-effect-retained",
             "src/legacy/cjs.cjs",
         );
+        // The entry script loaded by index.html is meant to run.
+        assert_absent(diagnostics, "vite/side-effect-retained", "src/main.js");
 
         let cjs = find(diagnostics, "vite/commonjs-wrapped", "src/legacy/cjs.cjs").unwrap();
         assert_eq!(cjs.status, EvidenceStatus::Confirmed);
@@ -877,6 +889,53 @@ mod tests {
                 .unwrap();
             assert_eq!(entry.state, CoverageState::NotApplicable, "{category:?}");
         }
+    }
+
+    #[test]
+    fn rspack_disabled_side_effects_or_provided_exports_are_not_covered() {
+        for option in ["optimization.sideEffects", "optimization.providedExports"] {
+            let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+                value["configSummary"][option] = serde_json::json!("false");
+            });
+            let analysis = &fixture.output.analysis;
+            assert_absent(&analysis.diagnostics, "rspack/side-effect-retained", "");
+            assert!(
+                analysis
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.rule.ends_with("-disabled")
+                        && diagnostic.title.contains("analysis is disabled")),
+                "{option}"
+            );
+            let entry = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == OptimizationCategory::TreeShaking)
+                .unwrap();
+            assert_eq!(entry.state, CoverageState::NotApplicable, "{option}");
+        }
+    }
+
+    #[test]
+    fn vite_export_less_side_effect_modules_are_reported() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with("src/effects/register.js"))
+                {
+                    module["exports"] = serde_json::json!([]);
+                }
+            }
+        });
+        assert!(
+            find(
+                &fixture.output.analysis.diagnostics,
+                "vite/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
     }
 
     #[test]

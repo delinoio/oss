@@ -38,6 +38,8 @@ pub enum RuleId {
     MinificationDisabled,
     ViteTreeShakingDisabled,
     RspackUsedExportsDisabled,
+    RspackSideEffectsDisabled,
+    RspackProvidedExportsDisabled,
     RspackConcatenationDisabled,
     DirectEvalBlocksMangling,
 }
@@ -56,6 +58,8 @@ impl RuleId {
             Self::MinificationDisabled => "minifier/minification-disabled",
             Self::ViteTreeShakingDisabled => "vite/tree-shaking-disabled",
             Self::RspackUsedExportsDisabled => "rspack/used-exports-disabled",
+            Self::RspackSideEffectsDisabled => "rspack/side-effects-disabled",
+            Self::RspackProvidedExportsDisabled => "rspack/provided-exports-disabled",
             Self::RspackConcatenationDisabled => "rspack/concatenation-disabled",
             Self::DirectEvalBlocksMangling => "minifier/direct-eval-blocks-mangling",
         }
@@ -66,7 +70,9 @@ impl RuleId {
             Self::RspackSideEffectRetained
             | Self::ViteSideEffectRetained
             | Self::ViteTreeShakingDisabled
-            | Self::RspackUsedExportsDisabled => OptimizationCategory::TreeShaking,
+            | Self::RspackUsedExportsDisabled
+            | Self::RspackSideEffectsDisabled
+            | Self::RspackProvidedExportsDisabled => OptimizationCategory::TreeShaking,
             Self::RspackModuleConcatenationBailout
             | Self::RspackConcatenationDisabled
             | Self::ViteCommonjsWrapped => OptimizationCategory::ModuleConcatenation,
@@ -410,6 +416,8 @@ pub fn rules_by_category(bundler: &str) -> BTreeMap<OptimizationCategory, Vec<Ru
         "rspack" => &[
             RuleId::RspackSideEffectRetained,
             RuleId::RspackUsedExportsDisabled,
+            RuleId::RspackSideEffectsDisabled,
+            RuleId::RspackProvidedExportsDisabled,
             RuleId::RspackModuleConcatenationBailout,
             RuleId::RspackConcatenationDisabled,
             RuleId::RspackModuleInMultipleChunks,

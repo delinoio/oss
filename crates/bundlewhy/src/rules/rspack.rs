@@ -25,9 +25,26 @@ fn option_disabled(collection: &crate::collect::Collection, option: &str) -> boo
         .is_some_and(|value| value == "false")
 }
 
-/// `optimization.usedExports: false` leaves no used-exports data to analyze.
+/// Rspack options whose `false` value turns off an analysis the side-effect
+/// detector depends on: used exports, side-effects analysis and provided
+/// exports (side-effects analysis builds on provided exports).
+pub const TREE_SHAKING_OPTIONS: [&str; 3] = [
+    "optimization.usedExports",
+    "optimization.sideEffects",
+    "optimization.providedExports",
+];
+
+/// The disabled tree-shaking inputs, in a stable order.
+pub fn disabled_tree_shaking_options(collection: &crate::collect::Collection) -> Vec<&'static str> {
+    TREE_SHAKING_OPTIONS
+        .into_iter()
+        .filter(|option| option_disabled(collection, option))
+        .collect()
+}
+
+/// True when any analysis the side-effect detector needs is disabled.
 pub fn used_exports_disabled(collection: &crate::collect::Collection) -> bool {
-    option_disabled(collection, "optimization.usedExports")
+    !disabled_tree_shaking_options(collection).is_empty()
 }
 
 /// `optimization.concatenateModules: false` turns scope hoisting off.
@@ -36,11 +53,13 @@ pub fn concatenation_disabled(collection: &crate::collect::Collection) -> bool {
 }
 
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
-    if used_exports_disabled(context.collection) {
-        super::common::configuration_disabled(
-            context,
-            drafts,
-            &super::common::DisabledOptimization {
+    let disabled = disabled_tree_shaking_options(context.collection);
+    if disabled.is_empty() {
+        side_effect_retained(context, drafts);
+    }
+    for option in disabled {
+        let finding = match option {
+            "optimization.usedExports" => super::common::DisabledOptimization {
                 rule: RuleId::RspackUsedExportsDisabled,
                 title: "Used-exports analysis is disabled",
                 option: "optimization.usedExports",
@@ -51,10 +70,33 @@ pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
                 safety: "Code that relies on unused exports being kept (for example through \
                          dynamic property access on a namespace) must import them explicitly.",
             },
-        );
-    } else {
-        side_effect_retained(context, drafts);
+            "optimization.sideEffects" => super::common::DisabledOptimization {
+                rule: RuleId::RspackSideEffectsDisabled,
+                title: "Side-effects analysis is disabled",
+                option: "optimization.sideEffects",
+                summary: "optimization.sideEffects is false, so Rspack never skips unused modules \
+                          based on side-effect analysis or package \"sideEffects\" flags. \
+                          Tree-shaking findings do not apply to this build.",
+                direction: "Remove `sideEffects: false` from optimization (the production default \
+                            is true).",
+                safety: "Modules imported only for their effects must stay imported or be \
+                         declared in package \"sideEffects\" lists.",
+            },
+            _ => super::common::DisabledOptimization {
+                rule: RuleId::RspackProvidedExportsDisabled,
+                title: "Provided-exports analysis is disabled",
+                option: "optimization.providedExports",
+                summary: "optimization.providedExports is false, so Rspack does not know which \
+                          exports modules provide; used-exports and side-effects analysis depend \
+                          on it. Tree-shaking findings do not apply to this build.",
+                direction: "Remove `providedExports: false` (the default is true).",
+                safety: "Re-enabling export analysis can change which exports are kept; run the \
+                         application's tests.",
+            },
+        };
+        super::common::configuration_disabled(context, drafts, &finding);
     }
+
     if concatenation_disabled(context.collection) {
         super::common::configuration_disabled(
             context,

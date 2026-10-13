@@ -429,6 +429,9 @@ await runAdapter(async (request) => {
       "optimization.usedExports": summarizeValue(
         config.optimization?.usedExports,
       ),
+      "optimization.providedExports": summarizeValue(
+        config.optimization?.providedExports,
+      ),
       "optimization.splitChunks": summarizeValue(
         config.optimization?.splitChunks,
       ),

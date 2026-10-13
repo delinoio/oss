@@ -19,7 +19,13 @@ use crate::{
 
 pub const BUNDLE_FILE: &str = "analysis.json";
 pub const INCOMPLETE_MARKER: &str = "INCOMPLETE";
+pub const SUMMARY_FILE: &str = "run-summary.json";
+const MAX_SUMMARY_BYTES: u64 = 64 * 1024;
+#[cfg(not(test))]
 const MAX_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
+// A small limit keeps oversized-result tests fast; behavior is identical.
+#[cfg(test)]
+const MAX_BUNDLE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +42,41 @@ pub struct ResultBundle {
     pub project_relative: BTreeMap<String, String>,
 }
 
+/// Keeps a result within the loader's size limit. When source content makes
+/// it too large, source content and snippets are dropped and a problem says
+/// so, instead of saving a run that `open` and `export` would reject.
+pub fn fit_within_limit(bundle: &mut ResultBundle) -> BwResult<()> {
+    let size = serde_json::to_vec(bundle).map_or(u64::MAX, |json| json.len() as u64);
+    if size <= MAX_BUNDLE_BYTES {
+        return Ok(());
+    }
+    tracing::warn!(
+        size,
+        limit = MAX_BUNDLE_BYTES,
+        "result too large; dropping source content"
+    );
+    for source in &mut bundle.sources {
+        source.content.clear();
+        source.content_included = false;
+    }
+    for summary in &mut bundle.analysis.sources {
+        summary.content_included = false;
+    }
+    for diagnostic in &mut bundle.analysis.diagnostics {
+        diagnostic.snippet = None;
+    }
+    bundle.analysis.problems.push(problem(
+        ErrorCode::ResultTooLarge,
+        ProblemSeverity::Warning,
+        format!(
+            "The result exceeded {MAX_BUNDLE_BYTES} bytes, so source content and snippets were \
+             not saved"
+        ),
+        "Use --exclude-sources for this project, or analyze a smaller build.",
+    ));
+    Ok(())
+}
+
 pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
     let json = serde_json::to_vec(bundle).map_err(|error| {
         BwError::new(
@@ -44,6 +85,26 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
             "Report this as a bug.",
         )
     })?;
+    if json.len() as u64 > MAX_BUNDLE_BYTES {
+        return Err(BwError::new(
+            ErrorCode::ResultTooLarge,
+            format!(
+                "The result is {} bytes, above the {MAX_BUNDLE_BYTES}-byte limit",
+                json.len()
+            ),
+            "Use --exclude-sources, or analyze a smaller build.",
+        ));
+    }
+    // A small summary lets run listings avoid reading full bundles.
+    let summary = serde_json::json!({
+        "schemaVersion": bundle.schema_version,
+        "runId": bundle.analysis.run_id,
+        "status": bundle.analysis.status,
+        "projectName": bundle.analysis.project_name,
+        "bundler": bundle.analysis.engine.as_ref().map(|engine| engine.bundler).unwrap_or_default(),
+        "startedAt": bundle.analysis.started_at,
+    });
+    let _ = std::fs::write(run_dir.join(SUMMARY_FILE), summary.to_string());
     let temporary = run_dir.join(format!("{BUNDLE_FILE}.tmp"));
     // std::fs::rename replaces an existing destination on every supported
     // platform, including Windows (MoveFileExW with replacement).
@@ -178,6 +239,24 @@ fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
     Ok(file)
 }
 
+/// Reads a run summary through the same no-follow, bounded rules with a much
+/// smaller limit.
+pub fn read_summary_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.len() > MAX_SUMMARY_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "not a bounded summary file",
+        ));
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(open_no_follow(path)?, MAX_SUMMARY_BYTES + 1),
+        &mut bytes,
+    )?;
+    Ok(bytes)
+}
+
 pub fn read_bundle_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
     // Inspect the entry itself: a symlink could point at a bundle outside the
     // run directory.
@@ -294,8 +373,12 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         else {
             continue;
         };
+        // A file that cannot be verified (too large, special, outside the
+        // root) is not reported stale; only a removed file or a hash mismatch
+        // is.
+        let removed = std::fs::symlink_metadata(canonical_root.join(&relative)).is_err();
         let is_stale = read_project_file(&canonical_root, &relative)
-            .is_none_or(|bytes| sha256_hex(&bytes) != source.sha256);
+            .map_or(removed, |bytes| sha256_hex(&bytes) != source.sha256);
         source.stale = is_stale;
         stale += usize::from(is_stale);
     }
@@ -414,6 +497,42 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn oversized_unverifiable_sources_are_not_stale_but_removed_ones_are() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        let big = vec![b'a'; (MAX_STALE_CHECK_BYTES + 1) as usize];
+        std::fs::write(project.join("src/big.js"), &big).unwrap();
+        let mut saved = bundle();
+        saved.project_root = project.to_string_lossy().into_owned();
+        saved.sources[0].sha256 = sha256_hex(&big);
+        saved
+            .project_relative
+            .insert("src-0123456789abcdef".to_owned(), "src/big.js".to_owned());
+        mark_stale(&mut saved);
+        assert!(!saved.sources[0].stale);
+        std::fs::remove_file(project.join("src/big.js")).unwrap();
+        mark_stale(&mut saved);
+        assert!(saved.sources[0].stale);
+    }
+
+    #[test]
+    fn oversized_results_drop_source_content_instead_of_saving_unreadable_runs() {
+        let mut large = bundle();
+        large.sources[0].content = "x".repeat((MAX_BUNDLE_BYTES + 1) as usize);
+        large.sources[0].content_included = true;
+        fit_within_limit(&mut large).unwrap();
+        assert!(large.sources[0].content.is_empty());
+        assert!(
+            large
+                .analysis
+                .problems
+                .iter()
+                .any(|entry| entry.code == "BW_RESULT_TOO_LARGE")
+        );
     }
 
     #[cfg(unix)]

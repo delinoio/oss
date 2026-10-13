@@ -32,16 +32,21 @@ pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
 fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let collection = context.collection;
     for module in &collection.modules {
-        let has_exports = module
-            .exports
-            .as_ref()
-            .is_some_and(|exports| !exports.is_empty());
+        // Export-less modules (for example `import "./polyfill"`) qualify:
+        // rendered code with no rendered export is the evidence.
         let no_rendered_exports = module.used_exports.as_ref().is_some_and(Vec::is_empty);
         let esm = module.input_format.as_deref() == Some("es");
+        // Scripts that an HTML entry loads are entry points too: their
+        // top-level code is meant to run.
+        let html_entry = !module.importers.is_empty()
+            && module
+                .importers
+                .iter()
+                .all(|importer| importer.ends_with(".html"));
         if !module.included
             || module.is_entry
+            || html_entry
             || !esm
-            || !has_exports
             || !no_rendered_exports
             || module.rendered_length == 0
         {
