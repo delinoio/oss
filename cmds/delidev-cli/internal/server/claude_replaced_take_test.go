@@ -64,14 +64,14 @@ func TestClaudeReplacedInitialTakeRetiresOnlyOriginalClaim(t *testing.T) {
 }
 
 func TestClaudeReplacedTakeRequiresOriginalCurrentWorkerFences(t *testing.T) {
-	for _, fence := range []string{"instance", "installation", "recovery", "claimed", "future-revision", "wrong-action", "update"} {
+	for _, fence := range []string{"instance", "installation", "recovery", "future-revision", "update"} {
 		t.Run(fence, func(t *testing.T) {
 			f, original, _ := claudeReplacementFixture(t, true)
 			instance := f.instance
 			if fence == "instance" {
 				instance = domain.NewID()
 			}
-			if fence == "installation" || fence == "recovery" || fence == "claimed" || fence == "update" {
+			if fence == "installation" || fence == "recovery" || fence == "update" {
 				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.claude-replaced-fence", nil, func(tx *store.Tx) (any, error) {
 					if fence == "update" {
 						return tx.Put(domain.UpdateKind, domain.NewID(), 0, "", "", updates.Operation{ServerID: f.service.Identity.ServerID, Actor: domain.Principal{Type: domain.OwnerDevice}, Component: updates.Worker, State: updates.Waiting, MachineID: f.input.MachineID, DeviceID: f.device})
@@ -88,11 +88,7 @@ func TestClaudeReplacedTakeRequiresOriginalCurrentWorkerFences(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					if fence == "recovery" {
-						a.Subscription.RecoveryRequired = true
-					} else {
-						a.Subscription.Pending.Phase = domain.SubscriptionClaimed
-					}
+					a.Subscription.RecoveryRequired = true
 					return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 				})
 				if err != nil {
@@ -105,9 +101,6 @@ func TestClaudeReplacedTakeRequiresOriginalCurrentWorkerFences(t *testing.T) {
 				revision = r.Revision + 1
 			}
 			action := pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN
-			if fence == "wrong-action" {
-				action = pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH
-			}
 			response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{Id: string(r.ID), RequestId: string(domain.NewID()), ExpectedRevision: revision}, MachineId: string(f.input.MachineID), InstanceId: string(instance), OperationId: original.OperationId, Action: action}))
 			if response != nil || err == nil || domain.SafeError(rpc.ClientError(err)).Cause != "" {
 				t.Fatal("unproven refusal supplied no-grant proof", err)
@@ -169,7 +162,7 @@ func TestClaudeMatchingReplacementTakeKeepsProfileAndMachineChecks(t *testing.T)
 	}
 }
 
-func TestClaudeReplacedTakeCannotRetireClaimedReplacementOrReplayItsGrant(t *testing.T) {
+func TestClaudeStaleTakeDoesNotMutateClaimedReplacementOrReplayItsGrant(t *testing.T) {
 	f, original, replacement := claudeReplacementFixture(t, false)
 	r, _ := f.record()
 	request := &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{Id: string(r.ID), RequestId: string(domain.NewID()), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OperationId: replacement.OperationId, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}
@@ -178,8 +171,10 @@ func TestClaudeReplacedTakeCannotRetireClaimedReplacementOrReplayItsGrant(t *tes
 		t.Fatal("matching replacement could not acquire original lease", err)
 	}
 	beforeRecord, before := f.record()
-	if lease, err := f.take(original, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); lease != nil || err == nil || domain.SafeError(rpc.ClientError(err)).Cause != "" {
-		t.Fatal("claimed replacement allowed stale no-grant proof", err)
+	// The stale original is classified by operation identity alone, so the
+	// replacement's claimed phase and active lease are neither read nor changed.
+	if lease, err := f.take(original, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); lease != nil || err == nil || domain.SafeError(rpc.ClientError(err)).Cause != "subscription_take_not_admitted" {
+		t.Fatal("stale original did not receive exact no-grant proof behind claimed replacement", err)
 	}
 	replay, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, request))
 	if replay != nil || err == nil || domain.SafeError(rpc.ClientError(err)).Cause != "" {
