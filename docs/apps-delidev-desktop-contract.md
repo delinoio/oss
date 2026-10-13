@@ -1395,7 +1395,9 @@ Connection-memory revision fences and original-ID tombstones prevent stale
 history restoration or reopening from reviving dismissed tabs. Pending or
 uncertain original controls retain their recovery presentation; only a missing
 or null `pending` field means no operation, so an empty object, scalar or array
-`pending` value stays unsettled and never dismisses. Each original ID
+`pending` value stays unsettled and never dismisses. The same presence rule
+gates replacement creation (an inventory row with present `pending` keeps
+original cleanup unconfirmed) and terminal input or resize dispatch. Each original ID
 retains one compact fingerprint (no document bytes) of its latest accepted
 revision; an equal-revision observation whose state, cleanup proof or pending
 evidence differs is contradictory and rejected without tombstoning (logging only a

@@ -68,9 +68,10 @@ function canonicalDigest(root: unknown): string {
 /**
  * A pending operation exists for any present, non-null value, including an
  * empty object, a scalar or an array. Only a missing or null pending field
- * means no operation.
+ * means no operation. Every terminal gate that decides dismissal, replacement
+ * creation or input dispatch for an original terminal shares this predicate.
  */
-function hasPending(pending: unknown): boolean {
+export function hasPending(pending: unknown): boolean {
   return pending !== undefined && pending !== null;
 }
 
