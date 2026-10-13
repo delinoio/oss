@@ -303,7 +303,6 @@ export function RepositoryDiff({
     console.debug("delidev.diff.explicit_base_invalidated", {
       sessionId,
       repository,
-      base: explicitBaseKey,
     });
     setInvalidatedBase({
       owner: optionsOwner,

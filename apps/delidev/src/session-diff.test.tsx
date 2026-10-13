@@ -2135,3 +2135,30 @@ it("keeps an invalidated explicit base unavailable across tabbed comparison swit
     (branchReads(f.read).at(-1)?.base_ref as { name: string }).name,
   ).toBe("main");
 });
+
+it("omits the raw Git reference from the base invalidation diagnostic", async () => {
+  const setup = inventoryFixture([{ name: "main" }, { name: "secret-ref" }], "main");
+  const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+  try {
+    const { f, state, operations } = setup;
+    render(<f.View />);
+    await screen.findByText("+<script>doNotRun()</script>");
+    fireEvent.change(screen.getByLabelText("Base"), {
+      target: { value: baseValue("secret-ref") },
+    });
+    await waitFor(() =>
+      expect(operations().at(-1)).toBe("git-diff:branch:secret-ref"),
+    );
+    state.choices = [{ name: "main" }];
+    refreshDiff();
+    await screen.findByText(/No available default base/);
+    const logged = debug.mock.calls.filter(
+      ([event]) => event === "delidev.diff.explicit_base_invalidated",
+    );
+    expect(logged).toHaveLength(1);
+    expect(JSON.stringify(logged[0])).not.toContain("secret-ref");
+    expect(logged[0][1]).not.toHaveProperty("base");
+  } finally {
+    debug.mockRestore();
+  }
+});
