@@ -2440,9 +2440,9 @@ describe("reopened repository editors", () => {
     fireEvent.click(save);
     await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
     const corrected = input(value.save.mock.calls[1][0]);
-    expect(JSON.parse(new TextDecoder().decode(corrected.documentJson)).name).toBe(
-      "Gamma",
-    );
+    expect(
+      JSON.parse(new TextDecoder().decode(corrected.documentJson)).name,
+    ).toBe("Gamma");
   });
 
   it("restores the draft when the collision settled while no editor was mounted", async () => {
@@ -2551,7 +2551,9 @@ describe("reopened repository editors", () => {
     })();
     render(
       <NotificationProvider>
-        {value.view(<SwitchableRepositoryEditor repositories={[first, second]} />)}
+        {value.view(
+          <SwitchableRepositoryEditor repositories={[first, second]} />,
+        )}
       </NotificationProvider>,
     );
     await renameRepository("Beta");
