@@ -324,6 +324,50 @@ const invalidSnapshots: [string, Mutation][] = [
     },
   ],
   [
+    "a whitespace-only native model",
+    (_, configuration) => {
+      const native = " \u3000\u0085\n";
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a native model containing NUL",
+    (_, configuration) => {
+      const native = "original\u0000model";
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a native model longer than 256 UTF-8 bytes",
+    (_, configuration) => {
+      const native = "모".repeat(86);
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
+    "a native model that is not well-formed UTF-8",
+    (_, configuration) => {
+      const native = "original\ud800model";
+      configuration.native_model = native;
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: native,
+      });
+    },
+  ],
+  [
     "a non-string effort",
     (_, configuration) => {
       configuration.effort = 5;
@@ -458,6 +502,24 @@ it("accepts a source model key whose native model ID is not ASCII", () => {
   expect(savedExecutionSnapshot(resource)).toEqual({
     ready: true,
     nativeModel: "모델/<preview>&v2",
+    effort: "high",
+  });
+});
+
+it("accepts a native model ID of exactly 256 UTF-8 bytes", () => {
+  const value = fixture();
+  const configuration = value.configuration as Record<string, unknown>;
+  const native = `${"모".repeat(85)}x`;
+  expect(new TextEncoder().encode(native).length).toBe(256);
+  configuration.native_model = native;
+  configuration.model_key = sourceModelKey({
+    provider_id: configuration.provider_id as string,
+    native_id: native,
+  });
+  const resource = { ...value.resource, documentJson: encode(value.data) };
+  expect(savedExecutionSnapshot(resource)).toEqual({
+    ready: true,
+    nativeModel: native,
     effort: "high",
   });
 });

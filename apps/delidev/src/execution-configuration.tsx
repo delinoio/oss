@@ -57,6 +57,28 @@ const sourceModelKeyPrefix = "source:";
 // Mirrors the server bound on the decoded source model identity document.
 const sourceModelKeyMaxBytes = 1024;
 const sourceModelKeyPayload = /^[A-Za-z0-9_-]+$/;
+// Mirrors the server `Text(value, "native model ID", 256, true)` bound.
+const nativeModelIdMaxBytes = 256;
+// Go `strings.TrimSpace` whitespace (`unicode.IsSpace`), which differs from
+// JavaScript `String.prototype.trim` at U+0085 and U+FEFF.
+const nativeModelIdBlank =
+  /^[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
+
+const loneSurrogate =
+  /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/**
+ * Validates a native model ID like the server's `ModelIdentity.Validate`:
+ * well-formed UTF-8, no NUL, at most 256 bytes and not blank.
+ */
+function validNativeModelId(value: string): boolean {
+  return (
+    !loneSurrogate.test(value) &&
+    !value.includes("\u0000") &&
+    !nativeModelIdBlank.test(value) &&
+    new TextEncoder().encode(value).length <= nativeModelIdMaxBytes
+  );
+}
 
 /**
  * Re-encodes the source model identity exactly like the server's
@@ -98,6 +120,7 @@ function sourceModelKeyMatches(
   configuration: Document,
   nativeModel: string,
 ): boolean {
+  if (!validNativeModelId(nativeModel)) return false;
   if (!key.startsWith(sourceModelKeyPrefix)) return false;
   const payload = key.slice(sourceModelKeyPrefix.length);
   if (!sourceModelKeyPayload.test(payload) || payload.length % 4 === 1)
@@ -186,7 +209,6 @@ export function savedExecutionSnapshot(
     typeof configuration.harness === "string" &&
     supportedHarnesses.has(configuration.harness) &&
     typeof nativeModel === "string" &&
-    nativeModel !== "" &&
     sourceModelKeyMatches(
       configuration.model_key,
       configuration,
