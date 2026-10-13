@@ -2693,6 +2693,45 @@ it("returns selected shared File close to retained Files and preserves inactive 
   expect(document.activeElement).toBe(diagnostics);
 });
 
+it.each(["tab", "preview"])(
+  "restores retained Files after Files, File, Files, existing File tab and %s Close",
+  async (control) => {
+    const f = fixture(undefined, false, {}, undefined, false, undefined, true);
+    render(f.view());
+    await screen.findByRole("heading", { name: "Original session" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    const row = await screen.findByRole("treeitem", {
+      name: "note.txt 4 bytes",
+    });
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+    await screen.findByRole("heading", { name: "note.txt" });
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+    fireEvent.click(filesTab);
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    for (let round = 0; round < 2; round += 1) {
+      // Reselect the existing File tab, then move focus away from the tree.
+      fireEvent.click(screen.getByRole("tab", { name: /^note\.txt/ }));
+      await screen.findByRole("heading", { name: "note.txt" });
+      filesTab.focus();
+      if (control === "tab")
+        fireEvent.click(
+          screen.getByRole("button", { name: "Close note.txt tab" }),
+        );
+      else fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(document.activeElement).toBe(row));
+      expect(filesTab.getAttribute("aria-selected")).toBe("true");
+      expect(row.getAttribute("aria-selected")).toBe("true");
+      // Reopen the File for the next round.
+      fireEvent.click(row);
+      await screen.findByRole("heading", { name: "note.txt" });
+      fireEvent.click(filesTab);
+      await waitFor(() => expect(document.activeElement).toBe(row));
+    }
+  },
+);
+
 it("keeps quota and independent recovery above the composer without replacing draft or transcript", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
     recovery: "required",

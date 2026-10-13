@@ -538,6 +538,7 @@ it.each(["pointer", "Enter"])(
                 <SessionFiles
                   sessionId={f.sessionId}
                   active={!path}
+                  previewing={Boolean(path)}
                   close={() => {}}
                   openFile={(_repository, path) => setPath(path)}
                 />
@@ -603,6 +604,107 @@ it.each(["pointer", "Enter"])(
     ).toHaveLength(1);
   },
 );
+
+it("restores the retained explorer after every File reselect round trip with current scroll", async () => {
+  const f = fixture();
+  enum Tab {
+    Files = "files",
+    File = "file",
+    Other = "other",
+  }
+  function View() {
+    const [tab, setTab] = useState<Tab>(Tab.Files);
+    const [path, setPath] = useState<string>();
+    const shown = tab === Tab.Files;
+    return (
+      <TransportProvider transport={f.transport}>
+        <QueryClientProvider client={f.client}>
+          <button onClick={() => setTab(Tab.Files)}>Select Files</button>
+          <button onClick={() => setTab(Tab.File)}>Select File</button>
+          <button onClick={() => setTab(Tab.Other)}>Select Other</button>
+          <div className="session-workspace">
+            <div hidden={!shown} inert={!shown}>
+              <SessionFiles
+                sessionId={f.sessionId}
+                active={shown}
+                previewing={tab === Tab.File}
+                close={() => {}}
+                openFile={(_repository, next) => {
+                  setPath(next);
+                  setTab(Tab.File);
+                }}
+              />
+            </div>
+            {tab === Tab.File && path ? (
+              <SessionFilePreview
+                sessionId={f.sessionId}
+                repository={f.primary}
+                path={path}
+                close={() => setTab(Tab.Files)}
+              />
+            ) : null}
+          </div>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  }
+  const view = render(<View />);
+  const row = await screen.findByRole("treeitem", {
+    name: "note.txt 42 bytes",
+  });
+  const scroll = row.closest<HTMLElement>(".conversation-page-scroll")!;
+  const workspace =
+    view.container.querySelector<HTMLElement>(".session-workspace")!;
+  scroll.scrollTop = 70;
+  workspace.scrollTop = 31;
+  row.focus();
+  fireEvent.keyDown(row, { key: "Enter" });
+  await screen.findByRole("heading", { name: "note.txt" });
+  // Files -> File -> Files: the first return consumes the open() arming.
+  fireEvent.click(screen.getByRole("button", { name: "Select Files" }));
+  await waitFor(() => expect(document.activeElement).toBe(row));
+  for (const [inner, outer] of [
+    [110, 44],
+    [12, 3],
+  ]) {
+    // The user scrolls the visible explorer, then reselects the File tab.
+    scroll.scrollTop = inner;
+    workspace.scrollTop = outer;
+    const other = screen.getByRole("button", { name: "Select Other" });
+    other.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Select File" }));
+    await screen.findByRole("heading", { name: "note.txt" });
+    // Preview reads and the departure itself never receive the explorer focus.
+    expect(row.closest("[hidden][inert]")).not.toBeNull();
+    scroll.scrollTop = 0;
+    workspace.scrollTop = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    expect(scroll.scrollTop).toBe(inner);
+    expect(workspace.scrollTop).toBe(outer);
+    expect(row.getAttribute("aria-selected")).toBe("true");
+  }
+  // Selecting Files directly without a File round trip never moves focus.
+  fireEvent.click(screen.getByRole("button", { name: "Select Other" }));
+  const other = screen.getByRole("button", { name: "Select Other" });
+  other.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Select Files" }));
+  expect(document.activeElement).toBe(other);
+  // Files -> File -> another tab -> Files abandons the File departure, so the
+  // direct Files selection restores no stale position and never moves focus.
+  scroll.scrollTop = 90;
+  workspace.scrollTop = 20;
+  fireEvent.click(screen.getByRole("button", { name: "Select File" }));
+  await screen.findByRole("heading", { name: "note.txt" });
+  fireEvent.click(screen.getByRole("button", { name: "Select Other" }));
+  scroll.scrollTop = 5;
+  workspace.scrollTop = 6;
+  other.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Select Files" }));
+  expect(document.activeElement).toBe(other);
+  expect(scroll.scrollTop).toBe(5);
+  expect(workspace.scrollTop).toBe(6);
+});
 
 it("fences late shared File reads and does not focus hidden or replaced previews", async () => {
   const f = fixture();
