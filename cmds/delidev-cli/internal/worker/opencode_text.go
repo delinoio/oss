@@ -41,6 +41,7 @@ type OpenCodeTextPublisher struct {
 	blocked       bool
 	usageAttached bool
 	seen          map[string]bool
+	snapshotSeen  map[string]bool
 }
 
 func OpenOpenCodeTextPublisher(binding *OpenCodeBindingPublisher) (*OpenCodeTextPublisher, error) {
@@ -110,12 +111,13 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 		return false, err
 	}
 	publicationKey, keyErr := observation.PublicationKey()
-	if keyErr != nil || c.seen[publicationKey] || len(c.seen) >= 65536 {
+	snapshot := keyErr == nil && observation.EventID == "" && isOpenCodeSnapshotKey(publicationKey)
+	if keyErr != nil || openCodeKeyRejected(c.seen, c.snapshotSeen, publicationKey, snapshot) {
 		return false, publicationUncertain()
 	}
 	defer func() {
 		if returned == nil && handled {
-			c.seen[publicationKey] = true
+			markOpenCodeKey(c.seen, &c.snapshotSeen, publicationKey, snapshot)
 		}
 	}()
 	switch observation.Kind {

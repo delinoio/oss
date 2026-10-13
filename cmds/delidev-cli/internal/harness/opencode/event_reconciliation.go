@@ -47,10 +47,17 @@ func (s *sessionAPI) nextRecovered(ctx context.Context) (inputObservation, bool,
 	s.reconciliationMu.Lock()
 	denied := s.reconciliationDenied
 	s.reconciliationMu.Unlock()
-	if denied || s.observer.ctx.Err() != nil || ctx.Err() != nil || s.events.status() != nil || s.observer.stop != nil {
+	// Only owner-lifetime failures invalidate the verified recovered batch.
+	if denied || s.observer.ctx.Err() != nil || s.events.status() != nil || s.observer.stop != nil {
 		s.recovered, s.recoveredObserver = nil, nil
 		s.reconciliation = ReconciliationFailed
 		return inputObservation{}, true, s.observer.interruption(ctx)
+	}
+	// A consumer that was canceled after gate admission grants no authority over
+	// the immutable batch. Leave it and the reconciliation state untouched so the
+	// next healthy Next drains it in order.
+	if ctx.Err() != nil {
+		return inputObservation{}, true, unavailable()
 	}
 	value := s.recovered[0]
 	s.recovered[0] = inputObservation{}

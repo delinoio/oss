@@ -633,3 +633,78 @@ func TestEventReconciliationLateTailRejectsContradictionAtomically(t *testing.T)
 		}
 	}
 }
+
+// admittedThenCanceledContext reports no error for the first Err call, which
+// is the gate admission check, and context.Canceled afterwards.
+type admittedThenCanceledContext struct {
+	context.Context
+	calls atomic.Int32
+}
+
+func (c *admittedThenCanceledContext) Err() error {
+	if c.calls.Add(1) == 1 {
+		return nil
+	}
+	return context.Canceled
+}
+
+func TestEventReconciliationCanceledConsumerAfterAdmissionKeepsRecoveredBatch(t *testing.T) {
+	f := newReconciliationFixture(t)
+	first, err := f.api.Next(context.Background())
+	if err != nil || first.Kind == "" && first.EventID != "" {
+		t.Fatal("first recovered observation did not drain", err)
+	}
+	session := f.api.session
+	remaining := len(session.recovered)
+	if remaining < 2 {
+		t.Fatalf("fixture left %d recovered observations, want at least two", remaining)
+	}
+	recoveredObserver, observer := session.recoveredObserver, session.observer
+	state := session.reconciliation
+	canceled := &admittedThenCanceledContext{Context: context.Background()}
+	value, ok, err := session.nextRecovered(canceled)
+	if !ok || err == nil || domain.SafeError(err).Code != domain.Unavailable || value.Kind != "" {
+		t.Fatal("canceled consumer was not rejected as unavailable", err)
+	}
+	if len(session.recovered) != remaining || session.recoveredObserver != recoveredObserver || session.observer != observer || session.reconciliation != state || session.reconciliation == ReconciliationFailed {
+		t.Fatal("canceled consumer changed the recovered batch or reconciliation state")
+	}
+	for index := 0; index < remaining; index++ {
+		if _, err := f.api.Next(context.Background()); err != nil {
+			t.Fatal("healthy Next did not drain the preserved batch", index, err)
+		}
+	}
+	if len(session.recovered) != 0 || session.reconciliation != ReconciliationComplete || f.opened.Load() != 1 {
+		t.Fatal("preserved batch did not complete without another reconciliation cycle")
+	}
+}
+
+func TestEventReconciliationOwnerFailuresStillClearRecoveredBatch(t *testing.T) {
+	failures := map[string]func(*sessionAPI){
+		"denied": func(s *sessionAPI) { s.cancelReconciliation() },
+		"observer-context": func(s *sessionAPI) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			s.observer.ctx = ctx
+		},
+		"event-stream":  func(s *sessionAPI) { s.events.failAs(unavailable(), streamTransport) },
+		"observer-stop": func(s *sessionAPI) { s.observer.stop = &inputStopAttempt{} },
+	}
+	for name, fail := range failures {
+		t.Run(name, func(t *testing.T) {
+			f := newReconciliationFixture(t)
+			if _, err := f.api.Next(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			session := f.api.session
+			if len(session.recovered) == 0 {
+				t.Fatal("fixture left no recovered batch")
+			}
+			fail(session)
+			value, ok, err := session.nextRecovered(context.Background())
+			if !ok || err == nil || value.Kind != "" || len(session.recovered) != 0 || session.recoveredObserver != nil || session.reconciliation != ReconciliationFailed {
+				t.Fatal("owner failure kept the recovered batch", err)
+			}
+		})
+	}
+}
