@@ -7,8 +7,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"filippo.io/age"
+	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,13 +117,16 @@ func TestEncryptedWorkerNetworkGenerationControlsDispatchAndOriginalScope(t *tes
 	}
 }
 
-func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t *testing.T) {
-	f := newAuthorityFixture(t, "http://127.0.0.1:46311")
+// seedNativeRouteFixture installs a Codex API proxy route and machine network
+// state for the fixture Worker and registers the execution grant.
+func seedNativeRouteFixture(t *testing.T, f *authorityFixture) (routeID, profileID domain.ID) {
+	t.Helper()
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, routeID, profileID := domain.NewID(), domain.NewID(), domain.NewID()
+	key := domain.NewID()
+	routeID, profileID = domain.NewID(), domain.NewID()
 	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-route", nil, func(tx *store.Tx) (any, error) {
 		profile := domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 46319}}
 		if _, err := tx.Put(domain.NetworkProfileKind, profileID, 0, "", "", profile); err != nil {
@@ -147,6 +152,12 @@ func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t 
 		t.Fatal(err)
 	}
 	f.registerGrant(t)
+	return routeID, profileID
+}
+
+func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t *testing.T) {
+	f := newAuthorityFixture(t, "http://127.0.0.1:46311")
+	routeID, profileID := seedNativeRouteFixture(t, f)
 	request := &pb.ReportWorkerNativeRouteRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), ExecutionId: string(f.input.ExecutionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_OBSERVED}
 	if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err == nil {
 		t.Fatal("positive report without original pre-launch pin was accepted")
@@ -210,6 +221,135 @@ func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t 
 	request.State = pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_OBSERVED
 	if _, err := f.client.ReportWorkerNativeRoute(context.Background(), connect.NewRequest(request)); err == nil {
 		t.Fatal("unpaired actor reported native routing")
+	}
+}
+
+const nativeRouteLogMarker = "forged-log-marker"
+
+// nativeRouteRejectionLogs returns the decoded worker_native_route_rejected log
+// entries and fails when the raw log bytes carry the injected marker or any line
+// is not a standalone JSON object.
+func nativeRouteRejectionLogs(t *testing.T, raw string) []map[string]any {
+	t.Helper()
+	if strings.Contains(raw, nativeRouteLogMarker) {
+		t.Fatalf("raw log bytes carry request-derived marker: %q", raw)
+	}
+	var entries []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("log line is not a standalone JSON object: %q", line)
+		}
+		for key, value := range entry {
+			if text, ok := value.(string); ok && strings.Contains(text, nativeRouteLogMarker) {
+				t.Fatalf("decoded log field %q carries request-derived marker", key)
+			}
+		}
+		if entry["msg"] == "worker_native_route_rejected" {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
+}
+
+func TestWorkerNativeRouteRejectionLogOmitsMalformedIdentifiers(t *testing.T) {
+	malformed := nativeRouteLogMarker + "\nforged_line=true"
+	cases := []struct {
+		name        string
+		mutationID  string
+		executionID string
+		wantJob     bool
+		wantExec    bool
+	}{
+		{name: "malformed mutation id", mutationID: malformed, wantExec: true},
+		{name: "malformed execution id", executionID: malformed, wantJob: true},
+		{name: "both malformed", mutationID: malformed, executionID: malformed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newAuthorityFixture(t, "http://127.0.0.1:46311")
+			routeID, _ := seedNativeRouteFixture(t, f)
+			logs := &syncBuffer{}
+			f.service.logger = slog.New(slog.NewJSONHandler(logs, nil))
+			request := &pb.ReportWorkerNativeRouteRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), ExecutionId: string(f.input.ExecutionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_UNVERIFIED}
+			if tc.mutationID != "" {
+				request.Mutation.Id = tc.mutationID
+			}
+			if tc.executionID != "" {
+				request.ExecutionId = tc.executionID
+			}
+			for attempt := 0; attempt < 2; attempt++ {
+				if response, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err == nil {
+					t.Fatalf("malformed identifiers were accepted: %v", response.Msg)
+				}
+			}
+			entries := nativeRouteRejectionLogs(t, logs.String())
+			if len(entries) != 2 {
+				t.Fatalf("expected two rejection logs, got %d", len(entries))
+			}
+			for _, entry := range entries {
+				_, hasJob := entry["job_id"]
+				_, hasExec := entry["execution_id"]
+				if hasJob != tc.wantJob || hasExec != tc.wantExec {
+					t.Fatalf("unexpected identifier fields: %v", entry)
+				}
+				if tc.wantJob && entry["job_id"] != string(f.job) {
+					t.Fatalf("valid job id was not retained: %v", entry)
+				}
+				if tc.wantExec && entry["execution_id"] != string(f.input.ExecutionID) {
+					t.Fatalf("valid execution id was not retained: %v", entry)
+				}
+				if code, _ := entry["code"].(string); code == "" {
+					t.Fatalf("stable error code is missing: %v", entry)
+				}
+			}
+			if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+				if _, err := tx.WorkerNativeRoute(f.job); domain.SafeError(err).Code != domain.NotFound {
+					t.Fatal("rejected request created a native route observation")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestWorkerNativeRouteRejectionLogKeepsValidIdentifiersForStaleAndUnrelatedRoutes(t *testing.T) {
+	f := newAuthorityFixture(t, "http://127.0.0.1:46311")
+	routeID, _ := seedNativeRouteFixture(t, f)
+	logs := &syncBuffer{}
+	f.service.logger = slog.New(slog.NewJSONHandler(logs, nil))
+	base := func() *pb.ReportWorkerNativeRouteRequest {
+		return &pb.ReportWorkerNativeRouteRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), ExecutionId: string(f.input.ExecutionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_UNVERIFIED}
+	}
+	unrelated := base()
+	unrelated.RouteId = string(domain.NewID())
+	stale := base()
+	stale.Generation = 7
+	for _, request := range []*pb.ReportWorkerNativeRouteRequest{unrelated, stale} {
+		if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err == nil {
+			t.Fatal("mismatched route report was accepted")
+		}
+	}
+	entries := nativeRouteRejectionLogs(t, logs.String())
+	if len(entries) != 2 {
+		t.Fatalf("expected two rejection logs, got %d", len(entries))
+	}
+	for _, entry := range entries {
+		if entry["job_id"] != string(f.job) || entry["execution_id"] != string(f.input.ExecutionID) || entry["code"] != string(domain.Conflict) {
+			t.Fatalf("valid correlation fields or stable code were dropped: %v", entry)
+		}
+	}
+	accepted, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, base()))
+	if err != nil || accepted.Msg.Replayed {
+		t.Fatal("valid original binding was rejected after logged rejections", err)
+	}
+	if got := len(nativeRouteRejectionLogs(t, logs.String())); got != 2 {
+		t.Fatalf("accepted report emitted a rejection log: %d", got)
 	}
 }
 

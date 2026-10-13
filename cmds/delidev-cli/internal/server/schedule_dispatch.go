@@ -44,7 +44,7 @@ func planOccurrenceSession(tx *store.Tx, id, occurrenceID domain.ID, occurrence 
 	if err := validateSessionSelection(tx, occurrence.Selection); err != nil {
 		return value, workspace.PrepareRequest{}, err
 	}
-	preparation, err := sessionWorkspaceRequest(tx, id, value)
+	preparation, err := sessionWorkspaceRequestWithNames(tx, id, value, occurrence.DirectoryNames)
 	return value, preparation, err
 }
 
@@ -182,11 +182,34 @@ func selectOccurrenceState(tx *store.Tx, id domain.ID, occurrence *domain.Schedu
 				skipOccurrence(occurrence, domain.WaitingLimitOccurrence, now)
 				return nil
 			}
+			// Wait bypasses queueSessionWorkspace until release, so new named
+			// acceptance must prove Worker support now (already accepted waits
+			// keep their release-time check).
+			if _, err := requireNamedDirectoryCapability(tx, occurrence.Selection.MachineID, preparation); err != nil {
+				if problem := occurrenceSelectionFailure(err); problem != nil {
+					failOccurrence(occurrence, problem, now)
+					return nil
+				}
+				return err
+			}
 			occurrence.State = domain.OccurrenceWaiting
+			occurrence.DirectoryNames = frozenDirectoryNames(preparation)
 			return nil
 		}
 	}
 	return createOccurrenceSession(tx, sessionID, occurrence, session, preparation)
+}
+
+// frozenDirectoryNames records the accepted per-repository checkout directory
+// names so release never derives them again from mutable registration names.
+func frozenDirectoryNames(preparation workspace.PrepareRequest) []domain.OccurrenceDirectoryName {
+	var names []domain.OccurrenceDirectoryName
+	for _, repo := range preparation.Repositories {
+		if repo.DirectoryName != "" {
+			names = append(names, domain.OccurrenceDirectoryName{RepositoryID: repo.ID, Name: repo.DirectoryName})
+		}
+	}
+	return names
 }
 
 func scheduleHasActiveSession(tx *store.Tx, schedule domain.ID) (bool, error) {

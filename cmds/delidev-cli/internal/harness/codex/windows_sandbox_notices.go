@@ -142,17 +142,21 @@ func (c *Client) observeWindowsSandboxLocked(native nativewire.Event) (Event, er
 	}
 	event := c.metadata(WindowsSandboxWarningDiscarded)
 	event.windowsWarning = &observed
-	turn, known := c.execution.turns[c.execution.active]
-	if observed.class == windowsNoWarning || !known || turn.Turn.Status.terminal() || c.execution.paused || c.problem != nil {
+	if observed.class == windowsNoWarning {
 		return event, nil
 	}
-	// Process-local classes have only three possible warning values. A replay
-	// cannot flood the transcript or make a terminal/failed context current.
+	// Process-local classes have only three possible warning values. Record the
+	// class for every valid nonempty observation in the bound original process,
+	// including inactive ones, so a later replay on an eligible turn cannot
+	// publish a second notice. A replay cannot flood the transcript or make a
+	// terminal/failed context current.
 	bit := uint8(1 << observed.class)
-	if c.execution.windowsWarnings&bit != 0 {
+	alreadyObserved := c.execution.windowsWarnings&bit != 0
+	c.execution.windowsWarnings |= bit
+	turn, known := c.execution.turns[c.execution.active]
+	if alreadyObserved || !known || turn.Turn.Status.terminal() || c.execution.paused || c.problem != nil {
 		return event, nil
 	}
-	c.execution.windowsWarnings |= bit
 	event.Kind, event.Notice, event.Metadata = NoticeEvent, domain.NativeWarning, ""
 	event.TurnID = c.execution.active
 	return event, nil

@@ -113,8 +113,7 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 					return nil, err
 				}
 				claimed, err := store.Decode[domain.QueuedInput](queue)
-				original := domain.SessionInput{Prompt: claimed.Prompt, Mode: claimed.Mode, Skills: claimed.Skills, Attachments: claimed.Attachments}
-				if err != nil || queue.SessionID != sr.ID || claimed.Delivery != domain.InputClaimed || claimed.ExecutionID != input.ExecutionID || claimed.NativeRequestID != input.TurnRequestID || original.InputDigest() != input.Input.InputDigest() {
+				if err != nil || queue.SessionID != sr.ID || claimed.Delivery != domain.InputClaimed || claimed.ExecutionID != input.ExecutionID || claimed.NativeRequestID != input.TurnRequestID || !queuedSessionInput(claimed).Equal(input.Input) {
 					return nil, executionDenied()
 				}
 			}

@@ -21,7 +21,12 @@ import { useSessionRevert } from "./session-revert";
 import { isImageStartupRejectedInput } from "./startup-rejection";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
-import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
+import {
+  useSessionTabs,
+  useSessionTabsStore,
+  SessionTabKind,
+  sessionTabKey,
+} from "./session-tabs";
 import {
   initialExecutionPending,
   initialSessionStartup,
@@ -45,7 +50,7 @@ import {
   StartupObservedOperation,
   RetainedStartupTimes,
 } from "./session-progress-status";
-import { currentTurn } from "./turn-timing";
+import { currentTurn, turnTimingConfirmed } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
@@ -915,7 +920,9 @@ export function SessionView({
   initialSkills,
   changeSkills,
   active = true,
+  connectionReady = true,
   embedded = false,
+  activateOnMount = !embedded,
 }: {
   id: string;
   draft: string;
@@ -928,7 +935,13 @@ export function SessionView({
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
+  connectionReady?: boolean;
   embedded?: boolean;
+  /**
+   * Whether a mount that starts active is an explicit activation. Embedded
+   * panes default to false so automatic publication never animates.
+   */
+  activateOnMount?: boolean;
   openRunnerSettings?: () => void;
 }) {
   const productLabel = useProductLabels();
@@ -1053,12 +1066,16 @@ export function SessionView({
   const [startupInfoHidden, setStartupInfoHidden] = useState(false);
   // Explicit session activation (selection, or returning to a retained session)
   // owns one 120ms Y2 header entrance. Reads, streaming, edits and preference
-  // changes never restart it, and nothing waits for it to finish. Embedded
-  // Sidechat panes belong to their own tool motion and never animate here.
-  const sessionActivations = useActivationCount(active);
+  // changes never restart it, and nothing waits for it to finish. An embedded
+  // Sidechat pane plays the same entrance on its own header for each rising
+  // edge of its tab selection. Its mount counts only when the owner marks it
+  // explicit (`activateOnMount`): a pane that mounts selected because its
+  // pending tab was promoted, or one that is published in the background,
+  // must not animate until a later explicit re-selection.
+  const sessionActivations = useActivationCount(active, activateOnMount);
   const headerEntrance = useEntranceActivation(
     `${id}:${sessionActivations}`,
-    active && !embedded,
+    active && sessionActivations > 0,
     EntranceMotion.Y2,
   );
   // Only an explicit Info reveal (Show details or a recovery/budget entry)
@@ -2077,16 +2094,17 @@ export function SessionView({
       progressRevision.current.revision = session.revision;
   }, [id, session]);
   const timing = currentTurn(session, id);
-  const timingConfirmed =
-    live.state === ConnectionState.Live &&
-    !live.error &&
-    !messages.error &&
-    !queue.error &&
-    !interactions.error &&
-    !control.uncertain &&
-    !control.error &&
-    data.recovery !== "required" &&
-    !Number(object(data.execution).unconfirmed_responses);
+  // Only loss of synchronization of the owning Session resource unconfirms
+  // timing. Definitive control rejections and unrelated queue/interaction read
+  // failures stay visible through their own surfaces without freezing the clock.
+  const timingConfirmed = turnTimingConfirmed({
+    liveLive: live.state === ConnectionState.Live,
+    liveFailed: Boolean(live.error),
+    messagesFailed: Boolean(messages.error),
+    controlUncertain: Boolean(control.uncertain),
+    recoveryRequired: data.recovery === "required",
+    unconfirmedResponses: Number(object(data.execution).unconfirmed_responses),
+  });
   const observedProgress = sessionProgress({
     session,
     sessionId: id,
@@ -2414,7 +2432,12 @@ export function SessionView({
               newPage={() => setBrowserDialog(true)}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
-            <SessionToolMenu key={id} active={active}>
+            <SessionToolMenu
+              key={id}
+              active={active}
+              ready={connectionReady}
+              recoveryFocus={() => sessionHeading.current}
+            >
               {tools.map((tool) => (
                 <button
                   role="menuitem"
@@ -3286,6 +3309,7 @@ export function SessionView({
                 >
                   <SessionFiles
                     active={active && panel === SessionPanel.Files}
+                    previewing={tabs.tab.kind === SessionTabKind.File}
                     sessionId={id}
                     close={closePanel}
                     openFile={(repository, path) =>
@@ -3501,6 +3525,11 @@ export function SessionView({
 }
 
 function SidechatPane({ id, active }: { id: string; active: boolean }) {
+  const store = useSessionTabsStore();
+  // Decided once at mount: a Sidechat that `publishSidechat` promoted or
+  // published automatically does not animate on mount, while one the user
+  // opened (`open`, for example from a Search result) does.
+  const [activateOnMount] = useState(() => !store.automaticSidechat(id));
   return (
     <SidechatAuthoring id={id} active={active}>
       {({ draft, setDraft, bindings, setBindings }) => (
@@ -3509,6 +3538,7 @@ function SidechatPane({ id, active }: { id: string; active: boolean }) {
             id={id}
             active={active}
             embedded
+            activateOnMount={activateOnMount}
             draft={draft}
             setDraft={setDraft}
             initialSkills={bindings}

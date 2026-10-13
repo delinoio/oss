@@ -197,6 +197,14 @@ const (
 	WaitingLimitOccurrence    OccurrenceReason = "waiting-limit"
 )
 
+// OccurrenceDirectoryName freezes one repository checkout directory name at
+// Wait acceptance. The domain package cannot import workspace, so the name is
+// stored as a plain portable string that workspace validation rechecks.
+type OccurrenceDirectoryName struct {
+	RepositoryID ID     `json:"repository_id"`
+	Name         string `json:"name"`
+}
+
 // The accepted selection is retained independently of schedule edits/deletion.
 // Its Source remains a creation selection; the created session's provenance is
 // server-derived from this immutable occurrence, never caller-selectable.
@@ -211,11 +219,15 @@ type ScheduleOccurrence struct {
 	Selection             CreateSession     `json:"selection"`
 	LocalOrigin           *LocalOrigin      `json:"local_origin,omitempty"`
 	Overlap               ScheduleOverlap   `json:"overlap"`
-	State                 OccurrenceState   `json:"state"`
-	SessionID             ID                `json:"session_id,omitempty"`
-	Reason                OccurrenceReason  `json:"reason,omitempty"`
-	Problem               *Error            `json:"problem,omitempty"`
-	FinishedAt            *time.Time        `json:"finished_at,omitempty"`
+	// DirectoryNames is set only for a Worktree Wait occurrence accepted with
+	// named checkout directories. Historical records omit it and keep deriving
+	// names from current registration at release.
+	DirectoryNames []OccurrenceDirectoryName `json:"directory_names,omitempty"`
+	State          OccurrenceState           `json:"state"`
+	SessionID      ID                        `json:"session_id,omitempty"`
+	Reason         OccurrenceReason          `json:"reason,omitempty"`
+	Problem        *Error                    `json:"problem,omitempty"`
+	FinishedAt     *time.Time                `json:"finished_at,omitempty"`
 }
 
 func (o ScheduleOccurrence) Validate() error {
@@ -223,6 +235,9 @@ func (o ScheduleOccurrence) Validate() error {
 		return Fail(InvalidArgument, "Invalid schedule occurrence identity or selection.", "Retain its original schedule, sequence and accepted selections.")
 	}
 	if err := validateScheduleOrigin(o.Selection.Workspace, o.Selection.MachineID, o.LocalOrigin); err != nil {
+		return err
+	}
+	if err := o.validateDirectoryNames(); err != nil {
 		return err
 	}
 	_, dueOffset := o.DueAt.Zone()
@@ -256,4 +271,21 @@ type ScheduleOrigin struct {
 	OccurrenceID          ID                `json:"occurrence_id"`
 	ConfigurationRevision uint64            `json:"configuration_revision"`
 	Trigger               OccurrenceTrigger `json:"trigger"`
+}
+
+func (o ScheduleOccurrence) validateDirectoryNames() error {
+	if len(o.DirectoryNames) == 0 {
+		return nil
+	}
+	if o.Selection.Workspace != Worktree || len(o.DirectoryNames) > 100 {
+		return Fail(InvalidArgument, "Invalid frozen occurrence directory names.", "Only a Worktree occurrence retains 1 through 100 accepted repository directory names.")
+	}
+	seen := make(map[ID]bool, len(o.DirectoryNames))
+	for _, entry := range o.DirectoryNames {
+		if entry.RepositoryID.Validate() != nil || ValidateRepositoryCloneDirectory(entry.Name) != nil || seen[entry.RepositoryID] {
+			return Fail(InvalidArgument, "Invalid frozen occurrence directory names.", "Retain each accepted repository identity once with its non-empty directory name.")
+		}
+		seen[entry.RepositoryID] = true
+	}
+	return nil
 }

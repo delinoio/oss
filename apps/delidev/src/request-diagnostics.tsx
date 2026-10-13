@@ -11,6 +11,7 @@ import {
   useLocale,
 } from "./localization";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EntranceMotion, useEntranceActivation } from "./entrance-motion";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   FailureCode,
@@ -435,6 +436,14 @@ export function RequestDiagnostics({
   close: () => void;
 }) {
   useLocale();
+  // The panel is mounted only while Diagnostics is open, so a mount is one
+  // explicit activation. The motion moves only the static header and never
+  // gates focus, Close, reads or disposal.
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:diagnostics`,
+    true,
+    EntranceMotion.Y2,
+  );
   const panelRoot = useRef<HTMLElement>(null);
   const shortcuts = useShortcuts([
     {
@@ -507,7 +516,7 @@ export function RequestDiagnostics({
       aria-label={copy("request-diagnostics.modelRequestDiagnostics_0c266b")}
       onKeyDown={shortcuts.onKeyDown}
     >
-      <header>
+      <header {...headerEntrance}>
         <h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2>
         <button
           onClick={close}

@@ -93,6 +93,11 @@ func (s *Service) CloneRepository(ctx context.Context, req *connect.Request[pb.C
 			}
 			input.GitHub = &domain.RepositoryCloneSelection{ProfileID: domain.ID(selected.ProfileId), Revision: selected.ExpectedRevision, GenerationID: profile.Connection.GenerationID, RepositoryID: selected.RepositoryId, NodeID: selected.NodeId, Owner: selected.Owner, Name: selected.Name}
 		}
+		// Only fresh admission applies the complete reserved-device set. Queued
+		// jobs and replays revalidate with the historical set.
+		if err := domain.ValidateRepositoryCloneDirectory(input.DirectoryName); err != nil {
+			return nil, err
+		}
 		if err := cloneAuthority(tx, input); err != nil {
 			return nil, err
 		}

@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { act } from "react";
+import { i18n } from "./localization";
+import { Comparison } from "./session-diff-model";
 import { SessionTabBar } from "./session-tab-bar";
 import { SessionTabKind, SessionTabsProvider } from "./session-tabs";
 it("roves focus and selection without an absent-position alias and leaves pinned Conversation noncloseable", () => {
@@ -190,3 +193,67 @@ it("closing an inactive tab never selects it", () => {
   expect(close).toHaveBeenCalledWith("files");
   expect(select).not.toHaveBeenCalled();
 });
+
+const comparisonLabels = {
+  en: {
+    [Comparison.WorkingTree]: "Uncommitted changes",
+    [Comparison.Staged]: "Staged changes",
+    [Comparison.Creation]: "Since session creation",
+    [Comparison.Branch]: "Branch changes",
+  },
+  ko: {
+    [Comparison.WorkingTree]: "커밋되지 않은 변경 사항",
+    [Comparison.Staged]: "스테이징된 변경 사항",
+    [Comparison.Creation]: "세션 생성 이후",
+    [Comparison.Branch]: "브랜치 변경 사항",
+  },
+} as const;
+
+for (const language of ["en", "ko"] as const) {
+  it(`labels every Comparison mode distinctly in ${language} text, title, aria-label and Close name`, async () => {
+    await act(() => i18n.changeLanguage(language));
+    try {
+      const modes = Object.values(Comparison);
+      render(
+        <SessionTabsProvider>
+          <SessionTabBar
+            id="original"
+            tabs={[
+              { kind: SessionTabKind.Conversation },
+              ...modes.map((comparison) => ({
+                kind: SessionTabKind.Comparison as const,
+                repository: "repository",
+                path: ".",
+                comparison,
+              })),
+            ]}
+            selected={SessionTabKind.Conversation}
+            select={() => {}}
+            close={() => {}}
+          />
+        </SessionTabsProvider>,
+      );
+      const tabs = screen.getAllByRole("tab").slice(1);
+      const closes = [...document.querySelectorAll(".tab-close")];
+      expect(tabs).toHaveLength(modes.length);
+      const texts = tabs.map((tab) => tab.textContent);
+      modes.forEach((mode, index) => {
+        const label = comparisonLabels[language][mode];
+        const text = tabs[index]!.textContent!;
+        expect(text.endsWith(` · ${label}`)).toBe(true);
+        expect(tabs[index]!.getAttribute("title")).toBe(text);
+        expect(tabs[index]!.getAttribute("aria-label")).toContain(text);
+        expect(closes[index]!.getAttribute("aria-label")).toContain(text);
+      });
+      expect(new Set(texts).size).toBe(modes.length);
+      expect(
+        new Set(tabs.map((tab) => tab.getAttribute("aria-label"))).size,
+      ).toBe(modes.length);
+      expect(
+        new Set(closes.map((close) => close.getAttribute("aria-label"))).size,
+      ).toBe(modes.length);
+    } finally {
+      await act(() => i18n.changeLanguage("en"));
+    }
+  });
+}

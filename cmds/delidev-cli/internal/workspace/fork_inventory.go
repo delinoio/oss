@@ -25,6 +25,9 @@ type forkGitInventory struct {
 	common, admin                 string
 	commonIdentity, adminIdentity string
 	commonFiles, adminFiles       snapshotInventory
+	// configProof is the frozen expected-config evidence for the child's retained
+	// config files; see forkConfigProof.
+	configProof forkConfigProof
 }
 
 func inspectForkGitInventory(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
@@ -77,6 +80,9 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 		if err = validateGitInventory(result.adminFiles); err != nil {
 			return result, err
 		}
+	}
+	if err = result.captureConfigProof(ctx, git, source); err != nil {
+		return result, err
 	}
 	return result, nil
 }
@@ -135,11 +141,30 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	if err = validateSnapshotGitConfig(ctx, git, target, expected); err != nil {
 		return err
 	}
+	// The copied config files were excluded from the inventory comparison above
+	// because normalization rewrites them. Prove them against the frozen source.
+	if err = i.verifyChildConfig(ctx, git, target); err != nil {
+		return err
+	}
 	if _, err = os.Lstat(filepath.Join(expected, "objects", "info", "alternates")); !errors.Is(err, os.ErrNotExist) {
 		return forkUnsupported()
 	}
 	return nil
 }
+
+// syncForkConfigFile flushes one rewritten child config file to stable storage.
+func syncForkConfigFile(path string) error {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	err = file.Sync()
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
 func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec RepositorySpec, manifest *Manifest, write func() error, budget *snapshotCopyBudget, snapshot *ForkSnapshot) (PreparedRepository, *forkCopy, error) {
 	entry := &manifest.Repositories[len(manifest.Repositories)-1]
 	git.readOnly, git.offline = true, true
@@ -154,6 +179,7 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	if err != nil {
 		return *entry, nil, err
 	}
+	proof.bindRemote(spec)
 	if snapshot != nil {
 		for _, copy := range snapshot.copies {
 			if copy.source == spec.Checkout && copy.gitInventory != nil && !copy.gitInventory.sourceMatches(proof) {
@@ -182,12 +208,19 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	if err = security.WriteAtomic(filepath.Join(entry.Path, ".git", "HEAD"), []byte(entry.StartingCommit+"\n")); err != nil {
 		return *entry, nil, err
 	}
-	remote := spec.PreferredRemote
-	if remote == "" {
-		remote = "origin"
-	}
-	if _, err = git.run(ctx, entry.Path, "config", "--local", "remote."+remote+".url", spec.RemoteURL); err != nil {
+	remote := forkRemoteName(spec)
+	if _, err = git.run(ctx, entry.Path, "config", "--local", forkRemoteURLKey(remote), spec.RemoteURL); err != nil {
 		return *entry, nil, err
+	}
+	// With extensions.worktreeConfig, Git reads config.worktree after config, so a
+	// retained worktree-scoped URL for the selected remote would keep the stale
+	// source endpoint effective. Drop it so the child has one selected URL.
+	worktreeConfigRewritten := proof.configProof.worktree.hasKey(forkRemoteURLKey(remote))
+	if worktreeConfigRewritten {
+		if _, err = git.run(ctx, entry.Path, "config", "--file", filepath.Join(entry.Path, ".git", "config.worktree"), "--unset-all", forkRemoteURLKey(remote)); err != nil {
+			return *entry, nil, err
+		}
+		m.Logger.InfoContext(ctx, "workspace_fork_git_inventory_worktree_remote_url_removed", "session_id", manifest.SessionID, "repository_id", spec.ID, "remote", remote)
 	}
 	digest, err := scanForkTreePinned(ctx, spec.Checkout, entry.Path, true, maxForkEntries, &marker, budget)
 	if err != nil {
@@ -200,6 +233,7 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	hash := sha256.Sum256(index)
 	copy := forkCopy{sourceMarker: &marker, source: spec.Checkout, target: entry.Path, tree: digest, git: true, head: entry.StartingCommit, index: hex.EncodeToString(hash[:]), entryLimit: maxForkEntries, gitInventory: &proof}
 	if err = copy.verify(ctx, git); err != nil {
+		m.Logger.WarnContext(ctx, "workspace_fork_git_inventory_verify_failed", "session_id", manifest.SessionID, "repository_id", spec.ID, "phase", "copied_git_config_and_inventory", "code", domain.SafeError(err).Code)
 		return *entry, nil, err
 	}
 	if err = verifyIndependentDirectory(*entry, true); err != nil {
@@ -207,17 +241,15 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	}
 	// Config is the only rewritten payload besides HEAD, and must reach stable
 	// storage before the Ready publication can authorize this child lifetime.
-	config, err := os.OpenFile(filepath.Join(entry.Path, ".git", "config"), os.O_RDWR, 0)
-	if err != nil {
+	if err = syncForkConfigFile(filepath.Join(entry.Path, ".git", "config")); err != nil {
 		return *entry, nil, err
 	}
-	err = config.Sync()
-	closeErr := config.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return *entry, nil, err
+	if worktreeConfigRewritten {
+		// The --unset-all rewrite replaced config.worktree after the copy budget
+		// synced it, so a crash could otherwise restore the stale source URL.
+		if err = syncForkConfigFile(filepath.Join(entry.Path, ".git", "config.worktree")); err != nil {
+			return *entry, nil, err
+		}
 	}
 	if err = syncSnapshotDir(filepath.Join(entry.Path, ".git")); err != nil {
 		return *entry, nil, err

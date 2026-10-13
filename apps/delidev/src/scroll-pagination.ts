@@ -121,6 +121,12 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   // Failed refresh retains only its staged display projections. Full staged
   // responses are discarded; earlier refreshed payloads restore by exact token.
   private pendingRefresh?: { pages: PaginationPage<Row>[]; window: string[] };
+  // An invalidation that arrives while another read owns the controller (or an
+  // error is held) is never dropped. The latest reader is remembered and one
+  // coalesced reached-range refresh runs once a read settles successfully. Only
+  // suspend/reset (scope, owner or generation change) clear it; a failed read
+  // retains it for the next explicit recovery. There is no automatic retry.
+  private queuedRefresh?: PaginationReader<Row, Payload>;
   protect(token?: string) {
     this.protectedToken = token;
   }
@@ -145,6 +151,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
       );
     this.active = false;
     this.protectedToken = undefined;
+    this.queuedRefresh = undefined;
     this.generation++;
     this.controller?.abort();
     this.controller = undefined;
@@ -165,7 +172,16 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     this.publish(emptySnapshot<Row, Payload>());
   }
   refresh(reader: PaginationReader<Row, Payload>) {
-    if (this.snapshot.error) return Promise.resolve();
+    if (this.active && (this.controller || this.snapshot.error)) {
+      // Record the invalidation instead of dropping it. Repeated calls coalesce
+      // into one queued refresh that uses the latest reader.
+      this.queuedRefresh = reader;
+      console.debug("delidev.pagination.refresh_queued", {
+        busy: this.snapshot.loading ?? null,
+        failed: Boolean(this.snapshot.error),
+      });
+      return Promise.resolve();
+    }
     return this.run(
       this.snapshot.loaded ? ReadStage.Refresh : ReadStage.Initial,
       "",
@@ -227,6 +243,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     const controller = new AbortController();
     const generation = this.generation;
     const previous = this.snapshot;
+    let completed = false;
     this.controller = controller;
     this.publish({ ...previous, loading: stage, error: undefined });
     let currentToken = token;
@@ -239,8 +256,17 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         : stage === ReadStage.Additional || (retryOnly && !refreshing)
           ? [...previous.pages]
           : [];
-      if (stage === ReadStage.Reload || stage === ReadStage.Initial)
+      if (stage === ReadStage.Reload || stage === ReadStage.Initial) {
         this.pendingRefresh = undefined;
+        // These stages read every page from the start token after the queued
+        // invalidation was recorded, so they already supersede it. An
+        // invalidation arriving while they run queues again as usual.
+        if (this.queuedRefresh)
+          console.debug("delidev.pagination.refresh_queue_superseded", {
+            stage,
+          });
+        this.queuedRefresh = undefined;
+      }
       const payloads = new Map(
         previous.payloadPages.map((page) => [page.token, page.payload]),
       );
@@ -426,6 +452,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         nextPageToken: pages.at(-1)?.nextPageToken ?? "",
         settledReads: ++this.settledReads,
       });
+      completed = true;
     } catch (error) {
       if (
         !this.active ||
@@ -447,6 +474,13 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
       });
     } finally {
       if (this.controller === controller) this.controller = undefined;
+    }
+    // Only a successfully published read honors the queued invalidation, and
+    // only for the same live owner generation.
+    if (completed && this.active && generation === this.generation) {
+      const queued = this.queuedRefresh;
+      this.queuedRefresh = undefined;
+      if (queued) await this.refresh(queued);
     }
   }
 }

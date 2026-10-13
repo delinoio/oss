@@ -176,6 +176,19 @@ func RepositoryItemURL(owner, name string, kind RepositoryItemKind, number strin
 	}
 	return "https://github.com/" + owner + "/" + name + "/" + segment + "/" + number
 }
+
+// ValidateWorkspaceNode validates a pull request workspace graph node. A node
+// carries every Detail field except the description: the full body is loaded
+// only by the selected pull request's own Detail read, so a node that carries a
+// body is rejected rather than spending the workspace response budget on it.
+func (r RepositoryItem) ValidateWorkspaceNode(repository RemoteRepository, query RepositoryQuery) error {
+	if r.Body != nil {
+		return Fail(RecoveryRequired, "The repository item is inconsistent.", "Refresh the selected repository; no partial or foreign item is accepted.")
+	}
+	empty := ""
+	r.Body = &empty
+	return r.Validate(repository, query)
+}
 func (r RepositoryItem) Validate(repository RemoteRepository, query RepositoryQuery) error {
 	invalid := func() error {
 		return Fail(RecoveryRequired, "The repository item is inconsistent.", "Refresh the selected repository; no partial or foreign item is accepted.")

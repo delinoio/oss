@@ -46,7 +46,7 @@ func (i RepositoryCloneInput) Validate() error {
 	if err := ValidateRepositoryCloneParent(i.ParentPath); err != nil {
 		return err
 	}
-	if err := ValidateRepositoryCloneDirectory(i.DirectoryName); err != nil {
+	if err := ValidateHistoricalRepositoryDirectory(i.DirectoryName); err != nil {
 		return err
 	}
 	parsed, err := ParseRepositoryCloneURL(i.URL)

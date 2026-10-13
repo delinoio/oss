@@ -468,7 +468,10 @@ it("gates initial reads and polling on advertised terminal support", async () =>
     await act(async () => {
       await client.invalidateQueries();
     });
-    await waitFor(() => expect(listResources).toHaveBeenCalledTimes(1));
+    // Invalidating everything also reaches the refresh marker while the first
+    // read is active; that is queued as one coalesced refresh, so the read
+    // count is at least one and settles below.
+    await waitFor(() => expect(listResources).toHaveBeenCalled());
     capabilities = [];
     // Refresh only status to avoid requesting one more supported history page.
     await act(async () => {

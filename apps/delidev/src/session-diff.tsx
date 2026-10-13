@@ -3,6 +3,11 @@ import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
 import { copy, LocalizedText, useLocale } from "./localization";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  EntranceMotion,
+  useEntranceActivation,
+  type EntranceProps,
+} from "./entrance-motion";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   createQueryOptions,
@@ -88,6 +93,15 @@ export function SessionDiff({
   restoreBase?: RestoreBase;
 }) {
   useLocale();
+  // SessionDiff is mounted only while a Diff or Comparison tab is selected, so
+  // a mount is one explicit Diff activation. The hook lives here, not in
+  // RepositoryDiff, because RepositoryDiff is remounted per repository and
+  // Diff/Comparison tab moves reuse this instance; neither replays the motion.
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:diff`,
+    true,
+    EntranceMotion.Y2,
+  );
   const panelRoot = useRef<HTMLElement>(null);
   const shortcuts = useShortcuts([
     {
@@ -129,6 +143,20 @@ export function SessionDiff({
     repository ??
     available?.find((root) => root.primary)?.repository_id ??
     available?.[0]?.repository_id;
+  // The header remounts with `key={selectedRepository}`, and a fresh node that
+  // carries the entrance attribute would start the animation again. Only the
+  // repository whose header first mounted may carry this activation's entrance;
+  // any later repository change (even back to the first one) consumes it.
+  const [entranceRepository, setEntranceRepository] = useState<
+    string | null | undefined
+  >();
+  let entranceOwner = entranceRepository;
+  if (entranceOwner === undefined && selectedRepository)
+    entranceOwner = selectedRepository;
+  else if (entranceOwner && entranceOwner !== selectedRepository)
+    entranceOwner = null;
+  if (entranceOwner !== entranceRepository)
+    setEntranceRepository(entranceOwner);
   const chooseRepository = (value: string) => {
     setRepository(value);
     if (!openComparison) return;
@@ -186,6 +214,9 @@ export function SessionDiff({
           worktree={worktree}
           acceptedDeletionId={acceptedDeletionId}
           close={close}
+          entrance={
+            entranceOwner === selectedRepository ? headerEntrance : undefined
+          }
           repositoryControl={
             <label className="diff-select">
               <span className="diff-control-label">
@@ -234,6 +265,7 @@ export function RepositoryDiff({
   onNegotiated,
   close,
   repositoryControl,
+  entrance,
 }: {
   sessionId: string;
   repository: string;
@@ -254,6 +286,8 @@ export function RepositoryDiff({
   onNegotiated?: (value: ComparisonDescriptor) => void;
   close?: () => void;
   repositoryControl?: ReactNode;
+  /** The owner's Y2 entrance props for the heading and toolbar only. */
+  entrance?: EntranceProps;
 }) {
   useLocale();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -677,7 +711,7 @@ export function RepositoryDiff({
   };
   return (
     <>
-      <header className="diff-navbar">
+      <header className="diff-navbar" {...entrance}>
         <h2 ref={heading} tabIndex={-1}>
           {copy("session-diff.gitDiff_fa5e4e")}
         </h2>

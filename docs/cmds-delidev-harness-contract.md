@@ -149,7 +149,10 @@ Retain typed `model/verification` values, including `trustedAccessForCyber`,
 without granting account readiness, model eligibility or permissions. Required
 empty verification arrays retain their existing discarded-metadata representation.
 `model/safetyBuffering/updated` retains the original model, ordered use cases and
-reasons, buffering UI flag and required nullable faster-model descriptor.
+reasons, buffering UI flag and required nullable faster-model descriptor. The
+buffering `model` must equal the selected execution model exactly; any other value
+is rejected as incompatible and is neither retained nor published as passive
+evidence. The faster-model descriptor is never compared with or adopted as a model.
 `turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
 scalars and explicit null. These private observations emit no product prompt,
 response, tool or input mutation. Neither buffering nor verification selects a
@@ -159,12 +162,22 @@ model; original usage and effective settings remain authoritative.
 and closed `highRiskCyberActivity` reason. Retain the safety decision without
 reversing it or adopting a faster-model descriptor. An actual model change pauses
 fresh sends and prevents selected-model success publication. Keep the first
-problem when earlier uncertainty exists. Original native terminal evidence remains
+problem when earlier uncertainty exists. The model-change latch and recovery problem
+are independent of evidence retention: when the aggregate evidence caps are full, an
+actual model change still latches them, and the overflowed evidence is neither
+retained nor counted. Overflow by non-reroute evidence keeps the generic
+incompatible rejection. Original native terminal evidence remains
 available for reconciliation and independent cleanup; neither terminal completion
 nor passive observations clears the pause or replays input.
 
 Reject unknown enums, malformed or ambiguous fields and unowned root turns.
-Foreign threads and server requests retain their existing private boundaries.
+Foreign threads and server requests retain their existing private boundaries:
+a foreign-thread safety notification is validated only for the 64 KiB envelope
+bound, the exact native field set and valid thread/turn identity. Closed
+verification and reroute enums and descriptor text bounds apply only to the owned
+root thread, so an unsupported foreign descriptor stays a private native extension
+and cannot pause the execution or alter safety evidence, model selection,
+completion or account authority.
 After terminal completion, accept only an exact previously retained observation
 as late private evidence; changed or unseen late observations fail validation.
 Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors
@@ -2596,8 +2609,17 @@ A nonempty sample list, positive extra count or failed scan can emit the existin
 generic native-warning notice on the original process and active known
 nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
 three warning classifications (world-writable paths, failed scan, or both) for
-the lifetime of that original execution process. Replays and observations in
-paused, failed or completed contexts become validated discarded metadata. They
+the lifetime of that original execution process. Every valid nonempty
+classification observed on the bound original process records its class in that
+process-local registry, including observations between turns, while paused, in
+failed or completed contexts, with a recovery problem, or with an unknown or
+absent active turn. Those observations, and replays of an already-recorded
+class, become validated discarded metadata, so replaying the same class on a
+later eligible active turn in that process is also discarded metadata. A first
+observation of a different class on an eligible turn emits exactly one notice,
+and a fresh original process starts with an empty registry. Empty successful
+scans, malformed payloads, foreign or unbound process contexts, server requests
+and setup completions never write the registry. Discarded observations
 do not create a new current turn or change settings, approvals, account/provider,
 readiness, input delivery, response receipts, recovery or cleanup ownership.
 
@@ -2774,6 +2796,13 @@ atomic arrival claim and before its pipe write. With no selected backend, the
 only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
 tool backend, automatic input replay or automatic resend is introduced.
+
+A dynamic tool shares the Worker's native item identity space and the 10,000
+retained-item bound with messages, tools, artifacts, image generations and
+function outputs. A retained dynamic native ID cannot start any other item
+family, and a new item of any family is rejected as publication-uncertain at the
+bound without emitting an event. Updates to an already retained dynamic tool
+remain admitted at the bound and do not change the count.
 
 The first wire-request uniqueness claim atomically publishes a complete private
 original owner document. A missing or partial later call journal preserves that

@@ -68,6 +68,10 @@ func TestDynamicToolsAttachmentRenegotiatesProfileWhenSupportChanges(t *testing.
 	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1)
 }
 
+func TestBranchPrefixExactQuoteAttachmentRenegotiatesProfileWhenSupportChanges(t *testing.T) {
+	assertCapabilityAttachmentRenegotiatesProfile(t, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1)
+}
+
 func assertCapabilityAttachmentRenegotiatesProfile(t *testing.T, capability pb.WorkerCapability) {
 	t.Helper()
 	for _, tc := range []struct {

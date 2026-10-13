@@ -1438,16 +1438,20 @@ try {
                 inputTop: inputBox.top,
                 inputCenter: inputBox.top + inputBox.height / 2,
                 labelOverflow: label.scrollWidth > label.clientWidth,
+                labelMarginBlockStart: parseFloat(
+                  getComputedStyle(label).marginBlockStart,
+                ),
               };
             });
           const closedLabel = await labelGeometry();
           assert(!closedLabel.labelOverflow, JSON.stringify(closedLabel));
-          if (!closedLabel.stacked)
+          if (!closedLabel.stacked) {
+            assert.equal(closedLabel.labelMarginBlockStart, 0);
             assert(
               Math.abs(closedLabel.labelCenter - closedLabel.inputCenter) <= 1,
               JSON.stringify(closedLabel),
             );
-          else
+          } else
             assert(
               closedLabel.labelBottom <= closedLabel.inputTop,
               JSON.stringify(closedLabel),

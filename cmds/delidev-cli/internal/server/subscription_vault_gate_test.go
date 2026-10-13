@@ -187,3 +187,180 @@ func TestServerSubscriptionNativeWaitReleasesVaultGate(t *testing.T) {
 	close(n.finish)
 	awaitServerFixture(t, done)
 }
+
+// holdClaimedLoginGate keeps the account gate from the moment the server
+// controller commits its claim until release is called. The controller releases
+// the gate after the claim and re-enters it for credentials; the waiting hog is
+// handed the gate between those two acquisitions.
+func (f *subscriptionFixture) holdClaimedLoginGate() (claimed <-chan struct{}, release func()) {
+	f.t.Helper()
+	claimedCh := make(chan struct{})
+	stop := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			unlock, err := f.service.lockAccounts(context.Background())
+			if err != nil {
+				return
+			}
+			_, a := f.record()
+			if a.Subscription != nil && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.NativeStarted {
+				close(claimedCh)
+				<-stop
+				unlock()
+				return
+			}
+			unlock()
+		}
+	}()
+	var once sync.Once
+	return claimedCh, func() {
+		once.Do(func() { close(stop) })
+		<-finished
+	}
+}
+
+func (f *subscriptionFixture) mutateServerOperation(change func(*domain.Account)) {
+	f.t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.subscription.server_operation", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		change(&a)
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// The operation context ends while the controller waits on the account gate,
+// the parent stays live: pre-native absence is proven under a fresh context.
+func TestServerSubscriptionOperationEndedBeforeCredentialsReconciles(t *testing.T) {
+	cases := []struct {
+		name     string
+		prepare  func(*subscriptionFixture)
+		during   func(*subscriptionFixture)
+		wait     time.Duration
+		evidence string
+		want     pb.SubscriptionLoginState
+	}{
+		{
+			name: "canceled",
+			during: func(f *subscriptionFixture) {
+				f.mutateServerOperation(func(a *domain.Account) { a.Subscription.Pending.Canceled = true })
+			},
+			wait: 2 * time.Second,
+			want: pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_CANCELED,
+		},
+		{
+			name: "expired",
+			prepare: func(f *subscriptionFixture) {
+				expires := time.Now().Add(3 * time.Second)
+				f.mutateServerOperation(func(a *domain.Account) { a.Subscription.ServerOperation.ExpiresAt = expires })
+			},
+			wait: 3500 * time.Millisecond,
+			want: pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_EXPIRED,
+		},
+		{
+			name: "canceled with auth home evidence",
+			during: func(f *subscriptionFixture) {
+				f.mutateServerOperation(func(a *domain.Account) { a.Subscription.Pending.Canceled = true })
+			},
+			wait:     2 * time.Second,
+			evidence: "auth",
+			want:     pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED,
+		},
+		{
+			name: "canceled with probe evidence",
+			during: func(f *subscriptionFixture) {
+				f.mutateServerOperation(func(a *domain.Account) { a.Subscription.Pending.Canceled = true })
+			},
+			wait:     2 * time.Second,
+			evidence: "probe",
+			want:     pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED,
+		},
+		{
+			name: "expired with process owner evidence",
+			prepare: func(f *subscriptionFixture) {
+				expires := time.Now().Add(3 * time.Second)
+				f.mutateServerOperation(func(a *domain.Account) { a.Subscription.ServerOperation.ExpiresAt = expires })
+			},
+			wait:     3500 * time.Millisecond,
+			evidence: "process",
+			want:     pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSubscriptionFixture(t)
+			op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+			if tc.prepare != nil {
+				tc.prepare(f)
+			}
+			// The probe index must exist so the independent proof honors its context.
+			runtimeRoot := filepath.Join(f.service.Store.Root(), "subscription-runtime")
+			if err := os.MkdirAll(filepath.Join(runtimeRoot, "probes"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			switch tc.evidence {
+			case "auth":
+				err := os.MkdirAll(filepath.Join(runtimeRoot, "auth", op.OperationId), 0700)
+				if err != nil {
+					t.Fatal(err)
+				}
+			case "process":
+				err := os.MkdirAll(filepath.Join(runtimeRoot, "processes", op.OperationId), 0700)
+				if err != nil {
+					t.Fatal(err)
+				}
+			case "probe":
+				err := os.MkdirAll(filepath.Join(runtimeRoot, "probes", op.OperationId+"-probe"), 0700)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			var opened atomic.Int32
+			f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
+				opened.Add(1)
+				return nil, domain.Fail(domain.Unsupported, "Synthetic native refusal.", "")
+			}
+			claimed, release := f.holdClaimedLoginGate()
+			defer release()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				f.service.runServerSubscription(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), f.input.AccountID)
+			}()
+			awaitServerFixture(t, claimed)
+			if tc.during != nil {
+				tc.during(f)
+			}
+			// The 500 ms checker or the deadline ends the operation context while
+			// credentials wait on the held gate.
+			time.Sleep(tc.wait)
+			release()
+			awaitServerFixture(t, done)
+			if opened.Load() != 0 {
+				t.Fatalf("opener ran %d times", opened.Load())
+			}
+			_, a := f.record()
+			if a.Connection != nil || a.Subscription.Generation != "" {
+				t.Fatal("ended operation committed credentials")
+			}
+			if got := f.progressFor(op.OperationId).State; got != tc.want {
+				t.Fatalf("state = %v, want %v", got, tc.want)
+			}
+			if recovery := tc.want == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED; a.Subscription.RecoveryRequired != recovery {
+				t.Fatalf("recovery required = %t, want %t", a.Subscription.RecoveryRequired, recovery)
+			}
+		})
+	}
+}

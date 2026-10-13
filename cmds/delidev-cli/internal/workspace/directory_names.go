@@ -29,8 +29,7 @@ func PortableRepositoryDirectory(name string) (string, error) {
 	if name == "" {
 		name = "repository"
 	}
-	stem := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
-	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {
+	if domain.IsWindowsReservedDeviceName(name) {
 		name = "_" + truncateDirectory(name, 254)
 		name = strings.TrimRightFunc(name, func(c rune) bool { return c == '.' || unicode.IsSpace(c) })
 	}
@@ -68,10 +67,28 @@ func directoryCollisionKey(name string) string {
 	return norm.NFC.String(cases.Fold().String(norm.NFC.String(name)))
 }
 
-func validateRepositoryDirectories(r PrepareRequest) error {
+// directoryAdmission selects the reserved-name set for frozen directory names.
+type directoryAdmission int
+
+const (
+	// newDirectoryAdmission applies the complete Windows reserved-device set to
+	// names frozen by a fresh Worktree acceptance.
+	newDirectoryAdmission directoryAdmission = iota
+	// historicalDirectoryAdmission replays names that earlier releases accepted.
+	historicalDirectoryAdmission
+)
+
+func (a directoryAdmission) validate(name string) error {
+	if a == historicalDirectoryAdmission {
+		return domain.ValidateHistoricalRepositoryDirectory(name)
+	}
+	return domain.ValidateRepositoryCloneDirectory(name)
+}
+
+func validateRepositoryDirectories(r PrepareRequest, admission directoryAdmission) error {
 	seen := map[string]bool{directoryCollisionKey("manifest.json"): true}
 	for _, repo := range r.Repositories {
-		if repo.DirectoryName != "" && (r.Type != domain.Worktree || norm.NFC.String(repo.DirectoryName) != repo.DirectoryName || domain.ValidateRepositoryCloneDirectory(repo.DirectoryName) != nil || len(repo.DirectoryName) > 255) {
+		if repo.DirectoryName != "" && (r.Type != domain.Worktree || norm.NFC.String(repo.DirectoryName) != repo.DirectoryName || admission.validate(repo.DirectoryName) != nil || len(repo.DirectoryName) > 255) {
 			return ResultUncertain()
 		}
 		if r.Type != domain.Worktree {
@@ -132,7 +149,7 @@ func validateFrozenDirectory(name string) error {
 	if len(name) > 255 || !utf8.ValidString(name) || norm.NFC.String(name) != name {
 		return ResultUncertain()
 	}
-	return domain.ValidateRepositoryCloneDirectory(name)
+	return domain.ValidateHistoricalRepositoryDirectory(name)
 }
 
 func manifestRepositorySpecs(manifest Manifest) []RepositorySpec {
@@ -156,4 +173,8 @@ func ForkRequiresNamedDirectories(input domain.ForkJobInput) (bool, error) {
 	return preparation.RequiresNamedDirectories(), nil
 }
 
-func (r PrepareRequest) ValidateDirectories() error { return validateRepositoryDirectories(r) }
+// ValidateDirectories checks the frozen names of a freshly accepted request.
+// Replay paths use the historical validator and never call this method.
+func (r PrepareRequest) ValidateDirectories() error {
+	return validateRepositoryDirectories(r, newDirectoryAdmission)
+}

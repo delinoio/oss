@@ -35,5 +35,10 @@
   "session-browser.operationUnknown": "The page operation could not be confirmed. Check its status; it is not repeated.",
   "session-browser.cleanupPending": "The page was removed, but its native view cleanup is not confirmed yet.",
   "session-browser.busyOperation": "Another browser page operation is still in progress.",
-  "session-browser.accountRequired": "Browser pages need the AI account selected for this session."
+  "session-browser.accountRequired": "Browser pages need the AI account selected for this session.",
+  "session-browser.discoveryPending": "Checking this account's browser profile…",
+  "session-browser.discoveryFailed": "The account's browser profile could not be confirmed. Retrying only re-reads profiles; nothing is registered or opened.",
+  "session-browser.retryProfileRead": "Retry profile read",
+  "session-browser.inventoryPending": "Reading this profile's open pages…",
+  "session-browser.retryInventoryRead": "Retry page inventory read"
 }
