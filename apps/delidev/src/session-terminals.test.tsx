@@ -1913,7 +1913,8 @@ function explicitInventory(
     session,
     opened,
     presentation: () => store!.terminalPresentation(session.id),
-    open: () => fireEvent.click(screen.getByRole("button", { name: "Open fixture" })),
+    open: () =>
+      fireEvent.click(screen.getByRole("button", { name: "Open fixture" })),
     cleanup() {
       view.unmount();
       client.clear();
@@ -2467,12 +2468,18 @@ it("selects and focuses the additional terminal when no newer navigation happene
 });
 
 it.each([
-  ["Files", (store: SessionTabsStore, id: string) => {
-    store.open(id, { kind: SessionTabKind.Files });
-  }],
-  ["Conversation", (store: SessionTabsStore, id: string) => {
-    store.select(id, SessionTabKind.Conversation);
-  }],
+  [
+    "Files",
+    (store: SessionTabsStore, id: string) => {
+      store.open(id, { kind: SessionTabKind.Files });
+    },
+  ],
+  [
+    "Conversation",
+    (store: SessionTabsStore, id: string) => {
+      store.select(id, SessionTabKind.Conversation);
+    },
+  ],
 ] as const)(
   "keeps %s selected when it was chosen before the additional creation returns",
   async (_name, navigate) => {
@@ -2492,9 +2499,7 @@ it.each([
       expect(f.selected()).toBe(chosen);
       expect(f.createTerminal).toHaveBeenCalledOnce();
       expect(f.controlTerminal).not.toHaveBeenCalled();
-      expect(
-        f.addedTab()!.textContent,
-      ).toMatch(/^Terminal 3/);
+      expect(f.addedTab()!.textContent).toMatch(/^Terminal 3/);
     } finally {
       f.cleanup();
     }
@@ -2611,7 +2616,9 @@ it("still selects the terminal admitted by the toolbar reuse-or-create gesture f
   const f = navigationFixture();
   try {
     expect(f.selected()).toBe(SessionTabKind.Conversation);
-    fireEvent.click(await screen.findByRole("button", { name: "Open fixture" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open fixture" }),
+    );
     await waitFor(() => expect(f.createTerminal).toHaveBeenCalledOnce());
     expect(f.createTerminal.mock.calls[0]![0]).toMatchObject({
       creationMode: TerminalCreationMode.REUSE_OR_CREATE,
