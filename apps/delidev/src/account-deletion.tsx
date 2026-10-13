@@ -186,8 +186,7 @@ export function ChatGPTAccountDeletion({
   // Only a device-owned Claude account has a Runner profile. A server-token
   // account is logged out and cleaned up through the server, like ChatGPT.
   const managedClaude =
-    object(document(initial).subscription).claude_credential ===
-    "server-token";
+    object(document(initial).subscription).claude_credential === "server-token";
   const claude = service === SubscriptionServiceId.Claude && !managedClaude;
   const operationOf = (state: ReturnType<typeof object>) =>
     object(claude ? state.native_operation : state.server_operation);

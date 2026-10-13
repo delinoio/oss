@@ -182,16 +182,16 @@ function claudeAuthorizationURL(raw: string, setupToken: boolean): boolean {
         return false;
     }
     const scopes = (q.get("scope") ?? "").split(/\s+/);
-    if (setupToken) return scopes.length === 1 && scopes[0] === "user:inference";
-    const
-      permitted = [
-        "org:create_api_key",
-        "user:profile",
-        "user:inference",
-        "user:sessions:claude_code",
-        "user:mcp_servers",
-        "user:file_upload",
-      ];
+    if (setupToken)
+      return scopes.length === 1 && scopes[0] === "user:inference";
+    const permitted = [
+      "org:create_api_key",
+      "user:profile",
+      "user:inference",
+      "user:sessions:claude_code",
+      "user:mcp_servers",
+      "user:file_upload",
+    ];
     return (
       scopes.includes("user:profile") &&
       scopes.includes("user:inference") &&
@@ -470,11 +470,7 @@ export function useClaudeSubscriptionLogin(
       update(p, { busy: false });
     }
   };
-  const begin = (
-    initial?: Resource,
-    reauth = false,
-    serverLogin = false,
-  ) => {
+  const begin = (initial?: Resource, reauth = false, serverLogin = false) => {
     if (!active || pending.current || opening?.disposed) return;
     runnerTouched.current = false;
     // The first login of a new account uses the server when it advertises the
@@ -669,12 +665,13 @@ export function useClaudeSubscriptionLogin(
           result.userCode ||
           !(p.server ? claudeSetupTokenURL : claudeLoginURL)(result.url) ||
           (p.url && p.url !== result.url) ||
-          !(p.server
-            ? [SubscriptionLoginMethod.BROWSER_CODE]
-            : [
-                SubscriptionLoginMethod.BROWSER_CALLBACK,
-                SubscriptionLoginMethod.BROWSER_CODE,
-              ]
+          !(
+            p.server
+              ? [SubscriptionLoginMethod.BROWSER_CODE]
+              : [
+                  SubscriptionLoginMethod.BROWSER_CALLBACK,
+                  SubscriptionLoginMethod.BROWSER_CODE,
+                ]
           ).includes(result.loginMethod)
         )
           throw new Error("Invalid original native URL");
@@ -1010,14 +1007,15 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
   const status: Partial<Record<SubscriptionLoginState, MessageKey>> = v.server
     ? serverStatus
     : {
-    [SubscriptionLoginState.PREPARING]: "claude-subscription.preparing",
-    [SubscriptionLoginState.WAITING]: "claude-subscription.waiting",
-    [SubscriptionLoginState.CANCELED]: "claude-subscription.canceled",
-    [SubscriptionLoginState.EXPIRED]: "claude-subscription.expired",
-    [SubscriptionLoginState.UNSUPPORTED]: "claude-subscription.unsupported",
-    [SubscriptionLoginState.RECOVERY_REQUIRED]: "claude-subscription.recovery",
-    [SubscriptionLoginState.FAILED]: "claude-subscription.failed",
-  };
+        [SubscriptionLoginState.PREPARING]: "claude-subscription.preparing",
+        [SubscriptionLoginState.WAITING]: "claude-subscription.waiting",
+        [SubscriptionLoginState.CANCELED]: "claude-subscription.canceled",
+        [SubscriptionLoginState.EXPIRED]: "claude-subscription.expired",
+        [SubscriptionLoginState.UNSUPPORTED]: "claude-subscription.unsupported",
+        [SubscriptionLoginState.RECOVERY_REQUIRED]:
+          "claude-subscription.recovery",
+        [SubscriptionLoginState.FAILED]: "claude-subscription.failed",
+      };
   const runner = p.selectedRunner,
     runnerName = runner
       ? productResourceName(productLabel, runner)

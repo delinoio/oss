@@ -18,7 +18,10 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
-import { claudeLoginURL, claudeSetupTokenURL } from "./claude-subscription-login";
+import {
+  claudeLoginURL,
+  claudeSetupTokenURL,
+} from "./claude-subscription-login";
 import { useSubscriptionLogin } from "./subscription-login";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
@@ -305,7 +308,10 @@ it("hides the task without canceling, clears the code, and only explicit Cancel 
 it("rejects a substituted authorization profile and never opens it", async () => {
   const f = fixture();
   f.setURL(
-    setupURL.replace("scope=user%3Ainference", "scope=user%3Ainference+user%3Aprofile"),
+    setupURL.replace(
+      "scope=user%3Ainference",
+      "scope=user%3Ainference+user%3Aprofile",
+    ),
   );
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
@@ -322,7 +328,10 @@ it("rejects a substituted authorization profile and never opens it", async () =>
 it("does not advance on success evidence from a device-owned or foreign operation", async () => {
   const f = fixture();
   await start(f);
-  f.success({ claude_credential: undefined, native_profile_id: newRequestId() });
+  f.success({
+    claude_credential: undefined,
+    native_profile_id: newRequestId(),
+  });
   await waitFor(() =>
     expect(
       screen.getByText(
@@ -346,7 +355,7 @@ it("uses the setup-token profile separately from the auth-login profile", () => 
   const noCode = new URL(setupURL);
   noCode.searchParams.delete("code");
   expect(claudeSetupTokenURL(noCode.href)).toBe(false);
-  expect(claudeSetupTokenURL(setupURL.replace("claude.com", "other.invalid"))).toBe(
-    false,
-  );
+  expect(
+    claudeSetupTokenURL(setupURL.replace("claude.com", "other.invalid")),
+  ).toBe(false);
 });

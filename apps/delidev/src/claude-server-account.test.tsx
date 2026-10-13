@@ -90,7 +90,9 @@ it("states token limits, offers no reauthentication and logs out without a Runne
   const out = screen.getByRole("button", { name: "Log out" });
   await waitFor(() => expect((out as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(out);
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm logout" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Confirm logout" }),
+  );
   await waitFor(() => expect(value.logout).toHaveBeenCalled());
   const request = value.logout.mock.calls[0][0];
   expect(request.action).toBe(SubscriptionAction.LOGOUT);
