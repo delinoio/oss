@@ -2,7 +2,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   BudgetState,
@@ -295,7 +301,12 @@ it.each(["foreign", "missing"] as const)(
     f.view = create(SessionBudgetViewSchema, {
       state: BudgetState.DISABLED,
       ...(kind === "foreign"
-        ? { session: create(ResourceSchema, { ...f.resource, id: newRequestId() }) }
+        ? {
+            session: create(ResourceSchema, {
+              ...f.resource,
+              id: newRequestId(),
+            }),
+          }
         : {}),
     });
     render(f.renderView());
@@ -339,7 +350,9 @@ it("reports Pending for a retained successful view while a reread is in flight",
     ),
   );
   // The retained view stays displayed and controllers stay mounted.
-  expect(screen.getByText("No estimated-cost budget is configured.")).toBeTruthy();
+  expect(
+    screen.getByText("No estimated-cost budget is configured."),
+  ).toBeTruthy();
   release();
   await waitFor(() =>
     expect(f.evidence).toHaveBeenLastCalledWith(

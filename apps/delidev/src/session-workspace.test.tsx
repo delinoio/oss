@@ -1746,36 +1746,46 @@ it("keeps startup Info visible when a budget reread fails", async () => {
 it.each([
   { name: "unspecified state", state: BudgetState.UNSPECIFIED, foreign: false },
   { name: "unknown state", state: 99 as BudgetState, foreign: false },
-  { name: "another session", state: BudgetState.ALLOW_INCOMPLETE, foreign: true },
-  { name: "a missing session", state: BudgetState.ALLOW_INCOMPLETE, missing: true },
-] as { name: string; state: BudgetState; foreign?: boolean; missing?: boolean }[])(
-  "keeps startup Info visible for budget evidence with $name",
-  async (c) => {
-    const f = fixture(
-      BudgetState.ALLOW_INCOMPLETE,
-      false,
-      initialResponseWaiting(),
-    );
-    f.budget.mockImplementation((() => ({
-      view: create(SessionBudgetViewSchema, {
-        ...(c.missing
-          ? {}
-          : {
-              session: c.foreign
-                ? create(ResourceSchema, { ...f.session, id: newRequestId() })
-                : f.session,
-            }),
-        state: c.state,
-      }),
-    })) as never);
-    const { container } = render(f.view("Retained startup draft"));
-    const info = await startupInfo(container);
-    await waitFor(() => expect(f.budget).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(info).toHaveProperty("hidden", false);
-    expect(f.enqueue).not.toHaveBeenCalled();
+  {
+    name: "another session",
+    state: BudgetState.ALLOW_INCOMPLETE,
+    foreign: true,
   },
-);
+  {
+    name: "a missing session",
+    state: BudgetState.ALLOW_INCOMPLETE,
+    missing: true,
+  },
+] as {
+  name: string;
+  state: BudgetState;
+  foreign?: boolean;
+  missing?: boolean;
+}[])("keeps startup Info visible for budget evidence with $name", async (c) => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  f.budget.mockImplementation((() => ({
+    view: create(SessionBudgetViewSchema, {
+      ...(c.missing
+        ? {}
+        : {
+            session: c.foreign
+              ? create(ResourceSchema, { ...f.session, id: newRequestId() })
+              : f.session,
+          }),
+      state: c.state,
+    }),
+  })) as never);
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(f.budget).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(info).toHaveProperty("hidden", false);
+  expect(f.enqueue).not.toHaveBeenCalled();
+});
 it.each(["transcript", "queue", "interactions"] as const)(
   "keeps startup Info visible while a %s refresh retains stale complete pages",
   async (read) => {
