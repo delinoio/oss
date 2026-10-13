@@ -88,3 +88,23 @@ func TestManagedMCPHeaderCredentialsRejectCaseFoldedDuplicates(t *testing.T) {
 		t.Fatalf("distinct headers were rejected: %v", err)
 	}
 }
+
+func TestMCPElicitationIntegersAcceptExactSigned64BitValues(t *testing.T) {
+	maximum := 9007199254740996.0
+	field := MCPElicitationField{Key: "id", QuestionID: "field:id", Kind: MCPElicitationInteger, Maximum: &maximum}
+	for answer, want := range map[string]int64{"9007199254740994": 9007199254740994, "-9007199254740995": -9007199254740995, "12": 12, "12.0": 12, " 7 ": 7} {
+		got, ok := field.NativeValue([]string{answer})
+		if !ok || got != want {
+			t.Fatalf("%q was refused or changed: %v %v", answer, got, ok)
+		}
+	}
+	for _, answer := range []string{"9007199254740997", "1.5", "abc", "", "9223372036854775808", "NaN"} {
+		if _, ok := field.NativeValue([]string{answer}); ok {
+			t.Fatalf("%q was accepted", answer)
+		}
+	}
+	unbounded := MCPElicitationField{Key: "id", QuestionID: "field:id", Kind: MCPElicitationInteger}
+	if got, ok := unbounded.NativeValue([]string{"9223372036854775807"}); !ok || got != int64(9223372036854775807) {
+		t.Fatalf("the largest int64 was refused: %v %v", got, ok)
+	}
+}

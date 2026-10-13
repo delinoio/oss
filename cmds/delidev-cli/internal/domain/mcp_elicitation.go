@@ -3,6 +3,7 @@ package domain
 
 import (
 	"math"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -148,16 +149,28 @@ func (field MCPElicitationField) NativeValue(values []string) (any, bool) {
 		return nil, false
 	case MCPElicitationEnum:
 		return values[0], slices.Contains(field.Options, values[0])
-	case MCPElicitationNumber, MCPElicitationInteger:
+	case MCPElicitationInteger:
+		// Parse as a signed 64-bit integer: the native response is an int64 and the
+		// MCP integer schema has no 53-bit cutoff. Bounds compare exactly.
+		text := strings.TrimSpace(values[0])
+		number, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			// An integral float spelling such as "12.0" or "1e3" stays accepted when exact.
+			float, floatErr := strconv.ParseFloat(text, 64)
+			if floatErr != nil || math.IsNaN(float) || math.IsInf(float, 0) || float != math.Trunc(float) || math.Abs(float) > 1<<53 {
+				return nil, false
+			}
+			number = int64(float)
+		}
+		exact := new(big.Float).SetInt64(number)
+		if field.Minimum != nil && exact.Cmp(big.NewFloat(*field.Minimum)) < 0 || field.Maximum != nil && exact.Cmp(big.NewFloat(*field.Maximum)) > 0 {
+			return nil, false
+		}
+		return number, true
+	case MCPElicitationNumber:
 		number, err := strconv.ParseFloat(strings.TrimSpace(values[0]), 64)
 		if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || field.Minimum != nil && number < *field.Minimum || field.Maximum != nil && number > *field.Maximum {
 			return nil, false
-		}
-		if field.Kind == MCPElicitationInteger {
-			if number != math.Trunc(number) || math.Abs(number) > 1<<53 {
-				return nil, false
-			}
-			return int64(number), true
 		}
 		return number, true
 	case MCPElicitationMulti:
