@@ -367,10 +367,14 @@ cannot be lost to a swapped name because `unlinkat` refuses non-empty directorie
 the check-then-unlink of one name is not atomic on POSIX, so a process that can
 write the parent directory could still swap that single name between the final
 comparison and the unlink and lose a file or an empty directory. Windows has no
-descriptor-relative unlink: removal there is a path walk that re-binds the root to
-its captured identity before every unlink, which narrows but does not close the
-window, and it has not been exercised on a Windows host in this change (it is
-cross-compiled and vetted only). Objects that cannot be opened without following
+descriptor-relative unlink: removal there inventories the whole tree first,
+holding every directory open before it is listed and confirming afterwards that its
+path still names that directory, then re-binds the entry and every ancestor to its
+inventoried object (handle-derived records only, never path-based `os.SameFile`,
+which would conflict with the held handles) before each unlink. That narrows but
+does not close the window. The algorithm is portable Go and is unit-tested on Unix,
+but it has not been run on a Windows host in this change (it is cross-compiled and
+vetted only). Objects that cannot be opened without following
 links (symlinks, sockets) are never traversed or removed through and keep cleanup
 pending. An identity whose handle was released (the budget is 1,024 held handles
 per attempt) or restored from storage has no held handle and is only as strong as
