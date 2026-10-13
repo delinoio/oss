@@ -283,3 +283,59 @@ func TestLegacyFollowMarkerIsRevalidatedAgainstRetainedGrant(t *testing.T) {
 		t.Fatalf("existing marker was trusted without the retained grant: %v", err)
 	}
 }
+
+// Without a runtime record or follow marker the transport used to fall back to
+// the saved endpoint without verifying anything.
+func TestEditedEvidenceSendsNoRequestWithoutRuntimeOrMarker(t *testing.T) {
+	var staleHits atomic.Int32
+	stale := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { staleHits.Add(1) }))
+	defer stale.Close()
+	owner := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(owner); err != nil {
+		t.Fatal(err)
+	}
+	target := fixtureTarget("http://127.0.0.1:41000")
+	target.Root = owner
+	p := retainPairing(t, owner, target.ServerID, "http://127.0.0.1:40000")
+	rewriteJSON(t, filepath.Join(p.Worker, "device.json"), func(v map[string]any) { v["endpoint"] = stale.URL })
+	rewriteJSON(t, filepath.Join(p.Worker, "local-pairing.json"), func(v map[string]any) { v["endpoint"] = stale.URL })
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.Proxy = nil
+	defer base.CloseIdleConnections()
+	transport := &LocalTransport{Base: base, Root: p.Worker, Owner: owner, ServerID: target.ServerID, Endpoint: stale.URL, PairingID: p.PairingID}
+	request, _ := http.NewRequest("POST", stale.URL+"/rpc", nil)
+	request.Header.Set("Authorization", "Bearer retained")
+	if _, err := transport.RoundTrip(request); err == nil {
+		t.Fatal("edited evidence reached the direct fallback")
+	}
+	if staleHits.Load() != 0 {
+		t.Fatalf("bearer reached the edited address: %d", staleHits.Load())
+	}
+}
+
+// An intact retained grant still lets an unchanged Worker use its original
+// address when no desktop runtime has ever followed.
+func TestVerifiedPairingKeepsDirectFallbackBeforeAnyRuntime(t *testing.T) {
+	var hits atomic.Int32
+	original := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer original.Close()
+	owner := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(owner); err != nil {
+		t.Fatal(err)
+	}
+	target := fixtureTarget("http://127.0.0.1:41000")
+	p := retainPairing(t, owner, target.ServerID, original.URL)
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.Proxy = nil
+	defer base.CloseIdleConnections()
+	transport := &LocalTransport{Base: base, Root: p.Worker, Owner: owner, ServerID: target.ServerID, Endpoint: original.URL, PairingID: p.PairingID}
+	request, _ := http.NewRequest("POST", original.URL+"/rpc", nil)
+	reply, err := transport.RoundTrip(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply.Body.Close()
+	if hits.Load() != 1 {
+		t.Fatalf("direct request count = %d", hits.Load())
+	}
+}

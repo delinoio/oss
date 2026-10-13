@@ -305,9 +305,17 @@ type LocalTransport struct {
 }
 
 func (t *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	// The retained original grant is proven from files before any branch can
+	// contact a listener: the runtime, a marker-refused retirement or the
+	// original pairing address. Edited credential and journal endpoints that
+	// the unchanged grant does not name never receive the bearer token.
+	if err := VerifyOriginalPairing(t.Owner, t.Root, t.ServerID, t.Endpoint, t.PairingID); err != nil {
+		logUnverifiedPairing("transport", err)
+		return nil, unavailable()
+	}
 	target, err := Load(t.Owner, t.ServerID)
 	if err == nil {
-		if err := FollowVerified(t.Owner, t.Root, t.ServerID, t.Endpoint, t.PairingID); err != nil {
+		if err := follow(t.Root, t.ServerID); err != nil {
 			return nil, unavailable()
 		}
 		return (&Transport{Base: t.Base, Resolve: func() (Target, error) { return target, nil }}).RoundTrip(r)
