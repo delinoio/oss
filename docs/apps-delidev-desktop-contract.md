@@ -6028,21 +6028,77 @@ scratch preparation. Opened handles must prove regular, unlinked storage and
 original parent/sidecar identity; unsupported metadata or locking fails closed.
 Unix uses device/inode identity and owner/link checks. Windows uses handle-based
 volume and full 128-bit file identity, link counts and reparse checks.
-Missing publication atomically creates a new target without clobbering a target
-that appeared after the final absence check. Present publication atomically
-replaces only the unchanged observed document among participating writers.
-Remove the owned scratch link before validating the final destination link count.
+Publication and cleanup are bound to the exclusively created scratch file
+object, never to a bare scratch pathname. After the final destination check, open
+the scratch pathname once and prove that handle is the created regular file
+(owner, one link, device/inode or Windows volume/128-bit file identity) before
+publishing. Missing publication moves that file onto a new target without
+clobbering a target that appeared after the final absence check, so no second
+scratch link remains. Present publication replaces the observed document with
+that file. On Windows both renames go through the verified handle
+(`SetFileInformationByHandle` rename) and cleanup deletes through the verified
+handle (disposition with POSIX semantics), so a replacement at the scratch
+pathname is never published or unlinked. Unix has no handle-bound rename or
+unlink, so it uses single-syscall atomic renames (`renamex_np` with
+`RENAME_EXCL`/`RENAME_SWAP` on Apple platforms, `renameat2` with
+`RENAME_NOREPLACE`/`RENAME_EXCHANGE` on Linux and Android): Missing uses
+no-replace and Present exchanges the scratch and destination entries. Immediately
+after the syscall, compare entry identities with the verified file. Before an
+exchange, refuse with Changed and touch nothing when the destination is already
+not the observed document. If the entry that moved into the destination is not
+this save's scratch while the displaced entry is the observed document (or a
+no-replace move placed a foreign entry), reverse the same atomic rename so the
+destination returns to its observed state, keep the foreign entry at the scratch
+pathname as evidence and report a safe failure only when that restoration is
+verified, otherwise OutcomeUnknown. When this save's file reached the
+destination but the entry displaced to the scratch pathname is not the observed
+document, a changed destination cannot be told apart from a late replacement of
+the displaced entry, so never reverse it into the destination: keep the entry at
+the scratch pathname as evidence, leave the destination untouched by any
+reversal and report OutcomeUnknown. Foreign bytes may be visible at the
+destination pathname for the duration of a verified rollback only. A reversed
+rename is not durable until the lease's parent directory is synced: keep the
+attempt touched through that sync and map a failed barrier to OutcomeUnknown,
+and only then report the safe Changed failure. Unsupported platforms
+or filesystems that refuse the atomic variants fail closed with WriteFailed and an
+unchanged destination; never fall back to a pathname rename or link.
+`SetFileInformationByHandle` rename has no write-through option, so after a
+successful Windows publication (Missing or Present destination) and before the
+bound handle is released for cleanup, call `FlushFileBuffers` on that verified
+write-access handle after proving it is still the created file object by
+volume/128-bit file identity. Any identity mismatch or flush failure is
+OutcomeUnknown with explicit Reload recovery and no committed-state adoption;
+Unix relies on the parent sync below. File flush and read-back alone never
+establish power-loss durability, which is untested; automated tests cover only
+ordering, identity checking and failure mapping.
 Adopt the new selection and private receipt only after cleanup, required parent
 sync and exact published bytes/new-file identity verification succeed. Any
 post-publication failure is OutcomeUnknown and requires Read recovery without
-replay. Cleanup can remove only this attempt's exclusively created scratch with
-matching file and parent identity; it cannot remove colliding or replaced evidence.
+replay. Cleanup can remove only this attempt's exclusively created scratch (or,
+after a Unix Present exchange, the observed document it displaced) with matching
+file and parent identity; it cannot remove colliding or replaced evidence. A
+foreign entry found at the scratch pathname is retained, never reported as a
+fully successful save (OutcomeUnknown, explicit Reload), and the published
+preference stays available for recovery. Windows deletes through the verified
+handle, closes that POSIX-semantics delete handle (the link leaves the visible
+namespace only then) and only afterward verifies that the scratch pathname is
+gone. Unix cannot unlink by identity, so it first atomically claims the
+pathname under a private `.sidebar_preference-*.claim` name, verifies the
+claimed entry's identity and unlinks only a verified claim; a foreign claim is
+moved back untouched. Documented residual risk: a Unix writer that observes the
+private claim name and replaces it in the interval between claim verification and
+the unlink can still lose that replacement.
 
 This protocol coordinates processes that preserve the config/sidecar namespace
 and use the same lease. The final evidence check detects observed changes by
-nonparticipating writers, but an arbitrary writer can still replace an existing
-target after that check and before the replacing syscall. Do not promise an
-atomic comparison against writers that ignore the protocol. Process revisions
+nonparticipating writers. Scratch-pathname replacement after that check is
+detected and reverted as described above (bound on Windows). A writer that
+ignores the protocol can still replace an existing destination after the final
+check and before the Unix exchange. The pre-exchange identity check refuses a
+change it can see, and an exchange that displaces anything but the observed
+document is reported as OutcomeUnknown with the displaced entry retained at the
+scratch pathname, but the contract does not promise an atomic comparison against
+writers that ignore the protocol. Process revisions
 and product-window events remain process-local. Publish ordered
 `sidebar-preference-changed` snapshots only to authorized product windows;
 external, tray and child views have no storage/event authority. Invalid, linked,
