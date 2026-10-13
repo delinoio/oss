@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   BudgetState,
@@ -16,7 +16,11 @@ import {
   newRequestId,
   type SetSessionBudgetRequest,
 } from "@delinoio/delidev-api-client";
-import { BudgetEvidence, SessionBudget } from "./session-budget";
+import {
+  BudgetEvidence,
+  SessionBudget,
+  classifyBudgetEvidence,
+} from "./session-budget";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 function fixture() {
@@ -121,6 +125,9 @@ it("sets an exact optional budget and exposes unavailable evidence without claim
 });
 it.each([
   { state: BudgetState.DISABLED, expected: BudgetEvidence.Ready },
+  { state: BudgetState.ALLOW_INCOMPLETE, expected: BudgetEvidence.Ready },
+  { state: BudgetState.UNSPECIFIED, expected: BudgetEvidence.Failed },
+  { state: 99 as BudgetState, expected: BudgetEvidence.Failed },
   { state: BudgetState.THRESHOLD_REACHED, expected: BudgetEvidence.Blocked },
 ])("reports typed budget evidence $expected for $state", async (c) => {
   const f = fixture();
@@ -279,4 +286,102 @@ it("renders measured zero native units only with native accounting coverage", as
   expect(
     screen.queryByText(/Native budget evidence is unavailable/),
   ).toBeNull();
+});
+
+it.each(["foreign", "missing"] as const)(
+  "never reports Ready budget evidence from a %s session",
+  async (kind) => {
+    const f = fixture();
+    f.view = create(SessionBudgetViewSchema, {
+      state: BudgetState.DISABLED,
+      ...(kind === "foreign"
+        ? { session: create(ResourceSchema, { ...f.resource, id: newRequestId() }) }
+        : {}),
+    });
+    render(f.renderView());
+    await waitFor(() =>
+      expect(f.evidence).toHaveBeenLastCalledWith(
+        f.resource.id,
+        BudgetEvidence.Failed,
+      ),
+    );
+    expect(f.evidence).not.toHaveBeenCalledWith(
+      f.resource.id,
+      BudgetEvidence.Ready,
+    );
+  },
+);
+it("reports Pending for a retained successful view while a reread is in flight", async () => {
+  const f = fixture();
+  render(f.renderView());
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(
+      f.resource.id,
+      BudgetEvidence.Ready,
+    ),
+  );
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const retained = f.view;
+  f.read.mockImplementation((async () => {
+    await gate;
+    return { view: retained };
+  }) as never);
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(
+      f.resource.id,
+      BudgetEvidence.Pending,
+    ),
+  );
+  // The retained view stays displayed and controllers stay mounted.
+  expect(screen.getByText("No estimated-cost budget is configured.")).toBeTruthy();
+  release();
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(
+      f.resource.id,
+      BudgetEvidence.Ready,
+    ),
+  );
+});
+it("reports Failed and keeps Retry when a reread fails after a successful read", async () => {
+  const f = fixture();
+  render(f.renderView());
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(
+      f.resource.id,
+      BudgetEvidence.Ready,
+    ),
+  );
+  f.read.mockImplementation(() => {
+    throw new ConnectError("Budget unavailable", Code.Unavailable);
+  });
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(
+      f.resource.id,
+      BudgetEvidence.Failed,
+    ),
+  );
+  await screen.findByRole("button", { name: "Retry read" });
+  expect(f.blocked).toHaveBeenLastCalledWith(false);
+});
+it("keeps THRESHOLD_REACHED Blocked even while a reread is in flight", () => {
+  const view = create(SessionBudgetViewSchema, {
+    state: BudgetState.THRESHOLD_REACHED,
+  });
+  expect(
+    classifyBudgetEvidence({
+      resourceId: "any",
+      view,
+      failed: false,
+      fetching: true,
+    }),
+  ).toBe(BudgetEvidence.Blocked);
 });
