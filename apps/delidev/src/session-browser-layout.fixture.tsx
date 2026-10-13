@@ -116,6 +116,13 @@ const tabs = Array.from(
       : "https://example.com/",
   }),
 );
+interface PageRequest {
+  action: "inventory" | "create" | "close" | "observe";
+  operation_id?: string;
+  url?: string;
+  page_id?: string;
+}
+const receipts = new Map<string, Record<string, unknown>>();
 let local = {
   tabs: { tabs, selected: tabs[0].id },
   removal_pending: args.get("removal") === "pending",
@@ -158,23 +165,55 @@ Object.assign(window, {
         throw new Error("Synthetic original native failure");
       if (input.action === "select-tab")
         local = { ...local, tabs: { ...local.tabs, selected: input.tabId! } };
-      if (input.action === "close-tab") {
-        const tabs = local.tabs.tabs.filter((tab) => tab.id !== input.tabId);
-        local = {
-          ...local,
-          tabs: {
-            tabs,
-            selected: tabs.some((tab) => tab.id === local.tabs.selected)
-              ? local.tabs.selected
-              : (tabs[0]?.id ?? ""),
-          },
-        };
-      }
-      if (input.action === "new-tab") {
-        const tab = { id: newRequestId(), url: input.url! };
-        local = {
-          ...local,
-          tabs: { tabs: [...local.tabs.tabs, tab], selected: tab.id },
+      if (operation === "browser_pages") {
+        // Synthetic native-local page owner: Inventory and Observe read,
+        // Create and Close mutate under one retained original receipt.
+        const request = (input as { request: PageRequest }).request;
+        const retained = request.operation_id
+          ? receipts.get(request.operation_id)
+          : undefined;
+        if (request.action === "create" && !retained) {
+          const tab = { id: newRequestId(), url: request.url! };
+          local = {
+            ...local,
+            tabs: { tabs: [...local.tabs.tabs, tab], selected: tab.id },
+          };
+          receipts.set(request.operation_id!, {
+            operation_id: request.operation_id!,
+            page_id: tab.id,
+            phase: "completed",
+            metadata_committed: true,
+            native_cleanup_complete: true,
+            failure: null,
+          });
+        }
+        if (request.action === "close" && !retained) {
+          const tabs = local.tabs.tabs.filter(
+            (tab) => tab.id !== request.page_id,
+          );
+          local = {
+            ...local,
+            tabs: {
+              tabs,
+              selected: tabs.some((tab) => tab.id === local.tabs.selected)
+                ? local.tabs.selected
+                : (tabs[0]?.id ?? ""),
+            },
+          };
+          receipts.set(request.operation_id!, {
+            operation_id: request.operation_id!,
+            page_id: request.page_id!,
+            phase: "completed",
+            metadata_committed: true,
+            native_cleanup_complete: true,
+            failure: null,
+          });
+        }
+        return {
+          state: local,
+          receipt: request.operation_id
+            ? (receipts.get(request.operation_id) ?? null)
+            : null,
         };
       }
       if (input.action === "navigate")
@@ -217,6 +256,10 @@ const transport = createRouterTransport((router) => {
             : [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1],
       };
     },
+    listBrowserProfiles: () => ({
+      profiles: args.get("registered") === "0" ? [] : [profile],
+      nextPageToken: "",
+    }),
     registerBrowserProfile: (request) => {
       evidence.registrations.push({
         requestId: request.session!.requestId,

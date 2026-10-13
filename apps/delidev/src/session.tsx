@@ -1015,6 +1015,9 @@ export function SessionView({
   // Opening it creates nothing; the browser manager owns any accepted request.
   const [browserDialog, setBrowserDialog] = useState(false);
   const browserHandle = useRef<BrowserHandle | undefined>(undefined);
+  useEffect(() => {
+    if (!active) setBrowserDialog(false);
+  }, [active]);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] =
     useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(
@@ -2189,6 +2192,9 @@ export function SessionView({
               event.target.closest("[data-shortcuts=passthrough]")
             ) &&
             tabs.tab.kind !== SessionTabKind.Conversation &&
+            // Escape never closes a native browser page: Page × is the one
+            // explicit resource closure.
+            tabs.tab.kind !== SessionTabKind.Page &&
             !(
               event.target instanceof Element &&
               event.target.closest("dialog[open]")

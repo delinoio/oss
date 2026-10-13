@@ -58,6 +58,9 @@ enum PagePhase {
   Failed = "failed",
 }
 const pageLimit = 16;
+// Pages opened or closed by another window align at this read-only cadence; a
+// pending original operation is observed every second instead.
+const inventoryInterval = 3000;
 interface BrowserState {
   tabs: { tabs: { id: string; url: string }[]; selected: string };
   removal_pending: boolean;
@@ -381,6 +384,7 @@ function NativeSessionBrowser({
   const [failure, setFailure] = useProductMessage();
   // Create/Close problems stay with their operation, outside the page pane.
   const [operationFailure, setOperationFailure] = useProductMessage();
+  const [inventoryFailure, setInventoryFailure] = useProductMessage();
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
   const [operation, setOperation] = useState<PageOperation>();
@@ -755,15 +759,20 @@ function NativeSessionBrowser({
     if (!profileId || (!active && !operationRef.current)) return;
     let disposed = false,
       reading = false;
-    const read = async () => {
-      if (disposed || reading || nativeBusy.current) return;
+    const observePending = async () => {
       const pending = operationRef.current;
-      if (pending?.sent) {
-        if (pending.receipt?.phase !== PagePhase.Failed)
-          await runner.current(pending, true);
+      if (disposed || nativeBusy.current || !pending?.sent) return;
+      await runner.current(pending, true);
+    };
+    const readInventory = async () => {
+      if (
+        disposed ||
+        reading ||
+        nativeBusy.current ||
+        operationRef.current ||
+        !activeRef.current
+      )
         return;
-      }
-      if (pending || !activeRef.current) return;
       reading = true;
       const epoch = mutationEpoch.current;
       try {
@@ -779,20 +788,30 @@ function NativeSessionBrowser({
           !nativeBusy.current &&
           epoch === mutationEpoch.current &&
           !operationRef.current
-        )
+        ) {
           observeInventory(value, profileId);
+          setInventoryFailure(undefined);
+        }
       } catch {
         if (!disposed)
-          setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4"));
+          setInventoryFailure(
+            ownedMessage("session-browser.extra.c6d1ec80c1c4"),
+          );
       } finally {
         reading = false;
       }
     };
-    void read();
-    const timer = window.setInterval(() => void read(), 1000);
+    void readInventory();
+    void observePending();
+    const operations = window.setInterval(() => void observePending(), 1000);
+    const inventories = window.setInterval(
+      () => void readInventory(),
+      inventoryInterval,
+    );
     return () => {
       disposed = true;
-      window.clearInterval(timer);
+      window.clearInterval(operations);
+      window.clearInterval(inventories);
     };
   }, [profileId, active, Boolean(operation)]);
   // The toolbar address follows the selected page's observed URL.
@@ -1244,17 +1263,19 @@ function NativeSessionBrowser({
     ) : null;
   const atLimit = (state?.tabs.tabs.length ?? 0) >= pageLimit;
   const createPending = operation?.action === PageAction.Create;
-  const guidance = !supported
-    ? capabilities.error
-      ? undefined
-      : copy(
-          "session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80",
-        )
-    : state?.removal_pending
-      ? copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")
-      : atLimit
-        ? copy("session-browser.pageLimit")
-        : undefined;
+  const guidance = !idPattern.test(accountId)
+    ? copy("session-browser.accountRequired")
+    : !supported
+      ? capabilities.error
+        ? undefined
+        : copy(
+            "session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80",
+          )
+      : state?.removal_pending
+        ? copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")
+        : atLimit
+          ? copy("session-browser.pageLimit")
+          : undefined;
   return (
     <>
       {statusContent
@@ -1275,6 +1296,7 @@ function NativeSessionBrowser({
             <div className="browser-chrome">
               <BrowserHeader />
               {failure ? <p role="alert">{failure}</p> : null}
+              {inventoryFailure ? <p role="alert">{inventoryFailure}</p> : null}
               {state?.removal_pending ? (
                 <p role="alert">
                   {copy(

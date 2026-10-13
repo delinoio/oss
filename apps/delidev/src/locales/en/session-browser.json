@@ -34,5 +34,6 @@
   "session-browser.pageLimit": "A profile holds at most 16 browser pages. Close one to open another.",
   "session-browser.operationUnknown": "The page operation could not be confirmed. Check its status; it is not repeated.",
   "session-browser.cleanupPending": "The page was removed, but its native view cleanup is not confirmed yet.",
-  "session-browser.busyOperation": "Another browser page operation is still in progress."
+  "session-browser.busyOperation": "Another browser page operation is still in progress.",
+  "session-browser.accountRequired": "Browser pages need the AI account selected for this session."
 }

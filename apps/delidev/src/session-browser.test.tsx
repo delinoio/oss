@@ -356,7 +356,7 @@ it("restores retained pages as peer tabs without registering, creating or presen
   expect(calls("open_browser")).toHaveLength(0);
   // Repeated reads do not duplicate descriptors.
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await new Promise((resolve) => setTimeout(resolve, 3200));
   });
   expect(tabNames()).toHaveLength(3);
   expect(pageCalls("create")).toHaveLength(0);
@@ -760,7 +760,7 @@ it("closing the last page selects Conversation, keeps the profile and leaves zer
   expect(f.register).not.toHaveBeenCalled();
   // Subsequent observation restores nothing and creates nothing.
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await new Promise((resolve) => setTimeout(resolve, 3200));
   });
   expect(tabNames()).toEqual(["Conversation"]);
   expect(pageCalls("create")).toHaveLength(0);
@@ -786,7 +786,7 @@ it("aligns this workspace with pages opened or closed by another owner", async (
         "https://fixture.test/2",
         "https://other.test/",
       ]),
-    { timeout: 3000 },
+    { timeout: 6000 },
   );
   // Observation only aligned descriptors; it issued no mutation.
   expect(pageCalls("create")).toHaveLength(0);
@@ -1129,7 +1129,7 @@ it("refreshes owned shared labels from observed URLs without selecting or naviga
   await waitFor(
     () => expect(tabNames()[1]).toBe("https://redirect.test/landed"),
     {
-      timeout: 3000,
+      timeout: 6000,
     },
   );
   expect(
