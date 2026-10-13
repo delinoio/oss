@@ -19,7 +19,10 @@ import { encode } from "./documents";
 import { TranscriptItem } from "./session";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { AppearanceProvider, Theme, type AppearanceBridge } from "./appearance";
-import { DisclosureDefault, defaultPreferences } from "./appearance-preferences";
+import {
+  DisclosureDefault,
+  defaultPreferences,
+} from "./appearance-preferences";
 import { conversationProjection } from "./tool-turn-projection";
 afterEach(cleanup);
 const sessionId = newRequestId(),
@@ -386,8 +389,9 @@ it("applies a delayed saved Expanded default once to untouched groups and entrie
     </AppearanceProvider>,
   );
   const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
-  const entries = () =>
-    [...group.querySelectorAll<HTMLDetailsElement>("li > details")];
+  const entries = () => [
+    ...group.querySelectorAll<HTMLDetailsElement>("li > details"),
+  ];
   expect(group.open).toBe(false);
   expect(entries().map((entry) => entry.open)).toEqual([false, false]);
   await delayed.settle(DisclosureDefault.Expanded);
@@ -403,8 +407,9 @@ it("keeps explicit choices made before readiness when a Collapsed snapshot arriv
     </AppearanceProvider>,
   );
   const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
-  const entries = () =>
-    [...group.querySelectorAll<HTMLDetailsElement>("li > details")];
+  const entries = () => [
+    ...group.querySelectorAll<HTMLDetailsElement>("li > details"),
+  ];
   // Open the group explicitly, and expand then collapse the first entry so its
   // choice is an explicit false that a later default must not replace.
   expand(group);
@@ -424,8 +429,9 @@ it("retains an explicit collapse made before a delayed Expanded snapshot is acce
     </AppearanceProvider>,
   );
   const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
-  const entries = () =>
-    [...group.querySelectorAll<HTMLDetailsElement>("li > details")];
+  const entries = () => [
+    ...group.querySelectorAll<HTMLDetailsElement>("li > details"),
+  ];
   expand(group);
   group.open = false;
   fireEvent(group, new Event("toggle"));
