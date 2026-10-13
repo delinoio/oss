@@ -194,6 +194,21 @@ submission. Replayed claims grant none. An uncertain report is protected before
 OS submission, and original reports remain receipt-safe. OS submission does not
 prove that a person saw an alert or accepted a native request.
 
+Foreground delivery drains candidates in batches. It lists
+`ListNotificationCandidates` with the server maximum limit of 50 and processes
+candidates serially: claim, protected report, at most one OS submission for a
+fresh claim, then the report. Before each claim, OS submission and report send
+it rechecks the selected profile, the active live connection generation, the
+notification setting and the absence of an unrelated pending record. When a
+response has `more`, the next batch starts in a new zero-delay macrotask after
+the batch settles; there is no arbitrary total cap. At most one drain owns each
+connection generation. Ordinary sync events join it and request one more pass
+after it drains. A drain stops, without polling or implicit retry, on an
+unresolved pending record, a transport failure, a background or profile change,
+or a batch with no fresh claim. A lifecycle change before the report send
+leaves the exact stored report pending for explicit recovery. Drain results log
+only the opaque profile identifier, a closed stop reason and counts.
+
 ## Logging
 
 Beta provider failures record only provider, HTTP method, numeric status and

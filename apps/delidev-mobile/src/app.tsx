@@ -909,6 +909,7 @@ function Connected({
         id,
         () => connection.active && connection.status === Status.Live,
         { notify },
+        connection,
       )
         .then(changed)
         .catch(changed);

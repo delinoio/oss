@@ -712,12 +712,18 @@ it("denied foreground OS submission has an independent receipt and leaves the or
     candidates = await inbox.listNotificationCandidates({ limit: 1 });
   expect(candidates.candidates).toHaveLength(1);
   const original = candidates.candidates[0]!;
-  await presentForeground(state, id, () => true, {
-    notify: async () => {
-      calls++;
-      return false;
+  await presentForeground(
+    state,
+    id,
+    () => true,
+    {
+      notify: async () => {
+        calls++;
+        return false;
+      },
     },
-  });
+    { epoch: 0 },
+  );
   const delivery = await inbox.getNotificationDelivery({
     inboxId: original.inboxId,
   });
@@ -728,12 +734,18 @@ it("denied foreground OS submission has an independent receipt and leaves the or
         .documentJson,
     ).read_state,
   ).toBe("unread");
-  await presentForeground(state, id, () => true, {
-    notify: async () => {
-      calls++;
-      return true;
+  await presentForeground(
+    state,
+    id,
+    () => true,
+    {
+      notify: async () => {
+        calls++;
+        return true;
+      },
     },
-  });
+    { epoch: 0 },
+  );
   expect(calls).toBe(1);
 });
 it("original Steer and question responses replay one accepted operation after acknowledgment loss; stale responses fail", async () => {
