@@ -23,6 +23,8 @@ import {
   type ClientFailure,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
+import { useDocumentForeground } from "./document-foreground";
+import { subscriptionForegroundRefreshInterval } from "./subscription-quota-refresh";
 import { subscriptionCatalog } from "./subscription-catalog";
 import {
   useConnectPaginationReader,
@@ -61,6 +63,9 @@ export function SubscriptionRail({
     () => document.visibilityState !== "hidden",
   );
   const [now, setNow] = useState(Date.now);
+  // Visible-but-inactive documents keep the slower reread; app use rereads the
+  // accepted ranges every 30 seconds so completed native observations appear.
+  const appInUse = useDocumentForeground().foreground;
   const [authenticationLost, setAuthenticationLost] = useState(false);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled });
   const capable =
@@ -171,7 +176,10 @@ export function SubscriptionRail({
       setNow(Date.now());
       query.refresh();
     };
-    const timer = window.setInterval(refresh, 60000);
+    const timer = window.setInterval(
+      refresh,
+      appInUse ? subscriptionForegroundRefreshInterval : 60000,
+    );
     // Staleness advances independently of requests; failed reads never keep a current badge.
     const clock = window.setInterval(() => setNow(Date.now()), 1000);
     window.addEventListener("focus", refresh);
@@ -180,7 +188,7 @@ export function SubscriptionRail({
       clearInterval(clock);
       window.removeEventListener("focus", refresh);
     };
-  }, [allowed, query.refresh]);
+  }, [allowed, query.refresh, appInUse]);
   useEffect(() => {
     if (selection && (!enabled || !account)) close();
   }, [enabled, account, selection, close]);

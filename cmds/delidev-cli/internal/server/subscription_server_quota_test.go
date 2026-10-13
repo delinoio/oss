@@ -517,3 +517,95 @@ func TestServerQuotaRejectsShortProtectedOriginalAndEncodedIDs(t *testing.T) {
 		})
 	}
 }
+
+// Inactive maintenance becomes due at exactly the shared four-minute interval
+// for same-generation server quota requests, and concurrent scans admit one owner.
+func TestServerQuotaMaintenanceIsDueExactlyAtFourMinutes(t *testing.T) {
+	if subscriptionQuotaMaintenanceInterval != 4*time.Minute {
+		t.Fatal("maintenance interval changed", subscriptionQuotaMaintenanceInterval)
+	}
+	f, _ := newServerQuotaFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	requested := time.Now().UTC().Truncate(time.Millisecond)
+	if err := f.service.queueDueSubscriptionQuotas(ctx, requested); err != nil {
+		t.Fatal(err)
+	}
+	_, a := f.record()
+	if a.Subscription.ServerQuota == nil || !a.Subscription.ServerQuota.RequestedAt.Equal(requested) {
+		t.Fatal("initial maintenance did not admit the account")
+	}
+	f.service.runServerQuota(ctx, f.input.AccountID)
+	_, a = f.record()
+	if a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSucceeded || a.Subscription.ServerObservationActive() {
+		t.Fatal("initial observation did not settle")
+	}
+	count := quotaReceiptCounter(t, f)
+	before := count()
+	if err := f.service.queueDueSubscriptionQuotas(ctx, requested.Add(4*time.Minute-time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	_, a = f.record()
+	if !a.Subscription.ServerQuota.RequestedAt.Equal(requested) || count() != before {
+		t.Fatal("maintenance admitted work before the four-minute boundary")
+	}
+	due := requested.Add(4 * time.Minute)
+	problems := make(chan error, 12)
+	for i := 0; i < 12; i++ {
+		go func() { problems <- f.service.queueDueSubscriptionQuotas(ctx, due) }()
+	}
+	for i := 0; i < 12; i++ {
+		if err := <-problems; err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, a = f.record()
+	if !a.Subscription.ServerQuota.RequestedAt.Equal(due) || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationQueued || count() != before+1 {
+		t.Fatal("exactly one maintenance owner must be admitted at four minutes", count()-before)
+	}
+}
+
+// The Worker observation request time uses the same boundary and generation rule.
+func TestQuotaMaintenanceWorkerObservationUsesFourMinuteBoundary(t *testing.T) {
+	f := newQuotaFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	requested := time.Now().UTC().Truncate(time.Millisecond)
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+		due  bool
+	}{
+		{"before", requested.Add(4*time.Minute - time.Millisecond), false},
+		{"exact", requested.Add(4 * time.Minute), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.quota.worker.observation", nil, func(tx *store.Tx) (any, error) {
+				r, err := tx.Get(domain.AccountKind, f.input.AccountID)
+				if err != nil {
+					return nil, err
+				}
+				a, err := store.Decode[domain.Account](r)
+				if err != nil {
+					return nil, err
+				}
+				a.Subscription.ServerQuota = nil
+				a.Subscription.Observation = &domain.SubscriptionObservationOperation{Generation: a.Subscription.Generation, RequestedAt: requested, Phase: domain.SubscriptionObservationSucceeded}
+				_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				return nil, err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var due int
+			if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+				records, err := subscriptionQuotaCandidates(tx, tc.at, true, f.service.subscriptionServerEpoch())
+				due = len(records)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if (due == 1) != tc.due || due > 1 {
+				t.Fatal("unexpected due candidate count", due)
+			}
+		})
+	}
+}
