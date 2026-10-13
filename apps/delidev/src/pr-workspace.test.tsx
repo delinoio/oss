@@ -491,7 +491,9 @@ it("keeps the stack read pending without warning or Retry until the final observ
   await screen.findAllByText("Pending path body");
   expect(workspace).toHaveBeenCalledTimes(1);
   expect(screen.queryByText(/Stack context is incomplete/)).toBeNull();
-  expect(screen.queryByRole("button", { name: "Retry stack context" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry stack context" }),
+  ).toBeNull();
   expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(2);
   await act(async () => resolveWorkspace(undefined));
   await waitFor(() =>
@@ -501,7 +503,9 @@ it("keeps the stack read pending without warning or Retry until the final observ
   );
   expect(workspace).toHaveBeenCalledTimes(1);
   expect(screen.queryByText(/Stack context is incomplete/)).toBeNull();
-  expect(screen.queryByRole("button", { name: "Retry stack context" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry stack context" }),
+  ).toBeNull();
   view.unmount();
 });
 
