@@ -285,6 +285,17 @@ it("plays the AI Subscription category entrance once per explicit opening", asyn
   expect(column().getAttribute("data-entrance")).toBe("y4");
 });
 
+it("plays the entrance once when Settings opens on the default AI Subscription category", async () => {
+  fixture();
+  const node = column();
+  expect(node.querySelector("h1")?.textContent).toBe("AI Subscription");
+  expect(node.getAttribute("data-entrance")).toBe("y4");
+  dispatch(node);
+  await screen.findByRole("article", { name: "Retained subscription" });
+  expect(column()).toBe(node);
+  expect(node.getAttribute("data-entrance")).toBeNull();
+});
+
 it("leaves no stale motion when AI Subscription is left before completion", () => {
   fixture();
   category("AI Subscription");

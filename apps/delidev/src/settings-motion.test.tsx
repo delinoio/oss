@@ -66,6 +66,8 @@ it.each([
   "Backups",
 ])("plays the %s category entrance once per explicit opening", (name) => {
   render(providers(<Settings />));
+  // The default landing category (AI Subscription) opted in too, so leave it first.
+  category("Instructions");
   expect(column().getAttribute("data-entrance")).toBeNull();
   category(name);
   const node = column();
