@@ -122,6 +122,45 @@ func TestCaptureServerOptionsAnchorsRelativeTLSToPhysicalCwdThroughSymlink(t *te
 	}
 }
 
+func TestCaptureServerOptionsPreservesWindowsRootedAndDriveRelativeSemantics(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("rooted and drive-relative references exist only on Windows")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	volume := filepath.VolumeName(root)
+	lowerVolume := strings.ToLower(volume)
+	otherVolume := "Z:"
+	if strings.EqualFold(volume, otherVolume) {
+		otherVolume = "Y:"
+	}
+	otherExpected, err := filepath.Abs(otherVolume + "cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, reference, expected string }{
+		{"rooted on the cwd drive", `\cert.pem`, volume + `\cert.pem`},
+		{"rooted subdirectory", `\sub\key.pem`, volume + `\sub\key.pem`},
+		{"drive-relative on the cwd drive", volume + "cert.pem", filepath.Join(root, "cert.pem")},
+		{"drive-relative with different volume case", lowerVolume + "cert.pem", filepath.Join(root, "cert.pem")},
+		{"drive-relative on another drive", otherVolume + "cert.pem", otherExpected},
+		{"plain relative", "cert.pem", filepath.Join(root, "cert.pem")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := CaptureServerOptions(ServerOptions{TLSCertificate: test.reference, TLSKey: test.reference})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.TLSCertificate != test.expected || result.TLSKey != test.expected || !filepath.IsAbs(result.TLSCertificate) {
+				t.Fatalf("reference %q captured as %q, expected %q", test.reference, result.TLSCertificate, test.expected)
+			}
+		})
+	}
+}
+
 func TestCaptureServerOptionsFailsWhenOriginalCwdIsUnresolvable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a process cannot remove its own working directory on Windows")
