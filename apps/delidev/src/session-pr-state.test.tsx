@@ -458,9 +458,7 @@ it("refreshes exactly once when the authenticated transport is replaced", async 
   const { get, detail, makeTransport } = readCounters(f);
   const client = new QueryClient();
   const limiter = new PRReadLimiter();
-  const mounted = render(
-    refreshView(f, client, limiter, makeTransport(), {}),
-  );
+  const mounted = render(refreshView(f, client, limiter, makeTransport(), {}));
   await screen.findByRole("img", { name: "Pull request open" });
   mounted.rerender(refreshView(f, client, limiter, makeTransport(), {}));
   await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));

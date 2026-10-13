@@ -673,16 +673,23 @@ it.each([
       );
       await waitFor(() => expect(f.unlink).toHaveBeenCalledTimes(2));
       void f.client.invalidateQueries({ refetchType: "active" });
-      await screen.findAllByRole("button", { name: "Retry original PR unlink" });
+      await screen.findAllByRole("button", {
+        name: "Retry original PR unlink",
+      });
       await act(async () => {
         await i18n.changeLanguage(language);
       });
       const region = screen.getByRole("region", {
-        name: language === SupportedLanguage.English ? "Pending PR unlinks" : "대기 중인 PR 연결 해제",
+        name:
+          language === SupportedLanguage.English
+            ? "Pending PR unlinks"
+            : "대기 중인 PR 연결 해제",
       });
       const articles = within(region).getAllByRole("article");
       expect(articles).toHaveLength(2);
-      const names = articles.map((article) => article.getAttribute("aria-label")!);
+      const names = articles.map((article) =>
+        article.getAttribute("aria-label")!,
+      );
       expect(new Set(names).size).toBe(2);
       if (language === SupportedLanguage.English)
         expect([...names].sort()).toEqual([
@@ -695,7 +702,11 @@ it.each([
       for (const article of articles)
         for (const element of [article, ...article.querySelectorAll("*")]) {
           for (const attribute of element.getAttributeNames())
-            if (attribute.startsWith("aria-") || attribute === "title" || attribute === "alt")
+            if (
+              attribute.startsWith("aria-") ||
+              attribute === "title" ||
+              attribute === "alt"
+            )
               expect(element.getAttribute(attribute)).not.toMatch(uuidPattern);
         }
       expect(region.textContent).not.toMatch(uuidPattern);
@@ -703,7 +714,11 @@ it.each([
       expect(within(articles[0]!).getByRole("status").textContent).toBe(
         "PR unlink acknowledgment is uncertain.",
       );
-      expect(screen.getAllByRole("button", { name: /Retry original PR unlink|원래 PR 연결 해제 다시 시도/ }).length).toBe(2);
+      expect(
+        screen.getAllByRole("button", {
+          name: /Retry original PR unlink|원래 PR 연결 해제 다시 시도/,
+        }).length,
+      ).toBe(2);
     } finally {
       await act(async () => {
         await i18n.changeLanguage(SupportedLanguage.English);
