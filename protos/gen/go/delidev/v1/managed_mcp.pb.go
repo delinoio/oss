@@ -386,8 +386,10 @@ type ManagedMcpDefinition struct {
 	Authenticated      bool                        `protobuf:"varint,14,opt,name=authenticated,proto3" json:"authenticated,omitempty"`
 	SupportedHarnesses []string                    `protobuf:"bytes,15,rep,name=supported_harnesses,json=supportedHarnesses,proto3" json:"supported_harnesses,omitempty"`
 	Agents             []*ManagedMcpAgentReference `protobuf:"bytes,16,rep,name=agents,proto3" json:"agents,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// RFC 3339 expiry of the sealed credential; empty when it does not expire.
+	CredentialExpiresAt string `protobuf:"bytes,17,opt,name=credential_expires_at,json=credentialExpiresAt,proto3" json:"credential_expires_at,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ManagedMcpDefinition) Reset() {
@@ -530,6 +532,13 @@ func (x *ManagedMcpDefinition) GetAgents() []*ManagedMcpAgentReference {
 		return x.Agents
 	}
 	return nil
+}
+
+func (x *ManagedMcpDefinition) GetCredentialExpiresAt() string {
+	if x != nil {
+		return x.CredentialExpiresAt
+	}
+	return ""
 }
 
 type ManagedMcpOperation struct {
@@ -1263,7 +1272,7 @@ const file_delidev_v1_managed_mcp_proto_rawDesc = "" +
 	"\x05scope\x18\x05 \x01(\tR\x05scope\">\n" +
 	"\x18ManagedMcpAgentReference\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xfb\x04\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xaf\x05\n" +
 	"\x14ManagedMcpDefinition\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x12\x1d\n" +
@@ -1282,7 +1291,8 @@ const file_delidev_v1_managed_mcp_proto_rawDesc = "" +
 	"\x05oauth\x18\r \x01(\v2\".delidev.v1.ManagedMcpOAuthProfileR\x05oauth\x12$\n" +
 	"\rauthenticated\x18\x0e \x01(\bR\rauthenticated\x12/\n" +
 	"\x13supported_harnesses\x18\x0f \x03(\tR\x12supportedHarnesses\x12<\n" +
-	"\x06agents\x18\x10 \x03(\v2$.delidev.v1.ManagedMcpAgentReferenceR\x06agents\"\xe1\x01\n" +
+	"\x06agents\x18\x10 \x03(\v2$.delidev.v1.ManagedMcpAgentReferenceR\x06agents\x122\n" +
+	"\x15credential_expires_at\x18\x11 \x01(\tR\x13credentialExpiresAt\"\xe1\x01\n" +
 	"\x13ManagedMcpOperation\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12#\n" +

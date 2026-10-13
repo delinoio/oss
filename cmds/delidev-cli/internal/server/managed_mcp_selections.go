@@ -2,6 +2,8 @@
 package server
 
 import (
+	"time"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
@@ -36,7 +38,7 @@ func preserveManagedMCPSelections(tx configurationView, id domain.ID, expected u
 		if e != nil {
 			return e
 		}
-		if !r.Accepted || r.Deleted || r.PendingRequestID != "" || r.Definition.MachineID != v.MachineID || r.Definition.WorkerDeviceID != v.WorkerDeviceID || !r.Definition.Enabled {
+		if !r.Accepted || r.Deleted || r.PendingRequestID != "" || r.Definition.MachineID != v.MachineID || r.Definition.WorkerDeviceID != v.WorkerDeviceID || !r.Definition.Enabled || !r.Definition.CredentialCurrent(time.Now()) {
 			return domain.Fail(domain.Conflict, "The selected MCP definition is unavailable.", "Read its original Worker catalog before saving.")
 		}
 	}

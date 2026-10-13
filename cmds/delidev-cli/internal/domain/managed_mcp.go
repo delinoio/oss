@@ -139,8 +139,14 @@ func (s *ManagedMCPSelections) Validate() error {
 	}
 	return nil
 }
+
+// CredentialCurrent reports whether the definition needs no credential or holds
+// one that has not reached its expiry at the given time.
+func (d ManagedMCPDefinition) CredentialCurrent(now time.Time) bool {
+	return d.Authentication == MCPNoAuthentication || d.CredentialID != "" && (d.CredentialExpiresAt.IsZero() || now.Before(d.CredentialExpiresAt))
+}
 func (d ManagedMCPDefinition) Eligible(h Harness) bool {
-	return d.Enabled && slices.Contains(d.SupportedHarnesses, h) && (d.Authentication == MCPNoAuthentication || d.CredentialID != "" && (d.CredentialExpiresAt.IsZero() || time.Now().Before(d.CredentialExpiresAt)))
+	return d.Enabled && slices.Contains(d.SupportedHarnesses, h) && d.CredentialCurrent(time.Now())
 }
 
 type MCPSecretInput struct {

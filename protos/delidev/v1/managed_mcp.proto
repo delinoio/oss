@@ -67,6 +67,8 @@ message ManagedMcpDefinition {
   bool authenticated = 14;
   repeated string supported_harnesses = 15;
   repeated ManagedMcpAgentReference agents = 16;
+  // RFC 3339 expiry of the sealed credential; empty when it does not expire.
+  string credential_expires_at = 17;
 }
 message ManagedMcpOperation {
   string request_id = 1;

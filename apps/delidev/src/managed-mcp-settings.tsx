@@ -34,6 +34,10 @@ import {
   SettingsActionIcon as Icon,
   SettingsActionPresentation as Presentation,
 } from "./settings-action";
+import {
+  credentialCurrent,
+  useCredentialClock,
+} from "./managed-mcp-credential";
 import { Problem } from "./ui";
 import { Timestamp, TimestampText } from "./timestamp-display";
 
@@ -273,6 +277,7 @@ function RunnerMcp({
           .includes(search.trim().toLocaleLowerCase()),
       )
     : [];
+  const now = useCredentialClock(list.data?.definitions ?? []);
   // A restored awaiting attempt exists only in the catalog operations until the
   // user continues it, but it already forbids replacing the selected Runner.
   const awaitingAuthorization = operations.some(
@@ -435,7 +440,7 @@ function RunnerMcp({
               {copy(
                 row.authentication === Auth.NONE
                   ? "managed-mcp-settings.noAuth"
-                  : row.authenticated
+                  : credentialCurrent(row, now)
                     ? "managed-mcp-settings.authenticated"
                     : "managed-mcp-settings.authRequired",
               )}

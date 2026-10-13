@@ -464,6 +464,9 @@ func mcpWire(d domain.ManagedMCPDefinition) *pb.ManagedMcpDefinition {
 		auth = pb.ManagedMcpAuthentication_MANAGED_MCP_AUTHENTICATION_OAUTH
 	}
 	result := &pb.ManagedMcpDefinition{Id: string(d.ID), Revision: d.Revision, MachineId: string(d.MachineID), WorkerDeviceId: string(d.WorkerDeviceID), Name: d.Name, Transport: transport, Command: d.Command, Arguments: d.Arguments, Cwd: d.Cwd, Endpoint: d.Endpoint, Enabled: d.Enabled, Authentication: auth, Authenticated: d.CredentialID != "" && (d.CredentialExpiresAt.IsZero() || time.Now().Before(d.CredentialExpiresAt))}
+	if !d.CredentialExpiresAt.IsZero() {
+		result.CredentialExpiresAt = d.CredentialExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
 	if d.OAuth != nil {
 		result.Oauth = &pb.ManagedMcpOAuthProfile{ClientId: d.OAuth.ClientID, AuthorizationUrl: d.OAuth.AuthorizationURL, TokenUrl: d.OAuth.TokenURL, RedirectUri: d.OAuth.RedirectURI, Scope: d.OAuth.Scope}
 	}

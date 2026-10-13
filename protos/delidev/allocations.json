@@ -15046,6 +15046,14 @@
     {
       "issue": 2129,
       "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "credential_expires_at",
+      "number": 17,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
       "declaration": "ManagedMcpOperation",
       "member": "request_id",
       "number": 1,

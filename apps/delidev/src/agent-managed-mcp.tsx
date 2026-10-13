@@ -11,6 +11,10 @@ import {
 import { ResourceChoice } from "./configuration-fields";
 import { items, object, text, type Document } from "./documents";
 import { copy, useLocale } from "./localization";
+import {
+  credentialCurrent,
+  useCredentialClock,
+} from "./managed-mcp-credential";
 import { Problem } from "./ui";
 
 export function AgentManagedMCP({
@@ -39,13 +43,15 @@ export function AgentManagedMCP({
   );
   const selections = items(object(data.managed_mcp).selections).map(object);
   const rows = catalog.data?.definitions ?? [];
+  const now = useCredentialClock(rows);
   const publish = (selections: Document[]) =>
     change({ ...data, managed_mcp: { selections } });
   const eligible = (row: (typeof rows)[number]) =>
     row.machineId === machine &&
     row.enabled &&
     row.supportedHarnesses.includes(text(data.harness)) &&
-    (row.authentication === ManagedMcpAuthentication.NONE || row.authenticated);
+    (row.authentication === ManagedMcpAuthentication.NONE ||
+      credentialCurrent(row, now));
   return (
     <section
       className="server-preference-section"

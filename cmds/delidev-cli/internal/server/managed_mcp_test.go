@@ -7,6 +7,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestManagedMCPReplyOriginalIdentityFence(t *testing.T) {
@@ -147,5 +148,45 @@ func TestManagedMCPFirstSaveNeverRetainsAPlaceholderTheWorkerRejects(t *testing.
 	}
 	if err := admit(build(func(*domain.ManagedMCPDefinition) {})); domain.SafeError(err).Code != domain.ResourceExhausted {
 		t.Fatalf("full catalog admitted another placeholder: %v", err)
+	}
+}
+
+func TestManagedMCPCredentialExpiryIsExposedAndEnforcedAtSelection(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	machine, worker := domain.NewID(), domain.NewID()
+	expiry := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond)
+	definition := func(auth domain.MCPAuthentication, credential domain.ID, expires time.Time) domain.ID {
+		d := domain.ManagedMCPDefinition{ID: domain.NewID(), Revision: 2, MachineID: machine, WorkerDeviceID: worker, Name: "Fixture", Transport: domain.MCPStreamableHTTP, Endpoint: "https://fixture.test/mcp", Enabled: true, Authentication: auth, CredentialID: credential, CredentialExpiresAt: expires}
+		if auth == domain.MCPOAuthAuthentication {
+			d.OAuth = &domain.MCPOAuthProfile{ClientID: "public", AuthorizationURL: "https://fixture.test/auth", TokenURL: "https://fixture.test/token", RedirectURI: "http://localhost/callback"}
+		}
+		doctorPut(t, s, domain.ManagedMCPKind, d.ID, 0, domain.ManagedMCPRecord{Definition: d, Accepted: true})
+		return d.ID
+	}
+	expired := definition(domain.MCPOAuthAuthentication, domain.NewID(), time.Now().Add(-time.Minute))
+	current := definition(domain.MCPOAuthAuthentication, domain.NewID(), expiry)
+	unauthenticated := definition(domain.MCPOAuthAuthentication, "", time.Time{})
+	none := definition(domain.MCPNoAuthentication, "", time.Time{})
+	admit := func(id domain.ID) error {
+		agent := domain.Agent{ManagedMCP: &domain.ManagedMCPSelections{Selections: []domain.ManagedMCPSelection{{MachineID: machine, WorkerDeviceID: worker, DefinitionID: id}}}}
+		return s.Store.Read(context.Background(), func(tx *store.Tx) error { return preserveManagedMCPSelections(tx, domain.NewID(), 0, &agent) })
+	}
+	if err := admit(current); err != nil {
+		t.Fatalf("a current credential was refused: %v", err)
+	}
+	if err := admit(none); err != nil {
+		t.Fatalf("a definition without credentials was refused: %v", err)
+	}
+	for name, id := range map[string]domain.ID{"expired": expired, "unauthenticated": unauthenticated} {
+		if err := admit(id); domain.SafeError(err).Code != domain.Conflict {
+			t.Fatalf("%s credential was admitted for selection: %v", name, err)
+		}
+	}
+	wire := mcpWire(domain.ManagedMCPDefinition{ID: current, Revision: 1, CredentialID: domain.NewID(), CredentialExpiresAt: expiry})
+	if wire.CredentialExpiresAt != expiry.Format(time.RFC3339Nano) {
+		t.Fatalf("the safe expiry was not exposed: %q", wire.CredentialExpiresAt)
+	}
+	if mcpWire(domain.ManagedMCPDefinition{ID: none, Revision: 1}).CredentialExpiresAt != "" {
+		t.Fatal("a definition without expiry exposed one")
 	}
 }
