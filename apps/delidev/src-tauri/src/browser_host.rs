@@ -3228,7 +3228,7 @@ mod tests {
         }
         host.child_closed(&request(2));
         let state = host.state.lock().unwrap();
-        assert!(state.views.get("main").is_none());
+        assert!(!state.views.contains_key("main"));
         assert_eq!(state.live, 0);
     }
 
