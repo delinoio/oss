@@ -209,9 +209,9 @@ it("requires the durable first-input counter for every startup hiding path", () 
       false,
     );
   }
-  expect(
-    sessionProgress(observation({ last_input_sequence: undefined })),
-  ).toBe(SessionProgressPhase.Response);
+  expect(sessionProgress(observation({ last_input_sequence: undefined }))).toBe(
+    SessionProgressPhase.Response,
+  );
 });
 it("keeps Info visible when Starting lacks a current owned original queue row", () => {
   const starting = { execution: undefined };
