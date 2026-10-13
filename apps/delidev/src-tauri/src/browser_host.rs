@@ -287,6 +287,25 @@ impl State {
         Ok(replacement)
     }
 
+    // Removes a window's view after a lifecycle close (reservation, hide or
+    // window close) and, while the state lock is still held, attributes a view
+    // that owns or is creating a native child to the profile's in-flight
+    // committed page operation. Without this, a close that lands after the
+    // metadata commit but before reconciliation leaves reconciliation with no
+    // child to await, so the receipt would report cleanup complete before
+    // on_before_close.
+    fn remove_view_tracking_outstanding(&mut self, window: &str) {
+        let Some(view) = self.views.remove(window) else {
+            return;
+        };
+        if view.browser.is_some() || view.creation_pending {
+            self.track_outstanding_superseded(
+                &view.profile,
+                &[(window.to_string(), view.generation)],
+            );
+        }
+    }
+
     fn track_outstanding_superseded(&mut self, profile: &str, superseded: &[(String, u64)]) {
         let Some(key) = self.page_busy.get(profile).cloned() else {
             return;
@@ -450,9 +469,13 @@ impl BrowserHost {
             unmap(previous)?;
         }
         state.reservations.insert(window.into(), view_id.into());
-        let previous = state.views.remove(window);
+        let previous = state
+            .views
+            .get(window)
+            .and_then(|view| view.browser.clone());
+        state.remove_view_tracking_outstanding(window);
         drop(state);
-        if let Some(browser) = previous.and_then(|view| view.browser)
+        if let Some(browser) = previous
             && let Some(host) = browser.host()
         {
             host.close_browser(1);
@@ -1755,7 +1778,7 @@ impl BrowserHost {
             let hidden = unmap(view);
             let browser = view.browser.clone();
             if hidden.is_ok() {
-                state.views.remove(window);
+                state.remove_view_tracking_outstanding(window);
             }
             drop(state);
             if let Some(host) = browser.and_then(|browser| browser.host()) {
@@ -2249,7 +2272,7 @@ impl BrowserHost {
             .get(window)
             .and_then(|view| view.browser.clone());
         if hidden.is_ok() {
-            state.views.remove(window);
+            state.remove_view_tracking_outstanding(window);
         }
         drop(state);
         if let Some(browser) = browser
@@ -5967,6 +5990,59 @@ esac
             .unwrap();
         assert_eq!(settled.phase, PagePhase::Completed);
         assert!(settled.native_cleanup_complete);
+    }
+
+    #[test]
+    fn window_close_before_reconciliation_keeps_the_receipt_pending() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        // The window closes after the metadata commit and before the UI-loop
+        // reconciliation, so reconciliation finds no view to replace.
+        host.close_window("fixture").unwrap();
+        assert!(host.state.lock().unwrap().views.is_empty());
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn superseding_reservation_before_reconciliation_keeps_the_receipt_pending() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        let replacement = uuid::Uuid::now_v7().to_string();
+        host.reserve_with("fixture", &replacement, |_| Ok(()))
+            .unwrap();
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+    }
+
+    #[test]
+    fn lifecycle_close_without_a_native_child_or_failed_unmap_tracks_nothing() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        let key = admit_close(&host, &record, &original.tab);
+        // No native child exists, so no close callback will ever arrive.
+        host.hide_with("fixture", &record.id, &view_id, |_| Ok(()))
+            .unwrap();
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &key).phase,
+            PagePhase::Completed
+        );
     }
 
     #[test]

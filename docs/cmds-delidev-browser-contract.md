@@ -165,7 +165,9 @@ page that no native child presents completes immediately.
 A page selection control from another window that supersedes children after the
 metadata commit but before this reconciliation registers those children on the
 profile's in-flight committed receipt as well, so the receipt never reports
-completed cleanup before their `on_before_close`. The `on_before_close` callback that empties a reconciled receipt's set settles it
+completed cleanup before their `on_before_close`. The same registration applies when a lifecycle close (a superseding
+reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
+reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. The `on_before_close` callback that empties a reconciled receipt's set settles it
 immediately, so an owner that unmounts before its next Observe cannot leave a
 `cleanup-pending` receipt that exhausts the page operation limit. Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate
