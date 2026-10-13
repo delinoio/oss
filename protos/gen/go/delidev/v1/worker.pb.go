@@ -4229,8 +4229,13 @@ type NativeCodeReviewResponseUsage struct {
 	UnspecifiedNativeCost bool                   `protobuf:"varint,9,opt,name=unspecified_native_cost,json=unspecifiedNativeCost,proto3" json:"unspecified_native_cost,omitempty"`
 	Sequence              uint64                 `protobuf:"varint,10,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	NativeVersion         string                 `protobuf:"bytes,11,opt,name=native_version,json=nativeVersion,proto3" json:"native_version,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Worker clock instant (Unix milliseconds) at which the original response was
+	// observed. The server prices the receipt with the version eligible at this
+	// instant, so a delayed first publication cannot reprice it. Zero means an
+	// older Worker did not report it and the first-commit time applies.
+	ObservedAtUnixMs int64 `protobuf:"varint,12,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *NativeCodeReviewResponseUsage) Reset() {
@@ -4338,6 +4343,13 @@ func (x *NativeCodeReviewResponseUsage) GetNativeVersion() string {
 		return x.NativeVersion
 	}
 	return ""
+}
+
+func (x *NativeCodeReviewResponseUsage) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
 }
 
 var File_delidev_v1_worker_proto protoreflect.FileDescriptor
@@ -4681,7 +4693,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\aitem_id\x18\b \x01(\tR\x06itemId\x12?\n" +
 	"\x05usage\x18\x0e \x01(\v2).delidev.v1.NativeCodeReviewResponseUsageR\x05usage\"=\n" +
 	"\x1fPublishNativeCodeReviewResponse\x12\x1a\n" +
-	"\brevision\x18\x01 \x01(\x04R\brevision\"\xa5\x04\n" +
+	"\brevision\x18\x01 \x01(\x04R\brevision\"\xd4\x04\n" +
 	"\x1dNativeCodeReviewResponseUsage\x12'\n" +
 	"\x0fresponse_digest\x18\x01 \x01(\tR\x0eresponseDigest\x12\x19\n" +
 	"\x05input\x18\x02 \x01(\x03H\x00R\x05input\x88\x01\x01\x12&\n" +
@@ -4694,7 +4706,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x17unspecified_native_cost\x18\t \x01(\bR\x15unspecifiedNativeCost\x12\x1a\n" +
 	"\bsequence\x18\n" +
 	" \x01(\x04R\bsequence\x12%\n" +
-	"\x0enative_version\x18\v \x01(\tR\rnativeVersionB\b\n" +
+	"\x0enative_version\x18\v \x01(\tR\rnativeVersion\x12-\n" +
+	"\x13observed_at_unix_ms\x18\f \x01(\x03R\x10observedAtUnixMsB\b\n" +
 	"\x06_inputB\x0f\n" +
 	"\r_cached_inputB\x14\n" +
 	"\x12_cache_write_inputB\t\n" +

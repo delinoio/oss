@@ -14708,6 +14708,13 @@
       "newDeclaration": true
     },
     {
+      "declaration": "NativeCodeReviewResponseUsage",
+      "issue": 3331,
+      "kind": "message",
+      "member": "observed_at_unix_ms",
+      "number": 12
+    },
+    {
       "issue": 2129,
       "kind": "enum",
       "declaration": "ManagedMcpTransport",

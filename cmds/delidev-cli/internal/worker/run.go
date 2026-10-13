@@ -1155,6 +1155,13 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, domain.Fail(domain.RecoveryRequired, "A Worker journal has an unknown state.", "Preserve it for recovery.")
 		}
 		result.Problem = domain.Fail(domain.RecoveryRequired, "Execution began without a durable completion record.", "Reconcile the accepted operation before retrying.")
+		// A crash after the atomic review-result write but before the finished
+		// journal write leaves a verifiable completion record for native reviews.
+		if job.Type == domain.NativeCodeReviewJob {
+			if recovered, ok := recoverNativeReviewResult(ctx, config, resource, job); ok {
+				result.Output, result.Problem = recovered, nil
+			}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return journal{}, err
 	} else {

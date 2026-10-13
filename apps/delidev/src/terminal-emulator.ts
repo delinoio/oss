@@ -3,6 +3,7 @@ import { WTerm, type TerminalLabels } from "@wterm/dom";
 import { GhosttyCore } from "@wterm/ghostty";
 import ghosttyWasm from "@wterm/ghostty/ghostty-vt.wasm?url";
 import { copy, i18n } from "./localization";
+import { urlAtTerminalPosition } from "./external-links";
 import "@wterm/dom/css";
 import "./terminal-dock.css";
 
@@ -44,6 +45,7 @@ export function openTerminalScreen(
   resized: (rows: number, columns: number) => void,
   unavailable: () => void,
   tabShortcut?: (event: KeyboardEvent) => boolean,
+  openLink?: (url: string) => void,
 ): TerminalScreen {
   let alive = true,
     writable = false,
@@ -60,6 +62,10 @@ export function openTerminalScreen(
     observer.disconnect();
     host.removeEventListener("paste", paste, true);
     host.removeEventListener("keydown", shortcut, true);
+    host.removeEventListener("click", activate, true);
+    host.removeEventListener("mousemove", hover, true);
+    host.removeEventListener("mouseleave", clearHover, true);
+    host.removeAttribute("data-link");
     host.ownerDocument.fonts?.removeEventListener("loadingdone", measure);
     i18n.off("languageChanged", translate);
     // WTerm intentionally does not own supplied cores. Release both owners on
@@ -116,8 +122,116 @@ export function openTerminalScreen(
       event.stopImmediatePropagation();
     }
   }
+  // Printed HTTP(S) URLs are detected from the rendered rows. This never
+  // enables WTerm's OSC 8 anchors (linksEnabled stays false), never changes
+  // terminal bytes or parser replies, and never consumes the pointer event.
+  function urlAtPoint(event: MouseEvent): string | undefined {
+    if (!openLink || !alive || !terminal) return;
+    const target = event.target instanceof Element ? event.target : undefined;
+    const row = target?.closest(".term-row");
+    if (!row || !host.contains(row)) return;
+    const document = host.ownerDocument;
+    let node: Node | null | undefined,
+      offset = 0;
+    if (document.caretPositionFromPoint) {
+      const position = document.caretPositionFromPoint(
+        event.clientX,
+        event.clientY,
+      );
+      node = position?.offsetNode;
+      offset = position?.offset ?? 0;
+    } else if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+      node = range?.startContainer;
+      offset = range?.startOffset ?? 0;
+    }
+    if (!node || !row.contains(node)) return;
+    let index = -1,
+      before = 0;
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      if (text === node) {
+        index = before + offset;
+        break;
+      }
+      before += text.textContent?.length ?? 0;
+    }
+    if (index < 0) return;
+    // A boundary between two cells belongs to the character under the pointer.
+    const covers = (position: number) => {
+      const range = document.createRange();
+      try {
+        const [start, end] = locate(row, position);
+        if (!start || !end) return true;
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        const box = range.getBoundingClientRect();
+        return (
+          box.width === 0 ||
+          (event.clientX >= box.left &&
+            event.clientX <= box.right &&
+            event.clientY >= box.top &&
+            event.clientY <= box.bottom)
+        );
+      } catch {
+        return true;
+      }
+    };
+    const rows = [...host.querySelectorAll(".term-row")];
+    const rowIndex = rows.indexOf(row);
+    const lines = rows.map((element) => element.textContent ?? "");
+    for (const candidate of [index, index - 1]) {
+      if (candidate < 0 || !covers(candidate)) continue;
+      const url = urlAtTerminalPosition(
+        lines,
+        rowIndex,
+        candidate,
+        terminal.cols,
+      );
+      if (url) return url;
+    }
+    return undefined;
+  }
+  function locate(row: Element, position: number) {
+    const document = host.ownerDocument;
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let before = 0;
+    for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+      const length = text.textContent?.length ?? 0;
+      if (position < before + length)
+        return [
+          { node: text, offset: position - before },
+          { node: text, offset: position - before + 1 },
+        ];
+      before += length;
+    }
+    return [];
+  }
+  function activate(event: MouseEvent) {
+    if (
+      event.button !== 0 ||
+      event.shiftKey ||
+      event.altKey ||
+      host.ownerDocument.getSelection()?.toString()
+    )
+      return;
+    const url = urlAtPoint(event);
+    if (url) openLink?.(url);
+  }
+  function hover(event: MouseEvent) {
+    if (urlAtPoint(event)) host.setAttribute("data-link", "");
+    else host.removeAttribute("data-link");
+  }
+  function clearHover() {
+    host.removeAttribute("data-link");
+  }
   host.addEventListener("paste", paste, true);
   host.addEventListener("keydown", shortcut, true);
+  if (openLink) {
+    host.addEventListener("click", activate, true);
+    host.addEventListener("mousemove", hover, true);
+    host.addEventListener("mouseleave", clearHover, true);
+  }
   i18n.on("languageChanged", translate);
   const ready = (async () => {
     try {

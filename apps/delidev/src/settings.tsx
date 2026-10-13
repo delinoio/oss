@@ -165,7 +165,9 @@ import {
 } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
+import { useEntranceActivation, type EntranceProps } from "./entrance-motion";
 import { ShortcutSettings } from "./shortcut-settings";
+import { BrowserSettings } from "./browser-settings";
 import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
 import { LanguageSettings } from "./language";
@@ -1683,6 +1685,7 @@ enum SettingsArea {
   Integrations,
   Backups,
   Appearance,
+  Browser,
   KeyboardShortcuts,
   AppInformation,
 }
@@ -1715,6 +1718,15 @@ export const settingsCategories: Record<
       return copy("settings.savedOnThisComputer_11cb50");
     },
     area: SettingsArea.Appearance,
+  },
+  [SettingsCategory.Browser]: {
+    get label() {
+      return copy("browser-settings.title");
+    },
+    get description() {
+      return copy("browser-settings.scope");
+    },
+    area: SettingsArea.Browser,
   },
   [SettingsCategory.AppInformation]: {
     get label() {
@@ -1935,6 +1947,7 @@ export const settingsGroups: {
     label: SettingsGroup.System,
     categories: [
       SettingsCategory.Appearance,
+      SettingsCategory.Browser,
       SettingsCategory.KeyboardShortcuts,
       SettingsCategory.ServerPreferences,
       SettingsCategory.Diagnostics,
@@ -1954,6 +1967,8 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.KeyboardShortcuts]:
     "M3 6h18v12H3zM6 9h1m3 0h1m3 0h1m3 0h1M7 15h10",
   [SettingsCategory.Appearance]: "M12 3a9 9 0 1 0 0 18V3zM12 3a9 9 0 0 1 0 18",
+  [SettingsCategory.Browser]:
+    "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9",
   [SettingsCategory.Backups]: "M4 4h16v16H4zM8 4v6h8V4M8 20v-6h8v6",
   [SettingsCategory.Providers]:
     "M7 18a4 4 0 1 1 .9-7.9A5.5 5.5 0 0 1 18 9.5 3.5 3.5 0 0 1 18 18z",
@@ -2042,6 +2057,12 @@ type NavigateSettings = (
   entry?: SettingsCategoryEntry,
 ) => void;
 
+// Categories that opted in to the shared 160ms Y4 entrance. Each category adds
+// itself only with its own approved contract text.
+const entranceCategories: ReadonlySet<SettingsCategory> = new Set([
+  SettingsCategory.Appearance,
+]);
+
 function entrySelection(
   destination?: SettingsNavigationEntry,
 ): SettingsSelection {
@@ -2107,6 +2128,12 @@ function SettingsVisit({
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   const [selection, setSelection] = useState(() =>
     entrySelection(entryDestination),
+  );
+  // The activation key is the category opening, so rendering, reads, edits and
+  // preference changes inside the opening cannot replay the entrance.
+  const entrance = useEntranceActivation(
+    selection.key,
+    entranceCategories.has(selection.category),
   );
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(
@@ -2221,6 +2248,7 @@ function SettingsVisit({
               searchRequest={searchRequest}
               selectedCategory={selection.category}
               entry={selection.entry}
+              entrance={entrance}
               navigate={navigate}
               controlLocalWorker={
                 props.controlLocalWorker
@@ -2254,11 +2282,13 @@ function SettingsWorkspace({
   selectedCategory,
   searchRequest,
   entry,
+  entrance,
   navigate,
 }: SettingsProps & {
   searchRequest?: SettingsSearchRequest;
   selectedCategory: SettingsCategory;
   entry?: SettingsCategoryEntry;
+  entrance: EntranceProps;
   navigate: NavigateSettings;
 }) {
   const productLabel = useProductLabels();
@@ -2273,6 +2303,18 @@ function SettingsWorkspace({
     useState<HTMLSpanElement | null>(null);
   const deviceContent = useRef<HTMLDivElement>(null),
     refreshDevices = useRef<HTMLButtonElement>(null);
+  const attachEntrance = entrance.ref;
+  const contentRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      deviceContent.current = node;
+      const detach = attachEntrance?.(node);
+      return () => {
+        deviceContent.current = null;
+        detach?.();
+      };
+    },
+    [attachEntrance],
+  );
   const deviceReturnFocus = useRef<
     { id: string; exit: DeviceRevocationExit } | undefined
   >(undefined);
@@ -2781,7 +2823,8 @@ function SettingsWorkspace({
         <SettingsTaskBackground>
           <div className="settings-content-column">
             <div
-              ref={deviceContent}
+              ref={contentRef}
+              data-entrance={entrance["data-entrance"]}
               className={
                 isAgentWorkers
                   ? "settings-agent-column"
@@ -2906,6 +2949,9 @@ function SettingsWorkspace({
                     <LanguageSettings />
                     <DateFormatSettings />
                   </div>
+                ) : null}
+                {area === SettingsArea.Browser ? (
+                  <BrowserSettings active={visible} />
                 ) : null}
                 {area === SettingsArea.Backups ? (
                   <div>

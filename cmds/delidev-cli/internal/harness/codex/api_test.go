@@ -285,3 +285,56 @@ func TestExecutionAPINullOptionalFieldsPreserveTitleRetryRestrictions(t *testing
 		}
 	}
 }
+
+func TestOwnedForwarderReplacesOnlyNativeEndpointAndKeepsVerification(t *testing.T) {
+	const forwarder = "http://127.0.0.1:34567"
+	cfg := Config{Mode: ThreadProtocol, API: &APIConfig{ServerOrigin: "http://127.0.0.1:12345", Token: apiFixtureToken(), ForwarderOrigin: forwarder}}
+	binding, err := configureAPI(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.endpoint != forwarder+apiproxy.Prefix || binding.proxied {
+		t.Fatalf("unexpected native endpoint %q", binding.endpoint)
+	}
+	arguments := strings.Join(cfg.Process.Args, " ")
+	if strings.Contains(arguments, "12345") || !strings.Contains(arguments, forwarder+apiproxy.Prefix) || strings.Contains(arguments, "request_max_retries") || strings.Contains(arguments, "stream_max_retries") {
+		t.Fatal("forwarder changed the provider shape or exposed the retired address")
+	}
+	if len(cfg.Process.Env) != 1 || cfg.Process.Env[0] != executionTokenEnv+"="+apiFixtureToken() {
+		t.Fatal("the execution token is no longer the only credential")
+	}
+	provider := map[string]any{"name": "DeliDev", "base_url": forwarder + apiproxy.Prefix, "env_key": executionTokenEnv, "wire_api": "responses", "requires_openai_auth": false, "supports_websockets": false, "supports_standalone_web_search": false}
+	raw, _ := json.Marshal(map[string]any{"model_provider": APIProvider, "cli_auth_credentials_store": "ephemeral", "model_providers": map[string]any{APIProvider: provider}, "shell_environment_policy": map[string]any{"exclude": []string{executionTokenEnv}}})
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &config); err != nil || binding.validateConfig(config) != nil {
+		t.Fatal("effective forwarder configuration was rejected", err)
+	}
+	// The effective endpoint must equal the owned forwarder, not the pairing one.
+	provider["base_url"] = "http://127.0.0.1:12345" + apiproxy.Prefix
+	raw, _ = json.Marshal(map[string]any{"model_provider": APIProvider, "cli_auth_credentials_store": "ephemeral", "model_providers": map[string]any{APIProvider: provider}, "shell_environment_policy": map[string]any{"exclude": []string{executionTokenEnv}}})
+	config = nil
+	if err := json.Unmarshal(raw, &config); err != nil || binding.validateConfig(config) == nil {
+		t.Fatal("the retired pairing endpoint passed verification")
+	}
+}
+
+func TestOwnedForwarderRejectsNonCanonicalOriginsAndProxyCombination(t *testing.T) {
+	proxy := "http://delidev:" + base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("p", 32))) + "@127.0.0.1:12346"
+	for name, api := range map[string]APIConfig{
+		"https":     {ForwarderOrigin: "https://127.0.0.1:34567"},
+		"localhost": {ForwarderOrigin: "http://localhost:34567"},
+		"remote":    {ForwarderOrigin: "https://server.example"},
+		"path":      {ForwarderOrigin: "http://127.0.0.1:34567/api-proxy/v1"},
+		"userinfo":  {ForwarderOrigin: "http://u:p@127.0.0.1:34567"},
+		"no port":   {ForwarderOrigin: "http://127.0.0.1"},
+		"proxy":     {ForwarderOrigin: "http://127.0.0.1:34567", LoopbackProxyURL: proxy},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api.ServerOrigin, api.Token = "https://server.example", apiFixtureToken()
+			cfg := Config{Mode: ThreadProtocol, API: &api}
+			if _, err := configureAPI(&cfg); err == nil || len(cfg.Process.Env) != 0 {
+				t.Fatal("invalid forwarder authority was accepted")
+			}
+		})
+	}
+}
