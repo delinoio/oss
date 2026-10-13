@@ -173,7 +173,10 @@ them. The same registration applies when a lifecycle close (a superseding
 reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
 reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. A hide or window close whose native unmap fails
 retains the view for retried cleanup but still requests `CloseBrowser`, so it
-registers the view's exact generation on the receipt as well. The `on_before_close` callback that empties a reconciled receipt's set settles it
+registers the view's exact generation on the receipt as well. Publishing an
+`open_browser` view that replaces one already published for the window (for
+example overlapping opens sharing a view ID) removes the old view through the
+same registration. The `on_before_close` callback that empties a reconciled receipt's set settles it
 immediately, so an owner that unmounts before its next Observe cannot leave a
 `cleanup-pending` receipt that exhausts the page operation limit. Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate

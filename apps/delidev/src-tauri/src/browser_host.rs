@@ -315,6 +315,24 @@ impl State {
         }
     }
 
+    // Publication step of `open`: unmaps and removes a view already published
+    // for the window, returning its native browser for an asynchronous close.
+    // The removal is attributed to the profile's in-flight page operation like
+    // every other lifecycle removal, so overlapping opens that share a view ID
+    // cannot drop a native child that a committed receipt must still await.
+    fn withdraw_view(
+        &mut self,
+        window: &str,
+        mut unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<Option<Browser>> {
+        if let Some(view) = self.views.get(window) {
+            unmap(view)?;
+        }
+        let previous = self.views.get(window).and_then(|view| view.browser.clone());
+        self.remove_view_tracking_outstanding(window);
+        Ok(previous)
+    }
+
     // The profile's in-flight operation may not have published
     // `metadata_committed` yet: its staged replacement can already be on disk
     // while `prepare_pages` is still reacquiring this lock. Register the
@@ -1449,13 +1467,7 @@ impl BrowserHost {
         if state.reservations.get(window.label()) != Some(&view_id) {
             return Err(NativeFailure::Stopped);
         }
-        if let Some(view) = state.views.get(window.label()) {
-            unmap_view(view)?;
-        }
-        let previous = state
-            .views
-            .remove(window.label())
-            .and_then(|view| view.browser);
+        let previous = state.withdraw_view(window.label(), unmap_view)?;
         drop(state);
         if let Some(browser) = previous
             && let Some(host) = browser.host()
@@ -6101,6 +6113,46 @@ esac
         assert!(!operation.receipt.metadata_committed);
         assert_eq!(operation.receipt.phase, PagePhase::Failed);
         assert!(operation.awaiting_close.is_empty());
+    }
+
+    #[test]
+    fn open_publication_replacing_a_view_keeps_the_receipt_pending() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        // A second open sharing the view ID publishes after the first view was
+        // inserted and withdraws it before reconciliation runs.
+        let previous = host
+            .state
+            .lock()
+            .unwrap()
+            .withdraw_view("fixture", |_| Ok(()))
+            .unwrap();
+        assert!(previous.is_none());
+        assert!(host.state.lock().unwrap().views.is_empty());
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn open_publication_with_failed_unmap_keeps_the_view_untracked() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        let result = host
+            .state
+            .lock()
+            .unwrap()
+            .withdraw_view("fixture", |_| Err(NativeFailure::SidecarFailed));
+        assert!(matches!(result, Err(NativeFailure::SidecarFailed)));
+        let state = host.state.lock().unwrap();
+        assert!(state.views.contains_key("fixture"));
+        assert!(state.page_operations[&key].awaiting_close.is_empty());
     }
 
     #[test]
