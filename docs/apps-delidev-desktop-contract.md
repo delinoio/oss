@@ -3424,7 +3424,19 @@ Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
 with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
-adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
+adoption. Exact token-set checks compare the key count and each required key
+instead of a delimiter-joined key list, so a key containing a comma cannot
+stand in for several tokens. The frontend and native validators require the same
+contrast rows for each light/dark map: `text`, `text-secondary`, `muted`,
+`text-subtle` and `link` against `surface`; `success-text` against
+`surface-subtle`; `conversation-text` against `warning-background`;
+`on-accent` against `accent` and `accent-hover`; `selected-text` against
+`selected-background`; `warning-text` and `danger-text` against their
+backgrounds; `on-inverse` against `inverse-surface`, each at least 4.5:1; and
+`control-border` and `focus` against `surface`, plus `focus` against
+`surface-selected`, each at least 3:1. A saved custom theme that fails these
+rows makes the appearance document invalid (the file is preserved), the same as
+any other failing contrast row. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
 CSS injection or a CSP exception. The selected root palette must outrank built-in
 theme rules in main and retained tray windows for explicit Light/Dark and resolved
@@ -3439,8 +3451,9 @@ When session accent is disabled, focused content inside a user message keeps an
 outline with at least 3:1 contrast against `surface-selected`. Use the semantic
 `focus` token when it meets this threshold. Otherwise, compute the higher-contrast
 opaque black or white value and expose it through the render-only
-`--focus-on-selected` variable. This fallback does not change stored theme tokens
-or reject an existing custom theme.
+`--focus-on-selected` variable. This fallback does not change stored theme tokens.
+Stored maps must already meet the `focus` to `surface-selected` 3:1 row above, so
+the fallback is only a render-time safeguard.
 
 Composer and Display retain Regular/Compact layouts and explicit 12/14/16/18px
 text choices. Project and General Chat creation retain the 210px Regular minimum.

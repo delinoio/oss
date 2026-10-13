@@ -118,6 +118,31 @@ export function visibleHoverSurface(colors: ColorMap) {
     ? hover
     : colors.surface;
 }
+// Every stored color map must satisfy these (foreground, background, minimum
+// ratio) rows. Keep this list aligned with `valid_colors` in
+// src-tauri/src/appearance.rs.
+export const colorContrastRequirements: readonly [
+  keyof ColorMap,
+  keyof ColorMap,
+  number,
+][] = [
+  ["text", "surface", 4.5],
+  ["text-secondary", "surface", 4.5],
+  ["muted", "surface", 4.5],
+  ["text-subtle", "surface", 4.5],
+  ["on-accent", "accent", 4.5],
+  ["on-accent", "accent-hover", 4.5],
+  ["selected-text", "selected-background", 4.5],
+  ["warning-text", "warning-background", 4.5],
+  ["danger-text", "danger-background", 4.5],
+  ["on-inverse", "inverse-surface", 4.5],
+  ["link", "surface", 4.5],
+  ["success-text", "surface-subtle", 4.5],
+  ["conversation-text", "warning-background", 4.5],
+  ["control-border", "surface", 3],
+  ["focus", "surface", 3],
+  ["focus", "surface-selected", 3],
+];
 export function validColors(value: unknown): value is ColorMap {
   if (
     !object(value) ||
@@ -128,22 +153,9 @@ export function validColors(value: unknown): value is ColorMap {
   )
     return false;
   const v = value as ColorMap;
-  return (
-    (
-      [
-        ["text", "surface"],
-        ["text-secondary", "surface"],
-        ["muted", "surface"],
-        ["text-subtle", "surface"],
-        ["on-accent", "accent"],
-        ["on-accent", "accent-hover"],
-        ["selected-text", "selected-background"],
-        ["warning-text", "warning-background"],
-        ["danger-text", "danger-background"],
-        ["on-inverse", "inverse-surface"],
-      ] as [keyof ColorMap, keyof ColorMap][]
-    ).every(([a, b]) => contrast(v[a], v[b]) >= 4.5) &&
-    contrast(v["control-border"], v.surface) >= 3
+  return colorContrastRequirements.every(
+    ([foreground, background, minimum]) =>
+      contrast(v[foreground], v[background]) >= minimum,
   );
 }
 export function validTheme(
