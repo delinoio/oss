@@ -267,6 +267,28 @@ mod tests {
         }
     }
 
+    // Freshly written scripts can fail to spawn with ETXTBSY while another
+    // test thread's fork still holds the script's write descriptor before its
+    // exec. Such a spawn failure never runs the script, so it leaves no `ran`
+    // marker; the launcher itself still performs exactly one launch per call.
+    // A launch that ran the script (marker present) or succeeded is returned
+    // unchanged, so a real failure or a duplicate launch is still observable.
+    fn launch_until_spawned(
+        spec: &LaunchSpec,
+        url: &str,
+        ran: &Path,
+    ) -> std::result::Result<(), NativeFailure> {
+        let mut result = launch(spec, url, &AtomicBool::new(false));
+        for _ in 0..50 {
+            if result.is_ok() || ran.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+            result = launch(spec, url, &AtomicBool::new(false));
+        }
+        result
+    }
+
     #[test]
     fn url_is_exactly_one_argv_value_without_shell_interpretation_or_credentials() {
         let dir = tempfile::tempdir().unwrap();
@@ -282,7 +304,7 @@ mod tests {
         // SAFETY: tests in this module do not read this variable concurrently.
         unsafe { std::env::set_var("DELIDEV_FIXTURE_SECRET_TOKEN", "x") };
         let url = "https://example.com/?a=$(touch pwned)&b=;`id`|x";
-        launch(&spec(&program), url, &AtomicBool::new(false)).unwrap();
+        launch_until_spawned(&spec(&program), url, &out).unwrap();
         let record = fs::read_to_string(&out).unwrap();
         let lines: Vec<_> = record.lines().collect();
         assert_eq!(lines[0], "2");
@@ -301,11 +323,7 @@ mod tests {
             &format!("echo x >> '{}'; exit 3", count.display()),
         );
         assert_eq!(
-            launch(
-                &spec(&program),
-                "https://example.com/",
-                &AtomicBool::new(false)
-            ),
+            launch_until_spawned(&spec(&program), "https://example.com/", &count),
             Err(NativeFailure::BrowserLaunchFailed)
         );
         assert_eq!(fs::read_to_string(&count).unwrap().lines().count(), 1);
@@ -328,12 +346,7 @@ mod tests {
             &format!("sleep 3; echo done > '{}'", marker.display()),
         );
         let started = Instant::now();
-        launch(
-            &spec(&program),
-            "https://example.com/",
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        launch_until_spawned(&spec(&program), "https://example.com/", &marker).unwrap();
         assert!(started.elapsed() < Duration::from_millis(2900));
         // The detached browser must still finish its own work; poll generously
         // because the host may be heavily loaded.
