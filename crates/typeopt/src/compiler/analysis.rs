@@ -370,6 +370,38 @@ impl<'c> Ctx<'c> {
         self.file_of(&source_file_info(get_source_file_of_node(node)).file_name)
     }
 
+    /// Whether `typeof name` evaluates without throwing. A name that
+    /// resolves to no declaration, or only to ambient declarations (project
+    /// `.d.ts` files, `declare` statements and libraries), creates no
+    /// runtime lexical binding in application code, so `typeof` reads the
+    /// host global and never throws. A declared binding of the application
+    /// still throws while it is in its temporal dead zone and needs the
+    /// ordinary identifier initialization proof. An imported binding is
+    /// always an application binding: its declaration file may describe a
+    /// module that initializes later in a cycle.
+    fn typeof_operand_safe(&mut self, operand: Node) -> bool {
+        let symbol = self.resolve(operand);
+        if symbol.is_nil() {
+            return true;
+        }
+        let imported = {
+            let local = self.checker.get_symbol_at_location(operand);
+            local.is_some() && self.checker.sym(local).flags.intersects(SymbolFlags::Alias)
+        };
+        if !imported {
+            let declarations = self.checker.sym(symbol).declarations.to_vec();
+            if !declarations.is_empty()
+                && declarations.iter().all(|&d| {
+                    d.flags().intersects(NodeFlags::Ambient)
+                        || has_syntactic_modifier(d, ModifierFlags::Ambient)
+                })
+            {
+                return true;
+            }
+        }
+        self.is_pure(operand)
+    }
+
     /// Whether the expression evaluates without observable effects and
     /// without throwing. Conservative: unknown forms are impure.
     pub fn is_pure(&mut self, node: Node) -> bool {
@@ -424,11 +456,7 @@ impl<'c> Ctx<'c> {
             SyntaxKind::TypeOfExpression => {
                 let operand = skip_outer(node.expression());
                 if operand.kind() == SyntaxKind::Identifier {
-                    // `typeof` never throws for a name that resolves to no
-                    // declaration, but a declared lexical binding still
-                    // throws while it is in its temporal dead zone. Declared
-                    // names need the ordinary identifier initialization proof.
-                    self.resolve(operand).is_nil() || self.is_pure(operand)
+                    self.typeof_operand_safe(operand)
                 } else {
                     self.is_pure(operand)
                 }

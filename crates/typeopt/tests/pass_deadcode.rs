@@ -395,6 +395,64 @@ export function value() { return local; }
     assert!(!dep.contains("unusedUndeclared"), "{dep}");
 }
 
+/// Ambient declarations (project `.d.ts` files and `declare` statements)
+/// create no runtime lexical binding, so `typeof` of such a name never
+/// throws and its unused probe is removable.
+#[test]
+fn residual_typeof_of_ambient_name_is_removed() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                "import { value } from \"./dep.ts\";\nconsole.log(value());\n",
+            ),
+            (
+                "globals.d.ts",
+                "declare const __DEV__: boolean;\ndeclare class HostClass {}\n",
+            ),
+            (
+                "dep.ts",
+                r#"declare const LOCAL_FLAG: string;
+const unusedDev = typeof __DEV__;
+const unusedHostClass = typeof HostClass;
+const unusedLocalFlag = typeof LOCAL_FLAG;
+export function value() { return 1; }
+"#,
+            ),
+        ],
+        &[RESIDUAL],
+    );
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    for probe in ["unusedDev", "unusedHostClass", "unusedLocalFlag"] {
+        assert!(!dep.contains(probe), "{probe}: {dep}");
+    }
+}
+
+/// A `typeof` read of a class before its declaration throws, so the unused
+/// probe stays in every pass configuration.
+#[test]
+fn residual_keeps_typeof_of_class_before_declaration() {
+    let files: &[(&str, &str)] = &[
+        ("main.ts", "import \"./dep.ts\";\nconsole.log(\"main\");\n"),
+        (
+            "dep.ts",
+            r#"// @ts-ignore Used before its declaration.
+const unusedProbe = typeof Late;
+class Late {}
+"#,
+        ),
+    ];
+    for keep in [&[RESIDUAL][..], &[][..]] {
+        let temp = project(files);
+        optimize(temp.path(), &args(&only(keep)));
+        assert_tdz_preserved(temp.path());
+    }
+    let temp = project(files);
+    optimize(temp.path(), &[]);
+    assert_tdz_preserved(temp.path());
+}
+
 /// A parameter default that reads a later parameter under `typeof` throws
 /// `ReferenceError` (temporal dead zone), so signature reduction must not
 /// drop that unused parameter. A default that reads an earlier parameter
