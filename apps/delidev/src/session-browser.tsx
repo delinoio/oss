@@ -34,6 +34,12 @@ import {
 import { useRetainedMutation } from "./mutation";
 import { Modal, Problem } from "./ui";
 import { useBrowserHost } from "./host-capabilities";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+  type EntranceProps,
+} from "./entrance-motion";
 
 enum BrowserAction {
   Navigate = "navigate",
@@ -214,11 +220,11 @@ interface TabbedBrowser {
   statusTarget?: HTMLElement | null;
   selectedPage?: PageDescriptor;
 }
-function BrowserHeader() {
+function BrowserHeader({ entrance }: { entrance?: EntranceProps }) {
   const [information, setInformation] = useState(false);
   return (
     <>
-      <header className="browser-header">
+      <header className="browser-header" {...entrance}>
         <h3>{copy("session-browser.browser_d31de1")}</h3>
         <small>{copy("session-browser.accountProfile")}</small>
         <div className="browser-header-actions">
@@ -377,6 +383,21 @@ function NativeSessionBrowser({
   accountId: string;
 } & TabbedBrowser) {
   useLocale();
+  // An explicit activation is the rising edge of "the session is visible and a
+  // page is selected", derived from props only. It never follows the
+  // asynchronous inventory, native observation or `needsPresentation`, so a
+  // late result cannot replay it. The Y2 entrance moves only the static
+  // header, never the native viewport, its layout or hit-test containers.
+  const presenting = active && Boolean(selectedPage);
+  const presentations = useActivationCount(presenting);
+  const headerEntrance = useEntranceActivation(
+    `${session.id}:browser:${presentations}`,
+    presenting,
+    EntranceMotion.Y2,
+    // The panel stays mounted while hidden, so leaving settles an in-flight
+    // entrance instead of leaving the attribute on an inactive tool.
+    true,
+  );
   const [address, setAddress] = useState("");
   const [draft, setDraft] = useState("");
   const [profileId, setProfileId] = useState<string>();
@@ -1308,7 +1329,7 @@ function NativeSessionBrowser({
             aria-label={copy("session-browser.sessionBrowser_47d746")}
           >
             <div className="browser-chrome">
-              <BrowserHeader />
+              <BrowserHeader entrance={headerEntrance} />
               {failure ? <p role="alert">{failure}</p> : null}
               {inventoryFailure ? <p role="alert">{inventoryFailure}</p> : null}
               {state?.removal_pending ? (
