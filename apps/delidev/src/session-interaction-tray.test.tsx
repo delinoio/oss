@@ -311,3 +311,138 @@ it("keeps the compact question state and count after a successful answer when th
   expect(region.querySelector(".requests summary")?.textContent).toContain("1");
   expect(respond).toHaveBeenCalledTimes(1);
 });
+
+it("keeps an evicted older question receipt before newer page requests", async () => {
+  const sessionId = newRequestId();
+  const session = create(ResourceSchema, {
+    id: sessionId,
+    sessionId,
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 1n,
+    documentJson: encode({
+      name: "Receipt order fixture",
+      workspace: "general-chat",
+      outcome: "succeeded",
+      archive: "active",
+      dispatch: "paused",
+      recovery: "clear",
+    }),
+  });
+  const question = (header: string) => ({
+    type: "user-question",
+    closure: "open",
+    questions: {
+      questions: [
+        {
+          id: "original",
+          text: header,
+          header,
+          secret: false,
+          other: true,
+          options: [],
+        },
+      ],
+    },
+  });
+  // One request per page keeps the fixture small while reaching four pages.
+  const pages = ["First", "Second", "Third", "Fourth"].map((header) =>
+    create(ResourceSchema, {
+      id: newRequestId(),
+      sessionId,
+      kind: EntityKind.INTERACTION,
+      schemaVersion: 1,
+      revision: 9n,
+      documentJson: encode(question(`${header} question`)),
+    }),
+  );
+  const respond = vi.fn(async () => ({
+    interaction: create(ResourceSchema, {
+      ...pages[0],
+      revision: 10n,
+      documentJson: encode({
+        ...question("First question"),
+        response: { state: "queued" },
+      }),
+    }),
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SessionService, {
+      listSessions: () => ({ sessions: [session] }),
+      listQueue: () => ({ inputs: [] }),
+    });
+    router.service(InteractionService, { respondQuestion: respond });
+    router.service(ResourceService, {
+      getSnapshot: () => ({
+        resources: [session],
+        cursor: "receipt-order-snapshot",
+      }),
+      getResource: () => ({ resource: pages[0] }),
+      listResources: (request) => {
+        if (request.filter?.kind !== EntityKind.INTERACTION)
+          return { resources: [] };
+        const index = request.filter.pageToken
+          ? Number(request.filter.pageToken)
+          : 0;
+        return {
+          resources: [pages[index]],
+          nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+        };
+      },
+      async *watchEvents(_request, context) {
+        await new Promise<void>((done) =>
+          context.signal.addEventListener("abort", () => done()),
+        );
+      },
+    });
+    router.service(InboxService, {
+      listInbox: () => ({ entries: [] }),
+      getNotificationPreferences: () => ({
+        preferences: create(NotificationPreferencesSchema, { revision: 1n }),
+      }),
+    });
+  });
+  render(<App transport={transport} />);
+  fireEvent.click(
+    await within(
+      screen.getByRole("complementary", { name: "Application sidebar" }),
+    ).findByRole("button", { name: /General Chat Receipt order fixture/ }),
+  );
+  const region = screen.getByRole("region", { name: "Current session" });
+  const answer = await within(region).findByRole("textbox", {
+    name: "Your answer",
+  });
+  fireEvent.change(answer, { target: { value: "Original response bytes" } });
+  fireEvent.click(within(region).getByRole("button", { name: "Send answers" }));
+  await within(region).findByText("Response: queued");
+  const requests = region.querySelector<HTMLElement>(".requests")!;
+  // Reach pages two through four; page one then leaves the three-page window.
+  for (let page = 1; page < pages.length; page++) {
+    fireEvent.click(
+      await within(requests).findByRole("button", { name: /^Load more/ }),
+    );
+    await waitFor(() =>
+      expect(requests.querySelectorAll("[data-payload-page]")).toHaveLength(
+        page + 1,
+      ),
+    );
+  }
+  await waitFor(() =>
+    expect(
+      within(requests).getByRole("button", {
+        name: "Restore previously loaded items",
+      }),
+    ).not.toBeNull(),
+  );
+  const order = () =>
+    [...requests.querySelectorAll("[data-payload-page]")].map((node) =>
+      node.textContent?.includes("Response: queued")
+        ? "receipt"
+        : (/(Second|Third|Fourth) question/.exec(node.textContent ?? "")?.[1] ??
+          "restore"),
+    );
+  expect(order()).toEqual(["receipt", "Second", "Third", "Fourth"]);
+  expect(requests.textContent?.match(/Response: queued/g)).toHaveLength(1);
+  expect(respond).toHaveBeenCalledTimes(1);
+});

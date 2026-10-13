@@ -33,8 +33,8 @@ function PayloadPage<Row extends PaginationRow, Payload>({
   query: PayloadWindowQuery<Row, Payload>;
   root: RefObject<HTMLElement | null>;
   active: boolean;
-  projected?: (rows: Row[]) => ReactNode;
-  children: (payload: Payload[], rows: Row[]) => ReactNode;
+  projected?: (rows: Row[], payload?: Payload[]) => ReactNode;
+  children?: (payload: Payload[], rows: Row[]) => ReactNode;
 }) {
   useLocale();
   const element = useRef<HTMLDivElement>(null);
@@ -120,7 +120,7 @@ function PayloadPage<Row extends PaginationRow, Payload>({
     >
       {projected ? (
         <>
-          {projected(page.rows)}
+          {projected(page.rows, payload)}
           {!payload ? (
             <SettingsActionButton
               icon={SettingsActionIcon.Back}
@@ -135,7 +135,7 @@ function PayloadPage<Row extends PaginationRow, Payload>({
           ) : null}
         </>
       ) : payload ? (
-        children(payload, page.rows)
+        children?.(payload, page.rows)
       ) : (
         <SettingsActionButton
           icon={SettingsActionIcon.Back}
@@ -165,9 +165,11 @@ export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({
   query: PayloadWindowQuery<Row, Payload>;
   root: RefObject<HTMLElement | null>;
   active: boolean;
-  children: (payload: Payload[], rows: Row[]) => ReactNode;
-  /** Render retained display projections through both payload states without remounting their owner. */
-  projected?: (rows: Row[]) => ReactNode;
+  children?: (payload: Payload[], rows: Row[]) => ReactNode;
+  /** Render retained display projections through both payload states without remounting their owner.
+   * Receives the page's authoritative row identities in order plus its resident payload, when present;
+   * replaces `children` for that page. */
+  projected?: (rows: Row[], payload?: Payload[]) => ReactNode;
   identity?: (payload: Payload) => string;
   revision?: (payload: Payload) => bigint;
 }) {

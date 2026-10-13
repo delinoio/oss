@@ -168,6 +168,54 @@ export function missingQuestionReceipts(
       displayedInteraction(projection, pending),
   );
 }
+export enum PageEntryKind {
+  Resident = "resident",
+  Receipt = "receipt",
+}
+export type PageEntry<Resident, Receipt> =
+  | { kind: PageEntryKind.Resident; id: string; value: Resident }
+  | { kind: PageEntryKind.Receipt; id: string; value: Receipt };
+/**
+ * Orders one reached page's retained row identities, resolving each either to
+ * its resident payload row or to a compact receipt for an evicted/missing
+ * question. The authoritative page row order wins over receipt observation
+ * order, each identity renders at most once, and identities without a resident
+ * row or receipt render nothing (removed or retired rows).
+ */
+export function orderedPageEntries<Resident extends { id: string }, Receipt>(
+  rowIds: readonly string[],
+  resident: readonly Resident[],
+  receipts: ReadonlyMap<string, Receipt>,
+): PageEntry<Resident, Receipt>[] {
+  const rows = new Map<string, Resident>();
+  for (const row of resident) if (!rows.has(row.id)) rows.set(row.id, row);
+  const seen = new Set<string>();
+  const entries: PageEntry<Resident, Receipt>[] = [];
+  for (const id of rowIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const row = rows.get(id);
+    if (row) {
+      entries.push({ kind: PageEntryKind.Resident, id, value: row });
+      continue;
+    }
+    if (receipts.has(id))
+      entries.push({
+        kind: PageEntryKind.Receipt,
+        id,
+        value: receipts.get(id) as Receipt,
+      });
+  }
+  return entries;
+}
+/** Receipts for questions that no reached page owns (for example new live
+ * arrivals); they trail the final page in observation order. */
+export function unpagedQuestionReceipts<Receipt extends [string, unknown]>(
+  receipts: readonly Receipt[],
+  pagedIds: ReadonlySet<string>,
+): Receipt[] {
+  return receipts.filter(([requestId]) => !pagedIds.has(requestId));
+}
 export function completeEmptyInteractionTray({
   loaded,
   loading,

@@ -178,9 +178,13 @@ import { Interaction, PendingInteractionReceipt } from "./interactions";
 import {
   InteractionPresentationStore,
   InteractionPresentation,
+  type InteractionProjection,
   displayedInteraction,
   completeEmptyInteractionTray,
   missingQuestionReceipts as selectMissingQuestionReceipts,
+  orderedPageEntries,
+  PageEntryKind,
+  unpagedQuestionReceipts,
 } from "./interaction-presentation";
 import { SessionTerminals } from "./session-terminals";
 import {
@@ -1566,6 +1570,27 @@ export function SessionView({
     live.removed,
     pendingQuestionKeys,
   );
+  // Receipts render at their original reached page and row position, including
+  // after the owning payload page is evicted. Only questions that no reached
+  // page owns (for example new live arrivals) trail the final page.
+  const receiptsById = new Map(missingQuestionReceipts);
+  const trailingQuestionReceipts = unpagedQuestionReceipts(
+    missingQuestionReceipts,
+    new Set(interactions.pages.flatMap((page) => page.rows.map((r) => r.id))),
+  );
+  const questionReceipt = (
+    requestId: string,
+    projection: InteractionProjection,
+  ) => (
+    <PendingInteractionReceipt
+      key={requestId}
+      projection={projection}
+      accepted={(result) => {
+        if (result) observeResponse(result);
+        void interactions.refresh();
+      }}
+    />
+  );
   const requestsExpanded =
     requests.some((row) => {
       const projection = interactionPresentation.observe(row);
@@ -2468,18 +2493,27 @@ export function SessionView({
                             query={interactions}
                             root={requestsRoot}
                             active={conversationActive && requestsExpanded}
-                          >
-                            {(payload) =>
-                              interactionRows(
-                                payload,
-                                latestInteractions,
-                                live.removed,
-                                [],
-                                id,
-                                false,
-                              ).map(interactionRow)
+                            projected={(rows, payload) =>
+                              orderedPageEntries(
+                                rows.map((row) => row.id),
+                                payload
+                                  ? interactionRows(
+                                      payload,
+                                      latestInteractions,
+                                      live.removed,
+                                      [],
+                                      id,
+                                      false,
+                                    )
+                                  : [],
+                                receiptsById,
+                              ).map((entry) =>
+                                entry.kind === PageEntryKind.Receipt
+                                  ? questionReceipt(entry.id, entry.value)
+                                  : interactionRow(entry.value),
+                              )
                             }
-                          </ScrollPayloadWindow>
+                          />
                           {!interactions.nextPageToken
                             ? requests
                                 .filter(
@@ -2490,17 +2524,9 @@ export function SessionView({
                                 )
                                 .map(interactionRow)
                             : null}
-                          {missingQuestionReceipts.map(
-                            ([requestId, projection]) => (
-                              <PendingInteractionReceipt
-                                key={requestId}
-                                projection={projection}
-                                accepted={(result) => {
-                                  if (result) observeResponse(result);
-                                  void interactions.refresh();
-                                }}
-                              />
-                            ),
+                          {trailingQuestionReceipts.map(
+                            ([requestId, projection]) =>
+                              questionReceipt(requestId, projection),
                           )}
                           <ScrollContinuation
                             query={interactions}
