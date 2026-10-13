@@ -145,8 +145,7 @@ function jsonPath(path: string): readonly PathSegment[] {
       elements++;
     }
     if (name) segments.push(name);
-    for (let index = 0; index < elements; index++)
-      segments.push(arrayElement);
+    for (let index = 0; index < elements; index++) segments.push(arrayElement);
     return segments;
   });
 }
@@ -211,7 +210,8 @@ export function productMetadataJSON(
       parent?.protected ||
       (parent?.object &&
         parent.key !== undefined &&
-        (sourceContent.test(parent.key) || paths?.externalKeys.has(parent.key))),
+        (sourceContent.test(parent.key) ||
+          paths?.externalKeys.has(parent.key))),
     );
     const valuePath: readonly PathSegment[] = parent
       ? [...parent.path, parent.object ? (parent.key ?? "") : arrayElement]
@@ -302,7 +302,10 @@ export const configurationPreviewPaths: PathProjection = pathProjection(
         [
           [`plan.changes[].${document}.templates[]`, PresentationKind.Template],
           [`plan.changes[].${document}.agents.ids[]`, PresentationKind.Agent],
-          [`plan.changes[].${document}.accounts.ids[]`, PresentationKind.Account],
+          [
+            `plan.changes[].${document}.accounts.ids[]`,
+            PresentationKind.Account,
+          ],
         ] as const,
     ),
   ],

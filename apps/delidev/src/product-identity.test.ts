@@ -150,7 +150,9 @@ describe("product identity presentation", () => {
       expect(projected).toContain('"count":9007199254740993');
       expect(projected).toContain('"id":"resource unavailable · 2"');
       expect(projected).toContain('"agent_id":"agent unavailable · 1"');
-      expect(projected).toContain('"machines":[{"id":"resource unavailable · 3"}]');
+      expect(projected).toContain(
+        '"machines":[{"id":"resource unavailable · 3"}]',
+      );
       expect(projected).not.toContain(second);
       expect(raw).toContain(`"id":"${second}"`);
     });
@@ -172,7 +174,9 @@ describe("product identity presentation", () => {
       expect(projected).not.toContain(`"source_id":"${first}"`);
       // Other source_id uses are external, native or user-owned.
       expect(projected).toContain(`"native":{"source_id":"${third}"}`);
-      expect(projected).toContain(`"after":{"native":{"source_id":"${third}"},"source_id":"${third}"}`);
+      expect(projected).toContain(
+        `"after":{"native":{"source_id":"${third}"},"source_id":"${third}"}`,
+      );
       expect(projected).toContain(`"metadata":{"source_id":"${second}"}`);
       expect(generatedIdentityFields).not.toHaveProperty("source_id");
       // Generic callers never project source_id.
@@ -244,7 +248,12 @@ describe("product identity presentation", () => {
         ),
       ).toBe(`{"plan":{"changes":[{"source_id":"resource unavailable · 1",`);
       expect(
-        productMetadataJSON("not json", generatedIdentityFields, label, configurationPreviewPaths),
+        productMetadataJSON(
+          "not json",
+          generatedIdentityFields,
+          label,
+          configurationPreviewPaths,
+        ),
       ).toBe("not json");
     });
   });
