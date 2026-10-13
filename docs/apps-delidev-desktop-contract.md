@@ -796,6 +796,21 @@ its opener. Inert, hidden, closed, disabled or disposed owners reject late selec
 and retire positioning observers. IME commits and repeated shortcut events cannot
 select an option.
 
+Selection cue: the accepted option (`aria-selected="true"`), the keyboard- or
+pointer-highlighted option (`data-highlighted="true"`) and the current Home
+sidebar session row (`aria-current="true"`) draw a persistent
+`box-shadow: inset 0 0 0 1px var(--selected-border)` ring in addition to the
+selected background and text, so selection stays visible in palettes where those
+two barely differ from the surface. The ring is inset, so options and rows keep
+their size and position and unselected rows draw nothing. It is presentation
+only: labels, ARIA state, keyboard behavior, exact-ID admission and resource
+reads are unchanged, and moving the highlight moves the ring without changing the
+accepted value. `selected-border` contrasts at least 3:1 with `surface`,
+`surface-muted` and `selected-background` in every nondefault bundled light and
+dark palette (enforced by `themes.test.ts`). The Default light palette is a
+disclosed exception: its `selected-border` is about 2.04:1 against `surface`, and
+this change does not retune palette values.
+
 All pagination surfaces share this behavior: Home/contextual navigation, PR
 repository selection, Search/Inbox/Schedules, Settings inventories,
 Runner Devices, network/diagnostics/integrations/providers/models/accounts and
