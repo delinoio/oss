@@ -3321,7 +3321,8 @@ it("one refresh with exits of selected A and B selects the live C content tab", 
     f.inventoryExited.add(0);
     f.inventoryExited.add(1);
     await waitFor(
-      () => expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull(),
+      () =>
+        expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull(),
       { timeout: 4000 },
     );
     const survivor = await screen.findByRole("tab", { name: "Terminal 3" });
@@ -3355,7 +3356,8 @@ async function finalDismissalWithQueuedFocus() {
   f.inventoryExited.add(0);
   f.inventoryExited.add(1);
   await waitFor(
-    () => expect(screen.queryByRole("tab", { name: /^Terminal \d/ })).toBeNull(),
+    () =>
+      expect(screen.queryByRole("tab", { name: /^Terminal \d/ })).toBeNull(),
     { timeout: 4000 },
   );
   return {

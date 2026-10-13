@@ -142,7 +142,9 @@ function fixture(
         session={session}
         close={close}
         tabbed
-        selectedId={tabs.tab.kind === SessionTabKind.Terminal ? tabs.tab.id : ""}
+        selectedId={
+          tabs.tab.kind === SessionTabKind.Terminal ? tabs.tab.id : ""
+        }
         openTerminal={(id) =>
           tabs.store.open(session.id, { kind: SessionTabKind.Terminal, id })
         }
@@ -732,7 +734,9 @@ it("a user selection made before the deferred batch focus suppresses it", async 
         `terminal-tab-${test.rows[3]!.id}`,
       ),
     );
-    const survivor = document.getElementById(`terminal-tab-${test.rows[2]!.id}`);
+    const survivor = document.getElementById(
+      `terminal-tab-${test.rows[2]!.id}`,
+    );
     for (const frame of frames.splice(0)) frame(0);
     expect(document.activeElement).not.toBe(survivor);
   } finally {
