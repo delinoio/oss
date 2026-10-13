@@ -384,7 +384,7 @@ export function SubscriptionRail({
               {account.service === SubscriptionServiceId.ChatGPT ? (
                 <div className="subscription-rail-paid-credits">
                   <PaidCredits
-                    key={`${account.id}:${account.connectionId}`}
+                    key={`${account.id}:${account.connectionId}:${account.generation}`}
                     buckets={account.paidCredits}
                     state={
                       !status.data
