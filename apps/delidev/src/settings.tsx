@@ -3938,7 +3938,7 @@ function RunnerDeviceInventory({
                     </p>
                   ) : null}
                   <small>
-                    {productLabel(PresentationKind.Resource, row.id)}
+                    {productLabel(PresentationKind.Runner, row.id)}
                   </small>
                 </div>
                 <div className="actions">

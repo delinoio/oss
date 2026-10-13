@@ -54,6 +54,24 @@ describe("product identity presentation", () => {
       "backup unavailable · 1",
     );
   });
+  it("numbers Runner and generic Resource fallbacks independently", () => {
+    const { label } = fixture();
+    expect(label(PresentationKind.Resource, first)).toBe(
+      "resource unavailable · 1",
+    );
+    expect(label(PresentationKind.Runner, second)).toBe(
+      "runner unavailable · 1",
+    );
+    expect(label(PresentationKind.Runner, third)).toBe(
+      "runner unavailable · 2",
+    );
+    expect(
+      [third, second].map((id) => label(PresentationKind.Runner, id)),
+    ).toEqual(["runner unavailable · 2", "runner unavailable · 1"]);
+    expect(label(PresentationKind.Resource, first)).toBe(
+      "resource unavailable · 1",
+    );
+  });
   it("disambiguates duplicate observed names without inventing UUID fragments", () => {
     const { registry, label } = fixture();
     registry.observe(PresentationKind.Repository, first, "Same");
