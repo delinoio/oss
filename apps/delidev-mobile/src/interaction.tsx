@@ -10,6 +10,35 @@ const object = (v: unknown): Record<string, unknown> =>
 const array = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? v.map(object) : [];
 const text = (v: unknown) => (typeof v === "string" ? v : "");
+export enum QuestionFamily {
+  Ordinary = "ordinary",
+  Claude = "claude",
+  OpenCode = "opencode",
+  Grok = "grok",
+}
+// Custom text eligibility per question family. Ordinary questions carry
+// `other` (server rejects non-offered text when options exist and it is not
+// true); OpenCode questions carry `custom` (allowed unless false); Claude and
+// Grok keep their existing behavior.
+export const customAllowed = (
+  family: QuestionFamily,
+  q: Record<string, unknown>,
+): boolean => {
+  const hasOptions = array(q.options).length > 0;
+  switch (family) {
+    case QuestionFamily.Ordinary:
+      return q.other === true || !hasOptions;
+    case QuestionFamily.OpenCode:
+      return q.custom !== false;
+    default:
+      return q.other === true || q.custom !== false || !hasOptions;
+  }
+};
+// Only native OpenCode questions without `multiple: true` accept one answer.
+export const singleChoice = (
+  family: QuestionFamily,
+  q: Record<string, unknown>,
+): boolean => family === QuestionFamily.OpenCode && q.multiple !== true;
 export function RequestResponse({
   resource,
   enabled,
@@ -93,14 +122,27 @@ export function RequestResponse({
   const blocked = !enabled || closed || protectedAnswer || busy || !compatible;
   const questionKey = (q: Record<string, unknown>, i: number) =>
     text(q.id) || text(q.question) || String(i);
+  const family = d.claude
+    ? QuestionFamily.Claude
+    : d.opencode
+      ? QuestionFamily.OpenCode
+      : d.grok
+        ? QuestionFamily.Grok
+        : QuestionFamily.Ordinary;
+  // Compose the answer row for one question from the family rules so render,
+  // submit and the missing-answer check never disagree.
+  const rowOf = (q: Record<string, unknown>, i: number) => {
+    const key = questionKey(q, i);
+    if (unanswered[key]) return [];
+    const picked = answers[key] ?? [],
+      typed = customAllowed(family, q) ? (extra[key] ?? "") : "";
+    if (singleChoice(family, q))
+      return typed ? [typed] : picked.slice(0, 1);
+    return [...picked, ...(typed ? [typed] : [])];
+  };
   const response = () => {
     if (question) {
-      const rows = qs.map((q, i) => {
-        const key = questionKey(q, i);
-        return unanswered[key]
-          ? []
-          : [...(answers[key] ?? []), ...(extra[key] ? [extra[key]!] : [])];
-      });
+      const rows = qs.map((q, i) => rowOf(q, i));
       if (d.opencode) return { opencode: { answers: rows } };
       if (d.claude)
         return {
@@ -174,10 +216,7 @@ export function RequestResponse({
     return { decision: original };
   };
   const missing = question
-    ? qs.some((q, i) => {
-        const key = questionKey(q, i);
-        return !unanswered[key] && !(answers[key]?.length || extra[key]);
-      })
+    ? qs.some((q, i) => !unanswered[questionKey(q, i)] && !rowOf(q, i).length)
     : codex.kind !== "permissions" && !decision;
   return (
     <article className="request">
@@ -223,7 +262,8 @@ export function RequestResponse({
         <fieldset disabled={blocked}>
           {question ? (
             qs.map((q, i) => {
-              const key = questionKey(q, i);
+              const key = questionKey(q, i),
+                single = singleChoice(family, q);
               return (
                 <fieldset key={key}>
                   <legend>{text(q.header) || String(i + 1)}</legend>
@@ -231,16 +271,20 @@ export function RequestResponse({
                   {array(q.options).map((o, j) => (
                     <label key={j} className="check">
                       <input
-                        type="checkbox"
+                        type={single ? "radio" : "checkbox"}
+                        name={single ? key : undefined}
                         checked={answers[key]?.includes(text(o.label)) ?? false}
                         onChange={(e) => {
                           const current = answers[key] ?? [];
                           setAnswers({
                             ...answers,
-                            [key]: e.target.checked
-                              ? [...current, text(o.label)]
-                              : current.filter((v) => v !== o.label),
+                            [key]: single
+                              ? [text(o.label)]
+                              : e.target.checked
+                                ? [...current, text(o.label)]
+                                : current.filter((v) => v !== o.label),
                           });
+                          if (single) setExtra({ ...extra, [key]: "" });
                           setUnanswered({ ...unanswered, [key]: false });
                         }}
                       />
@@ -248,15 +292,15 @@ export function RequestResponse({
                       <small>{text(o.description)}</small>
                     </label>
                   ))}
-                  {q.other === true ||
-                  q.custom !== false ||
-                  !array(q.options).length ? (
+                  {customAllowed(family, q) ? (
                     <label>
                       {c.custom}
                       <textarea
                         value={extra[key] ?? ""}
                         onChange={(e) => {
                           setExtra({ ...extra, [key]: e.target.value });
+                          if (single && e.target.value)
+                            setAnswers({ ...answers, [key]: [] });
                           setUnanswered({ ...unanswered, [key]: false });
                         }}
                       />
