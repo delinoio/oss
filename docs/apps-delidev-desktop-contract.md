@@ -6213,7 +6213,17 @@ Live seconds use the paired authenticated Machine/Overview observed_at and a
 monotonic presentation timer, once per second even while closed. The clock anchors
 at receipt of the server observation; network read duration remains a conservative
 presence bound, not additional group duration. Finished time stays fixed without
-a spinner. Attention, inactivity, hidden documents, stale presence or connection
+a spinner and is confirmed only when its matching settlement is established. `finished_at` alone
+freezes an interval: Stop, failure and cancellation also write it, so it never
+confirms success. Workspace time is confirmed only by `preparation.state` ready
+for the same job; agent time only by the same job/execution's active execution
+document listing the selected original input first in a complete, valid
+`accepted_inputs` list (the same bounded, unique, digest-bound validation used for
+session progress). Legacy
+documents without that evidence, failed, stopped, lost-owner or still-pending
+claimed intervals keep the frozen seconds, no spinner and the Unconfirmed label,
+including in the retained row while cancellation is pending. Attention,
+inactivity, hidden documents, stale presence or connection
 replacement stop ticks and animation. Retained unfinished values are explicitly
 unconfirmed. Timing is outside the polite status node and has aria-live off.
 Disclosure toggles do not fetch, reset clocks, dispatch or remount controllers;

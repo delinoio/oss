@@ -8,6 +8,7 @@ import type {
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
 import { retainedTurnTiming } from "./turn-timing";
+import { acceptedInputsBind } from "./session-progress";
 import { startupWorkerCurrent } from "./session-startup-operations";
 
 export interface StartupTime {
@@ -35,12 +36,40 @@ interface Group {
   owner: string;
   start: number;
   end?: number;
+  /**
+   * `finished_at` only freezes the interval (Stop, failure and cancellation
+   * also write it). It is confirmed only with matching successful settlement:
+   * workspace readiness or acceptance of the original primary input.
+   */
+  settled: boolean;
 }
 const uuid = (value: unknown) =>
   typeof value === "string" &&
   /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
     value,
   );
+
+/**
+ * Agent settlement: the active execution document for the same job and
+ * execution lists the selected original input as its first accepted input and
+ * the whole ordered `accepted_inputs` list is valid.
+ * Legacy documents without `accepted_inputs` stay unsettled (fail closed).
+ */
+function originalInputAccepted(
+  active: Record<string, unknown>,
+  selected: Record<string, unknown>,
+  job: string,
+): boolean {
+  if (
+    !uuid(selected.id) ||
+    !uuid(selected.input_id) ||
+    active.execution_id !== selected.id ||
+    active.input_id !== selected.input_id ||
+    active.job_id !== job
+  )
+    return false;
+  return acceptedInputsBind(active.accepted_inputs, selected.input_id);
+}
 
 /** Exact original attempt only; entity, turn and job timestamps are never backfill. */
 export function startupTimingGroups(session?: Resource): {
@@ -85,6 +114,9 @@ export function startupTimingGroups(session?: Resource): {
       owner: JSON.stringify([session!.id, job, execution, t.startedAt]),
       start: timing.accepted,
       end: timing.terminal,
+      settled: native
+        ? originalInputAccepted(active, selected, job as string)
+        : preparation.state === "ready",
     };
   }
   return {
@@ -229,7 +261,7 @@ export function useStartupTimes(
       return {
         seconds: Math.floor((group.end - group.start) / 1000),
         running: false,
-        unconfirmed: false,
+        unconfirmed: !group.settled,
       };
     const frame = frames.current[key],
       confirmed = current();
