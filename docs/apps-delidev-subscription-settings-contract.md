@@ -311,8 +311,9 @@ status footer: the last-success timestamp and failed-refresh wording when saved
 quota, credit, preference, consent or status failure Problem, including after
 the operation settles. Every present retained failure from these independent
 operations stays visible; none hides another. An automatic-use confirmation
-opened while connected closes when the account disconnects and is not restored
-on reconnect. No timestamp, value or success claim is invented when no
+opened while connected closes as soon as the account's own connection state
+reports it disconnected, even while the owner keeps the controls visible for an
+in-flight request, and is not restored on reconnect. No timestamp, value or success claim is invented when no
 saved evidence exists, and no checkbox, Use credit, consent, preference or retry
 control is added by this presentation.
 

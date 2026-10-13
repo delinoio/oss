@@ -177,6 +177,20 @@ function fixture(
             </button>
             <button
               onClick={() => {
+                // The owner keeps `visible` true while a request is in flight,
+                // so a poll can report the disconnection with `visible` unchanged.
+                account = create(ResourceSchema, {
+                  ...account,
+                  revision: account.revision + 1n,
+                  documentJson: encode({ ...data, connection: undefined }),
+                });
+                setCurrent(account);
+              }}
+            >
+              Drop fixture connection
+            </button>
+            <button
+              onClick={() => {
                 account = create(ResourceSchema, {
                   ...account,
                   revision: account.revision + 1n,
@@ -1234,6 +1248,36 @@ it("leaves the consent confirmation when the account disconnects and does not re
     }),
   ).toBeNull();
   expect(value.consent).not.toHaveBeenCalled();
+});
+
+it("closes the consent confirmation when the account disconnects while the owner keeps the controls visible", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  const checkbox = await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(checkbox);
+  await screen.findByRole("heading", {
+    name: "Enable automatic reset credit use?",
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Drop fixture connection" }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", {
+        name: "Enable automatic reset credit use?",
+      }),
+    ).toBeNull(),
+  );
+  expect(value.consent).not.toHaveBeenCalled();
+  // `visible` stayed true, so the original controls remain mounted and the
+  // confirmation is not restored on its own.
+  expect(await screen.findByRole("checkbox", { name: "Automatic use" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Enable automatic use" })).toBeNull();
 });
 
 it("keeps every independent retained failure visible after the account disconnects", async () => {

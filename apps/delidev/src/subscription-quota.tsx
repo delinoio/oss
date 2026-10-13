@@ -322,10 +322,13 @@ export function SubscriptionQuotaControls({
   }, [busy, busyChanged]);
   // A confirmation opened while connected must not outlive the connection: the
   // disconnected presentation is read-only and the confirmation would otherwise
-  // reappear if the account reconnected.
+  // reappear if the account reconnected. The owner keeps `visible` true while a
+  // request is in flight, so the actual account connection is checked too.
+  const accountConnected = connection !== "";
+  const confirmationAllowed = visible && accountConnected;
   useEffect(() => {
-    if (!visible) setConsentConfirmation(undefined);
-  }, [visible]);
+    if (!confirmationAllowed) setConsentConfirmation(undefined);
+  }, [confirmationAllowed]);
   const originalActive =
     ["queued", "sending", "uncertain"].includes(text(observation.phase)) ||
     ["queued", "sending", "uncertain"].includes(
@@ -558,7 +561,7 @@ export function SubscriptionQuotaControls({
     setConsentConfirmation(undefined);
     queueMicrotask(() => consentOpener.current?.focus());
   };
-  if (consentConfirmation && visible)
+  if (consentConfirmation && confirmationAllowed)
     return (
       <SettingsTaskDialog
         title={copy("subscription-quota.automaticConfirmTitle")}
