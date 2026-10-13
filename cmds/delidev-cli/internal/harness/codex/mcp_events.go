@@ -350,7 +350,12 @@ func (c *Client) observeElicitationLocked(native nativewire.Event) (Event, error
 	form, supported := decodeElicitationSchema(params.Mode, params.Schema)
 	turn, known := c.execution.turns[turnID]
 	if !supported || turnID == "" || !known && c.problem == nil {
-		c.refuseElicitationLocked(native, binding)
+		if err := c.refuseElicitationLocked(native, binding); err != nil {
+			// An unconfirmed cancel can leave the native request pending with no
+			// retained interaction, so the failure must pause the execution instead
+			// of reporting a refusal that was never delivered.
+			return Event{}, err
+		}
 		event := c.metadata(MetadataMCPElicitationRefused)
 		event.MCPStartup = &MCPServerOutcome{Identity: binding.server.Identity, State: c.mcpOutcome(binding.name)}
 		return event, nil
@@ -369,7 +374,7 @@ func (c *Client) observeElicitationLocked(native nativewire.Event) (Event, error
 	return Event{Kind: InteractionRequestedEvent, ThreadID: c.thread, TurnID: turnID, ItemID: itemID, Correlated: known, Late: turn.Turn.Status.terminal(), Interaction: interaction}, nil
 }
 
-func (c *Client) refuseElicitationLocked(native nativewire.Event, binding mcpBinding) {
+func (c *Client) refuseElicitationLocked(native nativewire.Event, binding mcpBinding) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	err := c.wire.Reply(ctx, native, nativeElicitationResponse{Action: "cancel"})
@@ -380,6 +385,7 @@ func (c *Client) refuseElicitationLocked(native nativewire.Event, binding mcpBin
 		}
 		c.logger.WarnContext(ctx, "Codex managed MCP elicitation refused", "owner_id", c.ownerID, "definition_id", binding.server.Identity.DefinitionID, "revision", binding.server.Identity.Revision, "code", code)
 	}
+	return err
 }
 
 func decodeElicitationSchema(mode string, raw json.RawMessage) (*elicitationRequest, bool) {

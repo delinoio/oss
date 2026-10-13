@@ -629,6 +629,11 @@ func (f *threadFixture) handleMCP(id json.RawMessage, method string, raw json.Ra
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "mcpServer/elicitation/request", "params": fields})
 		write(id, map[string]any{})
+		if f.mode == "thread-turn-mcp-closed-input" {
+			// The native process stops reading, so the adapter's reply cannot be delivered.
+			_ = os.Stdin.Close()
+			time.Sleep(5 * time.Second)
+		}
 		if f.mode == "thread-turn-mcp-blocked" {
 			// The owned fixture stops reading its pipe so a large answer is
 			// canceled after native delivery becomes uncertain.
@@ -1085,5 +1090,24 @@ func TestManagedMCPReconnectNeverReloadsForAReadyDefinition(t *testing.T) {
 	assertCode(t, err, domain.Conflict)
 	if slices.Contains(captureMethods(t, capture), "config/mcpServer/reload") {
 		t.Fatal("a reload of every selected server ran for a healthy definition")
+	}
+}
+
+func TestManagedMCPFailedAutomaticCancelPausesInsteadOfClaimingRefusal(t *testing.T) {
+	client, _, _ := openMCPFixture(t, "mcp-closed-input", mcpStdioServer("fx_bbbb"))
+	if _, err := client.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode)); err != nil {
+		t.Fatal(err)
+	}
+	fixtureSignal(t, client, "elicitation", map[string]any{"requestId": 52, "params": map[string]any{"turnId": "active", "serverName": "fx_bbbb", "mode": "url", "message": "open a url", "elicitationId": "e", "url": "https://example.test"}})
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	for {
+		event, err := client.NextEvent(ctx)
+		if err != nil {
+			return
+		}
+		if event.Kind == MetadataEvent && event.Metadata == MetadataMCPElicitationRefused {
+			t.Fatal("an undelivered cancel was reported as a refusal")
+		}
 	}
 }
