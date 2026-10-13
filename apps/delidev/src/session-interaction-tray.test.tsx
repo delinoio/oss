@@ -464,10 +464,21 @@ enum RecoveredResult {
   OtherInteraction = "other-interaction",
 }
 
+enum RetryTiming {
+  /** The retry resolves while the compact receipt is still mounted. */
+  Settled = "settled",
+  /** Payload restoration replaces the receipt while the retry is in flight and
+   * the projection has already advanced to the result's revision. */
+  RestoredBeforeResult = "restored-before-result",
+}
+
 /** Sends the first of four paged questions, loses its acknowledgement, evicts
  * its payload page, retries through the compact receipt, then reopens the
  * request so any surviving edit draft becomes visible again. */
-async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
+async function recoverThroughEvictedReceipt(
+  returned: RecoveredResult,
+  timing: RetryTiming = RetryTiming.Settled,
+) {
   const sessionId = newRequestId();
   const session = create(ResourceSchema, {
     id: sessionId,
@@ -512,12 +523,15 @@ async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
   );
   let first = pages[0];
   const returnedResource = () => {
+    // The replaced-receipt timing keeps the interaction open at the result
+    // revision so the restored form, and any surviving draft, stays visible.
     const base = {
       ...pages[0],
-      documentJson: encode({
-        ...question("First question"),
-        response: { state: "queued" },
-      }),
+      documentJson: encode(
+        timing === RetryTiming.RestoredBeforeResult
+          ? question("First question")
+          : { ...question("First question"), response: { state: "queued" } },
+      ),
     };
     switch (returned) {
       case RecoveredResult.Advancing:
@@ -538,12 +552,19 @@ async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
         });
     }
   };
+  let releaseRetry: () => void = () => {};
+  const retryGate = new Promise<void>((done) => {
+    releaseRetry = done;
+  });
   const respond = vi
     .fn()
     .mockRejectedValueOnce(
       new ConnectError("Lost acknowledgement", Code.Unavailable),
     )
-    .mockImplementation(async () => ({ interaction: returnedResource() }));
+    .mockImplementation(async () => {
+      if (timing === RetryTiming.RestoredBeforeResult) await retryGate;
+      return { interaction: returnedResource() };
+    });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
     router.service(SessionService, {
@@ -632,21 +653,46 @@ async function recoverThroughEvictedReceipt(returned: RecoveredResult) {
   });
   fireEvent.click(retry);
   await waitFor(() => expect(respond).toHaveBeenCalledTimes(2));
+  if (timing === RetryTiming.RestoredBeforeResult) {
+    // The authoritative projection reaches the result revision, and restoring
+    // the evicted payload pages replaces the compact receipt, before the
+    // retried RPC completes.
+    first = create(ResourceSchema, {
+      ...pages[0],
+      revision: 10n,
+      documentJson: encode(question("First question")),
+    });
+    fireEvent.click(
+      within(requests).getByRole("button", {
+        name: "Restore previously loaded items",
+      }),
+    );
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 300));
+    });
+    releaseRetry();
+  }
   await act(async () => {
     await new Promise((done) => setTimeout(done, 50));
   });
   expect(respond.mock.calls[1][0]).toEqual(respond.mock.calls[0][0]);
+  expect(respond).toHaveBeenCalledTimes(2);
   // Reopen the request so a surviving draft is visible after payload restore.
   first = create(ResourceSchema, {
     ...pages[0],
     revision: 11n,
     documentJson: encode(question("First question")),
   });
-  fireEvent.click(
-    within(requests).getByRole("button", {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [restore] = within(requests).queryAllByRole("button", {
       name: "Restore previously loaded items",
-    }),
-  );
+    });
+    if (!restore || requests.textContent?.includes("First question")) break;
+    fireEvent.click(restore);
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 50));
+    });
+  }
   await waitFor(() => expect(requests.textContent).toContain("First question"));
   const values = () =>
     within(requests)
@@ -664,6 +710,33 @@ it("clears only the recovered request draft after a retry through an evicted rec
   expect(values()).toContain("");
   expect(values()).toContain("Second draft");
 }, 30_000);
+
+it("clears the recovered draft when restoration replaced the receipt before the retry completed", async () => {
+  const { values, respond } = await recoverThroughEvictedReceipt(
+    RecoveredResult.Advancing,
+    RetryTiming.RestoredBeforeResult,
+  );
+  expect(respond).toHaveBeenCalledTimes(2);
+  expect(values()).not.toContain("Original response bytes");
+  expect(values()).toContain("");
+  expect(values()).toContain("Second draft");
+}, 30_000);
+
+it.each([
+  RecoveredResult.Equal,
+  RecoveredResult.OtherSession,
+  RecoveredResult.OtherInteraction,
+])(
+  "keeps the draft when a replaced receipt's retry returns a %s result",
+  async (returned) => {
+    const { values } = await recoverThroughEvictedReceipt(
+      returned,
+      RetryTiming.RestoredBeforeResult,
+    );
+    expect(values()).toContain("Original response bytes");
+  },
+  30_000,
+);
 
 it.each([
   RecoveredResult.Equal,

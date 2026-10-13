@@ -1186,8 +1186,25 @@ export function SessionView({
         response &&
         response.id === mutation?.id &&
         response.revision > (mutation.expectedRevision ?? 0n)
-      )
+      ) {
         observeResponse(response);
+        // Retire the request's edit draft here, not in a presenter callback:
+        // payload restoration can replace the compact receipt while the retry
+        // is in flight, and the retained mutation then skips its unmounted
+        // callback. The baseline is the submitted request revision, not the
+        // mutable presentation revision, so an exact replay whose result equals
+        // an already advanced projection still retires its own draft.
+        if (
+          advancesInteraction(response, {
+            id: mutation.id,
+            sessionId: id,
+            kind: EntityKind.INTERACTION,
+            revision: mutation.expectedRevision ?? 0n,
+          }) &&
+          supportsResourceSchema(response)
+        )
+          requestDrafts.save(response.id);
+      }
       return;
     }
     if (key !== `session-name:${id}`) return;
@@ -1666,19 +1683,8 @@ export function SessionView({
       projection={projection}
       accepted={(result) => {
         if (result) observeResponse(result);
-        // A recovered answer retires only its own edit draft, and only when
-        // the returned interaction matches this request and advances the
-        // retained projection, as the resident Interaction path requires.
-        if (
-          advancesInteraction(result, {
-            id: requestId,
-            sessionId: id,
-            kind: EntityKind.INTERACTION,
-            revision: projection.revision,
-          }) &&
-          supportsResourceSchema(result)
-        )
-          requestDrafts.save(requestId);
+        // Draft retirement for a recovered answer lives in the session-level
+        // accepted-result notification, which survives receipt replacement.
         void interactions.refresh();
       }}
     />
