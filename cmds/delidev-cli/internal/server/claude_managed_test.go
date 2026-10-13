@@ -870,3 +870,49 @@ func TestManagedClaudeRestartedLeaseKeepsQueuedLogoutRecoverableAfterWorkerClean
 		t.Fatalf("logout state %v", got.State)
 	}
 }
+
+func TestManagedClaudeLogoutDeadlineStartsAfterTheOriginalLeaseClears(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The execution outlives the whole operation window from acceptance.
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-claude-logout-aged", nil, func(tx *store.Tx) (any, error) {
+		r, account, err := managedClaudeAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		account.Subscription.ServerOperation.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", account)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.progressFor(logout.OperationId); got.State == pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_EXPIRED {
+		t.Fatal("a logout still queued behind the original lease was reported expired")
+	}
+	if err := f.finishLease(a, lease, true, true); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if !managedClaudeCandidate(account) || !account.Subscription.ServerOperation.ExpiresAt.After(time.Now().UTC().Add(10*time.Minute)) {
+		t.Fatal("the logout deadline did not restart when the original lease cleared")
+	}
+	awaitServerFixture(t, f.run())
+	_, account = f.record()
+	if account.Connection != nil || account.Health != domain.AccountDisconnected || account.Subscription.Pending != nil || len(f.secrets.values[ref]) != 0 {
+		t.Fatal("the queued logout expired instead of deleting the credential")
+	}
+	if got := f.progressFor(logout.OperationId); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("logout state %v", got.State)
+	}
+}

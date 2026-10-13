@@ -33,6 +33,11 @@ import (
 // Worker that advertises the managed-Claude adapter. No Runner Device, native
 // profile or provider relay participates in login.
 
+// managedClaudeOperationWindow bounds one server operation. A login runs from
+// acceptance; a logout queued behind an execution lease starts it only when
+// that lease clears.
+const managedClaudeOperationWindow = 15 * time.Minute
+
 // managedClaudeLogin is the native setup-token child owned by one operation.
 type managedClaudeLogin interface {
 	Progress() (claude.SetupTokenProgress, error)
@@ -222,7 +227,7 @@ func (s *Service) requestManagedClaude(ctx context.Context, req *connect.Request
 			return nil, subscriptionDenied()
 		}
 		now := time.Now().UTC()
-		state.ServerOperation = &domain.ServerSubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: actor, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
+		state.ServerOperation = &domain.ServerSubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Epoch: s.subscriptionServerEpoch(), FinishID: domain.NewID(), Actor: actor, State: domain.SubscriptionPreparing, StartedAt: now, ExpiresAt: now.Add(managedClaudeOperationWindow)}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, Actor: actor, Phase: domain.SubscriptionQueued}
 		if action == domain.SubscriptionLogout {
 			// Readiness is revoked at acceptance. Admitted work is canceled and the
@@ -328,7 +333,8 @@ func (s *Service) managedClaudeProgress(ctx context.Context, req *connect.Reques
 		if st.RecoveryRequired || o.Active() && o.Epoch != s.subscriptionServerEpoch() {
 			state = domain.SubscriptionRecovery
 		}
-		if (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) && !o.ExpiresAt.After(time.Now().UTC()) {
+		queuedLogout := o.Action == domain.SubscriptionLogout && st.Lease != nil && !st.RecoveryRequired && state == domain.SubscriptionPreparing
+		if (state == domain.SubscriptionPreparing || state == domain.SubscriptionWaiting) && !queuedLogout && !o.ExpiresAt.After(time.Now().UTC()) {
 			state = domain.SubscriptionExpired
 		}
 		response.State = loginState(state)

@@ -268,6 +268,10 @@ func (s *Service) finishManagedClaudeExecution(ctx context.Context, req *connect
 				a.Health = domain.AccountRevoked
 				if o.State != domain.SubscriptionPreparing || o.NativeStarted || o.Epoch != s.subscriptionServerEpoch() {
 					st.RecoveryRequired = true
+				} else {
+					// The logout deadline starts when the original lease clears, not at
+					// acceptance, so a long execution cannot expire the queued logout.
+					o.ExpiresAt = time.Now().UTC().Add(managedClaudeOperationWindow)
 				}
 			} else if a.Health != domain.AccountRevoked {
 				a.Health = domain.AccountReady
