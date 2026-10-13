@@ -23,8 +23,11 @@ type credentialJSONGuard struct {
 	hasPrevious     bool
 	failed          bool
 	framing         credentialFraming
-	probe           []byte
-	sse             credentialSSEFraming
+	// sequence marks an RFC 7464 JSON text sequence whose RS bytes separate
+	// independently decoded records.
+	sequence bool
+	probe    []byte
+	sse      credentialSSEFraming
 }
 
 func (g *credentialJSONGuard) retainFrom() int64 {
