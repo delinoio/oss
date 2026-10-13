@@ -1743,14 +1743,24 @@ export function SessionView({
         readDocument(row).closure === "open"
       );
     }) || requestsOpen;
-  // A read failure stays sticky until the read settles with neither a pending
-  // nor an in-flight read and no error. An explicit Retry or Reload clears the
-  // error as soon as it starts, so the retained empty snapshot must not look
-  // like a healthy empty tray while recovery is still pending (including a
-  // stalled read). A healthy background Refresh never sets this flag.
+  // A read failure stays sticky until a later read settles successfully. An
+  // explicit Retry or Reload clears the error as soon as it starts, so the
+  // retained empty snapshot must not look like a healthy empty tray while
+  // recovery is still pending (including a stalled read). Suspending the chain
+  // (for example by switching sessions) cancels that read without settling it,
+  // so only an advanced settled-read count releases the latch. A healthy
+  // background Refresh never sets this flag.
   const requestsFailed = useRef(false);
-  if (interactions.error) requestsFailed.current = true;
-  else if (!interactions.isPending && !interactions.loading)
+  const requestsFailedAt = useRef<number | undefined>(undefined);
+  if (interactions.error) {
+    requestsFailed.current = true;
+    requestsFailedAt.current = interactions.settledReads;
+  } else if (
+    requestsFailed.current &&
+    interactions.settledReads !== requestsFailedAt.current &&
+    !interactions.isPending &&
+    !interactions.loading
+  )
     requestsFailed.current = false;
   const confirmedEmptyRequests = completeEmptyInteractionTray({
     loaded: Boolean(interactions.data),

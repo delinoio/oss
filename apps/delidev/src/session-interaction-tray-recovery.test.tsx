@@ -42,21 +42,26 @@ type Channel = {
 
 async function openEmptyTray(label: string) {
   const sessionId = newRequestId();
-  const session = create(ResourceSchema, {
-    id: sessionId,
-    sessionId,
-    kind: EntityKind.SESSION,
-    schemaVersion: 1,
-    revision: 1n,
-    documentJson: encode({
-      name: label,
-      workspace: "general-chat",
-      outcome: "succeeded",
-      archive: "active",
-      dispatch: "paused",
-      recovery: "clear",
-    }),
-  });
+  const sessionResource = (id: string, name: string) =>
+    create(ResourceSchema, {
+      id,
+      sessionId: id,
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({
+        name,
+        workspace: "general-chat",
+        outcome: "succeeded",
+        archive: "active",
+        dispatch: "paused",
+        recovery: "clear",
+      }),
+    });
+  const session = sessionResource(sessionId, label);
+  // A second retained session lets a test switch away from the failed tray.
+  const other = sessionResource(newRequestId(), "Elsewhere");
+  const sessions = [session, other];
   const control = {
     behavior: ReadBehavior.Empty,
     // Behavior applied after a held read is released.
@@ -70,7 +75,7 @@ async function openEmptyTray(label: string) {
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
     router.service(SessionService, {
-      listSessions: () => ({ sessions: [session] }),
+      listSessions: () => ({ sessions }),
       listQueue: () => ({ inputs: [] }),
     });
     router.service(InteractionService, {});
@@ -79,10 +84,14 @@ async function openEmptyTray(label: string) {
         snapshots += 1;
         return { resources: [session], cursor: `recovery-${snapshots}` };
       },
-      getResource: () => ({ resource: session }),
+      getResource: (request) => ({
+        resource: sessions.find((row) => row.id === request.id) ?? session,
+      }),
       listResources: async (request) => {
         if (request.filter?.kind !== EntityKind.INTERACTION)
           return { resources: [] };
+        // Only the tray under test drives the shared read behavior.
+        if (request.filter?.sessionId === other.id) return { resources: [] };
         control.started += 1;
         let behavior = control.behavior;
         if (behavior === ReadBehavior.Hold) {
@@ -297,6 +306,50 @@ it("keeps a Reload failure reachable when the reread settles with another failur
       ),
     ).not.toBeNull(),
   );
+}, 30_000);
+
+it("keeps the requests disclosure reachable when a pending Retry is suspended by switching sessions", async () => {
+  const label = "Suspended retry tray";
+  const { region, control, disclosure } = await openFailedTray(
+    label,
+    ReadBehavior.Fail,
+  );
+  const sidebar = screen.getByRole("complementary", {
+    name: "Application sidebar",
+  });
+  control.behavior = ReadBehavior.Hold;
+  control.settled = ReadBehavior.Empty;
+  let before = control.started;
+  fireEvent.click(
+    await within(disclosure).findByRole("button", { name: "Retry" }),
+  );
+  await waitFor(() => expect(control.started).toBeGreaterThan(before));
+  // Leave the session while the retry is pending, then return to it.
+  fireEvent.click(
+    await within(sidebar).findByRole("button", {
+      name: /General Chat Elsewhere/,
+    }),
+  );
+  await flush();
+  before = control.started;
+  fireEvent.click(
+    await within(sidebar).findByRole("button", {
+      name: new RegExp(`General Chat ${label}`),
+    }),
+  );
+  await waitFor(() => expect(control.started).toBeGreaterThan(before));
+  const returned = screen.getByRole("region", { name: "Current session" });
+  // The cancelled retry settled nothing, so the disclosure stays reachable for
+  // the whole pending (and possibly stalled) read that follows the return.
+  for (let step = 0; step < 3; step += 1) {
+    await flush();
+    expect(returned.querySelector(".requests")).not.toBeNull();
+  }
+  await act(async () => control.release());
+  await waitFor(() =>
+    expect(returned.querySelector(".requests")).toBeNull(),
+  );
+  expect(region).toBeDefined();
 }, 30_000);
 
 it("keeps a healthy background Refresh over a confirmed empty list quiet", async () => {
