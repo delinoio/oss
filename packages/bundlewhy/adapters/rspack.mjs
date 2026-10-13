@@ -138,7 +138,21 @@ function describeMinimizer(rspack, config) {
   // compression and mangling enabled; detectors assume both run.
   const swcDefault = (entry) => {
     const options = entry?._args?.[0]?.minimizerOptions ?? {};
-    return options.compress !== false && options.mangle !== false;
+    const { compress, mangle } = options;
+    if (compress === false || mangle === false) return false;
+    // Per-pass compression options (for example { dead_code: false }) and
+    // keep-name mangling options also disable what the detectors assume.
+    if (compress && typeof compress === "object" && Object.values(compress).some((value) => value === false)) {
+      return false;
+    }
+    if (
+      mangle &&
+      typeof mangle === "object" &&
+      Object.entries(mangle).some(([key, value]) => key.startsWith("keep_") && value)
+    ) {
+      return false;
+    }
+    return true;
   };
   const isDefault = (entry) =>
     entry === "..." ||

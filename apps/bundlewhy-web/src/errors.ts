@@ -33,6 +33,34 @@ function recoveryFor(code: Code): string {
   }
 }
 
+/**
+ * Recovery guidance for stable bundlewhy codes. A product code is more
+ * specific than the Connect status it travels with (for example
+ * BW_EXPORT_FAILED arrives as `internal`), so it takes precedence.
+ */
+const RECOVERY_BY_BW_CODE: Readonly<Record<string, string>> = Object.freeze({
+  BW_ACCESS_DENIED:
+    "Reopen the URL printed by `bundlewhy analyze` or `bundlewhy open`.",
+  BW_ACCESS_TOKEN_MISSING:
+    "Reopen the URL printed by `bundlewhy analyze` or `bundlewhy open`.",
+  BW_EXPORT_FAILED:
+    "Check that the run directory is writable and has free space, then export again. You can also run `bundlewhy export <run-dir> --output <file.html>`.",
+  BW_SOURCE_NOT_FOUND:
+    "The source is not stored in this run (it may have been analyzed with --exclude-sources).",
+  BW_RESULT_INVALID:
+    "The saved result is damaged or was not written by bundlewhy. Start a new run with `bundlewhy analyze`.",
+  BW_SCHEMA_UNSUPPORTED:
+    "Open the result with the bundlewhy version that created it, or start a new run.",
+  BW_RESULT_TOO_LARGE:
+    "Analyze with --exclude-sources, or analyze a smaller build.",
+  BW_USAGE:
+    "Reload the page. If the problem continues, run the bundlewhy command again.",
+});
+
+export function recoveryForCode(code: string | undefined, connect: Code): string {
+  return (code && RECOVERY_BY_BW_CODE[code]) || recoveryFor(connect);
+}
+
 export function describeError(error: unknown): ErrorDescription {
   const e = ConnectError.from(error);
   const split = splitCodedMessage(e.rawMessage);
@@ -40,6 +68,6 @@ export function describeError(error: unknown): ErrorDescription {
     code: split.code,
     connectCode: connectCodeName(e.code),
     message: split.message,
-    recovery: recoveryFor(e.code),
+    recovery: recoveryForCode(split.code, e.code),
   };
 }

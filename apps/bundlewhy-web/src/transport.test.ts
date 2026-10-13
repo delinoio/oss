@@ -190,3 +190,15 @@ describe("describeError", () => {
     ).toBe("failed_precondition");
   });
 });
+
+describe("product error recovery", () => {
+  it("prefers BW code guidance over the generic Connect status", () => {
+    const description = describeError(
+      new ConnectError("BW_EXPORT_FAILED: Could not write the report", Code.Internal),
+    );
+    expect(description.code).toBe("BW_EXPORT_FAILED");
+    expect(description.recovery).toMatch(/writable/);
+    const generic = describeError(new ConnectError("boom", Code.Internal));
+    expect(generic.recovery).toMatch(/Reload the page/);
+  });
+});

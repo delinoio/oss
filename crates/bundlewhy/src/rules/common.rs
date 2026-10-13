@@ -732,14 +732,98 @@ fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
     }
 }
 
+/// Source ranges in which a binding named `eval` is visible: the enclosing
+/// block of a `const`/`let`/`var`/`function eval` declaration, or the body of
+/// a function or arrow whose parameter list binds `eval`.
+fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let mut masked = source.as_bytes().to_vec();
+    for (start, end) in ignored {
+        for byte in &mut masked[*start..(*end).min(source.len())] {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    }
+    let code = String::from_utf8_lossy(&masked).into_owned();
+    let bytes = code.as_bytes();
+    let mut blocks = Vec::new();
+    let mut stack = Vec::new();
+    for (index, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'{' => stack.push(index),
+            b'}' => {
+                if let Some(open) = stack.pop() {
+                    blocks.push((open, index));
+                }
+            }
+            _ => {}
+        }
+    }
+    let enclosing = |position: usize| {
+        blocks
+            .iter()
+            .filter(|(open, close)| *open < position && position < *close)
+            .min_by_key(|(open, close)| close - open)
+            .map_or((0, bytes.len()), |(open, close)| (*open, *close))
+    };
+    let mut scopes = Vec::new();
+    let declaration = Regex::new(r"\b(?:const|let|var|function)\s+eval\b").expect("static regex");
+    for found in declaration.find_iter(&code) {
+        scopes.push(enclosing(found.start()));
+    }
+    // Parameter lists followed by a body: `(...) {` or `(...) =>`.
+    let parameters = Regex::new(r"\(([^()]*)\)\s*(?:=>|\{)").expect("static regex");
+    for captures in parameters.captures_iter(&code) {
+        let (Some(list), Some(whole)) = (captures.get(1), captures.get(0)) else {
+            continue;
+        };
+        let mut names = Vec::new();
+        for parameter in split_top_level(list.as_str(), b',') {
+            let target = split_top_level(binding_target(parameter), b':')[0]
+                .trim()
+                .trim_end_matches('?')
+                .trim_start_matches("...");
+            collect_binding_names(target, &mut names);
+        }
+        if names.iter().any(|name| name == "eval") {
+            let body = whole.end();
+            let end = if whole.as_str().ends_with('{') {
+                blocks
+                    .iter()
+                    .find(|(open, _)| *open == body - 1)
+                    .map_or(bytes.len(), |(_, close)| *close)
+            } else {
+                code[body..]
+                    .find([';', '\n'])
+                    .map_or(bytes.len(), |offset| body + offset)
+            };
+            scopes.push((list.start(), end));
+        }
+    }
+    let single = Regex::new(r"\beval\s*=>").expect("static regex");
+    for found in single.find_iter(&code) {
+        let end = code[found.end()..]
+            .find([';', '\n'])
+            .map_or(bytes.len(), |offset| found.end() + offset);
+        scopes.push((found.start(), end));
+    }
+    scopes
+}
+
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
     let pattern = Regex::new(r"(^|[^.\w$])eval\s*\(").expect("static regex");
     // `eval(` inside strings, templates, comments or regular expressions is
     // not a call.
     let ignored = non_code_ranges(source);
+    // A binding named `eval` makes calls inside its scope ordinary calls that
+    // cannot observe the surrounding scope; shadowing is decided per call.
+    let shadows = eval_shadow_scopes(source, &ignored);
     let start = pattern.find_iter(source).find_map(|found| {
         let start = found.start() + found.as_str().find("eval")?;
-        (!in_ranges(&ignored, start)).then_some(start)
+        let shadowed = shadows
+            .iter()
+            .any(|(begin, end)| (*begin..*end).contains(&start));
+        (!in_ranges(&ignored, start) && !shadowed).then_some(start)
     })?;
     let line = source[..start].matches('\n').count();
     let column = start - source[..start].rfind('\n').map_or(0, |index| index + 1);
@@ -765,14 +849,7 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         let Some(source) = context.module_source(module) else {
             continue;
         };
-        // A local binding named `eval` makes `eval(...)` an ordinary call that
-        // cannot observe the surrounding scope.
-        let shadowed = declared_names(&source).iter().any(|name| name == "eval");
-        let source_eval = if shadowed {
-            None
-        } else {
-            direct_eval_line(&source)
-        };
+        let source_eval = direct_eval_line(&source);
         if rolldown_log.is_none() && rspack_bailout.is_none() && source_eval.is_none() {
             continue;
         }
@@ -904,21 +981,20 @@ y=/process.env.F/.test(z),process.env.G"#;
     }
 
     #[test]
-    fn shadowed_eval_bindings_are_collected() {
-        assert!(
-            declared_names("function run(eval) { eval(code); }")
-                .iter()
-                .any(|name| name == "eval")
+    fn eval_shadowing_is_decided_per_call() {
+        // A shadowing parameter in one function does not hide a real direct
+        // eval in another.
+        let source = "function a(eval) {\n  eval(x);\n}\nfunction b() {\n  return eval(y);\n}\n";
+        assert_eq!(direct_eval_line(source), Some((4, 9)));
+        assert_eq!(direct_eval_line("function run(eval) { eval(code); }"), None);
+        assert_eq!(
+            direct_eval_line("{ const eval = (x) => x; eval(y); }"),
+            None
         );
-        assert!(
-            declared_names("const eval = (x) => x; eval(y);")
-                .iter()
-                .any(|name| name == "eval")
-        );
-        assert!(
-            !declared_names("function run(code) { eval(code); }")
-                .iter()
-                .any(|name| name == "eval")
+        assert_eq!(direct_eval_line("const f = (eval) => eval(z);"), None);
+        assert_eq!(
+            direct_eval_line("{ let eval = g; } eval(w);"),
+            Some((0, 18))
         );
     }
 

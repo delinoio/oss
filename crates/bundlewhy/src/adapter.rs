@@ -180,6 +180,19 @@ fn terminate_group(pid: u32, signal: libc::c_int) {
     }
 }
 
+/// Paths cross into the JSON adapter request; JSON strings are UTF-8, so a
+/// non-UTF-8 path is rejected with guidance instead of panicking.
+pub fn utf8_path(path: &Path) -> BwResult<&str> {
+    path.to_str().ok_or_else(|| {
+        BwError::new(
+            ErrorCode::Usage,
+            format!("The path {} is not valid UTF-8", path.display()),
+            "Move or rename the project, configuration or output directory to a UTF-8 path, then \
+             start a new run.",
+        )
+    })
+}
+
 /// Oldest supported Node.js: 22.18 is the first 22.x release that strips
 /// TypeScript types by default, which TypeScript Rspack configurations need.
 pub const MIN_NODE: (u64, u64) = (22, 18);
@@ -261,12 +274,13 @@ pub async fn run(
     // project configuration or plugins is never taken for an adapter event.
     let protocol_token = crate::server::new_token();
     let frame_prefix = format!("{FRAME_PREFIX} {protocol_token} ");
+    let build_dir = run_dir.join("build");
     let request = serde_json::json!({
-        "projectRoot": selection.project_root,
-        "configFile": selection.config_file,
+        "projectRoot": utf8_path(&selection.project_root)?,
+        "configFile": selection.config_file.as_deref().map(utf8_path).transpose()?,
         "configName": options.config_name,
-        "buildDir": run_dir.join("build"),
-        "collectPath": collect_path,
+        "buildDir": utf8_path(&build_dir)?,
+        "collectPath": utf8_path(&collect_path)?,
         "supportedVersion": spec.version,
         "protocolToken": protocol_token,
         "allowUnsupportedEngine": options.allow_unsupported_engine,
@@ -380,17 +394,17 @@ pub async fn run(
         }
         #[cfg(not(unix))]
         let _ = child.start_kill();
-        let leader_exited = tokio::time::timeout(Duration::from_secs(3), child.wait())
-            .await
-            .is_ok();
+        const GRACE: Duration = Duration::from_secs(3);
+        let grace_started = tokio::time::Instant::now();
+        let leader_exited = tokio::time::timeout(GRACE, child.wait()).await.is_ok();
         // The adapter may exit promptly while a plugin-spawned descendant in
         // the same group ignores SIGTERM: always finish with SIGKILL for the
         // whole group after the grace period.
         #[cfg(unix)]
         if let Some(pid) = pid {
-            if leader_exited {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
+            // Descendants that honor SIGTERM get the full grace period even
+            // when the adapter itself exits early.
+            tokio::time::sleep_until(grace_started + GRACE).await;
             terminate_group(pid, libc::SIGKILL);
         }
         if !leader_exited {
@@ -469,6 +483,15 @@ mod tests {
         assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("frame"));
         assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("last"));
         assert_eq!(lines.next_line().await.unwrap(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_paths_are_rejected_with_guidance() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/bad-\xff"));
+        assert_eq!(utf8_path(path).unwrap_err().code, ErrorCode::Usage);
+        assert_eq!(utf8_path(Path::new("/tmp/ok")).unwrap(), "/tmp/ok");
     }
 
     #[test]

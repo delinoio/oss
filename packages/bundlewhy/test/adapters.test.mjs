@@ -318,3 +318,15 @@ test("rspack adapter records providedExports in the configuration summary", () =
     "false",
   );
 });
+
+test("rspack adapter treats SWC with a disabled compression pass as non-default", () => {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    `import { createRequire } from "node:module";\nconst { SwcJsMinimizerRspackPlugin } = createRequire(${JSON.stringify(path.join(projectRoot, "package.json"))})("@rspack/core");\nexport default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", optimization: { minimizer: [new SwcJsMinimizerRspackPlugin({ minimizerOptions: { compress: { dead_code: false } } })] } };\n`,
+  );
+  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.defaultMinifier, false);
+});

@@ -128,7 +128,14 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         config: options.config.clone(),
         bundler: options.bundler,
     })?;
+    // Validate paths before creating anything, so an unsupported path never
+    // leaves a half-created run behind.
+    adapter::utf8_path(&selection.project_root)?;
+    if let Some(config) = &selection.config_file {
+        adapter::utf8_path(config)?;
+    }
     let out_dir = prepare_out_dir(&options.out_dir)?;
+    adapter::utf8_path(&out_dir)?;
     let run_id = uuid::Uuid::now_v7().to_string();
     let run_dir = out_dir.join(&run_id);
     std::fs::create_dir(&run_dir).map_err(|error| {
@@ -623,6 +630,33 @@ pub async fn open(run_dir: &Path, no_open: bool) -> BwResult<()> {
     Ok(())
 }
 
+/// Creates the export exclusively (never following a link). A replacement is
+/// written to an exclusively created sibling and renamed over the target.
+fn write_export(output: &Path, bytes: &[u8], replace: bool) -> std::io::Result<()> {
+    use std::io::Write;
+    let create = |path: &Path| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+    };
+    if !replace {
+        return create(output)?.write_all(bytes);
+    }
+    let name = output.file_name().map_or_else(
+        || "report".into(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let temporary = output.with_file_name(format!(".{name}.{}.tmp", uuid::Uuid::now_v7()));
+    let result = create(&temporary)
+        .and_then(|mut file| file.write_all(bytes))
+        .and_then(|()| std::fs::rename(&temporary, output));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 pub fn export_report(
     run_dir: &Path,
     output: &Path,
@@ -630,7 +664,21 @@ pub fn export_report(
     force: bool,
 ) -> BwResult<()> {
     let loaded = bundle::load(run_dir)?;
-    if output.exists() && !force {
+    // Never write through a symlink: an existing link (dangling or not) is
+    // refused, and --force replaces a regular file by renaming a new file
+    // over it, which replaces the directory entry rather than a link target.
+    let existing = std::fs::symlink_metadata(output).ok();
+    if existing
+        .as_ref()
+        .is_some_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(BwError::new(
+            ErrorCode::ExportFailed,
+            format!("{} is a symbolic link", output.display()),
+            "Choose an --output path that is not a symbolic link.",
+        ));
+    }
+    if existing.is_some() && !force {
         return Err(BwError::new(
             ErrorCode::ExportFailed,
             format!("{} already exists", output.display()),
@@ -644,7 +692,7 @@ pub fn export_report(
         &loaded.sources,
         include_sources,
     );
-    std::fs::write(output, &html).map_err(|error| {
+    write_export(output, html.as_bytes(), existing.is_some()).map_err(|error| {
         BwError::new(
             ErrorCode::ExportFailed,
             format!("Could not write {}: {error}", output.display()),
@@ -689,6 +737,27 @@ mod tests {
         assert!(!saved.message.contains("apiKey"));
         assert_eq!(saved.code, "BW_BUILD_FAILED");
         assert!(saved_problem(&error, false).message.contains("apiKey"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exports_never_write_through_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, "keep").unwrap();
+        let link = dir.path().join("report.html");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        // write_export refuses an existing entry when not replacing.
+        assert!(write_export(&link, b"x", false).is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+        let dangling = dir.path().join("dangling.html");
+        std::os::unix::fs::symlink(dir.path().join("missing.txt"), &dangling).unwrap();
+        assert!(write_export(&dangling, b"x", false).is_err());
+        assert!(!dir.path().join("missing.txt").exists());
+        let regular = dir.path().join("regular.html");
+        std::fs::write(&regular, "old").unwrap();
+        write_export(&regular, b"new", true).unwrap();
+        assert_eq!(std::fs::read_to_string(&regular).unwrap(), "new");
     }
 
     #[test]
