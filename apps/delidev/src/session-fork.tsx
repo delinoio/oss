@@ -312,6 +312,10 @@ export function SessionForkProvider({
   const generation = useRef(0);
   const preflight = useRef<number | undefined>(undefined);
   const [checking, setChecking] = useState(false);
+  const nameInput = useRef<HTMLInputElement | null>(null);
+  // Set when the dialog opens while a stale read still locks its controls: a
+  // disabled input cannot take autoFocus, so focus it once the draft unlocks.
+  const focusNameOnUnlock = useRef(false);
   useEffect(
     () => () => {
       generation.current += 1;
@@ -481,7 +485,10 @@ export function SessionForkProvider({
             .getElementById(`pending-sidechat-${original.requestId}`)
             ?.focus();
       });
-    } else setVisible(true);
+    } else {
+      focusNameOnUnlock.current = controlsLocked;
+      setVisible(true);
+    }
   };
   const submit = async () => {
     if (
@@ -602,6 +609,13 @@ export function SessionForkProvider({
     stale,
     controlsLocked,
   ]);
+  useEffect(() => {
+    if (!visible) focusNameOnUnlock.current = false;
+    else if (!controlsLocked && focusNameOnUnlock.current) {
+      focusNameOnUnlock.current = false;
+      nameInput.current?.focus();
+    }
+  }, [visible, controlsLocked]);
   useEffect(() => {
     const original = directOwner.current;
     if (!original || !child) return;
@@ -739,6 +753,7 @@ export function SessionForkProvider({
                 <label>
                   {copy("session-fork.forkName_d9ad67")}
                   <input
+                    ref={nameInput}
                     autoFocus
                     required
                     maxLength={256}

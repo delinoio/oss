@@ -471,7 +471,9 @@ the proof slot admits one read at a time. A replacement Sidechat prepared meanwh
 retries its automatic submission once that read settles and unlocks the controls;
 it is never left preparing indefinitely. Discard or replacement also detaches the
 stale read from the draft: it keeps the proof slot busy until it settles, but its
-rejection or changed-Runner proof is not presented in the replacement draft.
+rejection or changed-Runner proof is not presented in the replacement draft. A Fork
+dialog opened while the stale read still disables the name input moves focus to that
+input when the draft unlocks, because a disabled input cannot take initial focus.
 A definite rejected draft retains its diagnostic while hidden and reopened in
 that original context. Explicit discard or replacement with another source or
 purpose clears only terminal rejection presentation from the connection-owned

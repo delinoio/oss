@@ -512,6 +512,21 @@ it.each(["rejected", "changed-machine"])(
   },
 );
 
+it("focuses the replacement fork name once the stale Local proof unlocks it", async () => {
+  const fixture = await localProofFixture();
+  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+  fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+  const name = screen.getByRole("textbox", {
+    name: "Fork name",
+  }) as HTMLInputElement;
+  expect(name.disabled).toBe(true);
+  expect(globalThis.document.activeElement).not.toBe(name);
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(name.disabled).toBe(false));
+  expect(globalThis.document.activeElement).toBe(name);
+});
+
 it("sends a replacement Sidechat once the hidden stale Local proof settles", async () => {
   const fixture = await localProofFixture({ sidechat: true });
   fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
