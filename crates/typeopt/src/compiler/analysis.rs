@@ -404,7 +404,7 @@ impl<'c> Ctx<'c> {
                     return false;
                 }
                 match declaration.kind() {
-                    SyntaxKind::Parameter => true,
+                    SyntaxKind::Parameter => parameter_initialized(declaration, node),
                     SyntaxKind::VariableDeclaration => {
                         let list = declaration.parent();
                         let block_scoped = list
@@ -741,6 +741,22 @@ pub(crate) fn skip_outer(mut node: Node) -> Node {
 fn is_module_export_name(node: Node) -> bool {
     let parent = node.parent();
     parent.property_name().is_some() && parent.name() == node && parent.property_name() != node
+}
+
+/// Whether `parameter` is certainly bound when `read` executes. Parameters
+/// are initialized left to right, so a read inside a parameter list entry
+/// (default initializer or binding pattern) observes that same parameter or
+/// any later one in its temporal dead zone. Reads in the function body, or
+/// in the entry of a later parameter, see an initialized binding.
+fn parameter_initialized(parameter: Node, read: Node) -> bool {
+    let function = parameter.parent();
+    !function.parameters().iter().any(|p| {
+        let mut node = read;
+        while node.is_some() && node != p {
+            node = node.parent();
+        }
+        node == p && parameter.pos() >= p.pos()
+    })
 }
 
 fn same_function(a: Node, b: Node) -> bool {

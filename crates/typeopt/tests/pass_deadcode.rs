@@ -395,6 +395,31 @@ export function value() { return local; }
     assert!(!dep.contains("unusedUndeclared"), "{dep}");
 }
 
+/// A parameter default that reads a later parameter under `typeof` throws
+/// `ReferenceError` (temporal dead zone), so signature reduction must not
+/// drop that unused parameter. A default that reads an earlier parameter
+/// stays removable.
+#[test]
+fn signature_reduction_keeps_typeof_of_later_parameter_default() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"export {};
+// @ts-ignore Reading a later parameter is a TDZ error the checker rejects.
+function probe(a: string = typeof b, b: number = 1): number { return b; }
+function earlier(first: number, unused: string = typeof first): number { return first; }
+try { console.log(probe()); } catch (e) { console.log("threw", (e as Error).name); }
+console.log(earlier(2));
+"#,
+    )];
+    let temp = project(files);
+    let report = optimize(temp.path(), &args(&only(&["signature-reduction"])));
+    same_behavior(temp.path());
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("typeof b"), "{main}");
+    // The earlier-parameter default is initialized, so that parameter goes.
+    assert!(!main.contains("unused"), "{main}\n{report:#}");
+}
+
 /// Emitted output when the module was optimized, otherwise its source.
 fn emitted_or_source(root: &std::path::Path, source: &str) -> String {
     let manifest = modules(root);
