@@ -356,6 +356,76 @@ describe("shared Page descriptors follow native browser pages", () => {
     store.closePage("s", "p1", "a");
     expect(store.snapshot("s").selected).toBe(SessionTabKind.Diagnostics);
   });
+  describe("closing an acknowledged page in every session", () => {
+    const keysOf = (store: SessionTabsStore, id: string) =>
+      store.snapshot(id).tabs.map(sessionTabKey);
+    const populate = () => {
+      const store = new SessionTabsStore();
+      // Active session: the closed page is selected, so its left neighbor wins.
+      store.open("active", page("p1", "w"));
+      store.open("active", page("p1", "x"));
+      // Inactive session: the closed page is the last page and is selected.
+      store.open("inactive", page("p1", "x"));
+      // Retained session: another tab is selected and foreign pages exist.
+      store.open("retained", page("p1", "x"));
+      store.open("retained", page("p2", "x"));
+      store.open("retained", page("p1", "y"));
+      store.open("retained", { kind: SessionTabKind.Diagnostics });
+      return store;
+    };
+    it("removes the exact descriptor from every session and applies each selection rule", () => {
+      const store = populate();
+      const retainedBefore = store.snapshot("retained");
+      store.closePageEverywhere("p1", "x");
+      for (const id of ["active", "inactive", "retained"])
+        expect(keysOf(store, id)).not.toContain(sessionTabKey(page("p1", "x")));
+      expect(store.snapshot("active").selected).toBe(
+        sessionTabKey(page("p1", "w")),
+      );
+      expect(store.snapshot("inactive").selected).toBe(
+        SessionTabKind.Conversation,
+      );
+      expect(store.snapshot("retained").selected).toBe(retainedBefore.selected);
+      expect(keysOf(store, "retained")).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p2", "x")),
+        sessionTabKey(page("p1", "y")),
+        SessionTabKind.Diagnostics,
+      ]);
+    });
+    it("leaves the same page id under another profile and other pages untouched", () => {
+      const store = populate();
+      store.closePageEverywhere("p1", "x");
+      expect(keysOf(store, "retained")).toContain(
+        sessionTabKey(page("p2", "x")),
+      );
+      expect(keysOf(store, "retained")).toContain(
+        sessionTabKey(page("p1", "y")),
+      );
+      expect(keysOf(store, "active")).toContain(sessionTabKey(page("p1", "w")));
+    });
+    it("is idempotent and publishes nothing for sessions without the descriptor", () => {
+      const store = populate();
+      store.closePageEverywhere("p1", "x");
+      const snapshots = ["active", "inactive", "retained"].map((id) =>
+        store.snapshot(id),
+      );
+      let notified = 0;
+      const unsubscribe = store.subscribe(() => (notified += 1));
+      store.closePageEverywhere("p1", "x");
+      store.closePageEverywhere("p9", "x");
+      unsubscribe();
+      expect(notified).toBe(0);
+      expect(
+        ["active", "inactive", "retained"].map((id) => store.snapshot(id)),
+      ).toEqual(snapshots);
+      snapshots.forEach((snapshot, at) =>
+        expect(store.snapshot(["active", "inactive", "retained"][at]!)).toBe(
+          snapshot,
+        ),
+      );
+    });
+  });
   describe("restoring a native inventory", () => {
     const listed = (id: string, label = `https://${id}.test/`) => ({
       id,
@@ -571,5 +641,27 @@ describe("terminal presentation numbers", () => {
       // Sessions count independently.
       expect(store.navigation("other")).toBe(0);
     });
+  });
+});
+
+describe("automatic Sidechat publication", () => {
+  const child = {
+    kind: SessionTabKind.Sidechat as const,
+    id: "child",
+    name: "Child",
+  };
+  const draft = { text: "", start: 0, end: 0, focus: false };
+  it("marks a published Sidechat automatic until the user opens it", () => {
+    const store = new SessionTabsStore();
+    expect(store.automaticSidechat("child")).toBe(false);
+    expect(store.publishSidechat("parent", "request", child, draft)).toBe(true);
+    expect(store.automaticSidechat("child")).toBe(true);
+    store.open("parent", child);
+    expect(store.automaticSidechat("child")).toBe(false);
+  });
+  it("treats a Sidechat opened before it was ever published as explicit", () => {
+    const store = new SessionTabsStore();
+    store.open("never-visited-parent", child);
+    expect(store.automaticSidechat("child")).toBe(false);
   });
 });

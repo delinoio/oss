@@ -331,31 +331,42 @@ func queryPath(repository domain.RemoteRepository, q domain.RepositoryQuery) (st
 	values.Set("order", "desc")
 	return "/search/issues?" + values.Encode(), nil
 }
+
+// repositoryScope reads the authenticated identity and the selected
+// repository metadata. Both reads must succeed and validate; nothing about a
+// pull request or issue detail participates in establishing this scope.
+func (c *Client) repositoryScope(ctx context.Context, token []byte, owner, name string) (domain.GitHubIdentity, *domain.RemoteRepository, error) {
+	if err := domain.ValidateGitHubRepository(owner, name); err != nil {
+		return domain.GitHubIdentity{}, nil, err
+	}
+	identity, err := c.Identity(ctx, token)
+	if err != nil {
+		return domain.GitHubIdentity{}, nil, err
+	}
+	if identity.Identity == nil {
+		return domain.GitHubIdentity{}, nil, identity.Problem
+	}
+	metadata := c.readRepositoryJSON(ctx, token, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name))
+	if metadata.state != domain.IntegrationAccessAvailable {
+		return domain.GitHubIdentity{}, nil, readProblem(metadata)
+	}
+	repository, ok := parseRepository(metadata.raw, owner, name)
+	if !ok {
+		return domain.GitHubIdentity{}, nil, queryUnavailable()
+	}
+	return *identity.Identity, repository, nil
+}
 func (c *Client) QueryRepository(ctx context.Context, token []byte, owner, name string, q domain.RepositoryQuery) (RepositoryQueryObservation, error) {
 	if err := q.Validate(); err != nil {
 		return RepositoryQueryObservation{}, err
 	}
-	if err := domain.ValidateGitHubRepository(owner, name); err != nil {
-		return RepositoryQueryObservation{}, err
-	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	identity, err := c.Identity(bounded, token)
+	identity, repository, err := c.repositoryScope(bounded, token, owner, name)
 	if err != nil {
 		return RepositoryQueryObservation{}, err
 	}
-	if identity.Identity == nil {
-		return RepositoryQueryObservation{}, identity.Problem
-	}
-	metadata := c.readRepositoryJSON(bounded, token, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name))
-	if metadata.state != domain.IntegrationAccessAvailable {
-		return RepositoryQueryObservation{}, readProblem(metadata)
-	}
-	repository, ok := parseRepository(metadata.raw, owner, name)
-	if !ok {
-		return RepositoryQueryObservation{}, queryUnavailable()
-	}
-	result := RepositoryQueryObservation{Identity: *identity.Identity, Repository: *repository, Items: []domain.RepositoryItem{}}
+	result := RepositoryQueryObservation{Identity: identity, Repository: *repository, Items: []domain.RepositoryItem{}}
 	if q.IsPRObservation() {
 		return c.queryPRObservation(bounded, token, *repository, q, result)
 	}

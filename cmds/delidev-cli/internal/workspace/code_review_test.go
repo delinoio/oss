@@ -335,3 +335,41 @@ func TestForkScanRecordRejectsNonUTF8SymlinkPath(t *testing.T) {
 		t.Fatal("recording scan accepted a non-UTF-8 symlink path")
 	}
 }
+
+func TestNativeReviewNamedDirectoriesRequireNegotiationBeforeCapture(t *testing.T) {
+	m, input, _ := managedCloneFixture(t)
+	m.NamedDirectories = true
+	input.Repositories[0].DirectoryName = "oss"
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	request := diffRequest(input, manifest, domain.DiffWorkingTree, ".")
+	observed, err := m.ReadWorkspace(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := domain.NativeCodeReviewTarget{Kind: domain.ReviewUncommitted, RepositoryID: input.PrimaryRepository, DiffRevision: observed.Diff.Revision}
+	reached := false
+	if err := m.WithNativeCodeReview(context.Background(), request, target, func(ctx context.Context, path string, selection domain.NativeCodeReviewSelection) error {
+		reached = path == manifest.PrimaryPath && filepath.Base(path) == "oss"
+		return nil
+	}); err != nil || !reached {
+		t.Fatal("negotiated named native review did not reach capture", err)
+	}
+	m.NamedDirectories = false
+	reached = false
+	err = m.WithNativeCodeReview(context.Background(), request, target, func(ctx context.Context, path string, selection domain.NativeCodeReviewSelection) error {
+		reached = true
+		return nil
+	})
+	var failure *domain.Error
+	if !errors.As(err, &failure) || failure.Code != domain.Unsupported || reached {
+		t.Fatal("unnegotiated named native review was not rejected before capture", err)
+	}
+}

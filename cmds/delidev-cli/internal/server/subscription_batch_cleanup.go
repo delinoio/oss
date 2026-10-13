@@ -34,6 +34,10 @@ type subscriptionCleanupTarget uint32
 const (
 	subscriptionCleanupFailedLogin subscriptionCleanupTarget = iota
 	subscriptionCleanupDisconnected
+	// A terminal original server LOGOUT whose metadata publication succeeded but
+	// whose protected credential cleanup did not. Only explicit account deletion
+	// admits it; batch selection never creates this target.
+	subscriptionCleanupServerLogout
 )
 
 type failedCleanupAccount struct {
@@ -45,14 +49,25 @@ type failedCleanupAccount struct {
 	OperationID     domain.ID                 `json:"operation_id"`
 	DeleteRequestID domain.ID                 `json:"delete_request_id"`
 	Alias           string                    `json:"alias"`
+	// Frozen only by the server-LOGOUT target (child version 3). They bind the
+	// cleanup to the original operation, credential generation, finish identity
+	// and requesting actor, so a replacement connection never inherits authority.
+	Generation    domain.ID         `json:"generation,omitempty"`
+	FinishID      domain.ID         `json:"finish_id,omitempty"`
+	OriginalActor *domain.Principal `json:"original_actor,omitempty"`
 }
 type failedCleanupCheckpoint struct {
-	Revision           uint64                              `json:"revision,string"`
-	CredentialsStarted bool                                `json:"credentials_started,omitempty"`
-	Started            bool                                `json:"started"`
-	Outcome            pb.FailedSubscriptionCleanupOutcome `json:"outcome"`
-	Reason             pb.FailedSubscriptionCleanupReason  `json:"reason"`
-	ProblemCode        domain.Code                         `json:"problem_code,omitempty"`
+	Revision           uint64 `json:"revision,string"`
+	CredentialsStarted bool   `json:"credentials_started,omitempty"`
+	Started            bool   `json:"started"`
+	// Private server-LOGOUT checkpoints. Native proof precedes vault work; the
+	// credential checkpoint records that matching recovery metadata was cleared.
+	// They never reuse the LOGIN-only account CleanupPhase values.
+	NativeConfirmed      bool                                `json:"native_confirmed,omitempty"`
+	CredentialsConfirmed bool                                `json:"credentials_confirmed,omitempty"`
+	Outcome              pb.FailedSubscriptionCleanupOutcome `json:"outcome"`
+	Reason               pb.FailedSubscriptionCleanupReason  `json:"reason"`
+	ProblemCode          domain.Code                         `json:"problem_code,omitempty"`
 }
 
 func failedCleanupUnavailable() error {
@@ -86,7 +101,7 @@ func decodeFailedCleanupAccount(row store.Record, parent domain.ID) (domain.Job,
 	j, err := store.Decode[domain.Job](row)
 	var in failedCleanupAccount
 	var out failedCleanupCheckpoint
-	if err != nil || row.Kind != domain.JobKind || j.Type != domain.CleanupFailedSubscriptionJob || j.Validate() != nil || j.ParentID != parent || j.MachineID != "" || j.InstanceID != "" || j.AssignedDeviceID != "" || row.SessionID != "" || row.ProjectID != "" || j.AcceptedAt.IsZero() || j.State.Terminal() != (j.FinishedAt != nil) || domain.Decode(j.Input, &in) != nil || domain.Decode(j.Output, &out) != nil || (in.Version != 1 && in.Version != 2) || in.AccountID.Validate() != nil || !validCleanupTarget(in) || in.DeleteRequestID.Validate() != nil || in.Revision == 0 || out.Revision < in.Revision || domain.Text(in.Alias, "account alias", 256, true) != nil || out.Outcome < pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING || out.Outcome > pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED || out.Reason < 0 || out.Reason > pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE || j.State == domain.JobSucceeded && out.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING {
+	if err != nil || row.Kind != domain.JobKind || j.Type != domain.CleanupFailedSubscriptionJob || j.Validate() != nil || j.ParentID != parent || j.MachineID != "" || j.InstanceID != "" || j.AssignedDeviceID != "" || row.SessionID != "" || row.ProjectID != "" || j.AcceptedAt.IsZero() || j.State.Terminal() != (j.FinishedAt != nil) || domain.Decode(j.Input, &in) != nil || domain.Decode(j.Output, &out) != nil || (in.Version != 1 && in.Version != 2 && in.Version != 3) || in.AccountID.Validate() != nil || !validCleanupTarget(in) || in.DeleteRequestID.Validate() != nil || in.Revision == 0 || out.Revision < in.Revision || domain.Text(in.Alias, "account alias", 256, true) != nil || out.Outcome < pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING || out.Outcome > pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED || out.Reason < 0 || out.Reason > pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE || j.State == domain.JobSucceeded && out.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING {
 		return j, in, out, failedCleanupUnavailable()
 	}
 	switch j.State {
@@ -98,7 +113,7 @@ func decodeFailedCleanupAccount(row store.Record, parent domain.ID) (domain.Job,
 	default:
 		return j, in, out, failedCleanupUnavailable()
 	}
-	if out.CredentialsStarted && !out.Started {
+	if out.CredentialsStarted && !out.Started || out.NativeConfirmed && !out.Started || out.CredentialsConfirmed && !(out.CredentialsStarted && out.NativeConfirmed) || (out.NativeConfirmed || out.CredentialsConfirmed) && in.Target != subscriptionCleanupServerLogout {
 		return j, in, out, failedCleanupUnavailable()
 	}
 	if out.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED {
@@ -136,6 +151,12 @@ func failedCleanupMessage(row store.Record) (*pb.FailedSubscriptionCleanupJob, e
 // Version 1 children always retain their original initial LOGIN owner. Version 2
 // additionally represents disconnected configuration without inventing an owner.
 func validCleanupTarget(in failedCleanupAccount) bool {
+	if in.Target == subscriptionCleanupServerLogout {
+		return in.Version == 3 && in.DeleteRevision != 0 && in.DeleteRevision == in.Revision && in.OperationID.Validate() == nil && in.Generation.Validate() == nil && in.FinishID.Validate() == nil && in.OriginalActor != nil && validOriginalOperationActor(*in.OriginalActor)
+	}
+	if in.Version == 3 || in.Generation != "" || in.FinishID != "" || in.OriginalActor != nil {
+		return false
+	}
 	if in.DeleteRevision != 0 && (in.Version != 2 || in.DeleteRevision != in.Revision) {
 		return false
 	}
@@ -166,7 +187,13 @@ func disconnectedSubscription(a domain.Account) bool {
 	return st.ServerOperation == nil || !st.ServerOperation.Active() && !st.ServerOperation.NativeStarted
 }
 
-func cleanupTargetMatches(a domain.Account, in failedCleanupAccount) bool {
+func cleanupTargetMatches(a domain.Account, in failedCleanupAccount, out failedCleanupCheckpoint) bool {
+	if in.Target == subscriptionCleanupServerLogout {
+		if out.CredentialsConfirmed {
+			return serverLogoutRecoveryCleared(a, in)
+		}
+		return serverLogoutRecoveryMatches(a, in)
+	}
 	if in.Target == subscriptionCleanupDisconnected {
 		return disconnectedSubscription(a)
 	}
@@ -445,7 +472,7 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 		if err != nil {
 			return err
 		}
-		if ar.Revision != out.Revision || !cleanupTargetMatches(a, in) {
+		if ar.Revision != out.Revision || !cleanupTargetMatches(a, in, out) {
 			return failedCleanupUnavailable()
 		}
 		account = a
@@ -510,6 +537,17 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 					return err
 				})
 			}
+		}
+	}
+	if err == nil && in.Target == subscriptionCleanupServerLogout && !out.CredentialsConfirmed {
+		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED
+		// Never repeat an interrupted external attempt. Only the private native
+		// checkpoint can resume before the credential fence; a known terminal
+		// failure needs a fresh account read and a new explicit confirmation.
+		if out.CredentialsStarted || out.Started && !out.NativeConfirmed {
+			err = failedCleanupUnavailable()
+		} else {
+			out, err = s.cleanupServerLogoutLocked(ctx, parent, child, in, out, account)
 		}
 	}
 	if err == nil {

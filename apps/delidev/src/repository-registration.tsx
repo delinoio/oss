@@ -396,6 +396,9 @@ export function RepositoryRegistration({
   // can remove this guard after its allocation and atomic server handling are
   // established.
   const draftEdited = useRef(false);
+  // Directory spelling sent with the latest clone request. The server registers
+  // it as the Repository name, so a completed-clone name conflict restores it.
+  const submittedCloneDirectory = useRef("");
   const [options, setOptions] = useState(false),
     [childPending, setChildPending] = useState(false);
   const [cloneDraft, setCloneDraft] = useState<RepositoryCloneDraft>({
@@ -833,6 +836,7 @@ export function RepositoryRegistration({
         throw new WorkerVerificationProblem(
           "repository-registration.workerCloneUnsupported",
         );
+      submittedCloneDirectory.current = cloneDirectory;
       await clone.send({
         requestId: newRequestId(),
         machineId: proof.machineId,
@@ -950,9 +954,15 @@ export function RepositoryRegistration({
                         const selected = {
                           path: root,
                           machine: machineId,
-                          name: text(data.name),
+                          name: copy(
+                            "repository-registration.thisComputer_26f9f9",
+                          ),
                           local: true,
                         };
+                        // The cloned checkout must not be cloned again, so
+                        // block clone mode until the draft is registered.
+                        draftEdited.current = true;
+                        nameEdited.current = true;
                         setSource(selected);
                         setSummary({ output: inspection, source: selected });
                         setVerifiedMachine(machineId);
@@ -963,6 +973,7 @@ export function RepositoryRegistration({
                         setConnectFolder(true);
                         setData((current) => ({
                           ...current,
+                          name: submittedCloneDirectory.current || current.name,
                           checkouts: [{ machine_id: machineId, path: root }],
                         }));
                       }
@@ -1228,7 +1239,13 @@ export function RepositoryRegistration({
                           <dt>
                             {copy("repository-registration.computer_76ed42")}
                           </dt>
-                          <dd>{summary.source.name}</dd>
+                          <dd>
+                            {summary.source.local
+                              ? copy(
+                                  "repository-registration.thisComputer_26f9f9",
+                                )
+                              : summary.source.name}
+                          </dd>
                         </div>
                         <div>
                           <dt>

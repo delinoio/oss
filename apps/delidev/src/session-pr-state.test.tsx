@@ -370,3 +370,123 @@ it.each(["repository", "profile", "remote", "pr", "contradiction", "schema"])(
     );
   },
 );
+
+function readCounters(f: ReturnType<typeof fixture>) {
+  const get = vi.fn(async () => ({ resource: f.repository }));
+  const detail = vi.fn(async () => ({
+    schemaVersion: 1,
+    documentJson: encode(f.detail),
+  }));
+  const makeTransport = () =>
+    createRouterTransport((router) => {
+      router.service(ResourceService, { getResource: get });
+      router.service(IntegrationService, {
+        queryRepositoryIntegration: detail,
+      });
+    });
+  return { get, detail, makeTransport };
+}
+function refreshView(
+  f: ReturnType<typeof fixture>,
+  client: QueryClient,
+  limiter: PRReadLimiter,
+  transport: ReturnType<typeof createRouterTransport>,
+  options: { row?: typeof f.row; sessionActive?: boolean; visible?: boolean },
+) {
+  return (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionActivityProvider active={options.sessionActive ?? true}>
+          <SessionPRStatus
+            row={options.row ?? f.row}
+            association={f.association}
+            limiter={limiter}
+            active={options.visible ?? true}
+          />
+        </SessionActivityProvider>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+}
+
+it("reuses the retained observation across viewport re-entry without new reads", async () => {
+  const f = fixture();
+  const { get, detail, makeTransport } = readCounters(f);
+  const transport = makeTransport();
+  const client = new QueryClient();
+  const limiter = new PRReadLimiter();
+  const mounted = render(refreshView(f, client, limiter, transport, {}));
+  await screen.findByRole("img", { name: "Pull request open" });
+  expect(get).toHaveBeenCalledTimes(1);
+  expect(detail).toHaveBeenCalledTimes(1);
+  for (let pass = 0; pass < 3; pass++) {
+    mounted.rerender(
+      refreshView(f, client, limiter, transport, { visible: false }),
+    );
+    mounted.rerender(
+      refreshView(f, client, limiter, transport, { visible: true }),
+    );
+    await screen.findByRole("img", { name: "Pull request open" });
+  }
+  await act(async () => {});
+  expect(get).toHaveBeenCalledTimes(1);
+  expect(detail).toHaveBeenCalledTimes(1);
+});
+
+it("refreshes exactly once on association invalidation", async () => {
+  const f = fixture();
+  const { get, detail, makeTransport } = readCounters(f);
+  const transport = makeTransport();
+  const client = new QueryClient();
+  const limiter = new PRReadLimiter();
+  const mounted = render(refreshView(f, client, limiter, transport, {}));
+  await screen.findByRole("img", { name: "Pull request open" });
+  mounted.rerender(
+    refreshView(f, client, limiter, transport, {
+      row: { ...f.row, revision: 2n },
+    }),
+  );
+  await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  await screen.findByRole("img", { name: "Pull request open" });
+  await act(async () => {});
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(detail).toHaveBeenCalledTimes(2);
+});
+
+it("refreshes exactly once when the authenticated transport is replaced", async () => {
+  const f = fixture();
+  const { get, detail, makeTransport } = readCounters(f);
+  const client = new QueryClient();
+  const limiter = new PRReadLimiter();
+  const mounted = render(refreshView(f, client, limiter, makeTransport(), {}));
+  await screen.findByRole("img", { name: "Pull request open" });
+  mounted.rerender(refreshView(f, client, limiter, makeTransport(), {}));
+  await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  await screen.findByRole("img", { name: "Pull request open" });
+  await act(async () => {});
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(detail).toHaveBeenCalledTimes(2);
+});
+
+it("refreshes exactly once when the session becomes active again", async () => {
+  const f = fixture();
+  const { get, detail, makeTransport } = readCounters(f);
+  const transport = makeTransport();
+  const client = new QueryClient();
+  const limiter = new PRReadLimiter();
+  const mounted = render(refreshView(f, client, limiter, transport, {}));
+  await screen.findByRole("img", { name: "Pull request open" });
+  mounted.rerender(
+    refreshView(f, client, limiter, transport, { sessionActive: false }),
+  );
+  await act(async () => {});
+  expect(detail).toHaveBeenCalledTimes(1);
+  mounted.rerender(
+    refreshView(f, client, limiter, transport, { sessionActive: true }),
+  );
+  await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  await screen.findByRole("img", { name: "Pull request open" });
+  await act(async () => {});
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(detail).toHaveBeenCalledTimes(2);
+});

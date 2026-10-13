@@ -497,6 +497,12 @@
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
+.usage-price-rate-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-variant-numeric: normal;
+}
 @media (max-width: 759px) {
   .usage-price-rates {
     grid-template-columns: 1fr;

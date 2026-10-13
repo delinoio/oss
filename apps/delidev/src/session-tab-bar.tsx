@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useLayoutEffect, useRef } from "react";
-import { copy, useLocale } from "./localization";
+import { copy, useLocale, type MessageKey } from "./localization";
 import { Comparison } from "./session-diff-model";
 import {
   SessionTabKind,
@@ -12,6 +12,16 @@ import {
 import { bindingAria, shortcutPlatform } from "./shortcuts";
 import "./tab-strip.css";
 import { revealTabItem } from "./tab-strip";
+/**
+ * Presentation label per Comparison mode. Keyed by the enum so a new mode
+ * fails typecheck instead of silently reusing the working-tree label.
+ */
+const comparisonLabelKeys: Record<Comparison, MessageKey> = {
+  [Comparison.WorkingTree]: "session-diff.workingTreeAgainstCurrentHead_f0fac9",
+  [Comparison.Staged]: "session-diff.stagedChangesAgainstCurrentHead_9974f1",
+  [Comparison.Creation]: "session-diff.workingTreeAgainstCreationCommit_3102e8",
+  [Comparison.Branch]: "session-diff.branchChanges",
+};
 export function tabName(tab: SessionTab): string {
   switch (tab.kind) {
     case SessionTabKind.Conversation:
@@ -19,7 +29,7 @@ export function tabName(tab: SessionTab): string {
     case SessionTabKind.File:
       return tab.path;
     case SessionTabKind.Comparison:
-      return `${copy("session.diff_7ecf46")} · ${tab.path} · ${copy(tab.comparison === Comparison.Creation ? "session-diff.workingTreeAgainstCreationCommit_3102e8" : tab.comparison === Comparison.Staged ? "session-diff.stagedChangesAgainstCurrentHead_9974f1" : "session-diff.workingTreeAgainstCurrentHead_f0fac9")}`;
+      return `${copy("session.diff_7ecf46")} · ${tab.path} · ${copy(comparisonLabelKeys[tab.comparison])}`;
     case SessionTabKind.Terminal:
       // The tab bar labels terminals by their Session presentation number.
       return copy("product-identity.terminal");

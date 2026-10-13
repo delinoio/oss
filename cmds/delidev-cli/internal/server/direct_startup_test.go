@@ -314,7 +314,7 @@ func TestDirectStartupExplicitRetryRetainsOriginalSelectionAndReceipt(t *testing
 }
 
 func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
-	for _, scenario := range []string{"valid", "text", "no-thread", "changed-input", "changed-process", "acknowledged"} {
+	for _, scenario := range []string{"valid", "text", "no-thread", "changed-input", "changed-mode", "changed-skills", "changed-process", "acknowledged"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := directStartupFixture(t, func(i *domain.ExecutionJobInput) {
 				if scenario != "text" {
@@ -339,7 +339,7 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 				if scenario == "acknowledged" {
 					session.Execution.NativeTurnID = string(domain.NewID())
 				}
-				if scenario == "changed-input" {
+				if scenario == "changed-input" || scenario == "changed-mode" || scenario == "changed-skills" {
 					qr, err := tx.Get(domain.QueueKind, f.input.InputID)
 					if err != nil {
 						return nil, err
@@ -348,7 +348,20 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					q.Prompt += " changed"
+					switch scenario {
+					case "changed-input":
+						q.Prompt += " changed"
+					case "changed-mode":
+						// Mode is outside InputDigest, so only full input equality catches it.
+						if q.Mode == domain.PlanMode {
+							q.Mode = domain.ExecuteMode
+						} else {
+							q.Mode = domain.PlanMode
+						}
+					case "changed-skills":
+						// Skills are outside InputDigest, so only full input equality catches them.
+						q.Skills = []domain.SkillBinding{{WorkerDeviceID: domain.NewID(), InventoryID: domain.NewID(), SkillID: domain.NewID(), ContentRevision: "revision", SnapshotID: domain.NewID()}}
+					}
 					if _, err = tx.Put(domain.QueueKind, qr.ID, qr.Revision, qr.SessionID, "", q); err != nil {
 						return nil, err
 					}
@@ -372,6 +385,21 @@ func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
 			if scenario != "valid" {
 				if err == nil {
 					t.Fatal("foreign or mixed image report accepted")
+				}
+				if readErr := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+					_, session, err := sessionRecord(tx, f.input.SessionID)
+					if err != nil {
+						return err
+					}
+					if session.Startup.Failure != nil {
+						t.Fatal("rejected image report stored a startup failure")
+					}
+					if session.Problem != nil && session.Problem.Message == domain.UnsupportedImageInput().Message {
+						t.Fatal("rejected image report changed the session problem")
+					}
+					return nil
+				}); readErr != nil {
+					t.Fatal(readErr)
 				}
 				return
 			}

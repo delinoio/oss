@@ -137,6 +137,44 @@ func TestSafetyBufferingTransitionsUsageAndTerminalRemainOriginal(t *testing.T) 
 	}
 }
 
+func TestSafetyBufferingModelMustMatchSelectedModel(t *testing.T) {
+	const method = "model/safetyBuffering/updated"
+	for _, model := range []string{"other-model", "Fixture-Model", "fixture-model ", "fixture-model-faster"} {
+		c, turn := observationClient()
+		params := safetyFixture(c, turn, method)
+		params["model"] = model
+		paused := c.execution.paused
+		event, err := observeFixture(c, method, params)
+		if err == nil || event.Kind == ModelSafetyEvent || event.Safety != nil || len(c.safety.observations) != 0 || c.safety.bytes != 0 || c.execution.paused != paused || c.execution.settings.Model != "fixture-model" || c.modelObservation != "" {
+			t.Fatal("mismatched buffering model retained as passive evidence", model, err)
+		}
+		assertCode(t, err, domain.Unsupported)
+	}
+}
+
+func TestSafetyBufferingIgnoresFasterModelForSelection(t *testing.T) {
+	const method = "model/safetyBuffering/updated"
+	for _, faster := range []any{"other-model", nil} {
+		c, turn := observationClient()
+		params := safetyFixture(c, turn, method)
+		params["fasterModel"] = faster
+		event, err := observeFixture(c, method, params)
+		if err != nil || event.Kind != ModelSafetyEvent || !event.Safety.PassiveFor(c.thread, turn) || len(c.safety.observations) != 1 || c.execution.settings.Model != "fixture-model" || c.modelObservation != "" || c.problem != nil {
+			t.Fatal("fasterModel affected passive buffering", faster, err)
+		}
+	}
+}
+
+func TestSafetyForeignBufferingModelStaysPrivate(t *testing.T) {
+	c, turn := observationClient()
+	params := safetyFixture(c, turn, "model/safetyBuffering/updated")
+	params["threadId"], params["model"] = domain.NewID(), "other-model"
+	event, err := observeFixture(c, "model/safetyBuffering/updated", params)
+	if err != nil || event.Kind != NativeExtensionEvent || len(c.safety.observations) != 0 || c.problem != nil {
+		t.Fatal("foreign buffering model changed root evidence", err)
+	}
+}
+
 func TestSafetyTerminalReplayIsExactPrivateEvidence(t *testing.T) {
 	for _, method := range []string{"model/verification", "turn/moderationMetadata", "model/safetyBuffering/updated", "model/rerouted"} {
 		c, turn := observationClient()
@@ -250,6 +288,106 @@ func TestSafetyMalformedAndForeignBoundaries(t *testing.T) {
 	}
 }
 
+// unsupportedSafetyDescriptor mutates a valid fixture into a payload that only
+// the owned-root closed-descriptor validation rejects.
+func unsupportedSafetyDescriptor(method string, params map[string]any) {
+	switch method {
+	case "model/verification":
+		params["verifications"] = []string{"unknown"}
+	case "model/safetyBuffering/updated":
+		params["reasons"] = []string{strings.Repeat("x", 4097)}
+	case "model/rerouted":
+		params["reason"] = "unknown"
+	case "turn/moderationMetadata":
+		params["metadata"] = map[string]any{"unknown": []any{nil, "unsupported"}}
+	}
+}
+
+func TestSafetyForeignThreadSkipsRootOnlyDescriptorValidation(t *testing.T) {
+	for _, method := range []string{"model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted"} {
+		c, turn := observationClient()
+		paused := c.execution.paused
+		settings := c.execution.settings
+		params := safetyFixture(c, turn, method)
+		params["threadId"] = domain.NewID()
+		unsupportedSafetyDescriptor(method, params)
+		event, err := observeFixture(c, method, params)
+		if err != nil || event.Kind != NativeExtensionEvent || event.Safety != nil || c.problem != nil || c.execution.paused != paused || len(c.safety.observations) != 0 || c.safety.bytes != 0 || len(c.safety.rerouted) != 0 || c.modelObservation != "" || !reflect.DeepEqual(settings, c.execution.settings) || c.execution.active != turn {
+			t.Fatal("foreign unsupported descriptor changed root state", method, err)
+		}
+		// The same payload on the owned root remains an unsupported-profile failure.
+		owned, ownedTurn := observationClient()
+		ownedParams := safetyFixture(owned, ownedTurn, method)
+		unsupportedSafetyDescriptor(method, ownedParams)
+		_, err = observeFixture(owned, method, ownedParams)
+		if method == "turn/moderationMetadata" {
+			// Moderation metadata is any JSONValue, so the root retains it.
+			if err != nil || len(owned.safety.observations) != 1 {
+				t.Fatal("root moderation metadata rejected", err)
+			}
+			continue
+		}
+		assertCode(t, err, domain.Unsupported)
+		if len(owned.safety.observations) != 0 {
+			t.Fatal("root retained unsupported descriptor", method)
+		}
+	}
+}
+
+func TestSafetyRootUnsupportedDescriptorPausesThroughReader(t *testing.T) {
+	c, _, _, _ := boundTurnFixture(t, "ready")
+	result, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.PlanMode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextKind(t, c, MessageCompletedEvent)
+	fixtureSignal(t, c, "notify", map[string]any{"method": "model/verification", "params": map[string]any{"threadId": domain.NewID(), "turnId": result.TurnID, "verifications": []string{"unknown"}}})
+	nextKind(t, c, NativeExtensionEvent)
+	if c.problem != nil || c.execution.paused {
+		t.Fatal("foreign unsupported descriptor paused root")
+	}
+	fixtureSignal(t, c, "notify", map[string]any{"method": "model/verification", "params": map[string]any{"threadId": c.thread, "turnId": result.TurnID, "verifications": []string{"unknown"}}})
+	_, err = c.NextEvent(context.Background())
+	if err == nil || c.problem == nil || !c.execution.paused {
+		t.Fatal("root unsupported descriptor did not pause", err)
+	}
+}
+
+func TestSafetyForeignThreadKeepsBoundedEnvelopeAndIdentity(t *testing.T) {
+	for _, method := range []string{"model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted"} {
+		for _, change := range []string{"missing-thread", "null-thread", "numeric-thread", "invalid-thread", "missing-turn", "unknown-field", "oversized"} {
+			c, turn := observationClient()
+			params := safetyFixture(c, turn, method)
+			params["threadId"] = domain.NewID()
+			switch change {
+			case "missing-thread":
+				delete(params, "threadId")
+			case "null-thread":
+				params["threadId"] = nil
+			case "numeric-thread":
+				params["threadId"] = 7
+			case "invalid-thread":
+				params["threadId"] = "not-a-valid-id"
+			case "missing-turn":
+				delete(params, "turnId")
+			case "unknown-field":
+				params["unknown"] = true
+			case "oversized":
+				params["padding"] = strings.Repeat("x", maxSafetyEnvelope)
+				if method == "turn/moderationMetadata" {
+					delete(params, "padding")
+					params["metadata"] = strings.Repeat("x", maxSafetyEnvelope)
+				}
+			}
+			event, err := observeFixture(c, method, params)
+			assertCode(t, err, domain.Unsupported)
+			if event.Kind == NativeExtensionEvent || len(c.safety.observations) != 0 || c.safety.bytes != 0 {
+				t.Fatal("malformed foreign envelope accepted", method, change)
+			}
+		}
+	}
+}
+
 func TestSafetyEvidenceHasAggregateBounds(t *testing.T) {
 	for _, bound := range []string{"count", "bytes"} {
 		c, turn := observationClient()
@@ -288,6 +426,72 @@ func TestSafetyReroutePreservesFirstProblemAndNativeTerminalEvidence(t *testing.
 		if err != problem || event.Kind == TurnCompletedEvent || c.execution.turns[turn].Turn.Status != TurnCompleted || c.execution.active != "" {
 			t.Fatal("rerouted completion asserted selected model success", err)
 		}
+	}
+}
+
+func TestSafetyRerouteLatchesWhenEvidenceLedgerIsFull(t *testing.T) {
+	for _, bound := range []string{"count", "bytes"} {
+		for _, prior := range []bool{false, true} {
+			c, turn := observationClient()
+			if bound == "count" {
+				c.safety.observations = make([]*ModelSafetyObservation, maxSafetyObservations)
+			} else {
+				c.safety.bytes = maxSafetyBytes
+			}
+			if prior {
+				c.problem = turnUncertain()
+				c.execution.paused = true
+			}
+			first := c.problem
+			count, size := len(c.safety.observations), c.safety.bytes
+			_, err := observeFixture(c, "model/rerouted", safetyFixture(c, turn, "model/rerouted"))
+			assertCode(t, err, domain.RecoveryRequired)
+			if err != c.problem || first != nil && c.problem != first || !c.execution.paused || !c.safety.rerouted[turn] || len(c.safety.observations) != count || c.safety.bytes != size || c.execution.settings.Model != "fixture-model" || c.modelObservation != "" {
+				t.Fatal("overflowed reroute did not latch recovery", bound, prior)
+			}
+			problem := c.problem
+			event, err := observeFixture(c, "turn/completed", map[string]any{"threadId": c.thread, "turn": fixtureTurn(turn, TurnCompleted)})
+			if err != problem || event.Kind == TurnCompletedEvent || c.execution.turns[turn].Turn.Status != TurnCompleted || c.execution.active != "" {
+				t.Fatal("overflowed reroute completion asserted selected model success", bound, err)
+			}
+		}
+	}
+}
+
+func TestSafetyOverflowWithoutModelChangeKeepsGenericRejection(t *testing.T) {
+	sameModel := func(c *Client, turn domain.ID) (string, map[string]any) {
+		params := safetyFixture(c, turn, "model/rerouted")
+		params["toModel"] = c.execution.settings.Model
+		return "model/rerouted", params
+	}
+	moderation := func(c *Client, turn domain.ID) (string, map[string]any) {
+		return "turn/moderationMetadata", safetyFixture(c, turn, "turn/moderationMetadata")
+	}
+	for _, build := range []func(*Client, domain.ID) (string, map[string]any){moderation, sameModel} {
+		for _, bound := range []string{"count", "bytes"} {
+			c, turn := observationClient()
+			if bound == "count" {
+				c.safety.observations = make([]*ModelSafetyObservation, maxSafetyObservations)
+			} else {
+				c.safety.bytes = maxSafetyBytes
+			}
+			paused := c.execution.paused
+			method, params := build(c, turn)
+			_, err := observeFixture(c, method, params)
+			assertCode(t, err, domain.Unsupported)
+			if c.problem != nil || c.execution.paused != paused || c.safety.rerouted[turn] {
+				t.Fatal("non-reroute overflow acquired recovery", method, bound)
+			}
+		}
+	}
+}
+
+func TestSafetyBelowCapRerouteRecordsEvidenceAndLatch(t *testing.T) {
+	c, turn := observationClient()
+	_, err := observeFixture(c, "model/rerouted", safetyFixture(c, turn, "model/rerouted"))
+	assertCode(t, err, domain.RecoveryRequired)
+	if len(c.safety.observations) != 1 || c.safety.bytes != safetyEvidenceBytes(c.safety.observations[0]) || !c.safety.rerouted[turn] || !c.execution.paused {
+		t.Fatal("below-cap reroute behavior changed")
 	}
 }
 

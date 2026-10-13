@@ -19,3 +19,24 @@ func (t *Tx) RequireUnusedID(id domain.ID) error {
 	}
 	return nil
 }
+
+// RequireUnusedCreateID applies the same global identity and tombstone fence as
+// RequireUnusedID for ordinary creation, with guidance that asks for a new ID
+// instead of a new import preview.
+func (t *Tx) RequireUnusedCreateID(id domain.ID) error {
+	if err := id.Validate(); err != nil {
+		return err
+	}
+	var live, deleted bool
+	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=?), EXISTS(SELECT 1 FROM tombstones WHERE id=?)", id, id).Scan(&live, &deleted)
+	if err != nil {
+		return storageError(err)
+	}
+	if deleted {
+		return domain.Fail(domain.Conflict, "This entity was permanently deleted.", "Create a new entity with a new ID.")
+	}
+	if live {
+		return domain.Fail(domain.Conflict, "This identity is already used.", "Create the entity with a new ID.")
+	}
+	return nil
+}

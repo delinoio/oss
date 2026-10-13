@@ -46,8 +46,7 @@ func WorkspacePath(value string) bool {
 		if len(part) > 255 || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") {
 			return false
 		}
-		base := strings.ToUpper(strings.TrimRight(strings.SplitN(part, ".", 2)[0], " "))
-		if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || base == "CONIN$" || base == "CONOUT$" || (len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '0' && base[3] <= '9') || base == "COM¹" || base == "COM²" || base == "COM³" || base == "LPT¹" || base == "LPT²" || base == "LPT³" {
+		if IsWindowsReservedDeviceName(part) {
 			return false
 		}
 	}

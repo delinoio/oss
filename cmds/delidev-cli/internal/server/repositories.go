@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -43,15 +44,37 @@ func validateRepositoryInspectionSource(source string, child domain.Job) error {
 	return nil
 }
 
-func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
-	record, err := tx.Get(domain.RepositoryKind, id)
-	if expected == 0 && domain.SafeError(err).Code == domain.NotFound {
-		return tx.RequireUnusedID(id)
+// isRetryableStorageFailure reports whether err is an unexpected storage-class
+// failure whose report transaction must roll back for an exact retry, instead of
+// being settled as a terminal validation result. Domain outcomes (Conflict,
+// NotFound, InvalidArgument, a disabled machine's PermissionDenied, the bounded
+// relationship ResourceExhausted, RecoveryRequired) carry no storage cause and
+// stay terminal. Store failures classified by the store always carry a cause
+// for PermissionDenied/ResourceExhausted; Internal, Unavailable and Canceled
+// are never produced as deliberate repository validation outcomes.
+func isRetryableStorageFailure(err error) bool {
+	known := domain.SafeError(err)
+	switch known.Code {
+	case domain.Internal, domain.Unavailable, domain.Canceled:
+		return true
+	case domain.PermissionDenied, domain.ResourceExhausted:
+		return known.Cause != ""
+	default:
+		return false
 	}
+}
+
+func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
+	// Ordinary creation reports identity conflicts for any live kind or tombstone
+	// before the kind-specific lookup can produce revision or kind errors.
+	if expected == 0 {
+		return tx.RequireUnusedCreateID(id)
+	}
+	record, err := tx.Get(domain.RepositoryKind, id)
 	if err != nil {
 		return err
 	}
-	if expected == 0 || record.Revision != expected {
+	if record.Revision != expected {
 		return domain.Fail(domain.Conflict, "The repository revision changed.", "Read its current revision and submit a new save request.")
 	}
 	return nil
@@ -211,6 +234,13 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 					break
 				}
 			}
+		}
+		if err != nil && isRetryableStorageFailure(err) {
+			// An unexpected storage failure during final validation is not a
+			// settled domain result. Roll back so the child success report and
+			// parent state stay uncommitted and the original report can retry.
+			slog.Warn("repository save final validation hit a storage failure; rolling back report", "parent_id", parentID, "repository_id", input.ID, "code", domain.SafeError(err).Code, "cause", domain.SafeError(err).Cause)
+			return err
 		}
 		if err != nil {
 			problem = domain.SafeError(err)
