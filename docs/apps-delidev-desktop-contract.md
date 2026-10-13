@@ -353,7 +353,7 @@ native authority.
 
 The fixed Session Open terminals / 터미널 열기 action uses primary+logical grave (`). Register it only for the active selected nonembedded Session, with ordinary editable input allowed and the original Sidechat parent-snapshot guard. Invoke the existing Terminals open action once, retaining the composer draft, original inventory, revision-bound reuse/create intent, pending/uncertain recovery and Worker ownership. Repeated opening selects the destination without closing it or replacing its controller. Help, the read-only Session Settings catalog and the original tool entry ARIA share the same platform binding. Accepted invocation from Help closes Help before the original callback and preserves destination focus. Grave matching has no physical Backquote fallback. Terminal input, focused native Browser pages, shortcut capture, unrelated modals and the existing handled/IME/repeat/extra-modifier/hidden/inert fences remain excluded. The seven editable actions and native preference format stay unchanged.
 
-The read-only Session New terminal / 새 터미널 action (`ShortcutId.TerminalCreate`, `ShortcutTargetContext.Terminal`, priority 2, target input permission) uses primary+T and applies only while the visible terminal input host has focus. It runs the same additional-creation callback as + (Worker default shell, original session revision, fresh request identity, 24×80), selects and focuses the returned terminal tab, and is consumed before PTY delivery so an accepted chord sends no bytes. A matching chord blocked by inactive, opening, unsupported, busy, uncertain or archived creation gates is consumed without creation or terminal input. It has no editable preference, never reserves T globally and does not participate in the Open tool custom-override suppression; saved custom unshifted T overrides stay valid and unchanged. Help lists it with its terminal-focus restriction and cannot invoke it. The terminal input host and the renderer's input field carry `aria-keyshortcuts` derived from the effective platform binding. The handled/IME/repeat/AltGraph/extra-modifier/modal/hidden/inert fences remain.
+The read-only Session New terminal / 새 터미널 action (`ShortcutId.TerminalCreate`, `ShortcutTargetContext.Terminal`, priority 2, target input permission) uses primary+T and applies only while the visible terminal input host has focus. It runs the same additional-creation callback as + (Worker default shell, original session revision, fresh request identity, 24×80), selects and focuses the returned terminal tab only when no newer Session navigation (any selected-tab change recorded by the tab store's per-Session navigation generation, including leaving and returning to the origin terminal) happened after the request was sent; otherwise the user's later selection survives and the acknowledged terminal is only retained and listed for later explicit opening, and a request without its captured origin (for example after a remount) never selects. It is consumed before PTY delivery so an accepted chord sends no bytes. A matching chord blocked by inactive, opening, unsupported, busy, uncertain or archived creation gates is consumed without creation or terminal input. It has no editable preference, never reserves T globally and does not participate in the Open tool custom-override suppression; saved custom unshifted T overrides stay valid and unchanged. Help lists it with its terminal-focus restriction and cannot invoke it. The terminal input host and the renderer's input field carry `aria-keyshortcuts` derived from the effective platform binding. The handled/IME/repeat/AltGraph/extra-modifier/modal/hidden/inert fences remain.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
@@ -1357,12 +1357,18 @@ There is no standalone Terminals management tab. The Terminals tool entry is an
 explicit reuse-or-create intent that keeps the current pane selected until the
 atomic admission returns a verified original terminal, then opens or selects that
 terminal's direct tab. Each explicit creation or retained-resource selection
-opens/selects the tab keyed by the original terminal ID.
+opens/selects the tab keyed by the original terminal ID. + and primary+T
+additional creation applies the same rule only while no newer navigation
+happened after sending, so a pending acknowledgment never overwrites a later
+Conversation, Files or terminal choice. The toolbar reuse-or-create admission
+always selects its admitted terminal.
 
 Each direct terminal tab is labelled `Terminal N` / `터미널 N`. `N` is a monotonic
 presentation number owned by the connection-memory terminal presentation record of
 its Session. It is allocated once per original terminal ID in first
-opened-or-authenticated-inventory encounter order, is shared by the tab, its
+opened-or-authenticated-inventory encounter order (the explicit reuse-or-create
+inventory numbers every validated row, page by page, before any admission
+result opens, and invalid or aborted reads number nothing), is shared by the tab, its
 tooltip, accessible names, the Close tab name and the inventory rows, and is never
 reused. It survives close/reopen, paging, reorder, payload eviction, navigation and
 same-identity reconnect; Sessions number independently, and a replaced connection
@@ -1373,7 +1379,11 @@ proofs keep the original ID.
 Opening status, capability/read failures and uncertain-creation recovery render in
 a non-modal strip directly below the tab row while the current pane stays mounted;
 no placeholder tab is created. Read Retry is read-only and never creates a
-terminal. Repeated opening gestures coalesce into one admission using the captured
+terminal; from a non-terminal pane it enables exactly one bounded inventory
+attempt that ends when it settles (success or failure), when a terminal pane is
+selected, or on Session departure, so no interval-driven reads continue behind
+Conversation or Files, and a failed attempt keeps the Problem with a Retry
+button for the next bounded attempt. Repeated opening gestures coalesce into one admission using the captured
 session, revision and request ID. Session departure or a later explicit pane
 selection cancels an unsent intent; accepted or uncertain ownership survives.
 Retained manager lifetime, explicit-open resolution (Session visible) and
