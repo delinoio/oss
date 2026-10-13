@@ -117,6 +117,9 @@ pub enum Reason {
     CustomIterator,
     /// Array holes may be observed.
     SparseArray,
+    /// Bundle mode: a boundary chunk can import the chunk, so it keeps its
+    /// name and content to leave one instance of the module.
+    BoundaryReachable,
 }
 
 /// A transformation bundle: the edits of one pass plus any required cleanup

@@ -250,8 +250,10 @@ Settings search indexes only bundled category/target label and static help keys 
 The feature uses the separate `tray-status` bundled entry and English/Korean
 catalog. Retained native snapshots project the committed resolved language,
 semantic theme and date format without mounting writable device controllers.
-Preference changes update the same panel and selection without a product read or
-scope reset. Localize state, unavailable/empty distinctions, quota fallback IDs,
+Preference changes update the same panel and its retained representative window
+without a product read or scope reset. The catalog has no product-window label,
+no-window option or additional-window guidance because the panel has no window
+selector. Localize state, unavailable/empty distinctions, quota fallback IDs,
 reset expiry, precision-preserving counts and existing navigation actions. Keep
 explicit service brands and exact safe quota IDs separate from translated copy.
 The auxiliary document has no preference-write or protected widget-store access.
@@ -312,3 +314,7 @@ these cards. Only secondary codes, versions and opaque references are disclosed.
 The closed quota pair selects localized copy; translated or raw message text
 cannot establish the cause. Locale changes retain the original Session,
 composer, Info and operation identities without replay or focus movement.
+
+## Browser destination copy
+
+The `browser-settings` and `external-link` catalogs localize the Settings > Browser category and link-opening failures in English and Korean. The selector labels are `General URL destination` / `일반 URL 열기 대상` and `Local URL destination` / `로컬 URL 열기 대상`; the default option is `System default browser` / `시스템 기본 브라우저`. Native browser identities and display names come from the operating system and are shown unchanged; the unavailable-saved-browser suffix is localized. Selector option values are structural identities, never copy, and catalog text is never used to match or select a browser. Failure copy for a missing browser, a failed launch, unreadable browser settings, an unsupported address and unclassified failures points at Settings > Browser and is shared by message links, terminal links, Provider guidance, App information and GitHub opening. Success copy for those openers says the link was sent to the user's browser rather than the default browser. Locale changes re-render without replaying a pending launch.

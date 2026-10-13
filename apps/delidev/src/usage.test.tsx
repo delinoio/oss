@@ -1042,6 +1042,18 @@ it("defaults to Overview, keeps three topmost semantic tabs and retains state wi
     "false",
   ]);
   expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+  expect(tabs[0].parentElement!.classList.contains("tab-strip")).toBe(true);
+  expect(
+    tabs.map((tab) => [
+      tab.classList.contains("tab-item"),
+      tab.classList.contains("tab-label"),
+      tab.classList.contains("is-selected"),
+    ]),
+  ).toEqual([
+    [true, true, true],
+    [true, true, false],
+    [true, true, false],
+  ]);
   expect(
     screen.queryByRole("button", { name: "Model details and token pricing" }),
   ).toBeNull();

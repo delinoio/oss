@@ -6,26 +6,9 @@
   display: flex;
   flex-direction: column;
 }
+/* Tab geometry, baseline, selection and focus come from tab-strip.css. */
 .project-edit-tablist {
-  display: flex;
   flex: none;
-  overflow-x: auto;
-  scrollbar-gutter: stable;
-  border-bottom: 1px solid var(--border);
-}
-.project-edit-tablist button {
-  flex: none;
-  min-height: 40px;
-  padding: 8px 16px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 8px 8px 0 0;
-  background: transparent;
-  color: var(--muted);
-}
-.project-edit-tablist button[aria-selected="true"] {
-  color: var(--selected-text);
-  border-bottom-color: var(--selected-border);
 }
 .project-edit-tabs > [role="tabpanel"] {
   flex: 1;

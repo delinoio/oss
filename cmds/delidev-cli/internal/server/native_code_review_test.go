@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
@@ -159,7 +160,8 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 				t.Fatal("foreign original evidence was adopted")
 			}
 			usage := publication(domain.NativeReviewEntered, "")
-			usage.Usage = rpc.NativeReviewUsageWire(domain.NativeResponseUsage{ResponseDigest: strings.Repeat("d", 64), CostEvidence: domain.UsageCostMissing}, 1, domain.CodexProtocolVersion)
+			observedAt := time.Now().UTC().Add(-time.Second).Truncate(time.Millisecond)
+			usage.Usage = rpc.NativeReviewUsageWire(domain.NativeResponseUsage{ResponseDigest: strings.Repeat("d", 64), CostEvidence: domain.UsageCostMissing}, 1, domain.CodexProtocolVersion, observedAt)
 			for range 2 {
 				if _, err := f.workerClient.PublishNativeCodeReview(ctx, ownerRequest(f.workerIdentity, usage)); err != nil {
 					t.Fatal("cancellation erased original measured usage", err)
@@ -185,6 +187,9 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 				values, err := tx.NativeCodeReviewUsage(claim.ID)
 				if err == nil && len(values) != 1 {
 					t.Fatal("original usage receipt charged twice")
+				}
+				if err == nil && (!values[0].CreatedAt.Equal(observedAt) || !values[0].Record.ObservedAt.Equal(observedAt)) {
+					t.Fatal("receipt lost the Worker observation time", values[0].CreatedAt)
 				}
 				return err
 			}); err != nil {

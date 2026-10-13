@@ -4,7 +4,7 @@ import {
   commandPreview,
   NativeCommandBody,
 } from "./native-command-presentation";
-import { useAppearancePreferences } from "./appearance";
+import { useAppearancePreferences, useAppearanceReady } from "./appearance";
 import { DisclosureDefault } from "./appearance-preferences";
 import { TurnTime, TurnTimingProvider, type CurrentTurn } from "./turn-timing";
 import {
@@ -53,7 +53,11 @@ function ToolEntry({
   render: (row: Resource) => ReactNode;
 }) {
   const preferences = useAppearancePreferences();
-  if (!choices.entries.has(row.id))
+  const ready = useAppearanceReady();
+  // Seed the saved default only after the initial native read settles, and only
+  // for entries without an explicit choice. Before that, stay collapsed without
+  // recording a choice so a delayed Expanded default can still apply once.
+  if (ready && !choices.entries.has(row.id))
     choices.entries.set(
       row.id,
       preferences.tool_disclosure === DisclosureDefault.Expanded,
@@ -174,6 +178,7 @@ export function ToolTurnTranscript({
 }) {
   useLocale();
   const preferences = useAppearancePreferences();
+  const ready = useAppearanceReady();
   const [choices] = useState<Choices>(() => ({
     groups: new Map(),
     entries: new Map(),
@@ -259,7 +264,7 @@ export function ToolTurnTranscript({
     const entries = groups.get(projection.tool.owner)!;
     if (entries[0].id !== projection.id) return null;
     const owner = projection.tool.owner;
-    if (!choices.groups.has(owner))
+    if (ready && !choices.groups.has(owner))
       choices.groups.set(
         owner,
         preferences.tool_disclosure === DisclosureDefault.Expanded,

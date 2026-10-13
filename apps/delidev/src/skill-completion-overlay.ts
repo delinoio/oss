@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useLayoutEffect, type RefObject } from "react";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import {
   pickerSurfaceBounds,
   pickerSurfaceOwner,
@@ -111,6 +112,10 @@ export function useSkillCompletionOverlay(
       return true;
     };
     if (!position()) return;
+    // The top-layer popup is a fixed positioning host, so an in-flight entrance
+    // on an ancestor settles first. The attribute observer below measures the
+    // anchor again once the untransformed layout commits.
+    settleEnclosingEntrances(popup);
     popup.showPopover?.();
     position();
     const observer =
@@ -137,6 +142,7 @@ export function useSkillCompletionOverlay(
           "disabled",
           "class",
           "style",
+          "data-entrance",
         ],
       });
     // Result transitions can change scrollHeight without changing a capped box.

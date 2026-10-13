@@ -50,13 +50,17 @@ import { useFailedSubscriptionCleanup } from "./subscription-cleanup";
 import {
   SubscriptionQuotaControls,
   quotaAccountAvailable,
-  quotaObservationMachine,
   serverQuotaAvailable,
 } from "./subscription-quota";
 import { useSubscriptionLogin } from "./subscription-login";
 import { serviceAccount } from "./subscription-resource";
 import { document, items, object, text } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { subscriptionQuotaAllKey, useRetainedMutation } from "./mutation";
+import {
+  acknowledgeRefreshAllSubscriptionQuotas,
+  subscriptionForegroundRefreshInterval,
+} from "./subscription-quota-refresh";
+import { useDocumentForeground } from "./document-foreground";
 import { Failure, InlineRemediation, Problem } from "./ui";
 import { SubscriptionBrand } from "./subscription-catalog";
 import {
@@ -563,7 +567,6 @@ function NativeManagedSubscriptionAccount({
       {service === SubscriptionServiceId.ChatGPT ? (
         <SubscriptionQuotaControls
           current={current}
-          machine={quotaObservationMachine(state)}
           active={
             active &&
             connected &&
@@ -623,11 +626,15 @@ export function SubscriptionAccounts({
   // Login/status authority stays active while its own presentation pauses only
   // the background inventory reader. The callback uses the current reader.
   const flow = useSubscriptionLogin(active, () => refreshInventory.current());
+  // Completed native observations reach this inventory by rereading its already
+  // accepted ranges every 30 seconds while the app is in use. Unseen pages are
+  // never discovered, and an inactive document keeps the previous no-poll behavior.
+  const appInUse = useDocumentForeground().foreground;
   const inventory = useResourceScrollQuery(
     EntityKind.ACCOUNT,
     active && capable && !selected && !goCreate && !flow.workflow,
     "subscriptions",
-    false,
+    appInUse ? subscriptionForegroundRefreshInterval : false,
     AccountTypeFilter.SUBSCRIPTION,
     "",
     serviceAccount,
@@ -677,16 +684,12 @@ export function SubscriptionAccounts({
       ),
   );
   const refreshAll = useRetainedMutation(
-    "subscription:quota:all",
+    subscriptionQuotaAllKey,
     SubscriptionQuery.refreshAllSubscriptionQuotas,
     () => {
       void rows.refetch();
     },
-    (result, request) =>
-      result.requestId === request.requestId &&
-      result.accounts.length <= 10000 &&
-      new Set(result.accounts).size === result.accounts.length &&
-      result.accounts.every(isEntityId),
+    acknowledgeRefreshAllSubscriptionQuotas,
   );
   const serverQuotaSupported =
     status.data?.capabilities.includes(

@@ -528,7 +528,19 @@ it("renders the approved two-row table with UTC labels, full metadata and inert 
   expect(
     screen.queryByRole("navigation", { name: "Creation job pages" }),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  const creationTab = screen.getByRole("tab", { name: "Creation jobs" }),
+    deletionTab = screen.getByRole("tab", { name: "Deletion jobs" });
+  expect(creationTab.parentElement!.classList.contains("tab-strip")).toBe(true);
+  expect(creationTab.classList.contains("is-selected")).toBe(true);
+  expect(deletionTab.classList.contains("is-selected")).toBe(false);
+  // Keyboard movement stays manual: focus moves without selecting.
+  creationTab.focus();
+  fireEvent.keyDown(creationTab, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(deletionTab);
+  expect(deletionTab.getAttribute("aria-selected")).toBe("false");
+  expect(deletionTab.classList.contains("is-selected")).toBe(false);
+  fireEvent.click(deletionTab);
+  expect(deletionTab.classList.contains("is-selected")).toBe(true);
   await screen.findByText("No deletion jobs on this page.");
   expect(
     screen.queryByRole("navigation", { name: "Deletion job pages" }),

@@ -1,7 +1,5 @@
 {
   "tray-status.close": "상태 닫기",
-  "tray-status.window": "앱 창",
-  "tray-status.noWindows": "준비된 앱 창 없음",
   "tray-status.unavailable": "사용할 수 없음",
   "tray-status.connectionStale": "연결 관측이 오래됨",
   "tray-status.connected": "연결됨",
@@ -15,7 +13,6 @@
   "tray-status.quotasMissing": "이 계정의 할당량 관측이 없습니다.",
   "tray-status.moreQuotas": "설정에서 추가 할당량 구간을 확인할 수 있습니다.",
   "tray-status.moreAccounts": "설정에서 추가 계정을 확인할 수 있습니다.",
-  "tray-status.moreWindows": "추가 앱 창은 표시되지 않습니다. 관리하려면 DeliDev를 여세요.",
   "tray-status.manage": "구독 관리",
   "tray-status.metrics": "운영 상태",
   "tray-status.sessions": "활성 세션",

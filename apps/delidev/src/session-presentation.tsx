@@ -13,6 +13,7 @@ import {
   failureCause,
 } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureSummary } from "./disclosure";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import { copy, useLocale } from "./localization";
 
 export enum SessionIconKind {
@@ -196,10 +197,14 @@ export function SessionActions({ children }: { children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (open)
-      body.current
-        ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-        ?.focus();
+    if (!open) return;
+    // An animated ancestor is a stacking context that would cap this popup's
+    // z-index beneath later siblings, so the opening settles any in-flight
+    // entrance in the same commit. Focus never waits for the motion.
+    settleEnclosingEntrances(root.current);
+    body.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
   }, [open]);
   useEffect(() => {
     if (!open) return;

@@ -1,7 +1,7 @@
 //! All access to the pinned compiler lives in this adapter. The pipeline only
 //! receives plain candidates and byte spans, never compiler-owned identities.
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     hash::{Hash, Hasher},
     rc::Rc,
     sync::{Arc, Mutex},
@@ -47,13 +47,54 @@ pub enum InputKind {
     /// Declarations, JSON and other program files outside the application
     /// sources, including dependency declarations.
     Dependency,
+    /// A path the compiler probed for existence and found missing. A file or
+    /// directory that later appears at this path can change module
+    /// resolution, so consumers must reject output once the path exists. The
+    /// entry has no `sha256`.
+    Absent,
+    /// A path that exists but has the wrong kind for a failed probe, such as
+    /// a directory named `dep.ts` probed with `file_exists`. Resolution is
+    /// unaffected until the path becomes the kind in `Input::becomes`, so
+    /// consumers must reject output only once that happens. The entry has no
+    /// `sha256`.
+    Mismatch,
 }
+
+/// The kind of filesystem entry a path must become to satisfy a failed probe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BecomesKind {
+    /// A regular file (after following symlinks).
+    File,
+    /// A directory (after following symlinks).
+    Directory,
+}
+
+/// The compiler filesystem call that reported a path as missing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum ProbeKind {
+    /// `file_exists`: only a regular file satisfies the probe.
+    File,
+    /// `directory_exists`: only a directory satisfies the probe.
+    Directory,
+    /// `stat`: anything that resolves satisfies the probe.
+    Stat,
+}
+
+/// Missing non-`bundled:` paths and the probes that reported each as missing.
+type MissLog = Arc<Mutex<BTreeMap<String, BTreeSet<ProbeKind>>>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Input {
     pub path: String,
-    pub sha256: String,
+    /// SHA-256 of the file content; `None` exactly for `InputKind::Absent`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
     pub kind: InputKind,
+    /// Set exactly for `InputKind::Mismatch`: the entry kind that would
+    /// satisfy the failed probe and change resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub becomes: Option<BecomesKind>,
 }
 
 /// Everything the analysis read: application sources by absolute path and
@@ -68,6 +109,9 @@ pub struct Project {
     config: P<ParsedCommandLine>,
     /// SHA-256 of every file the compiler read, by path.
     reads: Arc<Mutex<BTreeMap<String, String>>>,
+    /// Non-`bundled:` paths whose existence the compiler probed and found
+    /// missing (`file_exists`, `directory_exists` or `stat`).
+    misses: MissLog,
     fs: Arc<dyn Fs>,
     cwd: String,
     version: Rc<CompilerProgram>,
@@ -104,9 +148,11 @@ impl Project {
         // snapshot that consumers validate.
         let base: Arc<dyn Fs> = Arc::new(bundled::wrap_fs(tsrs_vfs::osvfs::fs()));
         let reads = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
+        let misses = MissLog::default();
         let (reader, recorded) = (base.clone(), reads.clone());
         let fs = wrapvfs_wrap(
             base,
+            Some(misses.clone()),
             Replacements {
                 read_file: Some(Box::new(move |path| {
                     let text = reader.read_file(path);
@@ -219,6 +265,7 @@ impl Project {
             region,
             config,
             reads,
+            misses,
             fs,
             cwd,
             version,
@@ -281,6 +328,8 @@ impl Project {
             computed: computed_import,
             bare,
             worker_scripts,
+            non_esm,
+            eval_or_with,
         } = project.bundle_imported(dir);
         // Chunks known to run as ES modules: imported by another chunk or
         // loaded by an HTML module script. Others count as modules only with
@@ -341,9 +390,25 @@ impl Project {
         entries.sort();
         entries.dedup();
         project.entries = entries;
+        let html_classic = classic.clone();
         let mut classic = classic;
         classic.extend(worker_scripts);
         crate::app::set_bundle_modules(modules, classic);
+        // Boundary chunks stay byte-for-byte unchanged and keep importing the
+        // original names of what they reach. Whatever a boundary chunk can
+        // import must therefore keep its name and content too: a renamed copy
+        // would be evaluated next to the original, with a second module state.
+        let boundaries: Paths = chunks
+            .iter()
+            .filter(|chunk| {
+                crate::app::bundle_boundary(chunk, !non_esm.contains(*chunk))
+                    || eval_or_with.contains(*chunk)
+            })
+            .cloned()
+            .collect();
+        let reach = boundary_reach(&chunks, &boundaries, &edges);
+        log_frozen_chunks(&reach, &scripts, &html_classic, &from_html);
+        crate::app::set_bundle_frozen(first_boundary_credit(&reach));
         tracing::info!(
             chunks = chunks.len(),
             entries = project.entries.len(),
@@ -411,6 +476,7 @@ impl Project {
         let mut bare = None;
         let (mut worker_scripts, mut worker_computed) = (Paths::new(), false);
         let mut non_esm = Paths::new();
+        let mut eval_or_with = Paths::new();
         for file in source_files() {
             if !is_application(file) {
                 continue;
@@ -424,6 +490,9 @@ impl Project {
             collect(file, &mut nodes);
             if !has_esm_statements(file) && !uses_import_meta(&nodes) {
                 non_esm.insert(name.clone());
+            }
+            if uses_eval_or_with(&nodes) {
+                eval_or_with.insert(name.clone());
             }
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
@@ -521,8 +590,9 @@ impl Project {
         // A computed `importScripts` target can be any chunk that a classic
         // script can parse: every chunk without ESM syntax.
         if worker_computed {
-            worker_scripts.extend(non_esm);
+            worker_scripts.extend(non_esm.iter().cloned());
         }
+        let (non_esm_all, eval_or_with_all) = (non_esm, eval_or_with);
         BundleImports {
             imported,
             unlinked: public,
@@ -530,6 +600,8 @@ impl Project {
             computed,
             bare,
             worker_scripts,
+            non_esm: non_esm_all,
+            eval_or_with: eval_or_with_all,
         }
     }
 
@@ -565,8 +637,9 @@ impl Project {
             let text = std::fs::read(path).context("cannot read project configuration")?;
             inputs.push(Input {
                 path: path.clone(),
-                sha256: sha256_hex(&text),
+                sha256: Some(sha256_hex(&text)),
                 kind: InputKind::Configuration,
+                becomes: None,
             });
         }
         for file in files {
@@ -581,9 +654,10 @@ impl Project {
             if !is_application(file) {
                 if !name.starts_with("bundled:") {
                     inputs.push(Input {
-                        sha256: sha256_hex(source_file_text(file).as_bytes()),
+                        sha256: Some(sha256_hex(source_file_text(file).as_bytes())),
                         path: name,
                         kind: InputKind::Dependency,
+                        becomes: None,
                     });
                 }
                 continue;
@@ -632,13 +706,62 @@ impl Project {
             if !known.contains(path) {
                 inputs.push(Input {
                     path: path.clone(),
-                    sha256: sha256.clone(),
+                    sha256: Some(sha256.clone()),
                     kind: InputKind::Dependency,
+                    becomes: None,
                 });
             }
         }
         inputs.sort();
         inputs.dedup();
+        // Negative resolution dependencies come after the positive inputs, in
+        // path order. A path is kept when nothing resolves there (a dangling
+        // symlink counts) or when it appeared after the failed probe: the
+        // already-built program ignores such a file, so the entry makes
+        // consumers reject the output instead of trusting a stale module
+        // graph. A path that exists with the wrong kind for its failed probe
+        // (a directory probed as a file, or the reverse) is recorded as a
+        // `mismatch` that names the kind which would satisfy the probe, so it
+        // never becomes a false absence but still invalidates the output once
+        // it changes kind.
+        let mut negative = Vec::new();
+        for (path, probes) in self.misses.lock().expect("compiler probe log").iter() {
+            if known.contains(path) {
+                continue;
+            }
+            let (kind, becomes) = match classify_miss(path, probes) {
+                MissState::Absent => (InputKind::Absent, None),
+                MissState::Appeared => {
+                    tracing::warn!(
+                        path = path.as_str(),
+                        "resolution candidate appeared after the compiler found it missing; \
+                         recording it so the output is rejected"
+                    );
+                    (InputKind::Absent, None)
+                }
+                MissState::Mismatch(becomes) => {
+                    tracing::debug!(
+                        path = path.as_str(),
+                        becomes = ?becomes,
+                        "recording wrong-kind resolution candidate"
+                    );
+                    (InputKind::Mismatch, Some(becomes))
+                }
+                MissState::Unrelated => continue,
+            };
+            negative.push(Input {
+                path: path.clone(),
+                sha256: None,
+                kind,
+                becomes,
+            });
+        }
+        negative.sort();
+        tracing::debug!(
+            probes = negative.len(),
+            "recording absent resolution candidates"
+        );
+        inputs.extend(negative);
         Ok(Snapshot { sources, inputs })
     }
 
@@ -655,6 +778,7 @@ impl Project {
         let texts = texts.clone();
         let fs = wrapvfs_wrap(
             self.fs.clone(),
+            None,
             Replacements {
                 read_file: Some(Box::new(move |path| {
                     texts.get(path).cloned().or_else(|| base.read_file(path))
@@ -946,6 +1070,24 @@ fn build(config: P<ParsedCommandLine>, fs: Arc<dyn Fs>, cwd: &str) -> Rc<Compile
 struct OverlayFs {
     base: Arc<dyn Fs>,
     replacements: Replacements,
+    /// Receives every missing non-`bundled:` path the compiler probes. Rebuilds
+    /// over this overlay pass `None` because the wrapped base already records.
+    misses: Option<MissLog>,
+}
+
+impl OverlayFs {
+    fn record_miss(&self, path: &str, probe: ProbeKind) {
+        if let Some(misses) = &self.misses
+            && !path.starts_with("bundled:")
+        {
+            misses
+                .lock()
+                .expect("compiler probe log")
+                .entry(path.to_owned())
+                .or_default()
+                .insert(probe);
+        }
+    }
 }
 impl Fs for OverlayFs {
     fn use_case_sensitive_file_names(&self) -> bool {
@@ -953,7 +1095,11 @@ impl Fs for OverlayFs {
     }
 
     fn file_exists(&self, path: &str) -> bool {
-        self.base.file_exists(path)
+        let exists = self.base.file_exists(path);
+        if !exists {
+            self.record_miss(path, ProbeKind::File);
+        }
+        exists
     }
 
     fn read_file(&self, path: &str) -> Option<String> {
@@ -964,7 +1110,11 @@ impl Fs for OverlayFs {
     }
 
     fn directory_exists(&self, path: &str) -> bool {
-        self.base.directory_exists(path)
+        let exists = self.base.directory_exists(path);
+        if !exists {
+            self.record_miss(path, ProbeKind::Directory);
+        }
+        exists
     }
 
     fn get_accessible_entries(&self, path: &str) -> tsrs_vfs::Entries {
@@ -972,7 +1122,11 @@ impl Fs for OverlayFs {
     }
 
     fn stat(&self, path: &str) -> Option<tsrs_vfs::FileInfo> {
-        self.base.stat(path)
+        let info = self.base.stat(path);
+        if info.is_none() {
+            self.record_miss(path, ProbeKind::Stat);
+        }
+        info
     }
 
     fn realpath(&self, path: &str) -> String {
@@ -1000,8 +1154,66 @@ impl Fs for OverlayFs {
         Err(deny_write())
     }
 }
-fn wrapvfs_wrap(base: Arc<dyn Fs>, replacements: Replacements) -> Arc<dyn Fs> {
-    Arc::new(OverlayFs { base, replacements })
+fn wrapvfs_wrap(
+    base: Arc<dyn Fs>,
+    misses: Option<MissLog>,
+    replacements: Replacements,
+) -> Arc<dyn Fs> {
+    Arc::new(OverlayFs {
+        base,
+        replacements,
+        misses,
+    })
+}
+
+/// What the filesystem holds now at a path the compiler probed as missing.
+#[derive(Debug, PartialEq, Eq)]
+enum MissState {
+    /// Nothing resolves there. A dangling symlink counts, because the compiler
+    /// probes follow symlinks and creating its target changes resolution.
+    Absent,
+    /// Something now satisfies a probe that reported a miss, so the path
+    /// appeared after the compiler resolved modules and the program was built
+    /// from a different filesystem state than the one on disk.
+    Appeared,
+    /// The path exists but does not satisfy the failed probes (for example, a
+    /// directory probed with `file_exists`). Resolution changes once it
+    /// becomes the carried kind.
+    Mismatch(BecomesKind),
+    /// The path exists as neither a file nor a directory, or its state is
+    /// unknown, such as after a permission error. It is not a resolution
+    /// dependency.
+    Unrelated,
+}
+
+fn classify_miss(path: &str, probes: &BTreeSet<ProbeKind>) -> MissState {
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            let satisfies = |probe: &ProbeKind| match probe {
+                ProbeKind::File => metadata.is_file(),
+                ProbeKind::Directory => metadata.is_dir(),
+                ProbeKind::Stat => true,
+            };
+            if probes.iter().any(satisfies) {
+                MissState::Appeared
+            } else if metadata.is_dir() && probes.contains(&ProbeKind::File) {
+                MissState::Mismatch(BecomesKind::File)
+            } else if metadata.is_file() && probes.contains(&ProbeKind::Directory) {
+                MissState::Mismatch(BecomesKind::Directory)
+            } else {
+                MissState::Unrelated
+            }
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            MissState::Absent
+        }
+        Err(_) => MissState::Unrelated,
+    }
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -1120,6 +1332,126 @@ struct BundleImports {
     bare: Option<String>,
     /// Chunks that `importScripts` can load as classic scripts.
     worker_scripts: Paths,
+    /// Chunks without ESM statements or `import.meta`.
+    non_esm: Paths,
+    /// Chunks that use direct `eval`, `with` or `importScripts`.
+    eval_or_with: Paths,
+}
+
+/// Chunks that a boundary chunk can import, statically or through a literal
+/// dynamic `import()`, directly or through other chunks, each with the first
+/// boundary chunk in path order that reaches it. Boundary chunks themselves
+/// and imported files that are not in `chunks` (JSON or CSS assets) are not
+/// part of the result. A reference names only the file name, so a
+/// chunk that shares its file name with a frozen chunk (in another directory)
+/// is frozen with it: rehashing keeps a frozen name for every file that
+/// carries it, and an edited copy under the old content hash would let
+/// immutable caches serve stale code.
+#[cfg(test)]
+fn boundary_closure(
+    chunks: &[String],
+    boundaries: &Paths,
+    edges: &BTreeMap<String, Paths>,
+) -> BTreeMap<String, String> {
+    first_boundary_credit(&boundary_reach(chunks, boundaries, edges))
+}
+
+/// Credits every chunk to the first boundary chunk in path order that reaches
+/// it.
+fn first_boundary_credit(reach: &BTreeMap<String, Paths>) -> BTreeMap<String, String> {
+    let mut frozen = BTreeMap::<String, String>::new();
+    for (boundary, chunks) in reach {
+        for chunk in chunks {
+            frozen
+                .entry(chunk.clone())
+                .or_insert_with(|| boundary.clone());
+        }
+    }
+    frozen
+}
+
+/// For every boundary chunk that reaches at least one chunk, the chunks it
+/// freezes (see `boundary_closure`), counting chunks that an earlier boundary
+/// reaches as well.
+fn boundary_reach(
+    chunks: &[String],
+    boundaries: &Paths,
+    edges: &BTreeMap<String, Paths>,
+) -> BTreeMap<String, Paths> {
+    // Edges also reach existing assets that are not JavaScript chunks (JSON,
+    // CSS): those never take part in staging, so they cannot be frozen.
+    let known: Paths = chunks.iter().cloned().collect();
+    let mut by_name = BTreeMap::<&std::ffi::OsStr, Vec<&String>>::new();
+    for chunk in chunks {
+        if let Some(name) = std::path::Path::new(chunk).file_name() {
+            by_name.entry(name).or_default().push(chunk);
+        }
+    }
+    let mut reach = BTreeMap::<String, Paths>::new();
+    for boundary in boundaries {
+        // Traversal passes through other boundary chunks: what a nested
+        // boundary imports is reachable from this one as well.
+        let mut frozen = Paths::new();
+        let mut visited = Paths::from([boundary.clone()]);
+        let mut pending = vec![boundary.clone()];
+        while let Some(chunk) = pending.pop() {
+            let mut reached: Vec<String> =
+                edges.get(&chunk).into_iter().flatten().cloned().collect();
+            while let Some(target) = reached.pop() {
+                if !visited.insert(target.clone()) {
+                    continue;
+                }
+                if known.contains(&target) && !boundaries.contains(&target) {
+                    frozen.insert(target.clone());
+                    let name = std::path::Path::new(&target).file_name();
+                    reached.extend(
+                        name.and_then(|name| by_name.get(name))
+                            .into_iter()
+                            .flatten()
+                            .map(|sibling| (*sibling).clone()),
+                    );
+                }
+                pending.push(target);
+            }
+        }
+        if !frozen.is_empty() {
+            reach.insert(boundary.clone(), frozen);
+        }
+    }
+    reach
+}
+
+/// Logs which boundary chunk freezes how many chunks. A boundary that a page
+/// loads as a script keeps everything it imports out of optimization, which
+/// is worth a warning, whether the page loads it as a module script, as a
+/// classic script or through an inline script. Every boundary is checked on
+/// its own reach: a chunk that an earlier boundary reaches as well is
+/// credited to that boundary in the report, but the page-loaded boundary
+/// still keeps it out of optimization.
+fn log_frozen_chunks(
+    reach: &BTreeMap<String, Paths>,
+    scripts: &Paths,
+    classic_scripts: &Paths,
+    from_html: &Paths,
+) {
+    for (boundary, reached) in reach {
+        let chunks = reached.len();
+        tracing::info!(
+            boundary = boundary.as_str(),
+            chunks,
+            "chunks that a boundary chunk can import stay unchanged"
+        );
+        if scripts.contains(boundary)
+            || classic_scripts.contains(boundary)
+            || from_html.contains(boundary)
+        {
+            tracing::warn!(
+                boundary = boundary.as_str(),
+                chunks,
+                "an unchanged HTML entry chunk imports chunks that therefore cannot be optimized"
+            );
+        }
+    }
 }
 
 /// JavaScript MIME type essences, which make a `<script>` a classic script
@@ -1746,4 +2078,241 @@ fn token_start(node: Node) -> usize {
         get_source_file_of_node(node).raw().as_source_file_p(),
         false,
     ) as usize
+}
+
+#[cfg(test)]
+mod boundary_closure_tests {
+    use std::collections::BTreeMap;
+
+    use super::{Paths, boundary_closure, boundary_reach};
+
+    fn graph(edges: &[(&str, &[&str])]) -> BTreeMap<String, Paths> {
+        edges
+            .iter()
+            .map(|(from, to)| {
+                (
+                    (*from).to_owned(),
+                    to.iter().map(|t| (*t).to_owned()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// Every chunk that the graph mentions.
+    fn chunks(edges: &BTreeMap<String, Paths>) -> Vec<String> {
+        let all: Paths = edges
+            .iter()
+            .flat_map(|(from, to)| std::iter::once(from).chain(to))
+            .cloned()
+            .collect();
+        all.into_iter().collect()
+    }
+
+    #[test]
+    fn closure_follows_edges_transitively_and_names_the_first_boundary() {
+        let edges = graph(&[
+            ("a", &["x", "b2"]),
+            ("b", &["y"]),
+            ("x", &["z"]),
+            ("y", &["z", "w"]),
+            ("z", &["x"]),
+            ("free", &["w2"]),
+        ]);
+        let boundaries: Paths = ["a", "b", "b2"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        // Boundaries are not part of the closure; `z` is reached first through
+        // `a`, and chunks no boundary reaches stay editable.
+        assert_eq!(frozen, [("w", "b"), ("x", "a"), ("y", "b"), ("z", "a")]);
+    }
+
+    #[test]
+    fn closure_continues_through_nested_boundaries() {
+        // `a` imports the boundary `b`, which imports `x`: the first boundary
+        // in path order, `a`, reaches `x`, and `b` is not a frozen chunk.
+        let edges = graph(&[("a", &["b"]), ("b", &["x", "a"]), ("x", &["y"])]);
+        let boundaries: Paths = ["a", "b"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(frozen, [("x", "a"), ("y", "a")]);
+    }
+
+    #[test]
+    fn closure_skips_imported_files_that_are_not_chunks() {
+        // `a` imports a JSON asset and a stylesheet next to the chunk `x`: only
+        // JavaScript chunks can be frozen, because staging never sees assets.
+        let edges = graph(&[("a", &["data-H.json", "style-H.css", "x"])]);
+        let boundaries: Paths = ["a"].map(String::from).into_iter().collect();
+        let chunks: Vec<String> = ["a", "x"].map(String::from).into();
+        let frozen = boundary_closure(&chunks, &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(frozen, [("x", "a")]);
+    }
+
+    #[test]
+    fn reach_keeps_a_later_boundary_that_shares_chunks_with_an_earlier_one() {
+        // `a` (not loaded by a page) and `page` (loaded by a page) both reach
+        // `x`: the closure credits `x` to `a` only, but the reach of `page`
+        // still names it, so the HTML-entry warning is not skipped.
+        let edges = graph(&[("a", &["x"]), ("page", &["x", "y"])]);
+        let boundaries: Paths = ["a", "page"].map(String::from).into_iter().collect();
+        let chunks = chunks(&edges);
+        let closure = boundary_closure(&chunks, &boundaries, &edges);
+        let closure: Vec<_> = closure
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(closure, [("x", "a"), ("y", "page")]);
+        let reach = boundary_reach(&chunks, &boundaries, &edges);
+        let reach: Vec<_> = reach
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.iter().map(String::as_str).collect::<Vec<_>>()))
+            .collect();
+        assert_eq!(reach, [("a", vec!["x"]), ("page", vec!["x", "y"])]);
+    }
+
+    #[test]
+    fn closure_freezes_chunks_that_share_a_file_name_with_a_frozen_chunk() {
+        // `a` imports `dir1/x-H.js`; `dir2/x-H.js` shares its file name and is
+        // imported only by an editable chunk, and `dir2/y.js` is what that
+        // sibling imports. The sibling and its imports are frozen with it,
+        // while chunks with other names stay editable.
+        let edges = graph(&[
+            ("a", &["dir1/x-H.js"]),
+            ("free", &["dir2/x-H.js", "dir2/other.js"]),
+            ("dir2/x-H.js", &["dir2/y.js"]),
+        ]);
+        let boundaries: Paths = ["a"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(
+            frozen,
+            [
+                ("dir1/x-H.js", "a"),
+                ("dir2/x-H.js", "a"),
+                ("dir2/y.js", "a")
+            ]
+        );
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+
+    fn probes(kinds: &[ProbeKind]) -> BTreeSet<ProbeKind> {
+        kinds.iter().copied().collect()
+    }
+
+    fn classify(path: &std::path::Path, kinds: &[ProbeKind]) -> MissState {
+        classify_miss(&path.to_string_lossy(), &probes(kinds))
+    }
+
+    #[test]
+    fn missing_paths_and_dangling_symlinks_are_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("file.ts");
+        std::fs::write(&file, "").unwrap();
+        let dangling = temp.path().join("dangling.ts");
+        std::os::unix::fs::symlink(temp.path().join("target.ts"), &dangling).unwrap();
+        for kind in [ProbeKind::File, ProbeKind::Directory, ProbeKind::Stat] {
+            assert_eq!(
+                classify(&temp.path().join("none.ts"), &[kind]),
+                MissState::Absent
+            );
+            assert_eq!(classify(&dangling, &[kind]), MissState::Absent);
+            // A path below a regular file reports ENOTDIR.
+            assert_eq!(
+                classify(&file.join("nested.ts"), &[kind]),
+                MissState::Absent
+            );
+        }
+        // The symlink target appearing turns the candidate into a hit.
+        std::fs::write(temp.path().join("target.ts"), "").unwrap();
+        assert_eq!(classify(&dangling, &[ProbeKind::File]), MissState::Appeared);
+    }
+
+    #[test]
+    fn a_path_that_now_satisfies_a_failed_probe_has_appeared() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("file.ts");
+        std::fs::write(&file, "").unwrap();
+        let directory = temp.path().join("dir");
+        std::fs::create_dir(&directory).unwrap();
+        assert_eq!(classify(&file, &[ProbeKind::File]), MissState::Appeared);
+        assert_eq!(classify(&file, &[ProbeKind::Stat]), MissState::Appeared);
+        assert_eq!(
+            classify(&file, &[ProbeKind::Directory, ProbeKind::File]),
+            MissState::Appeared
+        );
+        assert_eq!(
+            classify(&directory, &[ProbeKind::Directory]),
+            MissState::Appeared
+        );
+        assert_eq!(
+            classify(&directory, &[ProbeKind::Stat]),
+            MissState::Appeared
+        );
+    }
+
+    #[test]
+    fn a_probe_of_the_wrong_kind_records_the_kind_that_would_satisfy_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("file.ts");
+        std::fs::write(&file, "").unwrap();
+        let directory = temp.path().join("dir");
+        std::fs::create_dir(&directory).unwrap();
+        assert_eq!(
+            classify(&file, &[ProbeKind::Directory]),
+            MissState::Mismatch(BecomesKind::Directory)
+        );
+        assert_eq!(
+            classify(&directory, &[ProbeKind::File]),
+            MissState::Mismatch(BecomesKind::File)
+        );
+    }
+
+    #[test]
+    fn candidate_created_before_snapshot_is_still_recorded() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        std::fs::write(
+            root.join("tsconfig.json"),
+            r#"{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"jsx":"react-jsx"}}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("main.ts"), "import { f } from './dep'; f();").unwrap();
+        std::fs::write(root.join("dep.tsx"), "export function f() {}").unwrap();
+        let project = Project::load(
+            &root.join("tsconfig.json").to_string_lossy(),
+            vec![root.join("main.ts").to_string_lossy().into_owned()],
+        )
+        .unwrap();
+        // The higher-priority candidate appears after `./dep` resolved past
+        // it but before the snapshot is taken.
+        let late = root.join("dep.ts");
+        std::fs::write(&late, "export function f() {}").unwrap();
+        let snapshot = project.snapshot().unwrap();
+        let late = late.to_string_lossy();
+        assert!(
+            snapshot
+                .inputs
+                .iter()
+                .any(|i| i.kind == InputKind::Absent && i.path == late.as_ref()),
+            "{:#?}",
+            snapshot.inputs
+        );
+    }
 }

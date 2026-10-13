@@ -738,6 +738,35 @@ it("uses one original server batch for unloaded account pages and one row quota 
   });
 });
 
+it("rereads accepted account pages every thirty seconds in app use without unseen-page discovery", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  try {
+    const f = fixture({ list: true });
+    render(<f.Harness />);
+    await screen.findByRole("article", { name: "Original account" });
+    const reads = () => f.list.mock.calls.length;
+    const initial = reads();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29999);
+    });
+    expect(reads()).toBe(initial);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(reads()).toBeGreaterThan(initial);
+    // Rereads reuse the accepted range and never discover the unseen next page.
+    expect(
+      f.list.mock.calls.some(
+        ([r]) => r.filter?.pageToken === "unloaded-next-page",
+      ),
+    ).toBe(false);
+  } finally {
+    focus.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("localizes the combined semantic icon and tooltip in Korean without a second quota button", async () => {
   await i18n.changeLanguage("ko");
   const f = fixture();
