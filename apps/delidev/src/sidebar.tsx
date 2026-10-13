@@ -1,6 +1,11 @@
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import {
   DisclosureButton,
@@ -1124,6 +1129,17 @@ export function Sidebar({
     surface === Surface.Sessions ||
     surface === Surface.NewSession ||
     surface === Surface.NewGeneralChat;
+  // Home activation (returning from another destination) owns one 160ms Y4
+  // entrance on the project-group wrapper. The count tracks the rising edge of
+  // Home navigation only, so session selection, Home to New session switches,
+  // list refreshes, paging, expansion, archive filtering and compact drawer
+  // open/close never replay it, and nothing waits for it.
+  const homeActivations = useActivationCount(sessionNavigation);
+  const homeEntrance = useEntranceActivation(
+    `home:${homeActivations}`,
+    sessionNavigation,
+    EntranceMotion.Y4,
+  );
   const selectedRowId =
     surface === Surface.NewSession || surface === Surface.NewGeneralChat
       ? ""
@@ -1699,7 +1715,7 @@ export function Sidebar({
                     : copy("sidebar.menuNavigationAndFilters_b5a21d")
                 }
               >
-                <div hidden={!sessionNavigation}>
+                <div hidden={!sessionNavigation} {...homeEntrance}>
                   <header className="sidebar-projects-heading">
                     <h2>{copy("sidebar.projects_04e2a9")}</h2>
                     <button
