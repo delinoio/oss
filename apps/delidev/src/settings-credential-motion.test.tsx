@@ -31,6 +31,7 @@ import {
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 import { Settings } from "./settings";
+import { unoptedSettingsCategory } from "./entrance-test-support";
 
 // Issue 3178: AI API Keys category and owned task entrance. Every secret value
 // below is a synthetic fixture string that never leaves the test.
@@ -189,7 +190,7 @@ afterEach(() => {
 
 it("plays the AI API Keys category entrance once per explicit opening", async () => {
   fixture();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI API Keys");
   const node = column();
   expect(node.getAttribute("data-entrance")).toBe("y4");
@@ -206,7 +207,7 @@ it("plays the AI API Keys category entrance once per explicit opening", async ()
   });
   expect(column()).toBe(node);
   expect(node.getAttribute("data-entrance")).toBeNull();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("AI API Keys");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -216,7 +217,7 @@ it("leaves no stale motion when AI API Keys is left before completion", () => {
   fixture();
   category("AI API Keys");
   const old = column();
-  category("Repositories");
+  category(unoptedSettingsCategory);
   expect(document.contains(old)).toBe(false);
   dispatch(old);
   expect(column().getAttribute("data-entrance")).toBeNull();
@@ -389,7 +390,7 @@ it("settles the AI API Keys task entrance for OS reduced motion without replay",
 
 it("plays one entrance per opened manage connection and edit task window", async () => {
   const f = fixture(true);
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category("AI API Keys");
   dispatch(column());
   const row = (

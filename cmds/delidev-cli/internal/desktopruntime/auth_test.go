@@ -88,13 +88,13 @@ func TestLocalFollowMarkerCannotAdoptForeignIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := domain.NewID()
-	if err := Follow(root, original); err != nil {
+	if err := follow(root, original); err != nil {
 		t.Fatal(err)
 	}
-	if err := Follow(root, original); err != nil {
+	if err := follow(root, original); err != nil {
 		t.Fatal("exact follow lost idempotency", err)
 	}
-	if err := Follow(root, domain.NewID()); err == nil {
+	if err := follow(root, domain.NewID()); err == nil {
 		t.Fatal("foreign server replaced original Local follow authority")
 	}
 }

@@ -185,14 +185,37 @@ it("replays only when a retained session is explicitly activated again", async (
   expect(header().getAttribute("data-entrance")).toBeNull();
 });
 
-it("does not animate an embedded Sidechat header or an inactive session", async () => {
-  const embedded = render(fixture().view("", true, true));
-  await screen.findByRole("textbox", { name: "Message" });
-  expect(header().getAttribute("data-entrance")).toBeNull();
-  embedded.unmount();
+it("does not animate an inactive session", async () => {
   render(fixture().view("", false));
   await waitFor(() => expect(header()).not.toBeNull());
   expect(header().getAttribute("data-entrance")).toBeNull();
+});
+
+it("animates an embedded Sidechat header only on a rising edge after mount", async () => {
+  const f = fixture();
+  // A pane that mounts selected (a promoted pending tab) is not an activation.
+  const mounted = render(f.view("", true, true));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  mounted.rerender(f.view("", false, true));
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  // An explicit re-selection of the retained pane plays once.
+  mounted.rerender(f.view("", true, true));
+  expect(header().getAttribute("data-entrance")).toBe("y2");
+  expect(document.querySelectorAll("[data-entrance]").length).toBe(1);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  dispatch(header(), "entrance-y2");
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  mounted.rerender(f.view("Typed after entrance", true, true));
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  expect(f.control).not.toHaveBeenCalled();
+  // Embedded panes that mount inactive animate on their first selection.
+  mounted.unmount();
+  const background = render(f.view("", false, true));
+  await waitFor(() => expect(header()).not.toBeNull());
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  background.rerender(f.view("", true, true));
+  expect(header().getAttribute("data-entrance")).toBe("y2");
 });
 
 it("plays the Info heading entrance only for an explicit opening", async () => {

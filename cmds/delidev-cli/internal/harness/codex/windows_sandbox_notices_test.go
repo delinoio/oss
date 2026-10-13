@@ -231,8 +231,23 @@ func TestWindowsSandboxCannotInventCurrentOrRequestAuthority(t *testing.T) {
 			if err == nil && event.Kind != MetadataEvent && event.Kind != NativeExtensionEvent {
 				t.Fatal("unowned or terminal observation acquired notice/request authority", change, method)
 			}
-			if c.execution != beforeState || c.problem != beforeProblem || c.execution != nil && c.execution.windowsWarnings != 0 {
+			if c.execution != beforeState || c.problem != beforeProblem {
 				t.Fatal("inert observation changed original context")
+			}
+			// Valid nonempty warnings in a bound original process register their
+			// class even when inactive; every other case leaves the registry empty.
+			wantRegistry := uint8(0)
+			switch change {
+			case "completed", "failed", "no-active", "unknown-active", "paused", "problem":
+				if method == "windows/worldWritableWarning" {
+					wantRegistry = 1 << windowsWorldWritableScanFailed
+				}
+			}
+			if c.execution != nil && c.execution.windowsWarnings != wantRegistry {
+				t.Fatal("inactive warning registry changed unexpectedly", change, method, c.execution.windowsWarnings)
+			}
+			if method == "windows/worldWritableWarning" && wantRegistry != 0 && (event.Kind != MetadataEvent || event.Metadata != WindowsSandboxWarningDiscarded || event.TurnID != "") {
+				t.Fatal("inactive warning did not emit only discarded metadata", change)
 			}
 		}
 	}
@@ -298,5 +313,80 @@ func TestWindowsSandboxMalformedWireLogsOnlyClosedStage(t *testing.T) {
 		if strings.Contains(logs.String(), "private-malformed") || !strings.Contains(logs.String(), `"stage":"windows-sandbox"`) {
 			t.Fatal("malformed native diagnostics lost their closed redaction boundary")
 		}
+	}
+}
+
+func TestWindowsWarningObservedWhileInactiveIsDiscardedOnLaterActiveTurn(t *testing.T) {
+	inactive := map[string]func(c *Client, turn domain.ID){
+		"completed": func(c *Client, turn domain.ID) {
+			tracked := c.execution.turns[turn]
+			tracked.Turn.Status = TurnCompleted
+			c.execution.turns[turn] = tracked
+		},
+		"no-active":      func(c *Client, turn domain.ID) { c.execution.active = "" },
+		"unknown-active": func(c *Client, turn domain.ID) { c.execution.active = domain.NewID() },
+		"paused":         func(c *Client, turn domain.ID) { c.execution.paused = true },
+		"problem": func(c *Client, turn domain.ID) {
+			c.problem = domain.Fail(domain.RecoveryRequired, "Fixture recovery.", "Preserve recovery.")
+		},
+	}
+	classes := []map[string]any{
+		windowsWarningFixture([]string{"private-first"}, 0, false),
+		windowsWarningFixture([]string{}, 0, true),
+		windowsWarningFixture([]string{"private-second"}, 2, true),
+	}
+	for name, makeInactive := range inactive {
+		for index, params := range classes {
+			c, turn := observationClient()
+			c.execution.paused = false
+			makeInactive(c, turn)
+			event, err := observeFixture(c, "windows/worldWritableWarning", params)
+			if err != nil || event.Kind != MetadataEvent || event.Metadata != WindowsSandboxWarningDiscarded || event.TurnID != "" {
+				t.Fatal("inactive warning was not discarded metadata", name, index, err)
+			}
+			if c.execution.windowsWarnings == 0 || c.execution.windowsWarnings&(c.execution.windowsWarnings-1) != 0 {
+				t.Fatal("inactive warning did not register exactly one class", name, index)
+			}
+			// Restore an eligible active turn in the same original process.
+			nextTurn := domain.NewID()
+			c.execution.active = nextTurn
+			c.execution.paused = false
+			c.problem = nil
+			c.execution.turns[nextTurn] = trackedTurn{Turn: Turn{ID: nextTurn, Status: TurnRunning}, Mode: domain.PlanMode}
+			replay, err := observeFixture(c, "windows/worldWritableWarning", params)
+			if err != nil || replay.Kind != MetadataEvent || replay.Metadata != WindowsSandboxWarningDiscarded || replay.TurnID != "" {
+				t.Fatal("replay on later eligible turn republished a notice", name, index, err)
+			}
+			encoded, _ := json.Marshal(replay)
+			if strings.Contains(string(encoded), "private-") {
+				t.Fatal("native warning content escaped event")
+			}
+			// A different class on the eligible turn still emits exactly one notice.
+			other := classes[(index+1)%len(classes)]
+			fresh, err := observeFixture(c, "windows/worldWritableWarning", other)
+			if err != nil || fresh.Kind != NoticeEvent || fresh.Notice != domain.NativeWarning || fresh.TurnID != nextTurn {
+				t.Fatal("new class on eligible turn lost its notice", name, index, err)
+			}
+			again, err := observeFixture(c, "windows/worldWritableWarning", other)
+			if err != nil || again.Kind != MetadataEvent || again.Metadata != WindowsSandboxWarningDiscarded {
+				t.Fatal("second observation of new class duplicated notice", name, index, err)
+			}
+			// A fresh original process keeps independent first-observation behavior.
+			other2, otherTurn := observationClient()
+			other2.execution.paused = false
+			first, err := observeFixture(other2, "windows/worldWritableWarning", params)
+			if err != nil || first.Kind != NoticeEvent || first.TurnID != otherTurn {
+				t.Fatal("another original process inherited the registry", name, index, err)
+			}
+		}
+	}
+}
+
+func TestWindowsEmptyScanNeverRegistersWhileInactive(t *testing.T) {
+	c, _ := observationClient()
+	c.execution.paused = true
+	event, err := observeFixture(c, "windows/worldWritableWarning", windowsWarningFixture([]string{}, 0, false))
+	if err != nil || event.Kind != MetadataEvent || event.Metadata != WindowsSandboxWarningDiscarded || c.execution.windowsWarnings != 0 {
+		t.Fatal("empty successful scan wrote the registry", err)
 	}
 }

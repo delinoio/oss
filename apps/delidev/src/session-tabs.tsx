@@ -111,6 +111,10 @@ export class SessionTabsStore {
     return value;
   }
   private parents = new Map<string, string>();
+  // Sidechat children whose latest tab publication was automatic (a pending
+  // tab promoted or published in the background) rather than a user `open`.
+  private automatic = new Set<string>();
+  automaticSidechat = (id: string) => this.automatic.has(id);
   private children = new Map<string, Map<string, SidechatTab>>();
   private sessions = new Map<string, SessionTabsSnapshot>();
   private listeners = new Set<() => void>();
@@ -159,6 +163,7 @@ export class SessionTabsStore {
     if (tab.kind === SessionTabKind.Terminal)
       this.terminalPresentation(id).number(tab.id);
     if (tab.kind === SessionTabKind.Sidechat) {
+      this.automatic.delete(tab.id);
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();
       children.set(tab.id, tab);
@@ -273,6 +278,29 @@ export class SessionTabsStore {
         1;
     this.close(id, key);
     if (last) this.select(id, SessionTabKind.Conversation);
+  }
+  /**
+   * Removes one acknowledged Page descriptor from every Session snapshot that
+   * still holds it, including inactive and retained Sessions. The native close
+   * is profile-scoped, so the descriptor is dead everywhere once it is
+   * acknowledged. Each affected Session follows the `closePage` selection rule
+   * only when its selected descriptor was removed; Sessions without the exact
+   * profile/page descriptor publish nothing, which keeps repeated
+   * acknowledgment idempotent. No native operation is issued.
+   */
+  closePageEverywhere(profile: string, pageId: string) {
+    const key = sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile,
+      id: pageId,
+      title: "",
+    });
+    const holders = [...this.sessions.entries()]
+      .filter(([, snapshot]) =>
+        snapshot.tabs.some((tab) => sessionTabKey(tab) === key),
+      )
+      .map(([id]) => id);
+    for (const id of holders) this.closePage(id, profile, pageId);
   }
   /**
    * Aligns the Page descriptors with one native inventory of the admitted
@@ -395,6 +423,7 @@ export class SessionTabsStore {
       (value) => sessionTabKey(value) === key,
     );
     this.childDrafts.set(tab.id, draft);
+    this.automatic.add(tab.id);
     this.parents.set(tab.id, parent);
     const children =
       this.children.get(parent) ?? new Map<string, SidechatTab>();

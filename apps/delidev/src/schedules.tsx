@@ -26,7 +26,13 @@ import {
   copy,
   useLocale,
 } from "./localization";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   EntranceMotion,
   useActivationCount,
@@ -876,7 +882,10 @@ export function ScheduleHistory({
     request,
     occurrencePage,
   );
-  const result = usePaginationChain(id, active, reader);
+  // Inactive presentation (a blocked mutation, a notification review, a hidden
+  // Schedules destination) keeps the resident payload and its mounted
+  // Occurrence disclosures; reads stay suspended and activation refreshes.
+  const result = usePaginationChain(id, active, reader, true, true);
   usePaginationRefresh(
     ScheduleQuery.listScheduleOccurrences,
     request(""),
@@ -970,30 +979,52 @@ export function ScheduleDetails({
   const data = document(current),
     definition = object(data.definition),
     problem = object(data.problem);
+  // A late accepted response must neither read nor change this view while it is
+  // inactive (for example during a notification review): the retained details
+  // stay exactly as they were hidden, and the whole response, including its
+  // refetch, is applied in order when the view is active again.
+  const activeNow = useRef(active);
+  activeNow.current = active;
+  const latestRefetch = useRef(result.refetch);
+  latestRefetch.current = result.refetch;
+  const deferredResponses = useRef<(() => void)[]>([]);
+  const applyWhenActive = (apply: () => void) => {
+    if (activeNow.current) apply();
+    else deferredResponses.current.push(apply);
+  };
+  useEffect(() => {
+    if (!active || deferredResponses.current.length === 0) return;
+    const queued = deferredResponses.current;
+    deferredResponses.current = [];
+    for (const apply of queued) apply();
+  }, [active]);
   const control = useRetainedMutation(
     `schedule-control:${initial.id}`,
     ScheduleQuery.controlSchedule,
-    (response) => {
-      setAcknowledged(response.schedule);
-      void result.refetch();
-    },
+    (response) =>
+      applyWhenActive(() => {
+        setAcknowledged(response.schedule);
+        void latestRefetch.current();
+      }),
   );
   const remove = useRetainedMutation(
     `schedule-delete:${initial.id}`,
     ScheduleQuery.deleteSchedule,
-    () => {
-      setDeleted(true);
-      setConfirm(undefined);
-    },
+    () =>
+      applyWhenActive(() => {
+        setDeleted(true);
+        setConfirm(undefined);
+      }),
   );
   const run = useRetainedMutation(
     `schedule-run:${initial.id}`,
     ScheduleQuery.runScheduleNow,
-    (response) => {
-      setOccurrence(response.occurrence);
-      setConfirm(undefined);
-      void result.refetch();
-    },
+    (response) =>
+      applyWhenActive(() => {
+        setOccurrence(response.occurrence);
+        setConfirm(undefined);
+        void latestRefetch.current();
+      }),
   );
   const operations = [control, remove, run],
     blocked = operations.some(
@@ -1223,7 +1254,42 @@ export function Schedules({
     EntranceMotion.Y4,
   );
   const closeDrawer = useCloseSidebarDrawer();
-  const locked = protectedWorkflow || Boolean(editing);
+  const reviewingNotification = Boolean(notificationOccurrence);
+  // The notification occurrence destination is exclusive, so the sidebar
+  // interactions and list reads stop together with the hidden workspace.
+  const locked = protectedWorkflow || Boolean(editing) || reviewingNotification;
+  const workspaceActive = active && !reviewingNotification;
+  // Hiding the inert workspace blurs its focused control and the review's Back
+  // button unmounts on return, so remember the control and restore it then.
+  const workspace = useRef<HTMLDivElement>(null);
+  const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
+  const focusAfterDeferredSave = useRef(false);
+  const wasReviewing = useRef(false);
+  const focusBeforeReview = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (reviewingNotification === wasReviewing.current) return;
+    wasReviewing.current = reviewingNotification;
+    if (reviewingNotification) {
+      const focused = globalThis.document.activeElement;
+      focusBeforeReview.current =
+        focused instanceof HTMLElement && workspace.current?.contains(focused)
+          ? focused
+          : null;
+      return;
+    }
+    const target = focusBeforeReview.current;
+    focusBeforeReview.current = null;
+    // A save accepted during the review unmounts the retained editor right
+    // after this effect, so focusing it would be lost; the deferred save hands
+    // focus to the resulting view instead.
+    if (deferredSave.current) return;
+    const current = globalThis.document.activeElement;
+    if (
+      target?.isConnected &&
+      (!current || current === globalThis.document.body || !current.isConnected)
+    )
+      target.focus({ preventScroll: true });
+  }, [reviewingNotification]);
   const request = useCallback(
     (token: string) => ({
       projectId,
@@ -1253,6 +1319,37 @@ export function Schedules({
     navigationActive && !locked,
     result.refresh,
   );
+  // An accepted save that arrives during a notification review must not clear
+  // the retained editor or read the list; it applies when the review clears.
+  const reviewingNow = useRef(reviewingNotification);
+  reviewingNow.current = reviewingNotification;
+  const applySave = (row?: Resource) => {
+    setEditing(undefined);
+    setProtectedWorkflow(false);
+    if (row) setSelected(row);
+    result.refresh();
+  };
+  const latestApplySave = useRef(applySave);
+  latestApplySave.current = applySave;
+  useEffect(() => {
+    if (reviewingNotification || !deferredSave.current) return;
+    const { row } = deferredSave.current;
+    deferredSave.current = undefined;
+    focusAfterDeferredSave.current = true;
+    latestApplySave.current(row);
+  }, [reviewingNotification]);
+  // The applied save unmounts the focused retained editor, so move focus to the
+  // first enabled control of the resulting view unless focus already moved.
+  useLayoutEffect(() => {
+    if (!focusAfterDeferredSave.current || editing) return;
+    focusAfterDeferredSave.current = false;
+    const current = globalThis.document.activeElement;
+    if (current && current !== globalThis.document.body && current.isConnected)
+      return;
+    workspace.current
+      ?.querySelector<HTMLElement>("button:not(:disabled)")
+      ?.focus({ preventScroll: true });
+  }, [editing, selected]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
     if (row.id !== selected?.id)
@@ -1429,47 +1526,55 @@ export function Schedules({
             )}
           </section>
         ) : null}
-        {editing ? (
-          <ScheduleEditor
-            readLocalWorker={readLocalWorker}
-            key={editing.key}
-            initial={editing.initial}
-            active={active}
-            saved={(row) => {
-              setEditing(undefined);
-              setProtectedWorkflow(false);
-              if (row) setSelected(row);
-              result.refresh();
-            }}
-            cancel={() => {
-              setEditing(undefined);
-              setProtectedWorkflow(false);
-            }}
-            protectedChange={setProtectedWorkflow}
-          />
-        ) : selected ? (
-          <ScheduleDetails
-            key={selected.id}
-            initial={selected}
-            active={active}
-            open={open}
-            close={() => {
-              setSelected(undefined);
-              setProtectedWorkflow(false);
-              result.refresh();
-            }}
-            edit={(initial) => {
-              setSelected(undefined);
-              setEditing({ initial, key: newRequestId() });
-            }}
-            protectedChange={setProtectedWorkflow}
-          />
-        ) : (
-          <section>
-            <h2>{copy("schedules.schedules_221ff1")}</h2>
-            <p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p>
-          </section>
-        )}
+        {/* The notification occurrence destination is exclusive: the normal
+            workspace stays mounted (draft, focus and request identity) but is
+            hidden, inert and inactive until the user explicitly returns. */}
+        <div
+          ref={workspace}
+          hidden={Boolean(notificationOccurrence)}
+          inert={Boolean(notificationOccurrence)}
+          className="schedule-workspace"
+        >
+          {editing ? (
+            <ScheduleEditor
+              readLocalWorker={readLocalWorker}
+              key={editing.key}
+              initial={editing.initial}
+              active={workspaceActive}
+              saved={(row) => {
+                if (reviewingNow.current) deferredSave.current = { row };
+                else latestApplySave.current(row);
+              }}
+              cancel={() => {
+                setEditing(undefined);
+                setProtectedWorkflow(false);
+              }}
+              protectedChange={setProtectedWorkflow}
+            />
+          ) : selected ? (
+            <ScheduleDetails
+              key={selected.id}
+              initial={selected}
+              active={workspaceActive}
+              open={open}
+              close={() => {
+                setSelected(undefined);
+                setProtectedWorkflow(false);
+                result.refresh();
+              }}
+              edit={(initial) => {
+                setSelected(undefined);
+                setEditing({ initial, key: newRequestId() });
+              }}
+              protectedChange={setProtectedWorkflow}
+            />
+          ) : (
+            <section>
+              <h2>{copy("schedules.schedules_221ff1")}</h2>
+              <p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p>
+            </section>
+          )}
+        </div>
       </div>
     </>
   );

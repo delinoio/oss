@@ -9,6 +9,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -51,6 +52,7 @@ import {
   RepositoryWorkerHeartbeat,
 } from "./repository-registration";
 import { i18n, SupportedLanguage, copy } from "./localization";
+import { dispatchAnimation } from "./entrance-test-support";
 
 const metadata = {
   root: "/canonical/oss",
@@ -2427,4 +2429,186 @@ it("blocks cloning again immediately after a completed clone collision", async (
   ]);
   expect(f.clone).toHaveBeenCalledTimes(1);
   expect(f.inspected).not.toHaveBeenCalled();
+});
+
+// Issue 3211: the Add repository task and its GitHub child chooser play one
+// header-only entrance per opening, and the motion starts no read or write.
+async function chooserScenario(animation: boolean) {
+  document.documentElement.dataset.animation = String(animation);
+  const f = fixture(metadata, true),
+    profile = connectedProfile(f);
+  f.mount();
+  await f.add(false);
+  const parent = screen.getByRole("dialog", { name: "Add repository" });
+  const parentHeader = parent.querySelector<HTMLElement>(
+    ".settings-task-header",
+  )!;
+  const observed = {
+    parentHeader: parentHeader.getAttribute("data-entrance"),
+    parentHost: parent.hasAttribute("data-entrance"),
+    parentAttributed: parent.querySelectorAll("[data-entrance]").length,
+    childHeader: [] as (string | null)[],
+    childHost: [] as boolean[],
+    childBody: [] as boolean[],
+    childAttributed: [] as number[],
+    afterEscape: {} as Record<string, unknown>,
+  };
+  if (animation) dispatchAnimation(parentHeader);
+  fireEvent.change(screen.getByRole("textbox", { name: "Repository name" }), {
+    target: { value: "My edited name" },
+  });
+  const openChild = async () => {
+    const opener = await screen.findByRole("button", {
+      name: "Choose from GitHub",
+    });
+    fireEvent.click(opener);
+    const child = screen.getByRole("dialog", {
+      name: "Choose a GitHub repository",
+    });
+    const header = child.querySelector<HTMLElement>(
+      ".repository-github-header",
+    )!;
+    observed.childHeader.push(header.getAttribute("data-entrance"));
+    observed.childHost.push(child.hasAttribute("data-entrance"));
+    observed.childBody.push(
+      child
+        .querySelector(".repository-github-body")!
+        .hasAttribute("data-entrance"),
+    );
+    observed.childAttributed.push(
+      child.querySelectorAll("[data-entrance]").length,
+    );
+    return { opener, child, header };
+  };
+  const first = await openChild();
+  // The chooser focuses its profile control without waiting for the motion.
+  expect(document.activeElement).toBe(
+    within(first.child).getByRole("combobox", { name: "GitHub profile" }),
+  );
+  if (animation) dispatchAnimation(first.header);
+  fireEvent.click(
+    within(first.child).getByRole("combobox", { name: "GitHub profile" }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "delinoio/oss Private · Archived",
+    }),
+  );
+  expect(
+    screen.queryByRole("dialog", { name: "Choose a GitHub repository" }),
+  ).toBeNull();
+  expect(document.activeElement).toBe(first.opener);
+  // Opening the chooser again is a new opening with its own single entrance.
+  const second = await openChild();
+  // Escape dismisses only the child.
+  fireEvent(
+    second.child,
+    new Event("cancel", { bubbles: true, cancelable: true }),
+  );
+  expect(
+    screen.queryByRole("dialog", { name: "Choose a GitHub repository" }),
+  ).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Add repository" })).toBe(parent);
+  expect(document.activeElement).toBe(second.opener);
+  observed.afterEscape = {
+    url: (screen.getByRole("textbox", { name: "Git URL" }) as HTMLInputElement)
+      .value,
+    name: (
+      screen.getByRole("textbox", {
+        name: "Repository name",
+      }) as HTMLInputElement
+    ).value,
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Close Add repository" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const counts = {
+    save: f.save.mock.calls.length,
+    clone: f.clone.mock.calls.length,
+    inspected: f.inspected.mock.calls.length,
+    repositories: f.repositories.mock.calls.length,
+    proof: f.proof.mock.calls.length,
+    control: f.control.mock.calls.length,
+  };
+  cleanup();
+  return { observed, counts };
+}
+it("plays one header-only entrance for Add repository and the GitHub child chooser without extra operations", async () => {
+  try {
+    const baseline = await chooserScenario(false);
+    const animated = await chooserScenario(true);
+    expect(baseline.observed.parentHeader).toBeNull();
+    expect(baseline.observed.childHeader).toEqual([null, null]);
+    expect(baseline.observed.childAttributed).toEqual([0, 0]);
+    expect(animated.observed.parentHeader).toBe("y4");
+    // The native task host and the form body never carry the attribute.
+    expect(animated.observed.parentHost).toBe(false);
+    expect(animated.observed.parentAttributed).toBe(1);
+    expect(animated.observed.childHeader).toEqual(["y4", "y4"]);
+    expect(animated.observed.childHost).toEqual([false, false]);
+    expect(animated.observed.childBody).toEqual([false, false]);
+    expect(animated.observed.childAttributed).toEqual([1, 1]);
+    // Parent draft, chooser-only Escape and operation counts match the
+    // no-motion baseline, and nothing is saved, cloned or inspected.
+    expect(animated.observed.afterEscape).toEqual(
+      baseline.observed.afterEscape,
+    );
+    expect(animated.observed.afterEscape).toEqual({
+      url: "https://github.com/delinoio/oss.git",
+      name: "My edited name",
+    });
+    expect(animated.counts).toEqual(baseline.counts);
+    expect(animated.counts).toMatchObject({
+      save: 0,
+      clone: 0,
+      inspected: 0,
+    });
+  } finally {
+    delete document.documentElement.dataset.animation;
+  }
+});
+it("does not replay the Add repository entrance for clone job progress", async () => {
+  try {
+    document.documentElement.dataset.animation = "true";
+    const f = fixture(metadata, true);
+    f.mount();
+    await f.add();
+    const header = screen
+      .getByRole("dialog", { name: "Add repository" })
+      .querySelector<HTMLElement>(".settings-task-header")!;
+    expect(header.getAttribute("data-entrance")).toBe("y4");
+    dispatchAnimation(header);
+    expect(header.getAttribute("data-entrance")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clone to this computer (optional)" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), {
+      target: { value: "/parent" },
+    });
+    const button = screen.getByRole("button", {
+      name: "Clone & add repository",
+    });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
+    await screen.findByText(
+      "Accepted by the server. Waiting for the selected Worker to finish.",
+    );
+    // The accepted job state is async-derived and never replays the entrance.
+    f.resources.set(f.jobs[0].id, {
+      ...f.jobs[0],
+      revision: 2n,
+      documentJson: encode({
+        type: "clone-repository",
+        state: "running",
+        machine_id: f.machine.id,
+      }),
+    });
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    expect(header.getAttribute("data-entrance")).toBeNull();
+    expect(f.clone).toHaveBeenCalledTimes(1);
+  } finally {
+    delete document.documentElement.dataset.animation;
+  }
 });

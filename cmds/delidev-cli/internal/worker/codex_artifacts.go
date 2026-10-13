@@ -18,10 +18,11 @@ func (c *CodexEventPublisher) itemKnown(native string) bool {
 	_, tool := c.tools[native]
 	_, artifact := c.artifacts[native]
 	_, output := c.outputs[native]
-	return message || tool || artifact || output
+	_, dynamic := c.dynamicTools[native]
+	return message || tool || artifact || output || dynamic
 }
 func (c *CodexEventPublisher) itemLimitReached() bool {
-	return len(c.messages)+len(c.tools)+len(c.artifacts)+len(c.outputs) >= 10000
+	return len(c.messages)+len(c.tools)+len(c.artifacts)+len(c.outputs)+len(c.dynamicTools) >= 10000
 }
 
 // Called under the event publisher lock; payloads are retained only by the
