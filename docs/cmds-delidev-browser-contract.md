@@ -168,8 +168,9 @@ profile's in-flight receipt as well, so the receipt never reports
 completed cleanup before their `on_before_close`. Registration starts while the
 mutation is in flight, before the receipt records `metadata_committed`, because
 a close can land after the staged replacement publishes and before that flag is
-set; a mutation that fails discards the registrations and a committed one keeps
-them. The same registration applies when a lifecycle close (a superseding
+set; a mutation that fails, or an idempotent Close of an already absent page that
+publishes nothing, discards the registrations and never attributes later child
+closes to its receipt, while a published one keeps them. The same registration applies when a lifecycle close (a superseding
 reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
 reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. A hide or window close whose native unmap fails
 retains the view for retried cleanup but still requests `CloseBrowser`, so it

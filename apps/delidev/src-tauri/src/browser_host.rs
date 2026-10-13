@@ -128,6 +128,19 @@ struct PageOperation {
     // Observe; before it, or after a failed reconciliation, the set is partial.
     cleanup_reconciled: bool,
 }
+impl PageOperation {
+    // Whether a child that a lifecycle close or another window's selection
+    // removes from `profile` is still attributed to this receipt: it is in
+    // flight, or committed with a reconciliation that has not succeeded. A
+    // reconciled receipt has a final awaited set, and a failed or idempotent
+    // no-op mutation has nothing to await.
+    fn tracks_outstanding(&self, profile: &str) -> bool {
+        self.profile == profile
+            && !self.cleanup_reconciled
+            && !self.receipt.native_cleanup_complete
+            && (self.receipt.metadata_committed || self.receipt.phase == PagePhase::Accepted)
+    }
+}
 const PAGE_LIMIT: usize = 16;
 const OPERATION_LIMIT: usize = 64;
 fn operation_key(owner: &str, profile: &str, operation_id: &str) -> String {
@@ -347,29 +360,17 @@ impl State {
         // receipt stays CleanupPending with a partial awaited set, so a retry
         // recomputes it from the views that still exist. Such a receipt must
         // keep observing children that are removed before the retry.
-        let mut keys: Vec<String> = self.page_busy.get(profile).cloned().into_iter().collect();
-        keys.extend(
-            self.page_operations
-                .iter()
-                .filter(|(_, operation)| {
-                    operation.profile == profile
-                        && operation.receipt.metadata_committed
-                        && !operation.cleanup_reconciled
-                        && !operation.receipt.native_cleanup_complete
-                })
-                .map(|(key, _)| key.clone()),
-        );
-        keys.sort();
-        keys.dedup();
-        for key in keys {
-            if let Some(operation) = self.page_operations.get_mut(&key) {
-                operation.awaiting_close.extend(superseded.iter().cloned());
-                tracing::debug!(
-                    operation = "browser_page_cleanup",
-                    state = "superseded_by_selection",
-                    awaiting_children = operation.awaiting_close.len()
-                );
-            }
+        for operation in self
+            .page_operations
+            .values_mut()
+            .filter(|operation| operation.tracks_outstanding(profile))
+        {
+            operation.awaiting_close.extend(superseded.iter().cloned());
+            tracing::debug!(
+                operation = "browser_page_cleanup",
+                state = "superseded_by_selection",
+                awaiting_children = operation.awaiting_close.len()
+            );
         }
     }
 
@@ -1235,25 +1236,46 @@ impl BrowserHost {
             profile.storage_revision = profile.storage_revision.saturating_add(1);
         }
         if let Some(operation) = state.page_operations.get_mut(&key) {
-            match outcome {
-                Ok(durability) => {
-                    operation.receipt.metadata_committed = true;
-                    if let Some((target, code)) = durability.flatten() {
+            Self::record_mutation_outcome(operation, outcome, tabs);
+        }
+        Ok(PageAdmission::Admitted)
+    }
+
+    // Records the metadata mutation's outcome on the operation's receipt.
+    fn record_mutation_outcome(
+        operation: &mut PageOperation,
+        outcome: Result<Option<Option<(PathBuf, NativeFailure)>>>,
+        tabs: Tabs,
+    ) {
+        match outcome {
+            Ok(published) => {
+                operation.receipt.metadata_committed = true;
+                match published {
+                    // An idempotent Close of an absent page published no
+                    // metadata, so a child that a lifecycle close registered
+                    // while the mutation was in flight does not belong to this
+                    // receipt. Its awaited set is empty and final, and later
+                    // closes are not attributed to it.
+                    None => {
+                        operation.awaiting_close.clear();
+                        operation.cleanup_reconciled = true;
+                    }
+                    Some(Some((target, code))) => {
                         operation.durability = Some(target);
                         operation.receipt.failure = Some(code);
                     }
-                    operation.tabs = tabs;
+                    Some(None) => {}
                 }
-                Err(code) => {
-                    // Nothing was committed, so no child closed during the
-                    // mutation belongs to this receipt.
-                    operation.awaiting_close.clear();
-                    operation.receipt.failure = Some(code);
-                }
+                operation.tabs = tabs;
             }
-            Self::settle_page_operation(operation);
+            Err(code) => {
+                // Nothing was committed, so no child closed during the
+                // mutation belongs to this receipt.
+                operation.awaiting_close.clear();
+                operation.receipt.failure = Some(code);
+            }
         }
-        Ok(PageAdmission::Admitted)
+        Self::settle_page_operation(operation);
     }
 
     // Returns Ok(Some(None)) for a replaced file, Ok(Some(Some(..))) when the
@@ -6153,6 +6175,60 @@ esac
         assert!(!operation.receipt.metadata_committed);
         assert_eq!(operation.receipt.phase, PagePhase::Failed);
         assert!(operation.awaiting_close.is_empty());
+    }
+
+    #[test]
+    fn idempotent_close_discards_children_registered_while_it_was_in_flight() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        let mut state = host.state.lock().unwrap();
+        // A lifecycle close registered the live child while the mutation was
+        // in flight, as it does before the outcome is recorded.
+        let tabs = state.profiles[&record.id].tabs.clone();
+        let operation = state.page_operations.get_mut(&key).unwrap();
+        operation
+            .awaiting_close
+            .insert(("fixture".to_string(), original.generation));
+        // The Close found its page already absent and published nothing.
+        BrowserHost::record_mutation_outcome(operation, Ok(None), tabs.clone());
+        assert!(operation.awaiting_close.is_empty());
+        assert!(operation.receipt.metadata_committed);
+        // A published mutation keeps the same registrations.
+        operation
+            .awaiting_close
+            .insert(("fixture".to_string(), original.generation));
+        operation.cleanup_reconciled = false;
+        BrowserHost::record_mutation_outcome(operation, Ok(Some(None)), tabs);
+        assert_eq!(operation.awaiting_close.len(), 1);
+    }
+
+    #[test]
+    fn idempotent_close_does_not_wait_for_an_unrelated_child_hidden_afterwards() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        // The page is already absent, so the Close commits nothing.
+        let absent = uuid::Uuid::now_v7().to_string();
+        let request = page_request(PageAction::Close, None, Some(&absent));
+        host.prepare_pages(OWNER, None, &record, &request, commit_fixture)
+            .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        assert_eq!(
+            host.hide_with("fixture", &record.id, &view_id, unmap_view)
+                .err(),
+            Some(NativeFailure::Busy)
+        );
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+        // The creating child's own callback leaves the settled receipt alone.
+        host.child_closed(&original);
+        assert_eq!(host.page_receipt(&key).unwrap().phase, PagePhase::Completed);
     }
 
     #[test]
