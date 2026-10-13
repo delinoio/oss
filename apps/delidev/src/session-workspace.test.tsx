@@ -1835,7 +1835,11 @@ it.each(
     if (hidden) {
       // Every reached payload page is resident, so a current snapshot may hide.
       await waitFor(() => expect(info).toHaveProperty("hidden", true));
-      expect(screen.queryByRole("button", { name: "Restore previously loaded items" })).toBeNull();
+      expect(
+        screen.queryByRole("button", {
+          name: "Restore previously loaded items",
+        }),
+      ).toBeNull();
     } else {
       await screen.findByRole("button", {
         name: "Restore previously loaded items",
