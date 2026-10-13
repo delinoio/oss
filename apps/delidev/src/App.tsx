@@ -53,6 +53,11 @@ import {
 import { document, text } from "./documents";
 import { SettingsCategory } from "./settings-category";
 import { SessionView } from "./session";
+import {
+  resolveSearchSession,
+  SearchOpenStatus,
+  SearchSessionRoute,
+} from "./search-session-routing";
 import { Search, Settings, Surface } from "./views";
 import { NewSession, NewSessionKind } from "./new-session";
 import { Inbox } from "./inbox";
@@ -181,6 +186,24 @@ function Shell({
     return true;
   };
 
+  const searchIntent = useRef(0);
+  const searchMounted = useRef(false);
+  const [searchOpening, setSearchOpening] = useState<{
+    id: string;
+    status: SearchOpenStatus;
+  }>();
+  useEffect(() => {
+    searchMounted.current = true;
+    return () => {
+      searchMounted.current = false;
+      searchIntent.current += 1;
+    };
+  }, []);
+  useEffect(() => {
+    if (surface === Surface.Search) return;
+    searchIntent.current += 1;
+    setSearchOpening(undefined);
+  }, [surface]);
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
     useState(0);
@@ -287,7 +310,11 @@ function Shell({
     setSettingsEntry(undefined);
     if (destination !== surface) setProjectCreation(undefined);
   };
-  const open = (id: string, originalParent?: string, name?: string) => {
+  const openSession = (
+    id: string,
+    originalParent?: string,
+    name?: string,
+  ) => {
     setSessionNavigationActivation((value) => value + 1);
     const parent = tabs.parent(id) ?? originalParent;
     if (parent) {
@@ -309,6 +336,46 @@ function Shell({
     setSelected(id);
     setSurface(Surface.Sessions);
     setDrawerOpen(false);
+  };
+  const openSessionRef = useRef(openSession);
+  useLayoutEffect(() => {
+    openSessionRef.current = openSession;
+  });
+  // Any deliberate navigation supersedes a pending Search-result resolution.
+  const open = (id: string, originalParent?: string, name?: string) => {
+    searchIntent.current += 1;
+    openSession(id, originalParent, name);
+  };
+  // A never-visited Sidechat result carries only its child ID, so its original
+  // parent is read from retained metadata before the host is chosen.
+  const openSearchResult = (id: string) => {
+    if (tabs.parent(id)) {
+      open(id);
+      return;
+    }
+    const token = (searchIntent.current += 1);
+    const owner = transport;
+    setSearchOpening({ id, status: SearchOpenStatus.Pending });
+    void resolveSearchSession(queryClient, owner, id).then((resolution) => {
+      if (
+        !searchMounted.current ||
+        searchIntent.current !== token ||
+        latestTransport.current !== owner
+      ) {
+        console.info("delidev.search.session_route_discarded", {
+          sessionId: id,
+        });
+        return;
+      }
+      if (resolution.route === SearchSessionRoute.Unavailable) {
+        setSearchOpening({ id, status: SearchOpenStatus.Unavailable });
+        return;
+      }
+      setSearchOpening(undefined);
+      if (resolution.route === SearchSessionRoute.Sidechat)
+        openSessionRef.current(id, resolution.parent, resolution.name);
+      else openSessionRef.current(id);
+    });
   };
   const navigateTray = (destination: TrayDestination, inboxId?: string) => {
     if (destination === TrayDestination.Settings) {
@@ -762,7 +829,11 @@ function Shell({
                           created={sessionCreated}
                         />
                       ) : null}
-                      <Search active={surface === Surface.Search} open={open} />
+                      <Search
+                        active={surface === Surface.Search}
+                        open={openSearchResult}
+                        opening={searchOpening}
+                      />
                       <div
                         className="inbox-container"
                         hidden={surface !== Surface.Inbox}

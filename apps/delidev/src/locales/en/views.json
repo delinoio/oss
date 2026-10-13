@@ -15,6 +15,8 @@
   "views.outcome_4e80ab": "Outcome",
   "views.chooseASearchTermAndFilters_99f204": "Choose a search term and filters, then search retained conversations.",
   "views.searching_c31723": "Searching…",
+  "views.openingTheConversation_4c1a7e": "Opening the conversation…",
+  "views.theConversationParentCouldNotBe_9d2b53": "This conversation could not be opened because its original parent could not be verified. Try again later.",
   "views.theRefreshFailedTheseAreThe_22c320": "The refresh failed. These are the last results for the applied search.",
   "views.noFurtherConversationsOnThisPage_5b8014": "No further conversations on this page.",
   "views.noRetainedConversationMatches_b59f78": "No retained conversation matches.",
