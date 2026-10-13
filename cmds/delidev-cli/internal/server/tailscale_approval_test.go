@@ -26,6 +26,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"github.com/google/uuid"
 )
 
 // tailnetClock is a shared fake clock for the fixture services.
@@ -730,5 +731,96 @@ func TestTailnetWorkerRetainedGrantStillResumesInsideWindow(t *testing.T) {
 	done, err := f.resume()
 	if err != nil || !done.Complete || done.Grant.Code != code {
 		t.Fatalf("a retained grant inside the window must complete with its original verifier: %v", err)
+	}
+}
+
+// tailnetIDAt returns a canonical UUID v7 whose embedded creation time is at.
+func tailnetIDAt(t *testing.T, at time.Time) domain.ID {
+	t.Helper()
+	id, err := uuid.NewV7()
+	if err != nil {
+		t.Fatal(err)
+	}
+	millis := uint64(at.UnixMilli())
+	for i := 0; i < 6; i++ {
+		id[i] = byte(millis >> (8 * (5 - i)))
+	}
+	result := domain.ID(id.String())
+	if err := result.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func TestTailnetRequestIDStaleBoundary(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	id := tailnetIDAt(t, created)
+	edge := created.Add(tailnetRequestLifetime + tailnetRecoveryWindow)
+	if tailnetRequestIDStale(id, edge) {
+		t.Fatal("the last instant of the recovery window must still admit the ID")
+	}
+	if !tailnetRequestIDStale(id, edge.Add(time.Millisecond)) {
+		t.Fatal("an ID older than the recovery window must be stale")
+	}
+	if tailnetRequestIDStale(tailnetIDAt(t, created.Add(48*time.Hour)), created) {
+		t.Fatal("a future-dated ID is not older than the window")
+	}
+	if !tailnetRequestIDStale(domain.ID("not-a-uuid"), created) || !tailnetRequestIDStale(domain.ID(uuid.New().String()), created) {
+		t.Fatal("a non-v7 identifier must never be admitted")
+	}
+}
+
+func TestTailnetReclaimedRequestIDCannotBeRecreated(t *testing.T) {
+	f := newTailnetWorkerPair(t)
+	// The requester's original journal, whose first RequestTailscaleApproval
+	// response was lost: it has no saved approval.
+	if err := os.Remove(f.requester.s.outgoingPath(f.outgoing.ID)); err != nil {
+		t.Fatal(err)
+	}
+	f.outgoing.ID = tailnetIDAt(t, f.clock.Now())
+	if err := f.requester.s.writeOutgoing(f.outgoing); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.resume(); err != nil {
+		t.Fatal(err)
+	}
+	// Inside the window the retained record answers the retry exactly.
+	f.clock.Advance(tailnetRequestLifetime + time.Hour)
+	if _, err := f.resume(); err != nil {
+		t.Fatalf("a retry inside the recovery window must see the retained request: %v", err)
+	}
+	// Another admission reclaims the record after the window.
+	if err := os.Remove(f.requester.s.outgoingPath(f.outgoing.ID)); err != nil {
+		t.Fatal(err)
+	}
+	lost := f.outgoing
+	if err := f.requester.s.writeOutgoing(lost); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(tailnetRecoveryWindow)
+	if err := tailnetRequest(t, f.target, domain.NewID(), "100.64.0.50"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(f.target.s.tailnetPath(f.outgoing.ID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the expired record should have been reclaimed: %v", err)
+	}
+	// The retry of the original journal must not mint a fresh request with a new
+	// target key and expiry under the same ID, in any restart state.
+	for _, restart := range []bool{false, true} {
+		var err error
+		if restart {
+			f.target.restart(f.clock)
+		}
+		// The target's Conflict reaches the requester as a relayed client error.
+		if _, err = f.resume(); err == nil || !strings.Contains(err.Error(), "conflict") {
+			t.Fatalf("a stale request ID must be refused with Conflict (restart=%v): %v", restart, err)
+		}
+		if _, statErr := os.Stat(f.target.s.tailnetPath(f.outgoing.ID)); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("a reclaimed request ID was recreated (restart=%v): %v", restart, statErr)
+		}
+	}
+	journal, err := f.requester.s.readOutgoing(f.outgoing.ID)
+	if err != nil || journal.Approval != nil {
+		t.Fatalf("the requester must not accept a renewed request: %v", err)
 	}
 }

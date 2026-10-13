@@ -183,6 +183,13 @@ Worker record holding a delivered grant are never reclaimed, so exact retry and
 replay stay available. Reclamation touches only well-formed approval files in the
 approvals directory; foreign or malformed entries still count toward capacity and
 are left in place, and outgoing journals and Worker scopes are never visited.
+Reclamation deletes the only evidence that a request ID was used, so creating a
+record also requires the canonical UUID v7 request ID's embedded creation time to
+be no older than the five-minute lifetime plus the recovery window. A retry of an
+original journal whose request was reclaimed (for example after a lost first
+response) is refused with Conflict and creates no record, key or expiry under the
+reused ID. Retained records are matched by ID first, so exact replays inside the
+window are unaffected; the check is stateless and identical after restart.
 
 Outgoing client completion uses the existing saved-profile pairing journal and
 immutable canonical origin. Approved Worker setup encrypts the selected server's

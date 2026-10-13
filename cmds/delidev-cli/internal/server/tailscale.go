@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"github.com/google/uuid"
 )
 
 type tailnetRecord struct {
@@ -66,6 +68,7 @@ type tailnetAdmissionReason string
 const (
 	tailnetAdmissionDirectoryFull tailnetAdmissionReason = "directory_full"
 	tailnetAdmissionHostLimit     tailnetAdmissionReason = "host_limit"
+	tailnetAdmissionStaleID       tailnetAdmissionReason = "stale_request_id"
 )
 
 type tailnetHostKey struct{}
@@ -157,6 +160,27 @@ func tailnetReclaimable(v tailnetRecord, now time.Time) bool {
 		return v.Approval.Role == tailscale.WorkerRole && v.IncomingGrant == nil
 	}
 	return false
+}
+
+// tailnetRequestIDStale reports whether a request ID is too old to name a fresh
+// approval request. Reclamation deletes a record once its recovery window ends,
+// which also removes the only evidence that the ID was already used, so a later
+// retry of the requester's original journal would otherwise create a new record
+// under the same ID and silently renew a terminal request. A canonical UUID v7
+// embeds its creation time in the first 48 bits (milliseconds since the Unix
+// epoch), and a request is created no earlier than its ID, so an ID older than
+// the request lifetime plus the recovery window can only name a record that was
+// retained and may since have been reclaimed. Retained records are matched by ID
+// before this check, so exact replays inside the window are unaffected.
+func tailnetRequestIDStale(id domain.ID, now time.Time) bool {
+	parsed, err := uuid.Parse(string(id))
+	if err != nil || parsed.Version() != 7 {
+		return true
+	}
+	var stamp [8]byte
+	copy(stamp[2:], parsed[:6])
+	created := time.UnixMilli(int64(binary.BigEndian.Uint64(stamp[:])))
+	return now.After(created.Add(tailnetRequestLifetime + tailnetRecoveryWindow))
 }
 
 type tailnetOutgoing struct {
@@ -446,6 +470,10 @@ func (s *Service) RequestTailscaleApproval(ctx context.Context, req *connect.Req
 			return nil, rpc.Error(err, "")
 		}
 		host := tailnetRequestHost(ctx)
+		if tailnetRequestIDStale(domain.ID(m.RequestId), s.tailnetClock()) {
+			s.logger.WarnContext(ctx, "tailscale_approval", "operation_id", m.RequestId, "phase", "admission_rejected", "reason", tailnetAdmissionStaleID)
+			return nil, rpc.Error(tailnetFailure(domain.Conflict), "")
+		}
 		admission, err := s.reclaimTailnet(ctx, directory, s.tailnetClock())
 		if err != nil {
 			return nil, rpc.Error(tailnetFailure(domain.ResourceExhausted), "")
