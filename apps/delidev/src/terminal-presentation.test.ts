@@ -134,6 +134,76 @@ it.each([
   expect(view.observe("parent", resource(5n, change))).toBe(false);
   expect(view.hidden("original")).toBe(false);
 });
+const nested = (depth: number, leaf: unknown = "leaf"): unknown => {
+  let value = leaf;
+  for (let level = 0; level < depth; level++) value = { next: [value] };
+  return value;
+};
+it("keeps bounded nested pending evidence comparable and unsettled", () => {
+  const view = new TerminalPresentation(),
+    pending = nested(8);
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, { state: "exited", cleanup_verified: true, pending }),
+    ),
+  ).toBe(false);
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, {
+        state: "exited",
+        cleanup_verified: true,
+        pending: nested(8, "other"),
+      }),
+    ),
+  ).toBe(false);
+  expect(view.hidden("original")).toBe(false);
+});
+// Raw JSON text nested far deeper than an unbounded recursion tolerates;
+// JSON.stringify cannot build it, but JSON.parse accepts it within 1 MiB.
+const DEEP_LEVELS = 100_000;
+const deepJson = "[".repeat(DEEP_LEVELS) + "]".repeat(DEEP_LEVELS);
+const rawResource = (revision: bigint, documentJson: string) =>
+  create(ResourceSchema, {
+    ...resource(revision, {}),
+    documentJson: new TextEncoder().encode(documentJson),
+  });
+const overDepthDocuments = {
+  pending: `{"state":"exited","cleanup_verified":true,"pending":${deepJson}}`,
+  state: `{"state":${deepJson},"cleanup_verified":true}`,
+  "cleanup proof": `{"state":"exited","cleanup_verified":${deepJson}}`,
+};
+it.each(Object.entries(overDepthDocuments))(
+  "treats excessively nested %s evidence as unsettled without overflowing",
+  (_name, json) => {
+    const view = new TerminalPresentation();
+    expect(() => view.observe("parent", rawResource(5n, json))).not.toThrow();
+    expect(view.observe("parent", rawResource(5n, json))).toBe(false);
+    expect(view.hidden("original")).toBe(false);
+    // A newer, shallow and settled exit still dismisses exactly once.
+    expect(
+      view.observe(
+        "parent",
+        resource(6n, { state: "exited", cleanup_verified: true }),
+      ),
+    ).toBe(true);
+    expect(view.hidden("original")).toBe(true);
+  },
+);
+it("rejects an equal-revision shallow replacement of over-depth evidence", () => {
+  const view = new TerminalPresentation();
+  expect(
+    view.observe("parent", rawResource(5n, overDepthDocuments.pending)),
+  ).toBe(false);
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, { state: "exited", cleanup_verified: true }),
+    ),
+  ).toBe(false);
+  expect(view.hidden("original")).toBe(false);
+});
 it("accepts identical equal-revision replays and dismisses exactly once", () => {
   const view = new TerminalPresentation(),
     data = { state: "exited", cleanup_verified: true };

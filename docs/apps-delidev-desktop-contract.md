@@ -1400,7 +1400,10 @@ retains one compact fingerprint (no document bytes) of its latest accepted
 revision; an equal-revision observation whose state, cleanup proof or pending
 evidence differs is contradictory and rejected without tombstoning, while an
 identical replay (including a deferred exit observed again after its control
-settles) is accepted once without requiring a newer revision. An inactive exit
+settles) is accepted once without requiring a newer revision. Fingerprinting
+bounds container nesting depth; evidence nested deeper receives one fixed
+fingerprint and never dismisses, so a malformed authenticated document stays
+unsettled instead of overflowing the call stack. An inactive exit
 preserves selection/focus; a selected exit chooses its nearest remaining left
 terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no

@@ -2,17 +2,50 @@
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document } from "./documents";
 
-/** Canonical JSON with sorted object keys, so equal evidence compares equal. */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value !== null && typeof value === "object")
-    return `{${Object.keys(value)
-      .sort()
-      .map(
-        (key) =>
-          `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`,
-      )
-      .join(",")}}`;
+/**
+ * Maximum container nesting accepted when canonicalizing pending evidence. An
+ * authenticated document may nest far deeper within its size limit, so the
+ * traversal is bounded to keep it from overflowing the call stack.
+ */
+const MAX_EVIDENCE_DEPTH = 32;
+
+/**
+ * Fixed fingerprint for evidence nested deeper than MAX_EVIDENCE_DEPTH. Such
+ * evidence is never compared structurally and never dismisses: a deeply nested
+ * pending value is present, and a deeply nested state or cleanup proof is not
+ * the exact exited and verified evidence that dismissal requires.
+ */
+const OVER_DEPTH_FINGERPRINT = "over-depth";
+
+/**
+ * Canonical JSON with sorted object keys, so equal evidence compares equal.
+ * Returns null, without recursing further, when containers nest deeper than
+ * MAX_EVIDENCE_DEPTH.
+ */
+function canonical(value: unknown, depth = 0): string | null {
+  if (Array.isArray(value)) {
+    if (depth >= MAX_EVIDENCE_DEPTH) return null;
+    const parts: string[] = [];
+    for (const item of value) {
+      const part = canonical(item, depth + 1);
+      if (part === null) return null;
+      parts.push(part);
+    }
+    return `[${parts.join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    if (depth >= MAX_EVIDENCE_DEPTH) return null;
+    const parts: string[] = [];
+    for (const key of Object.keys(value).sort()) {
+      const part = canonical(
+        (value as Record<string, unknown>)[key],
+        depth + 1,
+      );
+      if (part === null) return null;
+      parts.push(`${JSON.stringify(key)}:${part}`);
+    }
+    return `{${parts.join(",")}}`;
+  }
   return JSON.stringify(value) ?? "null";
 }
 
@@ -48,14 +81,13 @@ function hasPending(pending: unknown): boolean {
  * and pending evidence. Equal revisions must carry identical evidence.
  */
 function fingerprint(data: Record<string, unknown>): string {
-  return digest(
-    canonical([
-      data.state,
-      data.cleanup_verified,
-      hasPending(data.pending) ? data.pending : null,
-      hasPending(data.pending),
-    ]),
-  );
+  const evidence = canonical([
+    data.state,
+    data.cleanup_verified,
+    hasPending(data.pending) ? data.pending : null,
+    hasPending(data.pending),
+  ]);
+  return evidence === null ? OVER_DEPTH_FINGERPRINT : digest(evidence);
 }
 
 /** Connection-memory presentation tombstones never change server history. */
