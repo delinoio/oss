@@ -279,7 +279,9 @@ it("keeps the editing draft hidden and inert during notification review and rest
     clear = vi.fn();
   const rendered = render(value.view(<Schedules active open={() => {}} />));
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
-  const prompt = screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement;
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
   fireEvent.change(prompt, { target: { value: "Draft kept during review" } });
   rendered.rerender(
     value.view(
@@ -299,9 +301,13 @@ it("keeps the editing draft hidden and inert during notification review and rest
     screen.queryByRole("textbox", { name: "Scheduled prompt" }),
   ).toBeNull();
   expect(screen.queryByRole("button", { name: "Save schedule" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Back to schedules" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Back to schedules" }),
+  ).toBeTruthy();
   rendered.rerender(value.view(<Schedules active open={() => {}} />));
-  const restored = screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement;
+  const restored = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
   expect(restored).toBe(prompt);
   expect(restored.value).toBe("Draft kept during review");
   expect(workspace.hidden).toBe(false);
@@ -312,7 +318,9 @@ it("keeps the editing draft hidden and inert during notification review and rest
 it("hides selected schedule details without writes during notification review and restores the same instance", async () => {
   const value = fixture();
   const rendered = render(value.view(<Schedules active open={() => {}} />));
-  fireEvent.click(await screen.findByRole("button", { name: /Weekday review/ }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
   const heading = await screen.findByRole("button", { name: "Run now" });
   const workspace = heading.closest(".schedule-workspace") as HTMLElement;
   rendered.rerender(
@@ -353,9 +361,7 @@ it("hides the empty workspace and keeps the unavailable status for a missing not
     ),
   );
   expect((await screen.findByRole("status")).textContent).toBeTruthy();
-  expect(
-    screen.queryByText("Select a schedule from the sidebar."),
-  ).toBeNull();
+  expect(screen.queryByText("Select a schedule from the sidebar.")).toBeNull();
   expect(screen.queryByText("Original occurrence prompt")).toBeNull();
 });
 
