@@ -1791,6 +1791,9 @@ function tabsFixture(
                     options?.inheritDropped,
                   )
                 }
+                restoreBase={(repository, reference) =>
+                  store.clearDroppedBase(f.sessionId, repository, reference)
+                }
               />
             ) : null}
           </MutationIntents>
@@ -2678,4 +2681,78 @@ it("does not republish a dropped invalidated base for a recreated base-free tab 
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
     baseValue("main"),
   );
+});
+
+it("ends a retained base-free tab's dropped base record when the reference is explicitly reselected", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("other"));
+  const branch = sessionTabKey(
+    f
+      .comparisons()
+      .find((tab) => tab.comparison === "branch" && tab.base_ref?.name === "other")!,
+  );
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  // The staged tab drops the invalidated base onto its own descriptor.
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "staged")).toBe(
+      true,
+    ),
+  );
+  const staged = sessionTabKey(
+    f.comparisons().find((tab) => tab.comparison === "staged")!,
+  );
+  const droppedOf = () =>
+    f.comparisons().find((tab) => tab.comparison === "staged")?.dropped_base;
+  expect(droppedOf()).toMatchObject({ name: "other" });
+  // The reference reappears and is explicitly reselected on the Branch tab.
+  act(() => f.store.select(f.sessionId, branch));
+  state.names = ["main", "other"];
+  await refreshWhenReady();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  // Trust is restored, so no tab keeps a record of the earlier invalidation.
+  expect(droppedOf()).toBeUndefined();
+  // A second, independent invalidation does not bind the staged tab.
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  act(() => f.store.select(f.sessionId, staged));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Comparison") as HTMLSelectElement).value,
+    ).toBe("staged"),
+  );
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+      baseValue("main"),
+    ),
+  );
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("main"));
+  const snapshot = f.store.snapshot(f.sessionId),
+    selected = snapshot.tabs.find(
+      (value) => sessionTabKey(value) === snapshot.selected,
+    );
+  expect(selected).toMatchObject({
+    comparison: "branch",
+    base_ref: { name: "main" },
+  });
 });

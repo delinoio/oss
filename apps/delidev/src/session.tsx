@@ -3172,6 +3172,9 @@ export function SessionView({
                         options?.inheritDropped,
                       )
                     }
+                    restoreBase={(repository, reference) =>
+                      tabs.store.clearDroppedBase(id, repository, reference)
+                    }
                   />
                 </div>
               ) : null}

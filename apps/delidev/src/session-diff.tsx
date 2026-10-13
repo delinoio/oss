@@ -48,6 +48,16 @@ export type ComparisonDescriptor = {
   dropped_base?: BaseReference;
 };
 
+/**
+ * Called when an explicit Base control selection restores trust for one
+ * reference, so the owner of the retained comparison tabs can end the
+ * `dropped_base` records that named the invalidation that just ended.
+ */
+export type RestoreBase = (
+  repository: string,
+  reference: BaseReference,
+) => void;
+
 function comparisonOriginKey(value: ComparisonDescriptor) {
   return JSON.stringify([
     value.repository,
@@ -65,6 +75,7 @@ export function SessionDiff({
   close,
   selected,
   openComparison,
+  restoreBase,
 }: {
   sessionId: string;
   worktree: boolean;
@@ -74,6 +85,7 @@ export function SessionDiff({
     value: ComparisonDescriptor,
     options?: { inheritDropped?: boolean },
   ) => void;
+  restoreBase?: RestoreBase;
 }) {
   useLocale();
   const panelRoot = useRef<HTMLElement>(null);
@@ -169,6 +181,7 @@ export function SessionDiff({
               : selected
           }
           openComparison={openComparison}
+          restoreBase={restoreBase}
           onNegotiated={pending ? openNegotiated : undefined}
           worktree={worktree}
           acceptedDeletionId={acceptedDeletionId}
@@ -217,6 +230,7 @@ export function RepositoryDiff({
   acceptedDeletionId,
   initial,
   openComparison,
+  restoreBase,
   onNegotiated,
   close,
   repositoryControl,
@@ -230,6 +244,7 @@ export function RepositoryDiff({
     value: ComparisonDescriptor,
     options?: { inheritDropped?: boolean },
   ) => void;
+  restoreBase?: RestoreBase;
   /**
    * Set while a repository selection awaits its own negotiated base. Called at
    * most once per base with the exact typed descriptor of the displayed branch
@@ -674,6 +689,10 @@ export function RepositoryDiff({
                 // Only this explicit selection restores trust, including
                 // reselecting the recreated reference itself.
                 trust.reselect(optionsOwner, choice.reference);
+                // Retained base-free tabs that dropped this reference belong to
+                // the invalidation that just ended, so they must not bind a
+                // later, independent invalidation of the same reference.
+                restoreBase?.(repository, choice.reference);
                 choose(Comparison.Branch, path, choice.reference, true);
               }}
             >

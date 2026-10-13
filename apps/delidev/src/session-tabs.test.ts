@@ -55,6 +55,56 @@ describe("comparison tab dropped bases", () => {
     expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
   });
 });
+describe("clearing dropped bases on explicit reselection", () => {
+  const a: BaseReference = { type: "local-branch", name: "a" },
+    b: BaseReference = { type: "local-branch", name: "b" },
+    comparison = (
+      repository: string,
+      kind: Comparison,
+      dropped_base?: BaseReference,
+    ) => ({
+      kind: SessionTabKind.Comparison as const,
+      repository,
+      comparison: kind,
+      path: ".",
+      ...(dropped_base ? { dropped_base } : {}),
+    });
+  const records = (store: SessionTabsStore) =>
+    store
+      .snapshot("s")
+      .tabs.map((value) =>
+        value.kind === SessionTabKind.Comparison
+          ? [value.repository, value.comparison, value.dropped_base?.name]
+          : [value.kind],
+      );
+  it("ends only the matching records of the same repository and keeps order and selection", () => {
+    const store = new SessionTabsStore();
+    store.open("s", comparison("repo", Comparison.Staged, a));
+    store.open("s", comparison("repo", Comparison.WorkingTree, b));
+    store.open("s", comparison("other", Comparison.Staged, a));
+    store.open("s", comparison("repo", Comparison.Creation));
+    store.select("s", sessionTabKey(comparison("repo", Comparison.WorkingTree)));
+    const before = store.snapshot("s");
+    store.clearDroppedBase("s", "repo", a);
+    expect(records(store)).toEqual([
+      [SessionTabKind.Conversation],
+      ["repo", Comparison.Staged, undefined],
+      ["repo", Comparison.WorkingTree, "b"],
+      ["other", Comparison.Staged, "a"],
+      ["repo", Comparison.Creation, undefined],
+    ]);
+    expect(store.snapshot("s").selected).toBe(before.selected);
+  });
+  it("matches the exact reference and publishes nothing without a match", () => {
+    const store = new SessionTabsStore();
+    store.open("s", comparison("repo", Comparison.Staged, a));
+    const before = store.snapshot("s");
+    store.clearDroppedBase("s", "repo", b);
+    store.clearDroppedBase("s", "other", a);
+    store.clearDroppedBase("missing", "repo", a);
+    expect(store.snapshot("s")).toBe(before);
+  });
+});
 describe("connection session tab descriptors", () => {
   it("pins Conversation and preserves append order with exact resource identities", () => {
     const store = new SessionTabsStore();

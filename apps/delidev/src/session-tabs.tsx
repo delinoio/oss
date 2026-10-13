@@ -10,7 +10,11 @@ import {
   terminalFallback,
   TerminalPresentation,
 } from "./terminal-presentation";
-import { Comparison, type BaseReference } from "./session-diff-model";
+import {
+  Comparison,
+  sameReference,
+  type BaseReference,
+} from "./session-diff-model";
 
 export enum SessionTabKind {
   Conversation = "conversation",
@@ -165,6 +169,32 @@ export class SessionTabsStore {
         ? { ...tab, dropped_base: existing.dropped_base }
         : tab,
     );
+  }
+  /**
+   * Ends every `dropped_base` record of one repository's Comparison tabs that
+   * names the reference an explicit Base control selection just restored. The
+   * invalidation those records belong to is over, so a later invalidation of
+   * the same reference never binds a tab that did not take part in it. Tab
+   * order, selection and identity are untouched, and nothing publishes when no
+   * record matches.
+   */
+  clearDroppedBase(id: string, repository: string, reference: BaseReference) {
+    const previous = this.snapshot(id);
+    let changed = false;
+    const tabs = previous.tabs.map((tab) => {
+      if (
+        tab.kind !== SessionTabKind.Comparison ||
+        tab.repository !== repository ||
+        !tab.dropped_base ||
+        !sameReference(tab.dropped_base, reference)
+      )
+        return tab;
+      changed = true;
+      const ended: ComparisonTab = { ...tab };
+      delete ended.dropped_base;
+      return ended;
+    });
+    if (changed) this.publish(id, { ...previous, tabs });
   }
   select(id: string, key: string) {
     const previous = this.snapshot(id);
