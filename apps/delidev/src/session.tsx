@@ -45,7 +45,7 @@ import {
   StartupObservedOperation,
   RetainedStartupTimes,
 } from "./session-progress-status";
-import { currentTurn } from "./turn-timing";
+import { currentTurn, turnTimingConfirmed } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
@@ -2044,16 +2044,17 @@ export function SessionView({
       progressRevision.current.revision = session.revision;
   }, [id, session]);
   const timing = currentTurn(session, id);
-  const timingConfirmed =
-    live.state === ConnectionState.Live &&
-    !live.error &&
-    !messages.error &&
-    !queue.error &&
-    !interactions.error &&
-    !control.uncertain &&
-    !control.error &&
-    data.recovery !== "required" &&
-    !Number(object(data.execution).unconfirmed_responses);
+  // Only loss of synchronization of the owning Session resource unconfirms
+  // timing. Definitive control rejections and unrelated queue/interaction read
+  // failures stay visible through their own surfaces without freezing the clock.
+  const timingConfirmed = turnTimingConfirmed({
+    liveLive: live.state === ConnectionState.Live,
+    liveFailed: Boolean(live.error),
+    messagesFailed: Boolean(messages.error),
+    controlUncertain: Boolean(control.uncertain),
+    recoveryRequired: data.recovery === "required",
+    unconfirmedResponses: Number(object(data.execution).unconfirmed_responses),
+  });
   const observedProgress = sessionProgress({
     session,
     sessionId: id,
