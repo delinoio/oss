@@ -187,7 +187,15 @@ function Shell({
   };
 
   const searchIntent = useRef(0);
+  const searchAbort = useRef<AbortController>(undefined);
   const searchMounted = useRef(false);
+  // Invalidates the latest opening intent and cancels its in-flight read so a
+  // superseded GetResource cannot linger, accumulate or run after reconnection.
+  const supersedeSearchOpening = () => {
+    searchIntent.current += 1;
+    searchAbort.current?.abort();
+    searchAbort.current = undefined;
+  };
   const [searchOpening, setSearchOpening] = useState<{
     id: string;
     status: SearchOpenStatus;
@@ -196,19 +204,19 @@ function Shell({
     searchMounted.current = true;
     return () => {
       searchMounted.current = false;
-      searchIntent.current += 1;
+      supersedeSearchOpening();
     };
   }, []);
   // Leaving Search supersedes a pending result opening synchronously, in the
   // navigation path itself: a read can settle after the new surface commits but
   // before passive effects flush, and must not override the chosen destination.
   const setSurface = (next: Surface) => {
-    if (next !== Surface.Search) searchIntent.current += 1;
+    if (next !== Surface.Search) supersedeSearchOpening();
     setSurfaceState(next);
   };
   useEffect(() => {
     if (surface === Surface.Search) return;
-    searchIntent.current += 1;
+    supersedeSearchOpening();
     setSearchOpening(undefined);
   }, [surface]);
   const [selected, setSelected] = useState("");
@@ -346,7 +354,7 @@ function Shell({
   });
   // Any deliberate navigation supersedes a pending Search-result resolution.
   const open = (id: string, originalParent?: string, name?: string) => {
-    searchIntent.current += 1;
+    supersedeSearchOpening();
     openSession(id, originalParent, name);
   };
   // A never-visited Sidechat result carries only its child ID, so its original
@@ -356,10 +364,19 @@ function Shell({
       open(id);
       return;
     }
-    const token = (searchIntent.current += 1);
+    supersedeSearchOpening();
+    const token = searchIntent.current;
+    const controller = new AbortController();
+    searchAbort.current = controller;
     const owner = transport;
     setSearchOpening({ id, status: SearchOpenStatus.Pending });
-    void resolveSearchSession(queryClient, owner, id).then((resolution) => {
+    void resolveSearchSession(
+      queryClient,
+      owner,
+      id,
+      controller.signal,
+    ).then((resolution) => {
+      if (searchAbort.current === controller) searchAbort.current = undefined;
       if (
         !searchMounted.current ||
         searchIntent.current !== token ||

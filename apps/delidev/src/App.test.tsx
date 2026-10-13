@@ -455,7 +455,10 @@ function fixture(
   const extraResources: Resource[] = [];
   const searchHits: { sessionName: string; message: Resource }[] = [];
   const readHook: {
-    current?: (request: { id: string; kind: EntityKind }) => Promise<void>;
+    current?: (
+      request: { id: string; kind: EntityKind },
+      signal: AbortSignal,
+    ) => Promise<void>;
   } = {};
   const searches = vi.fn(
     (request: {
@@ -503,8 +506,8 @@ function fixture(
       createSession: creates,
     });
     router.service(ResourceService, {
-      getResource: async (request) => {
-        await readHook.current?.(request);
+      getResource: async (request, context) => {
+        await readHook.current?.(request, context.signal);
         return {
           resource: [
             ...projects,
@@ -4530,6 +4533,48 @@ it("keeps the chosen destination when a pending Search read settles after leavin
     screen.queryByRole("textbox", { name: "Search conversations" }),
   ).toBeNull();
   expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  info.mockRestore();
+});
+
+it("aborts the pending Search read when Search is left, superseded or unmounted", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const first = sidechatOf(value.session),
+    second = sidechatOf(value.session);
+  value.extraResources.push(first, second);
+  value.searchHits.push(
+    searchHit(first, "First hit"),
+    searchHit(second, "Second hit"),
+  );
+  const signals = new Map<string, AbortSignal>();
+  value.readHook.current = async (request, signal) => {
+    if (request.id !== first.id && request.id !== second.id) return;
+    signals.set(request.id, signal);
+    await new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true }),
+    );
+  };
+  const view = render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "First hit" }));
+  await waitFor(() => expect(signals.has(first.id)).toBe(true));
+  expect(signals.get(first.id)!.aborted).toBe(false);
+  // A later result supersedes the earlier opening and cancels its read.
+  fireEvent.click(screen.getByRole("button", { name: "Second hit" }));
+  await waitFor(() => expect(signals.get(first.id)!.aborted).toBe(true));
+  await waitFor(() => expect(signals.has(second.id)).toBe(true));
+  expect(signals.get(second.id)!.aborted).toBe(false);
+  // Leaving Search cancels the current opening's read.
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await waitFor(() => expect(signals.get(second.id)!.aborted).toBe(true));
+  expect(sidechatTabs()).toHaveLength(0);
+  // Unmounting the shell cancels a still-pending read.
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "First hit" }));
+  await waitFor(() => expect(signals.get(first.id)!.aborted).toBe(false));
+  const third = signals.get(first.id)!;
+  view.unmount();
+  await waitFor(() => expect(third.aborted).toBe(true));
   info.mockRestore();
 });
 

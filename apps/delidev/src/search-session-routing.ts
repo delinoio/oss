@@ -101,6 +101,8 @@ export async function resolveSearchSession(
         return unavailable(id, "malformed-parent-metadata");
     }
   } catch {
+    // A cancelled read belongs to a superseded opening: nothing to report.
+    if (signal?.aborted) return { route: SearchSessionRoute.Unavailable };
     return unavailable(id, "read-failed");
   } finally {
     signal?.removeEventListener("abort", abort);
