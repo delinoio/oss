@@ -22,12 +22,16 @@ type credentialBody struct {
 	sseGuard      *credentialJSONGuard
 	patterns      [][]byte
 	shortPatterns [][]byte
-	previous      byte
-	hasPrevious   bool
-	pending       []byte
-	mu            sync.Mutex
-	failed        bool
-	eof           bool
+	// Header values are independent complete values rather than framed bodies,
+	// so their patterns always include JSON-escaped spellings.
+	headerPatterns      [][]byte
+	headerShortPatterns [][]byte
+	previous            byte
+	hasPrevious         bool
+	pending             []byte
+	mu                  sync.Mutex
+	failed              bool
+	eof                 bool
 }
 
 func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType ...string) *credentialBody {
@@ -56,16 +60,26 @@ func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, exp
 			} else {
 				g.jsonGuard.short = append(g.jsonGuard.short, []byte(candidate))
 			}
-			forms := [][]byte{[]byte(candidate)}
+			encoded, _ := json.Marshal(candidate)
+			escaped := encoded[1 : len(encoded)-1]
+			headerForms := [][]byte{[]byte(candidate), escaped}
+			g.headerPatterns = append(g.headerPatterns, bytes.Clone(encoded))
+			bodyForms := [][]byte{[]byte(candidate)}
 			if g.jsonGuard.framing != credentialOpaque {
 				// JSON-escaped spellings (for example a quoted or backslash
 				// escaped password) exist only in JSON-framed bodies. Opaque
 				// bodies are matched on their literal and Base64 wire forms.
-				encoded, _ := json.Marshal(candidate)
 				g.patterns = append(g.patterns, bytes.Clone(encoded))
-				forms = append(forms, encoded[1:len(encoded)-1])
+				bodyForms = append(bodyForms, escaped)
 			}
-			for _, form := range forms {
+			for _, form := range headerForms {
+				if len(form) >= 8 {
+					g.headerPatterns = append(g.headerPatterns, bytes.Clone(form))
+				} else {
+					g.headerShortPatterns = append(g.headerShortPatterns, bytes.Clone(form))
+				}
+			}
+			for _, form := range bodyForms {
 				if len(form) >= 8 {
 					g.patterns = append(g.patterns, bytes.Clone(form))
 				} else {
@@ -76,7 +90,9 @@ func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, exp
 			}
 		}
 	}
-	g.patterns = append(g.patterns, []byte("Basic "+base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password))))
+	basic := []byte("Basic " + base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password)))
+	g.patterns = append(g.patterns, basic)
+	g.headerPatterns = append(g.headerPatterns, bytes.Clone(basic))
 	if g.jsonGuard.framing == credentialUnknown {
 		// Typeless input can be either JSON or SSE. Keep a streaming SSE view
 		// alongside the bounded framing probe so a JSON-shaped unknown field name
@@ -137,7 +153,7 @@ func credentialJSONMediaType(mediaType string) bool {
 // Headers are complete independent values; response reads also carry the last
 // emitted byte and withhold an unresolved right boundary until another read/EOF.
 func (g *credentialBody) contains(raw []byte) bool {
-	return g.containsBounded(raw, true, 0, false)
+	return containsCredentialForms(raw, true, 0, false, g.headerPatterns, g.headerShortPatterns)
 }
 func credentialTokenByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_' || b == '-' || b >= 0x80
@@ -151,7 +167,7 @@ func (g *credentialBody) containsBounded(raw []byte, ended bool, previous byte, 
 // case, while preserving the body's case-sensitive token boundary rules.
 func (g *credentialBody) containsHeaderName(name string) bool {
 	raw := []byte(strings.ToLower(name))
-	patterns, short := make([][]byte, len(g.patterns)), make([][]byte, len(g.shortPatterns))
+	patterns, short := make([][]byte, len(g.headerPatterns)), make([][]byte, len(g.headerShortPatterns))
 	defer func() {
 		clear(raw)
 		for _, forms := range [][][]byte{patterns, short} {
@@ -160,10 +176,10 @@ func (g *credentialBody) containsHeaderName(name string) bool {
 			}
 		}
 	}()
-	for i, form := range g.patterns {
+	for i, form := range g.headerPatterns {
 		patterns[i] = bytes.ToLower(form)
 	}
-	for i, form := range g.shortPatterns {
+	for i, form := range g.headerShortPatterns {
 		short[i] = bytes.ToLower(form)
 	}
 	return containsCredentialForms(raw, true, 0, false, patterns, short)
@@ -292,6 +308,11 @@ func (g *credentialBody) Close() error {
 	}
 	for _, p := range g.shortPatterns {
 		clear(p)
+	}
+	for _, forms := range [][][]byte{g.headerPatterns, g.headerShortPatterns} {
+		for _, p := range forms {
+			clear(p)
+		}
 	}
 	g.previous, g.hasPrevious = 0, false
 	g.jsonGuard.clear()

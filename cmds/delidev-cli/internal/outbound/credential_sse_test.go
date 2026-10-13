@@ -452,3 +452,28 @@ func TestCredentialOpaqueMediaTypesIgnoreJSONEscapedSpellings(t *testing.T) {
 	}
 	guard.Close()
 }
+
+func TestCredentialOpaqueMediaTypesKeepEscapedHeaderGuards(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: `fixture-"password\<tail>`}
+	// Header values are complete independent values: a JSON-escaped spelling of
+	// a protected value is rejected there even when the body is opaque.
+	escaped := `fixture-\"password\\\u003ctail\u003e`
+	for _, mediaType := range []string{"application/vnd.github.diff", "text/plain", "application/json"} {
+		for _, expectJSON := range []bool{false, true} {
+			guard := newExpectedCredentialBody(io.NopCloser(strings.NewReader("")), credential, expectJSON, mediaType)
+			for _, value := range []string{escaped, `"` + escaped + `"`, "prefix " + escaped + " suffix", credential.Password} {
+				if !guard.contains([]byte(value)) {
+					t.Fatalf("header guard accepted a protected spelling %q %q %v", mediaType, value, expectJSON)
+				}
+			}
+			if guard.contains([]byte("unrelated header value")) {
+				t.Fatal("header guard rejected an unrelated value", mediaType, expectJSON)
+			}
+			// Opaque bodies still ignore the escaped spelling on the wire.
+			if guard.jsonGuard.framing == credentialOpaque && guard.containsBounded([]byte(escaped), true, 0, false) {
+				t.Fatal("opaque body matched a JSON-escaped spelling", mediaType)
+			}
+			guard.Close()
+		}
+	}
+}
