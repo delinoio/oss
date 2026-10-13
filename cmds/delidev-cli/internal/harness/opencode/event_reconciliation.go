@@ -422,7 +422,7 @@ func (o *inputObserver) reconciliationCopy() *inputObserver {
 		seen: maps.Clone(o.seen), reconciliationText: maps.Clone(o.reconciliationText), bytes: o.bytes, messages: map[string]*observedMessage{}, messageOrder: slices.Clone(o.messageOrder),
 		parts: map[string]*observedPart{}, attachments: maps.Clone(o.attachments), calls: maps.Clone(o.calls), progress: o.progress,
 		ctx: o.ctx, cancel: o.cancel, interactions: map[string]*observedInteraction{}, responseIDs: maps.Clone(o.responseIDs),
-		alwaysOrder: slices.Clone(o.alwaysOrder), sessionPermissions: slices.Clone(o.sessionPermissions), rejectionPolicy: o.rejectionPolicy, retries: slices.Clone(o.retries)}
+		alwaysOrder: slices.Clone(o.alwaysOrder), sessionPermissions: slices.Clone(o.sessionPermissions), rejectionPolicy: o.rejectionPolicy, retries: slices.Clone(o.retries), protected: o.protected}
 	for id, m := range o.messages {
 		v := *m
 		v.raw = slices.Clone(m.raw)
@@ -435,6 +435,7 @@ func (o *inputObserver) reconciliationCopy() *inputObserver {
 		v := *p
 		v.raw = slices.Clone(p.raw)
 		v.value, _ = decodeNativePart(v.raw)
+		v.guard = p.guard.Clone()
 		c.parts[id] = &v
 	}
 	for id, i := range o.interactions {

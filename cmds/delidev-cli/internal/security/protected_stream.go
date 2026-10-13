@@ -145,6 +145,27 @@ func (s *ProtectedStream) Flush() string {
 	return release
 }
 
+// Settle marks the withheld suffix as published through another verified path,
+// such as a complete snapshot that was itself checked as one frame. It keeps the
+// matching window so a later fragment still cannot complete a protected form
+// with the now published bytes, but nothing is returned or released again.
+func (s *ProtectedStream) Settle() {
+	if s == nil {
+		return
+	}
+	clear(s.held)
+	s.held = s.held[:0]
+}
+
+// Clone returns an independent copy for a transactional rehearsal. Mutating
+// either stream never changes the other.
+func (s *ProtectedStream) Clone() *ProtectedStream {
+	if s == nil {
+		return nil
+	}
+	return &ProtectedStream{forms: s.forms, maxHold: s.maxHold, tail: append([]byte(nil), s.tail...), held: append([]byte(nil), s.held...)}
+}
+
 // Discard clears every retained byte without publishing it. Use it on failure,
 // cancellation, interruption and ownership replacement.
 func (s *ProtectedStream) Discard() {
