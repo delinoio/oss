@@ -302,6 +302,8 @@ export function Usage({
     `usage-tab:${tabSelections}`,
     active && tabSelections > 0,
     EntranceMotion.Y4,
+    // Leaving Usage ends the tab entrance so a return never stacks transforms.
+    true,
   );
   const tabStrip = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {

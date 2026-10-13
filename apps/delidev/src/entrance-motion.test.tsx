@@ -9,10 +9,21 @@ import {
   useEntranceActivation,
 } from "./entrance-motion";
 
-function Harness({ enabled = true }: { enabled?: boolean }) {
+function Harness({
+  enabled = true,
+  clearWhenDisabled = false,
+}: {
+  enabled?: boolean;
+  clearWhenDisabled?: boolean;
+}) {
   const [activation, setActivation] = useState("first");
   const [text, setText] = useState("");
-  const entrance = useEntranceActivation(activation, enabled);
+  const entrance = useEntranceActivation(
+    activation,
+    enabled,
+    EntranceMotion.Y4,
+    clearWhenDisabled,
+  );
   return (
     <div>
       <div data-testid="surface" {...entrance}>
@@ -327,12 +338,17 @@ it("clears the attribute synchronously when an enclosed host requests a settle",
   expect(entering()).toBeNull();
 });
 
-it("clears an in-flight entrance when the surface stops being enabled and never replays on re-enable", () => {
-  const { rerender } = render(<Harness />);
+it("keeps a request-scoped entrance running when enabled turns off unless the surface opts in to clearing", () => {
+  const { rerender, unmount } = render(<Harness />);
   expect(entering()).toBe("y4");
   rerender(<Harness enabled={false} />);
+  expect(entering()).toBe("y4");
+  unmount();
+  const view = render(<Harness clearWhenDisabled />);
+  expect(entering()).toBe("y4");
+  view.rerender(<Harness enabled={false} clearWhenDisabled />);
   expect(entering()).toBeNull();
-  rerender(<Harness />);
+  view.rerender(<Harness clearWhenDisabled />);
   expect(entering()).toBeNull();
   act(() => {
     fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
