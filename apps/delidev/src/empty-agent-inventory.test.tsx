@@ -295,9 +295,7 @@ async function loadAllPages(f: ReturnType<typeof fixture>, pages: number) {
   await screen.findByText(/More Agent Worker choices are available/);
   fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
   for (let index = 1; index < pages; index++) {
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Load more/ }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: /Load more/ }));
     await waitFor(() => expect(f.reads).toHaveBeenCalledWith(`p${index + 1}`));
   }
   await waitFor(() =>

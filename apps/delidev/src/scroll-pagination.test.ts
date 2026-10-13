@@ -365,7 +365,8 @@ it("keeps a read accepted when its observer throws", async () => {
   expect(chain.getSnapshot().error).toBeUndefined();
 });
 
-const counted = (counts: Record<string, number>): PaginationReader<Row, Payload> =>
+const counted =
+  (counts: Record<string, number>): PaginationReader<Row, Payload> =>
   async (token, signal) => ({
     ...(await reader(token, signal)),
     rawCount: counts[token || "0"] ?? 0,
@@ -397,7 +398,8 @@ it("replaces raw page scalars when a refresh, reload or reset replaces the chain
   const chain = new PaginationChain<Row, Payload>();
   chain.activate();
   await chain.refresh(counted({ "0": 3 }));
-  for (let index = 0; index < 4; index++) await chain.append(counted({ "0": 3 }));
+  for (let index = 0; index < 4; index++)
+    await chain.append(counted({ "0": 3 }));
   expect(rawTotal(chain)).toBe(3);
   await chain.refresh(counted({}));
   expect(chain.getSnapshot().pages).toHaveLength(5);
