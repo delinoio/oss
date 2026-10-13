@@ -8,7 +8,7 @@ Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAcco
 
 ## Request diagnostic client
 
-Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
+Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, the closed `RequestDiagnosticAttribution` (a builtin reviewer record has no catalog `model`), optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
 
 Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to remove retired historical aggregate

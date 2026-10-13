@@ -14706,6 +14706,28 @@
       "member": "png",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 2248,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticAttribution",
+      "member": "REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2248,
+      "kind": "enum",
+      "declaration": "RequestDiagnosticAttribution",
+      "member": "REQUEST_DIAGNOSTIC_ATTRIBUTION_CODEX_REVIEWER",
+      "number": 1
+    },
+    {
+      "issue": 2248,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "attribution",
+      "number": 34
     }
   ],
   "rpcReservations": [
