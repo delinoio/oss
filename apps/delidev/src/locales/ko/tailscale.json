@@ -49,5 +49,8 @@
   "tailscale.machineApproval": "Tailscale 기기 승인 필요",
   "tailscale.stopped": "Tailscale 중지됨",
   "tailscale.starting": "Tailscale 시작 중",
-  "tailscale.cancel": "원래 요청 취소"
+  "tailscale.cancel": "원래 요청 취소",
+  "tailscale.retryResume": "원래 재개 요청 다시 시도",
+  "tailscale.retryCancel": "원래 취소 요청 다시 시도",
+  "tailscale.retainedRequestHelp": "이 연결의 이전 요청이 이미 접수되었을 수 있습니다. 다른 요청을 보내기 전에 원래 요청을 다시 시도하세요."
 }

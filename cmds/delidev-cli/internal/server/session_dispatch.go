@@ -343,13 +343,26 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 // converting or replacing the original native assignment. Legacy operations
 // retain their existing capability contract; only new executions require v4.
 func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) error {
+	return checkedExecutionSourceWith(tx, sr, session, machine, input, session.OwnsExecution)
+}
+
+// Sidechat retry replays the exact parent turn accepted at admission. The parent
+// may have selected a later execution since, so ownership is the immutable
+// origin of the session (Worker, Agent and initial configuration) instead of its
+// current selection. Every other source check, including the captured workspace
+// preparation and Worker profile, is unchanged.
+func checkedHistoricalExecutionSource(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) error {
+	return checkedExecutionSourceWith(tx, sr, session, machine, input, session.OwnsHistoricalExecution)
+}
+
+func checkedExecutionSourceWith(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput, owns func(domain.ExecutionJobInput) bool) error {
 	if input.NativeDynamicTools && !slices.Contains(machine.WorkerCapabilities, domain.CodexDynamicToolsV1) {
 		return executionEventConflict()
 	}
 	if input.NativeImageGeneration && !slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1) {
 		return domain.Fail(domain.Unsupported, "The original Runner Device no longer supports generated images.", "Restore its original Worker profile before continuing this execution.")
 	}
-	if input.Validate() != nil || !session.OwnsExecution(input) {
+	if input.Validate() != nil || !owns(input) {
 		return continuationConflict()
 	}
 	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
