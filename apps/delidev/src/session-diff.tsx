@@ -4,8 +4,13 @@ import { Surface } from "./surface";
 import { copy, useLocale } from "./localization";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { useQuery } from "@connectrpc/connect-query";
-import { SessionQuery } from "@delinoio/delidev-api-client";
+import {
+  createQueryOptions,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import {
   Comparison,
@@ -229,16 +234,17 @@ export function RepositoryDiff({
   const [menu, setMenu] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null),
     pathInput = useRef<HTMLInputElement>(null);
+  const optionsInput = {
+    sessionId,
+    queryJson: encode({
+      operation: "git-diff-options",
+      repository_id: repository,
+      path: ".",
+    }),
+  };
   const options = useQuery(
     SessionQuery.readSessionWorkspace,
-    {
-      sessionId,
-      queryJson: encode({
-        operation: "git-diff-options",
-        repository_id: repository,
-        path: ".",
-      }),
-    },
+    optionsInput,
     {
       ...workspaceReadOptions,
       enabled: comparison === Comparison.Branch,
@@ -296,10 +302,16 @@ export function RepositoryDiff({
   }, [negotiatedKey]);
   // A failed explicit options refresh keeps the previous inventory (and any
   // diff derived from it) only as a stale observation.
+  // The explicit refresh reads through a disposable query, so its failure is
+  // recorded here, bound to the session and repository that issued it.
+  const optionsOwner = [sessionId, repository].join("\u0000");
+  const [refreshFailedOwner, setRefreshFailedOwner] = useState<
+    string | undefined
+  >();
   const optionsStale =
     comparison === Comparison.Branch &&
-    options.isError &&
-    Boolean(options.data);
+    Boolean(options.data) &&
+    (options.isError || refreshFailedOwner === optionsOwner);
   const [refreshing, setRefreshing] = useState(false);
   const scope = [
     sessionId,
@@ -311,6 +323,8 @@ export function RepositoryDiff({
   const scopeRef = useRef(scope),
     mounted = useRef(true);
   scopeRef.current = scope;
+  const transport = useTransport(),
+    queryClient = useQueryClient();
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -353,14 +367,47 @@ export function RepositoryDiff({
       wasEnabled = enabled,
       previousBase = chosenBase;
     setRefreshing(true);
+    setRefreshFailedOwner(undefined);
+    // The explicit read uses a refresh-scoped disposable query identity, so a
+    // late response never reaches the accepted options inventory unless the
+    // originating scope still owns it when the response arrives.
+    const accepted = createQueryOptions(
+      SessionQuery.readSessionWorkspace,
+      optionsInput,
+      { transport },
+    );
+    const disposableKey = [
+      ...accepted.queryKey,
+      { optionsRefresh: newRequestId() },
+    ];
     try {
-      const fresh = await options.refetch();
-      if (!mounted.current || scopeRef.current !== token) return;
-      if (fresh.isError || !fresh.data) return;
-      const nextBase = baseRef ?? fresh.data.default;
+      let response: { documentJson: Uint8Array };
+      try {
+        response = await queryClient.fetchQuery({
+          queryKey: disposableKey,
+          retry: false,
+          gcTime: 0,
+          staleTime: 0,
+          queryFn: (context) =>
+            accepted.queryFn({ ...context, queryKey: accepted.queryKey }),
+        });
+      } finally {
+        queryClient.removeQueries({ queryKey: disposableKey, exact: true });
+      }
+      if (!mounted.current || scopeRef.current !== token) {
+        console.debug("delidev.diff.options_refresh_retired", {
+          sessionId,
+          repository,
+          reason: mounted.current ? "scope-changed" : "disposed",
+        });
+        return;
+      }
+      const fresh = readDiffOptions(response.documentJson, repository);
+      queryClient.setQueryData(accepted.queryKey, response);
+      const nextBase = baseRef ?? fresh.default;
       const available =
         nextBase !== undefined &&
-        fresh.data.choices.some(
+        fresh.choices.some(
           (choice) =>
             choice.available && sameReference(choice.reference, nextBase),
         );
@@ -373,6 +420,15 @@ export function RepositoryDiff({
         sameReference(previousBase, nextBase)
       )
         await result.refetch();
+    } catch (error) {
+      if (mounted.current && scopeRef.current === token) {
+        console.warn("delidev.diff.options_refresh_failed", {
+          sessionId,
+          repository,
+          error,
+        });
+        setRefreshFailedOwner(optionsOwner);
+      }
     } finally {
       if (mounted.current) setRefreshing(false);
     }
@@ -666,6 +722,7 @@ export function RepositoryDiff({
             sessionId={sessionId}
             diff={result.data}
             reading={
+              refreshing ||
               result.isFetching ||
               Boolean(result.error) ||
               optionsStale ||

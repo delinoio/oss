@@ -853,6 +853,294 @@ it("fences a late options response after the comparison changes", async () => {
   ]);
 });
 
+type Gate = { release: () => void };
+
+// Holds the next read until released. Queue gates in request order.
+function holdNextRead(f: ReturnType<typeof fixture>): Gate {
+  const inner = f.read.getMockImplementation()!;
+  let release: () => void = () => {};
+  const opened = new Promise<void>((resolve) => (release = resolve));
+  f.read.mockImplementationOnce(async (request) => {
+    await opened;
+    return inner(request);
+  });
+  return { release: () => release() };
+}
+
+const addReviewComment = () =>
+  screen.getByRole("button", {
+    name: "Add review comment",
+  }) as HTMLButtonElement;
+
+// Raw options inventories currently held by the query cache, as default names.
+function cachedOptionDefaults(client: QueryClient) {
+  return client
+    .getQueryCache()
+    .getAll()
+    .flatMap((query) => {
+      const data = query.state.data as
+        | { documentJson?: Uint8Array }
+        | undefined;
+      if (!data?.documentJson) return [];
+      const value = JSON.parse(new TextDecoder().decode(data.documentJson));
+      return value.diff_options
+        ? [value.diff_options.default?.name as string]
+        : [];
+    });
+}
+
+it("keeps Add review comment disabled through the Branch Refresh options and diff phases", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  const options = holdNextRead(f),
+    diff = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  expect(addReviewComment().disabled).toBe(true);
+  options.release();
+  await waitFor(() => expect(operations()).toHaveLength(before + 2));
+  expect(operations().at(-1)).toBe("git-diff:branch:main");
+  expect(addReviewComment().disabled).toBe(true);
+  diff.release();
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+});
+
+it("keeps authoring closed until a changed implicit default has a ready comparison", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "trunk" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  state.defaultName = "trunk";
+  const options = holdNextRead(f),
+    diff = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  expect(addReviewComment().disabled).toBe(true);
+  options.release();
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:trunk"));
+  expect(
+    screen.queryByRole("button", { name: "Add review comment" }) === null ||
+      addReviewComment().disabled,
+  ).toBe(true);
+  diff.release();
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  fireEvent.click(addReviewComment());
+  expect(addReviewComment().disabled).toBe(true);
+});
+
+it("keeps authoring gated when the options refresh fails or removes the explicit base", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "other" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: JSON.stringify(["local-branch", "other", undefined]) },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:other"),
+  );
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(
+    "Refresh failed. The previous observation is stale and shown below.",
+  );
+  expect(addReviewComment().disabled).toBe(true);
+  const failed = operations().length;
+  state.choices = [{ name: "main" }];
+  refreshDiff();
+  await screen.findByText(/No available default base/);
+  expect(operations().slice(failed)).toEqual(["git-diff-options"]);
+  expect(
+    screen.queryByRole("button", { name: "Add review comment" }),
+  ).toBeNull();
+});
+
+it("does not gate authoring on options for working-tree Refresh", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "working-tree" },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:working-tree:"),
+  );
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  const diff = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  expect(operations().at(-1)).toBe("git-diff:working-tree:");
+  diff.release();
+  await waitFor(() => expect(addReviewComment().disabled).toBe(false));
+  expect(operations().slice(before)).toEqual(["git-diff:working-tree:"]);
+});
+
+it("does not publish a late options response after the comparison changes and returns", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:staged:"));
+  options.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:main"),
+  );
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+    JSON.stringify(["local-branch", "main", null]),
+  );
+  expect(operations()).not.toContain("git-diff:branch:late-next");
+  expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
+});
+
+it("does not publish a late options response after the path changes", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
+  fireEvent.change(screen.getByLabelText("Relative diff path"), {
+    target: { value: "src/main.ts" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:main"),
+  );
+  options.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(operations()).not.toContain("git-diff:branch:late-next");
+  expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+    JSON.stringify(["local-branch", "main", null]),
+  );
+});
+
+it("does not publish a late options response after the repository changes", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  state.defaultName = "main";
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:main"),
+  );
+  options.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(operations()).not.toContain("git-diff:branch:late-next");
+  expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
+});
+
+it("does not publish a late options response after the diff is disposed", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  const view = render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  view.unmount();
+  options.release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(operations()).toHaveLength(before + 1);
+  expect(cachedOptionDefaults(f.client)).toEqual([]);
+  expect(f.client.getQueryCache().getAll()).toHaveLength(0);
+});
+
+it("accepts a fresh options response for the unchanged scope and drops a failed one", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "trunk" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "trunk";
+  refreshDiff();
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:trunk"),
+  );
+  expect(cachedOptionDefaults(f.client)).toEqual(["trunk"]);
+  const settled = operations().length;
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  state.defaultName = "main";
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  refreshDiff();
+  await screen.findByText(
+    "Refresh failed. The previous observation is stale and shown below.",
+  );
+  expect(operations().slice(settled)).toEqual(["git-diff-options"]);
+  expect(cachedOptionDefaults(f.client)).toEqual(["trunk"]);
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);
