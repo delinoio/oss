@@ -198,6 +198,28 @@ fn missing_relative_dynamic_import_fails_when_absent_everywhere() {
 }
 
 #[test]
+fn missing_no_substitution_template_dynamic_import_fails() {
+    if !pinned_node() {
+        return;
+    }
+    // The baseline keeps the chunk the optimized build lost. Templates with
+    // substitutions cannot be resolved statically and stay ignored.
+    let (_temp, outcome) = two_builds(
+        ENTRY_HTML,
+        "import(`./lazy-12345678.js`); const n = 1; import(`./dynamic-${n}.js`);",
+        &[LAZY],
+        &[],
+    );
+    assert!(!outcome.success);
+    assert_eq!(outcome.report["passed"], false);
+    assert!(broken(&outcome, "original").is_empty());
+    assert_eq!(
+        broken(&outcome, "optimized"),
+        ["assets/main-12345678.js -> ./lazy-12345678.js"]
+    );
+}
+
+#[test]
 fn missing_static_imports_fail_in_every_syntax() {
     if !pinned_node() {
         return;

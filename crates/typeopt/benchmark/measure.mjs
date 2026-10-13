@@ -55,7 +55,8 @@ async function measure(root) {
 }
 // Loading references are the local module edges a browser follows: module
 // scripts and modulepreload links in HTML, and static `import`/`export ...
-// from` specifiers and literal `import()` arguments in JavaScript. Each one
+// from` specifiers and literal `import()` arguments (quoted strings or
+// templates without substitutions) in JavaScript. Each one
 // must resolve to a file of its own build, whether or not any other build
 // emits an asset with the same logical name. Other quoted `.js` strings,
 // remote URLs and bare specifiers are not loading references.
@@ -100,18 +101,29 @@ function scanModuleSpecifiers(text) {
       else if (last === "(" && before === "import") specifiers.push(value);
       remember('"');
     } else if (character === "`") {
-      // Skip the template, including nested `${...}` expressions.
+      // Skip the template, including nested `${...}` expressions. A template
+      // without substitutions is a literal, so keep its text for `import()`.
       let depth = 0;
+      let substituted = false;
+      let value = "";
       i++;
       while (i < text.length && !(text[i] === "`" && depth === 0)) {
-        if (text[i] === "\\") i++;
-        else if (text[i] === "$" && text[i + 1] === "{") {
+        if (text[i] === "\\") {
+          if (depth === 0) value += text[i];
+          i++;
+          if (depth === 0) value += text[i] ?? "";
+        } else if (text[i] === "$" && text[i + 1] === "{") {
           depth++;
+          substituted = true;
           i++;
         } else if (text[i] === "}" && depth > 0) depth--;
+        else if (depth === 0) value += text[i];
         i++;
       }
       i++;
+      const [before, last] = previous;
+      if (!substituted && last === "(" && before === "import")
+        specifiers.push(value);
       remember("`");
     } else if (isIdentifierCharacter(character)) {
       let end = i;
