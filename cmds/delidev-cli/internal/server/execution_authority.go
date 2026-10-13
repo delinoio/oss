@@ -651,7 +651,10 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 func ambiguousReferenceLease(logger *slog.Logger, source *apiproxy.Lease, role string) *apiproxy.Lease {
 	request := *source
 	request.BindModel = nil
-	request.ObserveReference = nil
+	// Keep a validation-only observer: the proxy validates the response identity
+	// only while a callback is present, but an ambiguous response must not be
+	// recorded as history.
+	request.ObserveReference = func(context.Context, apiproxy.ReferenceKind, string) error { return nil }
 	request.AuthorizeReference = func(ctx context.Context, kind apiproxy.ReferenceKind, _ string) error {
 		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", kind)
 		return domain.Fail(domain.PermissionDenied, "The native state reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")

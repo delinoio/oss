@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -250,5 +251,34 @@ func TestReviewerDistinctModelNamesKeepOrdinaryItemReferences(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || forwarded.Load() != 1 {
 		t.Fatalf("ordinary root item reference lost relay: status=%d forwarded=%d", response.StatusCode, forwarded.Load())
+	}
+}
+
+func TestReviewerCollisionKeepsResponseIdentityValidation(t *testing.T) {
+	bodies := map[string]string{
+		"non-string": `{"id":42,"object":"response","output":[]}`,
+		"oversized":  `{"id":"` + strings.Repeat("r", 257) + `","object":"response","output":[]}`,
+	}
+	for _, role := range []reviewerCollisionRole{collisionRoot, collisionChild, collisionDistinct} {
+		for name, body := range bodies {
+			t.Run(string(role)+"/"+name, func(t *testing.T) {
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, body)
+				}))
+				defer upstream.Close()
+				c := newReviewerCollision(t, role, upstream.URL)
+				model := "gpt-5.6-luna"
+				if role == collisionDistinct {
+					model = "fixture-model"
+				}
+				response := c.fixture.request(t, c.fixture.token, `{"model":"`+model+`","input":[]}`)
+				payload, _ := io.ReadAll(response.Body)
+				response.Body.Close()
+				if response.StatusCode == http.StatusOK || strings.Contains(string(payload), strings.Repeat("r", 257)) {
+					t.Fatalf("invalid response identity reached the native client: status=%d", response.StatusCode)
+				}
+			})
+		}
 	}
 }
