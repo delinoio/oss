@@ -240,10 +240,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 
 	case "update":
-		if len(rest) > 0 && (rest[0] == "check" || rest[0] == "worker-request" || rest[0] == "cancel") {
-			ensureRequest(&o)
-		}
-		value, err := updateCommand(ctx, c, o, rest)
+		value, err := updateCommand(ctx, c, &o, rest)
 		return emit(value, err)
 	case "storage":
 		if code, handled := dispatchStorage(ctx, c, o, rest, streams); handled {
