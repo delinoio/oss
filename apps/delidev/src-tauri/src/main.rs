@@ -2124,6 +2124,10 @@ fn run() -> Result<(), NativeFailure> {
              protection at rest."
         );
     }
+    // Replay any native update outcome a previous process could not publish to
+    // its original Installing journal before fresh installation is admitted.
+    let update_host = Arc::new(UpdateHost::default());
+    update_host.begin_launch_reconcile(Arc::clone(&connector));
     let app = tauri::Builder::<CefRuntime>::new()
         // Windows is an approved unsandboxed exception until upstream supports
         // Chromium's broker for executable hosts. Auto warns about that limit;
@@ -2142,7 +2146,7 @@ fn run() -> Result<(), NativeFailure> {
                 })
                 .root_cache_path(browser.cache_root()),
         )
-        .manage(Arc::new(UpdateHost::default()))
+        .manage(Arc::clone(&update_host))
         .manage(Arc::new(quit_host::QuitHost::default()))
         .manage(Arc::clone(&browser))
         .manage(Arc::new(ProductWindows::default()))

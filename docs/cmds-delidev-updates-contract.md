@@ -39,6 +39,32 @@ A lost reply retries the same phase; it never invokes installation or creates a
 generation. Failed persistence retains original retry/inspection ownership and
 logs uncertainty without claiming terminal publication.
 
+Before the first settlement attempt, the native host durably retains the exact
+observed outcome in a private per-operation record at
+`<root>/desktop-updates/native-outcomes/<operation-id>.json`, beside the Go-owned
+journal in the original connector root scope. The record is a closed `outcome`
+kind with the phase (`installed`, `failed` or `uncertain` only), server ID,
+operation ID, revision, native generation and optional saved-connection ID. The
+directory is owner-only and never repaired or created outside an existing
+`desktop-updates` scope; files are written owner-only through a fsynced
+temporary file and atomic rename, bounded to 4 KiB, and an existing record for
+the same operation is never replaced with different content. The record is
+retired only after the offline `native-outcome` response echoes the recorded
+phase for the same identities, and only when the stored bytes still equal the
+verified record. On the next launch a bounded background pass, and each
+original-scope `native-inspect` for the exact server, operation, revision and
+saved scope, replays the retained phase through the same offline writer with a
+settlement-only token. That token has no installer entry point, so replay never
+invokes installation and never changes the journal phase or generation. Launch
+keeps fresh installation admission busy until the pass ends, and Quit stops the
+pass between records. Corrupt, oversized, symlinked, misnamed, unknown-field,
+foreign-identity or rejected records stay on disk, are logged with typed
+outcomes and never authorize installation. A missing journal or record is never
+inferred as Installed. Fixture sidecars cover Installed, Failed and Uncertain
+replay, lost replies, foreign scope and corrupt evidence; they do not establish
+installed-platform acceptance. The record kind enum is the extension point for
+later retained native evidence.
+
 The native application manifest declares `desktop_update_context` and
 `desktop_update_native` under the dedicated closed `desktop-update` permission.
 Only the existing main/local-* and server-* product document capabilities grant
