@@ -46,3 +46,37 @@ func TestNamedWorkspacePreparationRequiresSeparateNegotiation(t *testing.T) {
 		t.Fatal("unsupported names changed the filesystem", err)
 	}
 }
+
+func TestSidechatForkPreflightRequiresNamedDirectoryNegotiation(t *testing.T) {
+	repository := domain.NewID()
+	for _, test := range []struct {
+		name   string
+		frozen string
+		want   bool
+	}{{"named source", "oss", true}, {"unnamed source", "", false}} {
+		t.Run(test.name, func(t *testing.T) {
+			preparation, err := json.Marshal(workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: domain.Worktree, PrimaryRepository: repository, Repositories: []workspace.RepositorySpec{{ID: repository, DirectoryName: test.frozen}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := domain.ForkJobInput{Version: 3, Purpose: domain.SidechatFork, Workspace: domain.Worktree}
+			input.SourceAssignment.Preparation = preparation
+			raw, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Join(t.TempDir(), "worker")
+			_, err = execute(context.Background(), Config{Root: root}, domain.NewID(), domain.Job{Type: domain.ForkSessionJob, MachineID: domain.NewID(), Input: raw})
+			unsupported := workspace.NamedDirectoriesUnsupported()
+			rejected := err != nil && domain.SafeError(err).Code == unsupported.Code && domain.SafeError(err).Message == unsupported.Message
+			if rejected != test.want {
+				t.Fatalf("named-directory rejection = %v, want %v (error %v)", rejected, test.want, err)
+			}
+			if test.want {
+				if _, err := os.Lstat(root); !os.IsNotExist(err) {
+					t.Fatal("named Sidechat preflight changed the filesystem", err)
+				}
+			}
+		})
+	}
+}

@@ -15,6 +15,8 @@ import {
 import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { sidechatAnswerFilter } from "./sidechat-retry";
+import { conversationProjection } from "./tool-turn-projection";
 
 export function SidechatFindings({
   session,
@@ -53,10 +55,14 @@ export function SidechatFindings({
   const supported = status.data?.capabilities.includes(
     SystemCapability.NATIVE_SIDECHAT_V1,
   );
+  // Superseded retry answers stay readable history but are never transferable;
+  // the server enforces the same selected-generation rule.
+  const currentAnswer = sidechatAnswerFilter(session);
   const eligible = messages.filter((row) => {
     const m = document(row);
     return (
       row.kind === EntityKind.MESSAGE &&
+      currentAnswer(conversationProjection(row, session.id)) &&
       row.sessionId === session.id &&
       m.role === "assistant" &&
       m.state === "complete" &&

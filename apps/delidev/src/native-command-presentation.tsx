@@ -186,6 +186,12 @@ export function nativeCommandPresentation(
     !["streaming", "complete"].includes(text(d.state))
   )
     return;
+  // The started command and cwd are immutable; exact comparison, no normalization.
+  if (
+    completed &&
+    (completed.command !== started.command || completed.cwd !== started.cwd)
+  )
+    return;
   const inputs = tool.inputs ?? [];
   if (!Array.isArray(inputs) || inputs.length > 1024) return;
   let sequence = 0;

@@ -4,6 +4,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { FailureCode } from "@delinoio/delidev-api-client";
 import {
   PaginationChain,
+  pagesResident,
   ReadStage,
   type PaginationReader,
 } from "./scroll-pagination";
@@ -256,6 +257,37 @@ it("retains only resident payloads for an inert owner while fencing paused reads
   chain.reset();
   expect(chain.getSnapshot().payloadPages).toEqual([]);
   expect(chain.getSnapshot().rows).toEqual([]);
+});
+
+it("does not treat a terminal token as resident payload evidence after eviction", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  for (let index = 0; index < 5; index++) await chain.append(reader);
+  const evicted = chain.getSnapshot();
+  expect(evicted.loaded).toBe(true);
+  expect(evicted.nextPageToken).toBe("");
+  expect(evicted.pages.length).toBeGreaterThan(evicted.payloadPages.length);
+  expect(evicted.payloadPages.length).toBeLessThanOrEqual(3);
+  expect(pagesResident(evicted)).toBe(false);
+  // Restoration stays reachable and refills the evicted page.
+  await chain.restore("", reader);
+  expect(chain.getSnapshot().payloadPages.length).toBeLessThanOrEqual(3);
+  expect(chain.getSnapshot().payloadPages.map((page) => page.token)).toContain(
+    "",
+  );
+});
+
+it("reports full residency for fully resident pages", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  expect(pagesResident(chain.getSnapshot())).toBe(true);
+  await chain.append(reader);
+  await chain.append(reader);
+  expect(chain.getSnapshot().pages).toHaveLength(3);
+  expect(pagesResident(chain.getSnapshot())).toBe(true);
+  expect(pagesResident({ pages: [], payloadPages: [] })).toBe(true);
 });
 
 it("runs the accepted observer for every reached page, including evicted ones, while payloads stay bounded", async () => {

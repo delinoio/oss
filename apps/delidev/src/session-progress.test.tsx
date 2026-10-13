@@ -108,8 +108,17 @@ it.each(["local", "worktree", "general-chat"])(
   "hides Info only for the proven original input in %s",
   (workspace) => {
     expect(hidesInfo(observation({ workspace }))).toBe(true);
+    expect(
+      hidesInfo(
+        observation(
+          { workspace, execution: undefined },
+          { queue: [originalRow()] },
+        ),
+      ),
+    ).toBe(true);
+    // A current empty queue is not first-input ownership evidence.
     expect(hidesInfo(observation({ workspace, execution: undefined }))).toBe(
-      true,
+      false,
     );
     expect(hidesInfo(observation({ workspace, last_input_sequence: 2 }))).toBe(
       false,
@@ -198,16 +207,19 @@ it("requires the durable first-input counter for every startup hiding path", () 
   const starting = { execution: undefined };
   const response = { execution: { ...progress } };
   for (const extra of [starting, response]) {
-    expect(hidesInfo(observation({ ...extra }))).toBe(true);
+    const options = { queue: extra === starting ? [originalRow()] : [] };
+    expect(hidesInfo(observation({ ...extra }, options))).toBe(true);
     expect(
-      hidesInfo(observation({ ...extra, last_input_sequence: undefined })),
+      hidesInfo(
+        observation({ ...extra, last_input_sequence: undefined }, options),
+      ),
     ).toBe(false);
-    expect(hidesInfo(observation({ ...extra, last_input_sequence: 2 }))).toBe(
-      false,
-    );
-    expect(hidesInfo(observation({ ...extra, last_input_sequence: 0 }))).toBe(
-      false,
-    );
+    expect(
+      hidesInfo(observation({ ...extra, last_input_sequence: 2 }, options)),
+    ).toBe(false);
+    expect(
+      hidesInfo(observation({ ...extra, last_input_sequence: 0 }, options)),
+    ).toBe(false);
   }
   expect(sessionProgress(observation({ last_input_sequence: undefined }))).toBe(
     SessionProgressPhase.Response,
@@ -218,6 +230,19 @@ it("keeps Info visible when Starting lacks a current owned original queue row", 
   expect(sessionProgress(observation(starting))).toBe(
     SessionProgressPhase.Starting,
   );
+  // A successful current read with no rows has not proven the original input.
+  expect(sessionProgress(observation(starting, { queue: [] }))).toBe(
+    SessionProgressPhase.Starting,
+  );
+  expect(hidesInfo(observation(starting, { queue: [] }))).toBe(false);
+  expect(
+    initialSessionStartup(
+      observation(starting).session,
+      SessionProgressPhase.Starting,
+      true,
+      [],
+    ),
+  ).toBe(false);
   for (const delivery of ["queued", "claimed", "accepted"]) {
     expect(
       hidesInfo(observation(starting, { queue: [originalRow({ delivery })] })),
