@@ -182,6 +182,10 @@ func (u ExecutionQuestionResponseUpdate) Validate() error {
 type QuestionAcceptanceEvidence string
 
 const NativeQuestionOutput QuestionAcceptanceEvidence = "native-question-output"
+
+// NativeMCPElicitationResolved is the exact native resolution of a managed MCP
+// elicitation after its transmitted response; it is not a tool-output claim.
+const NativeMCPElicitationResolved QuestionAcceptanceEvidence = "native-mcp-elicitation-resolved"
 const NativeOpenCodeQuestionReply QuestionAcceptanceEvidence = "native-opencode-question-reply"
 const NativeOpenCodeQuestionRejected QuestionAcceptanceEvidence = "native-opencode-question-rejected"
 
@@ -211,7 +215,7 @@ func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
 	if (u.Evidence == NativeOpenCodeQuestionReply || u.Evidence == NativeOpenCodeQuestionRejected) && u.OpenCode != nil {
 		return u.OpenCode.Validate(UserQuestionInteraction)
 	}
-	if u.OpenCode != nil || u.Evidence != NativeQuestionOutput {
+	if u.OpenCode != nil || u.Evidence != NativeQuestionOutput && u.Evidence != NativeMCPElicitationResolved {
 		return Fail(InvalidArgument, "Unknown native question acceptance evidence.", "Use the exact owned native tool-output observation; transport or closure cannot substitute for acceptance.")
 	}
 	return nil

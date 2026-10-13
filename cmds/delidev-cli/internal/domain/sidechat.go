@@ -25,7 +25,7 @@ func (c ExecutionConfiguration) ValidateSidechat() error {
 	if c.SidechatPolicy == "" {
 		return nil
 	}
-	if c.SidechatPolicy != CodexReadOnlySidechatV1 || c.Harness != Codex || (c.Subscription && c.SubscriptionService != SubscriptionChatGPT) || c.Options.Permission != PermissionReadOnly || c.Options.ApprovalPolicy != "never" || c.Options.ApprovalsReviewer.Effective() != CodexReviewerUser || c.Options.ApprovalReviewModel != "" || c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0 || c.SubagentModel != nil {
+	if len(c.ManagedMCP) != 0 || c.SidechatPolicy != CodexReadOnlySidechatV1 || c.Harness != Codex || (c.Subscription && c.SubscriptionService != SubscriptionChatGPT) || c.Options.Permission != PermissionReadOnly || c.Options.ApprovalPolicy != "never" || c.Options.ApprovalsReviewer.Effective() != CodexReviewerUser || c.Options.ApprovalReviewModel != "" || c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0 || c.SubagentModel != nil {
 		return SidechatUnavailable()
 	}
 	return nil
@@ -50,6 +50,8 @@ func SidechatSnapshot(parent InitialExecution) (InitialExecution, error) {
 	c.Options.Permission, c.Options.ApprovalPolicy, c.Options.ApprovalReviewModel = PermissionReadOnly, "never", ""
 	c.Options.SubagentModel, c.Options.SubagentEffort, c.Options.MaxConcurrency = "", "", 0
 	c.SubagentModel = nil
+	// Read-only Sidechat never inherits external managed MCP authority.
+	c.ManagedMCP = nil
 	child.ConfigurationDigest, err = c.Digest()
 	if err != nil || c.Validate() != nil {
 		return InitialExecution{}, SidechatUnavailable()

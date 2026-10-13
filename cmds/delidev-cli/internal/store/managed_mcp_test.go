@@ -11,9 +11,13 @@ import (
 func TestManagedMCPFrozenGenerationsAndEligibility(t *testing.T) {
 	s, _ := openTest(t)
 	machine, worker, id := domain.NewID(), domain.NewID(), domain.NewID()
-	d := domain.ManagedMCPDefinition{ID: id, Revision: 1, MachineID: machine, WorkerDeviceID: worker, Name: "Original", Transport: domain.MCPStreamableHTTP, Endpoint: "https://fixture.test/mcp", Enabled: true, Authentication: domain.MCPManualAuthentication, CredentialID: domain.NewID(), SupportedHarnesses: []domain.Harness{domain.Codex}}
+	// Saved support is never trusted: the Runner's published capability decides it.
+	d := domain.ManagedMCPDefinition{ID: id, Revision: 1, MachineID: machine, WorkerDeviceID: worker, Name: "Original", Transport: domain.MCPStreamableHTTP, Endpoint: "https://fixture.test/mcp", Enabled: true, Authentication: domain.MCPManualAuthentication, CredentialID: domain.NewID()}
 	selections := &domain.ManagedMCPSelections{Selections: []domain.ManagedMCPSelection{{MachineID: machine, WorkerDeviceID: worker, DefinitionID: id}}}
 	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.mcp", id, func(tx *Tx) (any, error) {
+		if _, e := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "Original Runner", OS: "linux", Architecture: "amd64", WorkerCapabilities: []domain.WorkerCapability{domain.ManagedMCPV1, domain.CodexManagedMCPV1}}); e != nil {
+			return nil, e
+		}
 		if _, e := tx.Put(domain.DeviceKind, worker, 0, "", "", domain.Device{Name: "Original Worker", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); e != nil {
 			return nil, e
 		}
@@ -51,8 +55,22 @@ func TestManagedMCPFrozenGenerationsAndEligibility(t *testing.T) {
 	if first[0].Revision != 1 || first[0].Name != "Original" || second[0].Revision != 2 || first[0].CredentialID == second[0].CredentialID {
 		t.Fatal("edit rewrote original generation")
 	}
+	if len(first[0].SupportedHarnesses) != 1 || first[0].SupportedHarnesses[0] != domain.Codex {
+		t.Fatal("the frozen generation did not record the Runner's verified native support")
+	}
 	for _, mode := range []string{"disabled", "unverified", "expired", "pending", "deleted", "foreign", "unresolved"} {
 		t.Run(mode, func(t *testing.T) {
+			if mode == "unverified" {
+				t.Cleanup(func() {
+					_, _ = s.Mutate(context.Background(), domain.NewID(), "fixture.mcp.capability.restore", mode, func(tx *Tx) (any, error) {
+						row, e := tx.Get(domain.MachineKind, machine)
+						if e != nil {
+							return nil, e
+						}
+						return tx.Put(domain.MachineKind, machine, row.Revision, "", "", domain.Machine{Name: "Original Runner", OS: "linux", Architecture: "amd64", WorkerCapabilities: []domain.WorkerCapability{domain.ManagedMCPV1, domain.CodexManagedMCPV1}})
+					})
+				})
+			}
 			record := domain.ManagedMCPRecord{Definition: d, Accepted: true}
 			binding := *selections
 			binding.Selections = append([]domain.ManagedMCPSelection(nil), selections.Selections...)
@@ -60,7 +78,18 @@ func TestManagedMCPFrozenGenerationsAndEligibility(t *testing.T) {
 			case "disabled":
 				record.Definition.Enabled = false
 			case "unverified":
-				record.Definition.SupportedHarnesses = nil
+				// A stored claim is irrelevant; only the Runner capability counts below.
+				record.Definition.SupportedHarnesses = []domain.Harness{domain.Codex}
+				_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.mcp.capability", mode, func(tx *Tx) (any, error) {
+					row, e := tx.Get(domain.MachineKind, machine)
+					if e != nil {
+						return nil, e
+					}
+					return tx.Put(domain.MachineKind, machine, row.Revision, "", "", domain.Machine{Name: "Original Runner", OS: "linux", Architecture: "amd64", WorkerCapabilities: []domain.WorkerCapability{domain.ManagedMCPV1}})
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
 			case "expired":
 				record.Definition.CredentialExpiresAt = time.Now().Add(-time.Minute)
 			case "pending":

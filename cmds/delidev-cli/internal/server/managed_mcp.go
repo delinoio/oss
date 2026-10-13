@@ -15,6 +15,14 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+// stampManagedMCPSupport replaces every Worker-claimed harness list with the
+// support derived from the capabilities the same authenticated Worker holds.
+func stampManagedMCPSupport(result *domain.ManagedMCPResult, capabilities []domain.WorkerCapability) {
+	for i := range result.Definitions {
+		result.Definitions[i].SupportedHarnesses = domain.ManagedMCPSupport(capabilities)
+	}
+}
+
 func mcpUnavailable() error {
 	return domain.Fail(domain.Unavailable, "MCP management is unavailable for this Runner Device.", "Connect the selected Runner with managed MCP support and retry the read.")
 }
@@ -148,6 +156,7 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 		}
 		q.CallbackURL = ""
 	}()
+	var workerCapabilities []domain.WorkerCapability
 	check := func(tx *store.Tx) error {
 		if e := currentWorkspaceReader(tx, reader); e != nil {
 			return e
@@ -156,6 +165,7 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 		if e != nil {
 			return e
 		}
+		workerCapabilities = slices.Clone(machine.WorkerCapabilities)
 		if !slices.Contains(machine.WorkerCapabilities, domain.ManagedMCPV1) {
 			return domain.Fail(domain.Unsupported, "This Runner does not support managed MCP.", "Pair a Worker that advertises MCP management support.")
 		}
@@ -307,6 +317,9 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 	if e = s.Store.Read(ctx, check); e != nil {
 		return empty, e
 	}
+	// A Worker result cannot self-assert native support. Replace it with the
+	// support derived from the capability the same authenticated Worker holds.
+	stampManagedMCPSupport(&r, workerCapabilities)
 	current, e := s.primaryWorkspaceStream(reader.machine, reader.instance)
 	if e != nil || current.ID != reader.primary {
 		return empty, mcpUnavailable()
