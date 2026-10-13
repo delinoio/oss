@@ -331,6 +331,58 @@ func TestSortUsageAnalyticsModelsUsesExactIntegerAndOriginalIdTuple(t *testing.T
 		t.Fatalf("model ordering rounded totals or used labels: %+v", models)
 	}
 }
+func TestSortUsageAnalyticsModelsIsTotalAcrossReviewerAttributionPermutations(t *testing.T) {
+	measure := func(total string) domain.UsageTotals {
+		return domain.UsageTotals{Total: domain.UsageMeasure{KnownTotal: total, MeasuredResponses: 1}}
+	}
+	base := []domain.UsageAnalyticsModel{
+		{ModelID: "", Attribution: domain.UnknownReviewAttribution, Totals: measure("50")},
+		{ModelID: "", Attribution: domain.BuiltinReviewerAttribution, Totals: measure("50")},
+		{ProviderID: "provider-a", ModelID: "model-b", Totals: measure("50")},
+		{ProviderID: "provider-a", ModelID: "model-a", Totals: measure("50")},
+		{ProviderID: "provider-b", ModelID: "model-a", Totals: measure("50")},
+		{ProviderID: "provider-a", ModelID: "model-c", Totals: domain.UsageTotals{Total: domain.UsageMeasure{UnavailableResponses: 1}}},
+	}
+	identity := func(model domain.UsageAnalyticsModel) string {
+		return string(model.ProviderID) + "/" + string(model.ModelID) + "/" + string(model.Attribution)
+	}
+	var want []string
+	var permute func(items []domain.UsageAnalyticsModel, start int)
+	count := 0
+	permute = func(items []domain.UsageAnalyticsModel, start int) {
+		if start == len(items) {
+			count++
+			models := append([]domain.UsageAnalyticsModel(nil), items...)
+			domain.SortUsageAnalyticsModels(models)
+			got := make([]string, len(models))
+			for index, model := range models {
+				got[index] = identity(model)
+			}
+			if want == nil {
+				want = got
+			}
+			if !reflect.DeepEqual(want, got) {
+				t.Fatalf("sort order depends on input order:\nwant %v\ngot  %v", want, got)
+			}
+			return
+		}
+		for index := start; index < len(items); index++ {
+			items[start], items[index] = items[index], items[start]
+			permute(items, start+1)
+			items[start], items[index] = items[index], items[start]
+		}
+	}
+	permute(append([]domain.UsageAnalyticsModel(nil), base...), 0)
+	if count != 720 {
+		t.Fatalf("expected every permutation, got %d", count)
+	}
+	// Empty-ID reviewer groups sort first, builtin before unknown by Attribution
+	// ("codex-reviewer-..." < "unknown-..."), with catalog ID tuples unchanged.
+	expected := []string{"//" + string(domain.BuiltinReviewerAttribution), "//" + string(domain.UnknownReviewAttribution), "provider-a/model-a/", "provider-a/model-b/", "provider-b/model-a/", "provider-a/model-c/"}
+	if !reflect.DeepEqual(want, expected) {
+		t.Fatalf("unexpected total order: %v", want)
+	}
+}
 func usageWindow() domain.UsageSelection {
 	return domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour)}
 }

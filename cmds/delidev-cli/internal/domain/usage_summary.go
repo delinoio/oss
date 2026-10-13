@@ -319,6 +319,11 @@ func SortUsageAnalyticsModels(models []UsageAnalyticsModel) {
 		if left.ProviderID != right.ProviderID {
 			return left.ProviderID < right.ProviderID
 		}
-		return left.ModelID < right.ModelID
+		if left.ModelID != right.ModelID {
+			return left.ModelID < right.ModelID
+		}
+		// Reviewer groups share empty provider/model IDs; Attribution is the
+		// final key so the order is total regardless of input order.
+		return left.Attribution < right.Attribution
 	})
 }
