@@ -206,7 +206,6 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	var input domain.PRFixRequest
 	var policy domain.RemediationPolicy
 	var link domain.SessionPullRequest
-	var problems []domain.PRProblem
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		var err error
 		link, policy, err = automaticPRScope(tx, original)
@@ -244,9 +243,38 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	if len(sources) == 0 {
 		return nil
 	}
-	target, observations, err := s.automaticPRObservations(ctx, link, sources)
+	// Each pass binds its sources to one final PR detail read. A source that did
+	// not fit the pass freshness budget is deferred to its own pass, which reads
+	// it first, so slow providers delay only their own kind. An admitted attempt
+	// ends the scan: remaining kinds join a later cycle exactly as before.
+	var firstErr error
+	for len(sources) > 0 {
+		deferred, finished, err := s.requestAutomaticPRFixPass(ctx, original, link, policy, input, sources)
+		if err != nil && finished {
+			return err
+		}
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if finished {
+			return nil
+		}
+		if len(deferred) != 0 {
+			s.logger.InfoContext(ctx, "automatic_pr_sources_deferred", "link_id", original.ID, "set_id", input.SetID, "kinds", deferred)
+		}
+		sources = deferred
+	}
+	return firstErr
+}
+
+// requestAutomaticPRFixPass evaluates one coherent observation pass. finished
+// is true once acceptance ran, successfully or not; otherwise deferred lists the
+// sources that must be observed by a separate pass.
+func (s *Service) requestAutomaticPRFixPass(ctx context.Context, original store.Record, link domain.SessionPullRequest, policy domain.RemediationPolicy, input domain.PRFixRequest, sources []domain.PRProblemKind) (deferred []domain.PRProblemKind, finished bool, err error) {
+	var problems []domain.PRProblem
+	target, observations, deferred, err := s.automaticPRObservations(ctx, link, sources)
 	if err != nil {
-		return err
+		return nil, false, err
 	}
 	// This transient preview has no durable attempt or execution authority. The
 	// same formatter runs again with current originals inside atomic acceptance.
@@ -308,10 +336,10 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, false, err
 	}
 	if len(input.Problems) == 0 {
-		return overflow
+		return deferred, false, overflow
 	}
 	used := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
 	for _, p := range problems {
@@ -319,13 +347,13 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	}
 	selected, err := s.selectPRFixSession(ctx, input, target, policy)
 	if err != nil {
-		return err
+		return nil, true, err
 	}
 	result, err := s.acceptPRFix(ctx, domain.NewID(), "pr.automatic.request", input, input, target, used, selected, policy, domain.PRRemediationAutomatic, &original)
 	if err == nil {
 		var receipt prFixReceipt
 		if err := domain.Decode(result.Data, &receipt); err != nil {
-			return err
+			return nil, true, err
 		}
 		if receipt.AttemptID == "" {
 			s.logger.InfoContext(ctx, "automatic_pr_fix_limit_reached", "link_id", original.ID, "set_id", input.SetID)
@@ -333,18 +361,32 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 			s.logger.InfoContext(ctx, "automatic_pr_fix_admitted", "link_id", original.ID, "set_id", input.SetID, "attempt_id", receipt.AttemptID, "request_id", result.RequestID)
 		}
 	}
-	return err
+	return nil, true, err
 }
 
-// automaticPRObservations reads each enabled non-conflict source once, then
-// reads PR detail last. Detail doubles as the conflict observation and the
-// common Git target, so its ObservedAt stays fresh for the 30-second
-// observation-to-claim limit even after two slow bounded source reads. Every
-// collected source is then bound to that final target; any identity, ref or
-// commit drift rejects the pass instead of mixing evidence.
-func (s *Service) automaticPRObservations(ctx context.Context, link domain.SessionPullRequest, kinds []domain.PRProblemKind) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
+// Automatic PR observation bounds. Every provider read keeps its own bound.
+// The freshness window is the domain's observation-to-claim limit minus a
+// margin for selection and the atomic claim; tests shorten both values.
+var (
+	automaticPRReadBound       = 20 * time.Second
+	automaticPRFreshnessWindow = domain.MaxPRRemediationObservationAge - 3*time.Second
+)
+
+// automaticPRObservations reads enabled non-conflict sources, then reads PR
+// detail last. Detail doubles as the conflict observation and the common Git
+// target. The first successful source anchors the freshness window: the final
+// detail read may take its full bound, so a later source is read only with the
+// time left before that reserve and is otherwise returned in deferred. Callers
+// observe deferred kinds in a separate pass that reads them first, so no
+// collected source can age past the 30-second observation-to-claim limit and
+// slowness never silently drops another kind. Every collected source is bound
+// to the final target; any identity, ref or commit drift rejects the pass
+// instead of mixing evidence. Reads are never retried.
+func (s *Service) automaticPRObservations(ctx context.Context, link domain.SessionPullRequest, kinds []domain.PRProblemKind) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, []domain.PRProblemKind, error) {
 	collected := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
 	attempted := map[domain.PRProblemKind]bool{}
+	var deferred []domain.PRProblemKind
+	var anchor time.Time
 	wantConflict := false
 	for _, kind := range kinds {
 		if attempted[kind] {
@@ -355,30 +397,49 @@ func (s *Service) automaticPRObservations(ctx context.Context, link domain.Sessi
 			wantConflict = true
 			continue
 		}
-		bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
+		bound := automaticPRReadBound
+		if !anchor.IsZero() {
+			left := automaticPRFreshnessWindow - time.Since(anchor) - automaticPRReadBound
+			if left <= 0 {
+				deferred = append(deferred, kind)
+				continue
+			}
+			bound = min(bound, left)
+		}
+		bounded, cancel := context.WithTimeout(ctx, bound)
 		observed, err := s.readProblemObservation(bounded, link.RepositoryID, link.Number, automaticPROperation(kind), "")
+		expired := bounded.Err() != nil
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
-				return domain.PRGitTarget{}, nil, ctx.Err()
+				return domain.PRGitTarget{}, nil, nil, ctx.Err()
+			}
+			if expired && bound < automaticPRReadBound {
+				// Only the shortened freshness budget ended this read, not the
+				// provider bound, so the kind gets its own full-bound pass.
+				deferred = append(deferred, kind)
+				continue
 			}
 			s.logger.InfoContext(ctx, "automatic_pr_prerequisite_blocked", "repository_id", link.RepositoryID, "kind", kind, "code", domain.SafeError(err).Code)
 			continue
 		}
+		if anchor.IsZero() || observed.ObservedAt.Before(anchor) {
+			anchor = observed.ObservedAt
+		}
 		collected[kind] = observed
 	}
-	detailCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	detailCtx, cancel := context.WithTimeout(ctx, automaticPRReadBound)
 	detail, err := s.readProblemObservation(detailCtx, link.RepositoryID, link.Number, domain.RepositoryDetail, "")
 	cancel()
 	if err != nil {
-		return domain.PRGitTarget{}, nil, err
+		return domain.PRGitTarget{}, nil, nil, err
 	}
 	target, err := domain.NewPRGitTarget(detail)
 	if err != nil {
-		return target, nil, err
+		return target, nil, nil, err
 	}
 	if !target.Target.SamePR(link) || target.Target.RepositoryNodeID != link.RepositoryNodeID || target.Target.PullRequestNodeID != link.PullRequestNodeID {
-		return target, nil, prObservationConflict()
+		return target, nil, nil, prObservationConflict()
 	}
 	observations := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
 	for kind, observed := range collected {
@@ -387,14 +448,14 @@ func (s *Service) automaticPRObservations(ctx context.Context, link domain.Sessi
 		fresh, err := domain.NewPRGitTarget(binding)
 		fresh.Target.ObservedAt, fresh.Target.Title = target.Target.ObservedAt, target.Target.Title
 		if err != nil || fresh != target {
-			return target, nil, prObservationConflict()
+			return target, nil, nil, prObservationConflict()
 		}
 		observations[kind] = observed
 	}
 	if wantConflict {
 		observations[domain.PRMergeConflictProblem] = detail
 	}
-	return target, observations, nil
+	return target, observations, deferred, nil
 }
 
 func (s *Service) remediateAutomaticPR(ctx context.Context, original store.Record) error {
