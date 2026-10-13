@@ -774,6 +774,205 @@ it("marks a deleted explicit base unavailable without a missing-base diff or fal
   expect(operations().at(-1)).toBe("git-diff:branch:main");
 });
 
+const baseValue = (name: string) =>
+  JSON.stringify(["local-branch", name, undefined]);
+const comparisonRegion = () =>
+  screen.queryByRole("region", { name: "Git comparison" });
+const diffReads = (operations: () => string[]) =>
+  operations().filter((op) => op.startsWith("git-diff:"));
+
+// Selects `other` explicitly, then reports it as `invalid` in a fresh inventory.
+async function invalidateOther(
+  invalid: RefChoice[],
+  setup: ReturnType<typeof inventoryFixture>,
+) {
+  const { f, state, operations } = setup;
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:other"),
+  );
+  state.choices = invalid;
+  refreshDiff();
+  await screen.findByText(/No available default base/);
+  expect(comparisonRegion()).toBeNull();
+}
+
+it.each([
+  ["absent", [{ name: "main" }]],
+  ["unavailable", [{ name: "main" }, { name: "other", available: false }]],
+])(
+  "keeps an explicit base invalidated when it is %s and later reappears until reselected",
+  async (_label, invalid) => {
+    const setup = inventoryFixture(
+      [{ name: "main" }, { name: "other" }],
+      "main",
+    );
+    const { f, state, operations } = setup;
+    await invalidateOther(invalid, setup);
+    state.choices = [{ name: "main" }, { name: "other" }];
+    const settled = operations().length;
+    refreshDiff();
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+    );
+    refreshDiff();
+    await waitFor(() => expect(operations()).toHaveLength(settled + 2));
+    expect(operations().slice(settled)).toEqual([
+      "git-diff-options",
+      "git-diff-options",
+    ]);
+    expect(comparisonRegion()).toBeNull();
+    expect(screen.getByText(/No available default base/)).toBeTruthy();
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+    // Reselecting the recreated reference itself resumes the comparison.
+    fireEvent.change(screen.getByLabelText("Base"), {
+      target: { value: baseValue("other") },
+    });
+    await screen.findByRole("region", { name: "Git comparison" });
+    expect(operations().at(-1)).toBe("git-diff:branch:other");
+    const q = JSON.parse(
+      new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson),
+    );
+    expect(q.base_ref).toEqual({ type: "local-branch", name: "other" });
+  },
+);
+
+it("resumes the comparison with a different available base after invalidation", async () => {
+  const setup = inventoryFixture(
+    [{ name: "main" }, { name: "other" }],
+    "main",
+  );
+  const { state, operations } = setup;
+  await invalidateOther([{ name: "main" }], setup);
+  state.choices = [{ name: "main" }, { name: "other" }];
+  refreshDiff();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  expect(comparisonRegion()).toBeNull();
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("main") },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(operations().at(-1)).toBe("git-diff:branch:main");
+});
+
+it("does not restore trust through path submission or comparison round trips", async () => {
+  const setup = inventoryFixture(
+    [{ name: "main" }, { name: "other" }],
+    "main",
+  );
+  const { state, operations } = setup;
+  await invalidateOther([{ name: "main" }], setup);
+  state.choices = [{ name: "main" }, { name: "other" }];
+  fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
+  fireEvent.change(screen.getByLabelText("Relative diff path"), {
+    target: { value: "src" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
+  await screen.findByText("Relative diff path: src");
+  expect(comparisonRegion()).toBeNull();
+  refreshDiff();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  expect(comparisonRegion()).toBeNull();
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:staged:"));
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(diffReads(operations).filter((op) => op.startsWith("git-diff:branch"))).toEqual([
+    "git-diff:branch:main",
+    "git-diff:branch:other",
+  ]);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(operations().at(-1)).toBe("git-diff:branch:other");
+});
+
+it("does not invalidate an explicit base from a failed options read", async () => {
+  const { f, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "other" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:other"),
+  );
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(
+    "Refresh failed. The previous observation is stale and shown below.",
+  );
+  expect(comparisonRegion()).toBeTruthy();
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() =>
+    expect(operations().slice(before)).toEqual([
+      "git-diff-options",
+      "git-diff:branch:other",
+    ]),
+  );
+});
+
+it("does not invalidate an explicit base from an obsolete-scope options read", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "other" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:other"),
+  );
+  state.choices = [{ name: "main" }];
+  const late = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:staged:"));
+  late.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  state.choices = [{ name: "main" }, { name: "other" }];
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(operations().at(-1)).toBe("git-diff:branch:other");
+});
+
 it("follows a fresh implicit default after Refresh", async () => {
   const { f, state, operations } = inventoryFixture(
     [{ name: "main" }, { name: "trunk" }],

@@ -275,9 +275,42 @@ export function RepositoryDiff({
     initial?.base_ref?.remote,
   ]);
   const chosenBase = baseRef ?? options.data?.default;
+  // An explicit base that a successful accepted inventory reported absent or
+  // unavailable stays invalidated, even if the same reference reappears in a
+  // later inventory, until the Base control explicitly selects a reference.
+  // The record is bound to the session and repository that observed it, so
+  // refresh, path submission and comparison round trips never restore trust.
+  const optionsOwner = [sessionId, repository].join("\u0000");
+  const [invalidatedBase, setInvalidatedBase] = useState<
+    { owner: string; key: string } | undefined
+  >();
+  const explicitBaseInvalidated = Boolean(
+    baseRef &&
+    invalidatedBase &&
+    invalidatedBase.owner === optionsOwner &&
+    invalidatedBase.key === referenceKey(baseRef),
+  );
+  const explicitBaseKey = baseRef ? referenceKey(baseRef) : undefined;
+  useEffect(() => {
+    if (comparison !== Comparison.Branch || !options.data || !baseRef) return;
+    if (
+      options.data.choices.some(
+        (choice) =>
+          choice.available && sameReference(choice.reference, baseRef),
+      )
+    )
+      return;
+    console.debug("delidev.diff.explicit_base_invalidated", {
+      sessionId,
+      repository,
+      base: explicitBaseKey,
+    });
+    setInvalidatedBase({ owner: optionsOwner, key: referenceKey(baseRef) });
+  }, [options.data, explicitBaseKey, comparison, optionsOwner]);
   const supportedBase = Boolean(
     options.data &&
     chosenBase &&
+    !explicitBaseInvalidated &&
     options.data.choices.some(
       (choice) =>
         choice.available && sameReference(choice.reference, chosenBase),
@@ -307,7 +340,6 @@ export function RepositoryDiff({
   // diff derived from it) only as a stale observation.
   // The explicit refresh reads through a disposable query, so its failure is
   // recorded here, bound to the session and repository that issued it.
-  const optionsOwner = [sessionId, repository].join("\u0000");
   // The failure also remembers the accepted options query's update position,
   // so any later accepted response (the explicit refresh, or an active-query
   // refetch such as a reconnect invalidation) ends the stale observation.
@@ -573,12 +605,20 @@ export function RepositoryDiff({
             <select
               aria-label={copy("session-diff.base_7b4736")}
               disabled={!options.data}
-              value={chosenBase ? referenceKey(chosenBase) : ""}
+              value={
+                chosenBase && !explicitBaseInvalidated
+                  ? referenceKey(chosenBase)
+                  : ""
+              }
               onChange={(event) => {
                 const choice = options.data?.choices.find(
                   (item) => referenceKey(item.reference) === event.target.value,
                 );
-                if (choice) choose(Comparison.Branch, path, choice.reference);
+                if (!choice?.available) return;
+                // Only this explicit selection restores trust, including
+                // reselecting the recreated reference itself.
+                setInvalidatedBase(undefined);
+                choose(Comparison.Branch, path, choice.reference);
               }}
             >
               <option value="" disabled>
