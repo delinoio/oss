@@ -203,3 +203,111 @@ it("retires the latest question through RPC and live closure while keeping compo
   });
   expect(respond).toHaveBeenCalledTimes(1);
 });
+
+it("keeps the compact question state and count after a successful answer when the payload page no longer lists the request", async () => {
+  const sessionId = newRequestId();
+  const session = create(ResourceSchema, {
+    id: sessionId,
+    sessionId,
+    kind: EntityKind.SESSION,
+    schemaVersion: 1,
+    revision: 1n,
+    documentJson: encode({
+      name: "Evicted question fixture",
+      workspace: "general-chat",
+      outcome: "succeeded",
+      archive: "active",
+      dispatch: "paused",
+      recovery: "clear",
+    }),
+  });
+  const data = {
+    type: "user-question",
+    closure: "open",
+    questions: {
+      questions: [
+        {
+          id: "original",
+          text: "Keep exact answer",
+          header: "Original question",
+          secret: false,
+          other: true,
+          options: [],
+        },
+      ],
+    },
+  };
+  const original = create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId,
+    kind: EntityKind.INTERACTION,
+    schemaVersion: 1,
+    revision: 9n,
+    documentJson: encode(data),
+  });
+  let listed = [original];
+  const respond = vi.fn(async () => ({
+    interaction: create(ResourceSchema, {
+      ...original,
+      revision: 10n,
+      documentJson: encode({ ...data, response: { state: "queued" } }),
+    }),
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SessionService, {
+      listSessions: () => ({ sessions: [session] }),
+      listQueue: () => ({ inputs: [] }),
+    });
+    router.service(InteractionService, { respondQuestion: respond });
+    router.service(ResourceService, {
+      getSnapshot: () => ({
+        resources: [session],
+        cursor: "evicted-question-snapshot",
+      }),
+      getResource: () => ({ resource: original }),
+      // The authoritative list no longer includes the request after the answer.
+      listResources: (request) => ({
+        resources:
+          request.filter?.kind === EntityKind.INTERACTION ? listed : [],
+      }),
+      async *watchEvents(_request, context) {
+        await new Promise<void>((done) =>
+          context.signal.addEventListener("abort", () => done()),
+        );
+      },
+    });
+    router.service(InboxService, {
+      listInbox: () => ({ entries: [] }),
+      getNotificationPreferences: () => ({
+        preferences: create(NotificationPreferencesSchema, { revision: 1n }),
+      }),
+    });
+  });
+  render(<App transport={transport} />);
+  fireEvent.click(
+    await within(
+      screen.getByRole("complementary", { name: "Application sidebar" }),
+    ).findByRole("button", { name: /General Chat Evicted question fixture/ }),
+  );
+  const region = screen.getByRole("region", { name: "Current session" });
+  const answer = await within(region).findByRole("textbox", {
+    name: "Your answer",
+  });
+  fireEvent.change(answer, { target: { value: "Original response bytes" } });
+  listed = [];
+  fireEvent.click(within(region).getByRole("button", { name: "Send answers" }));
+  await within(region).findByText("Response: queued");
+  await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+  // Allow any post-success refresh to settle against the empty list.
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 50));
+  });
+  expect(region.querySelector(".requests")).not.toBeNull();
+  expect(within(region).getByText("Response: queued")).not.toBeNull();
+  expect(
+    within(region).queryByRole("textbox", { name: "Your answer" }),
+  ).toBeNull();
+  expect(region.querySelector(".requests summary")?.textContent).toContain("1");
+  expect(respond).toHaveBeenCalledTimes(1);
+});

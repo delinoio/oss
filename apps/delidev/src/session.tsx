@@ -180,6 +180,7 @@ import {
   InteractionPresentation,
   displayedInteraction,
   completeEmptyInteractionTray,
+  missingQuestionReceipts as selectMissingQuestionReceipts,
 } from "./interaction-presentation";
 import { SessionTerminals } from "./session-terminals";
 import {
@@ -1559,10 +1560,11 @@ export function SessionView({
       pendingQuestionKeys,
     ),
   );
-  const missingQuestionReceipts = [...interactionPresentation.entries()].filter(
-    ([requestId, projection]) =>
-      pendingQuestionKeys.has(projection.mutationKey) &&
-      !requests.some((row) => row.id === requestId),
+  const missingQuestionReceipts = selectMissingQuestionReceipts(
+    interactionPresentation.entries(),
+    new Set(requests.map((row) => row.id)),
+    live.removed,
+    pendingQuestionKeys,
   );
   const requestsExpanded =
     requests.some((row) => {
@@ -1588,7 +1590,12 @@ export function SessionView({
       interactions.payloadPages.some((payload) => payload.token === page.token),
     ),
     displayed: displayedRequests.length,
-    pending: pendingQuestionKeys.size,
+    pending: new Set([
+      ...pendingQuestionKeys,
+      ...missingQuestionReceipts.map(
+        ([, projection]) => projection.mutationKey,
+      ),
+    ]).size,
   });
   // Drop RPC payloads after their resident page expires or a list/live revision
   // catches up. Monotonic metadata survives without retaining answer documents.
