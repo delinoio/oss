@@ -313,6 +313,7 @@ export function SessionContext({ session }: { session: Resource }) {
           </p>
           <div
             className="context-capacity"
+            data-token-observation={percent === undefined ? undefined : true}
             role="progressbar"
             aria-label={copy("session-name.contextSnapshot")}
             aria-valuemin={0}

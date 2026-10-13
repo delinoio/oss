@@ -5,6 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import {
   EntityKind,
   ResourceSchema,
+  ResourceService,
   SessionService,
   SystemCapability,
   SystemService,
@@ -380,16 +381,18 @@ describe("transcript token and time observation toggles", () => {
       session_revision: "8",
       current_tokens: harness === "codex" ? null : "12345",
     };
+    const observationId = newRequestId();
+    const turnId = newRequestId();
     if (harness === "codex") {
       context.execution_id = executionId;
       context.native_context = {
         harness: "codex",
         source: "last-request-total",
         tokens: "6789",
-        observation_id: newRequestId(),
+        observation_id: observationId,
         execution_id: executionId,
         native_thread_id: threadId,
-        native_turn_id: newRequestId(),
+        native_turn_id: turnId,
         sequence: "1",
         observed_at: "2026-01-01T00:00:00Z",
         status: "latest",
@@ -416,6 +419,29 @@ describe("transcript token and time observation toggles", () => {
       router.service(SystemService, {
         getStatus: () => ({
           capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1],
+        }),
+      });
+      // Known capacity makes the Codex context render its progress bar.
+      router.service(ResourceService, {
+        getResource: () => ({
+          resource: create(ResourceSchema, {
+            kind: EntityKind.USAGE,
+            id: observationId,
+            sessionId,
+            revision: 1n,
+            schemaVersion: 1,
+            documentJson: encode({
+              harness: "codex",
+              execution_id: executionId,
+              native_thread_id: threadId,
+              native_turn_id: turnId,
+              sequence: 1,
+              observation: {
+                last_request: { total: 6789 },
+                context_window: 10000,
+              },
+            }),
+          }),
         }),
       });
       router.service(SessionService, {
@@ -461,6 +487,20 @@ describe("transcript token and time observation toggles", () => {
         getComputedStyle(compaction.nextElementSibling as HTMLElement)
           .display === "none",
       ).toBe(!tokens);
+      // The capacity progress bar exposes token-valued aria-valuetext, so it
+      // must disappear with the token lines.
+      if (harness === "codex") {
+        const bar = () => view.container.querySelector('[role="progressbar"]');
+        await waitFor(() =>
+          expect(bar()?.getAttribute("aria-valuetext")).toContain(
+            "6789 / 10000",
+          ),
+        );
+        expect(
+          getComputedStyle(bar()!).display === "none",
+          "capacity progress bar",
+        ).toBe(!tokens);
+      }
       // The original context reference is not a token observation.
       const reference = [...view.container.querySelectorAll("dt")].find(
         (item) => /reference/i.test(item.textContent ?? ""),
