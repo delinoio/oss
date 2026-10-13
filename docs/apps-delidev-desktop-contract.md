@@ -6120,7 +6120,15 @@ The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus
 survive revisions, completion and locale changes. Preserve actual streaming,
 interrupted, failed, recovery and unavailable states. Malformed, mixed and unknown
-records retain the original fallback; OpenCode reasoning-text, Claude thinking
+records retain the original fallback. The dedicated disclosure requires a complete
+valid message envelope: role `artifact`, absent or empty-string `text` (non-string
+text is never coerced), and only the common metadata `execution_id`,
+`native_thread_id`, `native_turn_id`, `native_id`, `native_parent_id`,
+`first_sequence`, `last_sequence`, `context_revision` and `attachments` beside
+`state` and `artifact`. Role-specific fields such as `phase`, `input_id`,
+`inherited`, `turn_timing`, `tool`, `progress`, provider content and unknown
+fields select the generic artifact fallback without stripping or repair.
+OpenCode reasoning-text, Claude thinking
 and other artifacts retain their source-specific rules. Preserve reader gates,
 mounting, measured history wrappers, pagination, scroll anchors and live/history
 ordering. Disclosure adds no reads, execution authority, RPC, schema, migration,

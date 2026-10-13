@@ -121,7 +121,7 @@ import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
-import { CodexReasoning, codexReasoning } from "./codex-reasoning";
+import { CodexReasoning, codexReasoningMessage } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
 import { BudgetEvidence, SessionBudget } from "./session-budget";
 import {
@@ -578,20 +578,7 @@ export const TranscriptItem = memo(function TranscriptItem({
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
-  const reasoning =
-    data.role === "artifact" &&
-    data.tool == null &&
-    data.progress == null &&
-    !text(data.text) &&
-    [
-      "grok_text",
-      "claude",
-      "claude_tool",
-      "claude_progress",
-      "claude_interruption",
-    ].every((key) => !Object.hasOwn(data, key))
-      ? codexReasoning(data.artifact, text(data.state))
-      : undefined;
+  const reasoning = codexReasoningMessage(data, text(data.state));
   if (reasoning)
     return (
       <article
