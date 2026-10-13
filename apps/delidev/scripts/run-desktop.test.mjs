@@ -816,6 +816,25 @@ for (const target of ["stdout", "stderr"]) {
   });
 }
 
+test("a source read error after a sink failure is owned and keeps the classification", async () => {
+  const input = new PassThrough();
+  const writes = [];
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: failingSink(writes),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.write("early\n");
+  await drain();
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+  // The pipe is still being discarded; its late failure must not be uncaught.
+  input.destroy(new Error("/private/late-stream-error"));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(writes, ["early\n"]);
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
 test("a sink error before input end is classified without an unhandled error", async () => {
   const input = new PassThrough();
   const writes = [];

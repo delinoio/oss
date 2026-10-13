@@ -227,6 +227,7 @@ function captureStream(stream, destination, filter) {
     releaseSink();
     complete(outcome);
   };
+  const ignoreSourceError = () => {};
   const failed = () => {
     send(omitted + "\n");
     finish(CaptureOutcome.ReadFailed);
@@ -238,6 +239,10 @@ function captureStream(stream, destination, filter) {
     writable.on("error", sinkError);
     sinkErrorOwned = true;
   }
+  // The launcher owns this child pipe for its whole lifetime. After the sink
+  // fails the pipe is still resumed and discarded, so a later read error must
+  // not become an uncaught exception that replaces the child's result.
+  stream.on("error", ignoreSourceError);
   stream.on("data", data);
   stream.once("end", end);
   stream.once("error", failed);

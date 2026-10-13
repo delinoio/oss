@@ -4457,7 +4457,10 @@ destination from before the first write. A destination error stops all further
 forwarding to that sink, keeps consuming and discarding the child's pipe, and
 reports `output-write-failed` independently for stdout and stderr. The listener
 is removed only when no outstanding write can still emit an error; a failed
-destination keeps it until the destination closes. No outcome changes the
+destination keeps it until the destination closes. The launcher also keeps an
+`error` listener on each child pipe after capture ends or the destination
+fails, so a late read error on a pipe that is still being discarded cannot
+become an uncaught exception. No outcome changes the
 original child exit code or signal, and the managed child lifecycle (signal
 handler removal and build-lock release) still runs. Signing retains its private output capture. Final
 build-lock cleanup failure reports `cleanup-uncertain` with
