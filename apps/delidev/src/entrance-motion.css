@@ -1,0 +1,16 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Shared 160ms entrance primitive. Only the opaque, resting-transform-none
+   Y4 shape exists: no opacity, scale, bounce, stagger or height change. The
+   attribute is activation-scoped by useEntranceActivation, and themes.css
+   already forces `animation: none` for Animation Off and reduced motion. */
+@keyframes entrance-y4 {
+  from {
+    transform: translateY(4px);
+  }
+  to {
+    transform: none;
+  }
+}
+[data-entrance="y4"] {
+  animation: entrance-y4 160ms ease-out;
+}

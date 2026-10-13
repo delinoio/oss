@@ -2,7 +2,9 @@ import { productDiagnostic } from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
+import type { EntranceProps } from "./entrance-motion";
 import {
+  useCallback,
   useLayoutEffect,
   useId,
   useRef,
@@ -137,6 +139,7 @@ export function Modal({
   initialFocus,
   focusClose = false,
   trapFocus = false,
+  entrance,
 }: {
   title: string;
   close: () => void;
@@ -146,11 +149,25 @@ export function Modal({
   initialFocus?: RefObject<HTMLElement | null>;
   focusClose?: boolean;
   trapFocus?: boolean;
+  /** Optional activation-scoped entrance from useEntranceActivation. */
+  entrance?: EntranceProps;
 }) {
   useLocale();
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const attachEntrance = entrance?.ref;
+  const surface = useCallback(
+    (node: HTMLDialogElement | null) => {
+      ref.current = node;
+      const detach = attachEntrance?.(node);
+      return () => {
+        ref.current = null;
+        detach?.();
+      };
+    },
+    [attachEntrance],
+  );
   useLayoutEffect(() => {
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
@@ -164,7 +181,8 @@ export function Modal({
   }, [visible, initialFocus, focusClose]);
   return (
     <DialogSurface
-      ref={ref}
+      ref={surface}
+      data-entrance={entrance?.["data-entrance"]}
       className={className}
       aria-labelledby={id}
       onCancel={(event) => {

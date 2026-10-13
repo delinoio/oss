@@ -164,6 +164,7 @@ import {
 } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
+import { useEntranceActivation, type EntranceProps } from "./entrance-motion";
 import { ShortcutSettings } from "./shortcut-settings";
 import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
@@ -2030,6 +2031,12 @@ type NavigateSettings = (
   entry?: SettingsCategoryEntry,
 ) => void;
 
+// Categories that opted in to the shared 160ms Y4 entrance. Each category adds
+// itself only with its own approved contract text.
+const entranceCategories: ReadonlySet<SettingsCategory> = new Set([
+  SettingsCategory.Appearance,
+]);
+
 function entrySelection(
   destination?: SettingsNavigationEntry,
 ): SettingsSelection {
@@ -2095,6 +2102,12 @@ function SettingsVisit({
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   const [selection, setSelection] = useState(() =>
     entrySelection(entryDestination),
+  );
+  // The activation key is the category opening, so rendering, reads, edits and
+  // preference changes inside the opening cannot replay the entrance.
+  const entrance = useEntranceActivation(
+    selection.key,
+    entranceCategories.has(selection.category),
   );
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(
@@ -2209,6 +2222,7 @@ function SettingsVisit({
               searchRequest={searchRequest}
               selectedCategory={selection.category}
               entry={selection.entry}
+              entrance={entrance}
               navigate={navigate}
               controlLocalWorker={
                 props.controlLocalWorker
@@ -2242,11 +2256,13 @@ function SettingsWorkspace({
   selectedCategory,
   searchRequest,
   entry,
+  entrance,
   navigate,
 }: SettingsProps & {
   searchRequest?: SettingsSearchRequest;
   selectedCategory: SettingsCategory;
   entry?: SettingsCategoryEntry;
+  entrance: EntranceProps;
   navigate: NavigateSettings;
 }) {
   const productLabel = useProductLabels();
@@ -2261,6 +2277,18 @@ function SettingsWorkspace({
     useState<HTMLSpanElement | null>(null);
   const deviceContent = useRef<HTMLDivElement>(null),
     refreshDevices = useRef<HTMLButtonElement>(null);
+  const attachEntrance = entrance.ref;
+  const contentRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      deviceContent.current = node;
+      const detach = attachEntrance?.(node);
+      return () => {
+        deviceContent.current = null;
+        detach?.();
+      };
+    },
+    [attachEntrance],
+  );
   const deviceReturnFocus = useRef<
     { id: string; exit: DeviceRevocationExit } | undefined
   >(undefined);
@@ -2768,7 +2796,8 @@ function SettingsWorkspace({
         <SettingsTaskBackground>
           <div className="settings-content-column">
             <div
-              ref={deviceContent}
+              ref={contentRef}
+              data-entrance={entrance["data-entrance"]}
               className={
                 isAgentWorkers
                   ? "settings-agent-column"

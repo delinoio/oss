@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: Apache-2.0
+import { StrictMode, useState } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useEntranceActivation } from "./entrance-motion";
+
+function Harness({ enabled = true }: { enabled?: boolean }) {
+  const [activation, setActivation] = useState("first");
+  const [text, setText] = useState("");
+  const entrance = useEntranceActivation(activation, enabled);
+  return (
+    <div>
+      <div data-testid="surface" {...entrance}>
+        <span data-testid="spinner" />
+        <input
+          aria-label="Draft"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+      </div>
+      <button type="button" onClick={() => setActivation("second")}>
+        Re-enter
+      </button>
+    </div>
+  );
+}
+
+function reducedMotion(initial: boolean) {
+  const listeners = new Set<() => void>();
+  const media = {
+    matches: initial,
+    addEventListener: (_: string, listener: () => void) =>
+      listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) =>
+      listeners.delete(listener),
+  };
+  vi.stubGlobal("matchMedia", () => media);
+  return (next: boolean) =>
+    act(() => {
+      media.matches = next;
+      listeners.forEach((changed) => changed());
+    });
+}
+function dispatch(node: Element, type: string, name = "entrance-y4") {
+  const event = new Event(type, { bubbles: true });
+  Object.defineProperty(event, "animationName", { value: name });
+  act(() => {
+    node.dispatchEvent(event);
+  });
+}
+const surface = () => screen.getByTestId("surface");
+const entering = () => surface().getAttribute("data-entrance");
+async function setAnimation(value: string | undefined) {
+  await act(async () => {
+    if (value === undefined) delete document.documentElement.dataset.animation;
+    else document.documentElement.dataset.animation = value;
+    await Promise.resolve();
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  reducedMotion(false);
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  delete document.documentElement.dataset.animation;
+});
+
+it("plays once on activation and settles on animation end without replay", () => {
+  render(<Harness />);
+  expect(entering()).toBe("y4");
+  fireEvent.change(screen.getByLabelText("Draft"), {
+    target: { value: "typed while entering" },
+  });
+  expect(entering()).toBe("y4");
+  dispatch(surface(), "animationend");
+  expect(entering()).toBeNull();
+  fireEvent.change(screen.getByLabelText("Draft"), {
+    target: { value: "typed afterwards" },
+  });
+  expect(entering()).toBeNull();
+  expect((screen.getByLabelText("Draft") as HTMLInputElement).value).toBe(
+    "typed afterwards",
+  );
+});
+
+it("ignores unrelated or bubbled animations and settles on cancel", () => {
+  render(<Harness />);
+  dispatch(screen.getByTestId("spinner"), "animationend");
+  dispatch(surface(), "animationend", "spin");
+  expect(entering()).toBe("y4");
+  dispatch(surface(), "animationcancel");
+  expect(entering()).toBeNull();
+});
+
+it("settles through a generation-fenced fallback when no event arrives", () => {
+  render(<Harness />);
+  act(() => {
+    vi.advanceTimersByTime(239);
+  });
+  expect(entering()).toBe("y4");
+  act(() => {
+    vi.advanceTimersByTime(1);
+  });
+  expect(entering()).toBeNull();
+});
+
+it("keeps the mounted surface identity while settling", () => {
+  render(<Harness />);
+  const node = surface();
+  dispatch(node, "animationend");
+  expect(surface()).toBe(node);
+});
+
+it("does not play when Animation is Off or the activation is not enabled", async () => {
+  await setAnimation("false");
+  const { unmount } = render(<Harness />);
+  expect(entering()).toBeNull();
+  unmount();
+  await setAnimation("true");
+  render(<Harness enabled={false} />);
+  expect(entering()).toBeNull();
+});
+
+it("does not play with OS reduced motion", () => {
+  reducedMotion(true);
+  render(<Harness />);
+  expect(entering()).toBeNull();
+});
+
+it("settles mid-flight when Animation turns Off and never replays on re-enable", async () => {
+  await setAnimation("true");
+  render(<Harness />);
+  expect(entering()).toBe("y4");
+  await setAnimation("false");
+  expect(entering()).toBeNull();
+  await setAnimation("true");
+  expect(entering()).toBeNull();
+  act(() => {
+    vi.advanceTimersByTime(1000);
+  });
+  expect(entering()).toBeNull();
+});
+
+it("settles mid-flight for OS reduced motion and does not replay when it clears", () => {
+  const change = reducedMotion(false);
+  render(<Harness />);
+  expect(entering()).toBe("y4");
+  change(true);
+  expect(entering()).toBeNull();
+  change(false);
+  expect(entering()).toBeNull();
+});
+
+it("replays only for a new explicit activation, even before the old one finishes", () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  expect(entering()).toBe("y4");
+  // The first activation's fallback was fenced; the second still owns motion.
+  act(() => {
+    vi.advanceTimersByTime(239);
+  });
+  expect(entering()).toBe("y4");
+  dispatch(surface(), "animationend");
+  expect(entering()).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  expect(entering()).toBeNull();
+});
+
+it("is replay-safe under Strict Mode", () => {
+  render(
+    <StrictMode>
+      <Harness />
+    </StrictMode>,
+  );
+  expect(entering()).toBe("y4");
+  dispatch(surface(), "animationend");
+  expect(entering()).toBeNull();
+});
