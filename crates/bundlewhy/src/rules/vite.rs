@@ -116,6 +116,12 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
         if !module.included || module.input_format.as_deref() != Some("cjs") {
             continue;
         }
+        // The rule needs both facts: the CommonJS input format and the
+        // rendered wrapper helper. Without the helper there is no evidence of
+        // wrapping, so no finding is reported.
+        let Some(helper) = helper.as_ref() else {
+            continue;
+        };
         let display = context.module_display(module);
         let located = context.module_location(module, 0, 0);
         let mut evidence = vec![Evidence::new(
@@ -123,22 +129,12 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
             EvidenceStatus::Confirmed,
             "Rolldown detected the input format as cjs.",
         )];
-        let status = if let Some(helper) = &helper {
-            evidence.push(Evidence::new(
-                "rolldown runtime rendered exports",
-                EvidenceStatus::Confirmed,
-                format!("The runtime helper {helper} is rendered in the bundle."),
-            ));
-            EvidenceStatus::Confirmed
-        } else {
-            evidence.push(Evidence::new(
-                "bundlewhy analysis",
-                EvidenceStatus::Inferred,
-                "The CommonJS runtime helper was not observed; wrapping is inferred from the \
-                 input format.",
-            ));
-            EvidenceStatus::Inferred
-        };
+        evidence.push(Evidence::new(
+            "rolldown runtime rendered exports",
+            EvidenceStatus::Confirmed,
+            format!("The runtime helper {helper} is rendered in the bundle."),
+        ));
+        let status = EvidenceStatus::Confirmed;
         drafts.push(DiagnosticDraft {
             rule: RuleId::ViteCommonjsWrapped,
             status,
@@ -155,15 +151,8 @@ fn commonjs_wrapped(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>
                 ),
                 Condition::new(
                     "The module is hoisted without a runtime wrapper",
-                    if helper.is_some() {
-                        ConditionOutcome::Unmet
-                    } else {
-                        ConditionOutcome::Unknown
-                    },
-                    helper.as_ref().map_or_else(
-                        || "Runtime helper not observed".to_owned(),
-                        |name| format!("{name} rendered"),
-                    ),
+                    ConditionOutcome::Unmet,
+                    format!("{helper} rendered"),
                 ),
             ],
             located,

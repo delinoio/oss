@@ -42,12 +42,10 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
     for module in modules.into_iter().filter(|module| is_javascript(module)) {
-        let has_exports = module
-            .exports
-            .as_ref()
-            .is_some_and(|exports| !exports.is_empty());
         let no_used_exports = module.used_exports.as_ref().is_some_and(Vec::is_empty);
-        if !module.included || module.is_entry || !has_exports || !no_used_exports {
+        // Export-less modules (for example `import "./polyfill"`) qualify too:
+        // Rspack's side-effect bailout is the evidence, not the export list.
+        if !module.included || module.is_entry || !no_used_exports {
             continue;
         }
         let statements: Vec<&str> = module

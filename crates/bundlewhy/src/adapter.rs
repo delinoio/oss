@@ -190,11 +190,22 @@ pub async fn run(
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let stderr_task = tokio::spawn(async move {
-        let mut buffer = Vec::new();
-        let _ = (&mut stderr).take(64 * 1024).read_to_end(&mut buffer).await;
-        // Drain the rest so the child never blocks on a full pipe.
-        let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
-        String::from_utf8_lossy(&buffer).into_owned()
+        // Keep only the last 64 KiB: build tools print the actionable error
+        // after preceding warnings and logs. Draining also keeps the child
+        // from blocking on a full pipe.
+        const TAIL_BYTES: usize = 64 * 1024;
+        let mut tail: std::collections::VecDeque<u8> =
+            std::collections::VecDeque::with_capacity(TAIL_BYTES);
+        let mut chunk = [0u8; 8192];
+        while let Ok(read) = stderr.read(&mut chunk).await {
+            if read == 0 {
+                break;
+            }
+            tail.extend(&chunk[..read]);
+            let excess = tail.len().saturating_sub(TAIL_BYTES);
+            tail.drain(..excess);
+        }
+        String::from_utf8_lossy(&Vec::from(tail)).into_owned()
     });
 
     let mut lines = BufReader::new(stdout).lines();

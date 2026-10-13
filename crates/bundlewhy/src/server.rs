@@ -244,7 +244,8 @@ fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             uuid::Uuid::parse_str(&name).ok()?;
-            let bytes = std::fs::read(entry.path().join(BUNDLE_FILE)).ok()?;
+            // Saved runs are untrusted: read only bounded regular files.
+            let bytes = bundle::read_bundle_bytes(&entry.path().join(BUNDLE_FILE)).ok()?;
             let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
             let analysis = value.get("analysis")?;
             let field = |key: &str| {
@@ -394,7 +395,20 @@ async fn handle_rpc(
                 }
                 served.out_dir.clone()
             };
-            let run_dir = out_dir.join(&run_id);
+            // A UUID-named symlink must not redirect the served run (and later
+            // exports) outside the output directory.
+            let escape = || {
+                RpcError::new(
+                    ConnectCode::InvalidArgument,
+                    ErrorCode::Usage,
+                    "The selected run is not inside the output directory",
+                )
+            };
+            let canonical_out = std::fs::canonicalize(&out_dir).map_err(|_| escape())?;
+            let run_dir = std::fs::canonicalize(out_dir.join(&run_id)).map_err(|_| escape())?;
+            if run_dir.parent() != Some(canonical_out.as_path()) {
+                return Err(escape());
+            }
             let loaded = bundle::load(&run_dir)
                 .map_err(|error| RpcError::from_bw(ConnectCode::FailedPrecondition, &error))?;
             let progress = serve_bundle(state, loaded, run_dir);

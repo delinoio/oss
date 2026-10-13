@@ -123,6 +123,12 @@ pub struct SourceStore {
     files: BTreeMap<String, SourceFile>,
     pub project_relative: BTreeMap<String, String>,
     pub unreadable: Vec<String>,
+    /// Source text the bundler used, from source-map `sourcesContent`, keyed by
+    /// resolved path. Preferred over the live file, which may have changed
+    /// after the build read it.
+    pub snapshots: std::collections::HashMap<PathBuf, String>,
+    /// Display paths whose live file differs from the build snapshot.
+    pub changed_since_build: Vec<String>,
 }
 
 impl SourceStore {
@@ -142,14 +148,21 @@ impl SourceStore {
         if let Some(existing) = self.files.get(&key) {
             return Some((existing.id.clone(), existing.content.clone()));
         }
-        let content = match std::fs::read(path) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(error) => {
+        let live = std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+        let (content, stale) = match (self.snapshots.get(&normalize(path)), live) {
+            (Some(snapshot), Ok(live)) => (snapshot.clone(), *snapshot != live),
+            (Some(snapshot), Err(_)) => (snapshot.clone(), true),
+            (None, Ok(live)) => (live, false),
+            (None, Err(error)) => {
                 tracing::debug!(path = %classified.display, %error, "source file unreadable");
                 self.unreadable.push(classified.display);
                 return None;
             }
         };
+        if stale {
+            tracing::debug!(path = %classified.display, "source changed after the build read it");
+            self.changed_since_build.push(classified.display.clone());
+        }
         let id = source_id(&key);
         let file = SourceFile {
             id: id.clone(),
@@ -158,7 +171,7 @@ impl SourceStore {
             sha256: sha256_hex(content.as_bytes()),
             content: content.clone(),
             content_included: true,
-            stale: false,
+            stale,
         };
         if let Some(relative) = classified.project_relative {
             self.project_relative.insert(id.clone(), relative);
@@ -247,6 +260,23 @@ mod tests {
                 .iter()
                 .all(|file| file.path == "node_modules/pkg/index.js")
         );
+    }
+
+    #[test]
+    fn build_snapshots_win_over_changed_live_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.js");
+        std::fs::write(&file, "edited after the build").unwrap();
+        let mut store = SourceStore::new(true);
+        store
+            .snapshots
+            .insert(normalize(&file), "what the build read".to_owned());
+        let (_, content) = store.add_file(dir.path(), &file).unwrap();
+        assert_eq!(content, "what the build read");
+        assert_eq!(store.changed_since_build, vec!["a.js".to_owned()]);
+        let files = store.into_files();
+        assert!(files[0].stale);
+        assert_eq!(files[0].sha256, sha256_hex(b"what the build read"));
     }
 
     #[test]

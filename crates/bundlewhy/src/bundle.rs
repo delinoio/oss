@@ -45,6 +45,8 @@ pub fn save(run_dir: &Path, bundle: &ResultBundle) -> BwResult<()> {
         )
     })?;
     let temporary = run_dir.join(format!("{BUNDLE_FILE}.tmp"));
+    // std::fs::rename replaces an existing destination on every supported
+    // platform, including Windows (MoveFileExW with replacement).
     std::fs::write(&temporary, json)
         .and_then(|()| std::fs::rename(&temporary, run_dir.join(BUNDLE_FILE)))
         .map_err(|error| {
@@ -140,6 +142,30 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
         }
     }
     Ok(())
+}
+
+/// Reads `analysis.json` only when it is a regular file no larger than the
+/// bundle limit. Shared by `load` and run listing.
+pub fn read_bundle_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.is_file() || metadata.len() > MAX_BUNDLE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "not a regular result bundle file within the size limit",
+        ));
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(std::fs::File::open(path)?, MAX_BUNDLE_BYTES + 1),
+        &mut bytes,
+    )?;
+    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "result bundle is too large",
+        ));
+    }
+    Ok(bytes)
 }
 
 pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {

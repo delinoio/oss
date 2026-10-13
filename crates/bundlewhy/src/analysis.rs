@@ -65,6 +65,7 @@ fn coverage(
     collection: &Collection,
     missing_maps: usize,
     failed_chunks: usize,
+    unreadable_sources: usize,
 ) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
     OptimizationCategory::ALL
@@ -101,6 +102,15 @@ fn coverage(
                         ),
                     )
                 }
+                // The direct-eval detector reads module sources; an unreadable
+                // source may hide a finding.
+                OptimizationCategory::NameMangling if unreadable_sources > 0 => (
+                    CoverageState::Partial,
+                    format!(
+                        "{unreadable_sources} source file(s) could not be read; direct-eval \
+                         findings in them may be missing."
+                    ),
+                ),
                 // Both categories scan generated chunk text; a chunk that
                 // could not be read leaves part of the output unscanned.
                 OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
@@ -201,12 +211,29 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         ));
     }
 
+    let mut store = SourceStore::new(input.include_sources);
+    for chunk in &chunks {
+        let Some(map) = chunk.map.as_ref() else {
+            continue;
+        };
+        for (index, path) in chunk.map_sources.iter().enumerate() {
+            let content = u32::try_from(index)
+                .ok()
+                .and_then(|index| map.get_source_contents(index));
+            if let (Some(path), Some(content)) = (path, content) {
+                store
+                    .snapshots
+                    .entry(path.clone())
+                    .or_insert_with(|| content.to_owned());
+            }
+        }
+    }
     let mut context = Context::new(
         collection,
         input.project_root.clone(),
         input.project_name.clone(),
         chunks,
-        SourceStore::new(input.include_sources),
+        store,
     );
     let mut diagnostics = rules::run(&mut context);
     if !input.include_sources {
@@ -222,6 +249,19 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         .iter()
         .map(|chunk| measure(chunk, display))
         .collect();
+    let unreadable_sources = context.sources.unreadable.len();
+    if !context.sources.changed_since_build.is_empty() {
+        problems.push(problem(
+            ErrorCode::SourceStale,
+            ProblemSeverity::Warning,
+            format!(
+                "{} source file(s) changed after the build read them",
+                context.sources.changed_since_build.len()
+            ),
+            "Results use the source text from the build's source maps. Start a new run to analyze \
+             the current code.",
+        ));
+    }
     if !context.sources.unreadable.is_empty() {
         problems.push(problem(
             ErrorCode::SourceUnreadable,
@@ -264,7 +304,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         },
         engine: Some(engine_identity(input.bundler, collection)),
         diagnostics,
-        coverage: coverage(collection, missing_maps.len(), failed_chunks),
+        coverage: coverage(
+            collection,
+            missing_maps.len(),
+            failed_chunks,
+            unreadable_sources,
+        ),
         chunks: chunk_sizes,
         problems,
         config_summary,
@@ -685,6 +730,44 @@ mod tests {
                 .unwrap();
             assert_eq!(entry.state, CoverageState::Partial, "{category:?}");
         }
+    }
+
+    #[test]
+    fn rspack_side_effect_rule_covers_export_less_modules() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["name"] == "./src/effects/register.js" {
+                    module["exports"] = serde_json::json!([]);
+                }
+            }
+        });
+        assert!(
+            find(
+                &fixture.output.analysis.diagnostics,
+                "rspack/side-effect-retained",
+                "src/effects/register.js"
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn vite_commonjs_rule_requires_the_rendered_wrapper_helper() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["id"]
+                    .as_str()
+                    .is_some_and(|id| id.contains("rolldown/runtime"))
+                {
+                    module["usedExports"] = serde_json::json!(["__toESM"]);
+                }
+            }
+        });
+        assert_absent(
+            &fixture.output.analysis.diagnostics,
+            "vite/commonjs-wrapped",
+            "src/legacy/cjs.cjs",
+        );
     }
 
     #[test]

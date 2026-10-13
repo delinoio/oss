@@ -245,6 +245,20 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
     };
 
     let (mut result_bundle, mut error) = match result {
+        // Detectors are verified for client builds only; reject other builds
+        // before any rule runs so no unverified finding is saved.
+        Ok(collection) if collection.library_build || collection.ssr_build => incomplete_bundle(
+            &selection,
+            &run_id,
+            &started_at,
+            &log,
+            BwError::new(
+                ErrorCode::UnsupportedBuild,
+                "The selected configuration is a library, SSR or Node-target build",
+                "bundlewhy analyzes client production builds only. Select a client build \
+                 configuration.",
+            ),
+        ),
         Ok(collection) => {
             log.event(
                 "engine",
@@ -272,21 +286,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 "stage",
                 json!({ "stage": "analyzing", "durationMs": analyzing.elapsed().as_millis() as u64, "diagnostics": output.analysis.diagnostics.len() }),
             );
-            let mut analysis = output.analysis;
-            let mut unsupported: Option<BwError> = None;
-            if collection.library_build || collection.ssr_build {
-                let error = BwError::new(
-                    ErrorCode::UnsupportedBuild,
-                    "The selected configuration is a library, SSR or Node-target build",
-                    "bundlewhy analyzes client production builds only. Select a client build \
-                     configuration.",
-                );
-                analysis
-                    .problems
-                    .push(error.problem(ProblemSeverity::Error));
-                analysis.status = RunStatus::Failed;
-                unsupported = Some(error);
-            }
+            let analysis = output.analysis;
             let project_relative = output
                 .sources
                 .iter()
@@ -309,7 +309,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                     sources: output.sources,
                     project_relative,
                 },
-                unsupported,
+                None,
             )
         }
         Err(error) => incomplete_bundle(&selection, &run_id, &started_at, &log, error),

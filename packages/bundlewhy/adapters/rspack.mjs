@@ -108,8 +108,10 @@ async function loadConfig(request, rspack) {
 
 function describeMinimizer(rspack, config) {
   const optimization = config.optimization ?? {};
-  const minifyEnabled = optimization.minimize !== false;
   const minimizers = optimization.minimizer;
+  // An empty minimizer list runs no minifier even when minimize is true.
+  const minifyEnabled =
+    optimization.minimize !== false && !(Array.isArray(minimizers) && minimizers.length === 0);
   if (minimizers === undefined) {
     return { minifyEnabled, defaultMinifier: true, summary: "default" };
   }

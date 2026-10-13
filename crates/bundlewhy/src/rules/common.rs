@@ -441,8 +441,16 @@ fn declared_names(source: &str) -> Vec<String> {
     // Function declaration names are excluded: bundlers may keep top-level
     // function names for reasons unrelated to eval.
     let pattern = Regex::new(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]{3,})").expect("static regex");
+    // Declarations spelled inside strings, templates, comments or regular
+    // expressions are not bindings.
+    let ignored = non_code_ranges(source);
     let mut names: Vec<String> = pattern
         .captures_iter(source)
+        .filter(|captures| {
+            !captures
+                .get(0)
+                .is_some_and(|whole| in_ranges(&ignored, whole.start()))
+        })
         .map(|captures| captures[1].to_owned())
         .collect();
     names.sort();
@@ -634,5 +642,9 @@ y=/process.env.F/.test(z),process.env.G"#;
         let names =
             declared_names("const ab = 1; let local = 2; var other = 3; function helper() {}");
         assert_eq!(names, vec!["local".to_owned(), "other".to_owned()]);
+        let names = declared_names(
+            "const real = 1; const text = \"const retainedLiteralName\"; // let commented",
+        );
+        assert_eq!(names, vec!["real".to_owned(), "text".to_owned()]);
     }
 }

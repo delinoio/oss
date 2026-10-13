@@ -30,7 +30,26 @@ fn main() {
     let default_ui = manifest_dir.join("../../apps/bundlewhy-web/dist/index.html");
     println!("cargo:rerun-if-changed={}", default_ui.display());
     let source = std::env::var_os("BUNDLEWHY_UI_HTML").map_or(default_ui, PathBuf::from);
-    let html = std::fs::read_to_string(&source).unwrap_or_else(|_| FALLBACK.to_owned());
+    println!("cargo:rerun-if-env-changed=BUNDLEWHY_ALLOW_MISSING_UI");
+    let html = match std::fs::read_to_string(&source) {
+        Ok(html) => html,
+        // A release binary without the UI would serve only the fallback page;
+        // fail the build instead of producing an unusable distributable.
+        // BUNDLEWHY_ALLOW_MISSING_UI=1 opts out for release-profile checks
+        // that never ship the binary.
+        Err(error)
+            if std::env::var("PROFILE").as_deref() == Ok("release")
+                && std::env::var_os("BUNDLEWHY_ALLOW_MISSING_UI").is_none() =>
+        {
+            panic!(
+                "bundlewhy release builds require the built web UI at {}: {error}. Run `pnpm \
+                 --filter bundlewhy-web build` first, or set BUNDLEWHY_ALLOW_MISSING_UI=1 for a \
+                 non-distributed build.",
+                source.display()
+            );
+        }
+        Err(_) => FALLBACK.to_owned(),
+    };
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("out dir")).join("bundlewhy-ui.html");
     std::fs::write(out, html).expect("write embedded UI");
 }
