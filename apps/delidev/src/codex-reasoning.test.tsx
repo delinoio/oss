@@ -344,7 +344,8 @@ it.each([
   ({ extra }) => {
     for (const state of ["complete", "streaming"]) {
       const value = artifact();
-      if (state === "streaming") delete (value as { completed?: unknown }).completed;
+      if (state === "streaming")
+        delete (value as { completed?: unknown }).completed;
       const { container, unmount } = render(
         <TranscriptItem
           resource={transcriptResource({
@@ -378,11 +379,14 @@ it.each([
       attachments: [],
     },
   },
-])("selects the dedicated disclosure for a valid envelope with $name", ({ extra }) => {
-  const { container } = render(<TranscriptItem resource={envelope(extra)} />);
-  expect(container.querySelector(".message-codex-reasoning")).toBeTruthy();
-  expect(container.querySelector("details")?.open).toBe(false);
-});
+])(
+  "selects the dedicated disclosure for a valid envelope with $name",
+  ({ extra }) => {
+    const { container } = render(<TranscriptItem resource={envelope(extra)} />);
+    expect(container.querySelector(".message-codex-reasoning")).toBeTruthy();
+    expect(container.querySelector("details")?.open).toBe(false);
+  },
+);
 it.each([
   ["streaming", { started: snapshot() }],
   [
@@ -396,7 +400,11 @@ it.each([
 ])("keeps the dedicated disclosure for a valid %s snapshot", (state, value) => {
   const { container } = render(
     <TranscriptItem
-      resource={transcriptResource({ role: "artifact", state, artifact: value })}
+      resource={transcriptResource({
+        role: "artifact",
+        state,
+        artifact: value,
+      })}
     />,
   );
   expect(container.querySelector(".message-codex-reasoning")).toBeTruthy();
