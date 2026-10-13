@@ -109,6 +109,56 @@ test("host rejects foreign origins, hosts, paths and overlapping controls", asyn
   }
 });
 
+test("host serves WASM with the narrow CSP and preserved security headers", async () => {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "delidev-qa-host-wasm-test-")),
+  );
+  await writeFile(join(root, "index.html"), "<!doctype html>");
+  await writeFile(join(root, "app.js"), "export {};");
+  await writeFile(
+    join(root, "minimal.wasm"),
+    Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]),
+  );
+  const host = await createHost(root, {
+    endpoint: "http://127.0.0.1:12345",
+    bootstrap: () => ({}),
+    status: () => ({}),
+  });
+  const expectedScriptSrc = "script-src 'self' 'wasm-unsafe-eval'";
+  try {
+    const wasm = await fetch(`${host.origin}/minimal.wasm`);
+    assert.equal(wasm.status, 200);
+    assert.equal(wasm.headers.get("content-type"), "application/wasm");
+    const policy = wasm.headers.get("content-security-policy");
+    assert.ok(policy.split("; ").includes(expectedScriptSrc));
+    assert.doesNotMatch(policy, /'unsafe-eval'|'unsafe-inline'|\*/);
+    assert.equal(
+      policy,
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:12345; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    );
+    assert.equal(wasm.headers.get("cache-control"), "no-store");
+    assert.equal(wasm.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(wasm.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(
+      wasm.headers.get("cross-origin-resource-policy"),
+      "same-origin",
+    );
+    const module = await WebAssembly.instantiateStreaming(
+      await fetch(`${host.origin}/minimal.wasm`),
+    );
+    assert.ok(module.instance);
+    const index = await fetch(`${host.origin}/`);
+    assert.equal(index.headers.get("content-type"), "text/html; charset=utf-8");
+    const script = await fetch(`${host.origin}/app.js`);
+    assert.equal(script.headers.get("content-type"), "application/javascript");
+    await script.arrayBuffer();
+    await index.arrayBuffer();
+  } finally {
+    await host.close();
+    await rm(root, { recursive: true });
+  }
+});
+
 test("tracked processes stop owned children on failure and signals", async () => {
   const processes = new Processes();
   const unrelated = new Processes(),
