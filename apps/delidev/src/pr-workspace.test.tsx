@@ -22,6 +22,8 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { PRAvatarCache } from "./pr-avatar-cache";
+import { AvatarContext, PRWorkspaceRows } from "./pr-workspace";
 import {
   StandalonePullRequestResults,
   type PullRequestNavigation,
@@ -738,3 +740,94 @@ it.each([
     }
   },
 );
+
+// Each resident payload page renders its own PRWorkspaceRows instance, so a
+// component with seeds on two resident pages must be owned by exactly one.
+it("renders a component with seeds on two resident pages exactly once", () => {
+  const selected = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.REPOSITORY,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      integration_id: newRequestId(),
+      github_owner: "fixture-owner",
+      github_name: "repo",
+    }),
+  });
+  const item = (number: string) => ({
+    provider: "github.com",
+    kind: "pull-request",
+    identity_source: "pull-request-api",
+    id: String(Number(number) + 1000),
+    number,
+    title: `Resident title ${number}`,
+    state: "open",
+    created_at: "2026-10-10T00:00:00Z",
+    updated_at: "2026-10-11T00:00:00Z",
+    url: `https://github.com/fixture-owner/repo/pull/${number}`,
+    author: { login: "fixture-author" },
+    draft: false,
+  });
+  const page = (number: number, seed: string) => ({
+    query: {
+      kind: ItemKind.PullRequest,
+      operation: QueryOperation.List,
+      state: ItemState.Open,
+      page: number,
+      page_size: 1,
+    },
+    data: {
+      observed_at: "2026-10-11T00:00:00Z",
+      items: [item(seed)],
+    },
+  });
+  const observations = new Map([
+    [
+      "scope",
+      {
+        state: "complete",
+        nodes: ["101", "102", "103"].map((number) => ({ item: item(number) })),
+        edges: [
+          { parent: "101", child: "102" },
+          { parent: "102", child: "103" },
+        ],
+      },
+    ],
+  ]);
+  const transport = createRouterTransport(() => {});
+  const avatars = new PRAvatarCache();
+  const client = new QueryClient();
+  const allSeeds = ["101", "103"];
+  const rows = (residentSeeds?: string[]) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <AvatarContext.Provider value={avatars}>
+          {[page(1, "101"), page(2, "103")].map((value) => (
+            <PRWorkspaceRows
+              key={value.query.page}
+              pages={[value]}
+              selected={selected}
+              enabled={false}
+              choose={() => {}}
+              observations={observations}
+              observe={() => {}}
+              allSeeds={allSeeds}
+              residentSeeds={residentSeeds}
+            />
+          ))}
+        </AvatarContext.Provider>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const view = render(rows(allSeeds));
+  const numbers = () =>
+    [...view.container.querySelectorAll("[data-pr-number]")].map((node) =>
+      node.getAttribute("data-pr-number"),
+    );
+  expect(numbers()).toEqual(["101", "102", "103"]);
+  // Evicting the earlier page moves ownership to the earliest resident seed.
+  view.rerender(rows(["103"]));
+  expect(numbers()).toEqual(["101", "102", "103"]);
+  view.unmount();
+});

@@ -87,7 +87,9 @@ export function PRCounts({ value }: { value: unknown }) {
     <span aria-label={copy("pr-workspace.countsUnavailable")}>—</span>
   );
 }
-const AvatarContext = createContext<PRAvatarCache | undefined>(undefined);
+export const AvatarContext = createContext<PRAvatarCache | undefined>(
+  undefined,
+);
 function AvatarRead({
   selected,
   reference,
@@ -257,6 +259,7 @@ export function PRWorkspaceRows({
   observations,
   observe,
   allSeeds,
+  residentSeeds,
   previous,
 }: {
   pages: PRPage[];
@@ -267,6 +270,9 @@ export function PRWorkspaceRows({
   observations: Map<string, Document>;
   observe: (key: string, value?: Document) => void;
   allSeeds: string[];
+  /** Seeds on every page still inside the payload window; defaults to this
+   * instance's own pages. */
+  residentSeeds?: string[];
   previous?: boolean;
 }) {
   useLocale();
@@ -301,7 +307,7 @@ export function PRWorkspaceRows({
     edges,
     allSeeds,
     ambiguous,
-    new Set(seeds),
+    new Set(residentSeeds ?? seeds),
   ).filter((row) => seeds.includes(row.owner));
   return (
     <section
