@@ -183,7 +183,10 @@ function fixture(options: Options = {}) {
       listResources: (request) => {
         if (request.filter?.kind === EntityKind.MESSAGE) {
           if (failures.messages)
-            throw new ConnectError("Fixture message read failed", Code.Internal);
+            throw new ConnectError(
+              "Fixture message read failed",
+              Code.Internal,
+            );
           return { resources: [userMessage()], nextPageToken: "" };
         }
         if (request.filter?.kind === EntityKind.INTERACTION) {
@@ -391,7 +394,10 @@ it("freezes the estimate when a control mutation outcome is uncertain", async ()
 });
 
 it.each([
-  ["recovery is required", () => sessionResource(2n, 8, { recovery: "required" })],
+  [
+    "recovery is required",
+    () => sessionResource(2n, 8, { recovery: "required" }),
+  ],
   [
     "execution responses are unconfirmed",
     () => sessionResource(2n, 8, {}, { unconfirmed_responses: 1 }),
