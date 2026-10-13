@@ -132,6 +132,7 @@ it("keeps unscoped templates live across unrelated dispatch events and opaque cu
   expect(updates.at(-1)).toMatchObject({
     kind: SyncKind.Remove,
     id: template.id,
+    entityKind: EntityKind.TEMPLATE,
   });
   expect(
     updates.some(
