@@ -291,6 +291,102 @@ it("does not report restriction when every reached page is raw-empty", async () 
   ).toBeNull();
 });
 
+async function loadAllPages(f: ReturnType<typeof fixture>, pages: number) {
+  await screen.findByText(/More Agent Worker choices are available/);
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  for (let index = 1; index < pages; index++) {
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Load more/ }),
+    );
+    await waitFor(() => expect(f.reads).toHaveBeenCalledWith(`p${index + 1}`));
+  }
+  await waitFor(() =>
+    expect(
+      screen.queryByText(/More Agent Worker choices are available/),
+    ).toBeNull(),
+  );
+}
+const chained = (excluded: Resource, pages: number) => (token: string) => {
+  const index = token ? Number(token.slice(1)) : 1;
+  return {
+    resources: index === 1 ? [excluded] : [],
+    nextPageToken: index < pages ? `p${index + 1}` : "",
+  };
+};
+
+it("keeps restriction guidance when the excluded worker page was evicted from a four-page chain", async () => {
+  const f = fixture(chained(worker(), 4));
+  render(<f.View allowed={[]} />);
+  await loadAllPages(f, 4);
+  expect(
+    await screen.findByText(/match the selected project's restrictions/),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+  expect(f.change).not.toHaveBeenCalled();
+});
+
+it("keeps restriction guidance for the same excluded worker in a three-page chain", async () => {
+  const f = fixture(chained(worker(), 3));
+  render(<f.View allowed={[]} />);
+  await loadAllPages(f, 3);
+  expect(
+    await screen.findByText(/match the selected project's restrictions/),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+});
+
+it("drops stale restriction evidence when the chain is replaced by an empty first page", async () => {
+  let empty = false;
+  const excluded = worker(),
+    f = fixture((token) =>
+      empty
+        ? { resources: [] }
+        : token
+          ? { resources: [] }
+          : { resources: [excluded], nextPageToken: "next" },
+    );
+  const view = render(<f.View allowed={[]} />);
+  await loadTerminalPage(f);
+  expect(
+    await screen.findByText(/match the selected project's restrictions/),
+  ).toBeTruthy();
+  empty = true;
+  // A scope change (project restriction key) replaces the validated chain.
+  view.rerender(<f.View allowed={["other-project-worker"]} />);
+  expect(
+    await screen.findByRole("button", { name: "Create agent worker" }),
+  ).toBeTruthy();
+  expect(screen.queryByText(/match the selected project/)).toBeNull();
+});
+
+it("keeps the continuation status and no creation entry for a continuing empty first page followed by restricted workers", async () => {
+  const f = fixture((token) =>
+    token === "p3"
+      ? { resources: [worker()] }
+      : token
+        ? { resources: [worker()], nextPageToken: "p3" }
+        : { resources: [], nextPageToken: "p2" },
+  );
+  render(<f.View allowed={[]} />);
+  expect(
+    await screen.findByText(/More Agent Worker choices are available/),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Load more/ }));
+  await waitFor(() => expect(f.reads).toHaveBeenCalledWith("p2"));
+  expect(
+    await screen.findByText(/More Agent Worker choices are available/),
+  ).toBeTruthy();
+  expect(screen.queryByText(/match the selected project/)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+});
+
 it("lists an allowed worker from a later page without restriction guidance", async () => {
   const later = worker(),
     f = fixture((token) =>
