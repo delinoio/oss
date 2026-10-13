@@ -1,7 +1,7 @@
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
-import { copy, useLocale } from "./localization";
+import { copy, LocalizedText, useLocale } from "./localization";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
@@ -661,6 +661,16 @@ export function RepositoryDiff({
       refreshFailed ? (
         <>
           <Failure failure={refreshFailure.failure} />
+          {refreshFailure.failure.correlationId ? (
+            <p>
+              <LocalizedText
+                id="ui.reference_0eac07"
+                components={{
+                  s0: <code>{refreshFailure.failure.correlationId}</code>,
+                }}
+              />
+            </p>
+          ) : null}
           <p role="alert">{optionsFailureMessage(refreshFailure.code)}</p>
         </>
       ) : null}

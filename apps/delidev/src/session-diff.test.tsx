@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
+  ErrorDetailSchema,
   ResourceService,
   SessionQuery,
   SessionService,
@@ -1318,6 +1319,38 @@ it("presents a sanitized typed problem for a failed options refresh until a refr
       "Refresh failed. The previous observation is stale and shown below.",
     ),
   ).toBeNull();
+});
+
+it("renders the correlation ID of a failed options refresh until a refresh is accepted", async () => {
+  const { f } = inventoryFixture([{ name: "main" }], "main");
+  const correlationId = newRequestId();
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: {
+          code: "unavailable",
+          guidance: "Retry the comparison shortly.",
+          correlationId,
+        },
+      },
+    ]),
+  );
+  refreshDiff();
+  const reference = await screen.findByText(correlationId);
+  expect(reference.parentElement?.textContent).toBe(
+    `Reference: ${correlationId}`,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  refreshDiff();
+  await waitFor(() => expect(screen.queryByText(correlationId)).toBeNull());
 });
 
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
