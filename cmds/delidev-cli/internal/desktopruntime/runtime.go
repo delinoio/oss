@@ -256,14 +256,11 @@ func followMarkerPath(root string) string {
 // only after the retained original pairing grant proves that the saved Worker
 // identity (server, endpoint and pairing) is the one the owner granted. The
 // proof is file-only and runs before any listener is contacted. An existing
-// marker can only have been created through this verification and is just
-// revalidated.
+// marker is never trusted on its own: a version-2 marker written before grant
+// verification existed carries no proof, so the grant is re-verified every time.
 func FollowVerified(owner, root string, serverID domain.ID, endpoint string, pairingID domain.ID) error {
 	if serverID.Validate() != nil {
 		return unavailable()
-	}
-	if _, err := security.ReadPrivate(followMarkerPath(root), 4096); err == nil {
-		return follow(root, serverID)
 	}
 	if err := VerifyOriginalPairing(owner, root, serverID, endpoint, pairingID); err != nil {
 		return err

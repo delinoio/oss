@@ -257,3 +257,29 @@ func TestVerifiedPairingFollowsNewRuntimeGeneration(t *testing.T) {
 		t.Fatal("credential reached the immutable pairing address")
 	}
 }
+
+// A version-2 marker written before grant verification existed carries no
+// proof. Revalidating it must still require the retained grant.
+func TestLegacyFollowMarkerIsRevalidatedAgainstRetainedGrant(t *testing.T) {
+	const original = "http://127.0.0.1:40000"
+	owner := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(owner); err != nil {
+		t.Fatal(err)
+	}
+	target := fixtureTarget("http://127.0.0.1:41000")
+	target.Root = owner
+	p := retainPairing(t, owner, target.ServerID, original)
+	if err := follow(p.Worker, target.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := FollowVerified(owner, p.Worker, target.ServerID, original, p.PairingID); err != nil {
+		t.Fatalf("intact grant rejected an existing marker: %v", err)
+	}
+	if err := os.Remove(filepath.Join(owner, "pairing-codes", string(p.RequestID)+".json")); err != nil {
+		t.Fatal(err)
+	}
+	err := FollowVerified(owner, p.Worker, target.ServerID, original, p.PairingID)
+	if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatalf("existing marker was trusted without the retained grant: %v", err)
+	}
+}
