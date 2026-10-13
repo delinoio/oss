@@ -527,6 +527,10 @@ enum PersistStep {
     ScratchSynced,
     DestinationVerified,
     Published,
+    /// Persistence barrier for the published file object (Windows flushes the
+    /// verified handle; Unix relies on the later parent sync). Failure is
+    /// OutcomeUnknown.
+    PublishBarrier,
     ScratchUnlinking,
     ScratchRemoved,
     DirectorySynced,
@@ -725,6 +729,35 @@ fn delete_handle(file: &File) -> std::io::Result<()> {
     }
 }
 
+/// Persistence barrier for a file object that was just published by a handle
+/// rename. `SetFileInformationByHandle` has no write-through option, so the
+/// verified handle is flushed (`FlushFileBuffers` on Windows) before the save
+/// may be reported as committed. The handle is proven to still be the created
+/// file object first; every failure is OutcomeUnknown so the new selection is
+/// never adopted. This does not establish power-loss durability, which is
+/// untested.
+#[cfg(any(windows, test))]
+fn flush_published(file: &File, expected: FileIdentity) -> Result<(), SidebarProblem> {
+    match identity(file) {
+        Ok((found, _)) if found == expected => {}
+        _ => {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "publish-barrier-identity-mismatch"
+            );
+            return Err(SidebarProblem::OutcomeUnknown);
+        }
+    }
+    file.sync_all().map_err(|error| {
+        tracing::warn!(
+            operation = "sidebar_preference_publish",
+            code = "publish-barrier-failed",
+            kind = ?error.kind()
+        );
+        SidebarProblem::OutcomeUnknown
+    })
+}
+
 /// The exclusively created scratch file. Publication and cleanup are bound to
 /// the object this save created and verified, never to a bare pathname:
 /// Windows renames or deletes through the verified handle; Unix has no
@@ -804,6 +837,21 @@ impl Scratch {
         }
         self.bound = Some(source);
         Ok(())
+    }
+
+    /// Barrier after a successful publication, before cleanup releases the
+    /// bound handle. Windows flushes the renamed file object for both Missing
+    /// and Present destinations; Unix syncs the parent directory afterwards.
+    fn publish_barrier(&self) -> Result<(), SidebarProblem> {
+        #[cfg(windows)]
+        {
+            let file = self.bound.as_ref().ok_or(SidebarProblem::OutcomeUnknown)?;
+            flush_published(file, self.identity)
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(())
+        }
     }
 
     #[cfg(unix)]
@@ -1088,6 +1136,8 @@ fn persist_with(
         }
         published = true;
         step(PersistStep::Published, &scratch.path)?;
+        step(PersistStep::PublishBarrier, &scratch.path)?;
+        scratch.publish_barrier()?;
         // Discard the replaced document (Unix Present) before checking the
         // destination's link count. Moved scratch files need no removal.
         scratch.remove(&mut step)?;
@@ -1840,6 +1890,7 @@ mod tests {
     fn every_post_publication_failure_keeps_old_selection_and_requires_read() {
         for fail_at in [
             PersistStep::Published,
+            PersistStep::PublishBarrier,
             PersistStep::ScratchRemoved,
             PersistStep::DirectorySynced,
             PersistStep::ReceiptVerified,
@@ -2228,5 +2279,70 @@ mod tests {
         fs::remove_file(&second).unwrap();
         fs::write(&second, b"second").unwrap();
         assert!(identity(&File::open(second).unwrap()).unwrap().0 != original);
+    }
+
+    #[test]
+    fn publish_barrier_runs_after_publication_and_before_cleanup() {
+        for existing in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sidebar_preference.json");
+            if existing {
+                fs::write(&path, br#"{"version":1,"sidebar_preference":"expanded"}"#).unwrap();
+            }
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut steps = Vec::new();
+            let committed = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, _| {
+                        steps.push(step);
+                        Ok(())
+                    })
+                },
+            );
+            assert_eq!(committed.problem, None);
+            assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+            let position = |wanted| steps.iter().position(|step| *step == wanted).unwrap();
+            assert!(position(PersistStep::Published) < position(PersistStep::PublishBarrier));
+            assert!(position(PersistStep::PublishBarrier) < position(PersistStep::ScratchRemoved));
+        }
+    }
+
+    #[test]
+    fn publish_barrier_flushes_only_the_created_file_object() {
+        let directory = tempfile::tempdir().unwrap();
+        let created = directory.path().join("created");
+        let other = directory.path().join("other");
+        fs::write(&created, b"created").unwrap();
+        fs::write(&other, b"other").unwrap();
+        let mut options = OpenOptions::new();
+        options.read(true).write(true);
+        let file = options.open(&created).unwrap();
+        let (expected, _) = identity(&file).unwrap();
+        assert_eq!(flush_published(&file, expected), Ok(()));
+        let (foreign, _) = identity(&File::open(&other).unwrap()).unwrap();
+        assert_eq!(
+            flush_published(&file, foreign),
+            Err(SidebarProblem::OutcomeUnknown)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_replacement_commits_only_after_the_published_file_flush() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        fs::write(&path, br#"{"version":1,"sidebar_preference":"expanded"}"#).unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let committed = store.update(SidebarPreference::Collapsed, initial.revision);
+        assert_eq!(committed.problem, None);
+        assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+        assert_eq!(
+            store.read().sidebar_preference,
+            SidebarPreference::Collapsed
+        );
     }
 }

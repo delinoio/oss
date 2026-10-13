@@ -5781,6 +5781,15 @@ report a safe failure or OutcomeUnknown. Foreign bytes may be visible at the
 destination pathname for the duration of that rollback only. Unsupported platforms
 or filesystems that refuse the atomic variants fail closed with WriteFailed and an
 unchanged destination; never fall back to a pathname rename or link.
+`SetFileInformationByHandle` rename has no write-through option, so after a
+successful Windows publication (Missing or Present destination) and before the
+bound handle is released for cleanup, call `FlushFileBuffers` on that verified
+write-access handle after proving it is still the created file object by
+volume/128-bit file identity. Any identity mismatch or flush failure is
+OutcomeUnknown with explicit Reload recovery and no committed-state adoption;
+Unix relies on the parent sync below. File flush and read-back alone never
+establish power-loss durability, which is untested; automated tests cover only
+ordering, identity checking and failure mapping.
 Adopt the new selection and private receipt only after cleanup, required parent
 sync and exact published bytes/new-file identity verification succeed. Any
 post-publication failure is OutcomeUnknown and requires Read recovery without
