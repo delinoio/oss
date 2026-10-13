@@ -441,6 +441,48 @@ it("defers the schedule detail refetch after an accepted control until the view 
   );
 });
 
+it("defers accepted detail state updates with the refetch until the view is active", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.remove.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {};
+  });
+  const view = (active: boolean) =>
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active={active}
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    );
+  const rendered = render(view(true));
+  await waitFor(() => expect(value.getSchedule).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
+  const confirm = screen.getByRole("button", {
+    name: "Confirm schedule deletion",
+  });
+  fireEvent.click(confirm);
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1));
+  rendered.rerender(view(false));
+  const reads = value.getSchedule.mock.calls.length;
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  // The accepted delete keeps the retained controls mounted while inactive.
+  expect(confirm.isConnected).toBe(true);
+  expect(screen.queryByText(/Schedule configuration deleted/)).toBeNull();
+  expect(value.getSchedule.mock.calls.length).toBe(reads);
+  rendered.rerender(view(true));
+  await waitFor(() => expect(confirm.isConnected).toBe(false));
+  expect(screen.getByText(/Schedule configuration deleted/)).toBeTruthy();
+});
+
 it("keeps loaded occurrence history mounted during notification review", async () => {
   const value = fixture();
   const rendered = render(value.view(<Schedules active open={() => {}} />));

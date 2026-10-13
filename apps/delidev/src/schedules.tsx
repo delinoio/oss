@@ -979,44 +979,52 @@ export function ScheduleDetails({
   const data = document(current),
     definition = object(data.definition),
     problem = object(data.problem);
-  // A late acknowledgement must not read while this view is inactive (for
-  // example during a notification review); the read waits for reactivation.
+  // A late accepted response must neither read nor change this view while it is
+  // inactive (for example during a notification review): the retained details
+  // stay exactly as they were hidden, and the whole response, including its
+  // refetch, is applied in order when the view is active again.
   const activeNow = useRef(active);
   activeNow.current = active;
-  const refetchPending = useRef(false);
-  const refetchWhenActive = () => {
-    if (activeNow.current) void result.refetch();
-    else refetchPending.current = true;
+  const latestRefetch = useRef(result.refetch);
+  latestRefetch.current = result.refetch;
+  const deferredResponses = useRef<(() => void)[]>([]);
+  const applyWhenActive = (apply: () => void) => {
+    if (activeNow.current) apply();
+    else deferredResponses.current.push(apply);
   };
   useEffect(() => {
-    if (!active || !refetchPending.current) return;
-    refetchPending.current = false;
-    void result.refetch();
-  }, [active, result.refetch]);
+    if (!active || deferredResponses.current.length === 0) return;
+    const queued = deferredResponses.current;
+    deferredResponses.current = [];
+    for (const apply of queued) apply();
+  }, [active]);
   const control = useRetainedMutation(
     `schedule-control:${initial.id}`,
     ScheduleQuery.controlSchedule,
-    (response) => {
-      setAcknowledged(response.schedule);
-      refetchWhenActive();
-    },
+    (response) =>
+      applyWhenActive(() => {
+        setAcknowledged(response.schedule);
+        void latestRefetch.current();
+      }),
   );
   const remove = useRetainedMutation(
     `schedule-delete:${initial.id}`,
     ScheduleQuery.deleteSchedule,
-    () => {
-      setDeleted(true);
-      setConfirm(undefined);
-    },
+    () =>
+      applyWhenActive(() => {
+        setDeleted(true);
+        setConfirm(undefined);
+      }),
   );
   const run = useRetainedMutation(
     `schedule-run:${initial.id}`,
     ScheduleQuery.runScheduleNow,
-    (response) => {
-      setOccurrence(response.occurrence);
-      setConfirm(undefined);
-      refetchWhenActive();
-    },
+    (response) =>
+      applyWhenActive(() => {
+        setOccurrence(response.occurrence);
+        setConfirm(undefined);
+        void latestRefetch.current();
+      }),
   );
   const operations = [control, remove, run],
     blocked = operations.some(
