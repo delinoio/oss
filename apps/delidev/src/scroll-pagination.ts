@@ -251,8 +251,17 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         : stage === ReadStage.Additional || (retryOnly && !refreshing)
           ? [...previous.pages]
           : [];
-      if (stage === ReadStage.Reload || stage === ReadStage.Initial)
+      if (stage === ReadStage.Reload || stage === ReadStage.Initial) {
         this.pendingRefresh = undefined;
+        // These stages read every page from the start token after the queued
+        // invalidation was recorded, so they already supersede it. An
+        // invalidation arriving while they run queues again as usual.
+        if (this.queuedRefresh)
+          console.debug("delidev.pagination.refresh_queue_superseded", {
+            stage,
+          });
+        this.queuedRefresh = undefined;
+      }
       const payloads = new Map(
         previous.payloadPages.map((page) => [page.token, page.payload]),
       );

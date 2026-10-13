@@ -570,7 +570,7 @@ it("keeps the queued refresh after a failed read and honors it after explicit re
   expect(titles(chain).every((title) => title.startsWith("fresh"))).toBe(true);
 });
 
-it("honors a queued refresh after an explicit reload recovers an expired boundary", async () => {
+it("lets an explicit reload supersede a queued refresh recorded before it started", async () => {
   const chain = await loadedChain(2);
   const changed: PaginationReader<Row, Payload> = async () => ({
     rows: [{ id: "x", revision: 1n, title: "changed" }],
@@ -583,12 +583,42 @@ it("honors a queued refresh after an explicit reload recovers an expired boundar
   const fresh = deferredReader("fresh");
   await chain.refresh(fresh.read);
   expect(fresh.calls).toHaveLength(0);
-  const reloading = chain.reload(reader);
+  // Reload reads every page from the start token after the invalidation, so
+  // no second coalesced refresh follows it.
+  await chain.reload(reader);
   await flush();
   expect(chain.getSnapshot().error).toBeUndefined();
-  expect(fresh.calls).toHaveLength(1);
-  expect(fresh.calls[0].token).toBe("");
-  await settleAll(reloading, fresh);
+  expect(fresh.calls).toHaveLength(0);
+  // An invalidation arriving while the reload runs still queues one refresh.
+  const reloading = deferredReader("reloading");
+  const pending = chain.reload(reloading.read);
+  await chain.refresh(fresh.read);
+  await settleAll(pending, reloading, fresh);
+  expect(fresh.tokens).toEqual([""]);
+  expect(chain.getSnapshot().error).toBeUndefined();
+});
+
+it("lets an explicit retry of a failed initial read supersede the queued refresh", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(async () => {
+    throw new ConnectError("offline", Code.Unavailable);
+  });
+  expect(chain.getSnapshot().error?.stage).toBe(ReadStage.Initial);
+  const fresh = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.refresh(fresh);
+  expect(fresh).not.toHaveBeenCalled();
+  const recovery = vi.fn<PaginationReader<Row, Payload>>((token, signal) =>
+    reader(token, signal),
+  );
+  await chain.retry(recovery);
+  await flush();
+  // The retry re-reads from the start token after the invalidation.
+  expect(recovery).toHaveBeenCalledTimes(1);
+  expect(fresh).not.toHaveBeenCalled();
+  expect(chain.getSnapshot().error).toBeUndefined();
 });
 
 it("clears a queued refresh when the owner suspends, resets or is replaced", async () => {
