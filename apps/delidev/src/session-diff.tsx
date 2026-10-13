@@ -448,8 +448,6 @@ export function RepositoryDiff({
       if (mounted.current && scopeGeneration.current === token) {
         const failure = clientFailure(error);
         console.warn("delidev.diff.options_refresh_failed", {
-          sessionId,
-          repository,
           operation: "git-diff-options",
           classification: failure.code,
         });

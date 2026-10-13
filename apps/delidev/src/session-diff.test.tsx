@@ -1233,6 +1233,12 @@ it("logs only a sanitized operation and closed classification for a failed optio
     expect(logged).toHaveLength(1);
     expect(JSON.stringify(logged[0])).not.toContain("native secret");
     expect(logged[0][1]).not.toHaveProperty("error");
+    // Only the operation and the closed classification are allowed; resource
+    // identity such as the session and repository IDs must stay out of logs.
+    expect(Object.keys(logged[0][1] as object).sort()).toEqual([
+      "classification",
+      "operation",
+    ]);
     expect(logged[0][1]).toMatchObject({
       operation: "git-diff-options",
       classification: expect.any(String),
