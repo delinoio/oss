@@ -4155,6 +4155,41 @@ it(
 );
 
 it(
+  "skips the hidden retained session row when widening from compact on Settings",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /General Chat Retained session/,
+      }),
+    );
+    await screen.findByRole("heading", { name: "Retained session" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const retained = document.querySelector<HTMLElement>(
+      ".sidebar-session-row[aria-current='true']",
+    );
+    expect(retained?.closest("[hidden]")).not.toBeNull();
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused).not.toBe(opener);
+    expect(focused).not.toBe(document.body);
+    expect(focused).not.toBe(retained);
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expect(focused.getAttribute("aria-current")).toBe("page");
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
   "keeps focus and selection on a composer input across both breakpoint directions",
   async () => {
     const resize = viewport();

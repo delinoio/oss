@@ -5878,8 +5878,9 @@ primary+B. Drawer opening/closing never saves the wide preference. On return to
 wide layout, reapply the committed choice, retire any modal drawer and use the
 same current/first rail fallback when collapsed. When the closed compact opener
 owns focus as the viewport widens (ownership is captured from the breakpoint
-event, before CSS hides the opener), move focus to the `aria-current` pane item
-when the pane is visible, else to the current/first rail button; focus on any
+event, before CSS hides the opener), move focus to the first focusable `aria-current` pane item
+not inside a hidden or inert section (the retained session tree is skipped on
+non-session surfaces), else to the current/first rail button; focus on any
 other control, including composer selection and caret, is never touched and the
 reflow never writes the sidebar preference. Search initial focus cannot
 target a hidden pane; explicit Search focus may request the original

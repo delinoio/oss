@@ -1346,11 +1346,29 @@ export function Sidebar({
         if (!active || active === document.body || active === opener) {
           (element.hidden || collapsed
             ? railTarget()
-            : (element.querySelector<HTMLElement>(
-                // Pane rows use aria-current="true" while navigation buttons
-                // use "page"; accept any valid current token.
-                "[aria-current]:not([aria-current='false'])",
-              ) ?? railTarget())
+            : (Array.from(
+                element.querySelectorAll<HTMLElement>(
+                  // Pane rows use aria-current="true" while navigation buttons
+                  // use "page"; accept any valid current token.
+                  "[aria-current]:not([aria-current='false'])",
+                ),
+              ).find((candidate) => {
+                // The retained session tree stays mounted under a hidden
+                // wrapper on other surfaces; skip current items inside any
+                // hidden or inert ancestor so focus lands on a focusable row.
+                if (
+                  candidate instanceof HTMLButtonElement &&
+                  candidate.disabled
+                )
+                  return false;
+                for (
+                  let node: HTMLElement | null = candidate;
+                  node && node !== element;
+                  node = node.parentElement
+                )
+                  if (node.hidden || node.inert) return false;
+                return true;
+              }) ?? railTarget())
           )?.focus({ preventScroll: true });
         }
       }
