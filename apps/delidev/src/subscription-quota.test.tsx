@@ -46,6 +46,7 @@ function fixture(
   creditsV2 = true,
   savedQuota: Record<string, unknown> = {},
   quotaCapability = true,
+  statusError = false,
 ) {
   const machine = newRequestId(),
     connection = newRequestId(),
@@ -130,6 +131,8 @@ function fixture(
     router.service(SystemService, {
       getStatus: () => {
         status();
+        if (statusError)
+          throw new ConnectError("private-status-fixture", Code.Unavailable);
         return {
           capabilities: [
             SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
@@ -1362,6 +1365,44 @@ it("keeps a local preference save failure visible after the account disconnects"
   );
   await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
   expect((await screen.findByText(failure)).getAttribute("role")).toBe("alert");
+});
+
+it("leaves the shared status failure to its owner when the account is disconnected", async () => {
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    false,
+    true,
+    "",
+    false,
+    "",
+    false,
+    false,
+    {},
+    "",
+    false,
+    "uncertain",
+    true,
+    {},
+    true,
+    true,
+  );
+  render(<value.Harness />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
+  // The owner renders the status Problem once; the read-only view adds no
+  // second alert or Results section for the same failure.
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  expect(
+    screen.queryByRole("heading", { name: "Results and recovery" }),
+  ).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Refresh account status and quota" }),
+  ).toBeTruthy();
 });
 
 it("keeps every independent retained failure visible after the account disconnects", async () => {

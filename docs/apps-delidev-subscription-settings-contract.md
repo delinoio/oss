@@ -309,10 +309,11 @@ A disconnected ChatGPT account renders only read-only retained evidence above th
 status footer: the last-success timestamp and failed-refresh wording when saved
 `quota_observed_at` or `quota_state = failed` exists (current server or Worker
 quota capability gates only new requests, never saved evidence), plus any retained original
-quota, credit, preference, consent or status failure Problem and any local
+quota, credit, preference or consent failure Problem and any local
 preference-save alert (a document that cannot be patched locally never sends a
 request), including after the operation settles. Every present retained failure from these independent
-operations stays visible; none hides another. An automatic-use confirmation
+operations stays visible; none hides another. The shared status read failure
+stays with the account owner's single Problem and is not repeated here. An automatic-use confirmation
 opened while connected closes as soon as the account's own connection state
 reports it disconnected, even while the owner keeps the controls visible for an
 in-flight request, and is not restored on reconnect. No timestamp, value or success claim is invented when no

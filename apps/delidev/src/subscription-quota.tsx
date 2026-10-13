@@ -639,8 +639,8 @@ export function SubscriptionQuotaControls({
     // Independent retained operations keep independent failure evidence, so
     // every present error is shown rather than the first one only. A local
     // preference failure never reached a mutation, so it is retained separately.
+    // The shared status failure stays with its owner, which renders it once.
     const retainedErrors = [
-      status.error,
       consent.error,
       observe.error,
       reconcile.error,
