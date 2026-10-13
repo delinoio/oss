@@ -134,28 +134,43 @@ export function UsageModelPrices({
   const models = usePriceModels(active);
   const providers = useProviderPages("", active, false);
   const identity = selection ? selectionModel(selection) : undefined;
-  const label = (model: SourceModel) => {
-    const group = data?.groups.find(
+  const group = (model: SourceModel) =>
+    data?.groups.find(
       (row) =>
         row.model?.nativeId === model.nativeId &&
         row.providerId === model.providerId &&
         (row.subscriptionService ?? SubscriptionServiceIdentity.UNSPECIFIED) ===
           model.subscriptionService,
     );
-    const providerName = model.providerId
+  const providerName = (model: SourceModel) =>
+    model.providerId
       ? providers.rows.find((row) => row.providerId === model.providerId)
-          ?.displayName || group?.providerName
+          ?.displayName || group(model)?.providerName
       : undefined;
-    const identityLabel = productLabel(
+  const modelLabel = (model: SourceModel) =>
+    productLabel(
       PresentationKind.Model,
       modelPresentationId(
         model.nativeId,
         model.providerId,
         model.subscriptionService,
       ),
-      group?.modelName,
+      group(model)?.modelName,
     );
-    return `${providerName ? productLabel(PresentationKind.Provider, model.providerId, providerName) : subscriptionServiceLabel(model.subscriptionService)} · ${identityLabel}`;
+  // Register every loaded pricing model and its observed name before any
+  // picker label is read, so duplicate names are numbered consistently on the
+  // first committed render instead of drifting on a later unrelated rerender.
+  for (const model of [
+    ...(identity ? [identity] : []),
+    ...models.rows.map((row) => row.model),
+  ]) {
+    modelLabel(model);
+    const name = providerName(model);
+    if (name) productLabel(PresentationKind.Provider, model.providerId, name);
+  }
+  const label = (model: SourceModel) => {
+    const name = providerName(model);
+    return `${name ? productLabel(PresentationKind.Provider, model.providerId, name) : subscriptionServiceLabel(model.subscriptionService)} · ${modelLabel(model)}`;
   };
   const history = selection
     ? (selection.history ?? retainedPrices(data, selection))

@@ -211,3 +211,63 @@ it("reuses the source-scoped model identity registered by the Usage summary", as
   );
   expect(document.body.textContent).not.toMatch(/Shared model \u00b7 \d+/);
 });
+
+it("numbers duplicate observed pricing model names consistently on the first committed render", async () => {
+  const providers = [newRequestId(), newRequestId()];
+  const models = providers.map((providerId) => ({
+    providerId,
+    nativeId: "shared-exact",
+    subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED,
+  }));
+  const data = create(GetUsageSummaryResponseSchema, {
+    groups: models.map((model) => ({
+      providerId: model.providerId,
+      model,
+      modelName: "Shared model",
+    })),
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(UsageService, {
+      listTokenPricing: () => ({ models }),
+      getTokenPricing: () => ({
+        providerRevision: 1n,
+        policy: { mode: TokenPricingMode.AUTOMATIC },
+        reference: { state: "current" },
+      }),
+    });
+    router.service(ProviderService, {
+      listProviderInventory: () => ({
+        entries: [
+          { providerId: providers[0], displayName: "API A" },
+          { providerId: providers[1], displayName: "API B" },
+        ],
+      }),
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <ProductIdentityProvider>
+          <MutationIntents>
+            <UsageModelPrices
+              active
+              selection={models[0]}
+              select={() => {}}
+              data={data}
+            />
+          </MutationIntents>
+        </ProductIdentityProvider>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  // The selected label is read first; it must already be numbered even though
+  // the second duplicate is only loaded by the option list.
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Pricing model" }).textContent,
+    ).toMatch(/API A \u00b7 Shared model \u00b7 \d+/),
+  );
+});
