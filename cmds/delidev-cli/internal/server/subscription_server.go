@@ -87,6 +87,9 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			if err := cancelAccountExecutions(tx, r.ID); err != nil {
 				return nil, err
 			}
+			if err := retireAccountQueuedTitles(tx, r.ID); err != nil {
+				return nil, err
+			}
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err

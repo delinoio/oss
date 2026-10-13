@@ -280,3 +280,32 @@ func TestManagedTitlePreLeaseDenialReturnsDefiniteResult(t *testing.T) {
 		})
 	}
 }
+
+// A queued managed title has no lease, so its original Worker may be offline
+// and never scan it again. Accepting the account logout retires it in the same
+// transaction instead of leaving the session queued indefinitely.
+func TestManagedTitleQueuedLogoutRetiresTitle(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	if session := f.session(t); session.TitleState != domain.TitleQueued {
+		t.Fatalf("fixture title is not queued: %+v", session)
+	}
+	r, _ := f.record()
+	if _, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT})); err != nil {
+		t.Fatal(err)
+	}
+	record, err := f.service.Store.Get(context.Background(), domain.JobKind, f.titleJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.State != domain.JobCanceled || job.Problem == nil || job.Problem.Code != domain.Unauthenticated {
+		t.Fatalf("logout did not cancel the queued managed title: %+v", job)
+	}
+	session := f.session(t)
+	if session.TitleState != domain.TitleSkipped || session.TitleReason != domain.TitleReasonAuthorityLost || session.Name != "New session" {
+		t.Fatalf("logout did not settle the session title state: %+v", session)
+	}
+}
