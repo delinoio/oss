@@ -343,7 +343,9 @@ it("keeps the enclosing wide size for a nested step that omits its size and stil
       const [step, setStep] = useState<"none" | "inherit" | "confirm">("none");
       return (
         <>
-          <button onClick={() => setStep("inherit")}>Open inheriting step</button>
+          <button onClick={() => setStep("inherit")}>
+            Open inheriting step
+          </button>
           <button onClick={() => setStep("confirm")}>Open confirmation</button>
           {step === "inherit" ? (
             <SettingsTaskDialog
@@ -384,10 +386,14 @@ it("keeps the enclosing wide size for a nested step that omits its size and stil
     );
     const size = () => screen.getByRole("dialog").getAttribute("data-size");
     expect(size()).toBe("wide");
-    fireEvent.click(screen.getByRole("button", { name: "Open inheriting step" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open inheriting step" }),
+    );
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(size()).toBe("wide");
-    expect(screen.getByRole("heading", { name: "Inheriting step" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Inheriting step" }),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Back to wide" }));
     expect(size()).toBe("wide");
     fireEvent.click(screen.getByRole("button", { name: "Open confirmation" }));

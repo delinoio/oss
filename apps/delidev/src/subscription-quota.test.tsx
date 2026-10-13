@@ -1196,7 +1196,9 @@ it("keeps the enclosing wide dialog size through automatic-use consent and cance
     });
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(size()).toBe("wide");
-    await waitFor(() => expect(globalThis.document.activeElement).toBe(heading));
+    await waitFor(() =>
+      expect(globalThis.document.activeElement).toBe(heading),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
       expect(
