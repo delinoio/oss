@@ -11,15 +11,22 @@ import "./entrance-motion.css";
 
 // Stable identifiers shared with entrance-motion.css.
 export enum EntranceMotion {
+  // 160ms translateY(4px).
   Y4 = "y4",
+  // 120ms translateY(2px).
+  Y2 = "y2",
+  // 120ms translateX(4px).
+  X4 = "x4",
 }
-enum EntranceAnimationName {
-  Y4 = "entrance-y4",
-}
+const entranceAnimationNames: Record<EntranceMotion, string> = {
+  [EntranceMotion.Y4]: "entrance-y4",
+  [EntranceMotion.Y2]: "entrance-y2",
+  [EntranceMotion.X4]: "entrance-x4",
+};
 // Dispatched on an animated ancestor when a native dialog mounts beneath it.
 const ENTRANCE_SETTLE_EVENT = "delidev-entrance-settle";
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
-// The visual motion lasts 160ms. This generation-fenced fallback only settles
+// The longest visual motion lasts 160ms. This generation-fenced fallback only settles
 // state when no animation end/cancel event can arrive (for example, an element
 // that is never displayed). It never gates focus, navigation or disposal.
 const ENTRANCE_FALLBACK_MS = 240;
@@ -48,6 +55,20 @@ export function settleEnclosingEntrances(host: Element | null): void {
   for (let node = host?.parentElement; node; node = node.parentElement)
     if (node.hasAttribute("data-entrance"))
       node.dispatchEvent(new Event(ENTRANCE_SETTLE_EVENT));
+}
+
+/**
+ * Counts the rising edges of `active` (including a mount that starts active).
+ * Use the count in an activation key so a retained surface animates once per
+ * explicit return and never for renders, refetches or edits while it is active.
+ */
+export function useActivationCount(active: boolean): number {
+  const [state, setState] = useState({ count: active ? 1 : 0, active });
+  if (state.active !== active) {
+    setState({ count: active ? state.count + 1 : state.count, active });
+    return active ? state.count + 1 : state.count;
+  }
+  return state.count;
 }
 
 /**
@@ -127,7 +148,7 @@ export function useEntranceActivation(
         if (
           event.target === node &&
           (event as globalThis.AnimationEvent).animationName ===
-            EntranceAnimationName.Y4
+            entranceAnimationNames[motion]
         )
           settle();
       };
@@ -142,7 +163,7 @@ export function useEntranceActivation(
         node.removeEventListener(ENTRANCE_SETTLE_EVENT, settleNow);
       };
     },
-    [settle],
+    [settle, motion],
   );
   return active ? { "data-entrance": motion, ref: attach } : {};
 }

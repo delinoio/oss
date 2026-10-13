@@ -2,7 +2,11 @@
 import { StrictMode, useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useEntranceActivation } from "./entrance-motion";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 
 function Harness({ enabled = true }: { enabled?: boolean }) {
   const [activation, setActivation] = useState("first");
@@ -214,4 +218,43 @@ it("is replay-safe under Strict Mode", () => {
   expect(entering()).toBe("y4");
   dispatch(surface(), "animationend");
   expect(entering()).toBeNull();
+});
+
+function MotionHarness({ motion }: { motion: EntranceMotion }) {
+  const entrance = useEntranceActivation("only", true, motion);
+  return <div data-testid="surface" {...entrance} />;
+}
+
+it("settles each 120ms primitive only on its own animation name", () => {
+  const { unmount } = render(<MotionHarness motion={EntranceMotion.Y2} />);
+  expect(entering()).toBe("y2");
+  dispatch(surface(), "animationend", "entrance-y4");
+  dispatch(surface(), "animationend", "entrance-x4");
+  expect(entering()).toBe("y2");
+  dispatch(surface(), "animationend", "entrance-y2");
+  expect(entering()).toBeNull();
+  unmount();
+  render(<MotionHarness motion={EntranceMotion.X4} />);
+  expect(entering()).toBe("x4");
+  dispatch(surface(), "animationend", "entrance-y2");
+  expect(entering()).toBe("x4");
+  dispatch(surface(), "animationcancel", "entrance-x4");
+  expect(entering()).toBeNull();
+});
+
+function EdgeHarness({ active }: { active: boolean }) {
+  const count = useActivationCount(active);
+  return <output data-testid="count">{count}</output>;
+}
+
+it("counts rising activation edges only", () => {
+  const { rerender } = render(<EdgeHarness active />);
+  const count = () => screen.getByTestId("count").textContent;
+  expect(count()).toBe("1");
+  rerender(<EdgeHarness active />);
+  expect(count()).toBe("1");
+  rerender(<EdgeHarness active={false} />);
+  expect(count()).toBe("1");
+  rerender(<EdgeHarness active />);
+  expect(count()).toBe("2");
 });
