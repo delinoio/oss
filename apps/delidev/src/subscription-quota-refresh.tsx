@@ -10,7 +10,10 @@ import {
   type RefreshAllSubscriptionQuotasRequest,
   type RefreshAllSubscriptionQuotasResponse,
 } from "@delinoio/delidev-api-client";
-import { isDocumentForeground, useDocumentForeground } from "./document-foreground";
+import {
+  isDocumentForeground,
+  useDocumentForeground,
+} from "./document-foreground";
 import { subscriptionQuotaAllKey, useRetainedMutation } from "./mutation";
 
 /** Foreground cadence for both the automatic batch request and the saved
@@ -59,11 +62,7 @@ export function SubscriptionQuotaAutoRefresh({ ready }: { ready: boolean }) {
     acknowledgeRefreshAllSubscriptionQuotas,
   );
   const eligible =
-    ready &&
-    foreground &&
-    supported &&
-    !status.error &&
-    !status.data?.stopping;
+    ready && foreground && supported && !status.error && !status.data?.stopping;
   // Ticks recheck the newest gates immediately before sending, so a queued
   // callback that outlives a blur, disconnect or stopping status sends nothing.
   const latest = useRef({ mutation, eligible });

@@ -614,12 +614,16 @@ it("owns one automatic quota batch cadence above navigation while the connection
   expect(value.quotaBatches).not.toHaveBeenCalled();
   await act(async () => (cadence()![0] as () => void)());
   await waitFor(() => expect(value.quotaBatches).toHaveBeenCalledOnce());
-  expect(value.quotaBatches.mock.calls[0][0].requestId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(value.quotaBatches.mock.calls[0][0].requestId).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
   // A disconnected connection schedules no later send.
   view.rerender(<App transport={value.transport} connectionReady={false} />);
   const pending = timers.mock.calls.length;
   await act(async () => {});
-  expect(timers.mock.calls.slice(pending).some((call) => call[1] === 30000)).toBe(false);
+  expect(
+    timers.mock.calls.slice(pending).some((call) => call[1] === 30000),
+  ).toBe(false);
   focus.mockRestore();
   timers.mockRestore();
 });

@@ -152,7 +152,9 @@ it("stops on blur or hide, never catches up, and waits a fresh thirty seconds on
     const f = fixture();
     const mounted = await mount(f.view());
     await advance(20000);
-    act(() => setForeground(mode === "blur" ? { focus: false } : { hide: true }));
+    act(() =>
+      setForeground(mode === "blur" ? { focus: false } : { hide: true }),
+    );
     await advance(120000);
     expect(f.requests).toHaveLength(0);
     act(() => setForeground({ focus: true, hide: false }));
@@ -233,7 +235,10 @@ it("skips ticks while its shared request is busy and never replaces it", async (
 });
 
 it.each([
-  ["unavailable", () => Promise.reject(new ConnectError("down", Code.Unavailable))],
+  [
+    "unavailable",
+    () => Promise.reject(new ConnectError("down", Code.Unavailable)),
+  ],
   [
     "an invalid acknowledgement",
     (request: RefreshAllSubscriptionQuotasRequest) =>
@@ -264,8 +269,7 @@ it.each([
 it("permits a later fresh request after a definite rejection and keeps the error visible until then", async () => {
   let reject = true;
   const f = fixture(async (request) => {
-    if (reject)
-      throw new ConnectError("denied", Code.PermissionDenied);
+    if (reject) throw new ConnectError("denied", Code.PermissionDenied);
     return accepted(request);
   });
   await mount(f.view({ probe: true }));
@@ -281,21 +285,35 @@ it("permits a later fresh request after a definite rejection and keeps the error
 });
 
 it("validates the exact request and a bounded unique inventory", () => {
-  const request = { requestId: newRequestId() } as RefreshAllSubscriptionQuotasRequest;
+  const request = {
+    requestId: newRequestId(),
+  } as RefreshAllSubscriptionQuotasRequest;
   const a = newRequestId();
   const response = (requestId: string, accounts: string[]) =>
     ({ requestId, accounts }) as never;
   expect(
-    acknowledgeRefreshAllSubscriptionQuotas(response(request.requestId, [a]), request),
+    acknowledgeRefreshAllSubscriptionQuotas(
+      response(request.requestId, [a]),
+      request,
+    ),
   ).toBe(true);
   expect(
-    acknowledgeRefreshAllSubscriptionQuotas(response(newRequestId(), []), request),
+    acknowledgeRefreshAllSubscriptionQuotas(
+      response(newRequestId(), []),
+      request,
+    ),
   ).toBe(false);
   expect(
-    acknowledgeRefreshAllSubscriptionQuotas(response(request.requestId, [a, a]), request),
+    acknowledgeRefreshAllSubscriptionQuotas(
+      response(request.requestId, [a, a]),
+      request,
+    ),
   ).toBe(false);
   expect(
-    acknowledgeRefreshAllSubscriptionQuotas(response(request.requestId, ["not-an-id"]), request),
+    acknowledgeRefreshAllSubscriptionQuotas(
+      response(request.requestId, ["not-an-id"]),
+      request,
+    ),
   ).toBe(false);
   expect(
     acknowledgeRefreshAllSubscriptionQuotas(
