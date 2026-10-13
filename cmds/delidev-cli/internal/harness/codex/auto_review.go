@@ -66,6 +66,11 @@ func validReviewAction(raw json.RawMessage) bool {
 	if (kind == "command" || kind == "execve") && !slices.Contains([]string{"shell", "unifiedExec"}, value.Source) {
 		return false
 	}
+	// The native network action protocol is a closed union; reject any other
+	// spelling (including empty and case variants) before lifecycle state changes.
+	if kind == "networkAccess" && !slices.Contains([]string{string(ApprovalHTTP), string(ApprovalHTTPS), string(ApprovalSOCKSTCP), string(ApprovalSOCKSUDP)}, value.Protocol) {
+		return false
+	}
 	if len(value.Argv) > 4096 || len(value.Files) > 1024 {
 		return false
 	}
