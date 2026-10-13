@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { create } from "@bufbuild/protobuf";
@@ -66,6 +68,15 @@ vi.mock("./connection", async () => {
     },
   };
 });
+beforeAll(() => {
+  // jsdom lacks modal dialog support used by the retry confirmation.
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  };
+});
 afterEach(cleanup);
 
 function fixture(
@@ -107,17 +118,28 @@ function fixture(
       ...identityData,
     }),
   });
+  const other = create(ResourceSchema, {
+    kind: EntityKind.SESSION,
+    id: "other-session",
+    revision: 3n,
+    schemaVersion: 1,
+    documentJson: documentBytes({
+      name: "Other conversation",
+      archive: "active",
+      recovery: "none",
+    }),
+  });
   const sessionReads: string[] = [];
   const transport = createRouterTransport((router) => {
     router.service(SessionService, {
-      listSessions: () => ({ sessions: [session] }),
+      listSessions: () => ({ sessions: [session, other] }),
       listQueue: () => ({ inputs: [] }),
     });
     router.service(ResourceService, {
       listResources: () => ({ resources: [] }),
       getResource: (request) => {
         sessionReads.push(request.id);
-        return { resource: session };
+        return { resource: request.id === other.id ? other : session };
       },
     });
     router.service(InboxService, {
@@ -259,4 +281,165 @@ it("presents unavailable Runner and Agent labels while preserving original conve
   expect(f.sessionReads).toContain("original-session");
   expect(f.perform).not.toHaveBeenCalled();
   expect(f.retry).not.toHaveBeenCalled();
+});
+
+function composer() {
+  return screen.getByLabelText(en.prompt) as HTMLTextAreaElement;
+}
+function mode() {
+  return screen.getByLabelText(en.mode) as HTMLSelectElement;
+}
+function send() {
+  fireEvent.click(screen.getByRole("button", { name: en.send }));
+}
+function deferred() {
+  let resolve!: () => void, reject!: (reason: unknown) => void;
+  const promise = new Promise<undefined>((ok, fail) => {
+    resolve = () => ok(undefined);
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+function sendRequest(prompt: string) {
+  // Encode the wire JSON directly; jsdom and protobuf use different Uint8Array realms.
+  return JSON.stringify({
+    requestId: "original-request",
+    sessionId: "original-session",
+    documentJson: btoa(JSON.stringify({ prompt, mode: "plan" })),
+  });
+}
+it("clears the visible composer and retained draft after a confirmed Send and keeps the mode", async () => {
+  const f = fixture();
+  await openConversation();
+  fireEvent.change(composer(), { target: { value: "Confirmed prompt" } });
+  fireEvent.change(mode(), { target: { value: "plan" } });
+  send();
+  await waitFor(() => expect(composer().value).toBe(""));
+  expect(f.perform).toHaveBeenCalledTimes(1);
+  expect(mode().value).toBe("plan");
+  tab(en.inbox);
+  await screen.findByRole("heading", { name: en.inbox });
+  tab(en.sessions);
+  await openConversation();
+  expect(composer().value).toBe("");
+  expect(mode().value).toBe("plan");
+  expect(f.retry).not.toHaveBeenCalled();
+});
+it("clears only the originating draft when confirmation lands while the conversation is unmounted", async () => {
+  const f = fixture();
+  const completion = deferred();
+  f.perform.mockReturnValueOnce(completion.promise);
+  await openConversation();
+  fireEvent.change(composer(), { target: { value: "Unmounted prompt" } });
+  fireEvent.change(mode(), { target: { value: "plan" } });
+  send();
+  await waitFor(() => expect(f.perform).toHaveBeenCalledTimes(1));
+  // Settings unmounts Connected and Conversation while the original Send is in flight.
+  tab(en.settings);
+  await screen.findByRole("heading", { name: en.settings });
+  completion.resolve();
+  await act(async () => {
+    await completion.promise;
+  });
+  tab(en.sessions);
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Other conversation/ }),
+  );
+  await screen.findByRole("heading", { name: "Other conversation" });
+  expect(composer().value).toBe("");
+  fireEvent.change(composer(), { target: { value: "Other draft" } });
+  fireEvent.click(screen.getByRole("button", { name: en.back }));
+  await openConversation();
+  expect(composer().value).toBe("");
+  expect(mode().value).toBe("plan");
+  fireEvent.click(screen.getByRole("button", { name: en.back }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Other conversation/ }),
+  );
+  await screen.findByRole("heading", { name: "Other conversation" });
+  expect(composer().value).toBe("Other draft");
+});
+it("keeps text edited after the Send was captured", async () => {
+  const f = fixture();
+  const completion = deferred();
+  f.perform.mockReturnValueOnce(completion.promise);
+  await openConversation();
+  fireEvent.change(composer(), { target: { value: "Submitted prompt" } });
+  send();
+  await waitFor(() => expect(f.perform).toHaveBeenCalledTimes(1));
+  fireEvent.change(composer(), { target: { value: "Newer edit" } });
+  completion.resolve();
+  await act(async () => {
+    await completion.promise;
+  });
+  await waitFor(() => expect(f.perform).toHaveBeenCalledTimes(1));
+  expect(composer().value).toBe("Newer edit");
+  tab(en.inbox);
+  await screen.findByRole("heading", { name: en.inbox });
+  tab(en.sessions);
+  await openConversation();
+  expect(composer().value).toBe("Newer edit");
+});
+it("keeps the draft and pending request when the Send outcome is unconfirmed and refresh only reads", async () => {
+  const pending = {
+    operation: Operation.Send,
+    target: "original-session",
+    request: sendRequest("Uncertain prompt"),
+  };
+  const f = fixture();
+  f.perform.mockImplementationOnce(async () => {
+    f.state.state.profiles[0]!.pending = pending;
+    throw new Error("lost-response");
+  });
+  await openConversation();
+  fireEvent.change(composer(), { target: { value: "Uncertain prompt" } });
+  send();
+  await waitFor(() => expect(f.perform).toHaveBeenCalledTimes(1));
+  await screen.findByRole("alert");
+  expect(composer().value).toBe("Uncertain prompt");
+  expect(f.state.profile("profile").pending).toEqual(pending);
+  // The connection refresh is the first Refresh control in document order.
+  fireEvent.click(screen.getAllByRole("button", { name: en.refresh })[0]!);
+  tab(en.inbox);
+  await screen.findByRole("heading", { name: en.inbox });
+  tab(en.sessions);
+  await openConversation();
+  expect(composer().value).toBe("Uncertain prompt");
+  expect(f.state.profile("profile").pending).toEqual(pending);
+  expect(f.perform).toHaveBeenCalledTimes(1);
+  expect(f.retry).not.toHaveBeenCalled();
+});
+it("clears the matching draft after the explicit original-request retry succeeds", async () => {
+  const pending = {
+    operation: Operation.Send,
+    target: "original-session",
+    request: sendRequest("Retried prompt"),
+  };
+  const f = fixture(pending);
+  await openConversation();
+  fireEvent.change(composer(), { target: { value: "Retried prompt" } });
+  fireEvent.click(await screen.findByRole("button", { name: en.inspect }));
+  await screen.findByText(en.inspected);
+  fireEvent.click(screen.getByRole("button", { name: en.retry }));
+  fireEvent.click(await screen.findByRole("button", { name: en.confirm }));
+  await waitFor(() => expect(f.retry).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(composer().value).toBe(""));
+  expect(f.perform).not.toHaveBeenCalled();
+  expect(f.state.profile("profile").pending).toEqual(pending);
+});
+it("keeps an unrelated draft when the explicit retry belongs to another prompt", async () => {
+  const pending = {
+    operation: Operation.Send,
+    target: "original-session",
+    request: sendRequest("Retried prompt"),
+  };
+  const f = fixture(pending);
+  await openConversation();
+  fireEvent.change(composer(), { target: { value: "Different draft" } });
+  fireEvent.click(await screen.findByRole("button", { name: en.inspect }));
+  await screen.findByText(en.inspected);
+  fireEvent.click(screen.getByRole("button", { name: en.retry }));
+  fireEvent.click(await screen.findByRole("button", { name: en.confirm }));
+  await waitFor(() => expect(f.retry).toHaveBeenCalledTimes(1));
+  expect(composer().value).toBe("Different draft");
 });

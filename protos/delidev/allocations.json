@@ -14730,6 +14730,13 @@
       "number": 34
     },
     {
+      "issue": 2970,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2",
+      "number": 101
+    },
+    {
       "declaration": "NativeCodeReviewResponseUsage",
       "issue": 3331,
       "kind": "message",

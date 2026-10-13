@@ -12,7 +12,7 @@ import (
 )
 
 func newServerCredit(a domain.Account, input domain.SubscriptionObservationOperation, epoch domain.ID) domain.ServerCreditOperation {
-	return domain.ServerCreditOperation{ID: input.ID, Epoch: epoch, AttemptID: domain.NewID(), AttemptEpoch: epoch, FinishID: domain.NewID(), ConnectionID: input.ConnectionID, Generation: input.Generation, Actor: input.Actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: input.RequestedAt, CreditID: input.CreditID, NextCredit: input.NextCredit, CreditsObservationID: input.CreditsObservationID}
+	return domain.ServerCreditOperation{AccessOnly: true, ID: input.ID, Epoch: epoch, AttemptID: domain.NewID(), AttemptEpoch: epoch, FinishID: domain.NewID(), ConnectionID: input.ConnectionID, Generation: input.Generation, Actor: input.Actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: input.RequestedAt, CreditID: input.CreditID, NextCredit: input.NextCredit, CreditsObservationID: input.CreditsObservationID}
 }
 func acceptServerCredit(tx *store.Tx, r store.Record, a domain.Account, op domain.ServerCreditOperation) error {
 	if !serverQuotaReady(a) || op.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || subscriptionActorValid(tx, op.Actor) != nil {
@@ -32,7 +32,12 @@ func serverCreditAuthority(tx *store.Tx, a domain.Account, original domain.Serve
 }
 func reconcileServerCredit(tx *store.Tx, r store.Record, a domain.Account, connection, generation domain.ID, actor domain.Principal, epoch domain.ID) error {
 	o := a.Subscription.ServerCredit
-	if o == nil || o.Phase != domain.SubscriptionObservationUncertain || !o.CleanupConfirmed || !o.EverSent || o.Outcome != "" || connection != o.ConnectionID || generation != o.Generation || actor != o.Actor || !serverCreditAuthority(tx, a, *o) {
+	if o == nil || o.Phase != domain.SubscriptionObservationUncertain || !o.CleanupConfirmed || !o.EverSent || o.Outcome != "" || connection != o.ConnectionID || generation != o.Generation || actor != o.Actor {
+		return subscriptionDenied()
+	}
+	// Access-only reconciliation follows the captured generation across Execute
+	// rotations; historical managed claims still require the live generation.
+	if o.AccessOnly && !accessCreditAuthority(tx, a, *o) || !o.AccessOnly && !serverCreditAuthority(tx, a, *o) {
 		return subscriptionDenied()
 	}
 	// Explicit acceptance changes only the attempt. Provider idempotency and
@@ -61,7 +66,15 @@ func (s *Service) initializeServerCredits(ctx context.Context) error {
 			if !o.Active() || o.AttemptEpoch == s.subscriptionServerEpoch() {
 				continue
 			}
-			if o.Phase == domain.SubscriptionObservationQueued {
+			if o.AccessOnly {
+				// Restart never sends. A queued claim opened no native work; any other
+				// claim keeps its cleanup fence until the retained runtime is joined.
+				// The independent reference fence stays until checked retirement.
+				if o.Phase == domain.SubscriptionObservationQueued {
+					o.CleanupConfirmed = true
+				}
+				o.Phase, o.ErrorCode = domain.SubscriptionObservationUncertain, domain.RecoveryRequired
+			} else if o.Phase == domain.SubscriptionObservationQueued {
 				o.CleanupConfirmed = true
 				if o.EverSent {
 					o.Phase, o.ErrorCode = domain.SubscriptionObservationUncertain, domain.RecoveryRequired
@@ -84,7 +97,10 @@ func (s *Service) initializeServerCredits(ctx context.Context) error {
 		}
 		return struct{}{}, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return s.reconcileRetainedServerCredits(ctx)
 }
 func creditCode(err error) domain.Code {
 	if err == nil {
@@ -97,6 +113,21 @@ func creditCode(err error) domain.Code {
 	return code
 }
 func (s *Service) runServerCredit(parent context.Context, id domain.ID) {
+	var accessOnly bool
+	if err := s.Store.Read(parent, func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		accessOnly = a.Subscription != nil && a.Subscription.ServerCredit != nil && a.Subscription.ServerCredit.AccessOnly
+		return nil
+	}); err != nil {
+		return
+	}
+	if accessOnly {
+		s.runAccessCredit(parent, id)
+		return
+	}
 	ctx, cancel := context.WithTimeout(domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice}), time.Minute)
 	defer cancel()
 	var original domain.ServerCreditOperation

@@ -250,7 +250,7 @@ func TestServerQuotaV2RetirementFailureAndRestart(t *testing.T) {
 		}
 	}
 	assertRefs(true)
-	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSending || !after.Subscription.ServerQuota.CleanupConfirmed || quotaProtectedGeneration(after.Subscription) != captured.ID || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Lease != nil {
+	if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationSending || !after.Subscription.ServerQuota.CleanupConfirmed || len(protectedGenerations(after.Subscription)) != 1 || protectedGenerations(after.Subscription)[0] != captured.ID || after.Subscription.RecoveryRequired || after.Health != domain.AccountReady || after.Subscription.Lease != nil {
 		t.Fatal("retirement failure lost independent ownership")
 	}
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.quota.retirement.restart", nil, func(tx *store.Tx) (any, error) {

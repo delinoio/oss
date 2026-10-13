@@ -2549,7 +2549,7 @@ cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef
  // external children have no Tauri browser-side handler: reject every process
  // message here so that stub cannot acquire product/native authority.
  fn on_process_message_received(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_source_process:ProcessId,_message:Option<&mut ProcessMessage>)->i32{0}
- fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone()))}
+ fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone(),Arc::new(CloseGuard::default())))}
  fn request_handler(&self)->Option<RequestHandler>{Some(ExternalRequests::new(self.policy.clone()))}
  fn display_handler(&self)->Option<DisplayHandler>{Some(ExternalDisplay::new(Arc::clone(&self.host),self.profile.clone(),self.request.clone()))}
  fn permission_handler(&self)->Option<PermissionHandler>{Some(DenyPermissions::new())}
@@ -2638,14 +2638,228 @@ fn native_composition_clear(browser: &Browser) -> bool {
         false
     }
 }
-cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
+/// Native platforms with distinct CEF child close semantics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClosePlatform {
+    MacOs,
+    Windows,
+    Linux,
+}
+
+impl ClosePlatform {
+    const CURRENT: Self = if cfg!(target_os = "macos") {
+        Self::MacOs
+    } else if cfg!(windows) {
+        Self::Windows
+    } else {
+        Self::Linux
+    };
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::MacOs => "macos",
+            Self::Windows => "windows",
+            Self::Linux => "linux",
+        }
+    }
+}
+
+/// How the raw child's `do_close` callback must answer CEF.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloseDisposition {
+    /// Keep CEF's default behavior (return 0).
+    DefaultClose,
+    /// The handler owns destruction of the child's own native host (return 1).
+    /// CEF's default would send performClose:/WM_CLOSE to the parent product
+    /// window on macOS and Windows.
+    ChildOwned,
+}
+
+fn close_disposition(platform: ClosePlatform, popup: bool) -> CloseDisposition {
+    match (platform, popup) {
+        (ClosePlatform::MacOs | ClosePlatform::Windows, false) => CloseDisposition::ChildOwned,
+        _ => CloseDisposition::DefaultClose,
+    }
+}
+
+/// Outcome of one `do_close` callback for a child-owned close.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloseClaim {
+    /// First close of the exact bound browser: destroy its native host.
+    Destroy,
+    /// A repeated close of the same browser: destruction is already owned.
+    Duplicate,
+    /// The callback's browser is not the one this handler was created for.
+    ForeignBrowser,
+}
+
+/// Binds one handler to the exact browser it was created for and makes native
+/// destruction run at most once. Browser identifiers are positive, so zero
+/// means unbound.
+#[derive(Default)]
+struct CloseGuard {
+    identity: std::sync::atomic::AtomicI32,
+    claimed: AtomicBool,
+}
+
+impl CloseGuard {
+    fn bind(&self, browser_id: i32) -> bool {
+        browser_id > 0
+            && self
+                .identity
+                .compare_exchange(0, browser_id, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+    }
+
+    fn claim(&self, browser_id: i32) -> CloseClaim {
+        let bound = self.identity.load(Ordering::Acquire);
+        if bound <= 0 || bound != browser_id {
+            return CloseClaim::ForeignBrowser;
+        }
+        if self.claimed.swap(true, Ordering::AcqRel) {
+            CloseClaim::Duplicate
+        } else {
+            CloseClaim::Destroy
+        }
+    }
+}
+
+/// The child's own native host, captured from the exact Browser that CEF passed
+/// to `do_close`. It is only used on the UI thread.
+struct ChildHost {
+    #[cfg(target_os = "macos")]
+    view: objc2::rc::Retained<objc2_app_kit::NSView>,
+    #[cfg(windows)]
+    hwnd: usize,
+}
+
+// SAFETY: The captured host is created from a UI-thread callback and only
+// dereferenced by the UI-thread closure scheduled through the app handle.
+unsafe impl Send for ChildHost {}
+
+impl ChildHost {
+    fn capture(handle: cef::sys::cef_window_handle_t) -> Result<Self> {
+        #[cfg(target_os = "macos")]
+        {
+            // Retain so a queued destruction cannot outlive the view's owner.
+            let view = unsafe { objc2::rc::Retained::retain(handle as *mut objc2_app_kit::NSView) }
+                .ok_or(NativeFailure::InvalidEvidence)?;
+            Ok(Self { view })
+        }
+        #[cfg(windows)]
+        {
+            if handle.0.is_null() {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            Ok(Self {
+                hwnd: handle.0 as usize,
+            })
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let _ = handle;
+            Err(NativeFailure::Incompatible)
+        }
+    }
+
+    /// Destroys only this child's native host, never its parent.
+    fn destroy(self) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            // The superview holds the child's strong reference; removing it
+            // deallocates the view, which reports WindowDestroyed to CEF and
+            // leads to on_before_close.
+            self.view.removeFromSuperview();
+            Ok(())
+        }
+        #[cfg(windows)]
+        {
+            use windows::Win32::{
+                Foundation::HWND,
+                UI::WindowsAndMessaging::{DestroyWindow, IsWindow},
+            };
+            let hwnd = HWND(self.hwnd as *mut std::ffi::c_void);
+            if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            unsafe { DestroyWindow(hwnd) }.map_err(|_| NativeFailure::SidecarFailed)
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        Err(NativeFailure::Incompatible)
+    }
+}
+
+/// Decides one `do_close` answer for `browser_id` without touching native
+/// state, so the identity and idempotency rules stay unit-testable.
+fn resolve_close(
+    guard: &CloseGuard,
+    platform: ClosePlatform,
+    popup: bool,
+    browser_id: i32,
+) -> Option<CloseClaim> {
+    match close_disposition(platform, popup) {
+        CloseDisposition::DefaultClose => None,
+        CloseDisposition::ChildOwned => Some(guard.claim(browser_id)),
+    }
+}
+
+cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,close_guard:Arc<CloseGuard>,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
+   // Capture the exact Browser identity that later close callbacks must match.
+   let bound=self.close_guard.bind(b.identifier());
+   tracing::info!(operation="browser_view",phase="close_identity_bound",bound,browser_id=b.identifier());
    self.host.finish_child_created(&self.profile,&self.request,
      self.host.child_created(&self.profile,&self.request,b),
      ||{let _=hide_browser(b,&self.request);});
  }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
+ // CEF's default close sends performClose:/WM_CLOSE to the parent window of a
+ // parented child on macOS and Windows, which would close the product window.
+ // Own the child-only destruction there and keep CEF's default on Linux.
+ fn do_close(&self,browser:Option<&mut Browser>)->i32{
+   let platform=ClosePlatform::CURRENT;
+   let Some(b)=browser else{
+     // No browser to destroy: never let CEF fall through to the parent.
+     let owned=close_disposition(platform,false)==CloseDisposition::ChildOwned;
+     tracing::warn!(operation="browser_view",phase="close_requested",outcome="missing_browser",platform=platform.as_str());
+     return i32::from(owned);
+   };
+   let id=b.identifier();
+   let popup=b.is_popup()==1;
+   let Some(claim)=resolve_close(&self.close_guard,platform,popup,id) else{
+     tracing::info!(operation="browser_view",phase="close_requested",outcome="default",platform=platform.as_str(),popup,browser_id=id);
+     return 0;
+   };
+   match claim{
+     CloseClaim::Duplicate=>{
+       tracing::info!(operation="browser_view",phase="close_requested",outcome="duplicate_ignored",platform=platform.as_str(),browser_id=id);
+     }
+     CloseClaim::ForeignBrowser=>{
+       tracing::warn!(operation="browser_view",phase="close_requested",outcome="identity_mismatch",platform=platform.as_str(),browser_id=id);
+     }
+     CloseClaim::Destroy=>{
+       tracing::info!(operation="browser_view",phase="close_requested",outcome="child_owned",platform=platform.as_str(),browser_id=id);
+       let child=b.host().ok_or(NativeFailure::InvalidEvidence).and_then(|h|ChildHost::capture(h.window_handle()));
+       match child{
+         Ok(child)=>{
+           let queued=self.app.run_on_main_thread(move||{
+             match child.destroy(){
+               Ok(())=>tracing::info!(operation="browser_view",phase="destroyed",browser_id=id),
+               Err(code)=>tracing::warn!(operation="browser_view",phase="destroy_failed",browser_id=id,?code),
+             }
+           });
+           if queued.is_err(){
+             tracing::warn!(operation="browser_view",phase="destroy_failed",outcome="not_queued",browser_id=id);
+           }
+         }
+         Err(code)=>tracing::warn!(operation="browser_view",phase="destroy_failed",outcome="capture",browser_id=id,?code),
+       }
+     }
+   }
+   // Never fall back to the parent window's close on a child-owned platform.
+   1
+ }
  fn on_before_close(&self,_browser:Option<&mut Browser>){
    let exit = self.host.child_closed(&self.request);
    tracing::info!(operation="browser_view",state="closed");
@@ -2916,6 +3130,106 @@ mod tests {
         cef::rc::RcImpl::new(raw, child_host)
             .cast::<cef::sys::cef_browser_t>()
             .wrap_result()
+    }
+
+    #[test]
+    fn child_close_is_owned_only_for_non_popup_macos_and_windows() {
+        use ClosePlatform::{Linux, MacOs, Windows};
+        for platform in [MacOs, Windows] {
+            assert_eq!(
+                close_disposition(platform, false),
+                CloseDisposition::ChildOwned
+            );
+            assert_eq!(
+                close_disposition(platform, true),
+                CloseDisposition::DefaultClose
+            );
+        }
+        for popup in [false, true] {
+            assert_eq!(
+                close_disposition(Linux, popup),
+                CloseDisposition::DefaultClose
+            );
+        }
+    }
+
+    #[test]
+    fn child_close_destroys_only_the_bound_browser_once() {
+        let guard = CloseGuard::default();
+        // Unbound handlers never destroy anything.
+        assert_eq!(guard.claim(7), CloseClaim::ForeignBrowser);
+        assert!(!guard.bind(0));
+        assert!(guard.bind(7));
+        // The binding cannot be replaced by a later browser.
+        assert!(!guard.bind(8));
+        // A sibling or replacement browser cannot consume or trigger the claim.
+        assert_eq!(guard.claim(8), CloseClaim::ForeignBrowser);
+        assert_eq!(guard.claim(7), CloseClaim::Destroy);
+        assert_eq!(guard.claim(7), CloseClaim::Duplicate);
+        assert_eq!(guard.claim(8), CloseClaim::ForeignBrowser);
+    }
+
+    #[test]
+    fn resolve_close_keeps_default_close_without_claiming() {
+        let guard = CloseGuard::default();
+        assert!(guard.bind(3));
+        assert_eq!(resolve_close(&guard, ClosePlatform::Linux, false, 3), None);
+        assert_eq!(resolve_close(&guard, ClosePlatform::MacOs, true, 3), None);
+        // Defaulted closes leave the child-owned claim available.
+        assert_eq!(
+            resolve_close(&guard, ClosePlatform::Windows, false, 3),
+            Some(CloseClaim::Destroy)
+        );
+        assert_eq!(
+            resolve_close(&guard, ClosePlatform::Windows, false, 3),
+            Some(CloseClaim::Duplicate)
+        );
+    }
+
+    #[test]
+    fn generation_filter_ignores_late_close_for_replacement_view() {
+        let (_temp, host, _record) = storage_fixture();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let request = |generation| ViewRequest {
+            window: "main".into(),
+            parent: 0,
+            bounds: Bounds {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            scale: 1.0,
+            tab: "tab".into(),
+            generation,
+        };
+        let replacement = View {
+            profile: "profile".into(),
+            generation: 2,
+            request: request(2),
+            browser: Some(browser_fixture(&host, "main", &events)),
+            failure: None,
+            creation_pending: false,
+            closing: true,
+            view_id: "view".into(),
+        };
+        {
+            let mut state = host.state.lock().unwrap();
+            state.views.insert("main".into(), replacement);
+            state.live = 2;
+        }
+        // The old generation's close accounts for its own child only.
+        host.child_closed(&request(1));
+        {
+            let state = host.state.lock().unwrap();
+            let view = state.views.get("main").expect("replacement survives");
+            assert!(view.browser.is_some());
+            assert_eq!(state.live, 1);
+        }
+        host.child_closed(&request(2));
+        let state = host.state.lock().unwrap();
+        assert!(!state.views.contains_key("main"));
+        assert_eq!(state.live, 0);
     }
 
     fn forgotten_scope(record: &ProfileRecord) -> SavedConnection {

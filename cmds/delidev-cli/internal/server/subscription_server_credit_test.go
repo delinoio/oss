@@ -73,11 +73,22 @@ func requestServerCredit(f *subscriptionFixture) *pb.RequestSubscriptionObservat
 func creditContext() context.Context {
 	return domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 }
-func acceptCredit(t *testing.T, f *subscriptionFixture, req *pb.RequestSubscriptionObservationRequest) {
+
+// requestAccessCredit accepts a System 101 access-only request.
+func requestAccessCredit(t *testing.T, f *subscriptionFixture, req *pb.RequestSubscriptionObservationRequest) {
 	t.Helper()
 	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, req)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// acceptCredit accepts a request and rewrites it as a historical managed-auth
+// server credit, which keeps its original lane and interpretation after System
+// 101 became the lane for every new omitted-machine request.
+func acceptCredit(t *testing.T, f *subscriptionFixture, req *pb.RequestSubscriptionObservationRequest) {
+	t.Helper()
+	requestAccessCredit(t, f, req)
+	mutateCreditAccount(t, f, func(a *domain.Account) { a.Subscription.ServerCredit.AccessOnly = false })
 }
 func mutateCreditAccount(t *testing.T, f *subscriptionFixture, fn func(*domain.Account)) {
 	t.Helper()
@@ -387,20 +398,6 @@ func TestServerCreditClosedOutcomesRemainDistinct(t *testing.T) {
 			}
 		})
 	}
-}
-func TestServerCreditOmittedMachinePreservesOriginalActiveWorker(t *testing.T) {
-	f := newQuotaFixture(t)
-	mutateCreditAccount(t, f, func(a *domain.Account) {
-		a.Subscription.ResetCredits = &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: time.Now().UTC(), AvailableCount: 2}
-	})
-	lease := takeSubscriptionExecutionFixture(t, f)
-	req := requestServerCredit(f)
-	acceptCredit(t, f, req)
-	_, a := f.record()
-	if a.Subscription.ServerCredit != nil || a.Subscription.Observation.MachineID != f.input.MachineID || a.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
-		t.Fatal("server lane stole original active Worker")
-	}
-	f.claimObservation(req.Mutation.RequestId, lease)
 }
 func TestServerCreditPendingServerOwnersRejectConsumption(t *testing.T) {
 	for _, owner := range []string{"quota", "logout", "refresh", "recovery"} {

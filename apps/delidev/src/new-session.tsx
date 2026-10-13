@@ -49,6 +49,11 @@ import {
   type CreationPreferenceScope,
 } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { useProjectSessionPlacement } from "./project-session-placement";
 import { useGeneralChatPlacement } from "./general-chat-placement";
 import {
@@ -142,6 +147,31 @@ export function NewSession({
   );
   const placement = generalChat ? generalPlacement : projectPlacement;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
+  // Explicit activation of this destination (a New session or New Chat action,
+  // or returning from another surface to the retained page) owns one 160ms Y4
+  // entrance on the page root. Typing, Options, mode, attachments, Project and
+  // Runner Device changes, reads and refetches never replay it, and nothing
+  // (focus, navigation, creation, disposal) waits for it to finish.
+  const entryCount = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `${idPrefix}:${entryCount}:${activation}`,
+    active,
+    EntranceMotion.Y4,
+  );
+  const placementPage = placement.page;
+  const entranceRef = pageEntrance.ref;
+  // The placement hook measures through this ref, so both owners attach here.
+  const pageRef = useCallback(
+    (node: HTMLElement | null) => {
+      placementPage.current = node;
+      const cleanup = entranceRef?.(node);
+      return () => {
+        if (placementPage.current === node) placementPage.current = null;
+        if (typeof cleanup === "function") cleanup();
+      };
+    },
+    [placementPage, entranceRef],
+  );
   const images = useImageDraft(idPrefix);
   const local = useLocalWorkerProof(readLocalWorker);
   const transport = useTransport();
@@ -1006,7 +1036,8 @@ export function NewSession({
 
   return (
     <section
-      ref={placement.page}
+      ref={pageRef}
+      data-entrance={pageEntrance["data-entrance"]}
       hidden={!active}
       className={`new-session-page${generalChat ? " new-general-chat-page" : " new-project-session-page"}`}
       aria-labelledby={`${idPrefix}-heading`}

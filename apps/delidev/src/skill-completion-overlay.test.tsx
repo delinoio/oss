@@ -244,3 +244,20 @@ it("disposes a disconnected anchor and removes position listeners on unmount", a
   fireEvent.scroll(document);
   expect(f.send).not.toHaveBeenCalled();
 });
+it("settles an enclosing page entrance before the fixed popup opens", () => {
+  const f = fixture();
+  const settled = vi.fn();
+  const host = document.createElement("div");
+  host.setAttribute("data-entrance", "y4");
+  host.addEventListener("delidev-entrance-settle", settled);
+  document.body.append(host);
+  const view = render(f.view(), {
+    container: host.appendChild(document.createElement("div")),
+  });
+  const input = screen.getByRole("textbox");
+  expect(settled).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: "$", selectionStart: 1 } });
+  expect(view.container.querySelector(".skill-completion")).not.toBeNull();
+  expect(settled).toHaveBeenCalled();
+  host.remove();
+});

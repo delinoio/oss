@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -40,20 +41,8 @@ func (t *Tx) CreateInboxEntry(session, project domain.ID, value domain.InboxEntr
 		return Record{}, inboxConflict()
 	}
 	if value.Source == domain.InteractionInbox {
-		r, err := t.Get(domain.InteractionKind, value.SourceID)
-		if err != nil {
+		if err := t.validateInteractionSource(session, project, value.SourceID); err != nil {
 			return Record{}, err
-		}
-		interaction, err := Decode[domain.ExecutionInteraction](r)
-		if err != nil {
-			return Record{}, err
-		}
-		request := domain.ExecutionInteractionUpdate{ID: r.ID, NativeItemID: interaction.NativeItemID, NativeRequestID: interaction.NativeRequestID, Type: interaction.Type, Questions: interaction.Questions, Approval: interaction.Approval, OpenCode: interaction.OpenCode, Claude: interaction.Claude, Grok: interaction.Grok}
-		if r.SessionID != session || r.ProjectID != project || request.Validate(domain.ExecutionInteractionRequested) != nil || interaction.ExecutionID.Validate() != nil || domain.Text(interaction.NativeThreadID, "native thread identity", 1024, true) != nil || domain.Text(interaction.NativeTurnID, "native turn identity", 1024, true) != nil || interaction.FirstSequence == 0 || interaction.LastSequence < interaction.FirstSequence || interaction.LastSequence > domain.MaxExecutionEvents {
-			return Record{}, inboxConflict()
-		}
-		if interaction.Closure != domain.InteractionOpen && interaction.Closure != domain.InteractionNativeClosed && interaction.Closure != domain.InteractionTurnEnded {
-			return Record{}, inboxConflict()
 		}
 	} else {
 		r, err := t.Get(domain.JobKind, value.Terminal.JobID)
@@ -81,6 +70,60 @@ func (t *Tx) CreateInboxEntry(session, project domain.ID, value domain.InboxEntr
 		}
 	}
 	return t.Put(domain.InboxKind, domain.NewID(), 0, session, project, value)
+}
+
+// validateInteractionSource decodes the retained interaction document and checks
+// its scope, native binding, payload type, identities, sequence bounds and
+// closure. A missing source returns the storage lookup error. A malformed or
+// contradictory document returns the inbox conflict error. Creation and the
+// session acknowledgment share this check so neither accepts a source the other
+// would reject.
+func (t *Tx) validateInteractionSource(session, project, id domain.ID) error {
+	r, err := t.Get(domain.InteractionKind, id)
+	if err != nil {
+		return err
+	}
+	interaction, err := Decode[domain.ExecutionInteraction](r)
+	if err != nil {
+		slog.Warn("inbox_interaction_source_undecodable", "interaction_id", id, "session_id", session)
+		return inboxConflict()
+	}
+	request := domain.ExecutionInteractionUpdate{ID: r.ID, NativeItemID: interaction.NativeItemID, NativeRequestID: interaction.NativeRequestID, Type: interaction.Type, Questions: interaction.Questions, Approval: interaction.Approval, OpenCode: interaction.OpenCode, Claude: interaction.Claude, Grok: interaction.Grok}
+	if r.SessionID != session || r.ProjectID != project || request.Validate(domain.ExecutionInteractionRequested) != nil || interaction.ExecutionID.Validate() != nil || domain.Text(interaction.NativeThreadID, "native thread identity", 1024, true) != nil || domain.Text(interaction.NativeTurnID, "native turn identity", 1024, true) != nil || interaction.FirstSequence == 0 || interaction.LastSequence < interaction.FirstSequence || interaction.LastSequence > domain.MaxExecutionEvents {
+		slog.Warn("inbox_interaction_source_invalid", "interaction_id", id, "session_id", session)
+		return inboxConflict()
+	}
+	if interaction.Closure != domain.InteractionOpen && interaction.Closure != domain.InteractionNativeClosed && interaction.Closure != domain.InteractionTurnEnded {
+		slog.Warn("inbox_interaction_source_closure_invalid", "interaction_id", id, "session_id", session)
+		return inboxConflict()
+	}
+	return nil
+}
+
+// ValidateInboxInteractionSource checks the retained interaction document behind
+// an unread Session Inbox entry before an acknowledgment may mark it read. Other
+// sources are not interaction documents and pass unchanged. Corrupt retained
+// evidence returns a safe recovery-required error so the whole acknowledgment and
+// its receipt roll back; the source document is never rewritten.
+func (t *Tx) ValidateInboxInteractionSource(record Record) error {
+	entry, err := Decode[domain.InboxEntry](record)
+	if err != nil || record.Kind != domain.InboxKind || entry.Validate() != nil {
+		return inboxSourceRecoveryRequired()
+	}
+	if entry.Source != domain.InteractionInbox {
+		return nil
+	}
+	if err := t.validateInteractionSource(record.SessionID, record.ProjectID, entry.SourceID); err != nil {
+		if domain.SafeError(err).Code == domain.Conflict {
+			return inboxSourceRecoveryRequired()
+		}
+		return err
+	}
+	return nil
+}
+
+func inboxSourceRecoveryRequired() error {
+	return domain.Fail(domain.RecoveryRequired, "The retained inbox source is inconsistent.", "Preserve the original inbox and source records for reconciliation.")
 }
 
 // The dedicated owner API supplies authentication and a reference-only receipt.

@@ -230,22 +230,49 @@ impl Connector {
     }
 
     pub fn shutdown_owned(&self) -> Result<()> {
+        self.shutdown_owned_until(Instant::now() + SHUTDOWN_TIMEOUT)
+    }
+
+    #[cfg(test)]
+    fn shutdown_owned_with_timeout(&self, timeout: Duration) -> Result<()> {
+        self.shutdown_owned_until(Instant::now() + timeout)
+    }
+
+    // One absolute monotonic deadline bounds the complete owned-child shutdown.
+    // The resident host and app-owned Worker phases both start graceful
+    // shutdown immediately and measure their remaining grace against this same
+    // deadline, so a slow phase never grants the other a fresh allowance.
+    fn shutdown_owned_until(&self, deadline: Instant) -> Result<()> {
         self.exiting
             .store(true, std::sync::atomic::Ordering::Release);
-        let resident = self.session.shutdown(SHUTDOWN_TIMEOUT);
-        let hosted = self.shutdown_owned_with_timeout(SHUTDOWN_TIMEOUT);
+        tracing::info!(
+            operation = "desktop_sidecar_shutdown",
+            phase = "aggregate-deadline-set",
+            grace_ms = deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis() as u64
+        );
+        let (resident, hosted) = thread::scope(|scope| {
+            let resident = scope.spawn(|| self.session.shutdown(deadline));
+            let hosted = self.shutdown_hosted_until(deadline);
+            let resident = resident.join().unwrap_or_else(|_| {
+                tracing::error!(
+                    operation = "desktop_sidecar_shutdown",
+                    phase = "resident-phase-panicked"
+                );
+                Err(NativeFailure::SidecarFailed)
+            });
+            (resident, hosted)
+        });
         resident.and(hosted)
     }
 
-    fn shutdown_owned_with_timeout(&self, timeout: Duration) -> Result<()> {
-        self.exiting
-            .store(true, std::sync::atomic::Ordering::Release);
+    fn shutdown_hosted_until(&self, deadline: Instant) -> Result<()> {
         // Join commands admitted before Quit before taking the complete set.
         // New commands cannot cross their exiting checks after this gate.
         let _gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
         let mut children =
             std::mem::take(&mut *self.hosted.lock().unwrap_or_else(|e| e.into_inner()));
-        let deadline = Instant::now() + timeout;
         for owned in &mut children {
             if let Some(mut input) = owned.input.take() {
                 let _ = input.write_all(STOP);
@@ -507,8 +534,11 @@ struct Owned {
     _containment: Containment,
 }
 impl Owned {
-    fn finish(mut self, timeout: Duration) -> Result<()> {
-        let deadline = Instant::now() + timeout;
+    fn finish(self, timeout: Duration) -> Result<()> {
+        self.finish_until(Instant::now() + timeout)
+    }
+
+    fn finish_until(mut self, deadline: Instant) -> Result<()> {
         let pipe = self.pipe.clone();
         let startup_input = self.startup_input.take();
         // A pipe writer cannot hold the original-child exit/force deadline.
@@ -594,7 +624,7 @@ enum Control {
         bool,
         mpsc::SyncSender<Result<Arc<Pipe>>>,
     ),
-    Shutdown(Duration, mpsc::SyncSender<Result<()>>),
+    Shutdown(Instant, mpsc::SyncSender<Result<()>>),
 }
 // The original spawn thread remains alive for every owned child. Linux's
 // parent-death signal is tied to that thread, not just the process ID.
@@ -669,8 +699,10 @@ impl Session {
                             }
                         }
                     }
-                    Control::Shutdown(timeout, send) => {
-                        let result = owned.take().map_or(Ok(()), |child| child.finish(timeout));
+                    Control::Shutdown(deadline, send) => {
+                        let result = owned
+                            .take()
+                            .map_or(Ok(()), |child| child.finish_until(deadline));
                         let _ = send.send(result);
                         break;
                     }
@@ -751,14 +783,14 @@ impl Session {
         }
     }
 
-    fn shutdown(&self, timeout: Duration) -> Result<()> {
+    fn shutdown(&self, deadline: Instant) -> Result<()> {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
         self.fence();
         let (send, receive) = mpsc::sync_channel(1);
         self.control
-            .send(Control::Shutdown(timeout, send))
+            .send(Control::Shutdown(deadline, send))
             .map_err(|_| NativeFailure::SidecarFailed)?;
         let result = receive.recv().map_err(|_| NativeFailure::SidecarFailed)?;
         if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take() {
@@ -769,7 +801,7 @@ impl Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = self.shutdown(SHUTDOWN_TIMEOUT);
+        let _ = self.shutdown(Instant::now() + SHUTDOWN_TIMEOUT);
     }
 }
 fn frame(reader: &mut impl BufRead) -> Result<Reply> {
@@ -1440,6 +1472,140 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(3));
         assert!(connector.hosted.lock().unwrap().is_empty());
         assert!(!root.path().join("joined").exists());
+    }
+
+    const RESIDENT_HELLO_SH: &str = "printf '%s\\n' '{\"version\":2,\"result\":{\"endpoint\":\"http://127.0.0.1:51234\",\"generation\":\"019c2381-9300-7000-8000-000000000001\",\"key\":\"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\"}}'\n";
+
+    // One executable serves both roles: the resident host receives
+    // `server desktop-host ...` arguments after `--data-dir ROOT`, while the
+    // hosted Worker receives only the data directory.
+    fn dual_fixture(resident: &str, worker: &str) -> (tempfile::TempDir, Arc<Connector>) {
+        worker_fixture(&format!(
+            "#!/bin/sh\nif [ \"$#\" -gt 2 ]; then\nprintf '%s' \"$$\" > \
+             \"$2/resident.pid\"\n{RESIDENT_HELLO_SH}{resident}\nelse\n{}{worker}\nfi\n",
+            ready()
+        ))
+    }
+
+    fn process_exists(pid: i32) -> bool {
+        unsafe { libc::kill(pid, 0) == 0 }
+    }
+
+    fn resident_pid(root: &std::path::Path) -> i32 {
+        let limit = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(text) = fs::read_to_string(root.join("resident.pid"))
+                && let Ok(pid) = text.trim().parse()
+            {
+                return pid;
+            }
+            assert!(Instant::now() < limit);
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn hung_resident_and_hung_worker_share_one_aggregate_deadline() {
+        let (root, connector) = dual_fixture(
+            "while :; do /bin/sleep 1; done",
+            "while :; do /bin/sleep 1; done",
+        );
+        connector.runtime_endpoint().unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
+        let resident = resident_pid(root.path());
+        let worker = connector.hosted.lock().unwrap()[0].child.id() as i32;
+        let budget = Duration::from_secs(2);
+        let started = Instant::now();
+        connector.shutdown_owned_with_timeout(budget).unwrap();
+        let elapsed = started.elapsed();
+        assert!(elapsed >= budget, "forced before the budget: {elapsed:?}");
+        // Sequential phases would wait for twice the budget.
+        assert!(
+            elapsed < budget * 2 - Duration::from_millis(200),
+            "{elapsed:?}"
+        );
+        assert!(connector.hosted.lock().unwrap().is_empty());
+        assert!(!process_exists(resident));
+        assert!(!process_exists(worker));
+    }
+
+    #[test]
+    fn slow_resident_phase_leaves_only_the_remaining_grace_to_the_worker() {
+        // The resident host takes most of the budget to exit gracefully.
+        let (root, connector) = dual_fixture(
+            "IFS= read -r line\nIFS= read -r line\n/bin/sleep 3\nexit 0",
+            "while :; do /bin/sleep 1; done",
+        );
+        connector.runtime_endpoint().unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
+        let worker = connector.hosted.lock().unwrap()[0].child.id() as i32;
+        let _ = resident_pid(root.path());
+        let budget = Duration::from_secs(4);
+        let started = Instant::now();
+        connector.shutdown_owned_with_timeout(budget).unwrap();
+        let elapsed = started.elapsed();
+        assert!(elapsed >= budget, "worker forced early: {elapsed:?}");
+        // A fresh grant after the three-second first phase would exceed seven
+        // seconds.
+        assert!(elapsed < Duration::from_secs(6), "{elapsed:?}");
+        assert!(connector.hosted.lock().unwrap().is_empty());
+        assert!(!process_exists(worker));
+    }
+
+    #[test]
+    fn graceful_requests_start_for_every_owned_child_at_the_window_start() {
+        // A hung resident host must not delay the Worker stop frame.
+        let (root, connector) = dual_fixture(
+            "while :; do /bin/sleep 1; done",
+            "IFS= read -r control\nprintf stopped > \"$2/stopped\"",
+        );
+        connector.runtime_endpoint().unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
+        let resident = resident_pid(root.path());
+        let budget = Duration::from_secs(3);
+        let started = Instant::now();
+        let quitting = Arc::clone(&connector);
+        let task = thread::spawn(move || quitting.shutdown_owned_with_timeout(budget));
+        let marker = root.path().join("stopped");
+        let limit = Instant::now() + Duration::from_secs(5);
+        while !marker.exists() {
+            assert!(Instant::now() < limit);
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            started.elapsed() < budget,
+            "worker stop waited for the resident phase"
+        );
+        task.join().unwrap().unwrap();
+        assert!(started.elapsed() >= budget);
+        assert!(connector.hosted.lock().unwrap().is_empty());
+        assert!(!process_exists(resident));
+    }
+
+    #[test]
+    fn already_exited_children_and_repeated_quit_finish_without_waiting() {
+        let (root, connector) = dual_fixture("exit 0", "exit 0");
+        connector.runtime_endpoint().unwrap();
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
+        let _ = resident_pid(root.path());
+        thread::sleep(Duration::from_millis(500));
+        let started = Instant::now();
+        connector
+            .shutdown_owned_with_timeout(Duration::from_secs(20))
+            .unwrap();
+        connector
+            .shutdown_owned_with_timeout(Duration::from_secs(20))
+            .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(connector.hosted.lock().unwrap().is_empty());
     }
 
     #[test]
