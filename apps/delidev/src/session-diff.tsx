@@ -282,7 +282,7 @@ export function RepositoryDiff({
   // refresh, path submission and comparison round trips never restore trust.
   const optionsOwner = [sessionId, repository].join("\u0000");
   const [invalidatedBase, setInvalidatedBase] = useState<
-    { owner: string; key: string } | undefined
+    { owner: string; key: string; reference: BaseReference } | undefined
   >();
   const explicitBaseInvalidated = Boolean(
     baseRef &&
@@ -305,7 +305,11 @@ export function RepositoryDiff({
       repository,
       base: explicitBaseKey,
     });
-    setInvalidatedBase({ owner: optionsOwner, key: referenceKey(baseRef) });
+    setInvalidatedBase({
+      owner: optionsOwner,
+      key: referenceKey(baseRef),
+      reference: baseRef,
+    });
   }, [options.data, explicitBaseKey, comparison, optionsOwner]);
   const supportedBase = Boolean(
     options.data &&
@@ -531,20 +535,34 @@ export function RepositoryDiff({
   useEffect(() => {
     if (pendingReviews && reviews.current) reviews.current.open = true;
   }, [pendingReviews]);
-  const choose = (next: Comparison, nextPath = path, nextBase = chosenBase) => {
+  const choose = (
+    next: Comparison,
+    nextPath = path,
+    nextBase = chosenBase,
+    explicit = false,
+  ) => {
+    // A non-branch descriptor carries no base, which clears the local explicit
+    // selection. Returning to Branch must re-publish the invalidated selection
+    // itself, never the inventory default, until the Base control explicitly
+    // selects a reference.
+    const retained =
+      !explicit && !baseRef && invalidatedBase?.owner === optionsOwner
+        ? invalidatedBase.reference
+        : undefined;
+    const base = retained ?? nextBase;
     const value = {
       repository,
       comparison: next,
       path: nextPath,
-      ...(next === Comparison.Branch && options.data && nextBase
-        ? { base_ref: nextBase }
+      ...(next === Comparison.Branch && options.data && base
+        ? { base_ref: base }
         : {}),
     };
     if (openComparison) openComparison(value);
     else {
       setComparison(next);
       setPath(nextPath);
-      setBaseRef(nextBase);
+      setBaseRef(base);
     }
   };
   const failureCodeMessage = (code?: Code) =>
@@ -618,7 +636,7 @@ export function RepositoryDiff({
                 // Only this explicit selection restores trust, including
                 // reselecting the recreated reference itself.
                 setInvalidatedBase(undefined);
-                choose(Comparison.Branch, path, choice.reference);
+                choose(Comparison.Branch, path, choice.reference, true);
               }}
             >
               <option value="" disabled>

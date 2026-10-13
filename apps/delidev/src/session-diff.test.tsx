@@ -2071,3 +2071,67 @@ it("keeps working-tree, staged and creation descriptors base-free", async () => 
   expect(f.comparisons()).toHaveLength(3);
   for (const tab of f.comparisons()) expect(tab.base_ref).toBeUndefined();
 });
+
+it("keeps an invalidated explicit base unavailable across tabbed comparison switches", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({
+    options: async (repository) => ({
+      documentJson: encode({
+        size: "0",
+        binary: false,
+        truncated: false,
+        diff_options: {
+          version: 1,
+          repository_id: repository,
+          choices: state.names.map((name) => ({
+            reference: { type: "local-branch", name },
+            available: true,
+            configured: false,
+          })),
+          default: { type: "local-branch", name: "main" },
+        },
+      }),
+    }),
+  });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() =>
+    expect(
+      (branchReads(f.read).at(-1)?.base_ref as { name: string }).name,
+    ).toBe("other"),
+  );
+  state.names = ["main"];
+  refreshDiff();
+  await screen.findByText(/No available default base/);
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "staged")).toBe(
+      true,
+    ),
+  );
+  // Returning to Branch must not fall back to the inventory default.
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "main" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(
+    branchReads(f.read).map((q) => (q.base_ref as { name: string }).name),
+  ).toEqual(["main", "other"]);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("main") },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(
+    (branchReads(f.read).at(-1)?.base_ref as { name: string }).name,
+  ).toBe("main");
+});
