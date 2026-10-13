@@ -18,7 +18,10 @@ import (
 func TestPortableRepositoryDirectoryConversion(t *testing.T) {
 	for _, fixture := range []struct{ input, want string }{
 		{"oss", "oss"}, {"  OSS  ", "OSS"}, {"a/b", "a_b"}, {"a\\b:*?", "a_b___"},
-		{"CON", "_CON"}, {"lpt9.txt", "_lpt9.txt"}, {" ... \t", "repository"},
+		{"CON", "_CON"}, {"lpt9.txt", "_lpt9.txt"},
+		{"CONIN$", "_CONIN$"}, {"conout$.log", "_conout$.log"}, {"COM0", "_COM0"}, {"LPT0.txt", "_LPT0.txt"},
+		{"COM¹", "_COM¹"}, {"lpt²", "_lpt²"}, {"COM³.tar.gz", "_COM³.tar.gz"}, {"CON .txt", "_CON .txt"}, {"nul. ", "_nul"},
+		{"CONSOLE", "CONSOLE"}, {"COM10", "COM10"}, {"LPT10.txt", "LPT10.txt"}, {"CONIN", "CONIN"}, {" ... \t", "repository"},
 		{"name. \t", "name"}, {"e\u0301", "é"}, {"a\u0001b", "a_b"},
 		{strings.Repeat("界", 100), strings.Repeat("界", 85)},
 	} {
@@ -168,5 +171,48 @@ func TestForkRequiresNamedDirectoriesCoversSidechatAndIndependentSources(t *test
 	input.SourceAssignment.Preparation = []byte(`{"unknown":`)
 	if _, err := ForkRequiresNamedDirectories(input); err == nil {
 		t.Fatal("undecodable Sidechat source preparation was accepted")
+	}
+}
+
+func TestPortableRepositoryDirectoryReservedNameKeepsByteBound(t *testing.T) {
+	for _, input := range []string{"CON" + strings.Repeat("x", 300), "COM¹." + strings.Repeat("界", 100), "COM0." + strings.Repeat("a", 300)} {
+		got, err := PortableRepositoryDirectory(input)
+		if err != nil || len(got) > 255 || !utf8.ValidString(got) || domain.IsWindowsReservedDeviceName(got) || domain.ValidateRepositoryCloneDirectory(got) != nil {
+			t.Fatal(len(got), err)
+		}
+	}
+	// A reserved stem followed by a long extension is converted and bounded.
+	got, err := PortableRepositoryDirectory("NUL." + strings.Repeat("a", 400))
+	if err != nil || !strings.HasPrefix(got, "_NUL.") || len(got) != 255 {
+		t.Fatal(len(got), err)
+	}
+}
+
+func TestFreshDirectoryAdmissionRejectsReservedNamesButHistoryReplays(t *testing.T) {
+	for _, name := range []string{"COM0", "LPT0", "CONIN$", "conout$.txt", "COM¹", "lpt³.log", "CON .txt"} {
+		id := domain.NewID()
+		request := PrepareRequest{Type: domain.Worktree, Repositories: []RepositorySpec{{ID: id, DirectoryName: name}}}
+		if err := request.ValidateDirectories(); err == nil {
+			t.Fatal("fresh admission accepted", name)
+		}
+		// Previously frozen names are replayed and cleaned up, never rewritten.
+		if err := validateRepositoryDirectories(request, historicalDirectoryAdmission); err != nil {
+			t.Fatal("historical replay rejected", name, err)
+		}
+		if err := validateFrozenDirectory(name); err != nil {
+			t.Fatal("frozen name rejected", name, err)
+		}
+		if RepositoryDirectory(id, name) != name {
+			t.Fatal("frozen name rewritten", name)
+		}
+	}
+	ok := PrepareRequest{Type: domain.Worktree, Repositories: []RepositorySpec{{ID: domain.NewID(), DirectoryName: "CONSOLE"}, {ID: domain.NewID(), DirectoryName: "COM10"}}}
+	if err := ok.ValidateDirectories(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"CON", "nul.txt", "Lpt1"} {
+		if validateFrozenDirectory(name) == nil {
+			t.Fatal("legacy reserved name accepted", name)
+		}
 	}
 }

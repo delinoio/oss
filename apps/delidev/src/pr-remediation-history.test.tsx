@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   EntityKind,
+  ErrorDetailSchema,
   IntegrationService,
   ResourceSchema,
   newRequestId,
@@ -321,4 +322,243 @@ it("retries failed Info remediation reads without routine Refresh", async () => 
   expect(
     screen.queryByRole("button", { name: "Refresh remediation history" }),
   ).toBeNull();
+});
+
+it("recovers a failed remediation read through the Refresh button with the exact retry", async () => {
+  const f = fixture();
+  f.history.mockRejectedValueOnce(
+    new ConnectError("Read unavailable", Code.Unavailable),
+  );
+  render(f.view());
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(f.history).toHaveBeenCalledTimes(1);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  expect(f.history).toHaveBeenCalledTimes(2);
+  expect(f.history.mock.calls[1][0]).toEqual(f.history.mock.calls[0][0]);
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
+  expect(f.resume).not.toHaveBeenCalled();
+});
+
+it("reloads the first page from Refresh when the retained read failure is an expired cursor", async () => {
+  const f = fixture();
+  f.history.mockRejectedValueOnce(
+    new ConnectError("Cursor expired", Code.FailedPrecondition, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, {
+          code: "cursor_expired",
+          guidance: "Reload this list to accept a new chain.",
+        }),
+      },
+    ]),
+  );
+  render(f.view());
+  await screen.findByRole("button", { name: "Retry current read" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  expect(f.history).toHaveBeenCalledTimes(2);
+  expect(f.history.mock.calls[1][0]).toMatchObject({
+    remoteRepositoryId: "9007199254740993",
+    pullRequestId: "9007199254740995",
+  });
+  expect(f.resume).not.toHaveBeenCalled();
+});
+
+it("refreshes a healthy history from Refresh without a failure path", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
+});
+
+it("recovers a prior read failure after a successful resume without replaying the mutation", async () => {
+  const f = fixture();
+  f.resume.mockRejectedValueOnce(
+    new ConnectError("response lost", Code.Unavailable),
+  );
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Resume automatic attempt allowance" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  await screen.findByRole("button", {
+    name: "Retry original allowance resumption",
+  });
+  expect(f.history).toHaveBeenCalledTimes(1);
+  f.history.mockRejectedValueOnce(
+    new ConnectError("Read unavailable", Code.Unavailable),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(f.history).toHaveBeenCalledTimes(2);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original allowance resumption" }),
+  );
+  await waitFor(() => expect(f.resume).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(3));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Retry current read" }),
+    ).toBeNull(),
+  );
+  expect(f.resume).toHaveBeenCalledTimes(2);
+});
+
+it("reloads the first page after an accepted resume instead of retrying a retained continuation token", async () => {
+  const f = fixture();
+  let continuationFails = false;
+  f.history.mockImplementation(async (request: unknown) => {
+    const token = (request as { pageToken: string }).pageToken;
+    if (token === "continuation-1") {
+      if (continuationFails)
+        throw new ConnectError("Read unavailable", Code.Unavailable);
+      return { problemSet: f.set, attempts: [], nextPageToken: "" };
+    }
+    return {
+      problemSet: f.set,
+      attempts: f.attempts,
+      nextPageToken: "continuation-1",
+    };
+  });
+  f.resume.mockRejectedValueOnce(
+    new ConnectError("response lost", Code.Unavailable),
+  );
+  const tokens = () =>
+    f.history.mock.calls.map(
+      (call) => (call[0] as { pageToken: string }).pageToken,
+    );
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(await screen.findByRole("button", { name: /Load more/ }));
+  await waitFor(() => expect(tokens()).toEqual(["", "continuation-1"]));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Resume automatic attempt allowance",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  await screen.findByRole("button", {
+    name: "Retry original allowance resumption",
+  });
+  continuationFails = true;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(tokens()).toEqual(["", "continuation-1", "", "continuation-1"]);
+  continuationFails = false;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original allowance resumption" }),
+  );
+  await waitFor(() => expect(f.resume).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Retry current read" }),
+    ).toBeNull(),
+  );
+  // The accepted resume reloads from the first page; the retained
+  // continuation token is not retried.
+  expect(tokens()).toEqual(["", "continuation-1", "", "continuation-1", ""]);
+});
+
+it("disables history reads while an allowance resumption is in flight so the post-resume reload cannot be skipped", async () => {
+  const f = fixture();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.resume.mockImplementationOnce(async (request) => {
+    await gate;
+    return { problemSet: f.set, requestId: request.mutation?.requestId };
+  });
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Resume automatic attempt allowance" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  await waitFor(() => expect(f.resume).toHaveBeenCalledTimes(1));
+  const refresh = screen.getByRole("button", {
+    name: "Refresh remediation history",
+  });
+  expect((refresh as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(refresh);
+  expect(f.history).toHaveBeenCalledTimes(1);
+  release();
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Refresh remediation history",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+});
+
+it("holds the original resumption retry while a history read is active", async () => {
+  const f = fixture();
+  f.resume.mockRejectedValueOnce(
+    new ConnectError("response lost", Code.Unavailable),
+  );
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Resume automatic attempt allowance" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  const retry = await screen.findByRole("button", {
+    name: "Retry original allowance resumption",
+  });
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.history.mockImplementationOnce(async () => {
+    await gate;
+    return { problemSet: f.set, attempts: f.attempts };
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
+  expect((retry as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(retry);
+  expect(f.resume).toHaveBeenCalledTimes(1);
+  release();
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Retry original allowance resumption",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
 });

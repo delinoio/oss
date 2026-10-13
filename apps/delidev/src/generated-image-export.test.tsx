@@ -238,3 +238,145 @@ it("never releases an admitted lost-acknowledgment fence from a non-admission Ch
   ).toHaveLength(1);
   bridge.invoke.mockClear();
 });
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+const exporter = (ref: ImageAttachment, sessionId: string, number: number) => (
+  <GeneratedImageExport
+    bytes={new Uint8Array([1, 2, 3])}
+    reference={ref}
+    sessionId={sessionId}
+    number={number}
+    active
+  />
+);
+const saveButton = (number: number) =>
+  screen.getByRole("button", {
+    name: `Export original image ${number}`,
+  }) as HTMLButtonElement;
+
+it.each(["busy", "stopped", "invalid-input"])(
+  "releases the remounted exporter when proved %s non-admission settles after the remount",
+  async (reason) => {
+    const response = deferred<unknown>();
+    bridge.invoke.mockImplementationOnce(() => response.promise);
+    const ref = reference(),
+      sessionId = newRequestId();
+    const first = render(exporter(ref, sessionId, 6));
+    fireEvent.click(saveButton(6));
+    const original = bridge.invoke.mock.calls.at(-1)?.[1].request.operationId;
+    first.unmount();
+    render(exporter(ref, sessionId, 6));
+    expect(saveButton(6).disabled).toBe(true);
+    screen.getByText("Saving original image…");
+    response.resolve({
+      status: "not-admitted",
+      operationId: original,
+      reason,
+    });
+    await waitFor(() => expect(saveButton(6).disabled).toBe(false));
+    screen.getByText(
+      "The image was not saved. Choose a new filename and try again.",
+    );
+    expect(bridge.invoke).toHaveBeenCalledTimes(1);
+    bridge.invoke.mockResolvedValueOnce("saved");
+    fireEvent.click(saveButton(6));
+    await screen.findByText("Original image saved.");
+    expect(bridge.invoke.mock.calls.at(-1)?.[1].request.operationId).not.toBe(
+      original,
+    );
+    bridge.invoke.mockClear();
+  },
+);
+
+it("keeps the uncertainty fence for a remounted exporter after a transport failure", async () => {
+  const response = deferred<unknown>();
+  bridge.invoke.mockImplementationOnce(() => response.promise);
+  const ref = reference(),
+    sessionId = newRequestId();
+  const first = render(exporter(ref, sessionId, 7));
+  fireEvent.click(saveButton(7));
+  first.unmount();
+  render(exporter(ref, sessionId, 7));
+  response.resolve(new Error("not a result"));
+  await screen.findByText(
+    "The save result is unknown. Check the original save before exporting again.",
+  );
+  expect(saveButton(7).disabled).toBe(true);
+  bridge.invoke.mockClear();
+});
+
+it("updates every mounted observer of one key and leaves other keys independent", async () => {
+  const response = deferred<unknown>();
+  bridge.invoke.mockImplementationOnce(() => response.promise);
+  const ref = reference(),
+    sessionId = newRequestId();
+  const other = { ...reference(), id: newRequestId() };
+  render(
+    <>
+      <div data-testid="a">{exporter(ref, sessionId, 8)}</div>
+      <div data-testid="b">{exporter(ref, sessionId, 9)}</div>
+      <div data-testid="c">{exporter(other, sessionId, 10)}</div>
+      <div data-testid="d">{exporter(ref, newRequestId(), 11)}</div>
+    </>,
+  );
+  fireEvent.click(saveButton(8));
+  expect(saveButton(8).disabled).toBe(true);
+  expect(saveButton(9).disabled).toBe(true);
+  expect(saveButton(10).disabled).toBe(false);
+  expect(saveButton(11).disabled).toBe(false);
+  const original = bridge.invoke.mock.calls.at(-1)?.[1].request.operationId;
+  response.resolve({
+    status: "not-admitted",
+    operationId: original,
+    reason: "busy",
+  });
+  await waitFor(() => expect(saveButton(9).disabled).toBe(false));
+  expect(saveButton(8).disabled).toBe(false);
+  expect(bridge.invoke).toHaveBeenCalledTimes(1);
+  bridge.invoke.mockClear();
+});
+
+it("does not let an older Check response settle a newer operation for the same key", async () => {
+  const firstSave = deferred<unknown>();
+  const staleCheck = deferred<unknown>();
+  const secondSave = deferred<unknown>();
+  bridge.invoke.mockImplementationOnce(() => firstSave.promise);
+  const ref = reference(),
+    sessionId = newRequestId();
+  render(exporter(ref, sessionId, 12));
+  fireEvent.click(saveButton(12));
+  const original = bridge.invoke.mock.calls.at(-1)?.[1].request.operationId;
+  bridge.invoke.mockImplementationOnce(() => staleCheck.promise);
+  fireEvent.click(screen.getByRole("button", { name: "Check original save" }));
+  firstSave.resolve({
+    status: "not-admitted",
+    operationId: original,
+    reason: "busy",
+  });
+  await waitFor(() => expect(saveButton(12).disabled).toBe(false));
+  bridge.invoke.mockImplementationOnce(() => secondSave.promise);
+  fireEvent.click(saveButton(12));
+  const newer = bridge.invoke.mock.calls.at(-1)?.[1].request.operationId;
+  expect(newer).not.toBe(original);
+  staleCheck.resolve("saved");
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Check original save",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  expect(saveButton(12).disabled).toBe(true);
+  expect(screen.queryByText("Original image saved.")).toBeNull();
+  secondSave.resolve("saved");
+  await screen.findByText("Original image saved.");
+  bridge.invoke.mockClear();
+});

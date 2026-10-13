@@ -1,6 +1,6 @@
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import type { IdentityLabel } from "./product-identity";
-import type { PriceSelection } from "./usage-prices";
+import { modelPresentationId, type PriceSelection } from "./usage-prices";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import {
@@ -117,12 +117,28 @@ function NativeSummary({
 }) {
   const productLabel = useProductLabels();
   useLocale();
+  // Native model IDs are unique only within their provider or subscription
+  // source, so use the same scoped presentation identity as the response views.
   for (const group of data.groups) {
-    productLabel(PresentationKind.Model, group.model?.nativeId);
+    productLabel(
+      PresentationKind.Model,
+      modelPresentationId(
+        group.model?.nativeId,
+        group.providerId,
+        group.subscriptionService,
+      ),
+    );
     productLabel(PresentationKind.Provider, group.providerId);
   }
   for (const model of data.models) {
-    productLabel(PresentationKind.Model, model.model?.nativeId);
+    productLabel(
+      PresentationKind.Model,
+      modelPresentationId(
+        model.model?.nativeId,
+        model.providerId,
+        model.subscriptionService,
+      ),
+    );
     productLabel(PresentationKind.Provider, model.providerId);
   }
   const claude =
@@ -263,7 +279,11 @@ function NativeSummary({
                         >
                           {productLabel(
                             PresentationKind.Model,
-                            group.model?.nativeId,
+                            modelPresentationId(
+                              group.model?.nativeId,
+                              group.providerId,
+                              group.subscriptionService,
+                            ),
                           )}
                         </button>
                         <p>
@@ -385,7 +405,11 @@ function NativeSummary({
                         >
                           {productLabel(
                             PresentationKind.Model,
-                            model.model?.nativeId,
+                            modelPresentationId(
+                              model.model?.nativeId,
+                              model.providerId,
+                              model.subscriptionService,
+                            ),
                           )}
                         </button>
                         <p>

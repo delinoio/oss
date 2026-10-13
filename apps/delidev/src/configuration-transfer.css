@@ -90,6 +90,10 @@
   background: var(--accent);
   color: var(--on-accent);
 }
+/* Controls inside a transfer-owned fieldset carry no own disabled attribute, so anchor on the fieldset's attribute. Matching :disabled would also catch controls disabled only by the outer Settings task fieldset. */
+.configuration-transfer
+  :is(fieldset.transfer-input-fieldset, fieldset.transfer-mapping)[disabled]
+  :is(button, input, select, textarea),
 .configuration-transfer :is(button, input, select, textarea)[disabled] {
   opacity: 1;
   color: var(--muted);
@@ -125,6 +129,9 @@
   font: inherit;
   cursor: pointer;
 }
+.configuration-transfer
+  :is(fieldset.transfer-input-fieldset, fieldset.transfer-mapping)[disabled]
+  input::file-selector-button,
 .configuration-transfer input[disabled]::file-selector-button {
   border-color: var(--border);
   background: var(--surface-muted);

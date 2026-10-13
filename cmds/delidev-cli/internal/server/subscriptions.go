@@ -515,8 +515,21 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || state.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
-			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+		// Execution, quota and reset-credit Take keep contention first. A fresh
+		// lifecycle Take instead proves its queued original is still admissible
+		// after the Worker fences and before contention, so a definitely unadmitted
+		// claim is retired locally rather than retried behind an unrelated lease.
+		lifecycle := action != domain.SubscriptionExecute && action != domain.SubscriptionQuota && action != domain.SubscriptionResetCredit
+		accountBusy := func() error {
+			if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+				return domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
+			}
+			return nil
+		}
+		if !lifecycle {
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
@@ -648,11 +661,22 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 				return nil, err
 			}
-			if op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued) {
-				return nil, subscriptionDenied()
-			}
-			if op == nil || op.ID != input.Operation || op.Canceled {
+			// A missing or replaced original is classified before any field of the
+			// current Pending operation, which belongs to someone else's claim.
+			if op == nil || op.ID != input.Operation {
 				return nil, subscriptionTakeNotAdmitted()
+			}
+			original := op.Action == action && op.MachineID == input.Machine && op.Phase == domain.SubscriptionQueued
+			if original && op.Canceled {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+			// A matching claim that fails its original fields keeps the existing
+			// contention-first outcome and never carries the no-grant proof.
+			if err := accountBusy(); err != nil {
+				return nil, err
+			}
+			if !original {
+				return nil, subscriptionDenied()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {
 				return nil, err

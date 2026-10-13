@@ -236,7 +236,7 @@ func TestRepositoryTombstonesFenceAdmissionAndSettleOriginalChild(t *testing.T) 
 			mutation := ConfigurationMutation{RequestID: domain.NewID(), ID: id, Kind: domain.RepositoryKind, Document: raw}
 			otherKind := mutation
 			otherKind.ID, otherKind.RequestID = machine, domain.NewID()
-			if _, err := SaveConfiguration(ctx, db, otherKind); domain.SafeError(err).Code != domain.InvalidArgument {
+			if _, err := SaveConfiguration(ctx, db, otherKind); domain.SafeError(err).Code != domain.Conflict {
 				t.Fatal("live other-kind identity classification changed", err)
 			}
 			accepted, err := SaveConfiguration(ctx, db, mutation)

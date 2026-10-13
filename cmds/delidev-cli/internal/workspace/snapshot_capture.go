@@ -137,6 +137,13 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 
 func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, repo PreparedRepository, target string, budget *snapshotCopyBudget, existingGitRoot ...bool) error {
 	sourceBudget := *budget
+	// Ordinary snapshots keep the snapshot traversal cap. An independent Fork
+	// copies into an existing private Git root and admits the Fork inventory
+	// allowance; the shared budget still bounds the aggregate entries and bytes.
+	entryLimit := MaxSnapshotEntries
+	if len(existingGitRoot) > 0 && existingGitRoot[0] {
+		entryLimit = maxForkEntries
+	}
 	var originalGitRoot os.FileInfo
 	if len(existingGitRoot) > 0 && existingGitRoot[0] {
 		var err error
@@ -192,7 +199,7 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	var adminInventory snapshotInventory
 	if len(existingGitRoot) > 0 && existingGitRoot[0] {
 		inspectionBudget := *budget
-		adminInventory, err = walkSnapshotBudget(ctx, admin, "", adminSkip, min(MaxSnapshotEntries, budget.entries), &inspectionBudget)
+		adminInventory, err = walkSnapshotBudget(ctx, admin, "", adminSkip, min(entryLimit, budget.entries), &inspectionBudget)
 	} else {
 		adminInventory, err = walkSnapshot(ctx, admin, "", nil)
 	}
@@ -222,7 +229,7 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	if err := budget.take(0); err != nil {
 		return err
 	}
-	commonInventory, err := walkSnapshotBudget(ctx, common, filepath.Join(target, ".git"), skipCommon, MaxSnapshotEntries, budget, existingGitRoot...)
+	commonInventory, err := walkSnapshotBudget(ctx, common, filepath.Join(target, ".git"), skipCommon, entryLimit, budget, existingGitRoot...)
 	if err != nil {
 		return err
 	}
@@ -231,7 +238,7 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	}
 	if !sameNativePath(common, admin) {
 		skipAdmin := func(path string) bool { return path == "commondir" || path == "gitdir" || path == "locked" }
-		if _, err := walkSnapshotBudget(ctx, admin, filepath.Join(target, ".git"), skipAdmin, MaxSnapshotEntries, budget, true); err != nil {
+		if _, err := walkSnapshotBudget(ctx, admin, filepath.Join(target, ".git"), skipAdmin, entryLimit, budget, true); err != nil {
 			return err
 		}
 	}
@@ -261,13 +268,13 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 			return err
 		}
 	}
-	if err := m.validateSnapshotGit(ctx, session, repo, target); err != nil {
+	if err := m.validateSnapshotGitLimit(ctx, session, repo, target, entryLimit); err != nil {
 		return err
 	}
 	var commonAfter snapshotInventory
 	if originalGitRoot != nil {
 		probe := sourceBudget
-		commonAfter, err = walkSnapshotBudget(ctx, common, "", skipCommon, min(MaxSnapshotEntries, probe.entries), &probe)
+		commonAfter, err = walkSnapshotBudget(ctx, common, "", skipCommon, min(entryLimit, probe.entries), &probe)
 	} else {
 		commonAfter, err = walkSnapshot(ctx, common, "", skipCommon)
 	}
@@ -277,7 +284,7 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	var adminAfter snapshotInventory
 	if originalGitRoot != nil {
 		probe := sourceBudget
-		adminAfter, err = walkSnapshotBudget(ctx, admin, "", adminSkip, min(MaxSnapshotEntries, probe.entries), &probe)
+		adminAfter, err = walkSnapshotBudget(ctx, admin, "", adminSkip, min(entryLimit, probe.entries), &probe)
 	} else {
 		adminAfter, err = walkSnapshot(ctx, admin, "", nil)
 	}
@@ -322,7 +329,13 @@ const (
 	snapshotGitLocation snapshotGitValidationPhase = "location"
 )
 
-func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, path string) (returned error) {
+func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, repo PreparedRepository, path string) error {
+	return m.validateSnapshotGitLimit(ctx, session, repo, path, MaxSnapshotEntries)
+}
+
+// validateSnapshotGitLimit validates a copied Git directory with an explicit
+// traversal cap so an independent Fork can use its larger inventory allowance.
+func (m *Manager) validateSnapshotGitLimit(ctx context.Context, session domain.ID, repo PreparedRepository, path string, entryLimit int) (returned error) {
 	phase := snapshotGitCommits
 	defer func() {
 		if returned != nil {
@@ -336,7 +349,7 @@ func (m *Manager) validateSnapshotGit(ctx context.Context, session domain.ID, re
 	if err := validateSnapshotGitConfig(ctx, git, path, filepath.Join(path, ".git")); err != nil {
 		return err
 	}
-	inventory, err := walkSnapshot(ctx, filepath.Join(path, ".git"), "", nil)
+	inventory, err := walkSnapshotEntries(ctx, filepath.Join(path, ".git"), "", nil, entryLimit)
 	if err != nil {
 		return err
 	}

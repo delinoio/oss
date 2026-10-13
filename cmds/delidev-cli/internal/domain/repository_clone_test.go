@@ -129,3 +129,34 @@ func TestRepositoryCloneDirectory(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsReservedDeviceNames(t *testing.T) {
+	reserved := []string{"CON", "con", "PRN", "Aux.txt", "NUL.tar.gz", "CONIN$", "conout$", "CONOUT$.log", "COM0", "com9", "LPT0", "lpt9.txt",
+		"COM¹", "com²", "COM³.txt", "LPT¹", "lpt²", "LPT³.txt", "CON .txt", "NUL  "}
+	for _, value := range reserved {
+		if !IsWindowsReservedDeviceName(value) {
+			t.Fatal("not reserved", value)
+		}
+		if ValidateRepositoryCloneDirectory(value) == nil {
+			t.Fatal("new admission accepted", value)
+		}
+	}
+	for _, value := range []string{"CONSOLE", "COM10", "COM", "LPT10", "CONIN", "xCON", "_CON", "COM¹²", "CON-1", ".CON", "repo"} {
+		if IsWindowsReservedDeviceName(value) {
+			t.Fatal("neighbor reserved", value)
+		}
+	}
+}
+
+func TestHistoricalRepositoryDirectoryKeepsAcceptedFrozenNames(t *testing.T) {
+	for _, value := range []string{"COM0", "LPT0", "CONIN$", "conout$.txt", "COM¹", "lpt³.txt", "CON .txt", "repo"} {
+		if err := ValidateHistoricalRepositoryDirectory(value); err != nil {
+			t.Fatal("historical name rejected", value, err)
+		}
+	}
+	for _, value := range []string{"CON", "nul.txt", "Lpt1", "COM9.txt", "a/b", "trailing."} {
+		if ValidateHistoricalRepositoryDirectory(value) == nil {
+			t.Fatal("historical validator accepted", value)
+		}
+	}
+}

@@ -2593,6 +2593,34 @@ it("refreshes reads after recovery without replacing the connection's session dr
   expect(value.enqueues).not.toHaveBeenCalled();
 });
 
+it("closes an open Open tool dialog when readiness is lost and keeps it closed after same-identity recovery", async () => {
+  const value = fixture();
+  const view = render(<App transport={value.transport} connectionReady />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    }),
+  );
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Keep this draft" } });
+  const trigger = screen.getByRole("button", { name: "Open tool" });
+  fireEvent.click(trigger);
+  const dialog = () => document.querySelector("dialog.session-tool-dialog")!;
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+  view.rerender(<App transport={value.transport} connectionReady={false} />);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  fireEvent.click(trigger);
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  view.rerender(
+    <App transport={value.transport} connectionReady connectionEpoch={1} />,
+  );
+  expect((dialog() as HTMLDialogElement).open).toBe(false);
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  expect((dialog() as HTMLDialogElement).open).toBe(true);
+});
+
 it("retries the exact accepted message identity after uncertainty instead of sending a new message", async () => {
   const value = fixture();
   value.enqueues.mockRejectedValueOnce(
@@ -4414,6 +4442,76 @@ it("preserves first Search autofocus after a hidden wide activation", async () =
   fireEvent.click(headerAction("Search"));
   flushFrames();
   expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});
+
+it("focuses retained Search once when a compact drawer opens after a hidden wide activation", async () => {
+  const resize = viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const menu = await screen.findByRole("dialog", { name: "Command menu" });
+  fireEvent.click(within(menu).getByRole("option", { name: "Search" }));
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  // Resize below the compact breakpoint without leaving Search.
+  act(() => resize(true));
+  flushFrames();
+  const opener = await screen.findByRole("button", {
+    name: "Open search filters",
+  });
+  // Closed compact content never receives focus.
+  expect(document.activeElement).not.toBe(input);
+  const focused = vi.fn();
+  input.addEventListener("focus", focused);
+
+  fireEvent.click(opener);
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // Reopening an already focused drawer must not replay initial autofocus.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  opener.focus();
+  fireEvent.click(opener);
+  flushFrames();
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // The explicit SearchFocus shortcut still focuses the query input.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => {
+    flushFrames();
+    expect(document.activeElement).toBe(input);
+  });
   expectNoNavigationWrites(value);
 });
 

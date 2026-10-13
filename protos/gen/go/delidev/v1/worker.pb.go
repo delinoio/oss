@@ -43,19 +43,21 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1 WorkerCapability = 64
 	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1       WorkerCapability = 27
 	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1        WorkerCapability = 38
-	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1            WorkerCapability = 26
-	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1                     WorkerCapability = 24
-	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                      WorkerCapability = 25
-	WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1           WorkerCapability = 35
-	WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1       WorkerCapability = 20
-	WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1                 WorkerCapability = 23
-	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1                  WorkerCapability = 18
-	WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1            WorkerCapability = 19
-	WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1             WorkerCapability = 17
-	WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1          WorkerCapability = 16
-	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1         WorkerCapability = 5
-	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1          WorkerCapability = 13
-	WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1       WorkerCapability = 14
+	// Worker accepts retained branch prefix selection version 2 (exact JSON-style quoting).
+	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1   WorkerCapability = 65
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24
+	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                WorkerCapability = 25
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1     WorkerCapability = 35
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1 WorkerCapability = 20
+	WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1           WorkerCapability = 23
+	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1            WorkerCapability = 18
+	WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1      WorkerCapability = 19
+	WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1       WorkerCapability = 17
+	WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1    WorkerCapability = 16
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1   WorkerCapability = 5
+	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1    WorkerCapability = 13
+	WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 WorkerCapability = 14
 	// Independently negotiated pinned Unix plain-text General Chat fork profile.
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1     WorkerCapability = 15
 	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1         WorkerCapability = 1
@@ -92,6 +94,7 @@ var (
 		64: "WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1",
 		27: "WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
 		38: "WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1",
+		65: "WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1",
 		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		24: "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
 		25: "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
@@ -137,6 +140,7 @@ var (
 		"WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1": 64,
 		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":       27,
 		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":        38,
+		"WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1":         65,
 		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":            26,
 		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                     24,
 		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                      25,
@@ -4717,7 +4721,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12_cache_write_inputB\t\n" +
 	"\a_outputB\x13\n" +
 	"\x11_reasoning_outputB\b\n" +
-	"\x06_total*\xd2\x10\n" +
+	"\x06_total*\x86\x11\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
 	"(WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1\x10:\x12/\n" +
@@ -4736,7 +4740,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	")WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1\x10$\x12:\n" +
 	"6WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1\x10@\x124\n" +
 	"0WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1\x10\x1b\x123\n" +
-	"/WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1\x10&\x12/\n" +
+	"/WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1\x10&\x122\n" +
+	".WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1\x10A\x12/\n" +
 	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +
 	"\"WORKER_CAPABILITY_NATIVE_SKILLS_V1\x10\x18\x12%\n" +
 	"!WORKER_CAPABILITY_IMAGE_INPUTS_V1\x10\x19\x120\n" +

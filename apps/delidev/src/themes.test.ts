@@ -12,6 +12,10 @@ import {
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
 const usageStyles = readFileSync(join(directory, "usage.css"), "utf8");
+const disclosureStyles = readFileSync(
+  join(directory, "disclosure.css"),
+  "utf8",
+);
 const quotaColors = readFileSync(join(directory, "quota-color.ts"), "utf8");
 const palettes = [
   ...source.matchAll(/color-scheme: (?:light|dark);([^}]+)/g),
@@ -151,9 +155,19 @@ test("selected-border cue contrasts at least 3:1 with adjacent surfaces in every
   }
 });
 
-test("Usage token breakdown focus uses the inverse-surface contrast token", () => {
+test("Usage token breakdown focus keeps the shared focus outline over the ordinary surface", () => {
+  // The summary is an ordinary surface, so no inverse-surface override may remain.
+  expect(usageStyles).not.toMatch(
+    /\.usage-summary-breakdown[^{}]*:focus-visible[^{}]*\{[^}]*outline/u,
+  );
+  expect(usageStyles).not.toMatch(
+    /\.usage-page\s+\.usage-summary\s*\{[^}]*background:\s*var\(--inverse-surface\)/u,
+  );
   expect(usageStyles).toMatch(
-    /:root\s+\.usage-page\s+\.usage-summary-breakdown\s*>\s*\.disclosure-header:focus-visible\s*\{\s*outline-color:\s*var\(--on-inverse\);\s*\}/u,
+    /\.usage-page\s+\.usage-summary\s*\{[^}]*background:\s*var\(--surface\);/u,
+  );
+  expect(disclosureStyles).toMatch(
+    /:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus\);[^}]*outline-offset:\s*2px;/u,
   );
 });
 
@@ -306,5 +320,39 @@ test("Animation Off and reduced motion suppress entrance animations", () => {
   );
   expect(source).toMatch(
     /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,[^{]+\{\s*animation: none !important;/u,
+  );
+});
+
+test("merged pull request dot uses a fixed semantic purple token independent of accent palettes", () => {
+  expect(palettes).toHaveLength(3);
+  for (const palette of palettes) {
+    const merged = palette.get("pr-merged");
+    expect(merged).toBeTruthy();
+    expect(merged).not.toBe(palette.get("accent"));
+    expect(
+      contrast(merged!, palette.get("surface")!),
+      "pr-merged / surface",
+    ).toBeGreaterThanOrEqual(3);
+    // Purple hue: blue and red channels both dominate green.
+    const [red, green, blue] = [1, 3, 5].map((offset) =>
+      parseInt(merged!.slice(offset, offset + 2), 16),
+    );
+    expect(blue).toBeGreaterThan(green);
+    expect(red).toBeGreaterThan(green);
+  }
+  // The token is not user-customizable, so saved themes and accent palettes
+  // (Nord, Dracula and others) can never override it.
+  for (const modes of Object.values(appearancePalettes))
+    for (const colors of Object.values(modes))
+      expect(Object.keys(colors)).not.toContain("pr-merged");
+  const session = readFileSync(join(directory, "session.css"), "utf8");
+  const rule = (name: string) =>
+    session.match(new RegExp(`\\.session-pr-dot-${name}\\s*\\{([^}]*)\\}`))![1];
+  expect(rule("merged")).toMatch(/background:\s*var\(--pr-merged\)/);
+  expect(rule("merged")).not.toContain("--accent");
+  expect(rule("open")).toMatch(/background:\s*var\(--success-text\)/);
+  expect(rule("closed")).toMatch(/background:\s*var\(--danger-text\)/);
+  expect(session).toMatch(
+    /\.session-pr-dot\s*\{[^}]*background:\s*var\(--text-secondary\)/,
   );
 });

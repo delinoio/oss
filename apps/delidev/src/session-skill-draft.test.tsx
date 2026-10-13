@@ -162,7 +162,9 @@ it("retains exact skill invocation across retained App session tab switches", as
   );
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
   expect(f.enqueue.mock.calls[0]![0].skills?.selections).toEqual([f.selection]);
-});
+  // Every test here renders the full App; the first also pays the cold module
+  // import. Under a loaded CI shard these exceeded the 5s default.
+}, 10_000);
 
 it("retains the original opaque selection across same-identity reconnect", async () => {
   const f = fixture(),
@@ -221,7 +223,7 @@ it("clears only the original retained draft when its request accepts while hidde
       currentSession().getByRole("textbox", { name: "Message" }),
     ).toHaveProperty("value", ""),
   );
-});
+}, 10_000);
 
 it("accepts a skill before fixed Enter sends the original General Chat draft once", async () => {
   const f = fixture();
@@ -249,7 +251,7 @@ it("accepts a skill before fixed Enter sends the original General Chat draft onc
   ).toBe("$retained");
   fireEvent.keyDown(input, { key: "Enter", repeat: true });
   expect(f.enqueue).toHaveBeenCalledOnce();
-});
+}, 10_000);
 
 it("keeps composition-confirmation Enter away from local and connection send owners", async () => {
   const f = fixture();
@@ -277,4 +279,4 @@ it("keeps composition-confirmation Enter away from local and connection send own
   expect(f.enqueue).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
-});
+}, 10_000);

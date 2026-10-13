@@ -43,6 +43,7 @@ import {
   changeCounts,
   commitResult,
   sameReadScope,
+  sameSelectionScope,
   observationsConflict,
   orderWorkspace,
   workspaceResult,
@@ -86,7 +87,9 @@ export function PRCounts({ value }: { value: unknown }) {
     <span aria-label={copy("pr-workspace.countsUnavailable")}>—</span>
   );
 }
-const AvatarContext = createContext<PRAvatarCache | undefined>(undefined);
+export const AvatarContext = createContext<PRAvatarCache | undefined>(
+  undefined,
+);
 function AvatarRead({
   selected,
   reference,
@@ -164,7 +167,9 @@ function validWorkspaceItem(item: Document, scope: Document) {
     typeof item.draft === "boolean" &&
     typeof item.merged === "boolean" &&
     (item.mergeable == null || typeof item.mergeable === "boolean") &&
-    bounded(item.body, 128 << 10, false) &&
+    // Graph nodes never carry the description; the selected PR's own Detail read
+    // supplies the bounded body.
+    item.body === undefined &&
     bounded(item.base_ref, 1024) &&
     bounded(item.head_ref, 1024) &&
     sha(item.base_sha) &&
@@ -256,6 +261,7 @@ export function PRWorkspaceRows({
   observations,
   observe,
   allSeeds,
+  residentSeeds,
   previous,
 }: {
   pages: PRPage[];
@@ -266,6 +272,9 @@ export function PRWorkspaceRows({
   observations: Map<string, Document>;
   observe: (key: string, value?: Document) => void;
   allSeeds: string[];
+  /** Seeds on every page still inside the payload window; defaults to this
+   * instance's own pages. */
+  residentSeeds?: string[];
   previous?: boolean;
 }) {
   useLocale();
@@ -300,6 +309,7 @@ export function PRWorkspaceRows({
     edges,
     allSeeds,
     ambiguous,
+    new Set(residentSeeds ?? seeds),
   ).filter((row) => seeds.includes(row.owner));
   return (
     <section
@@ -1098,15 +1108,35 @@ export function PullRequestWorkspace({
     observer.observe(body.current);
     return () => observer.disconnect();
   }, []);
-  const enrich = useCallback((scope: Document) => {
-    setSelection((old) => {
-      if (!old || old.scope === scope) return old;
-      const node = items(scope.nodes)
-        .map(object)
-        .find((n) => object(n.item).number === old.number);
-      return node ? { ...old, node, scope } : old;
-    });
-  }, []);
+  // Mirrors the committed selection so enrichment can dispose it without
+  // running side effects inside a state updater.
+  const selectionScope = useRef<Document | undefined>(undefined);
+  useLayoutEffect(() => {
+    selectionScope.current = selection?.scope;
+  }, [selection]);
+  const enrich = useCallback(
+    (scope: Document) => {
+      const current = selectionScope.current;
+      // A selection and its avatar references are bound to the profile
+      // generation and numeric repository that produced them. Enrichment from
+      // another generation or repository identity disposes both instead of
+      // silently rebinding the selected PR.
+      if (current && current !== scope && !sameSelectionScope(current, scope)) {
+        selectionScope.current = undefined;
+        setSelection(undefined);
+        avatars.clear();
+        return;
+      }
+      setSelection((old) => {
+        if (!old || old.scope === scope) return old;
+        const node = items(scope.nodes)
+          .map(object)
+          .find((n) => object(n.item).number === old.number);
+        return node ? { ...old, node, scope } : old;
+      });
+    },
+    [avatars],
+  );
   const back = () => {
     const number = selection?.number;
     setSelection(undefined);

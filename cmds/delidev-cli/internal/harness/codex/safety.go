@@ -145,13 +145,20 @@ func cloneSafety(o *ModelSafetyObservation) *ModelSafetyObservation {
 	return &next
 }
 
-// Source: openai/codex c1382380de69521303b416720a52f42d51af6248,
-// app-server-protocol/schema/typescript/v2/{ModelVerificationNotification,
-// ModelSafetyBufferingUpdatedNotification,TurnModerationMetadataNotification,
-// ModelReroutedNotification,ModelVerification,ModelRerouteReason}.ts.
-// Pinned native notification schemas use closed verification/reroute enums.
-// Metadata remains JSONValue, including arrays, scalars and explicit null.
-func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, error) {
+// safetyEnvelope is the bounded, identity-checked notification shell shared by
+// every thread. It carries no validated descriptor content.
+type safetyEnvelope struct {
+	raw    json.RawMessage
+	kind   modelSafetyKind
+	fields map[string]json.RawMessage
+	thread domain.ID
+	turn   domain.ID
+}
+
+// decodeSafetyEnvelope bounds the notification, checks the exact native field set
+// and validates thread/turn identity. Descriptor semantics are left to
+// decodeSafetyDescriptors so foreign threads never see root-only validation.
+func decodeSafetyEnvelope(method string, raw json.RawMessage) (*safetyEnvelope, error) {
 	var fields map[string]json.RawMessage
 	if domain.DecodeBounded(raw, &fields, maxSafetyEnvelope) != nil || fields == nil {
 		return nil, incompatible()
@@ -181,10 +188,31 @@ func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, 
 			return nil, incompatible()
 		}
 	}
-	o := &ModelSafetyObservation{kind: kind}
-	if domain.Decode(fields["threadId"], &o.thread) != nil || domain.Decode(fields["turnId"], &o.turn) != nil || o.thread.Validate() != nil || o.turn.Validate() != nil {
+	e := &safetyEnvelope{raw: raw, kind: kind, fields: fields}
+	if domain.Decode(fields["threadId"], &e.thread) != nil || domain.Decode(fields["turnId"], &e.turn) != nil || e.thread.Validate() != nil || e.turn.Validate() != nil {
 		return nil, incompatible()
 	}
+	return e, nil
+}
+
+// Source: openai/codex c1382380de69521303b416720a52f42d51af6248,
+// app-server-protocol/schema/typescript/v2/{ModelVerificationNotification,
+// ModelSafetyBufferingUpdatedNotification,TurnModerationMetadataNotification,
+// ModelReroutedNotification,ModelVerification,ModelRerouteReason}.ts.
+// Pinned native notification schemas use closed verification/reroute enums.
+// Metadata remains JSONValue, including arrays, scalars and explicit null.
+// Only the owned root thread is validated against these closed descriptors.
+func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, error) {
+	e, err := decodeSafetyEnvelope(method, raw)
+	if err != nil {
+		return nil, err
+	}
+	return decodeSafetyDescriptors(e)
+}
+
+func decodeSafetyDescriptors(e *safetyEnvelope) (*ModelSafetyObservation, error) {
+	fields, raw, kind := e.fields, e.raw, e.kind
+	o := &ModelSafetyObservation{kind: kind, thread: e.thread, turn: e.turn}
 	text := func(name string, required bool) (string, error) {
 		var value *string
 		if domain.Decode(fields[name], &value) != nil || value == nil || domain.Text(*value, "native safety descriptor", 4096, required) != nil {
@@ -273,18 +301,29 @@ func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, 
 }
 
 func (c *Client) observeSafetyLocked(native nativewire.Event) (Event, error) {
-	o, err := decodeSafety(native.Method, native.Params)
+	envelope, err := decodeSafetyEnvelope(native.Method, native.Params)
 	if err != nil {
 		return Event{}, err
 	}
-	if o.thread != c.thread {
+	if envelope.thread != c.thread {
+		// Foreign descriptors stay private and are not validated beyond the
+		// bounded envelope and identity.
 		return privateNative(native), nil
+	}
+	o, err := decodeSafetyDescriptors(envelope)
+	if err != nil {
+		return Event{}, err
 	}
 	turn, known := c.execution.turns[o.turn]
 	if !known {
 		return Event{}, incompatible()
 	}
 	if o.reroute != nil && o.reroute.from != c.execution.settings.Model {
+		return Event{}, incompatible()
+	}
+	// Buffering evidence is bound to the immutable selected model; fasterModel is
+	// advisory and is never compared or adopted.
+	if o.buffering != nil && o.buffering.model != c.execution.settings.Model {
 		return Event{}, incompatible()
 	}
 	late := turn.Turn.Status.terminal()
@@ -301,27 +340,44 @@ func (c *Client) observeSafetyLocked(native nativewire.Event) (Event, error) {
 		}
 	} else {
 		if len(c.safety.observations) >= maxSafetyObservations || c.safety.bytes+safetyEvidenceBytes(o) > maxSafetyBytes {
+			if changesModel(o) {
+				// The reroute guard is independent of evidence retention: latch it
+				// before rejecting the overflowed evidence so completion cannot
+				// publish selected-model success.
+				return Event{}, c.latchRerouteLocked(o.turn)
+			}
 			return Event{}, incompatible()
 		}
 		c.safety.observations = append(c.safety.observations, cloneSafety(o))
 		c.safety.bytes += safetyEvidenceBytes(o)
 	}
-	if o.reroute != nil && o.reroute.from != o.reroute.to {
-		if c.safety.rerouted == nil {
-			c.safety.rerouted = make(map[domain.ID]bool)
-		}
-		c.safety.rerouted[o.turn] = true
-		if c.problem == nil {
-			c.problem = domain.Fail(domain.RecoveryRequired, "Native safety changed the execution model.", "Reconcile the original execution and independent cleanup before another input; preserve the native safety decision.")
-		}
-		c.execution.paused = true
-		return Event{}, c.problem
+	if changesModel(o) {
+		return Event{}, c.latchRerouteLocked(o.turn)
 	}
 	event := Event{Kind: ModelSafetyEvent, ThreadID: o.thread, TurnID: o.turn, Correlated: true, Late: late, Safety: cloneSafety(o)}
 	if o.kind == safetyVerification && len(o.verifications) == 0 {
 		event.Kind, event.Metadata = MetadataEvent, ModelVerificationAbsent
 	}
 	return event, nil
+}
+
+// changesModel reports whether the observation records an actual model change.
+func changesModel(o *ModelSafetyObservation) bool {
+	return o.reroute != nil && o.reroute.from != o.reroute.to
+}
+
+// latchRerouteLocked records that the turn ran on a changed model, keeps the first
+// recovery problem and pauses the execution. It returns the active problem.
+func (c *Client) latchRerouteLocked(turn domain.ID) error {
+	if c.safety.rerouted == nil {
+		c.safety.rerouted = make(map[domain.ID]bool)
+	}
+	c.safety.rerouted[turn] = true
+	if c.problem == nil {
+		c.problem = domain.Fail(domain.RecoveryRequired, "Native safety changed the execution model.", "Reconcile the original execution and independent cleanup before another input; preserve the native safety decision.")
+	}
+	c.execution.paused = true
+	return c.problem
 }
 
 func (c *Client) safetyCompletionProblem(turn domain.ID, status TurnStatus) error {

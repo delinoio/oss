@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -9,6 +10,12 @@ import {
   UsageTimeGranularity,
 } from "@delinoio/delidev-api-client";
 import { GrokAccounting } from "./grok-accounting";
+import {
+  PresentationKind,
+  ProductIdentityProvider,
+  useProductLabels,
+} from "./product-identity-labels";
+import { modelPresentationId } from "./usage-prices";
 
 it("shows distinct exact Grok totals in summary, day, model and session views without pricing", () => {
   const grok = {
@@ -266,4 +273,71 @@ it("keeps missing overall accounting evidence unavailable", () => {
   expect(
     screen.queryByText("No records does not establish zero usage or cost"),
   ).toBeNull();
+});
+
+it("reuses the source-scoped model identity registered by the Usage summary", () => {
+  const totals = {
+    accounting: [
+      {
+        kind: AccountingUnitKind.GROK_CLOSED_INPUT,
+        units: 1,
+        knownTotal: "16",
+        measuredUnits: 1,
+      },
+    ],
+  };
+  const model = { nativeId: "shared-native-model" };
+  const data = create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    totals,
+    groups: [
+      {
+        sessionId: "original-session",
+        providerId: "original-provider",
+        model,
+        modelName: "Shared model",
+        totals,
+      },
+    ],
+    analytics: {
+      granularity: UsageTimeGranularity.DAY,
+      timeZone: "UTC",
+      days: [],
+      models: [
+        {
+          model,
+          modelName: "Shared model",
+          providerId: "original-provider",
+          totals,
+        },
+      ],
+    },
+  });
+  // Mirrors Usage, which shares one registry with the Grok subview and
+  // registers every group's model under its source-scoped identity.
+  function UsageSummary() {
+    const productLabel = useProductLabels();
+    productLabel(
+      PresentationKind.Model,
+      modelPresentationId(
+        model.nativeId,
+        "original-provider",
+        data.groups[0].subscriptionService,
+      ),
+      "Shared model",
+    );
+    return <GrokAccounting data={data} open={vi.fn()} />;
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ProductIdentityProvider>
+        <UsageSummary />
+      </ProductIdentityProvider>
+    </QueryClientProvider>,
+  );
+  // One model observed under one name stays unnumbered in every Grok view.
+  const buttons = screen.getAllByRole("button", { name: /^Shared model/ });
+  expect(buttons.length).toBeGreaterThan(0);
+  for (const button of buttons) expect(button.textContent).toBe("Shared model");
+  expect(screen.queryByText(/Shared model \u00b7 \d+/)).toBeNull();
 });
