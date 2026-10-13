@@ -35,10 +35,12 @@ import {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 async function openCodePreflightFixture(duplicateNames = false) {
@@ -309,8 +311,17 @@ it("locks the draft controls while the OpenCode profile refresh is pending and s
   });
 });
 
-async function localProofFixture() {
+async function localProofFixture(options: { sidechat?: boolean } = {}) {
   const machineId = newRequestId();
+  const machine = create(ResourceSchema, {
+    kind: EntityKind.MACHINE,
+    id: machineId,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      worker_capabilities: ["codex-read-only-sidechat-v1"],
+    }),
+  });
   const sources = ["Local A", "Local B"].map((name) =>
     create(ResourceSchema, {
       kind: EntityKind.SESSION,
@@ -350,12 +361,18 @@ async function localProofFixture() {
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
       getStatus: () => ({
-        capabilities: [SystemCapability.CODEX_SESSION_FORK_V1],
+        capabilities: [
+          SystemCapability.CODEX_SESSION_FORK_V1,
+          SystemCapability.NATIVE_SIDECHAT_V1,
+        ],
       }),
     });
     router.service(ResourceService, {
       getResource: (request) => ({
-        resource: sources.find((source) => source.id === request.id),
+        resource:
+          request.kind === EntityKind.MACHINE
+            ? machine
+            : sources.find((source) => source.id === request.id),
       }),
     });
     router.service(SessionService, {
@@ -372,6 +389,12 @@ async function localProofFixture() {
         <MutationIntents>
           <SessionForkProvider openSession={vi.fn()} readLocalWorker={read}>
             <SessionForkAction source={source} />
+            {options.sidechat ? (
+              <SessionForkAction
+                source={source}
+                action={SessionCreationAction.Sidechat}
+              />
+            ) : null}
           </SessionForkProvider>
         </MutationIntents>
       </QueryClientProvider>
@@ -463,6 +486,25 @@ it("retains the original operation when hidden during a pending Local proof read
     name: "Local A fork",
     workspace: ForkWorkspace.LOCAL,
   });
+});
+
+it("sends a replacement Sidechat once the hidden stale Local proof settles", async () => {
+  const fixture = await localProofFixture({ sidechat: true });
+  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Open Sidechat" }),
+  );
+  // The stale proof still owns the Local proof slot, so nothing is sent yet.
+  await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
+  expect(fixture.fork).not.toHaveBeenCalled();
+  await act(async () => fixture.gate.resolve(fixture.proof));
+  await waitFor(() => expect(fixture.fork).toHaveBeenCalledTimes(1));
+  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({
+    mutation: { id: fixture.sources[0]!.id },
+    purpose: ForkPurpose.SIDECHAT,
+    workspace: ForkWorkspace.UNSPECIFIED,
+  });
+  expect(fixture.fork.mock.calls[0]?.[0].localWorkerToken).toBeFalsy();
 });
 
 it("retains exact fork retry and accepted job while navigation changes, publishing only the verified child", async () => {

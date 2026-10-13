@@ -591,12 +591,15 @@ export function SessionForkProvider({
     )
       return;
     void submit();
+    // A replacement Sidechat can start while a stale Local proof read still
+    // holds the controls locked, so settling that read must retry the submit.
   }, [
     direct?.requestId,
     current.data,
     current.isFetching,
     current.isError,
     stale,
+    controlsLocked,
   ]);
   useEffect(() => {
     const original = directOwner.current;
