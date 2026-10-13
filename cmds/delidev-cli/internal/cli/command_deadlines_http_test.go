@@ -80,7 +80,9 @@ func deadlineHTTPFixture(t *testing.T, delay time.Duration, problem *domain.Erro
 	deadlineProbe(mux, delidevv1connect.AccountServiceCompleteAccountOAuthProcedure, delay, problem, calls, func(r *pb.CompleteAccountOAuthRequest, id string) *pb.CompleteAccountOAuthResponse {
 		return &pb.CompleteAccountOAuthResponse{RequestId: id}
 	})
-	deadlineProbe(mux, delidevv1connect.InstallationServiceCheckUpdateProcedure, delay, problem, calls, func(r *pb.CheckUpdateRequest, id string) *pb.CheckUpdateResponse { return &pb.CheckUpdateResponse{} })
+	deadlineProbe(mux, delidevv1connect.InstallationServiceCheckUpdateProcedure, delay, problem, calls, func(r *pb.CheckUpdateRequest, id string) *pb.CheckUpdateResponse {
+		return &pb.CheckUpdateResponse{RequestId: id}
+	})
 	deadlineProbe(mux, delidevv1connect.AccountServiceValidateAccountProcedure, delay, problem, calls, func(r *pb.ValidateAccountRequest, id string) *pb.ValidateAccountResponse {
 		return &pb.ValidateAccountResponse{ValidationJson: []byte(`{}`)}
 	})
