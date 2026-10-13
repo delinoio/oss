@@ -35,7 +35,11 @@ test("index.html references no separate or external resources", () => {
     /\s(src|href)\s*=\s*["']?\s*(https?:)?\/\//i,
     "no absolute or protocol-relative resource URLs",
   );
-  assert.match(html, /<script[^>]*>[\s\S]{1000,}<\/script>/, "scripts are inlined");
+  assert.match(
+    html,
+    /<script[^>]*>[\s\S]{1000,}<\/script>/,
+    "scripts are inlined",
+  );
   assert.match(html, /<style[^>]*>[\s\S]+<\/style>/, "styles are inlined");
 });
 

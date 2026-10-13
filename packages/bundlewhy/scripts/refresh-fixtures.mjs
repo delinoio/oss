@@ -11,14 +11,27 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 const repoRoot = path.resolve(packageRoot, "../..");
 const PROJECT_PLACEHOLDER = "/__bundlewhy_project__";
 const BUILD_PLACEHOLDER = "/__bundlewhy_build__";
 
 const targets = [
-  { bundler: "vite", project: "vite-app", config: "vite.config.js", supportedVersion: "8.3.4" },
-  { bundler: "rspack", project: "rspack-app", config: "rspack.config.mjs", supportedVersion: "2.2.9" },
+  {
+    bundler: "vite",
+    project: "vite-app",
+    config: "vite.config.js",
+    supportedVersion: "8.3.4",
+  },
+  {
+    bundler: "rspack",
+    project: "rspack-app",
+    config: "rspack.config.mjs",
+    supportedVersion: "2.2.9",
+  },
 ];
 
 function replaceAll(text, from, to) {
@@ -27,7 +40,9 @@ function replaceAll(text, from, to) {
 
 for (const target of targets) {
   const projectRoot = path.join(packageRoot, "fixtures", target.project);
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), `bundlewhy-fixture-${target.bundler}-`));
+  const work = fs.mkdtempSync(
+    path.join(os.tmpdir(), `bundlewhy-fixture-${target.bundler}-`),
+  );
   const buildDir = path.join(work, "build");
   const collectPath = path.join(work, "collect.json");
   const requestPath = path.join(work, "request.json");
@@ -43,15 +58,23 @@ for (const target of targets) {
       allowUnsupportedEngine: false,
     }),
   );
-  const result = spawnSync(process.execPath, [path.join(packageRoot, "adapters", `${target.bundler}.mjs`), requestPath], {
-    cwd: projectRoot,
-    encoding: "utf8",
-  });
+  const result = spawnSync(
+    process.execPath,
+    [path.join(packageRoot, "adapters", `${target.bundler}.mjs`), requestPath],
+    {
+      cwd: projectRoot,
+      encoding: "utf8",
+    },
+  );
   if (result.status !== 0) {
     console.error(result.stdout, result.stderr);
     process.exit(1);
   }
-  const outRoot = path.join(repoRoot, "crates/bundlewhy/tests/fixtures", target.bundler);
+  const outRoot = path.join(
+    repoRoot,
+    "crates/bundlewhy/tests/fixtures",
+    target.bundler,
+  );
   fs.rmSync(outRoot, { recursive: true, force: true });
   fs.mkdirSync(path.join(outRoot, "build"), { recursive: true });
   const realBuild = fs.realpathSync(buildDir);
@@ -64,7 +87,10 @@ for (const target of targets) {
   ]) {
     collection = replaceAll(collection, JSON.stringify(from).slice(1, -1), to);
   }
-  fs.writeFileSync(path.join(outRoot, "collect.json"), `${JSON.stringify(JSON.parse(collection), null, 1)}\n`);
+  fs.writeFileSync(
+    path.join(outRoot, "collect.json"),
+    `${JSON.stringify(JSON.parse(collection), null, 1)}\n`,
+  );
   for (const file of fs.readdirSync(buildDir, { recursive: true })) {
     const source = path.join(buildDir, file);
     if (!fs.statSync(source).isFile() || !/\.(js|map)$/.test(file)) continue;
@@ -79,9 +105,13 @@ for (const target of targets) {
         // The bundler may have computed the relative path from either the
         // symlinked or the real temporary directory.
         const absolute = [buildDir, realBuild]
-          .map((base) => path.resolve(path.dirname(path.join(base, file)), entry))
+          .map((base) =>
+            path.resolve(path.dirname(path.join(base, file)), entry),
+          )
           .find((candidate) => candidate.startsWith(projectRoot));
-        return absolute ? PROJECT_PLACEHOLDER + absolute.slice(projectRoot.length) : entry;
+        return absolute
+          ? PROJECT_PLACEHOLDER + absolute.slice(projectRoot.length)
+          : entry;
       });
       fs.writeFileSync(destination, JSON.stringify(map));
     } else {

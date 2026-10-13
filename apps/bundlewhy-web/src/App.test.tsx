@@ -5,7 +5,13 @@ import {
   createRouterTransport,
   type ServiceImpl,
 } from "@connectrpc/connect";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { App, BundlewhyApp } from "./App";
 import {
@@ -39,7 +45,11 @@ function completeProgress(analysis: Analysis) {
   };
 }
 
-function renderWith(analysis: Analysis, impl: Impl = {}, mode = TransportMode.Server) {
+function renderWith(
+  analysis: Analysis,
+  impl: Impl = {},
+  mode = TransportMode.Server,
+) {
   const transport = createRouterTransport((router) =>
     router.service(AnalysisService, {
       getRunProgress: () => completeProgress(analysis),
@@ -81,17 +91,25 @@ describe("analysis layout", () => {
   it("renders categories with coverage, the list and details of the first diagnostic", async () => {
     await renderAnalysis();
     expect(screen.getByText("Vite 8.3.4 · Oxc minifier 1.2.13")).toBeTruthy();
-    const nav = screen.getByRole("navigation", { name: "Optimization categories" });
+    const nav = screen.getByRole("navigation", {
+      name: "Optimization categories",
+    });
     const tree = within(nav).getByRole("button", { name: /^Tree shaking/ });
     expect(tree.textContent).toContain("1 finding");
     expect(tree.textContent).toContain("Coverage: Covered");
-    const folding = within(nav).getByRole("button", { name: /^Constant folding/ });
+    const folding = within(nav).getByRole("button", {
+      name: /^Constant folding/,
+    });
     expect(folding.textContent).toContain("Coverage: Not applicable");
     expect(folding.textContent).toContain("Not reported by this minifier.");
     const chunk = within(nav).getByRole("button", { name: /^Chunk splitting/ });
     expect(chunk.textContent).toContain("0 findings");
     expect(chunk.textContent).toContain("Coverage: Unavailable");
-    expect(within(nav).getByRole("button", { name: /^All categories/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(
+      within(nav)
+        .getByRole("button", { name: /^All categories/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
 
     expect(listTitles()).toEqual([
       "Side effects keep lodash in the bundle",
@@ -102,24 +120,37 @@ describe("analysis layout", () => {
     expect(within(details).getByRole("heading", { level: 2 }).textContent).toBe(
       "Side effects keep lodash in the bundle",
     );
-    expect(within(details).getByText("Observed in the analysis engine output or configuration")).toBeTruthy();
-    expect(within(details).getByText("vite/side-effects-retained")).toBeTruthy();
+    expect(
+      within(details).getByText(
+        "Observed in the analysis engine output or configuration",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(details).getByText("vite/side-effects-retained"),
+    ).toBeTruthy();
     expect(within(details).getByText("Unmet")).toBeTruthy();
     expect(within(details).getByText("Met")).toBeTruthy();
     expect(within(details).getByText("src/main.ts:3:1")).toBeTruthy();
-    expect(within(details).getByText("dist/assets/index.js:120:4")).toBeTruthy();
-    expect(within(details).getByText("Original source", { selector: "li .tag" })).toBeTruthy();
+    expect(
+      within(details).getByText("dist/assets/index.js:120:4"),
+    ).toBeTruthy();
+    expect(
+      within(details).getByText("Original source", { selector: "li .tag" }),
+    ).toBeTruthy();
     expect(within(details).getByText("Generated output")).toBeTruthy();
     const highlighted = details.querySelector(".line-highlight");
     expect(highlighted?.textContent).toContain("▶");
     expect(highlighted?.textContent).toContain("3");
     expect(highlighted?.textContent).toContain("import _ from 'lodash';");
     expect(within(details).getByText("rolldown module info")).toBeTruthy();
-    const path = within(details).getByRole("list", { name: /Dependency path 1/ });
-    expect(within(path).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "src/main.ts",
-      "node_modules/lodash/lodash.js",
-    ]);
+    const path = within(details).getByRole("list", {
+      name: /Dependency path 1/,
+    });
+    expect(
+      within(path)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["src/main.ts", "node_modules/lodash/lodash.js"]);
     expect(within(details).getByText("Safety conditions")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/saving/i);
   });
@@ -144,7 +175,9 @@ describe("analysis layout", () => {
     expect(within(details).getByRole("heading", { level: 2 }).textContent).toBe(
       "Inlining evidence missing",
     );
-    expect(within(details).getByText("Evidence could not be collected")).toBeTruthy();
+    expect(
+      within(details).getByText("Evidence could not be collected"),
+    ).toBeTruthy();
     expect(buttons[2].getAttribute("aria-current")).toBe("true");
   });
 
@@ -159,12 +192,18 @@ describe("analysis layout", () => {
 
   it("narrows the list with category, status and search filters", async () => {
     await renderAnalysis();
-    const nav = screen.getByRole("navigation", { name: "Optimization categories" });
+    const nav = screen.getByRole("navigation", {
+      name: "Optimization categories",
+    });
     fireEvent.click(within(nav).getByRole("button", { name: /^Inlining/ }));
     expect(listTitles()).toEqual(["Inlining evidence missing"]);
-    fireEvent.click(within(nav).getByRole("button", { name: /^All categories/ }));
+    fireEvent.click(
+      within(nav).getByRole("button", { name: /^All categories/ }),
+    );
 
-    const chips = screen.getByRole("group", { name: "Filter by evidence status" });
+    const chips = screen.getByRole("group", {
+      name: "Filter by evidence status",
+    });
     const confirmed = within(chips).getByRole("button", { name: /Confirmed/ });
     expect(confirmed.textContent).toContain("1");
     fireEvent.click(confirmed);
@@ -176,26 +215,41 @@ describe("analysis layout", () => {
     fireEvent.change(search, { target: { value: "UTILS" } });
     expect(listTitles()).toEqual(["Module concatenation bailout"]);
 
-    fireEvent.click(within(nav).getByRole("button", { name: /^Chunk splitting/ }));
+    fireEvent.click(
+      within(nav).getByRole("button", { name: /^Chunk splitting/ }),
+    );
     expect(diagnosticList()).toBeNull();
     expect(screen.getByText("No diagnostics match the filters")).toBeTruthy();
-    expect(screen.getByText("Chunk splitting coverage: Unavailable.")).toBeTruthy();
+    expect(
+      screen.getByText("Chunk splitting coverage: Unavailable."),
+    ).toBeTruthy();
   });
 
   it("distinguishes no findings in covered categories from no coverage", async () => {
-    const { unmount } = await renderAnalysis(fixtureAnalysis({ diagnostics: [] }));
-    expect(screen.getByText("No blockers found in covered categories")).toBeTruthy();
-    expect(screen.getByText(/Categories without full coverage: Inlining, Name mangling/)).toBeTruthy();
+    const { unmount } = await renderAnalysis(
+      fixtureAnalysis({ diagnostics: [] }),
+    );
+    expect(
+      screen.getByText("No blockers found in covered categories"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Categories without full coverage: Inlining, Name mangling/,
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText("No analysis coverage")).toBeNull();
     unmount();
 
     await renderAnalysis(fixtureAnalysis({ diagnostics: [], coverage: [] }));
     expect(screen.getByText("No analysis coverage")).toBeTruthy();
-    expect(screen.queryByText("No blockers found in covered categories")).toBeNull();
+    expect(
+      screen.queryByText("No blockers found in covered categories"),
+    ).toBeNull();
   });
 
   it("renders hostile report content as inert text", async () => {
-    const hostile = "<script>window.pwned = 1</script><img src=x onerror=alert(1)>";
+    const hostile =
+      "<script>window.pwned = 1</script><img src=x onerror=alert(1)>";
     const analysis = fixtureAnalysis();
     analysis.projectName = hostile;
     analysis.diagnostics[0].title = hostile;
@@ -220,7 +274,9 @@ describe("analysis layout", () => {
       window.matchMedia = original;
     });
     await renderAnalysis();
-    expect(screen.queryByRole("region", { name: "Diagnostic details" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Diagnostic details" }),
+    ).toBeNull();
     fireEvent.click(within(diagnosticList()!).getAllByRole("button")[1]);
     expect(diagnosticList()).toBeNull();
     const details = screen.getByRole("region", { name: "Diagnostic details" });
@@ -242,7 +298,9 @@ describe("source viewer", () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "src/main.ts" });
     expect(getSourceFile).toHaveBeenCalledOnce();
-    expect(within(dialog).getByText("Source changed since analysis")).toBeTruthy();
+    expect(
+      within(dialog).getByText("Source changed since analysis"),
+    ).toBeTruthy();
     expect(within(dialog).getByText("// header")).toBeTruthy();
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -256,27 +314,39 @@ describe("source viewer", () => {
       contentIncluded: false,
       stale: false,
     });
-    await renderAnalysis(fixtureAnalysis(), { getSourceFile: () => ({ source }) });
+    await renderAnalysis(fixtureAnalysis(), {
+      getSourceFile: () => ({ source }),
+    });
     fireEvent.click(screen.getByRole("button", { name: "View full source" }));
-    expect(await screen.findByText("Source content was not included in this report.")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Source content was not included in this report.",
+      ),
+    ).toBeTruthy();
   });
 });
 
 describe("notices and banners", () => {
   it("shows the persistent diagnostic engine notice with engine details", async () => {
     await renderAnalysis();
-    const notice = screen.getByRole("note", { name: "Diagnostic build notice" });
+    const notice = screen.getByRole("note", {
+      name: "Diagnostic build notice",
+    });
     expect(
       within(notice).getByText(
         "Findings describe a separate diagnostic build with collection overrides.",
       ),
     ).toBeTruthy();
-    expect(within(notice).queryByRole("button", { name: /dismiss|close/i })).toBeNull();
+    expect(
+      within(notice).queryByRole("button", { name: /dismiss|close/i }),
+    ).toBeNull();
     expect(within(notice).getByText("Engine details")).toBeTruthy();
     expect(within(notice).getByText("vite 8.3.4")).toBeTruthy();
     expect(within(notice).getByText("Oxc 1.2.13")).toBeTruthy();
     expect(within(notice).getByText("Yes")).toBeTruthy();
-    expect(within(notice).getByText("bundlewhy-collector-vite 0.1.0")).toBeTruthy();
+    expect(
+      within(notice).getByText("bundlewhy-collector-vite 0.1.0"),
+    ).toBeTruthy();
     expect(within(notice).getByText("Supported")).toBeTruthy();
     expect(within(notice).getByText(">=8.3.0 <8.4.0")).toBeTruthy();
     expect(within(notice).getByText("build.sourcemap=true")).toBeTruthy();
@@ -286,7 +356,9 @@ describe("notices and banners", () => {
     const analysis = fixtureAnalysis();
     analysis.engine!.support = EngineSupport.UNSUPPORTED_SELECTED;
     await renderAnalysis(analysis);
-    expect(screen.getByText("Unsupported engine version selected explicitly")).toBeTruthy();
+    expect(
+      screen.getByText("Unsupported engine version selected explicitly"),
+    ).toBeTruthy();
     expect(screen.getByText(/Supported versions: >=8.3.0 <8.4.0/)).toBeTruthy();
   });
 
@@ -312,12 +384,16 @@ describe("notices and banners", () => {
     const problems = screen.getByRole("region", { name: "Analysis problems" });
     expect(within(problems).getByText("BW_SOURCE_MAP_MISSING")).toBeTruthy();
     expect(within(problems).getByText("Warning")).toBeTruthy();
-    expect(within(problems).getByText("Recovery: Enable build.sourcemap.")).toBeTruthy();
+    expect(
+      within(problems).getByText("Recovery: Enable build.sourcemap."),
+    ).toBeTruthy();
     unmount();
 
     await renderAnalysis(fixtureAnalysis({ status: RunStatus.FAILED }));
     expect(screen.getByText("Failed")).toBeTruthy();
-    expect(screen.getByText("The analysis failed before it finished.")).toBeTruthy();
+    expect(
+      screen.getByText("The analysis failed before it finished."),
+    ).toBeTruthy();
   });
 
   it("does not show the incomplete banner for a complete run", async () => {
@@ -349,12 +425,20 @@ describe("run lifecycle", () => {
     });
     const getAnalysis = vi.fn(() => ({ analysis }));
     renderWith(analysis, { getRunProgress, getAnalysis });
-    expect(await screen.findByText("Running the diagnostic build")).toBeTruthy();
+    expect(
+      await screen.findByText("Running the diagnostic build"),
+    ).toBeTruthy();
     expect(screen.getByText("vite build --mode production")).toBeTruthy();
     expect(screen.getByText("Elapsed 5s")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Cancel analysis" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Cancel analysis" }),
+    ).toBeTruthy();
     expect(getAnalysis).not.toHaveBeenCalled();
-    await screen.findByRole("heading", { level: 1, name: "storefront" }, { timeout: 3000 });
+    await screen.findByRole(
+      "heading",
+      { level: 1, name: "storefront" },
+      { timeout: 3000 },
+    );
     expect(getRunProgress).toHaveBeenCalledTimes(2);
     expect(getAnalysis).toHaveBeenCalled();
   });
@@ -370,20 +454,29 @@ describe("run lifecycle", () => {
     });
     const cancelRun = vi.fn(() => {
       cancelled = true;
-      return { progress: create(RunProgressSchema, { status: RunStatus.CANCELLED }) };
+      return {
+        progress: create(RunProgressSchema, { status: RunStatus.CANCELLED }),
+      };
     });
     renderWith(analysis, {
-      getRunProgress: () => (cancelled ? completeProgress(analysis) : { progress: running }),
+      getRunProgress: () =>
+        cancelled ? completeProgress(analysis) : { progress: running },
       cancelRun,
     });
-    const trigger = await screen.findByRole("button", { name: "Cancel analysis" });
+    const trigger = await screen.findByRole("button", {
+      name: "Cancel analysis",
+    });
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Cancel analysis?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Keep running" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Keep running" }),
+    );
     expect(cancelRun).not.toHaveBeenCalled();
     fireEvent.click(trigger);
     fireEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel analysis" }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel analysis",
+      }),
     );
     await waitFor(() => expect(cancelRun).toHaveBeenCalledOnce());
     expect(await screen.findByText("Cancelled")).toBeTruthy();
@@ -402,19 +495,26 @@ describe("run lifecycle", () => {
       }),
     });
     expect(await screen.findByText("Saving results")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Cancel analysis" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cancel analysis" }),
+    ).toBeNull();
   });
 
   it("shows Connect errors with the bundlewhy code and recovery", async () => {
     renderWith(fixtureAnalysis(), {
       getRunProgress: () => {
-        throw new ConnectError("BW_ACCESS_TOKEN_INVALID: The token was rejected.", Code.Unauthenticated);
+        throw new ConnectError(
+          "BW_ACCESS_TOKEN_INVALID: The token was rejected.",
+          Code.Unauthenticated,
+        );
       },
     });
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("BW_ACCESS_TOKEN_INVALID")).toBeTruthy();
     expect(within(alert).getByText("The token was rejected.")).toBeTruthy();
-    expect(within(alert).getByText("Connect code: unauthenticated")).toBeTruthy();
+    expect(
+      within(alert).getByText("Connect code: unauthenticated"),
+    ).toBeTruthy();
     expect(alert.textContent).toContain(
       "Reopen the URL printed by `bundlewhy analyze` or `bundlewhy open`.",
     );
@@ -446,11 +546,15 @@ describe("header dialogs", () => {
 
     fireEvent.click(trigger);
     dialog = screen.getByRole("dialog", { name: "Export HTML report" });
-    const checkbox = within(dialog).getByRole("checkbox", { name: "Include source content" });
+    const checkbox = within(dialog).getByRole("checkbox", {
+      name: "Include source content",
+    });
     expect((checkbox as HTMLInputElement).checked).toBe(true);
     fireEvent.click(checkbox);
     fireEvent.click(within(dialog).getByRole("button", { name: "Export" }));
-    expect(await within(dialog).findByText("bundlewhy-report.html")).toBeTruthy();
+    expect(
+      await within(dialog).findByText("bundlewhy-report.html"),
+    ).toBeTruthy();
     expect(exportReport).toHaveBeenCalledOnce();
     expect(exportReport.mock.calls[0][0].includeSources).toBe(false);
     expect(within(dialog).getByText("2.0 KiB")).toBeTruthy();
@@ -465,13 +569,18 @@ describe("header dialogs", () => {
     const last = focusable[focusable.length - 1];
     last.focus();
     fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close dialog" }));
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Close dialog" }),
+    );
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(last);
   });
 
   it("lists runs and selects a saved run", async () => {
-    const other = fixtureAnalysis({ runId: "run-old", projectName: "storefront-old" });
+    const other = fixtureAnalysis({
+      runId: "run-old",
+      projectName: "storefront-old",
+    });
     let active = fixtureAnalysis();
     const selectRun = vi.fn((request: { runId: string }) => {
       if (request.runId === "run-old") active = other;
@@ -482,8 +591,18 @@ describe("header dialogs", () => {
       getAnalysis: () => ({ analysis: active }),
       listRuns: () => ({
         runs: [
-          { runId: "run-2026-10-13", projectName: "storefront", status: RunStatus.COMPLETE, active: true },
-          { runId: "run-old", projectName: "storefront-old", status: RunStatus.PARTIAL, active: false },
+          {
+            runId: "run-2026-10-13",
+            projectName: "storefront",
+            status: RunStatus.COMPLETE,
+            active: true,
+          },
+          {
+            runId: "run-old",
+            projectName: "storefront-old",
+            status: RunStatus.PARTIAL,
+            active: false,
+          },
         ],
       }),
       selectRun,
@@ -493,9 +612,13 @@ describe("header dialogs", () => {
     const dialog = screen.getByRole("dialog", { name: "Open report" });
     expect(await within(dialog).findByText("run-old")).toBeTruthy();
     expect(within(dialog).getByText("Current")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Open run run-old" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open run run-old" }),
+    );
     await waitFor(() => expect(selectRun).toHaveBeenCalledOnce());
-    expect(await screen.findByRole("heading", { level: 1, name: "storefront-old" })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "storefront-old" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
@@ -504,7 +627,9 @@ describe("chunk sizes", () => {
   it("shows measured sizes with attribution and the not-savings caption", async () => {
     await renderAnalysis();
     fireEvent.click(screen.getByRole("tab", { name: "Chunk sizes" }));
-    const table = screen.getByRole("table", { name: /Measured sizes of emitted chunks/ });
+    const table = screen.getByRole("table", {
+      name: /Measured sizes of emitted chunks/,
+    });
     expect(table.textContent).toContain(
       "These totals are not savings attributable to any single diagnostic.",
     );
@@ -512,11 +637,17 @@ describe("chunk sizes", () => {
     const first = rows[1];
     expect(within(first).getByText("assets/index.js")).toBeTruthy();
     expect(within(first).getByText("Yes")).toBeTruthy();
-    expect(within(first).getByText("20.0 KiB").getAttribute("title")).toBe("20,480 bytes");
+    expect(within(first).getByText("20.0 KiB").getAttribute("title")).toBe(
+      "20,480 bytes",
+    );
     expect(within(first).getByText("6.8 KiB")).toBeTruthy();
     expect(within(first).getByText("6.0 KiB")).toBeTruthy();
-    expect(within(first).getByText("18.6 KiB").getAttribute("title")).toBe("19,096 bytes");
-    expect(within(first).getByText("node_modules/lodash/lodash.js")).toBeTruthy();
+    expect(within(first).getByText("18.6 KiB").getAttribute("title")).toBe(
+      "19,096 bytes",
+    );
+    expect(
+      within(first).getByText("node_modules/lodash/lodash.js"),
+    ).toBeTruthy();
     expect(within(first).getByText("Unmapped", { exact: false })).toBeTruthy();
     const second = rows[2];
     expect(within(second).getByText("Attribution unavailable")).toBeTruthy();
@@ -545,7 +676,12 @@ describe("App boot", () => {
   it("renders an exported report without network access", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const analysis = fixtureAnalysis({
-      coverage: [{ category: OptimizationCategory.TREE_SHAKING, state: CoverageState.COVERED }],
+      coverage: [
+        {
+          category: OptimizationCategory.TREE_SHAKING,
+          state: CoverageState.COVERED,
+        },
+      ],
     });
     analysis.diagnostics[0].status = EvidenceStatus.CONFIRMED;
     embed(
@@ -558,10 +694,14 @@ describe("App boot", () => {
     await screen.findByRole("heading", { level: 1, name: "storefront" });
     const exportButton = screen.getByRole("button", { name: "Export HTML" });
     expect((exportButton as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Export is not available in an exported report.")).toBeTruthy();
+    expect(
+      screen.getByText("Export is not available in an exported report."),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open report" }));
     const dialog = screen.getByRole("dialog", { name: "Open report" });
-    expect(within(dialog).getByText(/Exported reports contain one run/)).toBeTruthy();
+    expect(
+      within(dialog).getByText(/Exported reports contain one run/),
+    ).toBeTruthy();
     expect(within(dialog).getByText("bundlewhy open <run-dir>")).toBeTruthy();
     fireEvent.keyDown(dialog, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "View full source" }));
@@ -581,11 +721,16 @@ describe("App boot", () => {
   it("shows BW_SCHEMA_UNSUPPORTED for an unknown schema version", () => {
     embed(
       JSON.stringify({
-        analysis: { ...(toJson(AnalysisSchema, fixtureAnalysis()) as object), schemaVersion: 2 },
+        analysis: {
+          ...(toJson(AnalysisSchema, fixtureAnalysis()) as object),
+          schemaVersion: 2,
+        },
         sources: [],
       }),
     );
     render(<App />);
-    expect(within(screen.getByRole("alert")).getByText("BW_SCHEMA_UNSUPPORTED")).toBeTruthy();
+    expect(
+      within(screen.getByRole("alert")).getByText("BW_SCHEMA_UNSUPPORTED"),
+    ).toBeTruthy();
   });
 });

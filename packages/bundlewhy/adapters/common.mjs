@@ -116,7 +116,8 @@ export function nearestPackage(file) {
         if (typeof manifest.name === "string") {
           found = {
             name: manifest.name,
-            version: typeof manifest.version === "string" ? manifest.version : "",
+            version:
+              typeof manifest.version === "string" ? manifest.version : "",
             dir,
             sideEffects: manifest.sideEffects ?? null,
           };
@@ -137,7 +138,9 @@ export function nearestPackage(file) {
 /** Strips loader prefixes and queries from a bundler module identifier. */
 export function moduleFilePath(id) {
   if (typeof id !== "string" || id.startsWith("\0")) return null;
-  const withoutLoaders = id.includes("!") ? id.slice(id.lastIndexOf("!") + 1) : id;
+  const withoutLoaders = id.includes("!")
+    ? id.slice(id.lastIndexOf("!") + 1)
+    : id;
   const withoutQuery = withoutLoaders.split("?")[0];
   return path.isAbsolute(withoutQuery) ? withoutQuery : null;
 }
@@ -176,7 +179,8 @@ export async function runAdapter(main) {
     await main(request);
     emit({ event: "done", durationMs: Date.now() - started });
   } catch (error) {
-    const code = error instanceof AdapterError ? error.code : AdapterErrorCode.BuildFailed;
+    const code =
+      error instanceof AdapterError ? error.code : AdapterErrorCode.BuildFailed;
     const recovery =
       error instanceof AdapterError && error.recovery
         ? error.recovery

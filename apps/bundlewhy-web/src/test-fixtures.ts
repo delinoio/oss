@@ -96,10 +96,14 @@ export function fixtureAnalysis(
             status: EvidenceStatus.CONFIRMED,
           },
         ],
-        dependencyPaths: [{ modules: ["src/main.ts", "node_modules/lodash/lodash.js"] }],
+        dependencyPaths: [
+          { modules: ["src/main.ts", "node_modules/lodash/lodash.js"] },
+        ],
         correctiveAction: {
-          direction: "Import lodash-es named exports instead of the default export.",
-          safety: "Only when the code does not rely on lodash global side effects.",
+          direction:
+            "Import lodash-es named exports instead of the default export.",
+          safety:
+            "Only when the code does not rely on lodash global side effects.",
         },
       },
       {
@@ -110,7 +114,12 @@ export function fixtureAnalysis(
         title: "Module concatenation bailout",
         summary: "Dynamic access to the namespace object.",
         module: "src/utils.ts",
-        location: { kind: LocationKind.ORIGINAL, path: "src/utils.ts", line: 10, column: 2 },
+        location: {
+          kind: LocationKind.ORIGINAL,
+          path: "src/utils.ts",
+          line: 10,
+          column: 2,
+        },
       },
       {
         id: "d3",
@@ -120,12 +129,23 @@ export function fixtureAnalysis(
         title: "Inlining evidence missing",
         summary: "The minifier did not report inlining decisions.",
         module: "src/format.ts",
-        location: { kind: LocationKind.ORIGINAL, path: "src/format.ts", line: 1, column: 0 },
+        location: {
+          kind: LocationKind.ORIGINAL,
+          path: "src/format.ts",
+          line: 1,
+          column: 0,
+        },
       },
     ],
     coverage: [
-      { category: OptimizationCategory.TREE_SHAKING, state: CoverageState.COVERED },
-      { category: OptimizationCategory.DEAD_CODE_ELIMINATION, state: CoverageState.COVERED },
+      {
+        category: OptimizationCategory.TREE_SHAKING,
+        state: CoverageState.COVERED,
+      },
+      {
+        category: OptimizationCategory.DEAD_CODE_ELIMINATION,
+        state: CoverageState.COVERED,
+      },
       {
         category: OptimizationCategory.INLINING,
         state: CoverageState.PARTIAL,
@@ -136,8 +156,14 @@ export function fixtureAnalysis(
         state: CoverageState.NOT_APPLICABLE,
         note: "Not reported by this minifier.",
       },
-      { category: OptimizationCategory.MODULE_CONCATENATION, state: CoverageState.COVERED },
-      { category: OptimizationCategory.NAME_MANGLING, state: CoverageState.UNAVAILABLE },
+      {
+        category: OptimizationCategory.MODULE_CONCATENATION,
+        state: CoverageState.COVERED,
+      },
+      {
+        category: OptimizationCategory.NAME_MANGLING,
+        state: CoverageState.UNAVAILABLE,
+      },
     ],
     chunks: [
       {
@@ -173,7 +199,8 @@ export function fixtureSource() {
     path: "src/main.ts",
     origin: SourceOrigin.PROJECT,
     sha256: "abcdef0123456789",
-    content: "// header\nimport { render } from './render';\nimport _ from 'lodash';\nrender(_);",
+    content:
+      "// header\nimport { render } from './render';\nimport _ from 'lodash';\nrender(_);",
     contentIncluded: true,
     stale: true,
   });

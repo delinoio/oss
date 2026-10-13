@@ -37,7 +37,10 @@ function collectorPlugin(state) {
         lib: Boolean(config.build.lib),
         ssr: Boolean(config.build.ssr),
         target: summarizeValue(config.build.target),
-        treeshake: summarizeValue(config.build.rolldownOptions?.treeshake ?? config.build.rollupOptions?.treeshake),
+        treeshake: summarizeValue(
+          config.build.rolldownOptions?.treeshake ??
+            config.build.rollupOptions?.treeshake,
+        ),
         mode: config.mode,
         defineKeys: Object.keys(config.define ?? {}).sort(),
         plugins: config.plugins.map((plugin) => plugin.name).filter(Boolean),
@@ -74,7 +77,9 @@ function collectorPlugin(state) {
           dynamicImportedIds: info?.dynamicallyImportedIds ?? [],
           exports: info?.exports ?? null,
           usedExports: null,
-          moduleSideEffects: info ? summarizeValue(info.moduleSideEffects) : null,
+          moduleSideEffects: info
+            ? summarizeValue(info.moduleSideEffects)
+            : null,
           inputFormat: info?.inputFormat ?? "unknown",
           renderedLength: 0,
           included: false,
@@ -84,7 +89,10 @@ function collectorPlugin(state) {
           packageName: pkg?.name ?? null,
           packageVersion: pkg?.version ?? null,
           packageDir: pkg?.dir ?? null,
-          packageSideEffects: pkg && pkg.sideEffects !== null ? summarizeValue(pkg.sideEffects) : null,
+          packageSideEffects:
+            pkg && pkg.sideEffects !== null
+              ? summarizeValue(pkg.sideEffects)
+              : null,
         };
         modules.set(id, record);
         return record;
@@ -104,7 +112,10 @@ function collectorPlugin(state) {
           const record = recordModule(id);
           record.renderedLength += rendered.renderedLength;
           record.usedExports = [
-            ...new Set([...(record.usedExports ?? []), ...rendered.renderedExports]),
+            ...new Set([
+              ...(record.usedExports ?? []),
+              ...rendered.renderedExports,
+            ]),
           ];
           record.included = record.included || rendered.renderedLength > 0;
           record.chunks.push(output.fileName);
@@ -188,7 +199,8 @@ await runAdapter(async (request) => {
   const minifyEnabled = minify !== false;
   // Vite documents `build.minify` default as 'oxc' for client builds; `true`
   // selects the same default minifier.
-  const minifierName = minify === true || minify === undefined ? "oxc" : String(minify);
+  const minifierName =
+    minify === true || minify === undefined ? "oxc" : String(minify);
   const configSummary = {
     "build.minify": summarizeValue(minify),
     "build.target": resolved.target ?? "unknown",
@@ -198,7 +210,9 @@ await runAdapter(async (request) => {
     "original build.sourcemap": summarizeValue(resolved.sourcemap),
     mode: resolved.mode ?? "production",
     "define keys": (resolved.defineKeys ?? []).join(", ") || "(none)",
-    plugins: (resolved.plugins ?? []).filter((name) => name !== "bundlewhy:collector").join(", "),
+    plugins: (resolved.plugins ?? [])
+      .filter((name) => name !== "bundlewhy:collector")
+      .join(", "),
   };
 
   writeCollection(request, {
@@ -226,6 +240,10 @@ await runAdapter(async (request) => {
   });
 
   if (fs.existsSync(outDir)) {
-    emit({ event: "progress", stage: "collecting", message: "Diagnostic build written" });
+    emit({
+      event: "progress",
+      stage: "collecting",
+      message: "Diagnostic build written",
+    });
   }
 });

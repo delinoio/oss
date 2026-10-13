@@ -65,7 +65,10 @@ async function loadConfig(request, rspack) {
     );
   }
   if (typeof loaded === "function") {
-    loaded = await loaded({ production: true, RSPACK_BUILD: true }, { mode: "production" });
+    loaded = await loaded(
+      { production: true, RSPACK_BUILD: true },
+      { mode: "production" },
+    );
   }
   loaded = await loaded;
   if (Array.isArray(loaded)) {
@@ -111,11 +114,15 @@ function describeMinimizer(rspack, config) {
     return { minifyEnabled, defaultMinifier: true, summary: "default" };
   }
   const names = minimizers.map((entry) =>
-    entry === "..." ? "..." : (entry?.constructor?.name ?? summarizeValue(entry)),
+    entry === "..."
+      ? "..."
+      : (entry?.constructor?.name ?? summarizeValue(entry)),
   );
   const defaultMinifier =
     names.includes("...") ||
-    minimizers.some((entry) => entry instanceof rspack.SwcJsMinimizerRspackPlugin);
+    minimizers.some(
+      (entry) => entry instanceof rspack.SwcJsMinimizerRspackPlugin,
+    );
   return { minifyEnabled, defaultMinifier, summary: names.join(", ") };
 }
 
@@ -123,7 +130,9 @@ function normalizeStats(stats) {
   const chunkFiles = new Map();
   const chunks = [];
   for (const chunk of stats.chunks ?? []) {
-    const files = (chunk.files ?? []).filter((file) => /\.(c|m)?js$/.test(file));
+    const files = (chunk.files ?? []).filter((file) =>
+      /\.(c|m)?js$/.test(file),
+    );
     chunkFiles.set(chunk.id, files);
     for (const file of files) {
       chunks.push({
@@ -157,15 +166,23 @@ function normalizeStats(stats) {
     const importers = [
       ...new Set(
         reasons
-          .filter((reason) => reason.from && reason.from !== raw.identifier && reason.active)
-          .filter((reason) => reason.type !== "import()" && reason.type !== "import() eager")
+          .filter(
+            (reason) =>
+              reason.from && reason.from !== raw.identifier && reason.active,
+          )
+          .filter(
+            (reason) =>
+              reason.type !== "import()" && reason.type !== "import() eager",
+          )
           .map((reason) => reason.from),
       ),
     ];
     const dynamicImporters = [
       ...new Set(
         reasons
-          .filter((reason) => reason.from && reason.type?.startsWith("import()"))
+          .filter(
+            (reason) => reason.from && reason.type?.startsWith("import()"),
+          )
           .map((reason) => reason.from),
       ),
     ];
@@ -174,7 +191,8 @@ function normalizeStats(stats) {
       name: raw.name ?? null,
       path: file && path.isAbsolute(file) ? file : null,
       virtual: !(file && path.isAbsolute(file)),
-      isEntry: raw.depth === 0 || reasons.some((reason) => reason.type === "entry"),
+      isEntry:
+        raw.depth === 0 || reasons.some((reason) => reason.type === "entry"),
       importers,
       dynamicImporters,
       importedIds: [],
@@ -186,26 +204,36 @@ function normalizeStats(stats) {
           ? ["*"]
           : null,
       moduleSideEffects: null,
-      inputFormat: raw.moduleType === "javascript/esm" ? "es" : raw.moduleType ?? "unknown",
+      inputFormat:
+        raw.moduleType === "javascript/esm"
+          ? "es"
+          : (raw.moduleType ?? "unknown"),
       moduleType: raw.moduleType ?? null,
       renderedLength: raw.size ?? 0,
       included: files.length > 0,
       chunks: files,
-      bailouts: (raw.optimizationBailout ?? []).map((entry) => stripAnsi(String(entry))),
+      bailouts: (raw.optimizationBailout ?? []).map((entry) =>
+        stripAnsi(String(entry)),
+      ),
       reasons,
       depth: raw.depth ?? null,
       concatenatedInto: concatenatedInto ?? null,
       packageName: pkg?.name ?? null,
       packageVersion: pkg?.version ?? null,
       packageDir: pkg?.dir ?? null,
-      packageSideEffects: pkg && pkg.sideEffects !== null ? summarizeValue(pkg.sideEffects) : null,
+      packageSideEffects:
+        pkg && pkg.sideEffects !== null
+          ? summarizeValue(pkg.sideEffects)
+          : null,
     });
-    for (const fileName of files) chunkByFile.get(fileName)?.modules.push(raw.identifier);
+    for (const fileName of files)
+      chunkByFile.get(fileName)?.modules.push(raw.identifier);
   };
 
   for (const raw of stats.modules ?? []) {
     if (Array.isArray(raw.modules) && raw.modules.length > 0) {
-      for (const nested of raw.modules) record(nested, raw.identifier, raw.chunks ?? []);
+      for (const nested of raw.modules)
+        record(nested, raw.identifier, raw.chunks ?? []);
     } else {
       record(raw, null, []);
     }
@@ -216,8 +244,12 @@ function normalizeStats(stats) {
     modules: [...modules.values()],
     chunks,
     assets: (stats.assets ?? []).map((asset) => asset.name),
-    warnings: (stats.warnings ?? []).map((entry) => stripAnsi(String(entry.message ?? entry))),
-    errors: (stats.errors ?? []).map((entry) => stripAnsi(String(entry.message ?? entry))),
+    warnings: (stats.warnings ?? []).map((entry) =>
+      stripAnsi(String(entry.message ?? entry)),
+    ),
+    errors: (stats.errors ?? []).map((entry) =>
+      stripAnsi(String(entry.message ?? entry)),
+    ),
   };
 }
 
@@ -241,7 +273,10 @@ function runCompiler(rspack, config) {
 
 await runAdapter(async (request) => {
   progress("detecting", "Loading the project's Rspack installation");
-  const rspackPackage = resolveProjectPackage(request.projectRoot, "@rspack/core");
+  const rspackPackage = resolveProjectPackage(
+    request.projectRoot,
+    "@rspack/core",
+  );
   checkEngineVersion(request, "@rspack/core", rspackPackage.version);
   const rspackModule = rspackPackage.require("@rspack/core");
   const rspack = rspackModule.rspack ?? rspackModule;
@@ -293,7 +328,9 @@ await runAdapter(async (request) => {
     bundler: "rspack",
     bundlerPackage: "@rspack/core",
     bundlerVersion: version,
-    minifier: minimizer.defaultMinifier ? "SwcJsMinimizerRspackPlugin" : minimizer.summary,
+    minifier: minimizer.defaultMinifier
+      ? "SwcJsMinimizerRspackPlugin"
+      : minimizer.summary,
     minifierVersion: minimizer.defaultMinifier ? version : "unknown",
     defaultMinifier: minimizer.defaultMinifier,
     minifyEnabled: minimizer.minifyEnabled,
@@ -308,10 +345,18 @@ await runAdapter(async (request) => {
       target,
       "optimization.minimize": summarizeValue(config.optimization?.minimize),
       "optimization.minimizer": minimizer.summary,
-      "optimization.concatenateModules": summarizeValue(config.optimization?.concatenateModules),
-      "optimization.sideEffects": summarizeValue(config.optimization?.sideEffects),
-      "optimization.usedExports": summarizeValue(config.optimization?.usedExports),
-      "optimization.splitChunks": summarizeValue(config.optimization?.splitChunks),
+      "optimization.concatenateModules": summarizeValue(
+        config.optimization?.concatenateModules,
+      ),
+      "optimization.sideEffects": summarizeValue(
+        config.optimization?.sideEffects,
+      ),
+      "optimization.usedExports": summarizeValue(
+        config.optimization?.usedExports,
+      ),
+      "optimization.splitChunks": summarizeValue(
+        config.optimization?.splitChunks,
+      ),
       "original mode": summarizeValue(config.mode),
       "original devtool": summarizeValue(config.devtool),
     },

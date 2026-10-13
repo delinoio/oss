@@ -31,7 +31,9 @@ export function Modal({ title, onClose, children, footer, wide }: ModalProps) {
 
   useEffect(() => {
     const previous =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const dialog = ref.current;
     const first = dialog?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? dialog)?.focus();

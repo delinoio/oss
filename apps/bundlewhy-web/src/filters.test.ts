@@ -36,11 +36,14 @@ describe("filterDiagnostics", () => {
   const ids = (list: { id: string }[]) => list.map((d) => d.id);
 
   it("returns everything without filters", () => {
-    expect(ids(filterDiagnostics(analysis.diagnostics, { statuses: new Set(), search: "" }))).toEqual([
-      "d1",
-      "d2",
-      "d3",
-    ]);
+    expect(
+      ids(
+        filterDiagnostics(analysis.diagnostics, {
+          statuses: new Set(),
+          search: "",
+        }),
+      ),
+    ).toEqual(["d1", "d2", "d3"]);
   });
 
   it("filters by category", () => {
@@ -57,13 +60,20 @@ describe("filterDiagnostics", () => {
 
   it("filters by evidence status set", () => {
     const statuses = toggleStatus(new Set(), EvidenceStatus.INFERRED);
-    expect(ids(filterDiagnostics(analysis.diagnostics, { statuses, search: "" }))).toEqual(["d2"]);
+    expect(
+      ids(filterDiagnostics(analysis.diagnostics, { statuses, search: "" })),
+    ).toEqual(["d2"]);
     expect(toggleStatus(statuses, EvidenceStatus.INFERRED).size).toBe(0);
   });
 
   it("searches title, summary, module, rule and location path case-insensitively", () => {
     const search = (text: string) =>
-      ids(filterDiagnostics(analysis.diagnostics, { statuses: new Set(), search: text }));
+      ids(
+        filterDiagnostics(analysis.diagnostics, {
+          statuses: new Set(),
+          search: text,
+        }),
+      );
     expect(search("LODASH")).toEqual(["d1"]);
     expect(search("namespace object")).toEqual(["d2"]);
     expect(search("oxc/inline")).toEqual(["d3"]);
@@ -85,9 +95,9 @@ describe("filterDiagnostics", () => {
 describe("coverage and empty states", () => {
   it("treats missing coverage as unavailable", () => {
     const analysis = fixtureAnalysis();
-    expect(coverageStateFor(analysis, OptimizationCategory.CHUNK_SPLITTING)).toBe(
-      CoverageState.UNAVAILABLE,
-    );
+    expect(
+      coverageStateFor(analysis, OptimizationCategory.CHUNK_SPLITTING),
+    ).toBe(CoverageState.UNAVAILABLE);
     expect(categoriesWithoutCoverage(analysis)).toEqual([
       OptimizationCategory.INLINING,
       OptimizationCategory.NAME_MANGLING,
@@ -98,7 +108,9 @@ describe("coverage and empty states", () => {
 
   it("distinguishes covered-without-findings from no coverage", () => {
     const covered = fixtureAnalysis({ diagnostics: [] });
-    expect(emptyStateFor(covered, [])).toBe(EmptyState.NoFindingsInCoveredCategories);
+    expect(emptyStateFor(covered, [])).toBe(
+      EmptyState.NoFindingsInCoveredCategories,
+    );
     const uncovered = fixtureAnalysis({ diagnostics: [], coverage: [] });
     expect(emptyStateFor(uncovered, [])).toBe(EmptyState.NoCoverage);
     const onlyNotApplicable = fixtureAnalysis({
@@ -134,7 +146,9 @@ describe("labels and formatting", () => {
     ]);
     expect(coverageLabel(CoverageState.NOT_APPLICABLE)).toBe("Not applicable");
     expect(coverageLabel(undefined)).toBe("Unavailable");
-    expect(evidenceStatusPresentation(EvidenceStatus.INFERRED).label).toBe("Inferred");
+    expect(evidenceStatusPresentation(EvidenceStatus.INFERRED).label).toBe(
+      "Inferred",
+    );
     expect(runStageLabel(0)).toBe("Starting");
   });
 
@@ -145,11 +159,15 @@ describe("labels and formatting", () => {
     expect(formatExactBytes(20480)).toBe("20,480 bytes");
     expect(formatElapsed(4200)).toBe("4s");
     expect(formatElapsed(65000)).toBe("1m 05s");
-    expect(formatLocation({ path: "a.ts", line: 3, column: 0 } as never)).toBe("a.ts:3");
+    expect(formatLocation({ path: "a.ts", line: 3, column: 0 } as never)).toBe(
+      "a.ts:3",
+    );
   });
 
   it("summarizes the engine identity", () => {
-    expect(engineSummary(fixtureAnalysis().engine)).toBe("Vite 8.3.4 · Oxc minifier 1.2.13");
+    expect(engineSummary(fixtureAnalysis().engine)).toBe(
+      "Vite 8.3.4 · Oxc minifier 1.2.13",
+    );
   });
 
   it("splits coded server messages", () => {

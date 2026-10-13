@@ -23,7 +23,8 @@ import {
 } from "./report";
 
 export const TOKEN_STORAGE_KEY = "bundlewhy.token";
-export const EXPORTED_UNAVAILABLE_MESSAGE = "Not available in an exported report";
+export const EXPORTED_UNAVAILABLE_MESSAGE =
+  "Not available in an exported report";
 
 export enum TransportMode {
   Server = "server",
@@ -72,7 +73,10 @@ export function bearerInterceptor(token: string): Interceptor {
   };
 }
 
-export function createServerTransport(token: string, baseUrl: string): Transport {
+export function createServerTransport(
+  token: string,
+  baseUrl: string,
+): Transport {
   return createConnectTransport({
     baseUrl,
     useBinaryFormat: false,
@@ -151,8 +155,10 @@ export function bootTransport(
       error: {
         code: BootErrorCode.AccessTokenMissing,
         title: "Access token missing",
-        message: "This page was opened without the access token for the local bundlewhy server.",
-        recovery: "Reopen the URL printed by `bundlewhy analyze` or `bundlewhy open`.",
+        message:
+          "This page was opened without the access token for the local bundlewhy server.",
+        recovery:
+          "Reopen the URL printed by `bundlewhy analyze` or `bundlewhy open`.",
       },
     };
   return {

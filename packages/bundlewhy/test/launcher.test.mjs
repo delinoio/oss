@@ -11,13 +11,26 @@ const launcher = path.join(root, "bin/bundlewhy.cjs");
 const { PLATFORM_PACKAGES, resolveBinary } = require(launcher);
 
 test("supports exactly the three release platforms", () => {
-  assert.deepEqual(Object.keys(PLATFORM_PACKAGES).sort(), ["darwin-arm64", "linux-x64", "win32-x64"]);
+  assert.deepEqual(Object.keys(PLATFORM_PACKAGES).sort(), [
+    "darwin-arm64",
+    "linux-x64",
+    "win32-x64",
+  ]);
 });
 
 test("rejects unsupported platforms and musl with a structured error", () => {
-  assert.equal(resolveBinary({}, "linux", "arm64", false).error.code, "BW_PLATFORM_UNSUPPORTED");
-  assert.equal(resolveBinary({}, "linux", "x64", true).error.code, "BW_PLATFORM_UNSUPPORTED");
-  assert.equal(resolveBinary({}, "darwin", "arm64", false).error.code, "BW_PLATFORM_PACKAGE_MISSING");
+  assert.equal(
+    resolveBinary({}, "linux", "arm64", false).error.code,
+    "BW_PLATFORM_UNSUPPORTED",
+  );
+  assert.equal(
+    resolveBinary({}, "linux", "x64", true).error.code,
+    "BW_PLATFORM_UNSUPPORTED",
+  );
+  assert.equal(
+    resolveBinary({}, "darwin", "arm64", false).error.code,
+    "BW_PLATFORM_PACKAGE_MISSING",
+  );
 });
 
 test("forwards arguments and exit codes to the binary without a shell", () => {

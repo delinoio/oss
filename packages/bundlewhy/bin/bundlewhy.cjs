@@ -15,11 +15,19 @@ const PLATFORM_PACKAGES = Object.freeze({
 
 function isMusl() {
   if (process.platform !== "linux") return false;
-  const report = typeof process.report?.getReport === "function" ? process.report.getReport() : null;
+  const report =
+    typeof process.report?.getReport === "function"
+      ? process.report.getReport()
+      : null;
   return !report?.header?.glibcVersionRuntime;
 }
 
-function resolveBinary(env = process.env, platform = process.platform, arch = process.arch, musl = isMusl()) {
+function resolveBinary(
+  env = process.env,
+  platform = process.platform,
+  arch = process.arch,
+  musl = isMusl(),
+) {
   if (env.BUNDLEWHY_BINARY) return { binary: env.BUNDLEWHY_BINARY };
   const suffix = PLATFORM_PACKAGES[`${platform}-${arch}`];
   if (!suffix || musl) {
@@ -27,7 +35,8 @@ function resolveBinary(env = process.env, platform = process.platform, arch = pr
       error: {
         code: "BW_PLATFORM_UNSUPPORTED",
         message: `bundlewhy does not provide a binary for ${platform}-${arch}${musl ? " (musl)" : ""}`,
-        recovery: "Supported platforms: macOS arm64, Linux x64 (glibc) and Windows x64.",
+        recovery:
+          "Supported platforms: macOS arm64, Linux x64 (glibc) and Windows x64.",
       },
     };
   }
@@ -41,7 +50,8 @@ function resolveBinary(env = process.env, platform = process.platform, arch = pr
       error: {
         code: "BW_PLATFORM_PACKAGE_MISSING",
         message: `${packageName} is not installed`,
-        recovery: "Reinstall @delino/bundlewhy with optional dependencies enabled.",
+        recovery:
+          "Reinstall @delino/bundlewhy with optional dependencies enabled.",
       },
     };
   }
@@ -50,22 +60,32 @@ function resolveBinary(env = process.env, platform = process.platform, arch = pr
 function main() {
   const resolved = resolveBinary();
   if (resolved.error) {
-    process.stderr.write(`error[${resolved.error.code}]: ${resolved.error.message}\n  recovery: ${resolved.error.recovery}\n`);
+    process.stderr.write(
+      `error[${resolved.error.code}]: ${resolved.error.message}\n  recovery: ${resolved.error.recovery}\n`,
+    );
     process.exitCode = 1;
     return;
   }
-  const child = spawn(resolved.binary, process.argv.slice(2), { stdio: "inherit", shell: false });
+  const child = spawn(resolved.binary, process.argv.slice(2), {
+    stdio: "inherit",
+    shell: false,
+  });
   const forward = (signal) => {
     if (process.platform !== "win32") child.kill(signal);
   };
   // On Windows the console delivers Ctrl+C to the child directly.
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => forward(signal));
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+    process.on(signal, () => forward(signal));
   child.on("error", (error) => {
-    process.stderr.write(`error[BW_LAUNCH_FAILED]: ${error.message}\n  recovery: Reinstall @delino/bundlewhy.\n`);
+    process.stderr.write(
+      `error[BW_LAUNCH_FAILED]: ${error.message}\n  recovery: Reinstall @delino/bundlewhy.\n`,
+    );
     process.exitCode = 1;
   });
   child.on("exit", (code, signal) => {
-    if (signal) process.exitCode = 128 + (require("node:os").constants.signals[signal] ?? 1);
+    if (signal)
+      process.exitCode =
+        128 + (require("node:os").constants.signals[signal] ?? 1);
     else process.exitCode = code ?? 1;
   });
 }

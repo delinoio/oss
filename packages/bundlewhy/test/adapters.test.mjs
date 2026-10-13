@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function runAdapter(bundler, project, config, extra = {}) {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-adapter-test-"));
+  const work = fs.mkdtempSync(
+    path.join(os.tmpdir(), "bundlewhy-adapter-test-"),
+  );
   const projectRoot = path.join(root, "fixtures", project);
   const request = {
     projectRoot,
@@ -22,12 +24,24 @@ function runAdapter(bundler, project, config, extra = {}) {
     ...extra,
   };
   fs.writeFileSync(path.join(work, "request.json"), JSON.stringify(request));
-  const result = spawnSync(process.execPath, [path.join(root, "adapters", `${bundler}.mjs`), path.join(work, "request.json")], {
-    cwd: projectRoot,
-    encoding: "utf8",
-  });
-  const events = result.stdout.split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
-  const collection = fs.existsSync(request.collectPath) ? JSON.parse(fs.readFileSync(request.collectPath, "utf8")) : null;
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(root, "adapters", `${bundler}.mjs`),
+      path.join(work, "request.json"),
+    ],
+    {
+      cwd: projectRoot,
+      encoding: "utf8",
+    },
+  );
+  const events = result.stdout
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line));
+  const collection = fs.existsSync(request.collectPath)
+    ? JSON.parse(fs.readFileSync(request.collectPath, "utf8"))
+    : null;
   fs.rmSync(work, { recursive: true, force: true });
   return { status: result.status, events, collection };
 }
@@ -40,15 +54,33 @@ for (const [bundler, project, config] of [
     const { status, events, collection } = runAdapter(bundler, project, config);
     assert.equal(status, 0, JSON.stringify(events));
     assert.equal(collection.collectVersion, 1);
-    assert.ok(collection.modules.some((module) => module.path?.endsWith("effects/register.js") && module.included));
-    assert.ok(!collection.modules.some((module) => module.path?.endsWith("pure/index.js") && module.included));
+    assert.ok(
+      collection.modules.some(
+        (module) =>
+          module.path?.endsWith("effects/register.js") && module.included,
+      ),
+    );
+    assert.ok(
+      !collection.modules.some(
+        (module) => module.path?.endsWith("pure/index.js") && module.included,
+      ),
+    );
     assert.ok(collection.chunks.length >= 3);
     assert.ok(events.some((event) => event.event === "done"));
-    assert.ok(!JSON.stringify(collection.configSummary).includes(process.env.HOME ?? "\u0000"));
+    assert.ok(
+      !JSON.stringify(collection.configSummary).includes(
+        process.env.HOME ?? "\u0000",
+      ),
+    );
   });
 
   test(`${bundler} adapter refuses an engine outside the matrix`, () => {
-    const { status, events, collection } = runAdapter(bundler, project, config, { supportedVersion: "0.0.1" });
+    const { status, events, collection } = runAdapter(
+      bundler,
+      project,
+      config,
+      { supportedVersion: "0.0.1" },
+    );
     assert.equal(status, 1);
     assert.equal(collection, null);
     const error = events.find((event) => event.event === "error");
@@ -61,7 +93,11 @@ test("rspack adapter requires a name for multi-build configurations", () => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "bundlewhy-multi-"));
   const config = path.join(work, "rspack.config.mjs");
   fs.writeFileSync(config, "export default [{ name: 'a' }, { name: 'b' }];\n");
-  const { status, events } = runAdapter("rspack", "rspack-app", path.relative(path.join(root, "fixtures/rspack-app"), config));
+  const { status, events } = runAdapter(
+    "rspack",
+    "rspack-app",
+    path.relative(path.join(root, "fixtures/rspack-app"), config),
+  );
   fs.rmSync(work, { recursive: true, force: true });
   assert.equal(status, 1);
   const error = events.find((event) => event.event === "error");

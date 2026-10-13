@@ -33,8 +33,7 @@ export interface EmbeddedReport {
 }
 
 export type ParseResult =
-  | { ok: true; report: EmbeddedReport }
-  | { ok: false; error: BootError };
+  { ok: true; report: EmbeddedReport } | { ok: false; error: BootError };
 
 function invalid(message: string): ParseResult {
   return {
@@ -88,7 +87,10 @@ export function parseEmbeddedReport(text: string): ParseResult {
   // Check the version before strict decoding: a newer schema can add fields
   // that strict decoding would report as a generic structure error.
   const rawVersion = raw.analysis.schemaVersion ?? raw.analysis.schema_version;
-  if (rawVersion !== undefined && Number(rawVersion) !== SUPPORTED_SCHEMA_VERSION)
+  if (
+    rawVersion !== undefined &&
+    Number(rawVersion) !== SUPPORTED_SCHEMA_VERSION
+  )
     return unsupported(rawVersion);
 
   let analysis: Analysis;
@@ -108,7 +110,10 @@ export function parseEmbeddedReport(text: string): ParseResult {
 
   analysis.mode = ReportMode.EXPORTED;
   // An exported report is a finished snapshot; never present it as running.
-  if (analysis.status === RunStatus.RUNNING || analysis.status === RunStatus.UNSPECIFIED)
+  if (
+    analysis.status === RunStatus.RUNNING ||
+    analysis.status === RunStatus.UNSPECIFIED
+  )
     analysis.status = RunStatus.PARTIAL;
   return { ok: true, report: { analysis, sources } };
 }

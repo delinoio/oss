@@ -104,7 +104,9 @@ export function categoriesWithoutCoverage(
 ): OptimizationCategory[] {
   return ALL_CATEGORIES.filter((category) => {
     const state = coverageStateFor(analysis, category);
-    return state !== CoverageState.COVERED && state !== CoverageState.NOT_APPLICABLE;
+    return (
+      state !== CoverageState.COVERED && state !== CoverageState.NOT_APPLICABLE
+    );
   });
 }
 

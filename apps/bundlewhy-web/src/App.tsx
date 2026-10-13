@@ -112,7 +112,11 @@ export interface BundlewhyAppProps {
   queryClient?: QueryClient;
 }
 
-export function BundlewhyApp({ transport, mode, queryClient }: BundlewhyAppProps) {
+export function BundlewhyApp({
+  transport,
+  mode,
+  queryClient,
+}: BundlewhyAppProps) {
   const [client] = useState(() => queryClient ?? createQueryClient());
   return (
     <QueryClientProvider client={client}>
@@ -159,7 +163,10 @@ function RunGate({ exported }: { exported: boolean }) {
   if (progress.error)
     return (
       <SimplePage>
-        <ConnectErrorPanel title="Cannot load the run status" error={progress.error} />
+        <ConnectErrorPanel
+          title="Cannot load the run status"
+          error={progress.error}
+        />
       </SimplePage>
     );
   if (!progress.data)
@@ -177,10 +184,18 @@ function RunGate({ exported }: { exported: boolean }) {
         <ProgressView progress={run} />
       </SimplePage>
     );
-  return <AnalysisLoader exported={exported || run?.mode === ReportMode.EXPORTED} />;
+  return (
+    <AnalysisLoader exported={exported || run?.mode === ReportMode.EXPORTED} />
+  );
 }
 
-function SimplePage({ children, status }: { children: ReactNode; status?: RunStatus }) {
+function SimplePage({
+  children,
+  status,
+}: {
+  children: ReactNode;
+  status?: RunStatus;
+}) {
   return (
     <div className="page">
       <header className="app-header">
@@ -210,7 +225,10 @@ function ProgressView({ progress }: { progress: RunProgress }) {
         <p className="muted">Elapsed {formatElapsed(progress.elapsedMs)}</p>
       </div>
       {cancel.error ? (
-        <ConnectErrorPanel title="Cannot cancel the analysis" error={cancel.error} />
+        <ConnectErrorPanel
+          title="Cannot cancel the analysis"
+          error={cancel.error}
+        />
       ) : null}
       {progress.cancellable ? (
         <div className="actions">
@@ -251,8 +269,8 @@ function ProgressView({ progress }: { progress: RunProgress }) {
           }
         >
           <p>
-            bundlewhy stops the running analysis. Results collected so far may be
-            incomplete.
+            bundlewhy stops the running analysis. Results collected so far may
+            be incomplete.
           </p>
         </Modal>
       ) : null}
@@ -265,7 +283,10 @@ function AnalysisLoader({ exported }: { exported: boolean }) {
   if (analysis.error)
     return (
       <SimplePage>
-        <ConnectErrorPanel title="Cannot load the analysis" error={analysis.error} />
+        <ConnectErrorPanel
+          title="Cannot load the analysis"
+          error={analysis.error}
+        />
       </SimplePage>
     );
   if (!analysis.data?.analysis)
@@ -320,19 +341,27 @@ export function AnalysisView({
 }) {
   const wide = useMediaQuery(WIDE_LAYOUT_QUERY, true);
   const [category, setCategory] = useState<OptimizationCategory | undefined>();
-  const [statuses, setStatuses] = useState<ReadonlySet<EvidenceStatus>>(new Set());
+  const [statuses, setStatuses] = useState<ReadonlySet<EvidenceStatus>>(
+    new Set(),
+  );
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [showDetails, setShowDetails] = useState(false);
   const [tab, setTab] = useState(CenterTab.Diagnostics);
 
   const diagnostics = analysis.diagnostics;
-  const categoryCounts = useMemo(() => countByCategory(diagnostics), [diagnostics]);
+  const categoryCounts = useMemo(
+    () => countByCategory(diagnostics),
+    [diagnostics],
+  );
   const searchFiltered = useMemo(
     () => filterByCategoryAndSearch(diagnostics, { category, search }),
     [diagnostics, category, search],
   );
-  const statusCounts = useMemo(() => countByStatus(searchFiltered), [searchFiltered]);
+  const statusCounts = useMemo(
+    () => countByStatus(searchFiltered),
+    [searchFiltered],
+  );
   const filtered = useMemo(
     () => filterDiagnostics(diagnostics, { category, search, statuses }),
     [diagnostics, category, search, statuses],
@@ -365,7 +394,11 @@ export function AnalysisView({
             <section className="column column-center" aria-label="Results">
               <Tabs tab={tab} onChange={setTab} />
               {tab === CenterTab.Diagnostics ? (
-                <div role="tabpanel" id="panel-diagnostics" aria-labelledby="tab-diagnostics">
+                <div
+                  role="tabpanel"
+                  id="panel-diagnostics"
+                  aria-labelledby="tab-diagnostics"
+                >
                   <div className="toolbar">
                     <label className="search">
                       <span className="label">Search diagnostics</span>
@@ -389,10 +422,14 @@ export function AnalysisView({
                             type="button"
                             className="chip"
                             aria-pressed={statuses.has(status)}
-                            onClick={() => setStatuses(toggleStatus(statuses, status))}
+                            onClick={() =>
+                              setStatuses(toggleStatus(statuses, status))
+                            }
                           >
                             <span aria-hidden="true">{p.icon}</span> {p.label}{" "}
-                            <span className="count">{statusCounts.get(status) ?? 0}</span>
+                            <span className="count">
+                              {statusCounts.get(status) ?? 0}
+                            </span>
                           </button>
                         );
                       })}
@@ -408,14 +445,21 @@ export function AnalysisView({
                   />
                 </div>
               ) : (
-                <div role="tabpanel" id="panel-sizes" aria-labelledby="tab-sizes">
+                <div
+                  role="tabpanel"
+                  id="panel-sizes"
+                  aria-labelledby="tab-sizes"
+                >
                   <ChunkTable chunks={analysis.chunks} />
                 </div>
               )}
             </section>
           )}
           {wide || narrowDetails ? (
-            <section className="column column-details" aria-label="Diagnostic details">
+            <section
+              className="column column-details"
+              aria-label="Diagnostic details"
+            >
               {narrowDetails ? (
                 <button
                   type="button"
@@ -429,7 +473,8 @@ export function AnalysisView({
                 <DiagnosticDetails diagnostic={selected} />
               ) : (
                 <p className="muted empty-details">
-                  Select a diagnostic to see why the optimization was not applied.
+                  Select a diagnostic to see why the optimization was not
+                  applied.
                 </p>
               )}
             </section>
@@ -440,7 +485,13 @@ export function AnalysisView({
   );
 }
 
-function Tabs({ tab, onChange }: { tab: CenterTab; onChange: (tab: CenterTab) => void }) {
+function Tabs({
+  tab,
+  onChange,
+}: {
+  tab: CenterTab;
+  onChange: (tab: CenterTab) => void;
+}) {
   const tabs = [
     { id: CenterTab.Diagnostics, label: "Diagnostics" },
     { id: CenterTab.Sizes, label: "Chunk sizes" },
@@ -449,12 +500,21 @@ function Tabs({ tab, onChange }: { tab: CenterTab; onChange: (tab: CenterTab) =>
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
     const index = tabs.findIndex((t) => t.id === tab);
-    const next = tabs[(index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    const next =
+      tabs[
+        (index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
+          tabs.length
+      ];
     onChange(next.id);
     document.getElementById(`tab-${next.id}`)?.focus();
   }
   return (
-    <div className="tabs" role="tablist" aria-label="Result views" onKeyDown={onKeyDown}>
+    <div
+      className="tabs"
+      role="tablist"
+      aria-label="Result views"
+      onKeyDown={onKeyDown}
+    >
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -478,25 +538,41 @@ function Tabs({ tab, onChange }: { tab: CenterTab; onChange: (tab: CenterTab) =>
 /* Header and notices                                                  */
 /* ------------------------------------------------------------------ */
 
-function AnalysisHeader({ analysis, exported }: { analysis: Analysis; exported: boolean }) {
+function AnalysisHeader({
+  analysis,
+  exported,
+}: {
+  analysis: Analysis;
+  exported: boolean;
+}) {
   const [dialog, setDialog] = useState<"runs" | "export" | null>(null);
   return (
     <header className="app-header">
       <div className="header-identity">
         <div className="brand">bundlewhy</div>
-        <h1 className="project-name">{analysis.projectName || "Unnamed project"}</h1>
+        <h1 className="project-name">
+          {analysis.projectName || "Unnamed project"}
+        </h1>
         <p className="engine-line">{engineSummary(analysis.engine)}</p>
       </div>
       <div className="header-actions">
         <RunStatusBadge status={analysis.status} />
-        <button type="button" className="button-secondary" onClick={() => setDialog("runs")}>
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={() => setDialog("runs")}
+        >
           Open report
         </button>
         <button
           type="button"
           className="button-primary"
           disabled={exported}
-          title={exported ? "Export is not available in an exported report." : undefined}
+          title={
+            exported
+              ? "Export is not available in an exported report."
+              : undefined
+          }
           aria-describedby={exported ? "export-disabled-hint" : undefined}
           onClick={() => setDialog("export")}
         >
@@ -511,7 +587,9 @@ function AnalysisHeader({ analysis, exported }: { analysis: Analysis; exported: 
       {dialog === "runs" ? (
         <OpenReportDialog exported={exported} onClose={() => setDialog(null)} />
       ) : null}
-      {dialog === "export" ? <ExportDialog onClose={() => setDialog(null)} /> : null}
+      {dialog === "export" ? (
+        <ExportDialog onClose={() => setDialog(null)} />
+      ) : null}
     </header>
   );
 }
@@ -524,16 +602,18 @@ function AnalysisNotices({ analysis }: { analysis: Analysis }) {
     analysis.status === RunStatus.FAILED;
   return (
     <div className="notices">
-      {engine?.diagnosticEngine ? <DiagnosticEngineNotice engine={engine} /> : null}
+      {engine?.diagnosticEngine ? (
+        <DiagnosticEngineNotice engine={engine} />
+      ) : null}
       {engine?.support === EngineSupport.UNSUPPORTED_SELECTED ? (
         <div className="banner banner-warning" role="note">
           <strong>
-            <span aria-hidden="true">⚠ </span>Unsupported engine version selected
-            explicitly
+            <span aria-hidden="true">⚠ </span>Unsupported engine version
+            selected explicitly
           </strong>
           <p>
-            Supported versions: {engine.supportedVersions || "not reported"}. Findings may
-            not match the behavior of supported versions.
+            Supported versions: {engine.supportedVersions || "not reported"}.
+            Findings may not match the behavior of supported versions.
           </p>
         </div>
       ) : null}
@@ -548,18 +628,23 @@ function AnalysisNotices({ analysis }: { analysis: Analysis }) {
                 : "Some results are partial."}
           </strong>
           <p>
-            This analysis is incomplete. Missing results are not evidence that no blockers
-            exist.
+            This analysis is incomplete. Missing results are not evidence that
+            no blockers exist.
           </p>
         </div>
       ) : null}
       {analysis.problems.length > 0 ? (
-        <section className="banner banner-problems" aria-labelledby="problems-title">
+        <section
+          className="banner banner-problems"
+          aria-labelledby="problems-title"
+        >
           <h2 id="problems-title">Analysis problems</h2>
           <ul className="problems">
             {analysis.problems.map((problem, index) => (
               <li key={`${problem.code}-${index}`}>
-                <span className="tag">{problemSeverityLabel(problem.severity)}</span>{" "}
+                <span className="tag">
+                  {problemSeverityLabel(problem.severity)}
+                </span>{" "}
                 <code className="code-label">{problem.code}</code>
                 <p>{problem.message}</p>
                 {problem.recovery ? (
@@ -576,7 +661,11 @@ function AnalysisNotices({ analysis }: { analysis: Analysis }) {
 
 function DiagnosticEngineNotice({ engine }: { engine: EngineIdentity }) {
   return (
-    <div className="banner banner-info" role="note" aria-label="Diagnostic build notice">
+    <div
+      className="banner banner-info"
+      role="note"
+      aria-label="Diagnostic build notice"
+    >
       <strong>
         <span aria-hidden="true">ⓘ </span>Diagnostic build
       </strong>
@@ -589,19 +678,26 @@ function DiagnosticEngineNotice({ engine }: { engine: EngineIdentity }) {
         <dl>
           <dt>Bundler</dt>
           <dd>
-            {[engine.bundlerPackage || bundlerLabel(engine.bundler), engine.bundlerVersion]
+            {[
+              engine.bundlerPackage || bundlerLabel(engine.bundler),
+              engine.bundlerVersion,
+            ]
               .filter(Boolean)
               .join(" ")}
           </dd>
           <dt>Minifier</dt>
           <dd>
-            {[engine.minifier || "Unknown", engine.minifierVersion].filter(Boolean).join(" ")}
+            {[engine.minifier || "Unknown", engine.minifierVersion]
+              .filter(Boolean)
+              .join(" ")}
           </dd>
           <dt>Default minifier</dt>
           <dd>{engine.defaultMinifier ? "Yes" : "No"}</dd>
           <dt>Adapter</dt>
           <dd>
-            {[engine.adapterId || "Unknown", engine.adapterVersion].filter(Boolean).join(" ")}
+            {[engine.adapterId || "Unknown", engine.adapterVersion]
+              .filter(Boolean)
+              .join(" ")}
           </dd>
           <dt>Support</dt>
           <dd>{engineSupportLabel(engine.support)}</dd>
@@ -670,7 +766,10 @@ function CategoryNav({
   onSelect: (category: OptimizationCategory | undefined) => void;
 }) {
   return (
-    <nav className="column column-categories" aria-label="Optimization categories">
+    <nav
+      className="column column-categories"
+      aria-label="Optimization categories"
+    >
       <h2 className="column-title">Categories</h2>
       <ul className="category-list">
         <li>
@@ -696,7 +795,9 @@ function CategoryNav({
                 onClick={() => onSelect(category)}
               >
                 <span className="category-name">{categoryLabel(category)}</span>
-                <span className="count">{findingsLabel(counts.get(category) ?? 0)}</span>
+                <span className="count">
+                  {findingsLabel(counts.get(category) ?? 0)}
+                </span>
                 <span className={`coverage coverage-${coverageTone(state)}`}>
                   Coverage: {coverageLabel(state)}
                 </span>
@@ -755,11 +856,14 @@ function DiagnosticList({
 
   function onKeyDown(event: KeyboardEvent<HTMLUListElement>) {
     const buttons = Array.from(
-      listRef.current?.querySelectorAll<HTMLButtonElement>("button.diagnostic") ?? [],
+      listRef.current?.querySelectorAll<HTMLButtonElement>(
+        "button.diagnostic",
+      ) ?? [],
     );
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     let next = -1;
-    if (event.key === "ArrowDown") next = Math.min(buttons.length - 1, index + 1);
+    if (event.key === "ArrowDown")
+      next = Math.min(buttons.length - 1, index + 1);
     else if (event.key === "ArrowUp") next = Math.max(0, index - 1);
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = buttons.length - 1;
@@ -772,9 +876,15 @@ function DiagnosticList({
   return (
     <>
       <p className="muted list-count" aria-live="polite">
-        {diagnostics.length} {diagnostics.length === 1 ? "diagnostic" : "diagnostics"}
+        {diagnostics.length}{" "}
+        {diagnostics.length === 1 ? "diagnostic" : "diagnostics"}
       </p>
-      <ul className="diagnostic-list" aria-label="Diagnostics" ref={listRef} onKeyDown={onKeyDown}>
+      <ul
+        className="diagnostic-list"
+        aria-label="Diagnostics"
+        ref={listRef}
+        onKeyDown={onKeyDown}
+      >
         {diagnostics.map((d) => (
           <li key={d.id}>
             <button
@@ -787,7 +897,9 @@ function DiagnosticList({
               <span className="diagnostic-meta">
                 <EvidenceBadge status={d.status} />
                 <span className="tag">{categoryLabel(d.category)}</span>
-                {d.dependency ? <span className="tag tag-dependency">dependency</span> : null}
+                {d.dependency ? (
+                  <span className="tag tag-dependency">dependency</span>
+                ) : null}
               </span>
               <span className="diagnostic-path">
                 {d.location ? formatLocation(d.location) : d.module}
@@ -814,8 +926,9 @@ function EmptyList({
       <div className="empty" role="status">
         <h3>No analysis coverage</h3>
         <p>
-          No detectors produced results for any category, so the absence of findings
-          says nothing about blockers. Check the analysis problems above.
+          No detectors produced results for any category, so the absence of
+          findings says nothing about blockers. Check the analysis problems
+          above.
         </p>
       </div>
     );
@@ -826,8 +939,9 @@ function EmptyList({
         <h3>No blockers found in covered categories</h3>
         {uncovered.length > 0 ? (
           <p>
-            Categories without full coverage: {uncovered.map(categoryLabel).join(", ")}.
-            These were not fully analyzed.
+            Categories without full coverage:{" "}
+            {uncovered.map(categoryLabel).join(", ")}. These were not fully
+            analyzed.
           </p>
         ) : (
           <p>Every applicable category was analyzed.</p>
@@ -861,7 +975,9 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
       <h2 id="details-title">{diagnostic.title}</h2>
       <div className="details-status">
         <EvidenceBadge status={diagnostic.status} />
-        <span className="muted">{evidenceStatusExplanation(diagnostic.status)}</span>
+        <span className="muted">
+          {evidenceStatusExplanation(diagnostic.status)}
+        </span>
       </div>
       <dl className="facts">
         <dt>Category</dt>
@@ -877,12 +993,16 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
             <dt>Module</dt>
             <dd>
               {diagnostic.module}
-              {diagnostic.dependency ? <span className="tag tag-dependency">dependency</span> : null}
+              {diagnostic.dependency ? (
+                <span className="tag tag-dependency">dependency</span>
+              ) : null}
             </dd>
           </>
         ) : null}
       </dl>
-      {diagnostic.summary ? <p className="summary">{diagnostic.summary}</p> : null}
+      {diagnostic.summary ? (
+        <p className="summary">{diagnostic.summary}</p>
+      ) : null}
 
       <DetailSection title="Conditions">
         {diagnostic.conditions.length === 0 ? (
@@ -901,7 +1021,9 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
                 <tr key={index}>
                   <td>{condition.description}</td>
                   <td>
-                    <Badge p={conditionOutcomePresentation(condition.outcome)} />
+                    <Badge
+                      p={conditionOutcomePresentation(condition.outcome)}
+                    />
                   </td>
                   <td>{condition.detail}</td>
                 </tr>
@@ -914,7 +1036,9 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
       <DetailSection title="Location">
         {diagnostic.location || diagnostic.generatedLocation ? (
           <ul className="plain">
-            {diagnostic.location ? <LocationLine location={diagnostic.location} /> : null}
+            {diagnostic.location ? (
+              <LocationLine location={diagnostic.location} />
+            ) : null}
             {diagnostic.generatedLocation ? (
               <LocationLine location={diagnostic.generatedLocation} />
             ) : null}
@@ -940,7 +1064,10 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
           </button>
         ) : null}
         {sourceOpen && sourceId ? (
-          <SourceDialog sourceId={sourceId} onClose={() => setSourceOpen(false)} />
+          <SourceDialog
+            sourceId={sourceId}
+            onClose={() => setSourceOpen(false)}
+          />
         ) : null}
       </DetailSection>
 
@@ -1001,7 +1128,13 @@ export function DiagnosticDetails({ diagnostic }: { diagnostic: Diagnostic }) {
   );
 }
 
-function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <section className="detail-section">
       <h3>{title}</h3>
@@ -1028,7 +1161,10 @@ export function Snippet({ snippet }: { snippet: CodeSnippet }) {
         <span className="tag">{locationKindLabel(snippet.kind)}</span>{" "}
         <code>{snippet.path}</code>
         {snippet.highlightLine > 0 ? (
-          <span className="muted"> · line {snippet.highlightLine} is marked with ▶</span>
+          <span className="muted">
+            {" "}
+            · line {snippet.highlightLine} is marked with ▶
+          </span>
         ) : null}
       </figcaption>
       <pre className="code">
@@ -1037,7 +1173,10 @@ export function Snippet({ snippet }: { snippet: CodeSnippet }) {
             const number = start + index;
             const highlighted = number === snippet.highlightLine;
             return (
-              <span key={index} className={highlighted ? "line line-highlight" : "line"}>
+              <span
+                key={index}
+                className={highlighted ? "line line-highlight" : "line"}
+              >
                 <span className="line-marker" aria-hidden={!highlighted}>
                   {highlighted ? "▶" : " "}
                 </span>
@@ -1053,13 +1192,22 @@ export function Snippet({ snippet }: { snippet: CodeSnippet }) {
   );
 }
 
-function SourceDialog({ sourceId, onClose }: { sourceId: string; onClose: () => void }) {
+function SourceDialog({
+  sourceId,
+  onClose,
+}: {
+  sourceId: string;
+  onClose: () => void;
+}) {
   const source = useQuery(getSourceFile, { sourceId });
   const file = source.data?.source;
   return (
     <Modal title={file?.path || "Source file"} onClose={onClose} wide>
       {source.error ? (
-        <ConnectErrorPanel title="Cannot load the source file" error={source.error} />
+        <ConnectErrorPanel
+          title="Cannot load the source file"
+          error={source.error}
+        />
       ) : !file ? (
         <p className="muted" role="status">
           Loading source…
@@ -1075,7 +1223,9 @@ function SourceDialog({ sourceId, onClose }: { sourceId: string; onClose: () => 
               <strong>
                 <span aria-hidden="true">⚠ </span>Source changed since analysis
               </strong>
-              <p>The current file differs from the version that was analyzed.</p>
+              <p>
+                The current file differs from the version that was analyzed.
+              </p>
             </div>
           ) : null}
           {file.contentIncluded ? (
@@ -1091,7 +1241,9 @@ function SourceDialog({ sourceId, onClose }: { sourceId: string; onClose: () => 
               </code>
             </pre>
           ) : (
-            <p className="empty">Source content was not included in this report.</p>
+            <p className="empty">
+              Source content was not included in this report.
+            </p>
           )}
         </>
       )}
@@ -1119,8 +1271,8 @@ export function ChunkTable({ chunks }: { chunks: ChunkSize[] }) {
     <div className="table-scroll">
       <table className="table chunk-table">
         <caption>
-          Measured sizes of emitted chunks. These totals are not savings attributable to
-          any single diagnostic.
+          Measured sizes of emitted chunks. These totals are not savings
+          attributable to any single diagnostic.
         </caption>
         <thead>
           <tr>
@@ -1153,14 +1305,18 @@ export function ChunkTable({ chunks }: { chunks: ChunkSize[] }) {
                   <details>
                     <summary>
                       <Bytes
-                        value={chunk.sources.reduce((sum, s) => sum + s.generatedBytes, 0)}
+                        value={chunk.sources.reduce(
+                          (sum, s) => sum + s.generatedBytes,
+                          0,
+                        )}
                       />{" "}
                       mapped
                     </summary>
                     <ul className="plain attribution">
                       {chunk.sources.map((source, sourceIndex) => (
                         <li key={sourceIndex}>
-                          <code>{source.path}</code> <Bytes value={source.generatedBytes} />
+                          <code>{source.path}</code>{" "}
+                          <Bytes value={source.generatedBytes} />
                         </li>
                       ))}
                       <li>
@@ -1184,7 +1340,13 @@ export function ChunkTable({ chunks }: { chunks: ChunkSize[] }) {
 /* Dialogs                                                             */
 /* ------------------------------------------------------------------ */
 
-function OpenReportDialog({ exported, onClose }: { exported: boolean; onClose: () => void }) {
+function OpenReportDialog({
+  exported,
+  onClose,
+}: {
+  exported: boolean;
+  onClose: () => void;
+}) {
   const runs = useQuery(listRuns, {});
   const client = useQueryClient();
   const select = useMutation(selectRun, {
@@ -1210,7 +1372,9 @@ function OpenReportDialog({ exported, onClose }: { exported: boolean; onClose: (
           <code>bundlewhy open &lt;run-dir&gt;</code>.
         </p>
       ) : (
-        <p className="muted">Saved runs in the output directory of the active run.</p>
+        <p className="muted">
+          Saved runs in the output directory of the active run.
+        </p>
       )}
       {runs.error ? (
         <ConnectErrorPanel title="Cannot list runs" error={runs.error} />
@@ -1290,7 +1454,11 @@ function ExportDialog({ onClose }: { onClose: () => void }) {
           </button>
         ) : (
           <>
-            <button type="button" className="button-secondary" onClick={onClose}>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={onClose}
+            >
               Cancel
             </button>
             <button
@@ -1323,7 +1491,10 @@ function ExportDialog({ onClose }: { onClose: () => void }) {
         </div>
       ) : (
         <>
-          <p>Create a single self-contained HTML file that anyone can open offline.</p>
+          <p>
+            Create a single self-contained HTML file that anyone can open
+            offline.
+          </p>
           <label className="checkbox">
             <input
               type="checkbox"
@@ -1337,12 +1508,15 @@ function ExportDialog({ onClose }: { onClose: () => void }) {
               <span aria-hidden="true">⚠ </span>Review before sharing
             </strong>
             <p>
-              Reports that include source content may contain secrets from your code.
-              Review before sharing.
+              Reports that include source content may contain secrets from your
+              code. Review before sharing.
             </p>
           </div>
           {run.error ? (
-            <ConnectErrorPanel title="Cannot export the report" error={run.error} />
+            <ConnectErrorPanel
+              title="Cannot export the report"
+              error={run.error}
+            />
           ) : null}
         </>
       )}
@@ -1375,7 +1549,9 @@ export function ErrorPanel({
       </p>
       <h2>{title}</h2>
       <p>{message}</p>
-      {connectCode ? <p className="muted">Connect code: {connectCode}</p> : null}
+      {connectCode ? (
+        <p className="muted">Connect code: {connectCode}</p>
+      ) : null}
       <p className="recovery">
         <strong>What to do:</strong> {recovery}
       </p>
@@ -1383,7 +1559,13 @@ export function ErrorPanel({
   );
 }
 
-function ConnectErrorPanel({ title, error }: { title: string; error: unknown }) {
+function ConnectErrorPanel({
+  title,
+  error,
+}: {
+  title: string;
+  error: unknown;
+}) {
   const d = describeError(error);
   return (
     <ErrorPanel
@@ -1395,4 +1577,3 @@ function ConnectErrorPanel({ title, error }: { title: string; error: unknown }) 
     />
   );
 }
-

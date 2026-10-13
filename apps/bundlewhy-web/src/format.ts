@@ -40,7 +40,9 @@ export function engineSummary(engine: EngineIdentity | undefined): string {
     engine.bundler === Bundler.UNSPECIFIED && engine.bundlerPackage
       ? engine.bundlerPackage
       : bundlerLabel(engine.bundler);
-  const parts = [[bundlerName, engine.bundlerVersion].filter(Boolean).join(" ")];
+  const parts = [
+    [bundlerName, engine.bundlerVersion].filter(Boolean).join(" "),
+  ];
   if (engine.minifier) {
     const name = /minif|plugin/i.test(engine.minifier)
       ? engine.minifier

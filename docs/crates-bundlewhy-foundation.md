@@ -28,10 +28,10 @@ The project defaults to the current directory. The bundler is detected from `pac
 
 ### Engine compatibility matrix (frozen for 0.1.0)
 
-| Bundler | Package | Version | Default JavaScript minifier |
-| --- | --- | --- | --- |
-| Vite | `vite` | `8.3.4` (Rolldown `1.2.13`) | Oxc minifier (`build.minify: 'oxc'`) |
-| Rspack | `@rspack/core` | `2.2.9` | `SwcJsMinimizerRspackPlugin` |
+| Bundler | Package        | Version                     | Default JavaScript minifier          |
+| ------- | -------------- | --------------------------- | ------------------------------------ |
+| Vite    | `vite`         | `8.3.4` (Rolldown `1.2.13`) | Oxc minifier (`build.minify: 'oxc'`) |
+| Rspack  | `@rspack/core` | `2.2.9`                     | `SwcJsMinimizerRspackPlugin`         |
 
 An installed version outside the matrix fails with `BW_ENGINE_VERSION_UNSUPPORTED` before the build. `--allow-unsupported-engine` is the explicit selection that analyzes with that installed engine; the run records `ENGINE_SUPPORT_UNSUPPORTED_SELECTED`. A non-default minifier keeps module-graph categories but marks minifier categories `UNAVAILABLE` with `BW_MINIFIER_NON_DEFAULT`; disabled minification produces a confirmed configuration diagnostic and `BW_MINIFICATION_DISABLED`.
 
@@ -43,18 +43,18 @@ The diagnostic build always runs the project's own installed engine with collect
 
 Each rule has a stable identifier, a category, conditions with outcomes, evidence provenance and a corrective direction with safety conditions. Every rule has a fixture blocker and a counterexample.
 
-| Rule | Engine | Category | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| `rspack/side-effect-retained` | Rspack | Tree shaking | Confirmed | No used exports and an engine-reported `Statement with side_effects` bailout with location |
-| `vite/side-effect-retained` | Vite | Tree shaking | Confirmed | Module rendered with no rendered exports while its exports exist |
-| `rspack/module-concatenation-bailout` | Rspack | Module concatenation | Confirmed | `ModuleConcatenation bailout:` reason for a module that is in a chunk and not concatenated |
-| `vite/commonjs-wrapped` | Vite | Module concatenation | Confirmed | Rolldown input format `cjs` and the `__commonJSMin` runtime helper is rendered |
-| `rspack/module-in-multiple-chunks` | Rspack | Chunk splitting | Confirmed | Module listed in two or more chunks |
-| `vite/ineffective-dynamic-import` | Vite | Chunk splitting | Confirmed | Rolldown `INEFFECTIVE_DYNAMIC_IMPORT` log, or static and dynamic importers |
-| `bundle/duplicate-package` | Both | Duplicate modules | Confirmed | Same package name included from two or more package directories |
-| `minifier/unresolved-env-condition` | Both | Dead-code elimination | Inferred | Generated code still reads `process.env.<NAME>` (Rspack) or Vite's `({}).<NAME>` replacement |
-| `minifier/minification-disabled` | Both | Dead-code elimination | Confirmed | Configuration disables minification |
-| `minifier/direct-eval-blocks-mangling` | Both | Name mangling | Confirmed with an engine-reported `EVAL` log or eval bailout, Inferred from source otherwise | Direct `eval` in a module whose long local names survive in the generated chunk |
+| Rule                                   | Engine | Category              | Status                                                                                       | Evidence                                                                                     |
+| -------------------------------------- | ------ | --------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `rspack/side-effect-retained`          | Rspack | Tree shaking          | Confirmed                                                                                    | No used exports and an engine-reported `Statement with side_effects` bailout with location   |
+| `vite/side-effect-retained`            | Vite   | Tree shaking          | Confirmed                                                                                    | Module rendered with no rendered exports while its exports exist                             |
+| `rspack/module-concatenation-bailout`  | Rspack | Module concatenation  | Confirmed                                                                                    | `ModuleConcatenation bailout:` reason for a module that is in a chunk and not concatenated   |
+| `vite/commonjs-wrapped`                | Vite   | Module concatenation  | Confirmed                                                                                    | Rolldown input format `cjs` and the `__commonJSMin` runtime helper is rendered               |
+| `rspack/module-in-multiple-chunks`     | Rspack | Chunk splitting       | Confirmed                                                                                    | Module listed in two or more chunks                                                          |
+| `vite/ineffective-dynamic-import`      | Vite   | Chunk splitting       | Confirmed                                                                                    | Rolldown `INEFFECTIVE_DYNAMIC_IMPORT` log, or static and dynamic importers                   |
+| `bundle/duplicate-package`             | Both   | Duplicate modules     | Confirmed                                                                                    | Same package name included from two or more package directories                              |
+| `minifier/unresolved-env-condition`    | Both   | Dead-code elimination | Inferred                                                                                     | Generated code still reads `process.env.<NAME>` (Rspack) or Vite's `({}).<NAME>` replacement |
+| `minifier/minification-disabled`       | Both   | Dead-code elimination | Confirmed                                                                                    | Configuration disables minification                                                          |
+| `minifier/direct-eval-blocks-mangling` | Both   | Name mangling         | Confirmed with an engine-reported `EVAL` log or eval bailout, Inferred from source otherwise | Direct `eval` in a module whose long local names survive in the generated chunk              |
 
 Inlining and constant folding are `COVERAGE_STATE_UNAVAILABLE` for both engines: neither engine exposes those decisions and no verified detector exists. Module concatenation is covered for both engines. Missing source maps mark the affected chunk's attribution `UNAVAILABLE`, fall back to generated locations and record `BW_SOURCE_MAP_MISSING`. A partial collection keeps usable results, sets `RUN_STATUS_PARTIAL` and marks affected categories `COVERAGE_STATE_PARTIAL`. Retained code alone is never reported as a defect.
 

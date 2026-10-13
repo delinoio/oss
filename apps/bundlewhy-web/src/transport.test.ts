@@ -22,7 +22,10 @@ import { fixtureAnalysis, fixtureSource } from "./test-fixtures";
 
 function reportJson(analysisOverrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
-    analysis: { ...(toJson(AnalysisSchema, fixtureAnalysis()) as object), ...analysisOverrides },
+    analysis: {
+      ...(toJson(AnalysisSchema, fixtureAnalysis()) as object),
+      ...analysisOverrides,
+    },
     sources: [toJson(SourceFileSchema, fixtureSource())],
   });
 }
@@ -61,9 +64,12 @@ describe("embedded report parsing", () => {
   });
 
   it("rejects unknown schema versions as BW_SCHEMA_UNSUPPORTED", () => {
-    const parsed = parseEmbeddedReport(reportJson({ schemaVersion: 2, futureField: true }));
+    const parsed = parseEmbeddedReport(
+      reportJson({ schemaVersion: 2, futureField: true }),
+    );
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error.code).toBe(BootErrorCode.SchemaUnsupported);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe(BootErrorCode.SchemaUnsupported);
   });
 });
 
@@ -71,7 +77,10 @@ describe("exported transport", () => {
   function client() {
     const parsed = parseEmbeddedReport(reportJson());
     if (!parsed.ok) throw new Error("fixture must parse");
-    return createClient(AnalysisService, createExportedTransport(parsed.report));
+    return createClient(
+      AnalysisService,
+      createExportedTransport(parsed.report),
+    );
   }
 
   it("serves progress, analysis, sources and one run in memory", async () => {
@@ -82,7 +91,9 @@ describe("exported transport", () => {
     expect(progress.progress?.stage).toBe(RunStage.FINISHED);
     expect(progress.progress?.cancellable).toBe(false);
     expect((await c.getAnalysis({})).analysis?.projectName).toBe("storefront");
-    expect((await c.getSourceFile({ sourceId: "src-1" })).source?.path).toBe("src/main.ts");
+    expect((await c.getSourceFile({ sourceId: "src-1" })).source?.path).toBe(
+      "src/main.ts",
+    );
     const runs = await c.listRuns({});
     expect(runs.runs).toHaveLength(1);
     expect(runs.runs[0].active).toBe(true);
@@ -91,7 +102,9 @@ describe("exported transport", () => {
 
   it("rejects unknown sources and mutating methods", async () => {
     const c = client();
-    await expect(c.getSourceFile({ sourceId: "missing" })).rejects.toMatchObject({
+    await expect(
+      c.getSourceFile({ sourceId: "missing" }),
+    ).rejects.toMatchObject({
       code: Code.NotFound,
     });
     for (const call of [
@@ -102,7 +115,9 @@ describe("exported transport", () => {
       const error = await call().catch((e: unknown) => ConnectError.from(e));
       expect(error).toBeInstanceOf(ConnectError);
       expect((error as ConnectError).code).toBe(Code.FailedPrecondition);
-      expect((error as ConnectError).rawMessage).toBe("Not available in an exported report");
+      expect((error as ConnectError).rawMessage).toBe(
+        "Not available in an exported report",
+      );
     }
   });
 
@@ -161,14 +176,17 @@ describe("access token handling", () => {
 describe("describeError", () => {
   it("extracts bundlewhy codes and the Connect code", () => {
     const d = describeError(
-      new ConnectError("BW_ACCESS_TOKEN_INVALID: token rejected", Code.Unauthenticated),
+      new ConnectError(
+        "BW_ACCESS_TOKEN_INVALID: token rejected",
+        Code.Unauthenticated,
+      ),
     );
     expect(d.code).toBe("BW_ACCESS_TOKEN_INVALID");
     expect(d.connectCode).toBe("unauthenticated");
     expect(d.message).toBe("token rejected");
     expect(d.recovery).toMatch(/bundlewhy analyze/);
-    expect(describeError(new ConnectError("x", Code.FailedPrecondition)).connectCode).toBe(
-      "failed_precondition",
-    );
+    expect(
+      describeError(new ConnectError("x", Code.FailedPrecondition)).connectCode,
+    ).toBe("failed_precondition");
   });
 });
