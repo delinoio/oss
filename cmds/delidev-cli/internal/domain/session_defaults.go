@@ -70,11 +70,19 @@ type BranchPrefixSelection struct {
 }
 
 func (p BranchPrefixSelection) Validate() error {
-	if p.Version != 1 || (p.SettingsID == "") != (p.SettingsRevision == 0) || (p.ProjectID == "") != (p.ProjectRevision == 0) || p.SettingsID != "" && p.SettingsID.Validate() != nil || p.ProjectID != "" && p.ProjectID.Validate() != nil {
+	if (p.Version != BranchPrefixVersionLegacyQuote && p.Version != BranchPrefixVersionExactQuote) || (p.SettingsID == "") != (p.SettingsRevision == 0) || (p.ProjectID == "") != (p.ProjectRevision == 0) || p.SettingsID != "" && p.SettingsID.Validate() != nil || p.ProjectID != "" && p.ProjectID.Validate() != nil {
 		return Fail(RecoveryRequired, "Invalid retained branch prefix provenance.", "Preserve the original execution configuration.")
 	}
 	return ValidateBranchPrefix(p.Prefix)
 }
+
+// Branch prefix selection versions. Version 1 selections were accepted before the
+// exact-quoting rule and their retained instruction bytes (and therefore Claude
+// continuation and recovery digests) depend on the legacy encoding/json escaping.
+const (
+	BranchPrefixVersionLegacyQuote uint32 = 1
+	BranchPrefixVersionExactQuote  uint32 = 2
+)
 
 // quoteBranchPrefixLiteral returns the JSON-style quoted prefix for the plain-text
 // instruction. Unlike encoding/json it keeps <, > & and the U+2028/U+2029
@@ -116,12 +124,26 @@ func quoteBranchPrefixLiteral(prefix string) string {
 	return b.String()
 }
 
+// legacyQuoteBranchPrefixLiteral reproduces the version-1 encoding byte for byte.
+func legacyQuoteBranchPrefixLiteral(prefix string) string {
+	literal, _ := json.Marshal(prefix)
+	return string(literal)
+}
+
+// quoteBranchPrefixForVersion selects the quoting rule pinned by the retained selection.
+func quoteBranchPrefixForVersion(selection *BranchPrefixSelection) string {
+	if selection.Version == BranchPrefixVersionLegacyQuote {
+		return legacyQuoteBranchPrefixLiteral(selection.Prefix)
+	}
+	return quoteBranchPrefixLiteral(selection.Prefix)
+}
+
 // NativeInstructions retains template bytes and appends exactly one shared
 // Execute instruction. Plan and read-only Sidechat retain their original profile.
 func (c ExecutionConfiguration) NativeInstructions(mode SessionMode) (string, error) {
 	instructions := c.Instructions
 	if c.BranchPrefix != nil && c.BranchPrefix.Prefix != "" && mode == ExecuteMode && c.SidechatPolicy == "" {
-		literal := quoteBranchPrefixLiteral(c.BranchPrefix.Prefix)
+		literal := quoteBranchPrefixForVersion(c.BranchPrefix)
 		if instructions != "" {
 			instructions += "\n\n"
 		}

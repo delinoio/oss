@@ -85,7 +85,7 @@ func TestBranchPrefixInstructionLiteralIsExact(t *testing.T) {
 		{"replacement-character", "a\ufffdb", "\"a\ufffdb\""},
 	}
 	for _, tc := range cases {
-		c := ExecutionConfiguration{Harness: Codex, BranchPrefix: &BranchPrefixSelection{Version: 1, Prefix: tc.prefix}}
+		c := ExecutionConfiguration{Harness: Codex, BranchPrefix: &BranchPrefixSelection{Version: BranchPrefixVersionExactQuote, Prefix: tc.prefix}}
 		got, err := c.NativeInstructions(ExecuteMode)
 		if err != nil || !strings.Contains(got, "concatenate the literal prefix "+tc.quoted+" with a suffix") {
 			t.Fatalf("%s: instruction literal changed: %q %v", tc.name, got, err)
@@ -110,6 +110,30 @@ func TestBranchPrefixInstructionLiteralIsExact(t *testing.T) {
 		if ValidateBranchPrefix(bad) == nil {
 			t.Fatalf("invalid prefix %q accepted", bad)
 		}
+	}
+}
+func TestBranchPrefixVersionOneRetainsLegacyInstructionBytes(t *testing.T) {
+	cases := []struct {
+		prefix string
+		quoted string
+	}{
+		{"a<&>", `"a\u003c\u0026\u003e"`},
+		{"a\u2028b\u2029", `"a\u2028b\u2029"`},
+		{"team/", `"team/"`},
+	}
+	for _, tc := range cases {
+		legacy := ExecutionConfiguration{Harness: Codex, BranchPrefix: &BranchPrefixSelection{Version: BranchPrefixVersionLegacyQuote, Prefix: tc.prefix}}
+		got, err := legacy.NativeInstructions(ExecuteMode)
+		want := "When creating a new Git branch, concatenate the literal prefix " + tc.quoted + " with a suffix you choose. Do not insert a separator or rename existing branches. Preserve existing branches and workspace permissions."
+		if err != nil || got != want {
+			t.Fatalf("version 1 instruction bytes changed for %q: %q %v", tc.prefix, got, err)
+		}
+		if legacy.BranchPrefix.Validate() != nil {
+			t.Fatalf("version 1 selection %q must stay valid", tc.prefix)
+		}
+	}
+	if (BranchPrefixSelection{Version: 3, Prefix: "team"}).Validate() == nil || (BranchPrefixSelection{Version: 0, Prefix: "team"}).Validate() == nil {
+		t.Fatal("unknown selection versions accepted")
 	}
 }
 func TestBranchPrefixProvenanceRejectsForeignOrMissingRevision(t *testing.T) {
