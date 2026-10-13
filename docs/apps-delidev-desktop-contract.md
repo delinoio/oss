@@ -533,8 +533,11 @@ row gap without default definition-value indentation. Complete references wrap;
 ordered accounts keep their original numbering and order.
 
 Below 640px of available Diagnostics panel width, the inset is 16px and facts
-stack with 4px between each label and value and 12px between pairs. Request
-diagnostics has no second inset. Controls remain at least 40px high with visible
+stack with 4px between each label and value and 12px between pairs, for both
+wrapped `div` pairs and flat sibling `dt`/`dd` pairs (the last pair has no
+trailing gap). Request diagnostics has no second inset. Its top divider, 16px
+margin and 16px padding appear only while the technical portal host before it
+has content; an empty host leaves no extra separation. Controls remain at least 40px high with visible
 keyboard focus. Use existing system fonts and semantic light/dark theme tokens.
 Preserve English/Korean text, notices, original section order, filters, pagination,
 disclosures, close controls, confirmations and recovery gates. Keep the original
@@ -544,7 +547,8 @@ their layouts. This presentation adds no RPC, native change, logging or persiste
 
 The synthetic browser regression in
 `apps/delidev/scripts/test-session-diagnostics-layout.mjs` checks wide/narrow
-geometry, long references, ordered accounts, themes, both languages and effective
+geometry, flat and wrapped fact pairs, empty and populated portal hosts, long
+references, ordered accounts, themes, both languages and effective
 200% reflow independently of component behavior and installed-native acceptance.
 
 ## Scope
