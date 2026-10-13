@@ -304,7 +304,14 @@ func (s *Service) WatchAuxiliaryWork(ctx context.Context, req *connect.Request[p
 				candidateID := record.ID
 				record, err = claimTitleJob(ctx, s, machine, instance, actor.DeviceID, candidateID)
 				if err != nil {
-					if domain.SafeError(err).Code == domain.ResourceExhausted {
+					if safe := domain.SafeError(err); safe.Code == domain.ResourceExhausted {
+						if safe.Cause == managedTitleDeferredCause {
+							// Only this title's account is busy. Leave it queued and keep
+							// scanning so titles for free accounts on this Worker still run.
+							s.logger.DebugContext(ctx, "managed_title_deferred", "machine_id", machine, "job_id", candidateID)
+							after = candidateID
+							continue
+						}
 						waitForCapacity = true
 						break
 					}
@@ -370,6 +377,19 @@ func (s *Service) titleCancellationRequested(ctx context.Context, jobID domain.I
 	return requested, err
 }
 
+// managedTitleDeferredCause marks a ResourceExhausted result that belongs to one
+// queued managed title (its account is leased, refreshing, observed, fenced or
+// has eligible primary work) rather than to the whole title lane. The auxiliary
+// scan keeps such a title durably queued and continues with later candidates;
+// lane-wide exhaustion stays an untagged ResourceExhausted that ends the scan.
+const managedTitleDeferredCause = "managed_title_account_busy"
+
+func managedTitleDeferred() *domain.Error {
+	deferred := domain.Fail(domain.ResourceExhausted, "The original subscription account is busy.", "Keep this title durably queued; eligible primary work has admission priority and a running title is never preempted.")
+	deferred.Cause = managedTitleDeferredCause
+	return deferred
+}
+
 // claimManagedTitleJob admits a protected ChatGPT title on its original Worker.
 // Transient account ownership keeps the title durably queued; lost authority
 // retires it. Admission neither delivers credentials nor consumes the one-time
@@ -396,7 +416,7 @@ func (s *Service) claimManagedTitleJob(tx *store.Tx, record store.Record, job do
 		return nil, err
 	}
 	if busy {
-		return nil, domain.Fail(domain.ResourceExhausted, "The original subscription account is busy.", "Keep this title durably queued; eligible primary work has admission priority and a running title is never preempted.")
+		return nil, managedTitleDeferred()
 	}
 	job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, instance, device
 	updated, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job)

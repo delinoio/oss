@@ -3,11 +3,14 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -173,5 +176,59 @@ func TestManagedTitleAccountLossBeforeDeliveryReleasesLease(t *testing.T) {
 				t.Fatal("a released undelivered title received credentials on retry")
 			}
 		})
+	}
+}
+
+// A busy managed title is a candidate-specific deferral, not a full lane. The
+// auxiliary scan must advance past it so later titles for free accounts run.
+func TestManagedTitleBusyCandidateDoesNotBlockLaterTitles(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	f.mutate(t, "busy-account", func(tx *store.Tx) error {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return err
+		}
+		a.Subscription.Lease = &domain.SubscriptionLease{ID: domain.NewID(), OperationID: domain.NewID(), Revision: 1, Action: domain.SubscriptionExecute, MachineID: f.input.MachineID, InstanceID: f.instance, DeviceID: f.authorityFixture.device, Epoch: domain.NewID(), Generation: a.Subscription.Generation, StartedAt: time.Now().UTC()}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return err
+	})
+	// A later queued title on the same Worker whose assignment admission retires
+	// proves the scan reached it past the busy first candidate.
+	later := domain.NewID()
+	raw, _ := json.Marshal(map[string]any{"version": 99})
+	f.mutate(t, "later-title", func(tx *store.Tx) error {
+		_, err := tx.PutJob(later, 0, f.original.SessionID, "", domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobQueued, MachineID: f.input.MachineID, ParentID: f.job, Input: raw, AcceptedAt: time.Now().UTC()})
+		return err
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	stream, err := f.authorityFixture.client.WatchAuxiliaryWork(ctx, ownerRequest(security.Identity{Token: f.workerToken}, &pb.WatchAuxiliaryWorkRequest{MachineId: string(f.input.MachineID), InstanceId: string(f.instance)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		record, err := f.service.Store.Get(context.Background(), domain.JobKind, later)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := store.Decode[domain.Job](record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.State == domain.JobFailed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a busy managed title blocked the later queued title: %+v", job)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, first := f.titleRecord(t); first.State != domain.JobQueued {
+		t.Fatalf("the busy title was not kept durably queued: %+v", first)
+	}
+	if session := f.session(t); session.TitleState != domain.TitleQueued {
+		t.Fatalf("the busy title session was retired: %+v", session)
 	}
 }
