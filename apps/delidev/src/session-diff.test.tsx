@@ -2266,3 +2266,37 @@ it("retains every invalidated base across retained Branch comparison tabs until 
   expect(branchReads(f.read)).toHaveLength(afterAlpha);
   expect(comparisonRegion()).toBeNull();
 });
+
+it("keeps an invalidated base unavailable after the Diff presentation is left and reopened", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("other"));
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  fireEvent.click(screen.getByRole("button", { name: "Leave Diff" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Refresh diff" })).toBeNull(),
+  );
+  // The reference reappears while the Diff presentation is closed.
+  state.names = ["main", "other"];
+  const settled = branchReads(f.read).length;
+  fireEvent.click(screen.getByRole("button", { name: "Reopen Diff" }));
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(branchReads(f.read)).toHaveLength(settled);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await screen.findByRole("region", { name: "Git comparison" });
+  expect(branchBaseNames(f.read).at(-1)).toBe("other");
+});

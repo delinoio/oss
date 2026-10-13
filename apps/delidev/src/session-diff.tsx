@@ -33,7 +33,7 @@ import { Failure, Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 import { useRetainedMutationIntents } from "./mutation";
-import { DiffBaseTrust, useDiffBaseTrust } from "./session-diff-trust";
+import { useDiffBaseTrust } from "./session-diff-trust";
 import "./session-diff.css";
 
 export type ComparisonDescriptor = {
@@ -281,11 +281,11 @@ export function RepositoryDiff({
   // later inventory, until the Base control explicitly selects a reference.
   // The record is bound to the session and repository that observed it, so
   // refresh, path submission and comparison round trips never restore trust.
-  // Every invalidated reference is retained, so switching between retained
-  // Branch comparisons never restores trust for an earlier one either.
+  // Every invalidated reference is retained, and the record outlives this
+  // panel's mount, so switching retained Branch comparisons, leaving the Diff
+  // presentation or changing repositories never restores trust either.
   const optionsOwner = [sessionId, repository].join("\u0000");
-  const [panelTrust] = useState(() => new DiffBaseTrust());
-  const trust = useDiffBaseTrust(panelTrust);
+  const trust = useDiffBaseTrust();
   const explicitBaseInvalidated = Boolean(
     baseRef && trust.isInvalidated(optionsOwner, baseRef),
   );

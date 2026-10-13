@@ -11,7 +11,9 @@ interface OwnerTrust {
 /**
  * Renderer-lifetime record of explicit Git bases that an accepted options
  * inventory reported absent or unavailable. The owner binds each record to one
- * session and repository. Only an explicit Base control selection of the same
+ * session and repository. It deliberately outlives the Diff panel's mount, so
+ * leaving and reopening the Diff presentation or switching repositories never
+ * restores trust. Only an explicit Base control selection of the same
  * reference clears its invalidation. The record never leaves the renderer and
  * holds no response or diagnostic text.
  */
