@@ -49,9 +49,19 @@ const supportedHarnesses: ReadonlySet<string> = new Set(Object.values(Harness));
 const supportedRouting: ReadonlySet<string> = new Set(Object.values(Routing));
 
 // Revisions are server uint64 values. Imprecise (unsafe) integers stay valid
-// snapshot evidence because the revision display marks them unavailable.
+// snapshot evidence because the revision display marks them unavailable, but
+// a value above the uint64 envelope could never be stored by the server. The
+// maximum uint64 (2^64 - 1) is not representable as a double and parses to
+// exactly 2^64, so 2^64 is the inclusive upper bound.
+const maxRevisionEnvelope = 2 ** 64;
+
 function positiveRevision(value: unknown): boolean {
-  return typeof value === "number" && Number.isInteger(value) && value > 0;
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= maxRevisionEnvelope
+  );
 }
 
 const sourceModelKeyPrefix = "source:";
@@ -202,7 +212,7 @@ export type SavedExecutionSnapshot =
  * required keys of the server execution configuration (execution and Agent
  * identities are canonical UUIDs, the model key is the source-scoped key of
  * the saved native model rather than a UUID, the harness is one of the closed
- * supported set, revisions are positive integers and the structural keys have
+ * supported set, revisions are positive integers within the uint64 envelope and the structural keys have
  * their expected types).
  * Reasoning effort is exact direct input: it is never validated against a
  * value list, and an empty or absent value is simply omitted. Nothing is

@@ -312,6 +312,18 @@ const invalidSnapshots: [string, Mutation][] = [
     },
   ],
   [
+    "an agent revision above the uint64 range",
+    (_, configuration) => {
+      configuration.agent_revision = 1e30;
+    },
+  ],
+  [
+    "a model revision above the uint64 range",
+    (_, configuration) => {
+      configuration.model_revision = 2 ** 64 * 2;
+    },
+  ],
+  [
     "a missing agent revision",
     (_, configuration) => {
       delete configuration.agent_revision;
@@ -795,6 +807,16 @@ it.each([
     expect(within(native).queryByText("Observed approval policy")).toBeNull();
   },
 );
+
+it("accepts the maximum uint64 revision that JSON decodes to 2^64", () => {
+  const value = fixture();
+  const configuration = value.configuration as Record<string, unknown>;
+  configuration.agent_revision = JSON.parse("18446744073709551615");
+  configuration.model_revision = JSON.parse("18446744073709551615");
+  expect(configuration.agent_revision).toBe(2 ** 64);
+  const resource = { ...value.resource, documentJson: encode(value.data) };
+  expect(savedExecutionSnapshot(resource).ready).toBe(true);
+});
 
 it("keeps unavailable snapshots, unknown options and imprecise revisions explicit", () => {
   const value = fixture();
