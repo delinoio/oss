@@ -15,11 +15,7 @@ import {
 } from "react";
 import { create, type Message } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
-import {
-  QueryClient,
-  QueryClientProvider,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
   TransportProvider,
   useQuery,
@@ -61,6 +57,7 @@ import {
   type State,
 } from "./state";
 import { Connection, Status } from "./connection";
+import { ObservationEpoch, useObservationState } from "./observation";
 import {
   storage,
   observeForeground,
@@ -71,7 +68,7 @@ import {
 import { en, ko, type Labels } from "./localization";
 import { validateSessionName } from "./session-name";
 import { presentForeground } from "./notifications";
-import { RequestResponse } from "./interaction";
+import { RequestResponse, type ResponseDraft } from "./interaction";
 import { ConversationLane } from "./conversation-pages";
 import { useConversationPages } from "./use-conversation-pages";
 const owner = new ProtectedState(storage);
@@ -303,69 +300,101 @@ export function App({ state = owner }: { state?: ProtectedState }) {
     document.documentElement.dataset.theme = s.theme;
   }, [s.language, s.theme, revision]);
   const profile = s.profiles.find((p) => p.id === s.selectedProfile);
+  const verifiedId =
+    loaded && profile && !profile.pairing && !profile.revoked
+      ? profile.id
+      : undefined;
+  const [, setStatus] = useState(Status.Connecting),
+    [syncTick, setSyncTick] = useState(0);
+  const connection = useMemo(
+    () =>
+      verifiedId
+        ? new Connection(state, verifiedId, setStatus, () =>
+            setSyncTick((n) => n + 1),
+          )
+        : undefined,
+    [state, verifiedId],
+  );
+  useEffect(() => {
+    if (!connection) return;
+    if (active) void connection.resume();
+    else connection.suspend();
+    return () => connection.suspend();
+  }, [connection, active]);
   return (
     <Copy.Provider value={c}>
-      <div className="shell">
-        <header className="app-header">
-          <h1>DeliDev</h1>
-        </header>
-        <main>
-          {failed ? (
-            <p role="alert">{c.error}</p>
-          ) : !loaded ? (
-            <p role="status">{c.loading}</p>
-          ) : tab === "settings" ? (
-            <Settings state={state} changed={changed} active={active} />
-          ) : profile && !profile.pairing && !profile.revoked ? (
-            <Connected
-              key={profile.id}
-              state={state}
-              id={profile.id}
-              active={active}
-              tab={tab}
-              sessionId={
-                conversation?.profileId === profile.id ? conversation.id : ""
-              }
-              open={(id) => {
-                let profileDrafts = drafts.current.get(profile.id);
-                if (!profileDrafts) {
-                  profileDrafts = new Map();
-                  drafts.current.set(profile.id, profileDrafts);
+      <ObservationEpoch.Provider value={connection?.observationEpoch ?? 0}>
+        <div className="shell">
+          <header className="app-header">
+            <h1>DeliDev</h1>
+          </header>
+          <main>
+            {failed ? (
+              <p role="alert">{c.error}</p>
+            ) : !loaded ? (
+              <p role="status">{c.loading}</p>
+            ) : tab === "settings" ? (
+              <Settings
+                state={state}
+                changed={changed}
+                active={active}
+                connection={connection}
+                status={connection?.status ?? Status.Connecting}
+              />
+            ) : profile && connection ? (
+              <Connected
+                key={profile.id}
+                state={state}
+                connection={connection}
+                status={connection.status}
+                syncTick={syncTick}
+                id={profile.id}
+                active={active}
+                tab={tab}
+                sessionId={
+                  conversation?.profileId === profile.id ? conversation.id : ""
                 }
-                let draft = profileDrafts.get(id);
-                if (!draft) {
-                  draft = { prompt: "", mode: "execute" };
-                  profileDrafts.set(id, draft);
+                open={(id) => {
+                  let profileDrafts = drafts.current.get(profile.id);
+                  if (!profileDrafts) {
+                    profileDrafts = new Map();
+                    drafts.current.set(profile.id, profileDrafts);
+                  }
+                  let draft = profileDrafts.get(id);
+                  if (!draft) {
+                    draft = { prompt: "", mode: "execute" };
+                    profileDrafts.set(id, draft);
+                  }
+                  setConversation({ profileId: profile.id, id, draft });
+                }}
+                back={() => setConversation(undefined)}
+                draft={
+                  conversation?.profileId === profile.id
+                    ? conversation.draft
+                    : undefined
                 }
-                setConversation({ profileId: profile.id, id, draft });
-              }}
-              back={() => setConversation(undefined)}
-              draft={
-                conversation?.profileId === profile.id
-                  ? conversation.draft
-                  : undefined
-              }
-              changed={changed}
-            />
-          ) : (
-            <p>{profile?.revoked ? c.revoked : c.selectProfile}</p>
-          )}
-        </main>
-        <nav aria-label="DeliDev">
-          {(["sessions", "inbox", "settings"] as const).map((name) => (
-            <button
-              key={name}
-              aria-current={tab === name ? "page" : undefined}
-              onClick={() => {
-                setConversation(undefined);
-                setTab(name);
-              }}
-            >
-              {c[name]}
-            </button>
-          ))}
-        </nav>
-      </div>
+                changed={changed}
+              />
+            ) : (
+              <p>{profile?.revoked ? c.revoked : c.selectProfile}</p>
+            )}
+          </main>
+          <nav aria-label="DeliDev">
+            {(["sessions", "inbox", "settings"] as const).map((name) => (
+              <button
+                key={name}
+                aria-current={tab === name ? "page" : undefined}
+                onClick={() => {
+                  setConversation(undefined);
+                  setTab(name);
+                }}
+              >
+                {c[name]}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </ObservationEpoch.Provider>
     </Copy.Provider>
   );
 }
@@ -373,10 +402,14 @@ function Settings({
   state,
   changed,
   active,
+  connection,
+  status,
 }: {
   state: ProtectedState;
   changed: () => void;
   active: boolean;
+  connection?: Connection;
+  status: Status;
 }) {
   const c = useCopy(),
     [adding, setAdding] = useState(false),
@@ -512,6 +545,8 @@ function Settings({
           state={state}
           id={state.state.selectedProfile}
           active={active}
+          connection={connection}
+          status={status}
           changed={changed}
         />
       ) : null}
@@ -616,45 +651,36 @@ function NotificationSettings({
   id,
   changed,
   active,
+  connection,
+  status,
 }: {
   state: ProtectedState;
   id: string;
   changed: () => void;
   active: boolean;
+  connection?: Connection;
+  status: Status;
 }) {
-  const cache = useMemo(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: { retry: false, gcTime: 0 },
-          mutations: { retry: false },
-        },
-      }),
-    [id],
-  );
+  const c = useCopy();
   const transport = useMemo(() => state.transport(id), [state, id]);
-  useEffect(() => {
-    if (!active) void cache.cancelQueries();
-  }, [active, cache]);
-  useEffect(
-    () => () => {
-      void cache.cancelQueries();
-      cache.clear();
-    },
-    [cache],
-  );
+  if (!connection) return null;
+  const epoch = connection.observationEpoch;
   return (
-    <QueryClientProvider client={cache}>
-      <MobileIdentityProvider>
-        <TransportProvider transport={transport}>
-          <ServerNotificationSettings
-            state={state}
-            id={id}
-            changed={changed}
-            active={active}
-          />
-        </TransportProvider>
-      </MobileIdentityProvider>
+    <QueryClientProvider client={connection.cache}>
+      <ObservationEpoch.Provider value={connection.observationEpoch}>
+        <MobileIdentityProvider>
+          <TransportProvider transport={transport}>
+            {status !== Status.Live ? <p role="status">{c[status]}</p> : null}
+            <ServerNotificationSettings
+              state={state}
+              id={id}
+              changed={changed}
+              active={active && status === Status.Live}
+              current={() => connection.isCurrent(epoch)}
+            />
+          </TransportProvider>
+        </MobileIdentityProvider>
+      </ObservationEpoch.Provider>
     </QueryClientProvider>
   );
 }
@@ -663,11 +689,13 @@ export function ServerNotificationSettings({
   id,
   changed,
   active,
+  current = () => active,
 }: {
   state: ProtectedState;
   id: string;
   changed: () => void;
   active: boolean;
+  current?: () => boolean;
 }) {
   const c = useCopy(),
     [busy, setBusy] = useState(false),
@@ -677,13 +705,14 @@ export function ServerNotificationSettings({
       { situations: true },
       { enabled: active },
     ),
-    preferences = query.data?.preferences;
+    preferences = active ? query.data?.preferences : undefined;
   const update = async (
     field: "interactions" | "terminals" | SituationKey,
     enabled: boolean,
   ) => {
     if (
       !active ||
+      !current() ||
       !preferences ||
       query.isFetching ||
       query.isError ||
@@ -710,7 +739,7 @@ export function ServerNotificationSettings({
         }),
         "",
       );
-      await query.refetch();
+      if (current()) await query.refetch();
     } catch {
       setFailed(true);
     } finally {
@@ -786,6 +815,9 @@ const situationGroups = [
 }[];
 
 function Connected({
+  connection,
+  status,
+  syncTick,
   state,
   id,
   active,
@@ -797,6 +829,9 @@ function Connected({
   changed,
 }: {
   state: ProtectedState;
+  connection: Connection;
+  status: Status;
+  syncTick: number;
   id: string;
   active: boolean;
   tab: string;
@@ -807,32 +842,27 @@ function Connected({
   changed: () => void;
 }) {
   const c = useCopy(),
-    [status, setStatus] = useState(Status.Connecting),
     [creation, setCreation] = useState(false),
     [project, setProject] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [inspected, setInspected] = useState(""),
+    [inspected, setInspected] = useObservationState(""),
     [confirm, setConfirm] = useState<() => Promise<void>>(),
-    [revokeConfirm, setRevokeConfirm] = useState(false),
-    [syncTick, setSyncTick] = useState(0);
-  const connection = useMemo(
-    () => new Connection(state, id, setStatus, () => setSyncTick((n) => n + 1)),
-    [state, id],
-  );
+    [revokeConfirm, setRevokeConfirm] = useState(false);
   const transport = useMemo(() => state.transport(id), [state, id]);
-  useEffect(() => {
-    if (active) void connection.resume();
-    else connection.suspend();
-    return () => connection.suspend();
-  }, [connection, active]);
+  const epoch = connection.observationEpoch;
   const mutate = async (
     operation: Operation,
     request: Message,
     target: string,
     accepted?: () => void,
   ) => {
-    if (!connection.canMutate() || busy) return;
+    if (
+      connection.observationEpoch !== epoch ||
+      !connection.canMutate() ||
+      busy
+    )
+      return;
     setBusy(true);
     setError("");
     try {
@@ -868,6 +898,7 @@ function Connected({
   const enabled = active && status === Status.Live;
   async function inspect() {
     if (!pending || !enabled) return;
+    const originalEpoch = connection.observationEpoch;
     setBusy(true);
     try {
       const kind =
@@ -903,7 +934,12 @@ function Connected({
           id: pending.target,
         });
       }
-      setInspected(pending.request);
+      if (
+        connection.observationEpoch === originalEpoch &&
+        connection.active &&
+        connection.status === Status.Live
+      )
+        setInspected(pending.request);
     } catch {
       setError(c.error);
     } finally {
@@ -912,161 +948,169 @@ function Connected({
   }
   return (
     <QueryClientProvider client={connection.cache}>
-      <MobileIdentityProvider>
-        <TransportProvider transport={transport}>
-          <section>
-            <div className="connection">
-              <strong>{state.profile(id).name}</strong>
-              <span role="status">
-                {
-                  c[
-                    status === Status.Live
-                      ? "live"
-                      : status === Status.Suspended
-                        ? "suspended"
-                        : status === Status.Certificate
-                          ? "certificate"
-                          : status === Status.Unavailable
-                            ? "unavailable"
-                            : status === Status.Revoked
-                              ? "revoked"
-                              : status === Status.Version
-                                ? "version"
-                                : "connecting"
-                  ]
-                }
-              </span>
-              <button
-                disabled={!active || busy}
-                onClick={() => void connection.resume()}
-              >
-                {c.refresh}
-              </button>
-            </div>
-            {pending ? (
-              <aside role="status">
-                <p>{c.pending}</p>
-                <p>{c.inspectNote}</p>
+      <ObservationEpoch.Provider value={epoch}>
+        <MobileIdentityProvider>
+          <TransportProvider transport={transport}>
+            <section>
+              <div className="connection">
+                <strong>{state.profile(id).name}</strong>
+                <span role="status">
+                  {
+                    c[
+                      status === Status.Live
+                        ? "live"
+                        : status === Status.Suspended
+                          ? "suspended"
+                          : status === Status.Certificate
+                            ? "certificate"
+                            : status === Status.Unavailable
+                              ? "unavailable"
+                              : status === Status.Revoked
+                                ? "revoked"
+                                : status === Status.Version
+                                  ? "version"
+                                  : "connecting"
+                    ]
+                  }
+                </span>
                 <button
-                  disabled={!enabled || busy}
-                  onClick={() => void inspect()}
+                  disabled={!active || busy}
+                  onClick={() => void connection.resume()}
                 >
-                  {c.inspect}
+                  {c.refresh}
                 </button>
-                <button
-                  disabled={!enabled || busy || inspected !== pending.request}
-                  onClick={() => {
-                    setRevokeConfirm(false);
-                    setConfirm(() => async () => {
-                      setBusy(true);
-                      try {
-                        await state.retry(id);
-                        changed();
-                        await connection.cache.invalidateQueries();
-                      } catch {
-                        setError(c.error);
-                      } finally {
-                        setBusy(false);
-                        setConfirm(undefined);
-                      }
-                    });
-                  }}
-                >
-                  {c.retry}
-                </button>
-                {inspected === pending.request ? <p>{c.inspected}</p> : null}
-              </aside>
-            ) : null}
-            {error ? <p role="alert">{error}</p> : null}
-            {tab === "inbox" && !sessionId ? (
-              <Inbox
-                enabled={enabled}
-                busy={busy || !!pending}
-                mutate={mutate}
-                open={open}
-              />
-            ) : sessionId && draft ? (
-              <Conversation
-                key={sessionId}
-                id={sessionId}
-                draft={draft}
-                enabled={enabled}
-                busy={busy || !!pending}
-                mutate={mutate}
-                back={back}
-              />
-            ) : (
-              <Sessions
-                enabled={enabled}
-                project={project}
-                setProject={setProject}
-                open={open}
-                create={() => setCreation(true)}
-              />
-            )}
-            {creation ? (
-              <Modal title={c.newSession} close={() => setCreation(false)}>
-                <NewSession
-                  enabled={enabled && !busy && !pending}
-                  error={error}
-                  mutate={async (r) => {
-                    await mutate(Operation.Create, r, "", () =>
-                      setCreation(false),
-                    );
-                  }}
+              </div>
+              {pending ? (
+                <aside role="status">
+                  <p>{c.pending}</p>
+                  <p>{c.inspectNote}</p>
+                  <button
+                    disabled={!enabled || busy}
+                    onClick={() => void inspect()}
+                  >
+                    {c.inspect}
+                  </button>
+                  <button
+                    disabled={!enabled || busy || inspected !== pending.request}
+                    onClick={() => {
+                      setRevokeConfirm(false);
+                      setConfirm(() => async () => {
+                        if (
+                          connection.observationEpoch !== epoch ||
+                          !connection.active ||
+                          connection.status !== Status.Live
+                        )
+                          return;
+                        setBusy(true);
+                        try {
+                          await state.retry(id);
+                          changed();
+                          await connection.cache.invalidateQueries();
+                        } catch {
+                          setError(c.error);
+                        } finally {
+                          setBusy(false);
+                          setConfirm(undefined);
+                        }
+                      });
+                    }}
+                  >
+                    {c.retry}
+                  </button>
+                  {inspected === pending.request ? <p>{c.inspected}</p> : null}
+                </aside>
+              ) : null}
+              {error ? <p role="alert">{error}</p> : null}
+              {tab === "inbox" && !sessionId ? (
+                <Inbox
+                  enabled={enabled}
+                  busy={busy || !!pending}
+                  mutate={mutate}
+                  open={open}
                 />
-              </Modal>
-            ) : null}
-            {confirm ? (
-              <Modal
-                title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
-                close={() => setConfirm(undefined)}
-              >
-                <button disabled={busy} onClick={() => void confirm()}>
-                  {c.confirm}
-                </button>
-              </Modal>
-            ) : null}
-            <details>
-              <summary>{c.diagnostics}</summary>
-              <p>
-                {c.profile}: {state.profile(id).name}
-              </p>
-              <p>{status}</p>
-              <button
-                disabled={!enabled || busy || !!pending}
-                onClick={() => {
-                  setRevokeConfirm(true);
-                  setConfirm(() => async () => {
-                    const result = await createClient(
-                      ResourceService,
-                      transport,
-                    ).getResource({
-                      kind: EntityKind.DEVICE,
-                      id: state.profile(id).deviceId,
-                    });
-                    if (result.resource)
-                      await mutate(
-                        Operation.Revoke,
-                        create(RevokeDeviceRequestSchema, {
-                          mutation: {
-                            id: result.resource.id,
-                            expectedRevision: result.resource.revision,
-                            requestId: uuid(),
-                          },
-                        }),
-                        result.resource.id,
+              ) : sessionId && draft ? (
+                <Conversation
+                  key={sessionId}
+                  id={sessionId}
+                  draft={draft}
+                  enabled={enabled}
+                  busy={busy || !!pending}
+                  mutate={mutate}
+                  back={back}
+                />
+              ) : (
+                <Sessions
+                  enabled={enabled}
+                  project={project}
+                  setProject={setProject}
+                  open={open}
+                  create={() => setCreation(true)}
+                />
+              )}
+              {creation ? (
+                <Modal title={c.newSession} close={() => setCreation(false)}>
+                  <NewSession
+                    enabled={enabled && !busy && !pending}
+                    error={error}
+                    mutate={async (r) => {
+                      await mutate(Operation.Create, r, "", () =>
+                        setCreation(false),
                       );
-                    setConfirm(undefined);
-                  });
-                }}
-              >
-                {c.revoke}
-              </button>
-            </details>
-          </section>
-        </TransportProvider>
-      </MobileIdentityProvider>
+                    }}
+                  />
+                </Modal>
+              ) : null}
+              {confirm ? (
+                <Modal
+                  title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
+                  close={() => setConfirm(undefined)}
+                >
+                  <button disabled={busy} onClick={() => void confirm()}>
+                    {c.confirm}
+                  </button>
+                </Modal>
+              ) : null}
+              <details>
+                <summary>{c.diagnostics}</summary>
+                <p>
+                  {c.profile}: {state.profile(id).name}
+                </p>
+                <p>{status}</p>
+                <button
+                  disabled={!enabled || busy || !!pending}
+                  onClick={() => {
+                    setRevokeConfirm(true);
+                    setConfirm(() => async () => {
+                      const result = await createClient(
+                        ResourceService,
+                        transport,
+                      ).getResource({
+                        kind: EntityKind.DEVICE,
+                        id: state.profile(id).deviceId,
+                      });
+                      if (result.resource)
+                        await mutate(
+                          Operation.Revoke,
+                          create(RevokeDeviceRequestSchema, {
+                            mutation: {
+                              id: result.resource.id,
+                              expectedRevision: result.resource.revision,
+                              requestId: uuid(),
+                            },
+                          }),
+                          result.resource.id,
+                        );
+                      setConfirm(undefined);
+                    });
+                  }}
+                >
+                  {c.revoke}
+                </button>
+              </details>
+            </section>
+          </TransportProvider>
+        </MobileIdentityProvider>
+      </ObservationEpoch.Provider>
     </QueryClientProvider>
   );
 }
@@ -1090,15 +1134,15 @@ function Choices({
 }) {
   const productLabel = useMobileIdentity();
   const c = useCopy(),
-    [page, setPage] = useState(""),
-    [items, setItems] = useState<Resource[]>([]);
+    [page, setPage] = useObservationState(""),
+    [items, setItems] = useObservationState<Resource[]>([]);
   const query = useQuery(
     ResourceQuery.listResources,
     { filter: { kind, pageSize: 50, pageToken: page } },
     { enabled },
   );
   useEffect(() => {
-    if (query.data)
+    if (enabled && query.data)
       setItems((previous) =>
         page
           ? [
@@ -1109,7 +1153,7 @@ function Choices({
             ]
           : query.data!.resources,
       );
-  }, [query.data, page]);
+  }, [query.data, page, enabled]);
   return (
     <div>
       <label>
@@ -1136,7 +1180,7 @@ function Choices({
             ))}
         </select>
       </label>
-      {query.data?.nextPageToken ? (
+      {enabled && query.data?.nextPageToken ? (
         <button
           type="button"
           onClick={() => setPage(query.data!.nextPageToken)}
@@ -1163,8 +1207,8 @@ function Sessions({
 }) {
   const productLabel = useMobileIdentity();
   const c = useCopy(),
-    [page, setPage] = useState(""),
-    [items, setItems] = useState<Resource[]>([]);
+    [page, setPage] = useObservationState(""),
+    [items, setItems] = useObservationState<Resource[]>([]);
   const query = useQuery(
     SessionQuery.listSessions,
     { projectId: project, pageSize: 50, pageToken: page },
@@ -1175,7 +1219,7 @@ function Sessions({
     setItems([]);
   }, [project]);
   useEffect(() => {
-    if (query.data)
+    if (enabled && query.data)
       setItems((previous) =>
         page
           ? [
@@ -1186,7 +1230,7 @@ function Sessions({
             ]
           : query.data!.sessions,
       );
-  }, [query.data, page]);
+  }, [query.data, page, enabled]);
   return (
     <section>
       <header>
@@ -1222,7 +1266,7 @@ function Sessions({
           </article>
         ))
       )}
-      {query.data?.nextPageToken ? (
+      {enabled && query.data?.nextPageToken ? (
         <button onClick={() => setPage(query.data!.nextPageToken)}>
           {c.more}
         </button>
@@ -1471,6 +1515,18 @@ function ConversationPageControls({
     </div>
   );
 }
+function useResponseDrafts() {
+  const drafts = useRef(new Map<string, ResponseDraft>());
+  return (resource: Resource) => {
+    const key = `${resource.id}:${resource.revision}`;
+    let draft = drafts.current.get(key);
+    if (!draft) {
+      draft = {};
+      drafts.current.set(key, draft);
+    }
+    return draft;
+  };
+}
 function Conversation({
   id,
   draft,
@@ -1487,10 +1543,11 @@ function Conversation({
   draft: ConversationDraft;
 }) {
   const productLabel = useMobileIdentity();
+  const responseDraft = useResponseDrafts();
   const transport = useTransport();
   const c = useCopy(),
-    [page, setPage] = useState(""),
-    [history, setHistory] = useState<Resource[]>([]),
+    [page, setPage] = useObservationState(""),
+    [history, setHistory] = useObservationState<Resource[]>([]),
     [prompt, setPrompt] = useState(draft.prompt),
     [mode, setMode] = useState(draft.mode),
     [confirmation, setConfirmation] = useState<SessionAction>();
@@ -1518,7 +1575,7 @@ function Conversation({
   );
   const queue = useConversationPages(ConversationLane.Queue, id, enabled);
   useEffect(() => {
-    if (messages.data)
+    if (enabled && messages.data)
       setHistory((previous) =>
         page
           ? [
@@ -1529,8 +1586,8 @@ function Conversation({
             ]
           : messages.data!.resources,
       );
-  }, [messages.data, page]);
-  const resource = session.data?.resource,
+  }, [messages.data, page, enabled]);
+  const resource = enabled ? session.data?.resource : undefined,
     data = value(resource),
     available =
       enabled &&
@@ -1572,7 +1629,7 @@ function Conversation({
           </article>
         ))}
       </div>
-      {messages.data?.nextPageToken ? (
+      {enabled && messages.data?.nextPageToken ? (
         <button onClick={() => setPage(messages.data!.nextPageToken)}>
           {c.more}
         </button>
@@ -1595,6 +1652,7 @@ function Conversation({
             <RequestResponse
               key={r.id}
               resource={r}
+              draft={responseDraft(r)}
               enabled={available && interactions.canWrite(r)}
               copy={c}
               send={async (question, response) => {
@@ -1780,10 +1838,11 @@ function Inbox({
   open: (id: string) => void;
 }) {
   const productLabel = useMobileIdentity();
+  const responseDraft = useResponseDrafts();
   const c = useCopy(),
-    [page, setPage] = useState(""),
-    [items, setItems] = useState<InboxView[]>([]),
-    [selected, setSelected] = useState("");
+    [page, setPage] = useObservationState(""),
+    [items, setItems] = useObservationState<InboxView[]>([]),
+    [selected, setSelected] = useObservationState("");
   const list = useQuery(
     InboxQuery.listInbox,
     { pageSize: 50, pageToken: page },
@@ -1795,7 +1854,7 @@ function Inbox({
     { enabled: enabled && !!selected },
   );
   useEffect(() => {
-    if (list.data)
+    if (enabled && list.data)
       setItems((previous) =>
         page
           ? [
@@ -1806,8 +1865,8 @@ function Inbox({
             ]
           : list.data!.entries,
       );
-  }, [list.data, page]);
-  const v = current.data?.view,
+  }, [list.data, page, enabled]);
+  const v = enabled ? current.data?.view : undefined,
     r = v?.entry,
     d = value(r);
   return (
@@ -1831,7 +1890,7 @@ function Inbox({
           </button>
         </article>
       ))}
-      {list.data?.nextPageToken ? (
+      {enabled && list.data?.nextPageToken ? (
         <button onClick={() => setPage(list.data!.nextPageToken)}>
           {c.more}
         </button>
@@ -1880,6 +1939,7 @@ function Inbox({
               {v?.interaction ? (
                 <RequestResponse
                   resource={v.interaction}
+                  draft={responseDraft(v.interaction)}
                   enabled={enabled && !busy}
                   copy={c}
                   send={async (question, response) => {

@@ -15,6 +15,7 @@ import { ConversationLane, type ConversationPage } from "./conversation-pages";
 import { useConversationPages } from "./use-conversation-pages";
 import { documentBytes } from "./state";
 import type { ReactNode } from "react";
+import { ObservationEpoch } from "./observation";
 afterEach(cleanup);
 const row = (id: string, lane = ConversationLane.Queue) =>
   create(ResourceSchema, {
@@ -72,16 +73,27 @@ function fixture(
       },
     });
   });
+  let epoch = 0;
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={cache}>
-      <TransportProvider transport={transport}>{children}</TransportProvider>
+      <ObservationEpoch.Provider value={epoch}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </ObservationEpoch.Provider>
     </QueryClientProvider>
   );
   const hook = renderHook(
     ({ enabled }) => useConversationPages(lane, "session", enabled),
     { wrapper, initialProps: { enabled: true } },
   );
-  return { ...hook, requests, cache };
+  return {
+    ...hook,
+    requests,
+    cache,
+    retire: () => {
+      epoch++;
+      hook.rerender({ enabled: true });
+    },
+  };
 }
 it.each([ConversationLane.Queue, ConversationLane.Interactions])(
   "loads the original 51st %s only on explicit continuation",
@@ -249,4 +261,41 @@ it("does not publish an old profile's late continuation into a replacement cache
     replacement.result.current.resources.map((resource) => resource.id),
   ).toEqual(["new-profile"]);
   expect(replacement.requests.map((request) => request.token)).toEqual([""]);
+});
+
+it("does not reuse a reached chain or accept late continuations after epoch retirement", async () => {
+  let finish!: (page: ConversationPage) => void,
+    name = "original";
+  const f = fixture((token) =>
+    token
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : { resources: [row(name)], nextPageToken: `${name}-cursor` },
+  );
+  await waitFor(() => expect(f.result.current.loaded).toBe(true));
+  const previous = f.result.current;
+  let continuation!: Promise<void>;
+  act(() => {
+    continuation = previous.more();
+  });
+  await waitFor(() => expect(finish).toBeDefined());
+  name = "fresh";
+  act(() => f.retire());
+  expect(f.result.current.resources).toEqual([]);
+  expect(previous.canWrite(row("original"))).toBe(false);
+  await act(async () => {
+    finish({ resources: [row("late")], nextPageToken: "" });
+    await continuation;
+  });
+  await waitFor(() =>
+    expect(f.result.current.resources.map((resource) => resource.id)).toEqual([
+      "fresh",
+    ]),
+  );
+  expect(f.requests.map((request) => request.token)).toEqual([
+    "",
+    "original-cursor",
+    "",
+  ]);
 });

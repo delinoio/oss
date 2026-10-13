@@ -167,7 +167,18 @@ The webview loads bundled content only. Navigation to remote documents and
 popups is not granted. Connect calls use HTTPS, omit browser credentials, reject
 redirects, and acquire the selected profile's bearer only through the owning
 transport closure. Profiles cannot share transport or cache identity.
-Background transitions abort observation streams and clear query caches. Resume
+One profile-owned verified connection and query cache serve Sessions, Inbox and
+notification Settings. Settings reads, controls and writes require current pinned
+server identity and protocol verification. Background transitions and explicit
+refresh synchronously retire the observation epoch and abort its streams, cancel
+query reads and clear the cache before admitting another verified epoch. Identity
+or protocol mismatch publishes Version only after cancellation and cache clearing.
+Mounted page arrays, cursors, selected details and history belong to their original
+observation epoch and cannot render or republish after retirement. Creation,
+composer and original-revision response drafts remain mounted or retained by their
+workflow owner; protected credentials and exact pending mutation bytes remain
+unchanged. Foreground return verifies again and loads fresh observations only.
+Resume
 verifies original server identity and protocol before obtaining a new coherent
 event cursor. A bounded Settings snapshot supplies the cursor; session and
 history views remain explicit paginated reads. Events invalidate observations;
