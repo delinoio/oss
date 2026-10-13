@@ -248,6 +248,9 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 				}
 				if account.SubscriptionService == domain.SubscriptionClaude {
 					if account.Subscription.RecoveryRequired {
+						if account.Subscription.ManagedClaude() {
+							return runManagedClaudeRecovery(ctx, config, client, credential, domain.ID(r.Id), account)
+						}
 						return runClaudeRecovery(ctx, config, client, credential, domain.ID(r.Id), account)
 					}
 					return runClaudeAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
@@ -645,7 +648,7 @@ func managedSubscriptionCapability(resource *pb.Resource) bool {
 
 func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 	for _, v := range values {
-		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 {
+		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 || v == domain.ManagedClaudeExecutionV1 {
 			return true
 		}
 	}

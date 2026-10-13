@@ -445,16 +445,49 @@ func verifyNativeClaudeSubscriptionProfile(ctx context.Context, config Config, r
 	return err == nil, err
 }
 
-func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput) (*nativeClaudeProfile, func(bool) error, error) {
+// managedClaudeToken is one server-owned setup token delivered by the protected
+// execution lease. It exists only in this Worker process until the joined child
+// has terminated; it is never written to a journal, file or log.
+type managedClaudeToken struct {
+	token []byte
+	lease *managedSubscriptionLease
+}
+
+func (m *managedClaudeToken) clear() {
+	clear(m.token)
+	m.token = nil
+}
+
+func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput) (*nativeClaudeProfile, *managedClaudeToken, func(bool) error, error) {
 	connection := config.execution
 	client, closeHTTP, err := subscriptionRPC(ctx, config, connection.Credential)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	lease, err := takeManagedSubscription(ctx, config, client, connection.Credential, connection.Instance, input.AccountID, owner, connection.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
 	if err != nil {
 		closeHTTP()
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	if len(lease.response.Bundle) != 0 {
+		// Only a server-owned token account delivers a sealed envelope. It is bound
+		// to this server, account and settled generation and carries no profile.
+		managed := &managedClaudeToken{lease: lease}
+		finish := func(joined bool) error {
+			defer closeHTTP()
+			managed.clear()
+			return lease.finishClaude(nil, joined, joined)
+		}
+		opened, openErr := subscription.OpenClaudeToken(lease.response.Bundle, connection.Credential.ServerID, input.AccountID, domain.ID(lease.response.GenerationId))
+		clear(lease.response.Bundle)
+		if openErr != nil || domain.ID(lease.response.NativeProfileId) != "" {
+			opened.Clear()
+			_ = finish(false)
+			return nil, nil, nil, subscription.ClaudeTokenInvalid()
+		}
+		managed.token = opened.Token
+		config.Logger.InfoContext(ctx, "claude_managed_lease_taken", "account_id", input.AccountID, "lease_id", lease.response.LeaseId)
+		return nil, managed, finish, nil
 	}
 	var profile *nativeClaudeProfile
 	finish := func(joined bool) error {
@@ -487,7 +520,7 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 	if len(lease.response.Bundle) != 0 || domain.ID(lease.response.NativeProfileId).Validate() != nil {
 		clear(lease.response.Bundle)
 		_ = finish(false)
-		return nil, nil, subscription.Invalid()
+		return nil, nil, nil, subscription.Invalid()
 	}
 	profile, err = openClaudeProfile(config, connection.Credential, input.AccountID, domain.ID(lease.response.NativeProfileId), input.Installation, domain.ID(lease.response.LeaseId), false)
 	if err == nil {
@@ -504,10 +537,10 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 	}
 	if err != nil {
 		_ = finish(false)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	profile.managedLease = lease
-	return profile, finish, nil
+	return profile, nil, finish, nil
 }
 
 // Recovery consumes the original local claim and performs cleanup only. It
@@ -575,5 +608,42 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 	}
 	lease := &managedSubscriptionLease{client: client, credential: credential, instance: original.InstanceID, account: accountID, finishID: journal.CleanupFinish, journalPath: path, journal: journal, response: &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), GenerationId: string(original.Generation), LeaseRevision: original.Revision}}
 	config.Logger.InfoContext(ctx, "claude_subscription_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID)
+	return lease.finishClaude(nil, true, false)
+}
+
+// runManagedClaudeRecovery consumes the original local claim of a server-token
+// execution lease and performs cleanup only. It holds no token, never retakes a
+// lease and cannot report execution success.
+func runManagedClaudeRecovery(ctx context.Context, config Config, client delidevv1connect.SubscriptionServiceClient, credential Credential, accountID domain.ID, account domain.Account) error {
+	state := account.Subscription
+	if state == nil || !state.ManagedClaude() || !state.RecoveryRequired || state.Lease == nil || state.Lease.Action != domain.SubscriptionExecute || state.Lease.MachineID != credential.MachineID {
+		return subscription.Invalid()
+	}
+	original := state.Lease
+	path := filepath.Join(config.Root, "managed-auth", string(original.ID)+".json")
+	raw, err := security.ReadPrivate(path, 16<<10)
+	var journal managedSubscriptionJournal
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.Lease != original.ID || journal.Account != accountID || journal.Operation != original.OperationID || journal.Instance != original.InstanceID || journal.Finish.Validate() != nil || journal.NativeProfileID != "" || journal.Generation != original.Generation {
+		return subscription.Invalid()
+	}
+	// The token lived only in the original execution child's environment. Joined
+	// termination of that exact owner is the whole cleanup proof.
+	if journal.ExecutionStarted {
+		if err := process.ReconcileOwnerContext(ctx, filepath.Join(config.Root, "processes"), original.OperationID); err != nil {
+			return err
+		}
+	}
+	if journal.CleanupFinish == "" {
+		journal.CleanupFinish = domain.NewID()
+		if err := writeJSON(path, journal); err != nil {
+			return subscription.Invalid()
+		}
+	}
+	journal.Cleanup, journal.Success, journal.NativeIdentity, journal.State = true, false, "", managedClosed
+	if err := writeJSON(path, journal); err != nil {
+		return subscription.Invalid()
+	}
+	lease := &managedSubscriptionLease{client: client, credential: credential, instance: original.InstanceID, account: accountID, finishID: journal.CleanupFinish, journalPath: path, journal: journal, response: &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), GenerationId: string(original.Generation), LeaseRevision: original.Revision}}
+	config.Logger.InfoContext(ctx, "claude_managed_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID)
 	return lease.finishClaude(nil, true, false)
 }
