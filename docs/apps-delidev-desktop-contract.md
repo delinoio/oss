@@ -4634,6 +4634,10 @@ loop. Tray and notification navigation must move authorization to a blocking
 worker and recheck shutdown and notification generations before publication.
 Otherwise the UI loop can wait for its own queued URL request and deadlock.
 Keep these safeguards until the runtime provides nonblocking getters.
+The retained updater installer worker follows the same rule: after its durable
+begin it uses only retained registry, binding and OAuth epoch state and never a
+URL getter, so post-runtime joining cannot depend on the UI loop. See
+`cmds-delidev-updates-contract.md`.
 
 Each trusted CEF document explicitly enables the native accessibility tree after
 page load through the UI-loop webview callback. The pinned runtime otherwise
