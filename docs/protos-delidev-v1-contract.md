@@ -1507,3 +1507,15 @@ workspace/commits documents retain bounded source observations; avatars return
 sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
 Worker allocation, feature flag or database migration. Reconcile the capability
 and all declarations against current allocations before merge.
+
+## Native Codex function-output negotiation
+
+System `CODEX_FUNCTION_OUTPUTS_V1 = 92` and Worker
+`CODEX_FUNCTION_OUTPUTS_V1 = 54` independently negotiate the inert
+function-result projection. The allocation ledger, closed capability admission,
+server support response and Worker attach receipt profile retain these exact
+values. Older peers receive no unknown capability or typed result publication.
+The existing closed execution JSON adds an exclusive `function_output` payload;
+retained ToolMessage resources preserve the nullable namespace and ordered safe
+content. No RPC, SQLite migration or native dispatch authority is added. Follow
+[the harness contract](cmds-delidev-harness-contract.md#codex-native-function-outputs).

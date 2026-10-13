@@ -593,6 +593,10 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 				if err := publishExecutionProgress(tx, input, sr, progress, event); err != nil {
 					return err
 				}
+			} else if event.Kind == domain.ExecutionFunctionOutputObserved {
+				if err := publishFunctionOutput(tx, input, sr, event); err != nil {
+					return err
+				}
 			} else if event.Kind.IsTool() {
 				if err := publishExecutionTool(tx, input, sr, event); err != nil {
 					return err

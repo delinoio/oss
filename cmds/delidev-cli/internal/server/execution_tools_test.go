@@ -22,14 +22,14 @@ func (f *publicationFixture) toolEvent(kind domain.ExecutionEventKind, sequence 
 	return e
 }
 
-func bindNativeMapper(t *testing.T, f *publicationFixture, cfg worker.PublicationConfig) (*worker.ExecutionPublisher, *worker.CodexEventPublisher) {
+func bindNativeMapper(t *testing.T, f *publicationFixture, cfg worker.PublicationConfig, functionOutputsSupported ...bool) (*worker.ExecutionPublisher, *worker.CodexEventPublisher) {
 	t.Helper()
 	publisher, err := worker.OpenExecutionPublisher(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = publisher.Close() })
-	mapper := worker.NewCodexEventPublisher(publisher)
+	mapper := worker.NewCodexEventPublisher(publisher, functionOutputsSupported...)
 	err = mapper.BindThread(context.Background(), codex.ThreadResult{RequestID: f.input.ThreadRequestID, Thread: &codex.Thread{ID: f.thread}, Effective: &codex.EffectiveSettings{Model: f.input.Configuration.NativeModel, Provider: codex.APIProvider, Sandbox: codex.Sandbox{Type: codex.ReadOnly}, ApprovalPolicy: codex.ApprovalOnRequest, ApprovalsReviewer: "user"}})
 	if err != nil {
 		t.Fatal(err)

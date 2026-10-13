@@ -50,6 +50,7 @@ type Client struct {
 	codeReviewRoot       string
 	codeReview           *codeReviewAttempt
 	reviewProtected      security.ProtectedJSON
+	functionOutputs      map[string]functionOutputIdentity
 	safety               modelSafetyLedger
 	managedForkHistory   bool
 	currentTimeClock     func() time.Time
