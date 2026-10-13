@@ -105,7 +105,7 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 		}
 		s.logger.InfoContext(ctx, "server_quota_cleanup_reconciled", "operation_id", owner.Operation.ID)
 	}
-	return nil
+	return s.reconcilePendingServerQuotaRetirements(ctx)
 }
 func reconcileServerQuotaRuntime(ctx context.Context, root string, o domain.ServerQuotaOperation) error {
 	if o.Validate() != nil || !o.AccessOnly || o.Phase != domain.SubscriptionObservationUncertain {
@@ -250,4 +250,94 @@ func (s *Service) retireSettledServerQuotaReference(ctx context.Context, id doma
 		return err
 	}
 	return s.deleteCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retired", original.ID)
+}
+
+// completeServerQuotaRetirement finishes the checked retirement of a settled
+// frozen automatic refresh and then clears its durable fence. When the credit
+// admitted by the same finish holds the captured generation, that credit owns
+// the reference and its own checked retirement, so the quota fence is released
+// without deleting it. Any other failure leaves the fence for retry. Caller
+// holds account serialization.
+func (s *Service) completeServerQuotaRetirement(ctx context.Context, id domain.ID, original domain.ServerQuotaOperation) error {
+	var handedOff bool
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		c := a.Subscription.ServerCredit
+		handedOff = c != nil && c.AccessOnly && c.Active() && c.Generation == original.Generation
+		return nil
+	}); err != nil {
+		return err
+	}
+	if !handedOff {
+		if err := s.retireSettledServerQuotaReference(ctx, id, original); err != nil {
+			return err
+		}
+	}
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.server.quota.reference.retired", struct {
+		Account, Operation domain.ID
+		HandedOff          bool
+	}{id, original.ID, handedOff}, func(tx *store.Tx) (any, error) {
+		r, a, err := subscriptionAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		o := a.Subscription.ServerQuota
+		if o == nil || o.ID != original.ID || o.Active() || !o.ReferenceRetirementPending {
+			return struct{}{}, nil
+		}
+		o.ReferenceRetirementPending = false
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return struct{}{}, err
+	})
+	if err == nil {
+		s.logger.InfoContext(ctx, "server_quota_reference_fence_released", "operation_id", original.ID, "handed_off", handedOff)
+	}
+	return err
+}
+
+// reconcilePendingServerQuotaRetirements retries the checked retirement of
+// settled automatic refreshes whose fence survived a failure or restart.
+func (s *Service) reconcilePendingServerQuotaRetirements(ctx context.Context) error {
+	type pending struct {
+		Account   domain.ID
+		Operation domain.ServerQuotaOperation
+	}
+	var owners []pending
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		rows, err := all(tx, domain.AccountKind)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			a, err := store.Decode[domain.Account](r)
+			if err != nil {
+				return err
+			}
+			if a.Subscription != nil && a.Subscription.ServerQuota != nil && a.Subscription.ServerQuota.ReferenceRetirementPending && !a.Subscription.ServerQuota.Active() {
+				owners = append(owners, pending{r.ID, *a.Subscription.ServerQuota})
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, owner := range owners {
+		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := func() error {
+			unlock, err := s.lockAccounts(bounded)
+			if err != nil {
+				return err
+			}
+			defer unlock()
+			return s.completeServerQuotaRetirement(bounded, owner.Account, owner.Operation)
+		}()
+		cancel()
+		if err != nil {
+			s.logger.WarnContext(ctx, "server_quota_reference_cleanup_retained", "operation_id", owner.Operation.ID, "code", domain.SafeError(err).Code)
+		}
+	}
+	return nil
 }

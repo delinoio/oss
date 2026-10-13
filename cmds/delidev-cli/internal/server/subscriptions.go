@@ -1203,7 +1203,7 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 // only after joined observer cleanup and checked obsolete-reference retirement.
 func protectedGenerations(st *domain.SubscriptionState) []domain.ID {
 	var protected []domain.ID
-	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
+	if st != nil && st.ServerQuota != nil && (st.ServerQuota.Active() || st.ServerQuota.ReferenceRetirementPending) {
 		protected = append(protected, st.ServerQuota.Generation)
 	}
 	if st != nil && st.ServerCredit != nil && st.ServerCredit.AccessOnly && st.ServerCredit.Active() {

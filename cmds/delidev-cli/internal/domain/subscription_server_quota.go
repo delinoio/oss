@@ -21,6 +21,10 @@ type ServerQuotaOperation struct {
 	RequestedAt        time.Time                    `json:"requested_at"`
 	CleanupConfirmed   bool                         `json:"cleanup_confirmed"`
 	ErrorCode          Code                         `json:"error_code,omitempty"`
+	// ReferenceRetirementPending keeps the captured AccountLogin reference of a
+	// settled frozen automatic refresh fenced until its checked retirement (or
+	// its hand-off to the admitted credit) is durably complete.
+	ReferenceRetirementPending bool `json:"reference_retirement_pending,omitempty"`
 }
 
 func (o ServerQuotaOperation) Active() bool {
@@ -47,6 +51,9 @@ func (o ServerQuotaOperation) Validate() error {
 		return InvalidSubscriptionObservation()
 	}
 	if o.Phase == SubscriptionObservationQueued && o.CleanupConfirmed || o.Phase == SubscriptionObservationSucceeded && !o.CleanupConfirmed {
+		return InvalidSubscriptionObservation()
+	}
+	if o.ReferenceRetirementPending && (!o.AccessOnly || o.AutomaticEpisodeID == "" || !o.CleanupConfirmed || o.Active()) {
 		return InvalidSubscriptionObservation()
 	}
 	return nil

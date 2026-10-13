@@ -14,12 +14,15 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
+// serverQuotaRetirementRetryInterval spaces retries of a fenced checked retirement.
+const serverQuotaRetirementRetryInterval = 30 * time.Second
+
 func serverQuotaReady(a domain.Account) bool {
 	if !quotaAccountReady(a) {
 		return false
 	}
 	s := a.Subscription
-	return s.Pending == nil && !s.ServerObservationActive() && (s.Lease == nil || s.Lease.Action == domain.SubscriptionExecute) && (s.Observation == nil || !s.Observation.Active()) && (s.ServerOperation == nil || !s.ServerOperation.Active() && !s.ServerOperation.NativeStarted)
+	return s.Pending == nil && !s.ServerObservationActive() && (s.ServerQuota == nil || !s.ServerQuota.ReferenceRetirementPending) && (s.Lease == nil || s.Lease.Action == domain.SubscriptionExecute) && (s.Observation == nil || !s.Observation.Active()) && (s.ServerOperation == nil || !s.ServerOperation.Active() && !s.ServerOperation.NativeStarted)
 }
 func acceptServerQuota(tx *store.Tx, r store.Record, a domain.Account, op domain.ServerQuotaOperation) error {
 	if !serverQuotaReady(a) || op.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || subscriptionActorValid(tx, op.Actor) != nil {
@@ -100,7 +103,15 @@ func (s *Service) runServerQuotas(ctx context.Context) {
 	defer func() { stop(); workers.Wait() }()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
+	var lastRetirementRetry time.Time
 	for {
+		// A failed checked retirement keeps its durable fence; retry it slowly.
+		if now := time.Now(); now.Sub(lastRetirementRetry) >= serverQuotaRetirementRetryInterval {
+			lastRetirementRetry = now
+			if err := s.reconcilePendingServerQuotaRetirements(child); err != nil && child.Err() == nil {
+				s.logger.WarnContext(ctx, "server_quota_retirement_scan_failed", "code", domain.SafeError(err).Code)
+			}
+		}
 		if err := s.queueDueSubscriptionQuotas(child, time.Now().UTC()); err != nil && child.Err() == nil {
 			s.logger.WarnContext(ctx, "server_quota_queue_failed", "code", domain.SafeError(err).Code)
 		}
@@ -385,6 +396,11 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 			st.QuotaState = domain.ObservationFailed
 		}
 		o.ErrorCode = code
+		if automatic && o.AccessOnly {
+			// Persist the reference fence with the terminal result so a crash or
+			// a failed retirement below cannot leave an unowned obsolete reference.
+			o.ReferenceRetirementPending = true
+		}
 		if code == "" && automatic {
 			s.admitAutomaticCreditAfterRefresh(tx, &a, original.ID)
 		}
@@ -406,8 +422,9 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 	})
 	if err == nil && automatic {
 		// Retire the obsolete captured reference unless the credit admitted above
-		// (or any other owner) still holds that generation. A failure retains it.
-		if retireErr := s.retireSettledServerQuotaReference(ctx, id, original); retireErr != nil {
+		// (or any other owner) still holds that generation. A failure keeps the
+		// durable fence for startup reconciliation.
+		if retireErr := s.completeServerQuotaRetirement(ctx, id, original); retireErr != nil {
 			s.logger.WarnContext(ctx, "server_quota_reference_cleanup_retained", "operation_id", original.ID, "code", domain.SafeError(retireErr).Code)
 		}
 	}
