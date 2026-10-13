@@ -213,12 +213,17 @@ describe("transcript token and time observation toggles", () => {
           task: {
             kind: "task_updated",
             task_id: "original-task",
-            patch: { status: "paused", total_paused_ms: "4321" },
+            patch: {
+              status: "paused",
+              end_time: "1760000000000",
+              total_paused_ms: "4321",
+            },
           },
         })}
       />,
     );
     expect(view.hidden(/paused/i, "4321")).toBe(!time);
+    expect(view.hidden(/end time/i, "1760000000000")).toBe(!time);
     // Unrelated task fields stay visible.
     expect(view.hidden(/^task$/i, "original-task")).toBe(false);
   });

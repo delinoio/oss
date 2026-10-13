@@ -313,8 +313,10 @@ export function NativeClaudeTask({ value }: { value: unknown }) {
             ) : null}
             {patch.end_time !== undefined ? (
               <>
-                <dt>{copy("native-claude-tasks.reportedEndTime_d22cb3")}</dt>
-                <dd>{patch.end_time as string}</dd>
+                <dt data-time-observation>
+                  {copy("native-claude-tasks.reportedEndTime_d22cb3")}
+                </dt>
+                <dd data-time-observation>{patch.end_time as string}</dd>
               </>
             ) : null}
             {patch.total_paused_ms !== undefined ? (
