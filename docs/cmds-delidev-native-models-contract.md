@@ -56,6 +56,13 @@ Device scope, status/cancellation, immutable pages and retained last-success
 selection. Use model selects the executable ID; only final atomic Worker saving
 resolves or creates its canonical model.
 
+`model native-discover` and `model native-cancel` allocate a generated mutation request
+ID only after their flags parse successfully, immediately before the mutation RPC, so
+unknown flags produce a usage error with no envelope `request_id` and no RPC. The same
+ID is sent and returned in the envelope on success and uncertain failure. `native-list`
+and `native-observation` are reads and allocate none; an explicit `--request-id` is
+preserved.
+
 The feature exposes authenticated owner/client acceptance,
 status, bounded observation pages and cancellation, with equivalent explicit CLI
 and desktop controls. Mutation receipts use original UUID-v7 request identities
