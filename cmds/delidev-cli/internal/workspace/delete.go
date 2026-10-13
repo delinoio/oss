@@ -106,7 +106,18 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		} else if storedManifest != nil {
 			proof.Manifest = storedManifest
 		} else if !allowAbsent {
-			return domain.SessionDeletionPending()
+			// The managed workspace directory is shared by every device obligation
+			// of this session and machine. Another obligation may already have
+			// removed it; only its session-scoped, content-free removal evidence
+			// lets this obligation acknowledge the same absence.
+			removed, e := m.sharedWorkspaceRemoved(w)
+			if e != nil {
+				return e
+			}
+			if !removed {
+				return domain.SessionDeletionPending()
+			}
+			proof.Removed = true
 		}
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {
 			return e
@@ -252,6 +263,11 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		if e := security.SyncParent(root); e != nil {
 			return domain.SafeError(e)
 		}
+		// Publish the shared evidence before this obligation's own proof so a
+		// crash between the writes never strands another device obligation.
+		if e := writeSharedWorkspaceRemoval(m.Root, w); e != nil {
+			return e
+		}
 		proof.Removed = true
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {
 			return e
@@ -266,6 +282,48 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	// Retain only a non-content cleanup acknowledgement after all copies commit.
 	proof.Manifest = nil
 	return writeDeletionWorkspaceProof(proofPath, proof)
+}
+
+// deletionWorkspaceRemoval is the session-scoped, content-free evidence that the
+// managed workspace directory of one session on one machine was removed. It
+// holds no manifest, path or device identity, so it cannot grant ownership of
+// any content; it only lets later device obligations verify the earlier removal.
+type deletionWorkspaceRemoval struct {
+	Version   uint32    `json:"version"`
+	ServerID  domain.ID `json:"server_id"`
+	SessionID domain.ID `json:"session_id"`
+	MachineID domain.ID `json:"machine_id"`
+	Removed   bool      `json:"removed"`
+}
+
+func sharedWorkspaceRemovalPath(root string, w domain.SessionDeletionWork) string {
+	return filepath.Join(root, "session-deletions", string(w.SessionID)+"-workspace-removed.json")
+}
+
+// sharedWorkspaceRemoved reports whether another obligation of the same server,
+// session and machine already removed the shared workspace directory. A missing
+// record is false; an unreadable or foreign record keeps the obligation pending.
+func (m *Manager) sharedWorkspaceRemoved(w domain.SessionDeletionWork) (bool, error) {
+	raw, e := security.ReadPrivate(sharedWorkspaceRemovalPath(m.Root, w), 1<<16)
+	if errors.Is(e, os.ErrNotExist) {
+		return false, nil
+	}
+	var evidence deletionWorkspaceRemoval
+	if e != nil || domain.Decode(raw, &evidence) != nil || evidence.Version != 1 || !evidence.Removed || evidence.ServerID != w.ServerID || evidence.SessionID != w.SessionID || evidence.MachineID != w.MachineID {
+		return false, domain.SessionDeletionPending()
+	}
+	if m.Logger != nil {
+		m.Logger.Info("workspace_deletion_shared_removal_adopted", "session_id", w.SessionID, "deletion_id", w.DeletionID)
+	}
+	return true, nil
+}
+
+func writeSharedWorkspaceRemoval(root string, w domain.SessionDeletionWork) error {
+	b, e := json.Marshal(deletionWorkspaceRemoval{Version: 1, ServerID: w.ServerID, SessionID: w.SessionID, MachineID: w.MachineID, Removed: true})
+	if e != nil || security.WriteAtomic(sharedWorkspaceRemovalPath(root, w), b) != nil {
+		return domain.SessionDeletionPending()
+	}
+	return nil
 }
 
 // SessionDeletionObligationName identifies one original device obligation. Its

@@ -310,6 +310,15 @@ the one obligation whose digest matches exactly (or an untouched proof upgraded 
 server-proved child owners), preserving its report UUID; any other legacy scope
 stays pending and is never copied to another device.
 
+The managed `workspaces/<session>` directory is shared by every device obligation
+of one session and machine. When an obligation removes it, it first publishes
+content-free evidence at `session-deletions/<session>-workspace-removed.json`
+(`version`, server, session, machine, `removed`; no manifest, path or device).
+A later obligation whose own workspace is absent and has no stored snapshot
+manifest, and whose jobs forbid an absent workspace, adopts that removal only when
+the evidence matches its exact server, session and machine; missing, unreadable or
+foreign evidence keeps it pending. The evidence never grants deletion authority.
+
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked
 worktree; dirty/untracked owned worktree files are included. Original Local
