@@ -676,5 +676,9 @@ export function subagentSafeRow(
 ): { harness?: SubagentHarness } {
   const harness = validateSubagentPage([resource], sessionId)?.[0]?.record
     .harness;
-  return { harness: Object.values(SubagentHarness).includes(harness as never) ? (harness as SubagentHarness) : undefined };
+  return {
+    harness: Object.values(SubagentHarness).includes(harness as never)
+      ? (harness as SubagentHarness)
+      : undefined,
+  };
 }

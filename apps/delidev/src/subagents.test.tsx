@@ -268,7 +268,9 @@ test("keeps the OpenCode update warning after its only child payload page is evi
   await client.invalidateQueries();
   await screen.findByText(/Update the server and Runner Device/);
   expect(rowCount()).toBe(0);
-  expect(screen.queryByRole("button", { name: "Load more Subagents" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Load more Subagents" }),
+  ).toBeNull();
   client.clear();
 });
 
