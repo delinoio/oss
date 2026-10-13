@@ -434,7 +434,12 @@ impl Project {
                             let path = percent_decode(
                                 argument.text().split(['?', '#']).next().unwrap_or_default(),
                             );
-                            if let Ok(resolved) = base.join(&path).canonicalize() {
+                            let resolved = if is_root_relative(argument.text()) {
+                                resolve_root_relative(dir, argument.text())
+                            } else {
+                                base.join(&path).canonicalize().ok()
+                            };
+                            if let Some(resolved) = resolved {
                                 worker_scripts.insert(resolved.to_string_lossy().into_owned());
                             }
                         }
@@ -468,13 +473,8 @@ impl Project {
                 // Root-relative: resolve under the bundle root, dropping
                 // leading segments of a deployment base path when needed. The
                 // compiler cannot link it, so the target is public.
-                if text.starts_with('/') && !text.starts_with("//") {
-                    let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
-                    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-                    let resolved = (0..segments.len())
-                        .filter_map(|skip| dir.join(segments[skip..].join("/")).canonicalize().ok())
-                        .find(|c| c.starts_with(dir) && c.is_file());
-                    match resolved {
+                if is_root_relative(text) {
+                    match resolve_root_relative(dir, text) {
                         Some(resolved) => {
                             let resolved = resolved.to_string_lossy().into_owned();
                             public.insert(resolved.clone());
@@ -1355,6 +1355,22 @@ fn adds_diagnostics(before: &[String], after: &[String]) -> bool {
             }
             None => true,
         })
+}
+
+/// Whether a specifier is a root-relative URL path (a single leading slash).
+fn is_root_relative(text: &str) -> bool {
+    text.starts_with('/') && !text.starts_with("//")
+}
+
+/// Resolves a root-relative URL path under the bundle root `dir`, dropping
+/// leading segments of a deployment base path until a bundled file matches.
+/// The query and fragment are ignored and `%` escapes are decoded.
+fn resolve_root_relative(dir: &std::path::Path, text: &str) -> Option<std::path::PathBuf> {
+    let path = percent_decode(text.split(['?', '#']).next().unwrap_or_default());
+    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    (0..segments.len())
+        .filter_map(|skip| dir.join(segments[skip..].join("/")).canonicalize().ok())
+        .find(|c| c.starts_with(dir) && c.is_file())
 }
 
 /// Decodes `%XX` escapes of a URL path.
