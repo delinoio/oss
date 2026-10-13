@@ -204,3 +204,30 @@ it("settles an enclosing page entrance before opening the picker popup", () => {
   expect(screen.getByRole("listbox")).toBeTruthy();
   expect(screen.getByTestId("page").hasAttribute("data-entrance")).toBe(false);
 });
+
+it("moves the highlight with the keyboard without changing the accepted value", () => {
+  const change = vi.fn();
+  render(
+    <ScrollPicker
+      options={options}
+      label="Runner"
+      value="a"
+      change={change}
+      query={query()}
+      active
+    />,
+  );
+  const trigger = screen.getByRole("combobox", { name: "Runner" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  const [first, , last] = screen.getAllByRole("option");
+  expect(first.getAttribute("aria-selected")).toBe("true");
+  expect(first.getAttribute("data-highlighted")).toBe("true");
+  fireEvent.keyDown(trigger, { key: "End" });
+  // The cue hooks move with the highlight; aria-selected keeps the accepted value.
+  expect(first.getAttribute("data-highlighted")).toBe("false");
+  expect(last.getAttribute("data-highlighted")).toBe("true");
+  expect(first.getAttribute("aria-selected")).toBe("true");
+  expect(last.getAttribute("aria-selected")).toBe("false");
+  expect(change).not.toHaveBeenCalled();
+});

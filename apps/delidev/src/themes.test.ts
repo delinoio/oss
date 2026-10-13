@@ -115,6 +115,42 @@ test("semantic text, states, primary controls and focus retain accessible contra
   }
 });
 
+test("picker options and the Home sidebar current row draw a persistent inset selected-border cue", () => {
+  const picker = readFileSync(join(directory, "scroll-picker.css"), "utf8");
+  const styles = readFileSync(join(directory, "styles.css"), "utf8");
+  // An inset shadow paints inside the border box, so selection never moves geometry.
+  expect(picker).toMatch(
+    /\.scroll-picker-popup > button\[data-highlighted="true"\],\s*\.scroll-picker-popup > button\[aria-selected="true"\]\s*\{[^}]*box-shadow: inset 0 0 0 1px var\(--selected-border\);[^}]*\}/u,
+  );
+  expect(styles).toMatch(
+    /\.is-home \.sidebar-session-row\[aria-current="true"\]\s*\{[^}]*box-shadow: inset 0 0 0 1px var\(--selected-border\);[^}]*\}/u,
+  );
+  expect(picker).toMatch(/\.scroll-picker-popup > button \{[^}]*border: 0;/u);
+  expect(styles).not.toMatch(
+    /\.is-home \.sidebar-session-row\[aria-current="true"\]\s*\{[^}]*(?:border-width|padding|margin|width|height)/u,
+  );
+});
+
+test("selected-border cue contrasts at least 3:1 with adjacent surfaces in every nondefault bundled palette", () => {
+  // Default light (selected-border / surface is about 2.04:1) is deliberately
+  // outside this assertion: the palette is unchanged by the cue and disclosed
+  // as a known sub-3:1 case rather than silently retuned.
+  for (const [name, modes] of Object.entries(appearancePalettes)) {
+    if (name === "default") continue;
+    for (const [mode, colors] of Object.entries(modes)) {
+      for (const adjacent of [
+        "surface",
+        "surface-muted",
+        "selected-background",
+      ] as const)
+        expect(
+          contrast(colors["selected-border"], colors[adjacent]),
+          `${name} ${mode}: selected-border / ${adjacent}`,
+        ).toBeGreaterThanOrEqual(3);
+    }
+  }
+});
+
 test("Usage token breakdown focus uses the inverse-surface contrast token", () => {
   expect(usageStyles).toMatch(
     /:root\s+\.usage-page\s+\.usage-summary-breakdown\s*>\s*\.disclosure-header:focus-visible\s*\{\s*outline-color:\s*var\(--on-inverse\);\s*\}/u,
