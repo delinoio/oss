@@ -266,6 +266,32 @@ fn missing_root_relative_html_references_fail() {
 }
 
 #[test]
+fn prefixless_relative_html_urls_are_document_relative_references() {
+    if !pinned_node() {
+        return;
+    }
+    // HTML URLs resolve against the document without a `./` prefix, while the
+    // same text in JavaScript is a bare specifier and stays ignored.
+    let html = r#"<script type="module" src="assets/main-12345678.js"></script>
+<script type="module" src="assets/entry-12345678.js"></script>
+<link rel="modulepreload" href="assets/lazy-12345678.js">
+<script type="module">import "assets/bare-12345678.js";</script>"#;
+    let (_temp, outcome) = two_builds(html, "export const ready = true;", &[LAZY], &[]);
+    assert!(!outcome.success);
+    assert_eq!(
+        broken(&outcome, "original"),
+        ["index.html -> assets/entry-12345678.js"]
+    );
+    assert_eq!(
+        broken(&outcome, "optimized"),
+        [
+            "index.html -> assets/entry-12345678.js",
+            "index.html -> assets/lazy-12345678.js",
+        ]
+    );
+}
+
+#[test]
 fn different_hash_asset_in_another_build_keeps_exact_target_unresolved() {
     if !pinned_node() {
         return;

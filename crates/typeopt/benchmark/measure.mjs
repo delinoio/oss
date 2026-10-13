@@ -151,10 +151,14 @@ function htmlAttributes(tag) {
     );
   return attributes;
 }
-// Local specifiers of a file, in order, with inline module scripts included.
-function loadingSpecifiers(file, text) {
-  if (!file.endsWith(".html")) return scanModuleSpecifiers(text);
-  const specifiers = [];
+// Loading references of a file, in order, with inline module scripts
+// included. HTML attributes hold URLs, which resolve against the document
+// even without a `./` prefix; JavaScript specifiers without a prefix are bare.
+function loadingReferences(file, text) {
+  const asSpecifiers = (list) =>
+    list.map((specifier) => ({ specifier, url: false }));
+  if (!file.endsWith(".html")) return asSpecifiers(scanModuleSpecifiers(text));
+  const references = [];
   const markup = text.replace(/<!--[\s\S]*?-->/g, "");
   for (const match of markup.matchAll(
     /<script\b([^>]*)>([\s\S]*?)<\/script\s*>|<link\b([^>]*)>/gi,
@@ -165,23 +169,25 @@ function loadingSpecifiers(file, text) {
         .toLowerCase()
         .split(/\s+/);
       if (relations.includes("modulepreload") && attributes.has("href"))
-        specifiers.push(attributes.get("href"));
+        references.push({ specifier: attributes.get("href"), url: true });
       continue;
     }
     const attributes = htmlAttributes(match[1]);
     if ((attributes.get("type") ?? "").toLowerCase() !== "module") continue;
-    if (attributes.has("src")) specifiers.push(attributes.get("src"));
-    else specifiers.push(...scanModuleSpecifiers(match[2]));
+    if (attributes.has("src"))
+      references.push({ specifier: attributes.get("src"), url: true });
+    else references.push(...asSpecifiers(scanModuleSpecifiers(match[2])));
   }
-  return specifiers;
+  return references;
 }
-// Resolve a specifier against the importing file. Returns null for
+// Resolve a reference against the importing file. Returns null for
 // references that are not local script files (remote URLs, bare specifiers,
-// non-script assets).
-function localTarget(file, specifier) {
+// non-script assets). A URL (HTML attribute) never is a bare specifier.
+function localTarget(file, specifier, url) {
   const bare = specifier.trim().split(/[?#]/)[0];
   if (!bare || URL_SCHEME.test(bare)) return null;
   if (
+    !url &&
     !bare.startsWith("/") &&
     !bare.startsWith("./") &&
     !bare.startsWith("../")
@@ -196,8 +202,8 @@ function brokenReferences(build) {
   const present = new Set(build.files.map((f) => f.path));
   const broken = new Set();
   for (const [file, text] of build.texts)
-    for (const specifier of loadingSpecifiers(file, text)) {
-      const target = localTarget(file, specifier);
+    for (const { specifier, url } of loadingReferences(file, text)) {
+      const target = localTarget(file, specifier, url);
       if (target !== null && !present.has(target))
         broken.add(`${file} -> ${specifier}`);
     }
