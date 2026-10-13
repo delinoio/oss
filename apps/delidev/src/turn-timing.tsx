@@ -330,6 +330,30 @@ function compatibleObservation(frame: TurnClockFrame, turn: CurrentTurn) {
         : observation.updated >= frame.updated)),
   );
 }
+/** Owning-resource synchronization facts that can unconfirm an active estimate. */
+export interface TurnTimingSynchronization {
+  liveLive: boolean;
+  liveFailed: boolean;
+  messagesFailed: boolean;
+  controlUncertain: boolean;
+  recoveryRequired: boolean;
+  unconfirmedResponses: number;
+}
+/**
+ * A running estimate is confirmed only while the owning Session stream is Live
+ * and unambiguous. Definitive control rejections and queue/interaction read
+ * failures are independent operations and never unconfirm timing.
+ */
+export function turnTimingConfirmed(input: TurnTimingSynchronization): boolean {
+  return (
+    input.liveLive &&
+    !input.liveFailed &&
+    !input.messagesFailed &&
+    !input.controlUncertain &&
+    !input.recoveryRequired &&
+    !input.unconfirmedResponses
+  );
+}
 /** Exactly one mounted timer; inactive/unconfirmed observations do no clock work. */
 export function useTurnClock(
   turn: CurrentTurn | undefined,
