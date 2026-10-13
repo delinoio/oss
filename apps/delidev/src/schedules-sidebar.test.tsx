@@ -98,7 +98,9 @@ function fixture() {
       scheduleId: string;
       pageSize: number;
       pageToken: string;
-    }) => ({ occurrences: [] }),
+    }): Promise<{ occurrences: Resource[]; nextPageToken?: string }> => ({
+      occurrences: [],
+    }),
   );
   const run = vi.fn(async (_request: unknown) => ({
     occurrence: create(ResourceSchema, {
