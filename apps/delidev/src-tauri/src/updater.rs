@@ -374,7 +374,15 @@ impl Connector {
     ) -> ReconcileReport {
         let store = self.outcome_store();
         let mut report = ReconcileReport::default();
-        let entries = match store.scan() {
+        // An exact original-scope inspection reads only its own operation's
+        // record, so unrelated unreadable evidence cannot starve it.
+        let scanned = match scope {
+            ReconcileScope::Launch => store.scan(),
+            ReconcileScope::Original { id, .. } => {
+                store.load(id).map(|entry| entry.into_iter().collect())
+            }
+        };
+        let entries = match scanned {
             Ok(entries) => entries,
             Err(code) => {
                 tracing::warn!(
@@ -1661,7 +1669,6 @@ print(json.dumps({'version': 1, 'result': descriptor}))
         };
         for report in [
             skipped(&other, &fixture.id, 7, Some(&saved)),
-            skipped(&fixture.server, &other, 7, Some(&saved)),
             skipped(&fixture.server, &fixture.id, 8, Some(&saved)),
             skipped(&fixture.server, &fixture.id, 7, None),
             skipped(&fixture.server, &fixture.id, 7, Some(&other)),
@@ -1669,6 +1676,11 @@ print(json.dumps({'version': 1, 'result': descriptor}))
             assert_eq!(report.skipped, 1);
             assert_eq!(report.settled, 0);
         }
+        // Another operation has no record of its own, so nothing is read.
+        assert_eq!(
+            skipped(&fixture.server, &other, 7, Some(&saved)),
+            ReconcileReport::default()
+        );
         assert_eq!(fixture.calls(), 0);
         let exact = skipped(&fixture.server, &fixture.id, 7, Some(&saved));
         assert_eq!(exact.settled, 1);
@@ -1725,6 +1737,86 @@ print(json.dumps({'version': 1, 'result': descriptor}))
         for (name, bytes) in files {
             assert_eq!(fs::read(directory.join(name)).unwrap(), bytes);
         }
+    }
+
+    /// More unreadable entries than the record bound, all sorting before the
+    /// valid record (UUID-v7 names start with a digit after `0-`).
+    fn write_unreadable_prefix(fixture: &Fixture) -> Vec<PathBuf> {
+        let directory = fixture.root.join(crate::updater_outcome::STORE_DIRECTORY);
+        (0..40)
+            .map(|index| {
+                let path = directory.join(format!("0-corrupt-{index:02}.json"));
+                fs::write(&path, b"{not json").unwrap();
+                path
+            })
+            .collect()
+    }
+
+    #[test]
+    fn unreadable_entries_never_starve_launch_replay() {
+        let fixture = Fixture::new(None, Some("installing"));
+        let record = fixture.record(Phase::Installed);
+        fixture.store().persist(&record).unwrap();
+        let corrupt = write_unreadable_prefix(&fixture);
+        let report = fixture.launch();
+        assert_eq!((report.settled, report.retained), (1, corrupt.len()));
+        assert_eq!(fixture.journal()["phase"], "installed");
+        assert!(!fixture.marker(&fixture.id).exists());
+        for path in corrupt {
+            assert_eq!(fs::read(path).unwrap(), b"{not json");
+        }
+    }
+
+    #[test]
+    fn unreadable_entries_never_starve_exact_original_inspection() {
+        let saved = uuid::Uuid::now_v7().to_string();
+        let fixture = Fixture::new(Some(&saved), Some("installing"));
+        fixture
+            .store()
+            .persist(&fixture.record(Phase::Failed))
+            .unwrap();
+        let corrupt = write_unreadable_prefix(&fixture);
+        let report = fixture.connector.reconcile_retained_outcomes(
+            &ReconcileScope::Original {
+                server: &fixture.server,
+                id: &fixture.id,
+                revision: 7,
+                saved_connection: Some(&saved),
+            },
+            &|| false,
+        );
+        assert_eq!(
+            report,
+            ReconcileReport {
+                settled: 1,
+                retained: 0,
+                skipped: 0
+            }
+        );
+        assert_eq!(fixture.journal()["phase"], "failed");
+        assert!(corrupt.iter().all(|path| path.exists()));
+    }
+
+    #[test]
+    fn corrupt_exact_record_is_retained_without_contacting_the_sidecar() {
+        let fixture = Fixture::new(None, Some("installing"));
+        fixture
+            .store()
+            .persist(&fixture.record(Phase::Failed))
+            .unwrap();
+        fs::write(fixture.marker(&fixture.id), b"{not json").unwrap();
+        let report = fixture.connector.reconcile_retained_outcomes(
+            &ReconcileScope::Original {
+                server: &fixture.server,
+                id: &fixture.id,
+                revision: 7,
+                saved_connection: None,
+            },
+            &|| false,
+        );
+        assert_eq!((report.settled, report.retained), (0, 1));
+        assert_eq!(fixture.calls(), 0);
+        assert_eq!(fs::read(fixture.marker(&fixture.id)).unwrap(), b"{not json");
     }
 
     #[test]

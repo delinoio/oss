@@ -57,7 +57,10 @@ saved scope, replays the retained phase through the same offline writer with a
 settlement-only token. That token has no installer entry point, so replay never
 invokes installation and never changes the journal phase or generation. Launch
 keeps fresh installation admission busy until the pass ends, and Quit stops the
-pass between records. Corrupt, oversized, symlinked, misnamed, unknown-field,
+pass between records. A pass visits at most 32 readable records in stable name
+order; unreadable entries are reported but never consume that bound, so they
+cannot starve a later valid record. An original-scope inspection reads only the
+record keyed by its own operation ID and never enumerates the directory. Corrupt, oversized, symlinked, misnamed, unknown-field,
 foreign-identity or rejected records stay on disk, are logged with typed
 outcomes and never authorize installation. A missing journal or record is never
 inferred as Installed. Fixture sidecars cover Installed, Failed and Uncertain

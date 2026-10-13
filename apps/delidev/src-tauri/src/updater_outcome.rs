@@ -233,8 +233,27 @@ impl OutcomeStore {
         Ok(())
     }
 
-    /// Lists at most `MAX_ENTRIES` retained entries in stable order. Temporary
-    /// files from an interrupted write are ignored and never trusted.
+    /// Loads the one entry keyed by `operation_id` without enumerating the
+    /// directory, so unrelated or unreadable evidence can never hide it.
+    /// `Ok(None)` means no file exists; an unreadable record is reported as
+    /// such and stays on disk.
+    pub fn load(&self, operation_id: &str) -> Result<Option<StoredEntry>> {
+        canonical_id(operation_id)?;
+        if !self.check_dir(false)? {
+            return Ok(None);
+        }
+        Ok(match self.read(operation_id) {
+            Ok(None) => None,
+            Ok(Some(record)) => Some(StoredEntry::Record(record)),
+            Err(_) => Some(StoredEntry::Unreadable(Some(operation_id.to_owned()))),
+        })
+    }
+
+    /// Lists retained entries in stable order. At most `MAX_ENTRIES` readable
+    /// records are returned, so a bounded pass always reaches them even behind
+    /// any number of corrupt, misnamed or otherwise unreadable entries; those
+    /// are reported without consuming the bound and are never deleted.
+    /// Temporary files from an interrupted write are ignored and never trusted.
     pub fn scan(&self) -> Result<Vec<StoredEntry>> {
         if !self.check_dir(false)? {
             return Ok(Vec::new());
@@ -246,20 +265,28 @@ impl OutcomeStore {
             .filter(|name| !name.starts_with('.'))
             .collect();
         names.sort();
-        names.truncate(MAX_ENTRIES);
-        Ok(names
-            .into_iter()
-            .map(|name| {
-                let stem = name.strip_suffix(".json").unwrap_or("");
-                if canonical_id(stem).is_err() {
-                    return StoredEntry::Unreadable(None);
+        let mut entries = Vec::new();
+        let mut records = 0;
+        for name in names {
+            let stem = name.strip_suffix(".json").unwrap_or("");
+            if canonical_id(stem).is_err() {
+                entries.push(StoredEntry::Unreadable(None));
+                continue;
+            }
+            match self.read(stem) {
+                Ok(Some(record)) => {
+                    if records == MAX_ENTRIES {
+                        break;
+                    }
+                    records += 1;
+                    entries.push(StoredEntry::Record(record));
                 }
-                match self.read(stem) {
-                    Ok(Some(record)) => StoredEntry::Record(record),
-                    _ => StoredEntry::Unreadable(Some(stem.to_owned())),
-                }
-            })
-            .collect())
+                // A file that disappeared after listing is not evidence.
+                Ok(None) => {}
+                Err(_) => entries.push(StoredEntry::Unreadable(Some(stem.to_owned()))),
+            }
+        }
+        Ok(entries)
     }
 
     /// Removes the record only when the stored bytes still equal the exact
@@ -406,6 +433,66 @@ mod tests {
         let entries = store.scan().unwrap();
         assert_eq!(entries.len(), 2);
         assert!(entries.contains(&StoredEntry::Unreadable(Some(linked))));
+    }
+
+    #[test]
+    fn scan_bounds_readable_records_not_unreadable_prefixes() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        store.persist(&record(Phase::Failed)).unwrap();
+        let directory = root.join(STORE_DIRECTORY);
+        for index in 0..(MAX_ENTRIES + 8) {
+            fs::write(directory.join(format!("0-corrupt-{index:02}.json")), b"{").unwrap();
+        }
+        let entries = store.scan().unwrap();
+        let records = entries
+            .iter()
+            .filter(|entry| matches!(entry, StoredEntry::Record(_)))
+            .count();
+        assert_eq!(records, 1);
+        assert_eq!(entries.len(), MAX_ENTRIES + 9);
+        // Valid records beyond the bound are deferred, never dropped.
+        for _ in 0..MAX_ENTRIES {
+            store.persist(&record(Phase::Failed)).unwrap();
+        }
+        let records = store
+            .scan()
+            .unwrap()
+            .iter()
+            .filter(|entry| matches!(entry, StoredEntry::Record(_)))
+            .count();
+        assert_eq!(records, MAX_ENTRIES);
+        assert_eq!(
+            fs::read_dir(&directory).unwrap().count(),
+            2 * MAX_ENTRIES + 9
+        );
+    }
+
+    #[test]
+    fn load_reads_one_operation_without_enumerating_the_store() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        let missing = uuid::Uuid::now_v7().to_string();
+        assert_eq!(store.load(&missing).unwrap(), None);
+        let stored = record(Phase::Uncertain);
+        store.persist(&stored).unwrap();
+        let directory = root.join(STORE_DIRECTORY);
+        for index in 0..(MAX_ENTRIES + 8) {
+            fs::write(directory.join(format!("0-corrupt-{index:02}.json")), b"{").unwrap();
+        }
+        assert_eq!(
+            store.load(&stored.operation_id).unwrap(),
+            Some(StoredEntry::Record(stored.clone()))
+        );
+        fs::write(directory.join(format!("{missing}.json")), b"{").unwrap();
+        assert_eq!(
+            store.load(&missing).unwrap(),
+            Some(StoredEntry::Unreadable(Some(missing.clone())))
+        );
+        assert!(matches!(
+            store.load("../escape"),
+            Err(NativeFailure::InvalidEvidence)
+        ));
     }
 
     #[test]
