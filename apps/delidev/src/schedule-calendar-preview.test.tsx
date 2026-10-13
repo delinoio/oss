@@ -229,7 +229,8 @@ interface Reply {
 // Serves one scripted reply per call; the last reply repeats.
 function scripted(replies: Reply[]) {
   const handler = vi.fn(async () => {
-    const reply = replies[Math.min(handler.mock.calls.length - 1, replies.length - 1)];
+    const reply =
+      replies[Math.min(handler.mock.calls.length - 1, replies.length - 1)];
     if (reply.delayMs)
       await new Promise((resolve) => setTimeout(resolve, reply.delayMs));
     return reply.body() as ReturnType<typeof response>;
@@ -300,7 +301,10 @@ it("does not show a boundary that elapsed in flight as Ready and refetches immed
   fakeClock();
   const { handler, transport } = scripted([
     { delayMs: 1000, body: () => ({ ...response(), nextRunAt: at(500) }) },
-    { delayMs: 1000, body: () => ({ ...response(), nextRunAt: at(3_600_000) }) },
+    {
+      delayMs: 1000,
+      body: () => ({ ...response(), nextRunAt: at(3_600_000) }),
+    },
   ]);
   mountSummary(transport);
   await advance(300);
@@ -312,9 +316,7 @@ it("does not show a boundary that elapsed in flight as Ready and refetches immed
   await advance(1);
   expect(handler).toHaveBeenCalledTimes(2);
   expect(screen.getByText(CalendarPreviewState.Calculating)).toBeTruthy();
-  expect(firstRunText()).toBe(
-    "Calculating the first run…",
-  );
+  expect(firstRunText()).toBe("Calculating the first run…");
   await advance(1001);
   expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
 });
@@ -324,7 +326,11 @@ it("anchors minute refreshes to the refresh request start", async () => {
     { body: () => ({ ...response(), nextRunAt: at(130_000) }) },
     {
       delayMs: 2_000,
-      body: () => ({ ...response(), calculatedAt: at(60_000), nextRunAt: at(70_000) }),
+      body: () => ({
+        ...response(),
+        calculatedAt: at(60_000),
+        nextRunAt: at(70_000),
+      }),
     },
   ]);
   mountSummary(transport);
@@ -361,7 +367,10 @@ it.each([
   [
     "out-of-range calculated seconds",
     bare({
-      calculatedAt: create(TimestampSchema, { seconds: -(10n ** 20n), nanos: 0 }),
+      calculatedAt: create(TimestampSchema, {
+        seconds: -(10n ** 20n),
+        nanos: 0,
+      }),
     }),
   ],
 ])(

@@ -246,9 +246,7 @@ export function useScheduleCalendarPreview(
   return {
     state,
     constraints:
-      state === CalendarPreviewState.Ready
-        ? evidence?.constraints
-        : undefined,
+      state === CalendarPreviewState.Ready ? evidence?.constraints : undefined,
     next: state === CalendarPreviewState.Ready ? next : undefined,
     now: estimate,
   };
