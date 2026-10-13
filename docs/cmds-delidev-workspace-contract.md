@@ -686,4 +686,3 @@ Two enforcement points use that calculation:
 - Dispatch (`checkedExecutionAssignment`, shared by first execution, continuation, Fork, startup retry, account switch and Sidechat retry) rechecks the actual serialized `ExecutionJobInput` plus the wrapper reserve before the Job is published. Fields only known at dispatch (continuation progress, observed Worker paths) are therefore still enforced, and an oversized assignment is rejected with `ResourceExhausted` instead of failing permanently at the store.
 
 Small and single-repository jobs remain dispatchable. Existing immutable jobs and cleanup paths never run the admission calculation and stay readable.
-
