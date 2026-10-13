@@ -459,7 +459,11 @@ func TestSessionCopyRemoverPreservesReappearingStorageNamespace(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join(parent, string(domain.NewID()))
-			if err := removeSessionCopy(context.Background(), root, path); err != nil {
+			absent, err := security.CapturePathIdentity(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := removeSessionCopy(context.Background(), root, path, absent); err != nil {
 				t.Fatal("absent namespace blocked callback", err)
 			}
 			// Workspace validation has finished. A new private tree at the same
@@ -471,7 +475,7 @@ func TestSessionCopyRemoverPreservesReappearingStorageNamespace(t *testing.T) {
 			if err := os.WriteFile(foreign, []byte("preserve later replacement"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := removeSessionCopy(context.Background(), root, path); domain.SafeError(err).Code != domain.RecoveryRequired {
+			if err := removeSessionCopy(context.Background(), root, path, absent); domain.SafeError(err).Code != domain.RecoveryRequired {
 				t.Fatal("generic callback adopted reappearing namespace", err)
 			}
 			if raw, err := os.ReadFile(foreign); err != nil || string(raw) != "preserve later replacement" {

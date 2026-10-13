@@ -80,7 +80,11 @@ func TestOpenCodeCompactionEnvelopeRetainsLargeAcceptedComponents(t *testing.T) 
 	if err := security.WriteAtomic(path, raw); err != nil {
 		t.Fatal(err)
 	}
-	if err := removeSessionTree(context.Background(), root, path); err != nil {
+	validated, err := security.CapturePathIdentity(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := removeSessionTree(context.Background(), root, path, validated); err != nil {
 		t.Fatal("large retained action prevented original cleanup", err)
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {

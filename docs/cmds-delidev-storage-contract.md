@@ -324,6 +324,68 @@ manifest, and whose jobs forbid an absent workspace, adopts that removal only wh
 the evidence matches its exact server, session and machine; missing, unreadable or
 foreign evidence keeps it pending. The evidence never grants deletion authority.
 
+The Worker binds generic managed-copy removal to the objects that ownership
+validation observed. Before any job/process/journal validation reads them, it
+captures the identity of every inventoried managed path or records proven absence,
+so an object swapped in between capture and validation is never adopted (removal
+compares the path with the capture and finds a different object). `security.RemoveOwnedTreeIdentity` opens the path once
+without following links, compares that object with the captured identity, and
+unlinks nothing on mismatch: a renamed-and-replaced process directory, a same-content foreign journal or file,
+and a copy restored at a path that was proven absent stay intact, keep cleanup
+pending and are never acknowledged. Unchanged originals delete, an original that
+already vanished counts as removed, and proven absence stays absent. The Worker's
+own process-owner maintenance locks (`processes/<id>.recovery.lock`) are created by
+owner reconciliation after capture, so they alone are adopted, and only for exact
+owners: each job owner's lock right after job validation, and the session owner's
+lock right after workspace retirement, in both cases only as empty private regular
+files and only in the attempt that starts removal (a retry restores the retained
+inventory and never adopts a lock that appeared since). A lock at any other name, or one that appears after adoption, keeps cleanup
+pending. The identity inventory (present objects only; every other
+inventoried path was proven absent) is retained, content-free, at
+`session-deletions/<session>-<deletion>-<device>-identities.json` before the
+attempt persists `removal_started`. A retry skips validation, so it restores that
+inventory and re-binds each record to the object now at its path instead of
+capturing a fresh baseline: a replacement, or a copy restored where absence was
+proven, stays pending on every later attempt, and the original vanishing counts as
+removed. A proof records `identity_inventory` when it starts removal, and a retry of such a
+proof whose inventory file is missing or unreadable fails closed (pending) instead
+of recapturing. Only a started proof without that marker, written by an earlier
+release that never retained an inventory, has no baseline to restore, so its retry
+captures afresh with the authority that release granted. `security.RemoveOwnedTree` remains for callers without an earlier
+validated identity.
+
+A captured identity (`security.PathIdentity`) is read from an open handle, never
+from a path-based stat, and holds the validated object open. It records object
+kind, device and inode (the NTFS volume serial and file index on Windows), birth
+time where the platform reports one (Linux statx, macOS, Windows), and size plus
+modification time for regular files. While the handle is open the operating system
+cannot reuse the object's inode for a new object, so within one attempt a matching
+record proves the same object. On Unix the removal is anchored to that object: the
+parent is opened once, the object is opened relative to it and compared, and every
+descendant is listed, opened and unlinked relative to its already-open parent
+directory, never by path. A directory swapped in for the root or for a
+subdirectory after it was opened is not entered, symlinks are unlinked and never
+followed, and a directory on another device is pending cleanup. Directory contents
+cannot be lost to a swapped name because `unlinkat` refuses non-empty directories;
+the check-then-unlink of one name is not atomic on POSIX, so a process that can
+write the parent directory could still swap that single name between the final
+comparison and the unlink and lose a file or an empty directory. Windows has no
+descriptor-relative unlink: removal there inventories the whole tree first,
+holding every directory open before it is listed and confirming afterwards that its
+path still names that directory, then re-binds the entry and every ancestor to its
+inventoried object (handle-derived records only, never path-based `os.SameFile`,
+which would conflict with the held handles) before each unlink. That narrows but
+does not close the window. The algorithm is portable Go and is unit-tested on Unix,
+but it has not been run on a Windows host in this change (it is cross-compiled and
+vetted only). Objects that cannot be opened without following
+links (symlinks, sockets) are never traversed or removed through and keep cleanup
+pending. An identity whose handle was released (the budget is 1,024 held handles
+per attempt, applied both when capturing and when restoring a retained inventory
+on a retry, so thousands of present objects cannot exhaust the descriptor limit)
+or restored from storage has no held handle and is only as strong as
+its record, so inode reuse is excluded only by birth time where reported, size and
+modification time.
+
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked
 worktree; dirty/untracked owned worktree files are included. Original Local
