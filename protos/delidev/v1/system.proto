@@ -47,6 +47,9 @@ message GetStatusResponse {
   string started_at = 6;
   bool stopping = 7;
   repeated SystemCapability capabilities = 8;
+  // Presence-bearing readiness of the compiled production update-signing root.
+  // Absent means a legacy server that does not report readiness.
+  optional bool production_root_ready = 9;
 }
 
 enum SystemCapability {

@@ -135,7 +135,8 @@
         "listener": 5,
         "started_at": 6,
         "stopping": 7,
-        "capabilities": 8
+        "capabilities": 8,
+        "production_root_ready": 9
       }
     },
     "SystemCapability": {
