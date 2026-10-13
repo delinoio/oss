@@ -1451,8 +1451,7 @@ try {
               Math.abs(closedLabel.labelCenter - closedLabel.inputCenter) <= 1,
               JSON.stringify(closedLabel),
             );
-          }
-          else
+          } else
             assert(
               closedLabel.labelBottom <= closedLabel.inputTop,
               JSON.stringify(closedLabel),
