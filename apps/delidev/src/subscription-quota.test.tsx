@@ -24,6 +24,11 @@ import { document, encode } from "./documents";
 import { i18n, copy } from "./localization";
 import { MutationIntents } from "./mutation";
 import { SubscriptionQuotaControls } from "./subscription-quota";
+import {
+  SettingsDialogSize,
+  SettingsTaskDialog,
+  SettingsTasks,
+} from "./settings-task";
 
 function fixture(
   details: unknown = [
@@ -1202,6 +1207,62 @@ it("keeps automatic credits off until exact confirmation and disables them expli
     confirmed: false,
   });
   expect(value.request).not.toHaveBeenCalled();
+});
+it("keeps the enclosing wide dialog size through automatic-use consent and cancellation", async () => {
+  // CSS maximum widths are viewport-limited, so assert above the 960px mark.
+  vi.stubGlobal("innerWidth", 1280);
+  try {
+    const value = fixture();
+    const outer = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={outer}>
+        <TransportProvider transport={createRouterTransport(() => {})}>
+          <SettingsTasks>
+            <SettingsTaskDialog
+              title="Manage subscription"
+              size={SettingsDialogSize.Wide}
+              close={() => {}}
+            >
+              <value.Harness />
+            </SettingsTaskDialog>
+          </SettingsTasks>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    const size = () => screen.getByRole("dialog").getAttribute("data-size");
+    const checkbox = (await screen.findByRole("checkbox", {
+      name: "Automatic use",
+    })) as HTMLInputElement;
+    await waitFor(() => expect(checkbox.disabled).toBe(false));
+    expect(size()).toBe("wide");
+    fireEvent.click(checkbox);
+    const heading = await screen.findByRole("heading", {
+      name: "Enable automatic reset credit use?",
+    });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(size()).toBe("wide");
+    await waitFor(() =>
+      expect(globalThis.document.activeElement).toBe(heading),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", {
+          name: "Enable automatic reset credit use?",
+        }),
+      ).toBeNull(),
+    );
+    expect(size()).toBe("wide");
+    expect(value.consent).not.toHaveBeenCalled();
+    expect(value.request).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 it("fences a consent confirmation after account revision replacement", async () => {
   const value = fixture();
