@@ -10,6 +10,14 @@ const SIDE_EFFECT_PREFIX: &str = "Statement with side_effects in source code at 
 const CONCAT_PREFIX: &str = "ModuleConcatenation bailout: ";
 const STATS_PROVENANCE: &str = "rspack stats (optimizationBailout)";
 
+/// CSS and asset modules are out of scope: bundlewhy diagnoses JavaScript only.
+fn is_javascript(module: &crate::collect::CollectedModule) -> bool {
+    module
+        .module_type
+        .as_deref()
+        .is_none_or(|kind| kind.starts_with("javascript/"))
+}
+
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     side_effect_retained(context, drafts);
     concatenation_bailouts(context, drafts);
@@ -33,7 +41,7 @@ fn side_effect_retained(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         .cloned()
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
-    for module in modules {
+    for module in modules.into_iter().filter(|module| is_javascript(module)) {
         let has_exports = module
             .exports
             .as_ref()
@@ -191,7 +199,7 @@ fn concatenation_bailouts(context: &mut Context<'_>, drafts: &mut Vec<Diagnostic
         .cloned()
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
-    for module in modules {
+    for module in modules.into_iter().filter(|module| is_javascript(module)) {
         if !module.included || module.concatenated_into.is_some() || module.chunks.is_empty() {
             continue;
         }
@@ -269,7 +277,7 @@ fn multiple_chunks(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>)
         .cloned()
         .unwrap_or_else(|| "undefined".to_owned());
     let modules: Vec<_> = context.collection.modules.iter().collect();
-    for module in modules {
+    for module in modules.into_iter().filter(|module| is_javascript(module)) {
         if !module.included || module.chunks.len() < 2 {
             continue;
         }

@@ -608,6 +608,33 @@ mod tests {
     }
 
     #[test]
+    fn rspack_css_modules_are_out_of_scope() {
+        // A CSS module with an engine-reported bailout must not produce a
+        // JavaScript diagnostic, while the same bailout on JavaScript does.
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            for module in value["modules"].as_array_mut().unwrap() {
+                if module["name"] == "./src/legacy/cjs.cjs" {
+                    module["moduleType"] = serde_json::json!("css/auto");
+                }
+            }
+        });
+        let diagnostics = &fixture.output.analysis.diagnostics;
+        assert_absent(
+            diagnostics,
+            "rspack/module-concatenation-bailout",
+            "src/legacy/cjs.cjs",
+        );
+        assert!(
+            find(
+                diagnostics,
+                "rspack/module-concatenation-bailout",
+                "src/dynamic/evaluate.js"
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
     fn disabled_minification_is_a_confirmed_configuration_finding() {
         let fixture = run_fixture(BundlerChoice::Vite, |value| {
             value["minifyEnabled"] = serde_json::Value::Bool(false);
