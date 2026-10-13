@@ -3,7 +3,6 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `cmds/delidev-cli/internal/harness/codex/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
-- Answer `currentTime/read` only through the once-claimed technical service in `current_time.go`: claim the original arrival before the single Worker-clock sample, never resample or resend, and keep the reply free of input, approval or completion authority.
 
 ## Owning contracts
 
