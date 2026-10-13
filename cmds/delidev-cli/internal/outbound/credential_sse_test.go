@@ -477,3 +477,41 @@ func TestCredentialOpaqueMediaTypesKeepEscapedHeaderGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestCredentialJSONExpectationAlsoScansEventStreamLabeledBodies(t *testing.T) {
+	credential := domainCredentialFixture()
+	escaped := `\u0066ixture-password`
+	for _, wire := range []string{
+		`{"value":"` + escaped + `"}`,
+		"data: {" + `"value":"` + escaped + `"}` + "\n\n",
+		": " + "comment\n" + `{"value":"` + escaped + `"}`,
+	} {
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+			if guard.jsonGuard.framing != credentialOrdinary || guard.sseGuard == nil {
+				t.Fatal("JSON expectation did not pair the JSON and SSE guards")
+			}
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") {
+				t.Fatal("event-stream label hid an escaped reflection from a JSON caller", wire)
+			}
+			guard.Close()
+		}
+	}
+	// Without a JSON expectation the label keeps SSE framing, and a request
+	// that lists both types still streams safe SSE bytes unchanged.
+	guard := newCredentialBody(io.NopCloser(strings.NewReader(`{"value":"`+escaped+`"}`)), credential, "text/event-stream")
+	if guard.jsonGuard.framing != credentialSSE || guard.sseGuard != nil {
+		t.Fatal("event-stream label without a JSON expectation changed framing")
+	}
+	guard.Close()
+	safe := "event: message\ndata: {" + `"value":"safe"` + "}\n\ndata: [DONE]\n\n"
+	for _, reader := range []io.Reader{strings.NewReader(safe), fragmentedReader{strings.NewReader(safe)}} {
+		guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("event-stream body changed safe bytes", err)
+		}
+		guard.Close()
+	}
+}

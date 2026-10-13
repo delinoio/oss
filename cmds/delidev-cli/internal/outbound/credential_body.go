@@ -40,15 +40,23 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 
 // A caller that asked for JSON will parse the body as JSON whatever media type
 // the proxy or server labels it with. expectJSON keeps JSON escape decoding for
-// such a body when the response label would otherwise make it opaque.
+// such a body when the response label would otherwise make it opaque. A
+// text/event-stream label may still be genuine for a request that lists both
+// JSON and SSE, so that body is scanned with the JSON guard and the SSE guard
+// together.
 func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, expectJSON bool, contentType ...string) *credentialBody {
 	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
+	labeledSSE := false
 	if len(contentType) > 0 {
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
 		if err == nil && mediaType != "" {
 			g.jsonGuard.framing = credentialFramingForMediaType(mediaType)
-			if g.jsonGuard.framing == credentialOpaque && expectJSON {
+			switch {
+			case g.jsonGuard.framing == credentialOpaque && expectJSON:
 				g.jsonGuard.framing = credentialOrdinary
+			case g.jsonGuard.framing == credentialSSE && expectJSON:
+				g.jsonGuard.framing = credentialOrdinary
+				labeledSSE = true
 			}
 		}
 	}
@@ -93,10 +101,12 @@ func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, exp
 	basic := []byte("Basic " + base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password)))
 	g.patterns = append(g.patterns, basic)
 	g.headerPatterns = append(g.headerPatterns, bytes.Clone(basic))
-	if g.jsonGuard.framing == credentialUnknown {
+	if g.jsonGuard.framing == credentialUnknown || labeledSSE {
 		// Typeless input can be either JSON or SSE. Keep a streaming SSE view
 		// alongside the bounded framing probe so a JSON-shaped unknown field name
 		// cannot commit the response to the wrong decoder before a later data field.
+		// A JSON-expected response labeled as SSE keeps the same pairing, with
+		// the JSON guard already committed.
 		g.sseGuard = &credentialJSONGuard{framing: credentialSSE}
 		for _, pattern := range g.jsonGuard.patterns {
 			g.sseGuard.patterns = append(g.sseGuard.patterns, bytes.Clone(pattern))
