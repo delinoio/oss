@@ -470,3 +470,35 @@ func TestCompactionLeaseRequiresProofCapabilityForSkilledOrProofCarryingRevert(t
 		}
 	}
 }
+
+func TestQueuedRevertClaimRechecksCurrentWorkerCapabilities(t *testing.T) {
+	skilled := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{Prompt: domain.SessionInput{Skills: []domain.SkillBinding{{}}}}}
+	plain := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{}}
+	legacy := domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.CodexSessionRevertV1}}
+	extended := domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}}
+	missing := domain.Machine{}
+	job := func(input domain.SessionCompactionInput) domain.Job {
+		raw, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return domain.Job{Type: domain.CompactSessionJob, State: domain.JobQueued, Input: raw}
+	}
+	if err := requireQueuedRevertCapabilities(extended, job(skilled)); err != nil {
+		t.Fatal("capable Worker rejected a skilled Revert", err)
+	}
+	if err := requireQueuedRevertCapabilities(legacy, job(plain)); err != nil {
+		t.Fatal("legacy Worker rejected a text-only Revert", err)
+	}
+	for name, machine := range map[string]domain.Machine{"downgraded-to-legacy": legacy, "missing-revert": missing} {
+		if err := requireQueuedRevertCapabilities(machine, job(skilled)); domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatal("skilled Revert was claimable by a Worker without the proof capability", name, err)
+		}
+	}
+	if err := requireQueuedRevertCapabilities(missing, job(plain)); domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("Revert was claimable by a Worker without the Revert capability", err)
+	}
+	if err := requireQueuedRevertCapabilities(domain.Machine{}, domain.Job{Type: domain.ExecuteSessionJob}); err != nil {
+		t.Fatal("non-compaction job was gated", err)
+	}
+}

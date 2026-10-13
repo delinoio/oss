@@ -553,7 +553,11 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 						if err != nil {
 							return nil, err
 						}
-						if err := requireNamedWorkspaceJob(current, j); err != nil {
+						err = requireNamedWorkspaceJob(current, j)
+						if err == nil {
+							err = requireQueuedRevertCapabilities(current, j)
+						}
+						if err != nil {
 							if j.Type != domain.PrepareWorkspaceJob && j.Type != domain.WorkspaceStorageJob && j.Type != domain.RecoverWorkspaceJob && j.Type != domain.RecoverExecutionJob && j.Type != domain.ExecuteSessionJob && j.Type != domain.CompactSessionJob {
 								return nil, err
 							}

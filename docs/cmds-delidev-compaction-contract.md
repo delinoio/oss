@@ -452,7 +452,12 @@ because a Worker without it compares only the prompt digest and never
 authenticates the selected skills. The server refuses a skilled target with the
 safe unsupported failure before pausing the session unless the original Worker
 advertises that capability, and lease and dispatch authority require it again
-for any job whose target selected skills or carries the reference.
+for any job whose target selected skills or carries the reference. The claim
+transaction also rechecks the current machine capabilities of a still-queued
+Revert job (`CodexSessionRevertV1`, plus the proof capability when required). A
+Worker that reconnected without them never claims the job: it fails with the
+safe unsupported failure and releases the unclaimed action with no native
+effect, instead of quarantining the session as uncertain.
 Selected skills are authenticated by a separate native skill digest that prompt
 digests do not cover. Before the native claim the Worker resolves
 that digest only from the immutable retained input proof for the exact target

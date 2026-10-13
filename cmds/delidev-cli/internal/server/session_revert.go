@@ -8,6 +8,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"time"
 )
@@ -150,4 +151,24 @@ func freezeRevertTargetProof(revert *domain.SessionRevertTarget, targetExecution
 	}
 	revert.ExecutionID, revert.CheckpointDigest = targetExecution, completion.NativeCheckpointDigest
 	return nil
+}
+
+// requireQueuedRevertCapabilities rechecks the current machine capability set
+// when a queued version-4 Revert is about to be claimed. A Worker that
+// reconnected without the Revert or target-proof capability would otherwise be
+// assigned a job it cannot decode or authenticate, and the failure would
+// quarantine the session as uncertain. The job is still unclaimed here, so the
+// caller retires it with a typed unsupported failure and no native effect.
+func requireQueuedRevertCapabilities(machine domain.Machine, job domain.Job) error {
+	if job.Type != domain.CompactSessionJob {
+		return nil
+	}
+	var input domain.SessionCompactionInput
+	if domain.DecodeCompactionInput(job.Input, &input) != nil {
+		return workspace.ResultUncertain()
+	}
+	if input.Revert == nil || compactionLeaseCapabilities(machine.WorkerCapabilities, input) {
+		return nil
+	}
+	return domain.Fail(domain.Unsupported, "The original Worker no longer supports this Revert.", "Update and reconnect the original Worker.")
 }
