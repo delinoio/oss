@@ -4,6 +4,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -401,5 +403,285 @@ func TestManagedClaudeStatusAdvertisesIndependentCapabilities(t *testing.T) {
 		if !seen[capability] {
 			t.Fatalf("capability %v is not advertised", capability)
 		}
+	}
+}
+
+type managedWorker struct {
+	token                          string
+	machine, instance, device, job domain.ID
+	revision                       uint64
+}
+
+// prepareExecution freezes a Claude subscription assignment for the connected
+// account on the fixture's own Worker.
+func (f *managedFixture) prepareExecution(capabilities ...domain.WorkerCapability) managedWorker {
+	f.t.Helper()
+	_, account := f.record()
+	c := &f.input.Configuration
+	c.Harness, c.SubscriptionService, c.Subscription, c.ProviderID = domain.ClaudeCode, domain.SubscriptionClaude, true, ""
+	c.ModelID = (domain.ModelIdentity{SubscriptionService: domain.SubscriptionClaude, NativeID: c.NativeModel}).Key()
+	c.Options = domain.AgentOptions{Permission: domain.PermissionDefault}
+	f.input.ConnectionID = account.Connection.ID
+	f.input.Installation = domain.Installation{Harness: domain.ClaudeCode, State: domain.InstallationDetected, Version: domain.ClaudeProtocolVersion, ProtocolVerified: true, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(domain.ClaudeCode), State: domain.ProtocolVerified}}
+	digest, err := f.input.Configuration.Digest()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.input.ConfigurationDigest = digest
+	worker := managedWorker{token: f.workerToken, machine: f.input.MachineID, instance: f.instance, job: f.job}
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-claude-execution", nil, func(tx *store.Tx) (any, error) {
+		mr, machine, err := activeMachine(tx, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = capabilities
+		if _, err := tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine); err != nil {
+			return nil, err
+		}
+		sr, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session.InitialExecution.ConnectionID = f.input.ConnectionID
+		session.InitialExecution.Configuration = f.input.Configuration
+		session.InitialExecution.ConfigurationDigest = f.input.ConfigurationDigest
+		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.SessionID, sr.ProjectID, session); err != nil {
+			return nil, err
+		}
+		jr, err := tx.Get(domain.JobKind, f.job)
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](jr)
+		if err != nil {
+			return nil, err
+		}
+		job.Input, _ = json.Marshal(f.input)
+		updated, err := tx.PutJob(jr.ID, jr.Revision, jr.SessionID, jr.ProjectID, job)
+		worker.revision = updated.Revision
+		return nil, err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return worker
+}
+
+// addWorker registers an independent Worker device, instance and claimed job.
+func (f *managedFixture) addWorker(capabilities ...domain.WorkerCapability) managedWorker {
+	f.t.Helper()
+	token, err := security.RandomToken()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	w := managedWorker{token: token, machine: domain.NewID(), instance: domain.NewID(), device: domain.NewID(), job: domain.NewID()}
+	input := f.input
+	input.MachineID = w.machine
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-claude-worker", nil, func(tx *store.Tx) (any, error) {
+		if _, err := tx.Put(domain.MachineKind, w.machine, 0, "", "", domain.Machine{Name: "Second", OS: "linux", Architecture: "arm64", WorkerCapabilities: capabilities, LastSeen: time.Now().UTC()}); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.DeviceKind, w.device, 0, "", "", domain.Device{Name: "Second Worker", Type: domain.WorkerDevice, MachineID: w.machine}); err != nil {
+			return nil, err
+		}
+		digest := sha256.Sum256([]byte(w.token))
+		if err := tx.PutCredential(w.device, digest[:]); err != nil {
+			return nil, err
+		}
+		if err := tx.SetWorkerInstance(w.machine, w.instance, time.Now().UTC()); err != nil {
+			return nil, err
+		}
+		raw, _ := json.Marshal(input)
+		updated, err := tx.PutJob(w.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobClaimed, MachineID: w.machine, InstanceID: w.instance, AssignedDeviceID: w.device, Input: raw, AcceptedAt: time.Now().UTC()})
+		w.revision = updated.Revision
+		return nil, err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return w
+}
+
+func (f *managedFixture) take(w managedWorker, request domain.ID) (*pb.TakeSubscriptionResponse, error) {
+	response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(w.token, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(request), Id: string(f.input.AccountID), ExpectedRevision: w.revision}, MachineId: string(w.machine), InstanceId: string(w.instance), OperationId: string(w.job), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE}))
+	if err != nil {
+		return nil, err
+	}
+	return response.Msg, nil
+}
+
+func (f *managedFixture) finishLease(w managedWorker, lease *pb.TakeSubscriptionResponse, cleanup, success bool) error {
+	_, err := f.client.FinishSubscription(context.Background(), subscriptionRequest(w.token, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: lease.LeaseRevision}, LeaseId: lease.LeaseId, GenerationId: lease.GenerationId, MachineId: string(w.machine), InstanceId: string(w.instance), CleanupConfirmed: cleanup, Succeeded: success}))
+	return err
+}
+
+func (f *managedFixture) requireToken(lease *pb.TakeSubscriptionResponse) {
+	f.t.Helper()
+	opened, err := subscription.OpenClaudeToken(lease.Bundle, f.service.Identity.ServerID, f.input.AccountID, domain.ID(lease.GenerationId))
+	if err != nil || string(opened.Token) != managedFixtureToken {
+		f.t.Fatalf("lease did not deliver the sealed generation: %v", err)
+	}
+	opened.Clear()
+}
+
+func TestManagedClaudeSameGenerationExecutesOnTwoWorkersSequentially(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	b := f.addWorker(domain.ManagedClaudeExecutionV1)
+	legacy := f.addWorker(domain.NativeClaudeSubscriptionsV1, domain.ManagedCodexSubscriptionsV1)
+	if lease, err := f.take(legacy, domain.NewID()); err == nil || lease != nil {
+		t.Fatal("a legacy-only Worker received a token")
+	}
+	request := domain.NewID()
+	first, err := f.take(a, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.GenerationId != string(generation) || first.NativeProfileId != "" {
+		t.Fatal("the lease changed generation or fabricated a native profile")
+	}
+	f.requireToken(first)
+	if _, err := f.take(a, request); err == nil {
+		t.Fatal("a replayed receipt redistributed the token")
+	}
+	if lease, err := f.take(b, domain.NewID()); err == nil || lease != nil {
+		t.Fatal("a simultaneous request received a second original lease")
+	}
+	if err := f.finishLease(b, first, true, true); err == nil {
+		t.Fatal("another Worker finished the original lease")
+	}
+	if err := f.finishLease(a, first, true, true); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if account.Subscription.Lease != nil || account.Health != domain.AccountReady || account.Subscription.Generation != generation {
+		t.Fatal("joined cleanup did not release the original lease")
+	}
+	second, err := f.take(b, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.GenerationId != string(generation) {
+		t.Fatal("the second Worker did not execute the same settled generation")
+	}
+	f.requireToken(second)
+	if err := f.finishLease(b, second, true, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagedClaudeUncertainCleanupRetainsFenceUntilOriginalWorkerConfirms(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	b := f.addWorker(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.finishLease(a, lease, false, false); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if !account.Subscription.RecoveryRequired || account.Subscription.Lease == nil || account.Health != domain.AccountFailed {
+		t.Fatal("unconfirmed cleanup did not retain the fence")
+	}
+	if _, err := f.take(b, domain.NewID()); err == nil {
+		t.Fatal("another Worker bypassed the cleanup fence")
+	}
+	if err := f.finishLease(b, lease, true, false); err == nil {
+		t.Fatal("another Worker confirmed cleanup it did not own")
+	}
+	if err := f.finishLease(a, lease, true, true); err == nil {
+		t.Fatal("recovery accepted execution success")
+	}
+	if err := f.finishLease(a, lease, true, false); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Lease != nil {
+		t.Fatal("original positive cleanup did not release the fence")
+	}
+}
+
+func TestManagedClaudeDisconnectWaitsForOriginalWorkerThenDeletesVault(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logout, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if account.Health != domain.AccountRevoked || account.Subscription.Lease == nil || managedClaudeCandidate(account) {
+		t.Fatal("disconnect did not revoke readiness while retaining the original lease")
+	}
+	// An offline Worker cannot finish: the claim is refused and the vault stays.
+	f.native = newFakeManagedLogin()
+	awaitServerFixture(t, f.run())
+	_, account = f.record()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	if account.Connection == nil || len(f.secrets.values[ref]) == 0 || account.Subscription.ServerOperation.NativeStarted {
+		t.Fatal("deletion proceeded before original cleanup was proved")
+	}
+	if err := f.finishLease(a, lease, true, true); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if !managedClaudeCandidate(account) {
+		t.Fatal("confirmed cleanup did not admit the disconnect claim")
+	}
+	awaitServerFixture(t, f.run())
+	_, account = f.record()
+	if account.Connection != nil || account.Subscription.Generation != "" || account.Health != domain.AccountDisconnected || len(f.secrets.values[ref]) != 0 {
+		t.Fatal("disconnect did not retire the connection and delete the vault generation")
+	}
+	if got := f.progressFor(logout.OperationId); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("logout state %v", got.State)
+	}
+	if _, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN); err == nil {
+		t.Fatal("a disconnected account was reconnected instead of connecting a new account")
+	}
+}
+
+func TestManagedClaudeRestartRecoveryOnlyReconcilesTheOriginalRuntime(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.native.closeErr = errors.New("still running")
+	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(f.native.ready)
+	close(f.native.finish)
+	awaitServerFixture(t, f.run())
+	_, account := f.record()
+	if !account.Subscription.RecoveryRequired || !managedClaudeNeedsRecovery(account) || managedClaudeCandidate(account) {
+		t.Fatal("uncertain cleanup is not selected only for recovery")
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, domain.ID(op.OperationId)); err == nil {
+		t.Fatal("recovery succeeded without proof of the original process owner")
+	}
+	runtimeRoot := filepath.Join(f.service.Store.Root(), "subscription-runtime")
+	for _, path := range []string{runtimeRoot, filepath.Join(runtimeRoot, "processes"), filepath.Join(runtimeRoot, "processes", op.OperationId)} {
+		if err := security.PrivateDir(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.native.closeErr = nil
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, domain.ID(op.OperationId)); err != nil {
+		t.Fatalf("recovery with joined owner proof failed: %v", err)
+	}
+	_, account = f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Connection != nil || account.Subscription.ServerOperation.State != domain.SubscriptionFailed || managedClaudeNeedsRecovery(account) {
+		t.Fatal("recovery did not retire the failed login without connecting it")
+	}
+	if f.native.submitCalls.Load() != 0 || f.secrets.puts != 0 {
+		t.Fatal("recovery replayed input or wrote credentials")
 	}
 }
