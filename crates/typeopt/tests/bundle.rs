@@ -1402,6 +1402,8 @@ fn keeps_exports_when_a_handler_has_an_undecodable_reference() {
         r#"<a href="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
         r#"<a href="java&Tab;script:import('./lib.js').then(m=>m.handlerOnly())"></a>"#,
         r#"<a href="&Tab;JavaScript:void 0"></a>"#,
+        r#"<form action="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></form>"#,
+        r#"<iframe src="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></iframe>"#,
         r#"<a href="java&#115;cript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
         r#"<a href="javascript&colon;import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
     ] {
@@ -1433,6 +1435,8 @@ fn ignores_undecodable_references_in_non_executable_attributes() {
     for html in [
         r#"<p title="&unknownref; text" data-x="&Tab;"></p>"#,
         r#"<a href="/docs&Tab;/page">docs</a>"#,
+        r#"<div title="javascript:&Tab;" data-url="javascript:import&Tab;('./lib.js')"></div>"#,
+        r#"<img src="javascript:&Tab;"><link href="javascript:&Tab;">"#,
     ] {
         let temp = handler_bundle(html);
         optimize(temp.path(), &[]);

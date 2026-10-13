@@ -1159,10 +1159,24 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
     /// Whether an attribute whose raw value has an undecodable character
     /// reference can hold code: an event handler, or a value that reads as a
     /// `javascript:` URL once references and URL-stripped characters (ASCII
-    /// whitespace and control characters) are dropped from its scheme.
-    fn may_run_code(attribute: &str, raw: &str) -> bool {
+    /// whitespace and control characters) are dropped from its scheme and
+    /// that sits in an attribute where a browser runs such a URL.
+    fn may_run_code(tag: &str, attribute: &str, raw: &str) -> bool {
         if attribute.starts_with("on") {
             return true;
+        }
+        // Navigating or loading these runs a `javascript:` URL; the same
+        // text in any other attribute (`title`, `data-*`) is inert.
+        let runs_url = match tag {
+            "a" | "area" => matches!(attribute, "href" | "xlink:href"),
+            "form" => attribute == "action",
+            "button" | "input" => attribute == "formaction",
+            "iframe" | "frame" | "embed" => attribute == "src",
+            "object" => attribute == "data",
+            _ => false,
+        };
+        if !runs_url {
+            return false;
         }
         // Decode the references this parser knows first: they can spell the
         // scheme (`java&#115;cript:`) next to one it cannot decode. A
@@ -1235,7 +1249,9 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                     // The browser decodes the value before it runs, so a
                     // reference this parser cannot decode may hide an import
                     // from the scan below: assume any chunk can be loaded.
-                    if tag.undecodable.contains(attribute) && may_run_code(attribute, value) {
+                    if tag.undecodable.contains(attribute)
+                        && may_run_code(&tag.name, attribute, value)
+                    {
                         tracing::info!(
                             page = %path.display(),
                             attribute = %attribute,
