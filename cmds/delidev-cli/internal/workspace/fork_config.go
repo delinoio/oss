@@ -151,14 +151,26 @@ func readChildForkConfig(ctx context.Context, git Git, target, name string) (for
 	return forkConfigLayer{present: true, records: records}, nil
 }
 
+// forkRemoteURLKey is the canonical Git config key of the selected remote URL.
+func forkRemoteURLKey(remoteName string) string {
+	return "remote." + remoteName + ".url"
+}
+
+// hasKey reports whether the layer holds at least one record for key.
+func (l forkConfigLayer) hasKey(key string) bool {
+	return slices.ContainsFunc(l.records, func(record string) bool { return forkConfigKey(record) == key })
+}
+
 // matchesNormalized reports whether the child layer is the source layer after the
-// accepted normalization: every record except the normalized keys is unchanged
-// and in its original order, and each normalized key has exactly its accepted value.
-func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map[string]string) bool {
+// accepted normalization: every record except the normalized and removed keys is
+// unchanged and in its original order, each normalized key has exactly its
+// accepted value, and each removed key has no record at all.
+func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map[string]string, removed ...string) bool {
 	rest := func(records []string) []string {
 		result := []string{}
 		for _, record := range records {
-			if _, ok := normalized[forkConfigKey(record)]; !ok {
+			key := forkConfigKey(record)
+			if _, ok := normalized[key]; !ok && !slices.Contains(removed, key) {
 				result = append(result, record)
 			}
 		}
@@ -166,6 +178,11 @@ func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map
 	}
 	if !slices.Equal(rest(l.records), rest(child.records)) {
 		return false
+	}
+	for _, key := range removed {
+		if child.hasKey(key) {
+			return false
+		}
 	}
 	for key, value := range normalized {
 		got := []string{}
@@ -183,7 +200,9 @@ func (l forkConfigLayer) matchesNormalized(child forkConfigLayer, normalized map
 
 // verifyChildConfig requires the copied config files to equal the frozen source
 // files plus only the accepted normalization (core.bare=false and core.worktree=..
-// in each retained layer, and the selected remote URL in config).
+// in each retained layer, the selected remote URL in config, and no selected
+// remote URL in config.worktree, which Git reads after config and would
+// otherwise keep the stale source endpoint effective).
 func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target string) error {
 	proof := i.configProof
 	if !proof.bound {
@@ -197,7 +216,7 @@ func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target
 	// Git recreates a missing source config, so config is always expected.
 	if !config.present || !proof.config.matchesNormalized(config, map[string]string{
 		"core.bare": core["core.bare"], "core.worktree": core["core.worktree"],
-		"remote." + proof.remoteName + ".url": proof.remoteURL,
+		forkRemoteURLKey(proof.remoteName): proof.remoteURL,
 	}) {
 		return forkSnapshotChanged()
 	}
@@ -205,7 +224,7 @@ func (i forkGitInventory) verifyChildConfig(ctx context.Context, git Git, target
 	if err != nil {
 		return err
 	}
-	if worktree.present != proof.worktree.present || worktree.present && !proof.worktree.matchesNormalized(worktree, core) {
+	if worktree.present != proof.worktree.present || worktree.present && !proof.worktree.matchesNormalized(worktree, core, forkRemoteURLKey(proof.remoteName)) {
 		return forkSnapshotChanged()
 	}
 	return nil

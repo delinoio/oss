@@ -113,6 +113,58 @@ func TestIndependentForkInventoryProvesRetainedConfig(t *testing.T) {
 	}
 }
 
+// staleWorktreeRemoteSetup gives the selected checkout a worktree-scoped URL for
+// the selected remote, which Git would read after the rewritten common URL.
+func staleWorktreeRemoteSetup(t *testing.T, source, selected string) {
+	t.Helper()
+	retainedConfigSetup(t, source, selected)
+	gitTest(t, selected, "config", "--worktree", "remote.origin.url", "https://example.invalid/stale-source.git")
+}
+
+func TestIndependentForkInventoryDropsStaleWorktreeRemoteURL(t *testing.T) {
+	for _, linked := range []bool{false, true} {
+		name := "common checkout"
+		if linked {
+			name = "linked worktree"
+		}
+		t.Run(name, func(t *testing.T) {
+			m, _, child, proof, _ := forkInventoryCopyFixtureWith(t, linked, staleWorktreeRemoteSetup)
+			git := m.Git
+			git.OwnerID = child.SessionID
+			worktree := filepath.Join(child.PrimaryPath, ".git", "config.worktree")
+			if err := proof.verify(context.Background(), git); err != nil {
+				t.Fatal("normalized child was rejected", err)
+			}
+			// Git must resolve exactly the selected URL, with no stale endpoint.
+			if urls := gitTest(t, child.PrimaryPath, "config", "--get-all", "remote.origin.url"); urls != proof.gitInventory.configProof.remoteURL {
+				t.Fatalf("child exposes remote URLs other than the selected one: %q", urls)
+			}
+			if records, err := listForkConfigFile(context.Background(), git, child.PrimaryPath, worktree); err != nil {
+				t.Fatal(err)
+			} else if (forkConfigLayer{present: true, records: records}).hasKey("remote.origin.url") {
+				t.Fatal("child config.worktree retained the selected remote URL")
+			}
+			// Other worktree-scoped settings are still retained unchanged.
+			if gitTest(t, child.PrimaryPath, "config", "--file", worktree, "fixture.scoped") != "scoped" {
+				t.Fatal("unrelated worktree setting was not retained")
+			}
+			original := readForkFixtureFile(t, worktree)
+			for _, stale := range []string{"https://example.invalid/stale-source.git", proof.gitInventory.configProof.remoteURL} {
+				gitTest(t, child.PrimaryPath, "config", "--file", worktree, "remote.origin.url", stale)
+				if err := proof.verify(context.Background(), git); domain.SafeError(err).Code != domain.Conflict {
+					t.Fatalf("worktree-scoped remote URL %q accepted: %v", stale, err)
+				}
+				if err := os.WriteFile(worktree, original, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := proof.verify(context.Background(), git); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestIndependentForkInventoryConfigWorktreeLayerFollowsSource(t *testing.T) {
 	m, _, child, proof, _ := forkInventoryCopyFixture(t, false)
 	git := m.Git

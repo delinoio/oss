@@ -195,8 +195,17 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 		return *entry, nil, err
 	}
 	remote := forkRemoteName(spec)
-	if _, err = git.run(ctx, entry.Path, "config", "--local", "remote."+remote+".url", spec.RemoteURL); err != nil {
+	if _, err = git.run(ctx, entry.Path, "config", "--local", forkRemoteURLKey(remote), spec.RemoteURL); err != nil {
 		return *entry, nil, err
+	}
+	// With extensions.worktreeConfig, Git reads config.worktree after config, so a
+	// retained worktree-scoped URL for the selected remote would keep the stale
+	// source endpoint effective. Drop it so the child has one selected URL.
+	if proof.configProof.worktree.hasKey(forkRemoteURLKey(remote)) {
+		if _, err = git.run(ctx, entry.Path, "config", "--file", filepath.Join(entry.Path, ".git", "config.worktree"), "--unset-all", forkRemoteURLKey(remote)); err != nil {
+			return *entry, nil, err
+		}
+		m.Logger.InfoContext(ctx, "workspace_fork_git_inventory_worktree_remote_url_removed", "session_id", manifest.SessionID, "repository_id", spec.ID, "remote", remote)
 	}
 	digest, err := scanForkTreePinned(ctx, spec.Checkout, entry.Path, true, maxForkEntries, &marker, budget)
 	if err != nil {
