@@ -47,11 +47,11 @@ describe("comparison tab dropped bases", () => {
   it("never overwrites the record an open destination owns when inheriting", () => {
     const store = new SessionTabsStore();
     store.open("s", tab(Comparison.WorkingTree, b));
-    store.open("s", tab(Comparison.WorkingTree, a), { inheritDropped: true });
+    store.openComparison("s", tab(Comparison.WorkingTree, a), true);
     expect(dropped(store, Comparison.WorkingTree)?.dropped_base).toEqual(b);
-    store.open("s", tab(Comparison.Creation, a), { inheritDropped: true });
+    store.openComparison("s", tab(Comparison.Creation, a), true);
     expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
-    store.open("s", tab(Comparison.Creation), { inheritDropped: true });
+    store.openComparison("s", tab(Comparison.Creation), true);
     expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
   });
 });

@@ -93,6 +93,7 @@ const initial: SessionTabsSnapshot = {
   selected: SessionTabKind.Conversation,
 };
 type SidechatTab = Extract<SessionTab, { kind: SessionTabKind.Sidechat }>;
+type ComparisonTab = Extract<SessionTab, { kind: SessionTabKind.Comparison }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
@@ -120,13 +121,7 @@ export class SessionTabsStore {
     this.sessions.set(id, value);
     for (const callback of this.listeners) callback();
   }
-  /**
-   * `inheritDropped` keeps the `dropped_base` that an already open destination
-   * Comparison tab owns; the incoming value only fills a destination without
-   * one. Without it the incoming `dropped_base` (or its absence) replaces the
-   * destination's.
-   */
-  open(id: string, tab: SessionTab, options?: { inheritDropped?: boolean }) {
+  open(id: string, tab: SessionTab) {
     if (
       tab.kind === SessionTabKind.Terminal &&
       this.terminalPresentation(id).hidden(tab.id)
@@ -147,17 +142,29 @@ export class SessionTabsStore {
       (value) => sessionTabKey(value) === key,
     );
     const tabs = [...previous.tabs];
-    const existing = previous.tabs[found];
     if (found < 0) tabs.push(tab);
-    else if (
-      options?.inheritDropped &&
-      tab.kind === SessionTabKind.Comparison &&
-      existing?.kind === SessionTabKind.Comparison &&
-      existing.dropped_base
-    )
-      tabs[found] = { ...tab, dropped_base: existing.dropped_base };
     else tabs[found] = tab;
     this.publish(id, { tabs, selected: key });
+  }
+  /**
+   * Opens a Comparison tab. With `inheritDropped`, the `dropped_base` that an
+   * already open destination owns is kept and the incoming one only fills a
+   * destination without a record. Otherwise the incoming `dropped_base` (or
+   * its absence) replaces the destination's.
+   */
+  openComparison(id: string, tab: ComparisonTab, inheritDropped = false) {
+    const key = sessionTabKey(tab),
+      existing = this.snapshot(id).tabs.find(
+        (value) => sessionTabKey(value) === key,
+      );
+    this.open(
+      id,
+      inheritDropped &&
+        existing?.kind === SessionTabKind.Comparison &&
+        existing.dropped_base
+        ? { ...tab, dropped_base: existing.dropped_base }
+        : tab,
+    );
   }
   select(id: string, key: string) {
     const previous = this.snapshot(id);

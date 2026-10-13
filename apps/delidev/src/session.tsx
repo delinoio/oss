@@ -3166,10 +3166,10 @@ export function SessionView({
                         : undefined
                     }
                     openComparison={(value, options) =>
-                      tabs.store.open(
+                      tabs.store.openComparison(
                         id,
                         { kind: SessionTabKind.Comparison, ...value },
-                        options,
+                        options?.inheritDropped,
                       )
                     }
                   />

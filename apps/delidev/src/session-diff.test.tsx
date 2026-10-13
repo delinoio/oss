@@ -1785,10 +1785,10 @@ function tabsFixture(
                   tab?.kind === SessionTabKind.Comparison ? tab : undefined
                 }
                 openComparison={(value, options) =>
-                  store.open(
+                  store.openComparison(
                     f.sessionId,
                     { kind: SessionTabKind.Comparison, ...value },
-                    options,
+                    options?.inheritDropped,
                   )
                 }
               />
