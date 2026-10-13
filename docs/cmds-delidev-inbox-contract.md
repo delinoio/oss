@@ -184,7 +184,13 @@ successful loading. Re-renders, polling, reconnects, pagination and newly arrivi
 alerts do not start another acknowledgment within that activation. The connection
 mutation registry retains exact original bytes across navigation. Failed or uncertain
 outcomes permit only original receipt reconciliation/retry on a later qualifying
-activation and never fabricate a replacement request. Accepted results invalidate the
+activation and never fabricate a replacement request. A qualifying visit that begins
+while an earlier acknowledgment for the same session and connection is still busy
+sends nothing and stays eligible; when that request settles, the visit is evaluated
+again against every gate. A positive settlement then admits one fresh request, and an
+uncertain settlement reconciles only the original retained bytes. A visit that no
+longer qualifies by then (session, connection, focus, capability or loaded state)
+sends nothing. Accepted results invalidate the
 original connection's Inbox and unread-count queries even after the sender leaves.
 The authoritative aggregate controls the existing badge; the client never decrements
 it locally. Native selection, freshness and publication fences, zero clearing, 99+

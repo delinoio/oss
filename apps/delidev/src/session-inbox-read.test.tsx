@@ -258,3 +258,98 @@ it("cannot settle an original connection request into its successor", async () =
   expect(successor.invalidate).not.toHaveBeenCalled();
   expect(successor.requests).toHaveLength(0);
 });
+
+function heldFirst(outcome: "accept" | "reject" = "accept") {
+  let settle!: () => void;
+  const held = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  const f = fixture(async (request) => {
+    if (f.requests.length === 1) {
+      await held;
+      if (outcome === "reject")
+        throw new ConnectError("fixture uncertain", Code.Unavailable);
+    }
+    return receipt(request);
+  });
+  return { f, settle: () => act(async () => settle()) };
+}
+function reactivate() {
+  focused = false;
+  fireEvent(window, new Event("blur"));
+  focused = true;
+  fireEvent(window, new Event("focus"));
+}
+
+it("keeps a visit that begins while an earlier acknowledgment is busy eligible and sends one fresh request after it settles", async () => {
+  const { f, settle } = heldFirst();
+  const mounted = render(f.view());
+  await waitFor(() => expect(f.requests).toHaveLength(1));
+  reactivate();
+  mounted.rerender(f.view());
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  expect(f.requests).toHaveLength(1);
+  f.invalidate.mockClear();
+  await settle();
+  await waitFor(() => expect(f.requests).toHaveLength(2));
+  expect(f.requests[1].requestId).not.toBe(f.requests[0].requestId);
+  expect(f.requests[1].sessionId).toBe(f.id);
+  await waitFor(() => expect(f.invalidate).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(document.body.textContent).toContain("No pending request"),
+  );
+  mounted.rerender(f.view({ loaded: false }));
+  mounted.rerender(f.view());
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  expect(f.requests).toHaveLength(2);
+});
+
+it("retries only the original retained bytes when the busy earlier acknowledgment settles uncertain", async () => {
+  const { f, settle } = heldFirst("reject");
+  render(f.view());
+  await waitFor(() => expect(f.requests).toHaveLength(1));
+  reactivate();
+  expect(f.requests).toHaveLength(1);
+  await settle();
+  await waitFor(() => expect(f.requests).toHaveLength(2));
+  expect(f.requests[1]).toEqual(f.requests[0]);
+  await waitFor(() =>
+    expect(document.body.textContent).toContain("No pending request"),
+  );
+  expect(f.requests).toHaveLength(2);
+});
+
+it.each(["inactive", "incomplete", "unfocused", "not-ready"])(
+  "does not acknowledge a departed busy-time visit (%s) and still admits a later eligible activation",
+  async (departure) => {
+    const { f, settle } = heldFirst();
+    const mounted = render(f.view());
+    await waitFor(() => expect(f.requests).toHaveLength(1));
+    reactivate();
+    if (departure === "unfocused") {
+      focused = false;
+      fireEvent(window, new Event("blur"));
+    } else
+      mounted.rerender(
+        f.view({
+          active: departure !== "inactive",
+          loaded: departure !== "incomplete",
+          ready: departure !== "not-ready",
+        }),
+      );
+    await settle();
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    expect(f.requests).toHaveLength(1);
+    focused = true;
+    mounted.rerender(f.view());
+    reactivate();
+    await waitFor(() => expect(f.requests).toHaveLength(2));
+    expect(f.requests[1].requestId).not.toBe(f.requests[0].requestId);
+  },
+);
