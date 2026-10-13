@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useRef } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { i18n } from "./localization";
 import {
   ShortcutProvider,
@@ -19,6 +19,7 @@ import {
 } from "./shortcuts";
 import {
   ShortcutPreferenceProvider,
+  useShortcutPreferences,
   type ShortcutPreferenceBridge,
 } from "./shortcut-preference-controller";
 import { Surface } from "./surface";
@@ -909,4 +910,164 @@ it("marks the inactive default Open Files shortcut in Help while a committed cus
   act(() => changed({ revision: 2, problem: null, overrides: {} }));
   fireEvent.keyDown(opener, { key: "e", code: "KeyE", ctrlKey: true });
   expect(run).toHaveBeenCalledOnce();
+});
+
+describe.each([
+  ["Win32", { ctrlKey: true }],
+  ["MacIntel", { metaKey: true }],
+])("initial shortcut preference read gate on %s", (platform, modifier) => {
+  const overridden = {
+    revision: 1,
+    problem: null,
+    overrides: {
+      "session-focus": {
+        state: "binding",
+        chord: { key: "e", shift: false },
+      },
+    },
+  };
+  function setup(read: ShortcutPreferenceBridge["read"]) {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const files = vi.fn(),
+      tool = vi.fn(),
+      focus = vi.fn();
+    let reload: () => void = () => {};
+    function GateProbe() {
+      useShortcutSurface(Surface.Sessions);
+      const openHelp = useShortcutHelp();
+      reload = useShortcutPreferences().reload;
+      const shortcuts = useShortcuts([
+        {
+          id: ShortcutId.OpenFiles,
+          scope: Surface.Sessions,
+          label: "shortcuts.openFiles",
+          bindings: sessionShortcutBindings[ShortcutId.OpenFiles],
+          input: ShortcutInput.Allow,
+          run: files,
+        },
+        {
+          id: ShortcutId.OpenTool,
+          scope: Surface.Sessions,
+          label: "session.openTool",
+          bindings: sessionShortcutBindings[ShortcutId.OpenTool],
+          input: ShortcutInput.Allow,
+          run: tool,
+        },
+        {
+          id: ShortcutId.SessionFocus,
+          scope: Surface.Sessions,
+          label: "shortcuts.focusMessage",
+          bindings: [{ key: "i", primary: true }],
+          input: ShortcutInput.Allow,
+          run: focus,
+        },
+      ]);
+      return (
+        <main>
+          <button onClick={openHelp}>Help opener</button>
+          <span
+            data-testid="files-hint"
+            aria-keyshortcuts={shortcuts.aria(ShortcutId.OpenFiles)}
+          >
+            {shortcuts.bindings(ShortcutId.OpenFiles).length}
+          </span>
+        </main>
+      );
+    }
+    const bridge: ShortcutPreferenceBridge = {
+      read,
+      update: vi.fn(),
+      subscribe: async () => () => {},
+    };
+    render(
+      <ShortcutPreferenceProvider bridge={bridge}>
+        <ShortcutProvider>
+          <GateProbe />
+        </ShortcutProvider>
+      </ShortcutPreferenceProvider>,
+    );
+    return { files, tool, focus, reload: () => reload() };
+  }
+  const press = (key: string, node: Element = document.body) =>
+    fireEvent.keyDown(node, {
+      key,
+      code: `Key${key.toUpperCase()}`,
+      ...modifier,
+    });
+
+  it("keeps Files and Tool inactive, unadvertised and explained in Help while the read is pending, then runs the empty-override default", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    const { files, tool } = setup(
+      () => new Promise((done) => (resolve = done)),
+    );
+    await act(async () => {});
+    press("e");
+    press("t");
+    expect(files).not.toHaveBeenCalled();
+    expect(tool).not.toHaveBeenCalled();
+    const hint = screen.getByTestId("files-hint");
+    expect(hint.getAttribute("aria-keyshortcuts")).toBe("");
+    expect(hint.textContent).toBe("0");
+    fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+    const row = within(
+      screen.getByRole("dialog", { name: "Keyboard shortcuts" }),
+    )
+      .getByText("Open Files")
+      .closest("div")!;
+    expect(within(row).getByText("Disabled")).toBeTruthy();
+    expect(within(row).getByText(/finish loading/)).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await act(async () =>
+      resolve({ revision: 1, problem: null, overrides: {} }),
+    );
+    expect(screen.getByTestId("files-hint").textContent).toBe("1");
+    expect(
+      screen.getByTestId("files-hint").getAttribute("aria-keyshortcuts"),
+    ).toContain("E");
+    press("e");
+    press("t");
+    expect(files).toHaveBeenCalledOnce();
+    expect(tool).toHaveBeenCalledOnce();
+  });
+
+  it("keeps Files suppressed after the read settles with a saved primary+E override and runs the saved action", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    const { files, focus } = setup(
+      () => new Promise((done) => (resolve = done)),
+    );
+    await act(async () => {});
+    press("e");
+    expect(files).not.toHaveBeenCalled();
+    await act(async () => resolve(overridden));
+    press("e");
+    expect(files).not.toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("files-hint").textContent).toBe("0");
+  });
+
+  it("opens Files after a failed initial read and keeps accepted bindings during a later pending refresh", async () => {
+    const read = vi
+      .fn<ShortcutPreferenceBridge["read"]>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(overridden)
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const { files, focus, reload } = setup(read);
+    await act(async () => {});
+    press("e");
+    expect(files).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("files-hint").textContent).toBe("1");
+    files.mockClear();
+    // Explicit retry accepts the saved override and suppresses Files again.
+    await act(async () => reload());
+    press("e");
+    expect(files).not.toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledOnce();
+    // A later refresh pends without reverting to the startup gate or the
+    // accepted override.
+    await act(async () => reload());
+    expect(read).toHaveBeenCalledTimes(3);
+    press("e");
+    expect(files).not.toHaveBeenCalled();
+    expect(focus).toHaveBeenCalledTimes(2);
+  });
 });

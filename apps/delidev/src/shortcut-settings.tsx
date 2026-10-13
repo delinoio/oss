@@ -66,7 +66,8 @@ function ShortcutKeycaps({
 }
 export function ShortcutSettings() {
   useLocale();
-  const { snapshot, operation, save, reload } = useShortcutPreferences();
+  const { snapshot, ready, operation, save, reload } =
+    useShortcutPreferences();
   const [draft, setDraft] = useState(snapshot.overrides),
     [baseline, setBaseline] = useState(snapshot);
   const [capturing, setCapturing] = useState<ShortcutId>(),
@@ -339,6 +340,7 @@ export function ShortcutSettings() {
                   const suppression = readOnlyShortcutSuppression(
                     action.id,
                     snapshot.overrides,
+                    ready,
                   );
                   return (
                     <div key={action.id}>
@@ -353,6 +355,7 @@ export function ShortcutSettings() {
                           bindings={customizationBindings(
                             action.id,
                             snapshot.overrides,
+                            ready,
                           )}
                           platform={platform}
                         />

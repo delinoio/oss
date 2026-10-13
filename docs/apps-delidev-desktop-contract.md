@@ -345,7 +345,18 @@ follows the committed map) and the Files entry badge/ARIA share the effective
 platform binding. The Files row in the Open tool dialog shows a decorative
 muted shortcut hint (Command+E or Ctrl+E) that wraps inside the original row
 geometry; the hint and its `aria-keyshortcuts` are omitted while suppressed, and
-English/Korean Help and Settings explain the suppression. Owned Help closes
+English/Korean Help and Settings explain the suppression. The preference
+controller exposes an initial-read readiness flag that is false only while the
+first read of the current bridge is unsettled and defaults to true outside a
+provider. While it is false the empty startup overrides are not a committed map:
+every `readOnlyShortcutSuppression` policy ID (Files primary+E and the same-race
+Open tool primary+T) has no bindings, is disabled with the localized
+`shortcuts.preferencesPending` reason, runs no callback and advertises no hint or
+`aria-keyshortcuts`, consistently in dispatch, Help and the read-only Settings
+catalog. Editable defaults are never gated. After the read settles, success,
+read failure and the unavailable fallback use the committed-map rules above; later
+refreshes and saves keep the last accepted bindings and never re-enter the gate.
+Owned Help closes
 before the callback and retains destination focus. Existing terminal, native
 Browser, capture, modal, handled-event, repeat, IME, modifier and hidden/inert
 fences remain. Opening Files adds no execution, recovery, RPC, migration or
