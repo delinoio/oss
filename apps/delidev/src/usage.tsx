@@ -223,6 +223,26 @@ function pendingRange(selection: UsageSelection): ReactNode {
   );
 }
 
+/**
+ * A native model ID is unique only within its provider or subscription source,
+ * so the presentation identity scopes it by both. The key is internal and is
+ * never rendered or sent over RPC.
+ */
+function modelPresentationId(group: {
+  model?: { nativeId?: string };
+  providerId?: string;
+  subscriptionService?: number;
+}): string | undefined {
+  const nativeId = group.model?.nativeId;
+  return nativeId
+    ? JSON.stringify([
+        group.providerId ?? "",
+        group.subscriptionService ?? 0,
+        nativeId,
+      ])
+    : undefined;
+}
+
 function appliedFilters(
   selection: UsageSelection,
   productLabel: IdentityLabel,
@@ -398,7 +418,7 @@ export function Usage({
     );
     productLabel(
       PresentationKind.Model,
-      group.model?.nativeId,
+      modelPresentationId(group),
       group.modelName,
     );
   }
@@ -998,7 +1018,7 @@ export function Usage({
                                   {group.model?.nativeId
                                     ? productLabel(
                                         PresentationKind.Model,
-                                        group.model.nativeId,
+                                        modelPresentationId(group),
                                         group.modelName,
                                       )
                                     : copy("usage.extra.a99bc331d9ad")}

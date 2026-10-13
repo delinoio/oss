@@ -1902,6 +1902,64 @@ it("numbers duplicate observed names on the first committed render for every ide
   expect(f.read).toHaveBeenCalledTimes(1);
 });
 
+it("scopes model presentation identities by provider and subscription source", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const f = fixture();
+  const base = f.data.groups[0];
+  const otherProvider = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  const otherSubscription = clone(GetUsageSummaryResponseSchema, f.data)
+    .groups[0];
+  const unnamedA = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  const unnamedB = clone(GetUsageSummaryResponseSchema, f.data).groups[0];
+  // The same native model ID under different providers or subscription
+  // services is two distinct models that merely share an observed name.
+  base.model = create(ModelIdentitySchema, {
+    nativeId: "shared-native-model",
+    providerId: base.providerId,
+  });
+  otherProvider.providerId = newRequestId();
+  otherProvider.model = create(ModelIdentitySchema, {
+    nativeId: "shared-native-model",
+    providerId: otherProvider.providerId,
+  });
+  otherSubscription.subscriptionService =
+    SubscriptionServiceIdentity.OPENCODE_GO;
+  otherSubscription.model = create(ModelIdentitySchema, {
+    nativeId: "shared-native-model",
+    providerId: otherSubscription.providerId,
+  });
+  for (const group of [base, otherProvider, otherSubscription])
+    group.modelName = "Same model";
+  for (const group of [unnamedA, unnamedB]) group.modelName = "";
+  unnamedA.model = create(ModelIdentitySchema, {
+    nativeId: "unnamed-native-model",
+    providerId: unnamedA.providerId,
+  });
+  unnamedB.providerId = newRequestId();
+  unnamedB.model = create(ModelIdentitySchema, {
+    nativeId: "unnamed-native-model",
+    providerId: unnamedB.providerId,
+  });
+  f.data.groups = [base, otherProvider, otherSubscription, unnamedA, unnamedB];
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
+  const named = screen.getAllByRole("button", { name: /^Same model/ });
+  expect(named.map((button) => button.textContent)).toEqual([
+    "Same model \u00b7 1",
+    "Same model \u00b7 2",
+    "Same model \u00b7 3",
+  ]);
+  // Unnamed groups under different providers receive different fallbacks.
+  const rows = [
+    ...document.querySelectorAll<HTMLTableRowElement>(".usage-detail tbody tr"),
+  ];
+  const buttonText = (row: HTMLTableRowElement) =>
+    [...row.querySelectorAll("button")].map((button) => button.textContent);
+  expect(buttonText(rows[3])).not.toEqual(buttonText(rows[4]));
+  expect(f.read).toHaveBeenCalledTimes(1);
+});
+
 it("keeps unique names unnumbered and absent names on localized fallbacks", async () => {
   await i18n.changeLanguage(SupportedLanguage.English);
   const f = fixture();
