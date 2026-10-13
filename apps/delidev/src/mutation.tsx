@@ -128,6 +128,14 @@ class IntentRegistry {
     this.revision += 1;
     for (const listener of this.listeners) listener();
   }
+  /** Deletes one retained presentation, freeing its key count and bytes, and
+   * publishes a registry revision so mounted readers observe the removal. It
+   * never touches request entries, so busy and uncertain guards stay intact. */
+  releasePresentation(key: string) {
+    if (!this.presentations.delete(key)) return;
+    this.revision += 1;
+    for (const listener of this.listeners) listener();
+  }
   reserve(key: string, bytes: number) {
     const used = [...this.entries].reduce(
       (sum, [id, value]) => sum + (id === key ? 0 : (value.bytes ?? 0)),
@@ -277,9 +285,11 @@ export function useRetainedMutationPresentation<T extends object>(key: string) {
   const save = (next: T, bytes: number) => {
     registry.retainPresentation(key, next, bytes);
   };
+  const release = () => registry.releasePresentation(key);
   return {
     value,
     save,
+    release,
     read: () => registry.presentations.get(key)?.value as T | undefined,
   };
 }
