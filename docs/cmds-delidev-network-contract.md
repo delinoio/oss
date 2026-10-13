@@ -120,7 +120,7 @@ Only server selection affects catalog, credential validation, inference relay an
 
 ## Logging
 
-Structured `network_profile_saved`, `network_profile_deleted` and `network_route_selected` metadata includes opaque profile/machine IDs, selected profile revision, closed mode for profile saves and replay classification. Publication recovery emits `network_save_cleanup_pending` and `network_save_cleanup_completed` with only opaque profile/request IDs and a stable error code for pending cleanup. Deletion recovery emits `network_delete_cleanup_pending` and `network_delete_cleanup_completed` with the same metadata limits. No credentials, endpoint host/URLs, bypass entries, raw network errors or export authentication values enter logs.
+Structured `network_profile_saved`, `network_profile_deleted` and `network_route_selected` metadata includes opaque profile/machine IDs, selected profile revision, closed mode for profile saves and replay classification. Publication recovery emits `network_save_cleanup_pending` and `network_save_cleanup_completed` with only opaque profile/request IDs and a stable error code for pending cleanup. Deletion recovery emits `network_delete_cleanup_pending` and `network_delete_cleanup_completed` with the same metadata limits. Rejected Worker native-route reports emit `worker_native_route_rejected` with a stable error code and, only when each is a canonical ID, the opaque job and execution IDs; a malformed request-supplied ID is omitted entirely (no raw value, truncation, hash or excerpt). No credentials, endpoint host/URLs, bypass entries, raw network errors or export authentication values enter logs.
 
 ## Build and Test
 
