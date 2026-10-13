@@ -49,3 +49,10 @@ export async function setAnimation(value: string | undefined) {
     await Promise.resolve();
   });
 }
+
+/**
+ * Rendered name of a Settings category that has not opted in to the shared
+ * entrance (it is absent from `entranceCategories`). Entrance tests leave to it
+ * to assert the no-motion baseline. Move this when that category opts in.
+ */
+export const unoptedSettingsCategory = "Browser";

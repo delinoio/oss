@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -170,7 +171,9 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 			if _, err := f.workerClient.PublishNativeCodeReview(ctx, ownerRequest(f.workerIdentity, publication(domain.NativeReviewExited, "original-exited"))); err != nil {
 				t.Fatal("cancellation erased observed exited state", err)
 			}
-			result := domain.NativeCodeReviewResult{Version: 1, ActionID: input.ActionID, Selection: selection, ThreadID: domain.NativeIdentity(thread), TurnID: domain.NativeIdentity(turn), EnteredItemID: "original-entered", ExitedItemID: "original-exited", Findings: []domain.NativeCodeReviewFinding{}, Correctness: "patch is correct", RolloutDigest: strings.Repeat("e", 64), CleanupVerified: true}
+			// The settled output replays the same receipt that was published during the review.
+			receipt := domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, Purpose: domain.NativeCodeReviewUsage, SessionID: claim.SessionID, ProjectID: claim.ProjectID, ExecutionID: input.ActionID, AccountID: input.Source.AccountID, ConnectionID: input.Source.ConnectionID, ProviderID: input.Source.Configuration.ProviderID, SubscriptionService: input.Source.Configuration.SubscriptionService, ModelID: input.Source.Configuration.ModelID, Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(thread), TurnID: string(turn), Sequence: 1, Usage: domain.NativeResponseUsage{ResponseDigest: strings.Repeat("d", 64), CostEvidence: domain.UsageCostMissing}, ObservedAt: observedAt}
+			result := domain.NativeCodeReviewResult{Version: 1, ActionID: input.ActionID, Selection: selection, ThreadID: domain.NativeIdentity(thread), TurnID: domain.NativeIdentity(turn), EnteredItemID: "original-entered", ExitedItemID: "original-exited", Findings: []domain.NativeCodeReviewFinding{}, Correctness: "patch is correct", RolloutDigest: strings.Repeat("e", 64), CleanupVerified: true, UsageRecords: []domain.ResponseUsageRecord{receipt}}
 			output, _ := json.Marshal(result)
 			if _, err := f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(resourceForTest(claim), domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: output})); err != nil {
 				t.Fatal("original cleanup/result evidence lost", err)
@@ -178,6 +181,37 @@ func TestNativeReviewCancellationPreservesOriginalLifecycleAndUsageReceipts(t *t
 			view, err := client.GetNativeCodeReview(ctx, ownerRequest(f.identity, &pb.GetNativeCodeReviewRequest{SessionId: string(f.refresh(t).ID), JobId: string(claim.ID)}))
 			if err != nil || view.Msg.Review.Result == nil || !view.Msg.Review.UsageComplete {
 				t.Fatal("retained result lost independent usage", err)
+			}
+			requireNativeReviewJobDocumentRedacted(t, view.Msg.Review.Job.DocumentJson, receipt)
+			generic, err := f.resources.GetResource(ctx, ownerRequest(f.identity, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: string(claim.ID)}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireNativeReviewJobDocumentRedacted(t, generic.Msg.Resource.DocumentJson, receipt)
+			if !bytes.Equal(generic.Msg.Resource.DocumentJson, view.Msg.Review.Job.DocumentJson) {
+				t.Fatal("generic GetResource and GetNativeCodeReview projected different job documents")
+			}
+			listed, err := f.resources.ListResources(ctx, ownerRequest(f.identity, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(claim.SessionID)}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var listedDocument []byte
+			for _, resource := range listed.Msg.Resources {
+				if resource.Id == string(claim.ID) {
+					listedDocument = resource.DocumentJson
+				}
+			}
+			if listedDocument == nil || !bytes.Equal(listedDocument, view.Msg.Review.Job.DocumentJson) {
+				t.Fatal("generic ListResources did not return the same redacted job document")
+			}
+			stored, err := f.service.Store.Get(ctx, domain.JobKind, claim.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			storedJob, err := store.Decode[domain.Job](stored)
+			var storedResult domain.NativeCodeReviewResult
+			if err != nil || domain.Decode(storedJob.Output, &storedResult) != nil || len(storedResult.UsageRecords) != 1 || storedResult.UsageRecords[0].AccountID != input.Source.AccountID {
+				t.Fatal("persisted job output lost its private usage receipts", err)
 			}
 			after, _ := store.Decode[domain.Session](f.refresh(t))
 			if after.Outcome != source.Outcome || after.ExecutionSelection() != source.ExecutionSelection() || !reflect.DeepEqual(after.Execution, source.Execution) {
@@ -262,5 +296,33 @@ func TestNativeReviewTypedNoSendProofSettlesBeforeNativeAdmission(t *testing.T) 
 	view, err := client.GetNativeCodeReview(ctx, ownerRequest(f.identity, &pb.GetNativeCodeReviewRequest{SessionId: f.change.Session.Id, JobId: accepted.Msg.Review.Job.Id}))
 	if err != nil || view.Msg.Review.State != rpc.NativeReviewStateWire(domain.NativeReviewRejected) {
 		t.Fatal("verified no-send review did not reach rejected state", err)
+	}
+}
+
+// requireNativeReviewJobDocumentRedacted asserts that a public native review
+// Job document keeps its bounded result but none of the private receipt data.
+func requireNativeReviewJobDocumentRedacted(t *testing.T, document []byte, receipt domain.ResponseUsageRecord) {
+	t.Helper()
+	var job domain.Job
+	if err := json.Unmarshal(document, &job); err != nil || job.Type != domain.NativeCodeReviewJob || job.State != domain.JobSucceeded {
+		t.Fatal("public native review job document is not the settled review", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(job.Output, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := fields["usage_records"]; exists {
+		t.Fatal("public job output exposes usage receipts")
+	}
+	// The review's own thread and turn identifiers are part of the bounded public
+	// result, so only receipt-specific keys and values are checked here.
+	for _, private := range []string{string(receipt.AccountID), string(receipt.ConnectionID), string(receipt.ModelID), receipt.Usage.ResponseDigest, `"account_id"`, `"connection_id"`, `"provider_id"`, `"model_key"`, `"native_thread_id"`, `"native_turn_id"`, `"response"`} {
+		if private != "" && strings.Contains(string(job.Output), private) {
+			t.Fatal("public job output leaks private usage identity", private)
+		}
+	}
+	var public domain.NativeCodeReviewResult
+	if err := json.Unmarshal(job.Output, &public); err != nil || public.Selection.ContentDigest == "" || public.Findings == nil || public.RolloutDigest == "" || !public.CleanupVerified {
+		t.Fatal("public job output lost its bounded review result", err)
 	}
 }

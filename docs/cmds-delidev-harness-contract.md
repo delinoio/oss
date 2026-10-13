@@ -2779,6 +2779,13 @@ only response is `success: false` and one `inputText` item containing
 `This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
 tool backend, automatic input replay or automatic resend is introduced.
 
+A dynamic tool shares the Worker's native item identity space and the 10,000
+retained-item bound with messages, tools, artifacts, image generations and
+function outputs. A retained dynamic native ID cannot start any other item
+family, and a new item of any family is rejected as publication-uncertain at the
+bound without emitting an event. Updates to an already retained dynamic tool
+remain admitted at the bound and do not change the count.
+
 The first wire-request uniqueness claim atomically publishes a complete private
 original owner document. A missing or partial later call journal preserves that
 inspectable owner and never permits another send.

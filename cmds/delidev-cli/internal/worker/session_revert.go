@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -124,6 +125,11 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if !bytes.Equal(a, b) {
 		return nil, fail()
 	}
+	// The retained claim must carry the original selected-skill proof before any
+	// native reconciliation can publish the Revert.
+	if verifyRevertIntentSkillProof(config.Root, source, input, intent.Intent.Target, config.Logger) != nil {
+		return nil, fail()
+	}
 	installation, err := resolveOriginalStartup(ctx, config, input.SourceJobID, input.Assignment)
 	if err != nil {
 		return nil, err
@@ -229,13 +235,13 @@ func readRevertClaims(root string, owner domain.ID, input domain.SessionCompacti
 	}
 	return a, b, nil
 }
-func verifyRetainedRevertIntent(root string, p codexSessionCompactionCheckpoint) error {
+func verifyRetainedRevertIntent(root string, source CodexExecutionCheckpoint, p codexSessionCompactionCheckpoint, logger *slog.Logger) error {
 	if p.Input.Revert == nil {
 		return domain.CompactionUncertain()
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(p.Input.ActionID), "native-revert-intent.json"), maxCompactionCheckpoint)
 	var claim revertIntentClaim
-	if err != nil || domain.DecodeWithLimit(raw, &claim, maxCompactionCheckpoint) != nil || claim.Version != 1 || claim.JobID != p.JobID || claim.InputDigest != executionInputDigest(mustForkJSON(p.Input)) || claim.Intent.Target.ID != p.Input.Revert.InputID || claim.Intent.Target.PromptDigest != p.Input.Revert.Prompt.InputDigest() || codex.VerifyRevertIntent(claim.Intent, p.Native) != nil {
+	if err != nil || domain.DecodeWithLimit(raw, &claim, maxCompactionCheckpoint) != nil || claim.Version != 1 || claim.JobID != p.JobID || claim.InputDigest != executionInputDigest(mustForkJSON(p.Input)) || claim.Intent.Target.ID != p.Input.Revert.InputID || claim.Intent.Target.PromptDigest != p.Input.Revert.Prompt.InputDigest() || codex.VerifyRevertIntent(claim.Intent, p.Native) != nil || verifyRevertIntentSkillProof(root, source, p.Input, claim.Intent.Target, logger) != nil {
 		return domain.CompactionUncertain()
 	}
 	raw, err = security.ReadPrivate(filepath.Join(root, "runtimes", string(p.Input.ActionID), "native-revert-cleanup.json"), maxCompactionCheckpoint)

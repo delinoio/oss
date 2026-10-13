@@ -13,6 +13,11 @@ import {
 } from "react";
 import { SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { copy, LocalizedText, useLocale } from "./localization";
 import {
   FilesController,
@@ -144,6 +149,18 @@ export function SessionFiles({
   openFile?: (repository: string, path: string) => void;
 }) {
   useLocale();
+  // Each time Files becomes the active panel (including the first open) the
+  // header plays one Y2 entrance. The retained panel, its controller, tree and
+  // scroll are never touched, and reads or refreshes never restart it.
+  const filesActivations = useActivationCount(active);
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:files:${filesActivations}`,
+    active,
+    EntranceMotion.Y2,
+    // The panel stays mounted while hidden, so leaving settles an in-flight
+    // entrance instead of leaving the attribute on an inactive tool.
+    true,
+  );
   const read = useWorkspaceReader(sessionId),
     owner = useMemo(() => new FilesController(read), [read]);
   const state = useSyncExternalStore(owner.subscribe, owner.getSnapshot);
@@ -176,7 +193,7 @@ export function SessionFiles({
       aria-label={copy("session-files.sessionFiles_206907")}
       onKeyDown={shortcuts.onKeyDown}
     >
-      <header>
+      <header {...headerEntrance}>
         <h2 ref={heading} tabIndex={-1}>
           {copy("session-files.files_abc7e9")}
         </h2>
@@ -637,6 +654,13 @@ export function SessionFilePreview({
   path: string;
   close: () => void;
 }) {
+  // Mounting the preview panel (opening or re-selecting its tab) or opening a
+  // different file is one explicit activation; reads and retries never replay.
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:${repository}:${path}`,
+    true,
+    EntranceMotion.Y2,
+  );
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
     const node = heading.current;
@@ -671,7 +695,7 @@ export function SessionFilePreview({
       className="session-files file-preview"
       aria-label={copy("session-files.filePreview_71d50a")}
     >
-      <header>
+      <header {...headerEntrance}>
         <h2 ref={heading} tabIndex={-1}>
           {path}
         </h2>

@@ -8,6 +8,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"time"
 )
@@ -76,6 +77,14 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 		}
 		input.Version = 4
 		input.Revert = &domain.SessionRevertTarget{MessageID: message, InputID: target.InputID, NativeTurnID: turn, Prompt: queuedSessionInput(queued), ContextRevision: session.ContextRevision}
+		_, machine, err := activeMachine(tx, session.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		if err := freezeRevertTargetProof(input.Revert, target.ExecutionID, session.Execution.ExecutionID, done, machine.WorkerCapabilities); err != nil {
+			s.logger.WarnContext(ctx, "session_revert_target_proof_unavailable", "session_id", sr.ID, "machine_id", session.MachineID, "target_execution_id", target.ExecutionID, "source_execution_id", session.Execution.ExecutionID, "completion_version", done.Version)
+			return nil, err
+		}
 		if input.Validate() != nil {
 			return nil, domain.CompactionUncertain()
 		}
@@ -117,4 +126,49 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 	response := connect.NewResponse(&pb.RevertSessionResponse{Job: rpc.Resource(job), RequestId: m.RequestId, Replayed: receipt.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// freezeRevertTargetProof enforces the proof capability for every skilled
+// target and freezes the retained checkpoint reference of the target execution
+// only for a skilled target that an earlier execution accepted, the one case the
+// source checkpoint cannot prove. A text-only target keeps the original
+// envelope, which any Worker advertising CodexSessionRevertV1 decodes. A Worker
+// without CodexSessionRevertTargetProofV1 never authenticates selected skills
+// and strictly rejects the extra fields, so every skilled target is refused here
+// for such a Worker instead of pausing the session first.
+func freezeRevertTargetProof(revert *domain.SessionRevertTarget, targetExecution, sourceExecution domain.ID, completion domain.ExecutionCompletion, capabilities []domain.WorkerCapability) error {
+	if len(revert.Prompt.Skills) == 0 {
+		return nil
+	}
+	if !machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1) {
+		return domain.Fail(domain.Unsupported, "The original Worker cannot revert to a turn that selected skills.", "Update the original Worker.")
+	}
+	if targetExecution == sourceExecution {
+		return nil
+	}
+	if completion.Version != 2 {
+		return domain.Fail(domain.Unsupported, "The original Worker cannot revert to an earlier turn that selected skills.", "Update the original Worker.")
+	}
+	revert.ExecutionID, revert.CheckpointDigest = targetExecution, completion.NativeCheckpointDigest
+	return nil
+}
+
+// requireQueuedRevertCapabilities rechecks the current machine capability set
+// when a queued version-4 Revert is about to be claimed. A Worker that
+// reconnected without the Revert or target-proof capability would otherwise be
+// assigned a job it cannot decode or authenticate, and the failure would
+// quarantine the session as uncertain. The job is still unclaimed here, so the
+// caller retires it with a typed unsupported failure and no native effect.
+func requireQueuedRevertCapabilities(machine domain.Machine, job domain.Job) error {
+	if job.Type != domain.CompactSessionJob {
+		return nil
+	}
+	var input domain.SessionCompactionInput
+	if domain.DecodeCompactionInput(job.Input, &input) != nil {
+		return workspace.ResultUncertain()
+	}
+	if input.Revert == nil || compactionLeaseCapabilities(machine.WorkerCapabilities, input) {
+		return nil
+	}
+	return domain.Fail(domain.Unsupported, "The original Worker no longer supports this Revert.", "Update and reconnect the original Worker.")
 }

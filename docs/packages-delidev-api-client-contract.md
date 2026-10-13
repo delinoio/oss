@@ -403,7 +403,7 @@ catalog results grant no execution readiness. Follow the desktop/catalog contrac
 
 ## Failed subscription cleanup client
 
-The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations and capability numbers remain unchanged.
+The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations remain unchanged. The generated `SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1 = 64` gates the same deletion RPC for a terminal original server LOGOUT blocked on protected cleanup; clients without it send no expanded request.
 
 Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubscriptionCleanup plus the closed batch state, outcome and reason enums. Capability 41 was reserved on main in the originating change; preserve Claude 38/Grok 39/40 and their independent support. Exact request UUIDs bind uncertain admission retries; accepted work is read by original job ID, with bigint revisions and fixed 50-result pages. Validate identity, monotonic counts/revision, closed state/outcome/reasons and complete page bounds before accepting status. Metadata-only status may use category-scoped Connect Query; neither generated bindings nor a read grant native/login/callback/deletion authority. See the subscription/Settings contracts.
 

@@ -63,8 +63,6 @@ test.each([
   "/absolute.png",
   "https://example.com/image.png",
   "images//image.png",
-  "C:/image.png",
-  "C:\\image.png",
   "\\\\server\\share\\image.png",
 ])("rejects unscoped location %s", (location) => {
   const tool = fixture();
@@ -81,6 +79,9 @@ test.each([
   "screens/frame\\01.png",
   "screens\\archive/frame:01.png",
   "frame:01.png",
+  "C:/frame.png",
+  "C:\\frame.png",
+  "dir/C:/frame.png",
 ])("preserves inert POSIX filename %s", (location) => {
   const fetch = vi.spyOn(globalThis, "fetch");
   const tool = fixture();
@@ -94,3 +95,33 @@ test.each([
   expect(fetch).not.toHaveBeenCalled();
   fetch.mockRestore();
 });
+
+test.each(["C:/frame.png", "C:\\frame.png"])(
+  "renders drive-looking POSIX filename %s with the preview-unavailable message while running and completed",
+  (location) => {
+    const fetch = vi.spyOn(globalThis, "fetch");
+    for (const state of ["streaming", "complete"]) {
+      const tool = fixture();
+      tool.started.image_view.location = location;
+      tool.completed.image_view.location = location;
+      const running = state === "streaming";
+      const view = render(
+        <NativeImageView
+          tool={running ? { ...tool, completed: undefined } : tool}
+          state={state}
+        />,
+      );
+      expect(screen.getByText(location)).toBeTruthy();
+      expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
+      expect(
+        screen.queryByText("This image-view observation is unavailable."),
+      ).toBeNull();
+      expect(
+        view.container.querySelector("a,img,button,input,iframe"),
+      ).toBeNull();
+      view.unmount();
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    fetch.mockRestore();
+  },
+);

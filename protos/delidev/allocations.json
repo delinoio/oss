@@ -13466,6 +13466,13 @@
       "number": 63
     },
     {
+      "issue": 2279,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1",
+      "number": 64
+    },
+    {
       "declaration": "NativeCodeReviewTargetKind",
       "issue": 2019,
       "kind": "enum",
@@ -14735,6 +14742,13 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2",
       "number": 101
+    },
+    {
+      "issue": 3143,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1",
+      "number": 64
     },
     {
       "declaration": "NativeCodeReviewResponseUsage",

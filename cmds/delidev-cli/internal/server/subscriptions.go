@@ -1262,12 +1262,13 @@ func protectedGenerations(st *domain.SubscriptionState) []domain.ID {
 
 // compactionLeaseCapabilities reports whether a Worker advertises the exact
 // capability set for the validated compaction context-input kind. Revert
-// (version 4) is an independent operation gated only by CodexSessionRevertV1;
-// every other kind keeps the original native/Codex compaction pair. Neither
+// (version 4) is an independent operation gated by CodexSessionRevertV1, plus
+// CodexSessionRevertTargetProofV1 when the target selected skills or freezes a
+// retained checkpoint reference; every other kind keeps the original native/Codex compaction pair. Neither
 // set authorizes the other operation.
 func compactionLeaseCapabilities(capabilities []domain.WorkerCapability, compact domain.SessionCompactionInput) bool {
 	if compact.Revert != nil {
-		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1)
+		return compact.Version == 4 && machineCapabilityContains(capabilities, domain.CodexSessionRevertV1) && (!compact.Revert.RequiresProofCapability() || machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1))
 	}
 	return machineCapabilityContains(capabilities, domain.NativeSessionCompactionV1) && machineCapabilityContains(capabilities, domain.CodexSessionCompactionV1)
 }

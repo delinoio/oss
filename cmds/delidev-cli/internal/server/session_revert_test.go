@@ -60,6 +60,9 @@ func TestRevertPublicReceiptExactTargetHistoryAndContextRevision(t *testing.T) {
 			if domain.Decode(accepted.Msg.Job.DocumentJson, &job) != nil || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Version != 4 || !reflect.DeepEqual(input.Assignment, f.input) || input.Revert.Prompt.Prompt != f.input.Input.Prompt {
 				t.Fatal("Revert replaced original execution or prompt")
 			}
+			if input.Revert.CarriesProof() || input.Revert.CheckpointDigest != "" {
+				t.Fatal("Revert envelope for a target the source checkpoint proves was extended")
+			}
 			result := domain.SessionCompactionResult{Version: 4, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{Revert: true, ContextRevision: 1, JobID: domain.ID(accepted.Msg.Job.Id), ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, CheckpointDigest: strings.Repeat("a", 64), NativeDigest: strings.Repeat("b", 64)}, Revert: &domain.SessionRevertResult{Target: *input.Revert, NativeThreadID: input.Completion.NativeThreadID, RetainedTurnIDs: []domain.NativeIdentity{}, HistoryDigest: strings.Repeat("c", 64), ContextRevision: 1}}
 			raw, _ := json.Marshal(result)
 			_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.revert-result", nil, func(tx *store.Tx) (any, error) {
@@ -409,5 +412,93 @@ func TestRevertPreSendFailureReleasesOnlyExactOriginalContextJob(t *testing.T) {
 				t.Fatal("immutable prior message changed", e)
 			}
 		})
+	}
+}
+
+func TestFreezeRevertTargetProofRequiresCapabilityForEverySkilledTarget(t *testing.T) {
+	earlier, source := domain.NewID(), domain.NewID()
+	digest := strings.Repeat("d", 64)
+	skilled := domain.SessionInput{Prompt: "p", Mode: domain.ExecuteMode, Skills: []domain.SkillBinding{{}}}
+	textOnly := domain.SessionInput{Prompt: "p", Mode: domain.ExecuteMode}
+	proof := []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}
+	legacy := []domain.WorkerCapability{domain.CodexSessionRevertV1}
+	completion := domain.ExecutionCompletion{Version: 2, NativeCheckpointDigest: digest}
+	for _, tc := range []struct {
+		name         string
+		prompt       domain.SessionInput
+		target       domain.ID
+		completion   domain.ExecutionCompletion
+		capabilities []domain.WorkerCapability
+		frozen, deny bool
+	}{
+		{"text-only-earlier-legacy-worker", textOnly, earlier, completion, legacy, false, false},
+		{"text-only-source-execution-legacy-worker", textOnly, source, completion, legacy, false, false},
+		{"skilled-source-execution-legacy-worker", skilled, source, completion, legacy, false, true},
+		{"skilled-source-execution-proof-worker", skilled, source, completion, proof, false, false},
+		{"skilled-earlier-proof-worker", skilled, earlier, completion, proof, true, false},
+		{"skilled-earlier-legacy-worker", skilled, earlier, completion, legacy, false, true},
+		{"skilled-earlier-legacy-completion", skilled, earlier, domain.ExecutionCompletion{Version: 1}, proof, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			revert := &domain.SessionRevertTarget{Prompt: tc.prompt}
+			err := freezeRevertTargetProof(revert, tc.target, source, tc.completion, tc.capabilities)
+			if (err != nil) != tc.deny || revert.CarriesProof() != tc.frozen || tc.frozen && (revert.ExecutionID != earlier || revert.CheckpointDigest != digest) || !tc.frozen && revert.CheckpointDigest != "" {
+				t.Fatal("unexpected frozen target proof", err, revert.ExecutionID, revert.CheckpointDigest)
+			}
+			if tc.deny && domain.SafeError(err).Code != domain.Unsupported {
+				t.Fatal("missing capability was not reported as unsupported", err)
+			}
+		})
+	}
+}
+
+func TestCompactionLeaseRequiresProofCapabilityForSkilledOrProofCarryingRevert(t *testing.T) {
+	plain := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{}}
+	skilled := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{Prompt: domain.SessionInput{Skills: []domain.SkillBinding{{}}}}}
+	proof := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{ExecutionID: domain.NewID(), CheckpointDigest: strings.Repeat("e", 64)}}
+	legacy := []domain.WorkerCapability{domain.CodexSessionRevertV1}
+	extended := []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}
+	if !compactionLeaseCapabilities(legacy, plain) || !compactionLeaseCapabilities(extended, plain) {
+		t.Fatal("original text-only Revert envelope needs only the Revert capability")
+	}
+	for name, input := range map[string]domain.SessionCompactionInput{"skilled-without-reference": skilled, "proof-carrying": proof} {
+		if compactionLeaseCapabilities(legacy, input) || !compactionLeaseCapabilities(extended, input) {
+			t.Fatal("skilled or extended Revert envelope must require the proof capability", name)
+		}
+		if compactionLeaseCapabilities([]domain.WorkerCapability{domain.CodexSessionRevertTargetProofV1}, input) {
+			t.Fatal("proof capability alone authorized Revert", name)
+		}
+	}
+}
+
+func TestQueuedRevertClaimRechecksCurrentWorkerCapabilities(t *testing.T) {
+	skilled := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{Prompt: domain.SessionInput{Skills: []domain.SkillBinding{{}}}}}
+	plain := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{}}
+	legacy := domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.CodexSessionRevertV1}}
+	extended := domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}}
+	missing := domain.Machine{}
+	job := func(input domain.SessionCompactionInput) domain.Job {
+		raw, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return domain.Job{Type: domain.CompactSessionJob, State: domain.JobQueued, Input: raw}
+	}
+	if err := requireQueuedRevertCapabilities(extended, job(skilled)); err != nil {
+		t.Fatal("capable Worker rejected a skilled Revert", err)
+	}
+	if err := requireQueuedRevertCapabilities(legacy, job(plain)); err != nil {
+		t.Fatal("legacy Worker rejected a text-only Revert", err)
+	}
+	for name, machine := range map[string]domain.Machine{"downgraded-to-legacy": legacy, "missing-revert": missing} {
+		if err := requireQueuedRevertCapabilities(machine, job(skilled)); domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatal("skilled Revert was claimable by a Worker without the proof capability", name, err)
+		}
+	}
+	if err := requireQueuedRevertCapabilities(missing, job(plain)); domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("Revert was claimable by a Worker without the Revert capability", err)
+	}
+	if err := requireQueuedRevertCapabilities(domain.Machine{}, domain.Job{Type: domain.ExecuteSessionJob}); err != nil {
+		t.Fatal("non-compaction job was gated", err)
 	}
 }

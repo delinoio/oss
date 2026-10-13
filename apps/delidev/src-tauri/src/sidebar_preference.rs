@@ -527,16 +527,305 @@ enum PersistStep {
     ScratchSynced,
     DestinationVerified,
     Published,
+    /// Parent-directory sync that makes a verified Unix rollback durable.
+    /// Failure is OutcomeUnknown.
+    RollbackSynced,
+    /// Persistence barrier for the published file object (Windows flushes the
+    /// verified handle; Unix relies on the later parent sync). Failure is
+    /// OutcomeUnknown.
+    PublishBarrier,
+    ScratchUnlinking,
     ScratchRemoved,
     DirectorySynced,
     ReceiptVerified,
 }
 
+/// Outcome of a refused or rolled back publication attempt.
+struct PublishFailure {
+    problem: SidebarProblem,
+    /// True when the destination pathname may differ from its observed state.
+    touched: bool,
+    /// True when a verified rollback reversed a rename. The reversal is not
+    /// durable until the parent directory is synced, so the attempt stays
+    /// touched until then.
+    reversed: bool,
+}
+
+impl PublishFailure {
+    fn untouched(problem: SidebarProblem) -> Self {
+        Self {
+            problem,
+            touched: false,
+            reversed: false,
+        }
+    }
+
+    #[cfg(unix)]
+    fn reversed(problem: SidebarProblem) -> Self {
+        Self {
+            problem,
+            touched: false,
+            reversed: true,
+        }
+    }
+
+    #[cfg(unix)]
+    fn touched(problem: SidebarProblem) -> Self {
+        Self {
+            problem,
+            touched: true,
+            reversed: false,
+        }
+    }
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RenameMode {
+    /// Move the source only when the target does not exist.
+    NoReplace,
+    /// Atomically swap two existing entries.
+    Exchange,
+}
+
+/// Atomic, single-syscall rename variants. Pathname-only rename cannot refuse a
+/// clobber or report what it displaced, so unsupported platforms and
+/// filesystems fail closed instead of falling back to it.
+#[cfg(unix)]
+fn rename_checked(source: &Path, target: &Path, mode: RenameMode) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let invalid = |_| std::io::Error::from(std::io::ErrorKind::InvalidInput);
+    let source = CString::new(source.as_os_str().as_bytes()).map_err(invalid)?;
+    let target = CString::new(target.as_os_str().as_bytes()).map_err(invalid)?;
+    #[cfg(target_vendor = "apple")]
+    let result = unsafe {
+        libc::renamex_np(
+            source.as_ptr(),
+            target.as_ptr(),
+            match mode {
+                RenameMode::NoReplace => libc::RENAME_EXCL,
+                RenameMode::Exchange => libc::RENAME_SWAP,
+            },
+        )
+    };
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            target.as_ptr(),
+            match mode {
+                RenameMode::NoReplace => libc::RENAME_NOREPLACE,
+                RenameMode::Exchange => libc::RENAME_EXCHANGE,
+            },
+        )
+    };
+    #[cfg(not(any(target_vendor = "apple", target_os = "linux", target_os = "android")))]
+    let result = {
+        let _ = (source, target, mode);
+        return Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+    };
+    #[cfg(any(target_vendor = "apple", target_os = "linux", target_os = "android"))]
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+// Test seam that runs between the Unix rename syscall and the identity reads
+// that follow it, the window in which a late writer can alter either entry.
+#[cfg(all(test, unix))]
+type RenameHook = Box<dyn FnMut(&Path, &Path)>;
+
+#[cfg(all(test, unix))]
+thread_local! {
+    static AFTER_RENAME: std::cell::RefCell<Option<RenameHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(all(test, unix))]
+fn run_after_rename_hook(scratch: &Path, target: &Path) {
+    AFTER_RENAME.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().as_mut() {
+            hook(scratch, target);
+        }
+    });
+}
+
+/// Device/inode of the entry itself (symlinks are not followed).
+#[cfg(unix)]
+fn entry_identity(path: &Path) -> std::io::Result<Option<FileIdentity>> {
+    use std::os::unix::fs::MetadataExt;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(FileIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Handle options that can rename or delete the verified file object itself.
+#[cfg(windows)]
+fn bind_options() -> OpenOptions {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut options = OpenOptions::new();
+    // GENERIC_READ | GENERIC_WRITE | DELETE, inspecting the reparse object.
+    options
+        .access_mode(0x8000_0000 | 0x4000_0000 | 0x0001_0000)
+        .custom_flags(0x00200000);
+    options
+}
+
+/// Renames the file object behind `file` to `target` without consulting the
+/// pathname it was opened through. `replace` is false for create-new.
+#[cfg(windows)]
+fn rename_handle(file: &File, target: &Path, replace: bool) -> std::io::Result<()> {
+    use std::{
+        ffi::c_void,
+        os::windows::{ffi::OsStrExt, io::AsRawHandle},
+    };
+    // FILE_RENAME_INFO; the flags union starts with the ReplaceIfExists byte.
+    #[repr(C)]
+    struct RenameInfo {
+        replace_if_exists: u32,
+        root_directory: *mut c_void,
+        name_bytes: u32,
+        name: [u16; 1],
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetFileInformationByHandle(
+            handle: *mut c_void,
+            class: i32,
+            info: *mut c_void,
+            size: u32,
+        ) -> i32;
+    }
+    const FILE_RENAME_INFO_CLASS: i32 = 3;
+    let name: Vec<u16> = target.as_os_str().encode_wide().collect();
+    let offset = std::mem::offset_of!(RenameInfo, name);
+    let size = offset + name.len() * 2 + 2;
+    // u64 backing storage satisfies the struct alignment on every target.
+    let mut buffer = vec![0u64; size.div_ceil(8)];
+    let base = buffer.as_mut_ptr().cast::<u8>();
+    unsafe {
+        let header = base.cast::<RenameInfo>();
+        (*header).replace_if_exists = u32::from(replace);
+        (*header).root_directory = std::ptr::null_mut();
+        (*header).name_bytes = (name.len() * 2) as u32;
+        std::ptr::copy_nonoverlapping(name.as_ptr(), base.add(offset).cast::<u16>(), name.len());
+    }
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FILE_RENAME_INFO_CLASS,
+            base.cast(),
+            size as u32,
+        )
+    } == 0
+    {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// Unlinks the file object behind `file`, whatever its pathname now resolves
+/// to. POSIX semantics remove the name immediately instead of at last close.
+#[cfg(windows)]
+fn delete_handle(file: &File) -> std::io::Result<()> {
+    use std::{ffi::c_void, os::windows::io::AsRawHandle};
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetFileInformationByHandle(
+            handle: *mut c_void,
+            class: i32,
+            info: *mut c_void,
+            size: u32,
+        ) -> i32;
+    }
+    const FILE_DISPOSITION_INFO_EX_CLASS: i32 = 21;
+    // FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS
+    let mut flags: u32 = 0x1 | 0x2;
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FILE_DISPOSITION_INFO_EX_CLASS,
+            (&mut flags as *mut u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    } == 0
+    {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// Verifies that a scratch pathname is gone after its object was unlinked.
+/// A POSIX-semantics delete removes the link from the visible namespace only
+/// once the delete handle is closed, so callers release that handle first;
+/// checking while it is open would report the owned scratch as a foreign entry.
+#[cfg(any(windows, test))]
+fn verify_unlinked(path: &Path) -> Result<(), SidebarProblem> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(SidebarProblem::Changed),
+        Err(_) => Err(SidebarProblem::WriteFailed),
+    }
+}
+
+/// Persistence barrier for a file object that was just published by a handle
+/// rename. `SetFileInformationByHandle` has no write-through option, so the
+/// verified handle is flushed (`FlushFileBuffers` on Windows) before the save
+/// may be reported as committed. The handle is proven to still be the created
+/// file object first; every failure is OutcomeUnknown so the new selection is
+/// never adopted. This does not establish power-loss durability, which is
+/// untested.
+#[cfg(any(windows, test))]
+fn flush_published(file: &File, expected: FileIdentity) -> Result<(), SidebarProblem> {
+    match identity(file) {
+        Ok((found, _)) if found == expected => {}
+        _ => {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "publish-barrier-identity-mismatch"
+            );
+            return Err(SidebarProblem::OutcomeUnknown);
+        }
+    }
+    file.sync_all().map_err(|error| {
+        tracing::warn!(
+            operation = "sidebar_preference_publish",
+            code = "publish-barrier-failed",
+            kind = ?error.kind()
+        );
+        SidebarProblem::OutcomeUnknown
+    })
+}
+
+/// The exclusively created scratch file. Publication and cleanup are bound to
+/// the object this save created and verified, never to a bare pathname:
+/// Windows renames or deletes through the verified handle; Unix has no
+/// handle-bound primitive, so it uses atomic no-replace/exchange renames that
+/// are re-checked by identity and rolled back when they moved foreign entries.
 struct Scratch {
     path: PathBuf,
     identity: FileIdentity,
     parent_identity: FileIdentity,
+    /// Creation handle, released once the bytes are synced.
     file: Option<File>,
+    /// Handle opened after sync and proven to be the created file object.
+    bound: Option<File>,
+    /// Unix identity this save expects at `path` for cleanup: the scratch
+    /// itself, or the replaced document after a successful exchange.
+    #[cfg(unix)]
+    residual: FileIdentity,
     consumed: bool,
 }
 
@@ -567,13 +856,284 @@ impl Scratch {
             identity,
             parent_identity,
             file: Some(file),
+            bound: None,
+            #[cfg(unix)]
+            residual: identity,
             consumed: false,
         })
     }
 
-    fn remove(&mut self) -> Result<(), SidebarProblem> {
+    fn open_bound(&self) -> std::io::Result<File> {
+        #[cfg(windows)]
+        {
+            bind_options().open(&self.path)
+        }
+        #[cfg(not(windows))]
+        {
+            read_options(false).open(&self.path)
+        }
+    }
+
+    /// Opens the scratch pathname once and proves the handle is this save's
+    /// exclusively created, unlinked-elsewhere-free regular file. Windows then
+    /// publishes and deletes through this very handle.
+    fn bind(&mut self) -> Result<(), SidebarProblem> {
+        let source = self.open_bound().map_err(|_| SidebarProblem::WriteFailed)?;
+        validate_metadata(
+            &source.metadata().map_err(|_| SidebarProblem::WriteFailed)?,
+            false,
+        )?;
+        if identity(&source)? != (self.identity, 1) {
+            return Err(SidebarProblem::Changed);
+        }
+        self.bound = Some(source);
+        Ok(())
+    }
+
+    /// Barrier after a successful publication, before cleanup releases the
+    /// bound handle. Windows flushes the renamed file object for both Missing
+    /// and Present destinations; Unix syncs the parent directory afterwards.
+    fn publish_barrier(&self) -> Result<(), SidebarProblem> {
+        #[cfg(windows)]
+        {
+            let file = self.bound.as_ref().ok_or(SidebarProblem::OutcomeUnknown)?;
+            flush_published(file, self.identity)
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(())
+        }
+    }
+
+    #[cfg(unix)]
+    fn publish(
+        &mut self,
+        target: &Path,
+        document: &ObservedDocument,
+    ) -> Result<(), PublishFailure> {
+        match document {
+            ObservedDocument::Missing => self.publish_unix(target, RenameMode::NoReplace, None),
+            ObservedDocument::Present { identity, .. } => {
+                self.publish_unix(target, RenameMode::Exchange, Some(*identity))
+            }
+        }
+    }
+
+    /// Moves or swaps the scratch entry, then proves by identity that the
+    /// entry that moved is the one this save created. Anything else (a foreign
+    /// entry swapped in after verification, or a document changed by a writer
+    /// that ignored the lease) is moved back so the destination keeps its
+    /// observed state and the foreign entry stays at the scratch pathname.
+    #[cfg(unix)]
+    fn publish_unix(
+        &mut self,
+        target: &Path,
+        mode: RenameMode,
+        replaced: Option<FileIdentity>,
+    ) -> Result<(), PublishFailure> {
+        if let Some(expected) = replaced {
+            // Refuse before touching anything when the destination is already
+            // known to differ from the observed document, so a change that
+            // precedes the exchange never needs a reversal.
+            match entry_identity(target) {
+                Ok(Some(found)) if found == expected => {}
+                Ok(_) => {
+                    tracing::warn!(
+                        operation = "sidebar_preference_publish",
+                        code = "destination-changed-before-exchange"
+                    );
+                    return Err(PublishFailure::untouched(SidebarProblem::Changed));
+                }
+                Err(_) => return Err(PublishFailure::untouched(SidebarProblem::WriteFailed)),
+            }
+        }
+        if let Err(error) = rename_checked(&self.path, target, mode) {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "rename-refused",
+                kind = ?error.kind()
+            );
+            return Err(PublishFailure::untouched(match error.kind() {
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::NotFound => {
+                    SidebarProblem::Changed
+                }
+                _ => SidebarProblem::WriteFailed,
+            }));
+        }
+        #[cfg(test)]
+        run_after_rename_hook(&self.path, target);
+        let published = entry_identity(target).ok().flatten();
+        let displaced = entry_identity(&self.path).ok();
+        let ours = published == Some(self.identity);
+        let displaced_as_observed = match mode {
+            RenameMode::NoReplace => true,
+            RenameMode::Exchange => displaced == Some(replaced),
+        };
+        if ours && displaced_as_observed {
+            match mode {
+                RenameMode::NoReplace => self.consumed = true,
+                RenameMode::Exchange => {
+                    // The replaced document now sits at the scratch pathname.
+                    self.residual =
+                        replaced.ok_or(PublishFailure::touched(SidebarProblem::OutcomeUnknown))?;
+                }
+            }
+            return Ok(());
+        }
+        // An exchange that placed this save's file but displaced something
+        // other than the observed document cannot be told apart from a late
+        // replacement of the displaced entry at the scratch pathname. Reversing
+        // would move that possibly foreign entry into the destination, so keep
+        // it at the scratch pathname as evidence and report the outcome as
+        // unknown instead of claiming a verified rollback.
+        let can_reverse = match mode {
+            RenameMode::NoReplace => true,
+            RenameMode::Exchange => displaced == Some(replaced),
+        };
+        if !can_reverse {
+            tracing::error!(
+                operation = "sidebar_preference_publish",
+                code = "displaced-entry-unverified",
+                rolling_back = false
+            );
+            return Err(PublishFailure::touched(SidebarProblem::OutcomeUnknown));
+        }
+        tracing::warn!(
+            operation = "sidebar_preference_publish",
+            code = "unexpected-entry-published",
+            rolling_back = true
+        );
+        let rollback = match mode {
+            RenameMode::NoReplace => rename_checked(target, &self.path, RenameMode::NoReplace),
+            RenameMode::Exchange => rename_checked(&self.path, target, RenameMode::Exchange),
+        };
+        // Verified only when the destination holds its observed state again
+        // (absent, or the observed document) and the foreign entry sits at the
+        // scratch pathname.
+        let restored = rollback.is_ok()
+            && entry_identity(&self.path).ok() == Some(published)
+            && match mode {
+                RenameMode::NoReplace => entry_identity(target).ok() == Some(None),
+                RenameMode::Exchange => entry_identity(target).ok() == Some(replaced),
+            };
+        if restored {
+            // The foreign entry stays at the scratch pathname as evidence.
+            Err(PublishFailure::reversed(SidebarProblem::Changed))
+        } else {
+            tracing::error!(
+                operation = "sidebar_preference_publish",
+                code = "rollback-unverified"
+            );
+            Err(PublishFailure::touched(SidebarProblem::OutcomeUnknown))
+        }
+    }
+
+    #[cfg(windows)]
+    fn publish(
+        &mut self,
+        target: &Path,
+        document: &ObservedDocument,
+    ) -> Result<(), PublishFailure> {
+        let file = self
+            .bound
+            .as_ref()
+            .ok_or(PublishFailure::untouched(SidebarProblem::WriteFailed))?;
+        let replace = matches!(document, ObservedDocument::Present { .. });
+        match rename_handle(file, target, replace) {
+            Ok(()) => {
+                self.consumed = true;
+                Ok(())
+            }
+            Err(error) => {
+                tracing::warn!(
+                    operation = "sidebar_preference_publish",
+                    code = "rename-refused",
+                    kind = ?error.kind()
+                );
+                Err(PublishFailure::untouched(
+                    if error.kind() == std::io::ErrorKind::AlreadyExists {
+                        SidebarProblem::Changed
+                    } else {
+                        SidebarProblem::WriteFailed
+                    },
+                ))
+            }
+        }
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn publish(
+        &mut self,
+        _target: &Path,
+        _document: &ObservedDocument,
+    ) -> Result<(), PublishFailure> {
+        Err(PublishFailure::untouched(SidebarProblem::WriteFailed))
+    }
+
+    /// Removes only the entry this save owns. Any other entry at the scratch
+    /// pathname is retained as evidence and reported as `Changed`.
+    #[cfg(unix)]
+    fn remove(
+        &mut self,
+        step: &mut impl FnMut(PersistStep, &Path) -> Result<(), SidebarProblem>,
+    ) -> Result<(), SidebarProblem> {
+        self.file.take();
+        self.bound.take();
+        if self.consumed {
+            return Ok(());
+        }
+        let directory = self.path.parent().ok_or(SidebarProblem::WriteFailed)?;
+        let (_, parent_identity) = open_evidence(directory, true)?;
+        if parent_identity != self.parent_identity {
+            return Err(SidebarProblem::Changed);
+        }
+        match entry_identity(&self.path) {
+            Ok(None) => {
+                self.consumed = true;
+                return Ok(());
+            }
+            Ok(Some(found)) if found == self.residual => {}
+            Ok(Some(_)) => return Err(SidebarProblem::Changed),
+            Err(_) => return Err(SidebarProblem::WriteFailed),
+        }
+        step(PersistStep::ScratchUnlinking, &self.path)?;
+        // Unix cannot unlink by identity. Atomically claim whatever the
+        // pathname names now under a private name, verify that claim, and only
+        // then unlink it. A foreign entry is moved back untouched.
+        let claim = directory.join(format!(
+            ".sidebar_preference-{}.claim",
+            uuid::Uuid::now_v7()
+        ));
+        match rename_checked(&self.path, &claim, RenameMode::NoReplace) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.consumed = true;
+                return Ok(());
+            }
+            Err(_) => return Err(SidebarProblem::WriteFailed),
+        }
+        if entry_identity(&claim).ok() != Some(Some(self.residual)) {
+            let restored = rename_checked(&claim, &self.path, RenameMode::NoReplace).is_ok();
+            tracing::warn!(
+                operation = "sidebar_preference_update",
+                code = "scratch-cleanup-foreign-entry",
+                restored
+            );
+            return Err(SidebarProblem::Changed);
+        }
+        fs::remove_file(&claim).map_err(|_| SidebarProblem::WriteFailed)?;
+        self.consumed = true;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn remove(
+        &mut self,
+        step: &mut impl FnMut(PersistStep, &Path) -> Result<(), SidebarProblem>,
+    ) -> Result<(), SidebarProblem> {
         self.file.take();
         if self.consumed {
+            self.bound.take();
             return Ok(());
         }
         let (_, parent_identity) =
@@ -581,29 +1141,38 @@ impl Scratch {
         if parent_identity != self.parent_identity {
             return Err(SidebarProblem::Changed);
         }
-        let metadata = match fs::symlink_metadata(&self.path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                self.consumed = true;
-                return Ok(());
-            }
-            Err(_) => return Err(SidebarProblem::WriteFailed),
+        let file = match self.bound.take() {
+            Some(file) => file,
+            None => match self.open_bound() {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    self.consumed = true;
+                    return Ok(());
+                }
+                Err(_) => return Err(SidebarProblem::WriteFailed),
+            },
         };
-        if !metadata.is_file() {
-            return Err(SidebarProblem::Changed);
-        }
-        // A Missing publication briefly creates a second link. Check identity
-        // here without treating our own second link as foreign evidence.
-        let file = read_options(false)
-            .open(&self.path)
-            .map_err(|_| SidebarProblem::WriteFailed)?;
         if identity(&file)?.0 != self.identity {
             return Err(SidebarProblem::Changed);
         }
-        drop(file);
-        fs::remove_file(&self.path).map_err(|_| SidebarProblem::WriteFailed)?;
+        step(PersistStep::ScratchUnlinking, &self.path)?;
+        // Deletion is bound to the verified file object, so a replacement at
+        // the pathname cannot be unlinked here.
+        delete_handle(&file).map_err(|_| SidebarProblem::WriteFailed)?;
         self.consumed = true;
-        Ok(())
+        // Release the delete handle before checking the pathname.
+        drop(file);
+        verify_unlinked(&self.path)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn remove(
+        &mut self,
+        _step: &mut impl FnMut(PersistStep, &Path) -> Result<(), SidebarProblem>,
+    ) -> Result<(), SidebarProblem> {
+        self.file.take();
+        self.bound.take();
+        Err(SidebarProblem::WriteFailed)
     }
 }
 
@@ -647,43 +1216,32 @@ fn persist_with(
         if inspect(path, lease)? != *original {
             return Err(SidebarProblem::Changed);
         }
-        let source = read_options(false)
-            .open(&scratch.path)
-            .map_err(|_| SidebarProblem::WriteFailed)?;
-        validate_metadata(
-            &source.metadata().map_err(|_| SidebarProblem::WriteFailed)?,
-            false,
-        )?;
-        if identity(&source)? != (scratch.identity, 1) {
-            return Err(SidebarProblem::Changed);
-        }
-        drop(source);
+        scratch.bind()?;
         step(PersistStep::DestinationVerified, &scratch.path)?;
-        match original.document {
-            ObservedDocument::Missing => {
-                // Atomic create-new preserves a target created even after our
-                // final absence check by a writer that ignores the lease.
-                fs::hard_link(&scratch.path, path).map_err(|error| {
-                    if error.kind() == std::io::ErrorKind::AlreadyExists {
-                        SidebarProblem::Changed
-                    } else {
-                        SidebarProblem::WriteFailed
-                    }
-                })?;
+        if let Err(failure) = scratch.publish(path, &original.document) {
+            published = failure.touched;
+            if failure.reversed {
+                // The reversal changed the namespace twice. Stay touched until
+                // the restored namespace is synced, so a failed barrier is
+                // OutcomeUnknown rather than an untouched Changed.
+                published = true;
+                lease.validate()?;
+                lease
+                    .parent
+                    .sync_all()
+                    .map_err(|_| SidebarProblem::OutcomeUnknown)?;
+                step(PersistStep::RollbackSynced, &scratch.path)?;
+                published = false;
             }
-            ObservedDocument::Present { .. } => {
-                // Participating writers hold the same sidecar through rename.
-                // Arbitrary writers can still race this final replacing
-                // syscall.
-                crate::appearance::replace(&scratch.path, path)
-                    .map_err(|_| SidebarProblem::WriteFailed)?;
-                scratch.consumed = true;
-            }
+            return Err(failure.problem);
         }
         published = true;
         step(PersistStep::Published, &scratch.path)?;
-        // Remove our second link before checking the destination's link count.
-        scratch.remove()?;
+        step(PersistStep::PublishBarrier, &scratch.path)?;
+        scratch.publish_barrier()?;
+        // Discard the replaced document (Unix Present) before checking the
+        // destination's link count. Moved scratch files need no removal.
+        scratch.remove(&mut step)?;
         step(PersistStep::ScratchRemoved, &scratch.path)?;
         lease.validate()?;
         #[cfg(unix)]
@@ -704,7 +1262,7 @@ fn persist_with(
         step(PersistStep::ReceiptVerified, &scratch.path)?;
         Ok(receipt)
     })();
-    let cleanup = scratch.remove();
+    let cleanup = scratch.remove(&mut step);
     if cleanup.is_err() {
         tracing::warn!(
             operation = "sidebar_preference_update",
@@ -719,6 +1277,7 @@ fn persist_with(
         _ => Err(SidebarProblem::OutcomeUnknown),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1432,6 +1991,7 @@ mod tests {
     fn every_post_publication_failure_keeps_old_selection_and_requires_read() {
         for fail_at in [
             PersistStep::Published,
+            PersistStep::PublishBarrier,
             PersistStep::ScratchRemoved,
             PersistStep::DirectorySynced,
             PersistStep::ReceiptVerified,
@@ -1472,23 +2032,262 @@ mod tests {
     }
 
     #[test]
-    fn changed_receipt_and_failed_scratch_unlink_are_uncertain() {
-        for unlink_failure in [false, true] {
+    fn changed_receipt_is_uncertain() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        let external = b"external receipt";
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let uncertain = store.update_with(
+            SidebarPreference::Collapsed,
+            initial.revision,
+            |path, preference, original, lease| {
+                persist_with(path, preference, original, lease, |step, _| {
+                    if step == PersistStep::ScratchRemoved {
+                        fs::write(path, external).unwrap();
+                    }
+                    Ok(())
+                })
+            },
+        );
+        assert_eq!(uncertain.problem, Some(SidebarProblem::OutcomeUnknown));
+        assert_eq!(uncertain.sidebar_preference, SidebarPreference::Expanded);
+        assert_eq!(fs::read(path).unwrap(), external);
+        assert_eq!(store.read().problem, Some(SidebarProblem::InvalidDocument));
+    }
+
+    #[cfg(unix)]
+    fn inode(path: &Path) -> u64 {
+        use std::os::unix::fs::MetadataExt;
+        fs::symlink_metadata(path).unwrap().ino()
+    }
+
+    /// Swaps a distinct regular file onto `target` the way a nonparticipating
+    /// writer would, and returns the inode of the newly installed entry.
+    #[cfg(unix)]
+    fn install_foreign(target: &Path, bytes: &[u8]) -> u64 {
+        let staged = target.with_extension("foreign");
+        fs::write(&staged, bytes).unwrap();
+        let foreign = inode(&staged);
+        crate::appearance::replace(&staged, target).unwrap();
+        foreign
+    }
+
+    #[cfg(unix)]
+    const EXISTING: &[u8] = br#"{"version":1,"sidebar_preference":"expanded"}"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn scratch_replaced_after_identity_check_is_never_published() {
+        for existing in [false, true] {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("sidebar_preference.json");
-            let external = b"external receipt";
+            if existing {
+                fs::write(&path, EXISTING).unwrap();
+            }
+            let original_inode = existing.then(|| inode(&path));
             let store = SidebarStore::new(Some(directory.path().into()));
             let initial = store.read();
+            let mut foreign = None;
+            let refused = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, scratch| {
+                        if step == PersistStep::DestinationVerified {
+                            foreign = Some((
+                                scratch.to_path_buf(),
+                                install_foreign(scratch, b"foreign scratch"),
+                            ));
+                        }
+                        Ok(())
+                    })
+                },
+            );
+            // Foreign evidence is retained, so the save is uncertain, never a
+            // committed success.
+            assert_eq!(refused.problem, Some(SidebarProblem::OutcomeUnknown));
+            assert_eq!(refused.sidebar_preference, SidebarPreference::Expanded);
+            let (scratch, foreign_inode) = foreign.unwrap();
+            assert_eq!(fs::read(&scratch).unwrap(), b"foreign scratch");
+            assert_eq!(inode(&scratch), foreign_inode);
+            if existing {
+                assert_eq!(fs::read(&path).unwrap(), EXISTING);
+                assert_eq!(Some(inode(&path)), original_inode);
+                assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 3);
+            } else {
+                assert!(!path.exists());
+                assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+            }
+            assert_eq!(
+                store.update(SidebarPreference::Collapsed, refused.revision),
+                refused
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_changed_after_identity_check_is_restored_not_replaced() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        fs::write(&path, EXISTING).unwrap();
+        let external = br#"{ "version": 1, "sidebar_preference": "expanded" }"#;
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let mut external_inode = None;
+        let rejected = store.update_with(
+            SidebarPreference::Collapsed,
+            initial.revision,
+            |path, preference, original, lease| {
+                persist_with(path, preference, original, lease, |step, _| {
+                    if step == PersistStep::DestinationVerified {
+                        external_inode = Some(install_foreign(path, external));
+                    }
+                    Ok(())
+                })
+            },
+        );
+        assert_eq!(rejected.problem, Some(SidebarProblem::Changed));
+        assert_eq!(rejected.sidebar_preference, SidebarPreference::Expanded);
+        assert_eq!(fs::read(&path).unwrap(), external);
+        assert_eq!(Some(inode(&path)), external_inode);
+        // Our owned scratch returned to its pathname and was cleaned.
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verified_rollback_is_synced_before_it_is_reported() {
+        for existing in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sidebar_preference.json");
+            if existing {
+                fs::write(&path, EXISTING).unwrap();
+            }
+            let original_inode = existing.then(|| inode(&path));
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut steps = Vec::new();
+            let refused = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, scratch| {
+                        steps.push(step);
+                        if step == PersistStep::DestinationVerified {
+                            // Swapped in after binding: published, then
+                            // reversed.
+                            install_foreign(scratch, b"foreign scratch");
+                        }
+                        Ok(())
+                    })
+                },
+            );
+            let position = |wanted| steps.iter().position(|step| *step == wanted);
+            assert!(
+                position(PersistStep::DestinationVerified) < position(PersistStep::RollbackSynced)
+            );
+            assert!(position(PersistStep::RollbackSynced).is_some());
+            assert_eq!(position(PersistStep::Published), None);
+            assert_eq!(refused.sidebar_preference, SidebarPreference::Expanded);
+            // The destination is back to its observed state.
+            assert_eq!(path.exists(), existing);
+            assert_eq!(existing.then(|| inode(&path)), original_inode);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn late_scratch_replacement_after_exchange_is_not_swapped_into_the_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        fs::write(&path, EXISTING).unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let foreign = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let recorder = foreign.clone();
+        AFTER_RENAME.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move |scratch, _| {
+                // Replaces the displaced original at the scratch pathname.
+                *recorder.borrow_mut() = Some((
+                    scratch.to_path_buf(),
+                    install_foreign(scratch, b"late foreign scratch"),
+                ));
+            }));
+        });
+        let uncertain = store.update_with(SidebarPreference::Collapsed, initial.revision, persist);
+        AFTER_RENAME.with(|hook| *hook.borrow_mut() = None);
+        // Neither a verified rollback nor an untouched failure: the foreign
+        // entry stays at the scratch pathname and the outcome is unknown.
+        assert_eq!(uncertain.problem, Some(SidebarProblem::OutcomeUnknown));
+        assert_eq!(uncertain.sidebar_preference, SidebarPreference::Expanded);
+        let (scratch, foreign_inode) = foreign.borrow_mut().take().unwrap();
+        assert_eq!(fs::read(&scratch).unwrap(), b"late foreign scratch");
+        assert_eq!(inode(&scratch), foreign_inode);
+        // The foreign bytes never became the canonical preference.
+        assert_ne!(fs::read(&path).unwrap(), b"late foreign scratch");
+        assert_ne!(inode(&path), foreign_inode);
+        let recovered = store.read();
+        assert_eq!(recovered.problem, None);
+        assert_eq!(recovered.sidebar_preference, SidebarPreference::Collapsed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_never_unlinks_a_replacement_inserted_before_unlink() {
+        // Before publication, with the destination Missing.
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut foreign = None;
+            let refused = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, scratch| {
+                        match step {
+                            PersistStep::DestinationVerified => {
+                                return Err(SidebarProblem::WriteFailed);
+                            }
+                            PersistStep::ScratchUnlinking => {
+                                foreign = Some((
+                                    scratch.to_path_buf(),
+                                    install_foreign(scratch, b"foreign cleanup"),
+                                ));
+                            }
+                            _ => {}
+                        }
+                        Ok(())
+                    })
+                },
+            );
+            assert_eq!(refused.problem, Some(SidebarProblem::OutcomeUnknown));
+            let (scratch, foreign_inode) = foreign.unwrap();
+            assert_eq!(fs::read(&scratch).unwrap(), b"foreign cleanup");
+            assert_eq!(inode(&scratch), foreign_inode);
+            // Sidecar plus the retained foreign entry; no claim leftovers.
+            assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+        }
+        // After Present publication, where the replaced document is cleaned.
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sidebar_preference.json");
+            fs::write(&path, EXISTING).unwrap();
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut foreign = None;
             let uncertain = store.update_with(
                 SidebarPreference::Collapsed,
                 initial.revision,
                 |path, preference, original, lease| {
                     persist_with(path, preference, original, lease, |step, scratch| {
-                        if step == PersistStep::Published && unlink_failure {
-                            fs::rename(scratch, scratch.with_extension("retained")).unwrap();
-                            fs::create_dir(scratch).unwrap();
-                        } else if step == PersistStep::ScratchRemoved && !unlink_failure {
-                            fs::write(path, external).unwrap();
+                        if step == PersistStep::ScratchUnlinking {
+                            foreign = Some((
+                                scratch.to_path_buf(),
+                                install_foreign(scratch, b"foreign cleanup"),
+                            ));
                         }
                         Ok(())
                     })
@@ -1496,15 +2295,125 @@ mod tests {
             );
             assert_eq!(uncertain.problem, Some(SidebarProblem::OutcomeUnknown));
             assert_eq!(uncertain.sidebar_preference, SidebarPreference::Expanded);
-            if !unlink_failure {
-                assert_eq!(fs::read(path).unwrap(), external);
-                assert_eq!(store.read().problem, Some(SidebarProblem::InvalidDocument));
-            } else {
-                // The unrelated replacement directory is preserved. The
-                // retained second link prevents adopting the destination.
-                assert_eq!(store.read().problem, Some(SidebarProblem::InvalidDocument));
-            }
+            let (scratch, foreign_inode) = foreign.unwrap();
+            assert_eq!(fs::read(&scratch).unwrap(), b"foreign cleanup");
+            assert_eq!(inode(&scratch), foreign_inode);
+            assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 3);
+            // The published preference is recoverable with an explicit Read.
+            let recovered = store.read();
+            assert_eq!(recovered.problem, None);
+            assert_eq!(recovered.sidebar_preference, SidebarPreference::Collapsed);
         }
+        // After Missing publication the scratch pathname is no longer owned.
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut foreign = None;
+            let committed = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, scratch| {
+                        if step == PersistStep::Published {
+                            fs::write(scratch, b"foreign later").unwrap();
+                            foreign = Some((scratch.to_path_buf(), inode(scratch)));
+                        }
+                        Ok(())
+                    })
+                },
+            );
+            assert_eq!(committed.problem, None);
+            assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+            let (scratch, foreign_inode) = foreign.unwrap();
+            assert_eq!(fs::read(&scratch).unwrap(), b"foreign later");
+            assert_eq!(inode(&scratch), foreign_inode);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_at_scratch_pathname_is_retained_and_target_untouched() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("external.json");
+        fs::write(&target, b"external target").unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let mut link = None;
+        let refused = store.update_with(
+            SidebarPreference::Collapsed,
+            initial.revision,
+            |path, preference, original, lease| {
+                persist_with(path, preference, original, lease, |step, scratch| {
+                    if step == PersistStep::DestinationVerified {
+                        fs::remove_file(scratch).unwrap();
+                        std::os::unix::fs::symlink(&target, scratch).unwrap();
+                        link = Some(scratch.to_path_buf());
+                        return Err(SidebarProblem::WriteFailed);
+                    }
+                    Ok(())
+                })
+            },
+        );
+        assert_eq!(refused.problem, Some(SidebarProblem::OutcomeUnknown));
+        assert!(
+            fs::symlink_metadata(link.unwrap())
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external target");
+        assert!(!directory.path().join("sidebar_preference.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_failure_after_present_publication_is_uncertain() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        fs::write(&path, EXISTING).unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let uncertain = store.update_with(
+            SidebarPreference::Collapsed,
+            initial.revision,
+            |path, preference, original, lease| {
+                persist_with(path, preference, original, lease, |step, scratch| {
+                    if step == PersistStep::Published {
+                        // Replace the displaced document with a directory.
+                        fs::remove_file(scratch).unwrap();
+                        fs::create_dir(scratch).unwrap();
+                    }
+                    Ok(())
+                })
+            },
+        );
+        assert_eq!(uncertain.problem, Some(SidebarProblem::OutcomeUnknown));
+        assert_eq!(uncertain.sidebar_preference, SidebarPreference::Expanded);
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 3);
+        let recovered = store.read();
+        assert_eq!(recovered.problem, None);
+        assert_eq!(recovered.sidebar_preference, SidebarPreference::Collapsed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_rename_primitives_refuse_clobber_and_swap_entries() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first");
+        let second = directory.path().join("second");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"second").unwrap();
+        let refused = rename_checked(&first, &second, RenameMode::NoReplace).unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&second).unwrap(), b"second");
+        rename_checked(&first, &second, RenameMode::Exchange).unwrap();
+        assert_eq!(fs::read(&first).unwrap(), b"second");
+        assert_eq!(fs::read(&second).unwrap(), b"first");
+        let vacant = directory.path().join("vacant");
+        rename_checked(&first, &vacant, RenameMode::NoReplace).unwrap();
+        assert!(!first.exists());
+        assert_eq!(fs::read(&vacant).unwrap(), b"second");
     }
 
     #[test]
@@ -1548,5 +2457,104 @@ mod tests {
         fs::remove_file(&second).unwrap();
         fs::write(&second, b"second").unwrap();
         assert!(identity(&File::open(second).unwrap()).unwrap().0 != original);
+    }
+
+    #[test]
+    fn unlink_verification_accepts_only_an_absent_pathname() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("scratch");
+        assert_eq!(verify_unlinked(&path), Ok(()));
+        fs::write(&path, b"retained").unwrap();
+        assert_eq!(verify_unlinked(&path), Err(SidebarProblem::Changed));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_cleanup_releases_the_delete_handle_before_checking_the_pathname() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let refused = store.update_with(
+            SidebarPreference::Collapsed,
+            initial.revision,
+            |path, preference, original, lease| {
+                persist_with(path, preference, original, lease, |step, _| {
+                    if step == PersistStep::DestinationVerified {
+                        Err(SidebarProblem::WriteFailed)
+                    } else {
+                        Ok(())
+                    }
+                })
+            },
+        );
+        // A refusal after bind removes only the owned scratch and stays a
+        // safe pre-publication failure, never an upgraded OutcomeUnknown.
+        assert_eq!(refused.problem, Some(SidebarProblem::WriteFailed));
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn publish_barrier_runs_after_publication_and_before_cleanup() {
+        for existing in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sidebar_preference.json");
+            if existing {
+                fs::write(&path, br#"{"version":1,"sidebar_preference":"expanded"}"#).unwrap();
+            }
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut steps = Vec::new();
+            let committed = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, _| {
+                        steps.push(step);
+                        Ok(())
+                    })
+                },
+            );
+            assert_eq!(committed.problem, None);
+            assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+            let position = |wanted| steps.iter().position(|step| *step == wanted).unwrap();
+            assert!(position(PersistStep::Published) < position(PersistStep::PublishBarrier));
+            assert!(position(PersistStep::PublishBarrier) < position(PersistStep::ScratchRemoved));
+        }
+    }
+
+    #[test]
+    fn publish_barrier_flushes_only_the_created_file_object() {
+        let directory = tempfile::tempdir().unwrap();
+        let created = directory.path().join("created");
+        let other = directory.path().join("other");
+        fs::write(&created, b"created").unwrap();
+        fs::write(&other, b"other").unwrap();
+        let mut options = OpenOptions::new();
+        options.read(true).write(true);
+        let file = options.open(&created).unwrap();
+        let (expected, _) = identity(&file).unwrap();
+        assert_eq!(flush_published(&file, expected), Ok(()));
+        let (foreign, _) = identity(&File::open(&other).unwrap()).unwrap();
+        assert_eq!(
+            flush_published(&file, foreign),
+            Err(SidebarProblem::OutcomeUnknown)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_replacement_commits_only_after_the_published_file_flush() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sidebar_preference.json");
+        fs::write(&path, br#"{"version":1,"sidebar_preference":"expanded"}"#).unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let committed = store.update(SidebarPreference::Collapsed, initial.revision);
+        assert_eq!(committed.problem, None);
+        assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+        assert_eq!(
+            store.read().sidebar_preference,
+            SidebarPreference::Collapsed
+        );
     }
 }
