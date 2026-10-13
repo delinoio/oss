@@ -414,6 +414,39 @@ describe("overlay exact disclosure", () => {
       expect(hide).toHaveBeenCalledTimes(1);
     });
 
+    it("settles an in-flight enclosing entrance and measures the anchor again before placing", async () => {
+      const raf = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => {
+          callback(0);
+          return 1;
+        });
+      const settled = vi.fn();
+      const { container } = render(
+        <div data-entrance="y4">
+          <PaidCredits
+            buckets={[{ ...bucket, balance: "60961.1135370000" }]}
+            state={PaidCreditState.Observed}
+            now={now}
+            compact
+            exactPresentation={ExactDisclosurePresentation.Overlay}
+          />
+        </div>,
+      );
+      container.firstElementChild!.addEventListener(
+        "delidev-entrance-settle",
+        settled,
+      );
+      const button = trigger();
+      const measure = vi.spyOn(button, "getBoundingClientRect");
+      fireEvent.click(button);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      expect(settled).toHaveBeenCalledTimes(1);
+      // Placement runs once at show time and once after the layout settles.
+      expect(measure.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(raf).toHaveBeenCalled();
+    });
+
     it("positions from measured geometry and re-places on resize and scroll", () => {
       mount();
       const button = trigger();

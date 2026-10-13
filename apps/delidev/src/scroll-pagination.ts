@@ -15,6 +15,10 @@ export interface PaginationBatch<Row extends PaginationRow, Payload = never> {
   rows: Row[];
   nextPageToken: string;
   payload?: Payload[];
+  /** Optional bounded scalar describing this raw page. It is retained in page
+   * metadata for every reached page, so it survives payload eviction and is
+   * replaced together with the pages by Initial, Reload, Refresh and Restore. */
+  rawCount?: number;
   /** Runs once after generation, abort, boundary and continuation checks
    * accept this read and before any payload is evicted. Rejected, canceled and
    * superseded reads never call it. A throwing callback never fails the read. */
@@ -25,6 +29,8 @@ export interface PaginationPage<Row extends PaginationRow> {
   nextPageToken: string;
   token: string;
   height?: number;
+  /** Raw page scalar copied from the accepted batch; see PaginationBatch. */
+  rawCount?: number;
 }
 export enum ReadStage {
   Initial = "initial",
@@ -349,6 +355,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
           nextPageToken: acceptedPage?.nextPageToken ?? batch.nextPageToken,
           token: currentToken,
           height: acceptedPage?.height,
+          rawCount: batch.rawCount,
         };
         // Full domain payloads never enter retained page boundaries. Keep at
         // most three reached pages around the latest requested visible page.

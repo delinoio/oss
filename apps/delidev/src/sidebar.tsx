@@ -1,6 +1,12 @@
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
+import {
+  EntranceMotion,
+  settleEnclosingEntrances,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import {
   DisclosureButton,
@@ -1124,6 +1130,17 @@ export function Sidebar({
     surface === Surface.Sessions ||
     surface === Surface.NewSession ||
     surface === Surface.NewGeneralChat;
+  // Home activation (returning from another destination) owns one 160ms Y4
+  // entrance on the project-group wrapper. The count tracks the rising edge of
+  // Home navigation only, so session selection, Home to New session switches,
+  // list refreshes, paging, expansion, archive filtering and compact drawer
+  // open/close never replay it, and nothing waits for it.
+  const homeActivations = useActivationCount(sessionNavigation);
+  const homeEntrance = useEntranceActivation(
+    `home:${homeActivations}`,
+    sessionNavigation,
+    EntranceMotion.Y4,
+  );
   const selectedRowId =
     surface === Surface.NewSession || surface === Surface.NewGeneralChat
       ? ""
@@ -1430,6 +1447,10 @@ export function Sidebar({
     home,
   ]);
   const showNewProjectTooltip = () => {
+    // The tooltip is fixed and keeps this measurement, so settle the Home
+    // entrance first; the attribute clears synchronously and the anchor is
+    // measured without the in-flight transform.
+    settleEnclosingEntrances(newProjectButton.current);
     const rect = newProjectButton.current?.getBoundingClientRect();
     if (!rect) return;
     const width = Math.min(120, window.innerWidth - 16);
@@ -1699,7 +1720,7 @@ export function Sidebar({
                     : copy("sidebar.menuNavigationAndFilters_b5a21d")
                 }
               >
-                <div hidden={!sessionNavigation}>
+                <div hidden={!sessionNavigation} {...homeEntrance}>
                   <header className="sidebar-projects-heading">
                     <h2>{copy("sidebar.projects_04e2a9")}</h2>
                     <button
@@ -1741,7 +1762,12 @@ export function Sidebar({
                       )}
                       aria-haspopup="dialog"
                       aria-expanded={optionsOpen}
-                      onClick={() => setOptionsOpen((current) => !current)}
+                      onClick={() => {
+                        // The dialog mounts inside the Home wrapper; settle its
+                        // entrance first so the popup is not animated with Home.
+                        settleEnclosingEntrances(optionsButton.current);
+                        setOptionsOpen((current) => !current);
+                      }}
                     >
                       <Icon name="options" />
                     </button>

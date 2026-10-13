@@ -25,6 +25,7 @@ export {
   productMetadata,
   productMetadataJSON,
   generatedIdentityFields,
+  configurationPreviewPaths,
 } from "./product-identity";
 
 const kinds: Partial<Record<EntityKind, PresentationKind>> = {
@@ -59,16 +60,28 @@ export function presentationKind(kind?: EntityKind): PresentationKind {
 export function identityFallback(kind: PresentationKind): string {
   return copy(`product-identity.${kind}` as MessageKey);
 }
+/**
+ * Returns the exact optional document name, else alias, of a resource. Retain
+ * this raw value (never a presentation string) when a later render must derive
+ * the localized and numbered label again.
+ */
+export function productResourceObservedName(
+  resource?: Resource,
+): string | undefined {
+  const data = resource ? decodeResourceDocument(resource) : undefined;
+  return typeof data?.name === "string"
+    ? data.name
+    : typeof data?.alias === "string"
+      ? data.alias
+      : undefined;
+}
 function observeResource(registry: ProductIdentities, resource: Resource) {
   if (!resource.id || !supportsResourceSchema(resource)) return;
-  const data = decodeResourceDocument(resource);
-  const name =
-    typeof data?.name === "string"
-      ? data.name
-      : typeof data?.alias === "string"
-        ? data.alias
-        : undefined;
-  registry.observe(presentationKind(resource.kind), resource.id, name);
+  registry.observe(
+    presentationKind(resource.kind),
+    resource.id,
+    productResourceObservedName(resource),
+  );
 }
 interface Owner {
   registry: ProductIdentities;
@@ -155,14 +168,11 @@ export function productResourceName(
   label: IdentityLabel,
   resource?: Resource,
 ): string {
-  const data = resource ? decodeResourceDocument(resource) : undefined;
-  const name =
-    typeof data?.name === "string"
-      ? data.name
-      : typeof data?.alias === "string"
-        ? data.alias
-        : undefined;
-  return label(presentationKind(resource?.kind), resource?.id, name);
+  return label(
+    presentationKind(resource?.kind),
+    resource?.id,
+    productResourceObservedName(resource),
+  );
 }
 export function ResourceIdentity({ resource }: { resource?: Resource }) {
   return productResourceName(useProductLabels(), resource);

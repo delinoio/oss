@@ -180,6 +180,16 @@ Uncertain acceptance retains only its original UUID/wire request for an explicit
 
 The ChatGPT deletion task sends one existing `DeleteConfiguration` request for a failed initial LOGIN without independent connection/generation/Worker ownership, including credential-cleanup-pending recovery. Go owns original native cleanup, protected credential cleanup and deletion through a durable single-account job. The client does not submit a replacement LOGIN or LOGOUT. It preserves the originally confirmed request/revision for uncertain retries and closes only on a matching successful deletion acknowledgment. Accepted server deletion survives task departure; late responses cannot invoke a disposed completion callback. A definite terminal retained result requires fresh account observation and explicit confirmation. Fully disconnected accounts retain ordinary configuration deletion, and connected ChatGPT accounts retain their original logout sequence.
 
+## Settings entrance motion
+
+AI Subscription (`SettingsCategory.SubscriptionAccounts`) opts in to the shared 160ms Y4 entrance owned by `apps-delidev-desktop-contract.md#settings-category-and-task-entrance` with target `Surface`: the standard Settings heading and the whole subscription inventory move once per explicit category opening, and every task window opened inside the category (Claude and ChatGPT login, Manage subscription, OpenCode Go) plays one entrance on its task header. The native task `<dialog>` host and its body never receive the transform.
+
+- Replay safety: step advance, Runner selection, approval or name entry, held or late login responses, progress polling, native OAuth callbacks, refetch, pagination and existing progress spinners never restart an entrance. The logout confirmation is a step of the Manage window and does not open a second window. Failed-login cleanup is an inline status disclosure and does not animate.
+- Retained Claude login: hiding the task (Escape or the header close) unmounts the window without cancelling the original operation; only an explicit View original operation mounts a new window with one new entrance. A late response never reopens the task, opens a browser, performs follow-up deletion or restores focus.
+- Disposal: Escape and close dismiss immediately, and the native OAuth `Dispose` path runs exactly as before. Dismissal, focus, RPC, drafts and request ownership never wait for the motion, and there is no exit animation.
+- The exact paid-credit balance overlay settles an in-flight enclosing entrance before placing and measures its anchor again afterwards.
+- Animation Off and OS reduced motion suppress the entrance and clear an in-flight one; re-enabling never replays the current visit.
+
 ## Account storage presentation
 
 AI Subscription exposes no account-storage inspection reader, toolbar, row slot, notice, warning or technical disclosure. Opening, refreshing, paginating, revising accounts and changing locale never initiate storage-owned Doctor reads. Follow [Account-storage presentation](apps-delidev-diagnostics-contract.md#account-storage-presentation). Preserve account identity, connection/health and cleanup badges, quota/usage, Details/View usage, login and connection controls, Auto cleanup and independently owned operation failures. Protected storage, server/CLI diagnostics, native ownership and durable cleanup remain unchanged.
@@ -305,6 +315,21 @@ ineligible accounts retain available read-only status refresh and existing
 update/recovery guidance. Neither a successful status read nor a read-error
 retry submits quota or acquires eligibility for its original activation.
 
+A disconnected ChatGPT account renders only read-only retained evidence above the
+status footer: the last-success timestamp and failed-refresh wording when saved
+`quota_observed_at` or `quota_state = failed` exists (current server or Worker
+quota capability gates only new requests, never saved evidence), plus any retained original
+quota, credit, preference or consent failure Problem and any local
+preference-save alert (a document that cannot be patched locally never sends a
+request), including after the operation settles. Every present retained failure from these independent
+operations stays visible; none hides another. The shared status read failure
+stays with the account owner's single Problem and is not repeated here. An automatic-use confirmation
+opened while connected closes as soon as the account's own connection state
+reports it disconnected, even while the owner keeps the controls visible for an
+in-flight request, and is not restored on reconnect. No timestamp, value or success claim is invented when no
+saved evidence exists, and no checkbox, Use credit, consent, preference or retry
+control is added by this presentation.
+
 The quota/credit/preferences/consent controllers stay mounted for the original
 Manage account, retaining exact uncertain requests when later status reads
 change its connection or presentation. Only explicit original retry reuses
@@ -331,7 +356,7 @@ System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
 
-Account rows show a compact Paid credits card above quota, with a 24px tabular balance, a smaller credits suffix and the original observation status/time. Multiple account-row buckets use a localized balance count and retain separate original timestamps. Manage subscription uses the same numeric presentation in separate labelled buckets in source order. Never aggregate balances. The selected ChatGPT usage popover reuses this validated projection and exact-value disclosure above quota. It shows every bucket separately in source order, without a combined total; only a single bucket omits the redundant native ID label. System 76 display negotiation is independent of capability-17 rail admission. Unsupported peers show update guidance, while quota, saved-only recheck and management remain available. Failed or incomplete saved reads retain the accepted account-bound values and original timestamps until a complete replacement; credential replacement never carries evidence or disclosure state across identities. Credits never affect the quota-only rail badge.
+Account rows show a compact Paid credits card above quota, with a 24px tabular balance, a smaller credits suffix and the original observation status/time. Multiple account-row buckets use a localized balance count and retain separate original timestamps. Manage subscription uses the same numeric presentation in separate labelled buckets in source order. Never aggregate balances. The selected ChatGPT usage popover reuses this validated projection and exact-value disclosure above quota. It shows every bucket separately in source order, without a combined total; only a single bucket omits the redundant native ID label. System 76 display negotiation is independent of capability-17 rail admission. Unsupported peers show update guidance, while quota, saved-only recheck and management remain available. Failed or incomplete saved reads retain the accepted account-bound values and original timestamps until a complete replacement. A read pause alone (server stopping or hidden document) is not a read failure: it keeps the accepted state and timestamps without the refresh-failure label, disables the saved recheck, and admits no new saved read; observation freshness keeps ageing against the wall clock so a retained bucket becomes stale after five minutes; a real saved-read failure or unconfirmed retry keeps the failure label and unsupported or loading peers keep their distinct states; credential replacement never carries evidence or disclosure state across identities. Credits never affect the quota-only rail badge.
 
 Format valid nonnegative decimal strings through string arithmetic and locale grouping, with two fractional digits and half-up rounding. Display actual zero as `0.00` and positive values below `0.01` as `<0.01`. Keep the unchanged exact source string available through a labelled information disclosure. Hover or focus reveals it; click, Enter and Space support persistent disclosure and touch. Escape closes the disclosure without closing its parent and retains or restores the original trigger focus when appropriate. Long values and bucket labels wrap within the existing parent scrolling boundary.
 

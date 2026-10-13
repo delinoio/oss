@@ -16,6 +16,7 @@ import {
   SettingsDialogFocus,
 } from "./settings-task";
 import { copy, useLocale } from "./localization";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import { Problem } from "./ui";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 
@@ -64,6 +65,8 @@ export function ProjectSettingsMenu({
   useLayoutEffect(() => {
     if (!visible || !popup.current || !opener.current) return;
     const menu = popup.current;
+    // A native popover never sits beneath an animated ancestor.
+    settleEnclosingEntrances(menu);
     menu.showPopover?.();
     const position = () => {
       const bounds = opener.current?.getBoundingClientRect();

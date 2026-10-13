@@ -324,13 +324,21 @@ const readOnlyShortcutPolicies: Partial<
   [ShortcutId.OpenTool]: { key: "t", reason: "shortcuts.toolSuppressed" },
   [ShortcutId.OpenFiles]: { key: "e", reason: "shortcuts.filesSuppressed" },
 };
-/** Returns the localized reason when a committed override suppresses `id`. */
+/**
+ * Returns the localized reason when `id` must stay inactive. Until the initial
+ * preference read settles (`ready` false) the empty overrides are only startup
+ * placeholders, so every policy-listed ID is held back with a pending reason;
+ * afterwards a committed override suppresses it. Callers outside a preference
+ * provider keep the ready default.
+ */
 export function readOnlyShortcutSuppression(
   id: ShortcutId,
   overrides: ShortcutOverrides,
+  ready = true,
 ): MessageKey | undefined {
   const policy = readOnlyShortcutPolicies[id];
   if (!policy) return;
+  if (!ready) return "shortcuts.preferencesPending";
   // Disabled overrides and Shift variants never claim the unshifted chord.
   return editableShortcutCatalog.some((action) => {
     const override = overrides[action.id];
@@ -346,8 +354,9 @@ export function readOnlyShortcutSuppression(
 export function customizationBindings(
   id: ShortcutId,
   overrides: ShortcutOverrides,
+  ready = true,
 ): readonly ShortcutBinding[] {
-  if (readOnlyShortcutSuppression(id, overrides)) return [];
+  if (readOnlyShortcutSuppression(id, overrides, ready)) return [];
   const override = overrides[id];
   return override?.state === ShortcutOverrideState.Disabled
     ? []
@@ -358,9 +367,14 @@ export function customizationBindings(
 export function effectiveShortcutDefinitions(
   definitions: readonly ShortcutDefinition[],
   overrides: ShortcutOverrides,
+  ready = true,
 ): ShortcutDefinition[] {
   return definitions.map((action) => {
-    const suppression = readOnlyShortcutSuppression(action.id, overrides);
+    const suppression = readOnlyShortcutSuppression(
+      action.id,
+      overrides,
+      ready,
+    );
     if (suppression)
       return {
         ...action,
@@ -376,7 +390,7 @@ export function effectiveShortcutDefinitions(
             ...action.bindings.filter(
               (binding) => !binding.primary && binding.key !== "?",
             ),
-            ...customizationBindings(action.id, overrides),
+            ...customizationBindings(action.id, overrides, ready),
           ],
         };
   });

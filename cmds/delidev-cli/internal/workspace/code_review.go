@@ -56,7 +56,7 @@ func captureNativeReview(ctx context.Context, git Git, manifest Manifest, reques
 	if err != nil {
 		return result, err
 	}
-	digest, err := scanForkTreePinned(ctx, path, "", true, maxForkEntries, &marker)
+	digest, err := scanForkTreePolicy(ctx, forkSymlinkRecord, path, "", true, maxForkEntries, &marker)
 	if err != nil {
 		return result, err
 	}

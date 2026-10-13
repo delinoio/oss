@@ -11,6 +11,7 @@ import {
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   configure,
   fireEvent,
   render,
@@ -18,7 +19,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   SystemService,
   SystemCapability,
@@ -45,6 +46,7 @@ import {
 import { encode, type Document } from "./documents";
 import { SettingsCategory } from "./settings-category";
 import { MutationIntents } from "./mutation";
+import { i18n } from "./localization";
 
 // Settings renders all mounted categories under Strict Mode. Keep this fixture
 // bounded while allowing concurrent integration/build load on development hosts.
@@ -1348,6 +1350,92 @@ it.each([
     ).toBe(automaticApproval);
     expect(automaticFetch()).toBeTruthy();
     expect(details().open).toBe(false);
+    expect(value.save).not.toHaveBeenCalled();
+  },
+);
+
+afterEach(async () => {
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+});
+
+it.each([
+  {
+    variant: "unsupported schema",
+    english:
+      "Unsupported project defaults schema. Policy values are unavailable.",
+    korean:
+      "지원하지 않는 프로젝트 기본값 스키마입니다. 정책 값을 확인할 수 없습니다.",
+  },
+  {
+    variant: "unreadable values",
+    english:
+      "Project defaults contains unreadable or unsupported policy values. Policy values are unavailable.",
+    korean:
+      "프로젝트 기본값에 읽을 수 없거나 지원하지 않는 정책 값이 포함되어 있습니다. 정책 값을 확인할 수 없습니다.",
+  },
+  {
+    variant: "multiple resources",
+    english:
+      "The project defaults read is incomplete or does not identify one settings document. Refresh settings before editing.",
+    korean:
+      "프로젝트 기본값 읽기가 완료되지 않았거나 하나의 설정 문서를 식별하지 못했습니다. 편집하기 전에 설정을 새로 고치세요.",
+  },
+  {
+    variant: "incomplete page",
+    english:
+      "The project defaults read is incomplete or does not identify one settings document. Refresh settings before editing.",
+    korean:
+      "프로젝트 기본값 읽기가 완료되지 않았거나 하나의 설정 문서를 식별하지 못했습니다. 편집하기 전에 설정을 새로 고치세요.",
+  },
+])(
+  "localizes the unavailable $variant state without refetching on language change",
+  async ({ variant, english, korean }) => {
+    const rows =
+      variant === "incomplete page"
+        ? []
+        : [resource(EntityKind.SETTINGS, known)];
+    if (variant === "multiple resources")
+      rows.push(resource(EntityKind.SETTINGS, known));
+    if (variant === "unsupported schema") rows[0].schemaVersion = 4;
+    if (variant === "unreadable values")
+      rows[0].documentJson = new Uint8Array([255]);
+    const value = fixture(rows, () => ({
+      resources: rows,
+      nextPageToken: variant === "incomplete page" ? "opaque-page-2" : "",
+    }));
+    render(value.view(<Settings />));
+    choosePreferences();
+    const region = await screen.findByRole("region", {
+      name: "Project defaults unavailable",
+    });
+    expect(within(region).getByRole("status").textContent).toBe(english);
+    for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
+    const reads = value.list.mock.calls.length;
+    await act(async () => {
+      await i18n.changeLanguage("ko");
+    });
+    const localized = await screen.findByRole("region", {
+      name: "프로젝트 기본값을(를) 사용할 수 없음",
+    });
+    expect(within(localized).getByRole("status").textContent).toBe(korean);
+    expect(localized.textContent).not.toMatch(/[A-Za-z]/);
+    for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
+    expect(screen.queryByRole("form")).toBeNull();
+    expect(value.list).toHaveBeenCalledTimes(reads);
+    expect(value.save).not.toHaveBeenCalled();
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    expect(
+      within(
+        await screen.findByRole("region", {
+          name: "Project defaults unavailable",
+        }),
+      ).getByRole("status").textContent,
+    ).toBe(english);
+    expect(value.list).toHaveBeenCalledTimes(reads);
     expect(value.save).not.toHaveBeenCalled();
   },
 );

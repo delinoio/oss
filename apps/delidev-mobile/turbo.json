@@ -1,6 +1,58 @@
 {
   "extends": ["//"],
   "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env",
+        "src/**",
+        "**/*.proto",
+        "**/*.go",
+        "**/*.ts",
+        "**/*.mts",
+        "**/*.tsx",
+        "tsconfig.json",
+        "tsconfig.build.json",
+        "!**/e2e/",
+        "!.next/**",
+        "!*/**/*.test.ts",
+        "!*/**/*.test.tsx",
+        "!*/**/*.e2e.ts",
+        "!*/**/*.e2e.tsx",
+        "!*/**/*.cy.ts",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/apps/delidev/src/product-identity.ts"
+      ]
+    },
+    "build:frontend": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/apps/delidev/src/product-identity.ts"
+      ]
+    },
+    "typecheck": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/apps/delidev/src/product-identity.ts"
+      ]
+    },
     "test": {
       "cache": false
     },

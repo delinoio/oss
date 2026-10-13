@@ -929,6 +929,9 @@ export function ResourceChoice({
       // empty page and retained display rows cannot prove inventory absence.
       rows: projectResources(response.resources),
       nextPageToken: response.nextPageToken,
+      // Retained in page metadata for every reached page, so project
+      // restriction guidance survives payload eviction in long chains.
+      rawCount: response.resources.length,
       payload: [
         {
           count: response.resources.length,
@@ -1278,8 +1281,8 @@ export function ResourceChoice({
   )?.payload[0];
   // Project restriction guidance may use raw counts from every page reached in
   // the current validated chain. Creation stays first-page-only evidence.
-  const rawInventoryCount = resources.payloadPages.reduce(
-    (total, page) => total + (page.payload[0]?.count ?? 0),
+  const rawInventoryCount = resources.pages.reduce(
+    (total, page) => total + (page.rawCount ?? 0),
     0,
   );
   const emptyInventoryProven = Boolean(

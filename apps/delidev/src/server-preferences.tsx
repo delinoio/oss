@@ -84,17 +84,24 @@ export function ServerPreferencesUnavailable({
   const productLabel = useProductLabels();
   useLocale();
   const label = serverPreferenceLabel(section);
+  const shortLabel = label.toLowerCase();
   return (
     <section
       className="server-preferences-unavailable"
-      aria-label={`${label} unavailable`}
+      aria-label={copy("server-preferences.unavailableRegion", { v0: label })}
     >
       <p role="status">
         {rows.length === 1 && ![1, 2, 3].includes(rows[0].schemaVersion)
-          ? `Unsupported ${label.toLowerCase()} schema. Policy values are unavailable.`
+          ? copy("server-preferences.unavailableUnsupportedSchema", {
+              v0: shortLabel,
+            })
           : rows.length === 1 && !readableServerPreferences(rows[0])
-            ? `${label} contains unreadable or unsupported policy values. Policy values are unavailable.`
-            : `The ${label.toLowerCase()} read is incomplete or does not identify one settings document. Refresh settings before editing.`}
+            ? copy("server-preferences.unavailableUnreadableValues", {
+                v0: label,
+              })
+            : copy("server-preferences.unavailableIncompleteRead", {
+                v0: shortLabel,
+              })}
       </p>
       {rows.map((row) => (
         <small className="server-preferences-id" key={row.id}>
