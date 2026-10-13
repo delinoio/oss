@@ -2320,10 +2320,9 @@ async function collideCompletedClone(
   return { f, input, checkout };
 }
 function addRepositoryButton() {
-  return within(screen.getByRole("dialog", { name: "Add repository" })).getByRole(
-    "button",
-    { name: "Add repository" },
-  );
+  return within(
+    screen.getByRole("dialog", { name: "Add repository" }),
+  ).getByRole("button", { name: "Add repository" });
 }
 function computerRow() {
   return screen.getByText("Computer", { selector: "dt" }).nextElementSibling;
@@ -2381,7 +2380,9 @@ it("shows the localized local computer label after a completed clone collision",
     ).toBe("이 컴퓨터");
     fireEvent.click(
       within(
-        screen.getByRole("dialog", { name: copy("repository-registration.addRepository_2eda4d") }),
+        screen.getByRole("dialog", {
+          name: copy("repository-registration.addRepository_2eda4d"),
+        }),
       ).getByRole("button", {
         name: copy("repository-registration.addRepository_2eda4d"),
       }),
@@ -2411,7 +2412,9 @@ it("blocks cloning again immediately after a completed clone collision", async (
       "Clone mode is available before editing the repository name or optional settings. Add this draft first to preserve those settings.",
     ),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Clone & add repository" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Clone & add repository" }),
+  ).toBeNull();
   expect(f.clone).toHaveBeenCalledTimes(1);
   fireEvent.change(input, { target: { value: "Corrected" } });
   fireEvent.click(addRepositoryButton());
