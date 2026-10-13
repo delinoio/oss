@@ -406,9 +406,9 @@ impl Project {
             })
             .cloned()
             .collect();
-        let frozen = boundary_closure(&chunks, &boundaries, &edges);
-        log_frozen_chunks(&frozen, &scripts, &html_classic, &from_html);
-        crate::app::set_bundle_frozen(frozen);
+        let reach = boundary_reach(&chunks, &boundaries, &edges);
+        log_frozen_chunks(&reach, &scripts, &html_classic, &from_html);
+        crate::app::set_bundle_frozen(first_boundary_credit(&reach));
         tracing::info!(
             chunks = chunks.len(),
             entries = project.entries.len(),
@@ -1347,11 +1347,37 @@ struct BundleImports {
 /// is frozen with it: rehashing keeps a frozen name for every file that
 /// carries it, and an edited copy under the old content hash would let
 /// immutable caches serve stale code.
-pub(crate) fn boundary_closure(
+#[cfg(test)]
+fn boundary_closure(
     chunks: &[String],
     boundaries: &Paths,
     edges: &BTreeMap<String, Paths>,
 ) -> BTreeMap<String, String> {
+    first_boundary_credit(&boundary_reach(chunks, boundaries, edges))
+}
+
+/// Credits every chunk to the first boundary chunk in path order that reaches
+/// it.
+fn first_boundary_credit(reach: &BTreeMap<String, Paths>) -> BTreeMap<String, String> {
+    let mut frozen = BTreeMap::<String, String>::new();
+    for (boundary, chunks) in reach {
+        for chunk in chunks {
+            frozen
+                .entry(chunk.clone())
+                .or_insert_with(|| boundary.clone());
+        }
+    }
+    frozen
+}
+
+/// For every boundary chunk that reaches at least one chunk, the chunks it
+/// freezes (see `boundary_closure`), counting chunks that an earlier boundary
+/// reaches as well.
+fn boundary_reach(
+    chunks: &[String],
+    boundaries: &Paths,
+    edges: &BTreeMap<String, Paths>,
+) -> BTreeMap<String, Paths> {
     // Edges also reach existing assets that are not JavaScript chunks (JSON,
     // CSS): those never take part in staging, so they cannot be frozen.
     let known: Paths = chunks.iter().cloned().collect();
@@ -1361,11 +1387,11 @@ pub(crate) fn boundary_closure(
             by_name.entry(name).or_default().push(chunk);
         }
     }
-    let mut frozen = BTreeMap::<String, String>::new();
+    let mut reach = BTreeMap::<String, Paths>::new();
     for boundary in boundaries {
         // Traversal passes through other boundary chunks: what a nested
-        // boundary imports is reachable from this one as well, so the first
-        // boundary in path order gets the credit.
+        // boundary imports is reachable from this one as well.
+        let mut frozen = Paths::new();
         let mut visited = Paths::from([boundary.clone()]);
         let mut pending = vec![boundary.clone()];
         while let Some(chunk) = pending.pop() {
@@ -1376,9 +1402,7 @@ pub(crate) fn boundary_closure(
                     continue;
                 }
                 if known.contains(&target) && !boundaries.contains(&target) {
-                    frozen
-                        .entry(target.clone())
-                        .or_insert_with(|| boundary.clone());
+                    frozen.insert(target.clone());
                     let name = std::path::Path::new(&target).file_name();
                     reached.extend(
                         name.and_then(|name| by_name.get(name))
@@ -1390,27 +1414,30 @@ pub(crate) fn boundary_closure(
                 pending.push(target);
             }
         }
+        if !frozen.is_empty() {
+            reach.insert(boundary.clone(), frozen);
+        }
     }
-    frozen
+    reach
 }
 
 /// Logs which boundary chunk freezes how many chunks. A boundary that a page
 /// loads as a script keeps everything it imports out of optimization, which
 /// is worth a warning, whether the page loads it as a module script, as a
-/// classic script or through an inline script.
+/// classic script or through an inline script. Every boundary is checked on
+/// its own reach: a chunk that an earlier boundary reaches as well is
+/// credited to that boundary in the report, but the page-loaded boundary
+/// still keeps it out of optimization.
 fn log_frozen_chunks(
-    frozen: &BTreeMap<String, String>,
+    reach: &BTreeMap<String, Paths>,
     scripts: &Paths,
     classic_scripts: &Paths,
     from_html: &Paths,
 ) {
-    let mut per_boundary = BTreeMap::<&str, usize>::new();
-    for boundary in frozen.values() {
-        *per_boundary.entry(boundary.as_str()).or_default() += 1;
-    }
-    for (boundary, chunks) in per_boundary {
+    for (boundary, reached) in reach {
+        let chunks = reached.len();
         tracing::info!(
-            boundary,
+            boundary = boundary.as_str(),
             chunks,
             "chunks that a boundary chunk can import stay unchanged"
         );
@@ -1419,7 +1446,7 @@ fn log_frozen_chunks(
             || from_html.contains(boundary)
         {
             tracing::warn!(
-                boundary,
+                boundary = boundary.as_str(),
                 chunks,
                 "an unchanged HTML entry chunk imports chunks that therefore cannot be optimized"
             );
@@ -2057,7 +2084,7 @@ fn token_start(node: Node) -> usize {
 mod boundary_closure_tests {
     use std::collections::BTreeMap;
 
-    use super::{Paths, boundary_closure};
+    use super::{Paths, boundary_closure, boundary_reach};
 
     fn graph(edges: &[(&str, &[&str])]) -> BTreeMap<String, Paths> {
         edges
@@ -2129,6 +2156,28 @@ mod boundary_closure_tests {
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         assert_eq!(frozen, [("x", "a")]);
+    }
+
+    #[test]
+    fn reach_keeps_a_later_boundary_that_shares_chunks_with_an_earlier_one() {
+        // `a` (not loaded by a page) and `page` (loaded by a page) both reach
+        // `x`: the closure credits `x` to `a` only, but the reach of `page`
+        // still names it, so the HTML-entry warning is not skipped.
+        let edges = graph(&[("a", &["x"]), ("page", &["x", "y"])]);
+        let boundaries: Paths = ["a", "page"].map(String::from).into_iter().collect();
+        let chunks = chunks(&edges);
+        let closure = boundary_closure(&chunks, &boundaries, &edges);
+        let closure: Vec<_> = closure
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(closure, [("x", "a"), ("y", "page")]);
+        let reach = boundary_reach(&chunks, &boundaries, &edges);
+        let reach: Vec<_> = reach
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.iter().map(String::as_str).collect::<Vec<_>>()))
+            .collect();
+        assert_eq!(reach, [("a", vec!["x"]), ("page", vec!["x", "y"])]);
     }
 
     #[test]
