@@ -78,6 +78,31 @@ it("stores original pairing before network I/O and reload preserves credential a
   expect(resumed.profile(id).pairing).toEqual(original.pairing);
   expect(calls).toBe(2);
 });
+it("repeats the identical original pairing request when pair is retried on one prepared profile", async () => {
+  const bodies: string[] = [];
+  const state = new ProtectedState(store, async (_input, init) => {
+    bodies.push(Buffer.from(init?.body as Uint8Array).toString("hex"));
+    throw new Error("lost");
+  });
+  const id = await state.preparePair(
+    "Owned",
+    "https://example.test",
+    JSON.stringify({
+      version: 1,
+      server_id: uuid(),
+      pairing_id: uuid(),
+      endpoint: "https://example.test",
+      code: "x".repeat(43),
+    }),
+  );
+  const original = structuredClone(state.profile(id));
+  for (let attempt = 0; attempt < 3; attempt++)
+    await expect(state.pair(id)).rejects.toThrow();
+  expect(new Set(bodies).size).toBe(1);
+  expect(bodies).toHaveLength(3);
+  expect(state.state.profiles).toHaveLength(1);
+  expect(state.profile(id)).toEqual(original);
+});
 for (const operation of [
   Operation.Create,
   Operation.Send,

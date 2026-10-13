@@ -61,6 +61,17 @@ identity and original pairing request. Pairing accepts the existing version-1
 client grant document only when its HTTPS endpoint matches the explicit origin.
 The original token and request are stored before the first pairing call. Receipt
 retry reuses them; it cannot obtain a second grant, device or machine.
+The Add-profile modal retains the prepared profile ID after `preparePair`
+succeeds. While pairing is unverified, repeated Pair presses call only
+`pair(id)` (labelled with the existing original-pairing retry copy), and the
+name, origin and grant inputs are read-only. The retained ID is cleared only
+after verified pairing, explicit dismissal (which keeps the protected profile
+and its Settings-list retry) or when the profile is forgotten or paired
+elsewhere. Dismissal invalidates the submission in flight: if `preparePair`
+is still running, its durable profile is kept for the Settings-list retry, but
+the dismissed modal neither retains the ID nor calls `pair(id)`, and the form
+is cleared so a reopened modal starts empty. A failed `preparePair` retains
+nothing; a new grant after dismissal is a separate profile creation.
 
 One unresolved mutation per profile is durably stored before sending, using the
 original generated protobuf JSON and exact request ID. Create, Send, Steer,
@@ -249,7 +260,18 @@ An explicit `ios` target omits Android inputs and credentials. It produces a
 schema-2 manifest with exactly the iOS artifact; the default `both` target retains
 the schema-1 manifest. Provenance pins the target and cannot reinterpret a
 candidate across targets. All beta runs share one non-canceling concurrency group
-to serialize edits against the configured Google principal. Candidate manifests include identity,
+(`delidev-mobile-beta`, `cancel-in-progress: false`, `queue: max`) across modes,
+targets and recovery runs to serialize edits against the configured Google principal.
+`queue: max` keeps up to 100 pending runs in the group instead of GitHub's default
+single pending run, so a newer waiter never replaces an older one. GitHub gives no
+dispatch-order guarantee for near-simultaneous arrivals. When the group is full, the
+excess arrival is cancelled itself (capacity cancellation). Runbook: stop dispatching
+while 100 runs are pending; inspect the capacity-cancelled original run and rerun that
+same run once through GitHub's rerun action (within GitHub's 30-day and 50-rerun
+limits). Never replace the dispatch with a new one or regenerate the candidate. If the
+cancelled run had already reached provider access, reconcile the original receipts
+first. Dry-run default, protected environments, source/recovery SHA checks, cross-run
+artifact owner checks and receipt gates are unchanged. Candidate manifests include identity,
 architectures, expected signer fingerprints, original artifact byte lengths and
 SHA-256 checksums. Conflicting candidate/version reuse is refused. Internal-only
 preflight and immutable provider receipts precede any future upload. All selected platform receipts are stored before any provider is contacted. A

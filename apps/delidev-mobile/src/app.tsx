@@ -429,6 +429,13 @@ function Settings({
     [name, setName] = useState(""),
     [origin, setOrigin] = useState(""),
     [grant, setGrant] = useState(""),
+    // Durable profile id from a successful preparePair whose pair() has not
+    // yet been verified. While set, submit retries only that original request.
+    [prepared, setPrepared] = useState<string>(),
+    // Bumped on every dismissal so a submission started by a dismissed modal
+    // cannot attach its result to a later one.
+    submission = useRef(0),
+    preparing = useRef(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState<() => Promise<void>>(),
@@ -460,6 +467,34 @@ function Settings({
   };
   const settings = (change: (s: State) => void) =>
     void run(() => state.update(change));
+  const resetAddForm = () => {
+    setPrepared(undefined);
+    setGrant("");
+    setName("");
+    setOrigin("");
+  };
+  const preparedProfile = prepared
+    ? state.state.profiles.find((p) => p.id === prepared)
+    : undefined;
+  const preparedGone = !!prepared && !preparedProfile;
+  const preparedPaired = !!preparedProfile && !preparedProfile.pairing;
+  useEffect(() => {
+    // The prepared attempt ended elsewhere: forgotten, or paired through the
+    // profile-list retry. Release the frozen inputs.
+    if (preparedGone) setPrepared(undefined);
+    else if (preparedPaired) {
+      resetAddForm();
+      setAdding(false);
+    }
+  }, [preparedGone, preparedPaired]);
+  const closeAdd = () => {
+    // Dismissal keeps the protected profile; the list retry remains available.
+    // An in-flight submission becomes inert: it must neither freeze a later
+    // modal on the dismissed grant nor attempt pairing on its own.
+    submission.current += 1;
+    if (prepared || preparing.current) resetAddForm();
+    setAdding(false);
+  };
   return (
     <section>
       <h2>{c.settings}</h2>
@@ -586,18 +621,30 @@ function Settings({
       </details>
       {error ? <p role="alert">{error}</p> : null}
       {adding ? (
-        <Modal title={c.add} close={() => setAdding(false)}>
+        <Modal title={c.add} close={closeAdd}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              const attempt = submission.current;
               void run(async () => {
-                const id = await state.preparePair(name, origin, grant);
-                changed();
+                let id = prepared;
+                if (!id || !state.state.profiles.some((p) => p.id === id)) {
+                  preparing.current = true;
+                  try {
+                    id = await state.preparePair(name, origin, grant);
+                  } finally {
+                    preparing.current = false;
+                  }
+                  // Dismissed while preparing: the durable profile stays in
+                  // the Settings list for its retry; do not pair from here.
+                  if (submission.current !== attempt) return;
+                  setPrepared(id);
+                  changed();
+                }
                 await state.pair(id);
+                if (submission.current !== attempt) return;
                 setAdding(false);
-                setGrant("");
-                setName("");
-                setOrigin("");
+                resetAddForm();
               });
             }}
           >
@@ -607,6 +654,7 @@ function Settings({
                 <input
                   required
                   maxLength={120}
+                  readOnly={!!prepared}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -618,6 +666,7 @@ function Settings({
                   type="url"
                   autoCapitalize="none"
                   autoCorrect="off"
+                  readOnly={!!prepared}
                   value={origin}
                   onChange={(e) => setOrigin(e.target.value)}
                 />
@@ -629,12 +678,14 @@ function Settings({
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
+                  readOnly={!!prepared}
                   value={grant}
                   onChange={(e) => setGrant(e.target.value)}
                 />
               </label>
               <p>{c.pairingNote}</p>
-              <button>{c.pair}</button>
+              {prepared ? <p>{c.pendingPair}</p> : null}
+              <button>{prepared ? c.retryPair : c.pair}</button>
             </fieldset>
           </form>
         </Modal>
