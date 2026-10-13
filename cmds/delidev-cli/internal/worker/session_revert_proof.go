@@ -60,6 +60,28 @@ func resolveRevertTarget(root string, source CodexExecutionCheckpoint, i domain.
 	return target, nil
 }
 
+// verifyRevertIntentSkillProof checks the target a durable Revert claim froze
+// against the original retained skill proof. A claim written before the proof
+// was bound carries a zero skill digest for a skilled prompt, so it authorized
+// whatever skills the native history held; it is quarantined here rather than
+// reconciled or published. Text-only targets keep the zero digest.
+func verifyRevertIntentSkillProof(root string, source CodexExecutionCheckpoint, i domain.SessionCompactionInput, frozen codex.HistoricalInput, logger *slog.Logger) error {
+	if i.Revert == nil {
+		return domain.CompactionUncertain()
+	}
+	if len(i.Revert.Prompt.Skills) == 0 {
+		return nil
+	}
+	expected, err := resolveRevertTarget(root, source, i, nil)
+	if err == nil && frozen.SkillDigest != ([32]byte{}) && frozen.SkillDigest == expected.SkillDigest {
+		return nil
+	}
+	if logger != nil {
+		logger.Warn("codex_revert_intent_skill_proof_rejected", "action_id", i.ActionID, "input_id", i.Revert.InputID, "legacy_zero_digest", frozen.SkillDigest == ([32]byte{}), "proof_resolved", err == nil, "skills", len(i.Revert.Prompt.Skills))
+	}
+	return domain.CompactionUncertain()
+}
+
 // findRetainedInput matches both identity and prompt digest, so an input id
 // that was retained with different text cannot lend its skill proof.
 func findRetainedInput(inputs []codex.HistoricalInput, target codex.HistoricalInput) (codex.HistoricalInput, bool) {

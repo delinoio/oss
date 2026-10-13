@@ -446,8 +446,9 @@ original envelope stays decodable by an older Worker. The server refuses the
 skilled earlier target with the safe unsupported failure before pausing the
 session unless the original Worker advertises Worker capability
 `CODEX_SESSION_REVERT_TARGET_PROOF_V1`, and lease and dispatch authority require
-it again for a job that carries the reference. Selected skills are authenticated by a separate native skill digest
-that prompt digests do not cover. Before the native claim the Worker resolves
+it again for a job that carries the reference.
+Selected skills are authenticated by a separate native skill digest that prompt
+digests do not cover. Before the native claim the Worker resolves
 that digest only from the immutable retained input proof for the exact target
 input id and prompt digest: the source checkpoint when the target belongs to the
 source execution, otherwise the target execution's own checkpoint read by its
@@ -529,7 +530,12 @@ ordinary late canceled reports remain quarantined. Receipt replay cannot advance
 the context again. It never sends Revert again, changes targets or retries native
 input. Missing
 intent, mismatched history, changed ownership or cleanup uncertainty remains
-quarantined. Ordinary context jobs keep their existing recovery restrictions.
+quarantined. For a target whose prompt selected skills, recovery and the
+retained-checkpoint read also compare the skill digest frozen in the original
+intent with the original retained proof resolved as above. A claim written
+before the proof was bound froze a zero digest, never verified the skills, and
+is quarantined the same way, as is any claim whose digest differs from that
+proof; text-only targets keep the zero digest. Ordinary context jobs keep their existing recovery restrictions.
 
 ## Project requirements
 

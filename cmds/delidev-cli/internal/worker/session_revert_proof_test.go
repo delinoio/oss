@@ -203,3 +203,46 @@ func TestSessionRevertTargetCheckpointReferenceIsAllOrNothing(t *testing.T) {
 		t.Fatal("complete reference rejected")
 	}
 }
+
+func TestVerifyRevertIntentSkillProofQuarantinesLegacySkilledClaims(t *testing.T) {
+	fx := newRevertProofFixture(t, skilledPrompt("skilled prompt"), nil)
+	fx.source.Native.Inputs = []codex.HistoricalInput{fx.target(skillDigest("original"))}
+	// The claim of a Worker that bound the retained proof reconciles.
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target(skillDigest("original")), nil); err != nil {
+		t.Fatal("claim carrying the retained proof was rejected", err)
+	}
+	// A pre-fix claim froze a zero digest, which never verified the skills.
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target([32]byte{}), nil); err == nil {
+		t.Fatal("legacy skilled claim with a zero digest was accepted")
+	}
+	// A claim for removed, changed or reordered skills differs from the retained proof.
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target(skillDigest("changed")), nil); err == nil {
+		t.Fatal("claim for another skill selection was accepted")
+	}
+	// Without a retained proof nothing can vouch for the claim.
+	fx.source.Native.Inputs = nil
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target(skillDigest("original")), nil); err == nil {
+		t.Fatal("claim was accepted without a retained proof")
+	}
+}
+
+func TestVerifyRevertIntentSkillProofReadsEarlierExecutionCheckpoint(t *testing.T) {
+	fx := newRevertProofFixture(t, skilledPrompt("earlier skilled prompt"), nil)
+	fx.writeEarlierCheckpoint(t, nil, skillDigest("earlier"))
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target(skillDigest("earlier")), nil); err != nil {
+		t.Fatal("claim bound to the earlier checkpoint was rejected", err)
+	}
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target([32]byte{}), nil); err == nil {
+		t.Fatal("legacy zero-digest claim for an earlier skilled target was accepted")
+	}
+}
+
+func TestVerifyRevertIntentSkillProofKeepsTextOnlyClaims(t *testing.T) {
+	fx := newRevertProofFixture(t, domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "text only"}, nil)
+	if err := verifyRevertIntentSkillProof(fx.root, fx.source, fx.input, fx.target([32]byte{}), nil); err != nil {
+		t.Fatal("text-only claim was rejected", err)
+	}
+	if verifyRevertIntentSkillProof(fx.root, fx.source, domain.SessionCompactionInput{}, fx.target([32]byte{}), nil) == nil {
+		t.Fatal("non-Revert input was accepted")
+	}
+}

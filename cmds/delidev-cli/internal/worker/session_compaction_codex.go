@@ -521,7 +521,7 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 		expected := revertResult(p.JobID, p.Input, p.Native, ref.CheckpointDigest, ref.NativeDigest)
 		expectedRaw, _ := json.Marshal(expected)
 		actualRaw, _ := json.Marshal(result)
-		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, p) != nil {
+		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, source, p, slog.Default()) != nil {
 			return empty, domain.CompactionUncertain()
 		}
 		if p.Input.Revert == nil || result.Version != 4 || result.Revert == nil || result.Revert.HistoryDigest != p.Native.HistoryDigest || result.Revert.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || p.Native.Revert.ActionID != ref.ActionID || result.Revert.Target.NativeTurnID != domain.NativeIdentity(p.Native.Revert.BeforeTurnID) {
