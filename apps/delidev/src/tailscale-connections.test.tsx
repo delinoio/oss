@@ -129,7 +129,9 @@ it("retries an uncertain resume with the exact original request and never double
   expect(f.cancel).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(
-      screen.queryByRole("button", { name: "Retry the original resume request" }),
+      screen.queryByRole("button", {
+        name: "Retry the original resume request",
+      }),
     ).toBeNull(),
   );
 });

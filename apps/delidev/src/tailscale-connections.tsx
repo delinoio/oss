@@ -346,8 +346,10 @@ function DeviceInventory({
   );
   // A retained input (uncertain or in flight) makes the hook ignore any new
   // input, so row actions stay disabled until the original request is retried.
-  const resumeBlocked = resume.busy || resume.uncertain || Boolean(resume.input);
-  const cancelBlocked = cancel.busy || cancel.uncertain || Boolean(cancel.input);
+  const resumeBlocked =
+    resume.busy || resume.uncertain || Boolean(resume.input);
+  const cancelBlocked =
+    cancel.busy || cancel.uncertain || Boolean(cancel.input);
   const retainedHelpId = "tailscale-retained-request-help";
   const inventory = decode<Inventory>(discovery.data?.documentJson);
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
