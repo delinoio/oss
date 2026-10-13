@@ -157,6 +157,38 @@ func verifySavedWorker(owner, root string, serverID domain.ID, endpoint string) 
 	return true, VerifyOriginalPairing(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID)
 }
 
+// OwnsServer reports whether owner is the server data directory that holds the
+// identity of serverID. Only that canonical owner scope stores the retained
+// pairing grants a fixed Local Worker is verified against. A custom Worker
+// scope whose parent merely contains a "worker" directory has no owner
+// identity here and is not wrapped. An unreadable or corrupt identity fails
+// closed.
+func OwnsServer(owner string, serverID domain.ID) (bool, error) {
+	identity, err := security.LoadIdentity(owner)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return identity.ServerID == serverID, nil
+}
+
+// RequiresLocalTransport reports whether a classified fixed Local Worker must
+// be wrapped in LocalTransport: either owner is the canonical server data
+// directory that holds its retained grants, or follow evidence (a published
+// runtime record or a durable follow marker) already exists, in which case a
+// missing owner identity must fail closed instead of releasing the bearer
+// token to the saved pairing address. A custom Worker scope without either
+// keeps its direct pairing route.
+func RequiresLocalTransport(owner, root string, serverID domain.ID, endpoint string) (bool, error) {
+	owns, err := OwnsServer(owner, serverID)
+	if err != nil || owns {
+		return owns, err
+	}
+	return Following(root, serverID, endpoint)
+}
+
 func logUnverifiedPairing(phase string, err error) {
 	slog.Warn("desktop_runtime_follow", "phase", phase, "code", domain.SafeError(err).Code)
 }

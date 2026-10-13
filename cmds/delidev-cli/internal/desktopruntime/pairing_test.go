@@ -523,3 +523,31 @@ func TestMarkLocalRequiresCompleteWorkerCredential(t *testing.T) {
 		})
 	}
 }
+
+func TestOwnsServerRequiresMatchingOwnerIdentity(t *testing.T) {
+	owner := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(owner); err != nil {
+		t.Fatal(err)
+	}
+	serverID := domain.NewID()
+	// A directory without an owner identity is not a server data directory.
+	if owns, err := OwnsServer(owner, serverID); err != nil || owns {
+		t.Fatalf("directory without identity reported %v %v", owns, err)
+	}
+	identity, err := security.CreateIdentity(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owns, err := OwnsServer(owner, identity.ServerID); err != nil || !owns {
+		t.Fatalf("matching owner reported %v %v", owns, err)
+	}
+	if owns, err := OwnsServer(owner, serverID); err != nil || owns {
+		t.Fatalf("foreign server reported %v %v", owns, err)
+	}
+	if err := security.WriteAtomic(filepath.Join(owner, "owner.json"), []byte("{")); err != nil {
+		t.Fatal(err)
+	}
+	if owns, err := OwnsServer(owner, identity.ServerID); err == nil || owns {
+		t.Fatalf("corrupt identity did not fail closed: %v %v", owns, err)
+	}
+}
