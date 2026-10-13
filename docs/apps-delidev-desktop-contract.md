@@ -1164,21 +1164,37 @@ operations are permitted. Project committed language, theme and date-format stat
 from their in-memory owners without inspecting preference files.
 
 The 380px border-box panel has a maximum 640px height, 16px padding, 12px corners,
-semantic themes and internal scrolling with reachable header/footer. Show the
-window selector, connection observation, account quotas, Manage subscriptions,
-secondary metrics and Open/Quit footer in that order. Select the most recently
-used ready original window initially; retain selection across hiding, fall back
-only when that instance disappears, and never mix windows' observations. Snapshots
-include at most 32 product windows, retain the recent window within that bound,
-and disclose overflow. Selecting only changes presentation; Settings remains the
-existing destination. Preserve the 20-account/eight-quota-window bounds and
+semantic themes, 40px action/disclosure targets and internal scrolling with a
+fixed, reachable header/footer. Render no product-window label, selector or
+selector-only overflow guidance. Show, in order: the DeliDev header with Close; a
+compact connection/observation line; the Account quotas heading with Manage
+subscriptions (the heading and action wrap at narrow widths and in Korean);
+account cards; secondary 2x2 metrics; the incomplete-usage note; the initially
+collapsed Usage details disclosure; and the fixed Open/Quit footer. Exactly one
+ready-window snapshot is both the presentation source and the navigation target.
+Each panel opening selects the native recent ready window, falling back to the
+first ready row when that instance is absent. The choice is retained for the
+visible visit, including preference updates and disclosure interaction, and is
+replaced only when that window disappears. Snapshots are never merged, so
+multiple windows connected to the same server cannot create duplicate account
+cards or summed session, Worker or usage counts. This is representative snapshot
+selection, not server aggregation or routing. Snapshots include at most 32
+product windows and retain the recent window within that bound. Settings remains
+the existing destination. Preserve the 20-account/eight-quota-window bounds and
 explicit additional-record guidance. Render optional closed `chatgpt | claude |
 grok` service only from explicit subscription-account metadata. Preserve complete
 masked aliases and safe exact 128-character ASCII quota IDs; missing, invalid or
-credential-shaped IDs use localized Quota N. Each independent quota retains
-basis-point precision, original observation/reset evidence, state and decorative
-bar; never pool quotas or infer duration labels. Expired reset times await new
-observation, and stale historical values remain visibly stale. Usage stays exact,
+credential-shaped IDs use localized Quota N. Account cards are softly tinted with 12px
+padding and 8px corners, show service metadata and the masked alias in the header,
+and stack multiple quota rows with fine separators. Each independent quota shows
+its safe ID, a 24px remaining percentage with basis-point precision, original
+observation/reset evidence, state and a decorative bar; unknown, failed and
+unsupported quotas show the unavailable text and no bar. Never pool quotas or
+infer duration labels. Expired reset times await new
+observation, and stale historical values remain visibly stale. Loading, accounts-unavailable, accounts-empty and recoverable read-error states
+remain distinct muted inline messages with the existing Reload action. Secondary
+metrics use 14px text with subtle borders and keep exact counts, UTC-day labeling
+and unknown-versus-zero distinctions. Usage stays exact,
 incomplete and separated by currency in an initially collapsed disclosure. Reuse the shared native disclosure family with its original 40px header. Opening or closing it preserves the mounted retained snapshot and grants no product read or activation authority.
 
 On macOS/Windows, left-click toggles the panel adjacent to the native tray
@@ -1187,13 +1203,16 @@ the pointer monitor, falling back to the primary monitor. Convert desired CSS
 size with the monitor scale and clamp physical placement to its work area,
 including negative origins and small monitors. Keep one hidden, undecorated,
 nonresizable, taskbar-excluded native window and reuse it. Close, Escape and focus
-loss hide only this panel. Opening focuses the selector; keyboard and native CEF
+loss hide only this panel. The first successful snapshot read of each opening
+(initial load and the window focus event that follows a native show) focuses the
+Close button; later snapshot updates never move focus. No selector exists to
+autofocus. Keyboard Tab traversal, visible focus and native CEF
 accessibility remain supported. A bounded focus-loss/mouse-up correlation
 workaround prevents an icon click from reopening the panel it just dismissed.
 
 Preserve native Open status, Show and Quit fallback actions. Construction/show
 failure restores the full existing status menu with sanitized diagnostics. Panel
-snapshot reads, selection, repainting and preference projection perform no RPC,
+snapshot reads, representative-window selection, repainting and preference projection perform no RPC,
 quota refresh, scope reset or product mutation. The existing polling, native
 45-second monotonic staleness and widget writer remain authoritative. Activation
 retains original window instance, scope and exact publication revision, rejects

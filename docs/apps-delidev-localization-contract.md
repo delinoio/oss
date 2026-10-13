@@ -250,8 +250,10 @@ Settings search indexes only bundled category/target label and static help keys 
 The feature uses the separate `tray-status` bundled entry and English/Korean
 catalog. Retained native snapshots project the committed resolved language,
 semantic theme and date format without mounting writable device controllers.
-Preference changes update the same panel and selection without a product read or
-scope reset. Localize state, unavailable/empty distinctions, quota fallback IDs,
+Preference changes update the same panel and its retained representative window
+without a product read or scope reset. The catalog has no product-window label,
+no-window option or additional-window guidance because the panel has no window
+selector. Localize state, unavailable/empty distinctions, quota fallback IDs,
 reset expiry, precision-preserving counts and existing navigation actions. Keep
 explicit service brands and exact safe quota IDs separate from translated copy.
 The auxiliary document has no preference-write or protected widget-store access.
