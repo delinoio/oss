@@ -2997,6 +2997,124 @@ mod product_window_tests {
         assert!(recheck_record(&windows, &forged).is_err());
     }
 
+    fn staged_tabs() -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        delidev_desktop::browser::PrivateWrite,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("tabs.json");
+        let staged = delidev_desktop::browser::stage_private(
+            &path,
+            &delidev_desktop::browser::Tabs::default(),
+        )
+        .unwrap();
+        (temp, path, staged)
+    }
+
+    #[test]
+    fn page_publication_fence_replaces_only_for_the_original_authority() {
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        publish_browser_pages(&windows, &original, staged, &mut committed).unwrap();
+        assert!(committed && path.exists());
+
+        // A changed window instance, binding identity or removal barrier is
+        // rejected before replacement, leaving the prior file untouched.
+        for stale in ["instance", "binding", "barrier", "closing"] {
+            let windows = ProductWindows::default();
+            let first = saved(&windows, "profile");
+            match stale {
+                "instance" => {
+                    let mut registry = windows.registry.lock().unwrap();
+                    registry.begin_close(&first.entry.label, false).unwrap();
+                }
+                "binding" => {
+                    windows
+                        .bindings
+                        .lock()
+                        .unwrap()
+                        .get_mut(&first.entry.label)
+                        .unwrap()
+                        .profile
+                        .device_id = "replacement".into();
+                }
+                "barrier" => {
+                    windows.removals.lock().unwrap().insert(
+                        "profile".into(),
+                        SavedBinding {
+                            profile: first.saved.clone().unwrap(),
+                            instance: "removal".into(),
+                            closing: true,
+                        },
+                    );
+                }
+                _ => {
+                    windows
+                        .bindings
+                        .lock()
+                        .unwrap()
+                        .get_mut(&first.entry.label)
+                        .unwrap()
+                        .closing = true;
+                }
+            }
+            let (_temp, path, staged) = staged_tabs();
+            let mut committed = false;
+            assert!(
+                publish_browser_pages(&windows, &first, staged, &mut committed).is_err(),
+                "{stale}"
+            );
+            assert!(!committed && !path.exists(), "{stale}");
+        }
+    }
+
+    #[test]
+    fn local_page_publication_rejects_a_changed_local_connection_revision() {
+        let windows = ProductWindows::default();
+        let mut registry = windows.registry.lock().unwrap();
+        let entry = registry.reserve(Role::Local, true).unwrap();
+        registry.ready(&entry).unwrap();
+        let original = WindowAuthority {
+            entry,
+            local_revision: registry.local_revision,
+            saved: None,
+        };
+        drop(registry);
+        let (_temp, _path, staged) = staged_tabs();
+        let mut committed = false;
+        publish_browser_pages(&windows, &original, staged, &mut committed).unwrap();
+        assert!(committed);
+        windows.registry.lock().unwrap().local_revision += 1;
+        let (_temp, path, staged) = staged_tabs();
+        let mut committed = false;
+        assert_eq!(
+            publish_browser_pages(&windows, &original, staged, &mut committed),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert!(!committed && !path.exists());
+    }
+
+    #[test]
+    fn page_command_failures_distinguish_unadmitted_from_uncertain() {
+        assert_eq!(
+            serde_json::to_value(PageCommandFailure::NotAdmitted {
+                failure: NativeFailure::Busy
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "not-admitted", "failure": "busy"})
+        );
+        assert_eq!(
+            serde_json::to_value(PageCommandFailure::Uncertain {
+                failure: NativeFailure::SidecarFailed
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "uncertain", "failure": "sidecar-failed"})
+        );
+    }
+
     #[test]
     fn rename_updates_every_sibling_without_rolling_back_newer_names() {
         let windows = ProductWindows::default();
