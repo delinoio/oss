@@ -1154,7 +1154,8 @@ struct BundleImports {
 /// Chunks that a boundary chunk can import, statically or through a literal
 /// dynamic `import()`, directly or through other chunks, each with the first
 /// boundary chunk in path order that reaches it. Boundary chunks themselves
-/// are not part of the result. A reference names only the file name, so a
+/// and imported files that are not in `chunks` (JSON or CSS assets) are not
+/// part of the result. A reference names only the file name, so a
 /// chunk that shares its file name with a frozen chunk (in another directory)
 /// is frozen with it: rehashing keeps a frozen name for every file that
 /// carries it, and an edited copy under the old content hash would let
@@ -1164,6 +1165,9 @@ pub(crate) fn boundary_closure(
     boundaries: &Paths,
     edges: &BTreeMap<String, Paths>,
 ) -> BTreeMap<String, String> {
+    // Edges also reach existing assets that are not JavaScript chunks (JSON,
+    // CSS): those never take part in staging, so they cannot be frozen.
+    let known: Paths = chunks.iter().cloned().collect();
     let mut by_name = BTreeMap::<&std::ffi::OsStr, Vec<&String>>::new();
     for chunk in chunks {
         if let Some(name) = std::path::Path::new(chunk).file_name() {
@@ -1184,7 +1188,7 @@ pub(crate) fn boundary_closure(
                 if !visited.insert(target.clone()) {
                     continue;
                 }
-                if !boundaries.contains(&target) {
+                if known.contains(&target) && !boundaries.contains(&target) {
                     frozen
                         .entry(target.clone())
                         .or_insert_with(|| boundary.clone());
@@ -1923,6 +1927,21 @@ mod tests {
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         assert_eq!(frozen, [("x", "a"), ("y", "a")]);
+    }
+
+    #[test]
+    fn closure_skips_imported_files_that_are_not_chunks() {
+        // `a` imports a JSON asset and a stylesheet next to the chunk `x`: only
+        // JavaScript chunks can be frozen, because staging never sees assets.
+        let edges = graph(&[("a", &["data-H.json", "style-H.css", "x"])]);
+        let boundaries: Paths = ["a"].map(String::from).into_iter().collect();
+        let chunks: Vec<String> = ["a", "x"].map(String::from).into();
+        let frozen = boundary_closure(&chunks, &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(frozen, [("x", "a")]);
     }
 
     #[test]
