@@ -112,6 +112,11 @@ struct PageOperation {
     request: PageRequest,
     // Profile whose shared children this operation's receipt observes.
     profile: String,
+    // Highest view generation that existed when the metadata committed. Only
+    // children up to it can be this operation's original children; a child
+    // with a newer generation is a replacement created after the commit and
+    // never delays the original cleanup. Unbounded until the commit.
+    generation_limit: u64,
     receipt: PageReceipt,
     // Inventory after the operation, for a profile that was never loaded.
     tabs: Tabs,
@@ -139,6 +144,18 @@ impl PageOperation {
             && !self.cleanup_reconciled
             && !self.receipt.native_cleanup_complete
             && (self.receipt.metadata_committed || self.receipt.phase == PagePhase::Accepted)
+    }
+
+    // Awaits the close callbacks of the given (window, generation) children
+    // that could be this operation's originals.
+    fn await_originals(&mut self, children: &[(String, u64)]) {
+        let limit = self.generation_limit;
+        self.awaiting_close.extend(
+            children
+                .iter()
+                .filter(|(_, generation)| *generation <= limit)
+                .cloned(),
+        );
     }
 }
 const PAGE_LIMIT: usize = 16;
@@ -278,9 +295,7 @@ impl State {
     ) -> Result<TabReplacement> {
         let replacement = self.select_tab(profile, selected, unmap)?;
         if let Some(operation) = self.page_operations.get_mut(key) {
-            operation
-                .awaiting_close
-                .extend(replacement.superseded.iter().cloned());
+            operation.await_originals(&replacement.superseded);
         }
         Ok(replacement)
     }
@@ -365,7 +380,7 @@ impl State {
             .values_mut()
             .filter(|operation| operation.tracks_outstanding(profile))
         {
-            operation.awaiting_close.extend(superseded.iter().cloned());
+            operation.await_originals(superseded);
             tracing::debug!(
                 operation = "browser_page_cleanup",
                 state = "superseded_by_selection",
@@ -1197,6 +1212,7 @@ impl BrowserHost {
                 PageOperation {
                     request: request.clone(),
                     profile: record.id.clone(),
+                    generation_limit: u64::MAX,
                     receipt: PageReceipt {
                         operation_id: operation_id.into(),
                         page_id: page_id.clone(),
@@ -1235,8 +1251,9 @@ impl BrowserHost {
             }
             profile.storage_revision = profile.storage_revision.saturating_add(1);
         }
+        let generation = state.generation;
         if let Some(operation) = state.page_operations.get_mut(&key) {
-            Self::record_mutation_outcome(operation, outcome, tabs);
+            Self::record_mutation_outcome(operation, outcome, tabs, generation);
         }
         Ok(PageAdmission::Admitted)
     }
@@ -1246,10 +1263,14 @@ impl BrowserHost {
         operation: &mut PageOperation,
         outcome: Result<Option<Option<(PathBuf, NativeFailure)>>>,
         tabs: Tabs,
+        generation: u64,
     ) {
         match outcome {
             Ok(published) => {
                 operation.receipt.metadata_committed = true;
+                // Every child that exists now is an original of this receipt;
+                // children created after this point are replacements.
+                operation.generation_limit = generation;
                 match published {
                     // An idempotent Close of an absent page published no
                     // metadata, so a child that a lifecycle close registered
@@ -3888,6 +3909,8 @@ exec /bin/cat "$2/desktop-client/pending.json"
                 view_id: view_id.clone(),
             },
         );
+        // Generations are allocated from the state counter.
+        state.generation = state.generation.max(1);
         drop(state);
         (temp, host, record, view_id, request)
     }
@@ -6191,7 +6214,7 @@ esac
             .awaiting_close
             .insert(("fixture".to_string(), original.generation));
         // The Close found its page already absent and published nothing.
-        BrowserHost::record_mutation_outcome(operation, Ok(None), tabs.clone());
+        BrowserHost::record_mutation_outcome(operation, Ok(None), tabs.clone(), 1);
         assert!(operation.awaiting_close.is_empty());
         assert!(operation.receipt.metadata_committed);
         // A published mutation keeps the same registrations.
@@ -6199,7 +6222,7 @@ esac
             .awaiting_close
             .insert(("fixture".to_string(), original.generation));
         operation.cleanup_reconciled = false;
-        BrowserHost::record_mutation_outcome(operation, Ok(Some(None)), tabs);
+        BrowserHost::record_mutation_outcome(operation, Ok(Some(None)), tabs, 1);
         assert_eq!(operation.awaiting_close.len(), 1);
     }
 
@@ -6361,6 +6384,56 @@ esac
         let receipt = host.page_receipt(&key).unwrap();
         assert_eq!(receipt.phase, PagePhase::Completed);
         assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn replacement_children_are_not_attributed_to_a_failed_reconciliation() {
+        let (_temp, host, record, view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        // The reconciliation partially fails: one window's replacement child
+        // is created after the commit while the receipt stays pending.
+        host.complete_page_cleanup(&key, &record.id, true, Err(NativeFailure::SidecarFailed))
+            .unwrap();
+        {
+            let mut state = host.state.lock().unwrap();
+            state.generation += 1;
+            let generation = state.generation;
+            let mut request = original.clone();
+            request.window = "replacement".into();
+            request.generation = generation;
+            state.views.insert(
+                "replacement".into(),
+                View {
+                    profile: record.id.clone(),
+                    generation,
+                    request,
+                    browser: None,
+                    failure: None,
+                    creation_pending: true,
+                    closing: false,
+                    view_id,
+                },
+            );
+        }
+        // Hiding the replacement before the retry must not delay the original
+        // cleanup.
+        host.close_window_with("replacement", |_| Ok(())).unwrap();
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
+        // The original child is still attributed to the receipt.
+        host.close_window_with("fixture", |_| Ok(())).unwrap();
+        assert_eq!(
+            host.state.lock().unwrap().page_operations[&key].awaiting_close,
+            BTreeSet::from([("fixture".to_string(), original.generation)])
+        );
+        let retried = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(retried.phase, PagePhase::CleanupPending);
+        host.child_closed(&original);
+        assert_eq!(host.page_receipt(&key).unwrap().phase, PagePhase::Completed);
     }
 
     #[test]

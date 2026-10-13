@@ -183,7 +183,11 @@ immediately, so an owner that unmounts before its next Observe cannot leave a
 reconciliation failed stays `cleanup-pending` with a partial set after the
 profile's mutation slot is released, so every later registration above also
 applies to a committed receipt whose reconciliation has not succeeded, and a
-child removed before the retried Observe is still awaited. Observing the
+child removed before the retried Observe is still awaited. Only children that
+existed when the receipt's metadata committed are attributed to it: the receipt
+records the highest view generation at that commit, so a replacement child created
+after it (for example by a partially failed reconciliation) is never added to the
+awaited set when it is later hidden or closed. Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate
 close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
