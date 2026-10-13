@@ -24,6 +24,13 @@ change. A genuine alias that equals a generated fallback string stays a user nam
 
 `apps/delidev/src/product-identity.ts` owns the shared pure typed projection;
 `product-identity-labels.tsx` owns desktop observation of existing query-cache data.
+The provider scans the query cache once when it is created (plus one catch-up scan when
+it subscribes) and then observes only the data of added or updated queries from the
+`QueryCache` subscription, so labels are current before observers re-render. Consumers
+of `useProductLabels` only read the retained registry and never traverse the cache. The
+excluded content keys (`documentJson`, `responseJson`, `reportJson`, `bundleJson`,
+`native`, `metadata`, `content`, `output`, `text`, `prompt`, `frames`, `messages`) stay
+unobserved.
 Mobile imports the pure projection with its own connection/view lifetime. Preserve
 original UUIDs in RPC requests, authorization, receipts, immutable retries, history,
 selection, cache/React/DOM keys and machine-readable export formats. Preserve exact
