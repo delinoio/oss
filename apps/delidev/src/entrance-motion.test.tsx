@@ -265,8 +265,14 @@ it("settles each 120ms primitive only on its own animation name", () => {
   expect(entering()).toBeNull();
 });
 
-function EdgeHarness({ active }: { active: boolean }) {
-  const count = useActivationCount(active);
+function EdgeHarness({
+  active,
+  countMount = true,
+}: {
+  active: boolean;
+  countMount?: boolean;
+}) {
+  const count = useActivationCount(active, countMount);
   return <output data-testid="count">{count}</output>;
 }
 
@@ -280,6 +286,18 @@ it("counts rising activation edges only", () => {
   expect(count()).toBe("1");
   rerender(<EdgeHarness active />);
   expect(count()).toBe("2");
+});
+
+it("does not count a mount that starts active when countMount is false", () => {
+  const { rerender } = render(<EdgeHarness active countMount={false} />);
+  const count = () => screen.getByTestId("count").textContent;
+  expect(count()).toBe("0");
+  rerender(<EdgeHarness active countMount={false} />);
+  expect(count()).toBe("0");
+  rerender(<EdgeHarness active={false} countMount={false} />);
+  expect(count()).toBe("0");
+  rerender(<EdgeHarness active countMount={false} />);
+  expect(count()).toBe("1");
 });
 
 function stubAnimations(node: Element, running: string[]) {
