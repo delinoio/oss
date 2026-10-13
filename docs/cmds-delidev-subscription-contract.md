@@ -670,7 +670,11 @@ apply the same predicate. Keep health, authentication, removal, model/project
 compatibility, connection/credential generation, Worker capability and lease
 restrictions. Registered original grant/receipt ownership remains authoritative
 after credit evidence expires for completion, cleanup and exact registration
-replay. Other live ownership fences still apply. API, Claude and OpenCode retain
+replay. Other live ownership fences still apply. A new paid registration also
+requires the live selected Worker to advertise `managed-codex-subscriptions-v1`,
+as dispatch does; a same-instance reattachment that withdraws it denies new
+registration without storing a grant, while an already registered exact grant
+keeps replay, completion and cleanup. API, Claude and OpenCode retain
 their existing exhaustion rules.
 
 Paid admission never clears included exhaustion, changes quota scores, creates
