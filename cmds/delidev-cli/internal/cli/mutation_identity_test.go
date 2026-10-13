@@ -642,3 +642,54 @@ func TestCLIOAuthReceiptRequiresExactDispatchedRequestID(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIOAuthLocalRejectionsAllocateNoMutationIdentity(t *testing.T) {
+	resource := string(domain.NewID())
+	cases := []struct {
+		name  string
+		args  []string
+		input string
+	}{
+		{"start/unknown-flag", []string{"account", "oauth", "start", "--provider-id", resource, "--revision", "1", "--bogus"}, ""},
+		{"start/invalid-api-protocol", []string{"account", "oauth", "start", "--provider-id", resource, "--revision", "1", "--api-protocol", "not-a-protocol"}, ""},
+		{"start/unsupported-api-protocol-capability", []string{"account", "oauth", "start", "--provider-id", resource, "--revision", "1", "--api-protocol", string(domain.OpenAIResponses)}, ""},
+		{"complete/no-input-choice", []string{"account", "oauth", "complete", "--attempt-id", resource, "--revision", "1"}, ""},
+		{"complete/two-input-choices", []string{"account", "oauth", "complete", "--attempt-id", resource, "--revision", "1", "--code-stdin", "--callback-stdin"}, "fixture-code"},
+		{"complete/invalid-code", []string{"account", "oauth", "complete", "--attempt-id", resource, "--revision", "1", "--code-stdin"}, "bad\ncode"},
+		{"complete/invalid-callback", []string{"account", "oauth", "complete", "--attempt-id", resource, "--revision", "1", "--callback-stdin"}, "not json"},
+		{"complete/recover-without-request-id", []string{"account", "oauth", "complete", "--attempt-id", resource, "--revision", "1", "--recover"}, ""},
+		{"cancel/missing-revision", []string{"account", "oauth", "cancel", "--attempt-id", resource}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var mutex sync.Mutex
+			var paths []string
+			mux := http.NewServeMux()
+			mux.Handle(delidevv1connect.SystemServiceGetStatusProcedure, connect.NewUnaryHandler(delidevv1connect.SystemServiceGetStatusProcedure, func(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
+				return connect.NewResponse(&pb.GetStatusResponse{}), nil
+			}))
+			mux.Handle(delidevv1connect.ProviderServiceListProviderInventoryProcedure, connect.NewUnaryHandler(delidevv1connect.ProviderServiceListProviderInventoryProcedure, func(context.Context, *connect.Request[pb.ListProviderInventoryRequest]) (*connect.Response[pb.ListProviderInventoryResponse], error) {
+				return connect.NewResponse(&pb.ListProviderInventoryResponse{}), nil
+			}))
+			peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != delidevv1connect.SystemServiceGetStatusProcedure && r.URL.Path != delidevv1connect.ProviderServiceListProviderInventoryProcedure {
+					mutex.Lock()
+					paths = append(paths, r.URL.Path)
+					mutex.Unlock()
+				}
+				mux.ServeHTTP(w, r)
+			}))
+			t.Cleanup(peer.Close)
+			root := identityClientScope(t, peer.URL, domain.ClientDevice)
+			code, envelope := cliRun(t, root, tc.args, tc.input)
+			if code == 0 || envelope["error"] == nil || envelope["request_id"] != nil {
+				t.Fatalf("locally rejected OAuth command acquired mutation identity: %d %v", code, envelope)
+			}
+			mutex.Lock()
+			defer mutex.Unlock()
+			if len(paths) != 0 {
+				t.Fatalf("locally rejected OAuth command reached mutation RPCs: %v", paths)
+			}
+		})
+	}
+}
