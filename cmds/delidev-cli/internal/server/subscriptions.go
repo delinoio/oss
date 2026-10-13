@@ -675,6 +675,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		}
 	}
 	// Authorization after native I/O prevents revocation from winning during Get.
+	titleCanceled := false
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -688,6 +689,9 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				return subscriptionDenied()
 			}
 			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
+				// A canceled managed title never delivers the bundle below, so its
+				// lease has a definite no-delivery release instead of recovery.
+				titleCanceled = err == nil && a.Subscription.Lease.TitleRevision != 0
 				return subscriptionDenied()
 			}
 			if lease := a.Subscription.Lease; lease.TitleRevision != 0 {
@@ -710,6 +714,15 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	})
 	if err != nil {
 		clear(bundle)
+		if titleCanceled {
+			if releaseErr := s.releaseUndeliveredTitleLease(ctx, input.Account, input.Lease, input.Machine, input.Instance, leaseRevision); releaseErr != nil {
+				// The lease stays owned, so the deferred recovery fence still applies.
+				s.logger.WarnContext(ctx, "subscription_title_lease_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(releaseErr).Code)
+			} else {
+				owned = false
+				s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", "canceled-before-delivery")
+			}
+		}
 		return nil, rpc.Error(err, c)
 	}
 	s.logger.InfoContext(ctx, "subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "action", action)
@@ -1120,6 +1133,32 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 		}
 	}
 	return nil
+}
+
+// releaseUndeliveredTitleLease releases the exact EXECUTE lease of a managed
+// title that was canceled after the lease committed but before TakeSubscription
+// returned any credential. No bundle crossed the boundary and no generation
+// changed, so the account stays ready instead of entering recovery. The caller
+// holds the accounts gate.
+func (s *Service) releaseUndeliveredTitleLease(ctx context.Context, account, lease, machine, instance domain.ID, revision uint64) error {
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.title-release", struct{ Account, Lease domain.ID }{account, lease}, func(tx *store.Tx) (any, error) {
+		r, a, err := s.subscriptionLease(ctx, tx, account, lease, machine, instance)
+		if err != nil {
+			return nil, err
+		}
+		state := a.Subscription
+		held := state.Lease
+		if state.RecoveryRequired || held.Action != domain.SubscriptionExecute || held.TitleRevision == 0 || held.Revision != revision {
+			return nil, subscriptionDenied()
+		}
+		if canceled, err := tx.JobCancellationRequested(held.OperationID); err != nil || !canceled {
+			return nil, subscriptionDenied()
+		}
+		state.Lease = nil
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return accountReceipt{ID: r.ID}, err
+	})
+	return err
 }
 
 func (s *Service) markSubscriptionRecovery(id domain.ID) error {

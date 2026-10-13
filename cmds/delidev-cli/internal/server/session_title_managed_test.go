@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -678,6 +679,49 @@ func TestManagedTitleRacesPreserveManualRenameAndStop(t *testing.T) {
 			}
 		})
 	}
+}
+
+// getHookSecrets runs a hook before every vault read, modeling work that commits
+// while TakeSubscription is reading the protected bundle.
+type getHookSecrets struct {
+	accountSecrets
+	before func()
+}
+
+func (g *getHookSecrets) Get(ctx context.Context, ref credentials.Ref) ([]byte, error) {
+	if g.before != nil {
+		g.before()
+	}
+	return g.accountSecrets.Get(ctx, ref)
+}
+
+// A Stop that cancels the title after its lease commits but before the bundle
+// is returned never delivers credentials, so the lease is released instead of
+// fencing the protected account for recovery.
+func TestManagedTitleCanceledBeforeDeliveryReleasesLease(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	record, err := f.claim()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cancelErr error
+	f.service.accountSecrets = &getHookSecrets{accountSecrets: f.secrets, before: func() {
+		_, cancelErr = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.cancel-title", nil, func(tx *store.Tx) (any, error) {
+			return cancelSessionTitleJob(tx, f.titleJob)
+		})
+	}}
+	response, err := f.takeTitle(record.Revision)
+	if cancelErr != nil {
+		t.Fatal(cancelErr)
+	}
+	if err == nil || response != nil {
+		t.Fatal("a canceled title received protected credentials")
+	}
+	_, account := f.record()
+	if account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Health != domain.AccountReady {
+		t.Fatalf("a canceled undelivered title fenced the account: %+v", account.Subscription)
+	}
+	f.service.accountSecrets = f.secrets
 }
 
 // Scenario 7: invalid, multiline or oversized output is bounded and unavailable
