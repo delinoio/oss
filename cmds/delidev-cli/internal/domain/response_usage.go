@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/hex"
+import (
+	"encoding/hex"
+	"time"
+)
 
 type UsageCostEvidence string
 
@@ -89,6 +92,10 @@ type ResponseUsageRecord struct {
 	TurnID               string              `json:"native_turn_id"`
 	Sequence             uint64              `json:"sequence"`
 	Usage                NativeResponseUsage `json:"response"`
+	// ObservedAt is the Worker clock instant at which a native review response
+	// was observed. It is zero for every other purpose and for records from
+	// older Workers; the first durable commit time then applies.
+	ObservedAt time.Time `json:"observed_at,omitzero"`
 }
 
 func (u ResponseUsageRecord) Validate() error {
@@ -108,6 +115,9 @@ func (u ResponseUsageRecord) Validate() error {
 		return invalidObservation()
 	}
 	if (u.Purpose != "" && u.Purpose != ConversationUsage && u.Purpose != SessionTitleUsage && u.Purpose != NativeCodeReviewUsage) || (u.ProjectID != "" && u.ProjectID.Validate() != nil) || u.Harness != Codex || (u.Version != "" && !ValidNativeVersionMetadata(u.Version)) || ID(u.ThreadID).Validate() != nil || (u.CompactionSourceTurn == "" && ID(u.TurnID).Validate() != nil) || u.Sequence == 0 || u.Sequence > MaxExecutionEvents {
+		return invalidObservation()
+	}
+	if !u.ObservedAt.IsZero() && (u.Purpose != NativeCodeReviewUsage || u.ObservedAt.Year() < 2000 || u.ObservedAt.Year() > 9999) {
 		return invalidObservation()
 	}
 	if (u.CompactionSourceTurn != "") != (u.Usage.Source == CompactionHTTPResponse) {

@@ -110,6 +110,7 @@ type Service struct {
 	ownedPAT              *credentials.PATStore
 	github                githubIdentity
 	githubQueries         githubRepositoryQueries
+	githubWorkspaces      githubPullRequestWorkspaces
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}
@@ -123,6 +124,7 @@ type Service struct {
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
 	quotaOpen                     serverQuotaOpener
+	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID

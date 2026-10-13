@@ -218,6 +218,7 @@ export function TailscaleConnections({
           close={() => setConfirmation(false)}
           trapFocus
           focusClose
+          headingEntrance
         >
           <p>{copy("tailscale.visibility")}</p>
           <button
@@ -485,6 +486,7 @@ function DeviceInventory({
           close={() => setSelected(undefined)}
           trapFocus
           focusClose
+          headingEntrance
         >
           <p>{selected.peer.name}</p>
           <p>

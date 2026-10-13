@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -337,5 +339,58 @@ func TestMarkSessionInboxReadAuthorityAndReceipt(t *testing.T) {
 	}
 	if _, err := client.MarkSessionInboxRead(ctx, ownerRequest(f.service.Identity, &pb.MarkSessionInboxReadRequest{RequestId: string(domain.NewID()), SessionId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatal("missing original session admitted")
+	}
+}
+
+func TestMarkSessionInboxReadRejectsCorruptRetainedSourceAtomically(t *testing.T) {
+	for _, corruption := range []string{"malformed-json", "contradictory-json"} {
+		t.Run(corruption, func(t *testing.T) {
+			f, id := questionResponseFixture(t)
+			client, ctx := inboxClient(f), context.Background()
+			inbox, _ := readExecutionInbox(t, f, domain.InteractionInbox, id)
+			db, err := sql.Open("sqlite", filepath.Join(f.service.Store.Root(), "state.sqlite"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			var original []byte
+			if err := db.QueryRow("SELECT body FROM entities WHERE id=?", string(id)).Scan(&original); err != nil {
+				t.Fatal(err)
+			}
+			if corruption == "malformed-json" {
+				_, err = db.Exec("UPDATE entities SET body=? WHERE id=?", []byte("{"), string(id))
+			} else {
+				_, err = db.Exec("UPDATE entities SET body=CAST(json_set(body,'$.first_sequence',0) AS BLOB) WHERE id=?", string(id))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := &pb.MarkSessionInboxReadRequest{RequestId: string(domain.NewID()), SessionId: string(f.input.SessionID)}
+			_, err = client.MarkSessionInboxRead(ctx, ownerRequest(f.service.Identity, request))
+			wantAccountCode(t, err, domain.RecoveryRequired)
+			if strings.Contains(err.Error(), "{") {
+				t.Fatal("the error exposed retained source content")
+			}
+			current, err := f.service.Store.Get(ctx, domain.InboxKind, inbox.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value, err := store.Decode[domain.InboxEntry](current)
+			if err != nil || current.Revision != inbox.Revision || value.ReadState != domain.InboxUnread {
+				t.Fatal("rejected acknowledgment changed the unread entry")
+			}
+			var receipts int
+			if err := db.QueryRow("SELECT COUNT(*) FROM receipts WHERE id=?", request.RequestId).Scan(&receipts); err != nil || receipts != 0 {
+				t.Fatal("rejected acknowledgment retained a receipt")
+			}
+			// Restoring the original evidence lets the same request identity succeed.
+			if _, err := db.Exec("UPDATE entities SET body=? WHERE id=?", original, string(id)); err != nil {
+				t.Fatal(err)
+			}
+			accepted, err := client.MarkSessionInboxRead(ctx, ownerRequest(f.service.Identity, request))
+			if err != nil || accepted.Msg.MarkedCount != 1 || accepted.Msg.Replayed {
+				t.Fatalf("valid source was not acknowledged: %v", err)
+			}
+		})
 	}
 }

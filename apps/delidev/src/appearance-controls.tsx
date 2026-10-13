@@ -31,7 +31,7 @@ import {
 } from "./appearance-preferences";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 const label = (key: string) => copy(`appearance.v2.${key}` as MessageKey);
-function ColorPreview({ draft }: { draft: ThemeFile }) {
+export function ColorPreview({ draft }: { draft: ThemeFile }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (

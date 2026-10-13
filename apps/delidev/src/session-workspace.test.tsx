@@ -122,6 +122,26 @@ function fixture(
     ]),
   );
   const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
+  // Inventory observations: verified exits and rows omitted from the chain.
+  const inventoryExited = new Set<number>(),
+    inventoryOmitted = new Set<number>();
+  const terminalInventory = () =>
+    terminals.flatMap((row, index) =>
+      inventoryOmitted.has(index)
+        ? []
+        : [
+            inventoryExited.has(index)
+              ? create(ResourceSchema, {
+                  ...row,
+                  revision: 5n,
+                  documentJson: encode({
+                    state: "exited",
+                    cleanup_verified: true,
+                  }),
+                })
+              : row,
+          ],
+    );
   const terminalControl = vi.fn(),
     terminalCreate = vi.fn(
       (request: {
@@ -272,7 +292,7 @@ function fixture(
       getResource,
       listResources: (request) =>
         terminalMode && request.filter?.kind === EntityKind.TERMINAL
-          ? { resources: terminals }
+          ? { resources: terminalInventory() }
           : list(request),
       async *watchEvents(_request, context) {
         while (!context.signal.aborted) {
@@ -344,6 +364,8 @@ function fixture(
     getResource,
     overview,
     releaseTerminal,
+    inventoryExited,
+    inventoryOmitted,
     terminalControl,
     terminalCreate,
     terminalWatches,
@@ -3222,3 +3244,163 @@ it.each([SessionTabKind.Sidechat, SessionTabKind.PendingSidechat] as const)(
     expect(f.control).not.toHaveBeenCalled();
   },
 );
+
+// Opens Terminals, then (optionally) Files, and every listed terminal as a tab.
+async function openTerminalTabs(
+  f: ReturnType<typeof fixture>,
+  count: number,
+  filesAfterFirst = false,
+) {
+  await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  await screen.findByRole("tab", { name: "Terminal 1" });
+  if (filesAfterFirst) {
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+  }
+  for (let number = 2; number <= count; number++) {
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`^Terminal ${number} ·`),
+      }),
+    );
+    await waitFor(() =>
+      expect(f.terminalWatches).toHaveBeenLastCalledWith(
+        f.terminals[number - 1]!.id,
+      ),
+    );
+  }
+}
+
+it("a verified exit keeps an opened terminal that is absent from the replacement inventory chain", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 2);
+  const view = render(f.view());
+  try {
+    await openTerminalTabs(f, 2);
+    // A (Terminal 1) stays opened while a Reload chain lists only B.
+    f.inventoryOmitted.add(0);
+    await waitFor(
+      () =>
+        expect(screen.queryByRole("button", { name: /^Terminal 1 ·/ })).toBe(
+          null,
+        ),
+      { timeout: 4000 },
+    );
+    await act(async () => f.releaseTerminal(1));
+    await waitFor(() =>
+      expect(screen.queryByRole("tab", { name: "Terminal 2" })).toBeNull(),
+    );
+    const retained = screen.getByRole("tab", { name: "Terminal 1" });
+    expect(retained.getAttribute("aria-selected")).toBe("true");
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("false");
+    expect(f.terminalControl).not.toHaveBeenCalled();
+    expect(f.terminalCreate).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    for (let index = 0; index < 2; index++) f.releaseTerminal(index);
+    f.client.clear();
+  }
+});
+
+it("one refresh with exits of selected A and B selects the live C content tab", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 3);
+  const view = render(f.view());
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
+    await screen.findByRole("tab", { name: "Terminal 1" });
+    await screen.findByRole("button", { name: /^Terminal 3 ·/ });
+    f.inventoryExited.add(0);
+    f.inventoryExited.add(1);
+    await waitFor(
+      () =>
+        expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull(),
+      { timeout: 4000 },
+    );
+    const survivor = await screen.findByRole("tab", { name: "Terminal 3" });
+    expect(survivor.getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("tab", { name: "Terminal 2" })).toBeNull();
+    expect(
+      screen
+        .getByRole("tab", { name: "Conversation" })
+        .getAttribute("aria-selected"),
+    ).toBe("false");
+    await waitFor(() =>
+      expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
+    );
+    expect(f.terminalControl).not.toHaveBeenCalled();
+    expect(f.terminalCreate).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    for (let index = 0; index < 3; index++) f.releaseTerminal(index);
+    f.client.clear();
+  }
+});
+
+async function finalDismissalWithQueuedFocus() {
+  const frames: FrameRequestCallback[] = [];
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 2);
+  const view = render(f.view());
+  await openTerminalTabs(f, 2, true);
+  const request = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => frames.push(callback));
+  f.inventoryExited.add(0);
+  f.inventoryExited.add(1);
+  await waitFor(
+    () =>
+      expect(screen.queryByRole("tab", { name: /^Terminal \d/ })).toBeNull(),
+    { timeout: 4000 },
+  );
+  return {
+    f,
+    frames,
+    files: () => screen.getByRole("tab", { name: "Files" }),
+    finish() {
+      request.mockRestore();
+      view.unmount();
+      for (let index = 0; index < 2; index++) f.releaseTerminal(index);
+      f.client.clear();
+    },
+  };
+}
+
+it("final automatic dismissal focuses the surviving selected tab by identity after the tab bar commits", async () => {
+  const test = await finalDismissalWithQueuedFocus();
+  try {
+    // Tabs were [Conversation, Terminal 1, Files, Terminal 2]; Files moved.
+    expect(test.files().getAttribute("aria-selected")).toBe("true");
+    expect(test.files().id).toBe(`session-tab-${test.f.session.id}-1`);
+    expect(document.activeElement).not.toBe(test.files());
+    await act(async () => {
+      for (const frame of test.frames.splice(0)) frame(0);
+    });
+    expect(document.activeElement).toBe(test.files());
+    expect(test.f.terminalControl).not.toHaveBeenCalled();
+    // Only the two explicit Terminals gestures created or reused; no replacement.
+    expect(test.f.terminalCreate).toHaveBeenCalledTimes(2);
+  } finally {
+    test.finish();
+  }
+});
+
+it("a selection change before the deferred final-dismissal focus suppresses it", async () => {
+  const test = await finalDismissalWithQueuedFocus();
+  try {
+    fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    await act(async () => {
+      for (const frame of test.frames.splice(0)) frame(0);
+    });
+    expect(document.activeElement).not.toBe(test.files());
+  } finally {
+    test.finish();
+  }
+});

@@ -50,7 +50,6 @@ import { useFailedSubscriptionCleanup } from "./subscription-cleanup";
 import {
   SubscriptionQuotaControls,
   quotaAccountAvailable,
-  quotaObservationMachine,
   serverQuotaAvailable,
 } from "./subscription-quota";
 import { useSubscriptionLogin } from "./subscription-login";
@@ -568,7 +567,6 @@ function NativeManagedSubscriptionAccount({
       {service === SubscriptionServiceId.ChatGPT ? (
         <SubscriptionQuotaControls
           current={current}
-          machine={quotaObservationMachine(state)}
           active={
             active &&
             connected &&
