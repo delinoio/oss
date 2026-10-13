@@ -36,7 +36,7 @@ func writeRetainedEvidence(t *testing.T, owner, worker string, requestID, server
 		t.Fatal(err)
 	}
 	for path, value := range map[string]any{
-		filepath.Join(worker, "device.json"):                             map[string]any{"version": 1, "type": domain.WorkerDevice, "endpoint": endpoint, "server_id": serverID, "device_id": domain.NewID(), "pairing_id": pairingID, "token": token},
+		filepath.Join(worker, "device.json"):                             map[string]any{"version": 1, "type": domain.WorkerDevice, "endpoint": endpoint, "server_id": serverID, "device_id": domain.NewID(), "machine_id": domain.NewID(), "pairing_id": pairingID, "token": token},
 		filepath.Join(worker, "local-pairing.json"):                      map[string]any{"request_id": requestID, "server_id": serverID, "endpoint": endpoint},
 		filepath.Join(owner, "pairing-codes", string(requestID)+".json"): map[string]any{"version": 1, "pairing_id": pairingID, "server_id": serverID, "endpoint": endpoint, "code": code},
 	} {
@@ -136,7 +136,11 @@ func TestFollowVerifiedRequiresRetainedOriginalGrant(t *testing.T) {
 			target.Root = owner
 			p := retainPairing(t, owner, target.ServerID, original)
 			mutate(t, owner, p)
-			var saved workerCredentialIdentity
+			var saved struct {
+				Endpoint  string    `json:"endpoint"`
+				ServerID  domain.ID `json:"server_id"`
+				PairingID domain.ID `json:"pairing_id"`
+			}
 			if raw, err := security.ReadPrivate(filepath.Join(p.Worker, "device.json"), 16<<10); err == nil {
 				_ = json.Unmarshal(raw, &saved)
 			}
@@ -445,6 +449,76 @@ func TestUnreadableEvidenceIsIsolatedAsRecoveryRequired(t *testing.T) {
 			err := VerifyOriginalPairing(owner, p.Worker, target.ServerID, original, p.PairingID)
 			if name != "oversized credential" && (err == nil || domain.SafeError(err).Code != domain.RecoveryRequired) {
 				t.Fatalf("unreadable evidence not classified as recovery_required: %v", err)
+			}
+		})
+	}
+}
+
+// A credential that only matches the identity fields must not earn a follow
+// marker: the complete Worker credential has to pass the same schema checks
+// as the full loader.
+func TestMarkLocalRequiresCompleteWorkerCredential(t *testing.T) {
+	cases := map[string]func(t *testing.T, credential string){
+		"missing version": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { delete(v, "version") })
+		},
+		"unsupported version": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { v["version"] = 2 })
+		},
+		"invalid token": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { v["token"] = "short" })
+		},
+		"missing device identity": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { delete(v, "device_id") })
+		},
+		"missing machine identity": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { delete(v, "machine_id") })
+		},
+		"unknown field": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { v["extra"] = true })
+		},
+		"duplicate field": func(t *testing.T, credential string) {
+			raw, err := security.ReadPrivate(credential, 16<<10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			duplicated := strings.Replace(string(raw), `"version":1`, `"version":1,"version":1`, 1)
+			if duplicated == string(raw) {
+				t.Fatal("fixture has no version field to duplicate")
+			}
+			if err := security.WriteAtomic(credential, []byte(duplicated)); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"invalid endpoint": func(t *testing.T, credential string) {
+			rewriteJSON(t, credential, func(v map[string]any) { v["endpoint"] = "http://user@127.0.0.1:40000" })
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			const original = "http://127.0.0.1:40000"
+			owner := filepath.Join(t.TempDir(), "owner")
+			if err := security.PrivateDir(owner); err != nil {
+				t.Fatal(err)
+			}
+			target := fixtureTarget("http://127.0.0.1:41000")
+			target.Root = owner
+			p := retainPairing(t, owner, target.ServerID, original)
+			credential := filepath.Join(p.Worker, "device.json")
+			mutate(t, credential)
+			err := MarkLocal(target)
+			if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatalf("incomplete credential was accepted: %v", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(p.Worker, "desktop-runtime-follow.json")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatal("follow marker created from an incomplete credential")
+			}
+			// Publishing the app runtime stays available and gains no marker.
+			if err := Publish(target); err != nil {
+				t.Fatalf("incomplete Worker credential blocked runtime publication: %v", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(p.Worker, "desktop-runtime-follow.json")); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatal("publication created a follow marker from an incomplete credential")
 			}
 		})
 	}

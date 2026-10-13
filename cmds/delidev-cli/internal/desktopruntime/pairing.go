@@ -3,13 +3,13 @@ package desktopruntime
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
@@ -18,6 +18,7 @@ const (
 	pairingGrantDir    = "pairing-codes"
 	credentialName     = "device.json"
 	grantVersion       = 1
+	credentialVersion  = 1
 	maxGrantBytes      = 32 << 10
 )
 
@@ -38,13 +39,35 @@ type retainedGrant struct {
 	Code      string    `json:"code"`
 }
 
-// workerCredentialIdentity is the non-secret part of the Worker credential.
-// The bearer token is never decoded here.
-type workerCredentialIdentity struct {
+// workerCredential mirrors worker.Credential field for field so a follow marker
+// is only ever created for a credential the full loader would accept. The
+// worker package imports this one, so the schema cannot be shared by import.
+// Keep it in step with worker.Credential and its Validate method.
+type workerCredential struct {
+	Version   int               `json:"version"`
 	Type      domain.DeviceType `json:"type"`
 	Endpoint  string            `json:"endpoint"`
 	ServerID  domain.ID         `json:"server_id"`
+	DeviceID  domain.ID         `json:"device_id"`
+	MachineID domain.ID         `json:"machine_id,omitempty"`
 	PairingID domain.ID         `json:"pairing_id"`
+	Token     string            `json:"token"`
+}
+
+// validate applies the same rules as worker.Credential.Validate for a Worker.
+func (c workerCredential) validate() error {
+	if c.Version != credentialVersion || c.Type != domain.WorkerDevice || !validGrantCode(c.Token) {
+		return recoveryRequired()
+	}
+	if err := rpc.ValidateEndpoint(c.Endpoint); err != nil {
+		return recoveryRequired()
+	}
+	for _, id := range []domain.ID{c.ServerID, c.DeviceID, c.MachineID, c.PairingID} {
+		if id.Validate() != nil {
+			return recoveryRequired()
+		}
+	}
+	return nil
 }
 
 func recoveryRequired() error {
@@ -110,7 +133,11 @@ func VerifyOriginalPairing(owner, root string, serverID domain.ID, endpoint stri
 
 // verifySavedWorker applies VerifyOriginalPairing to the Worker credential
 // stored at root. A missing credential reports exists=false: nothing follows
-// a runtime before a Worker identity was accepted.
+// a runtime before a Worker identity was accepted. The complete credential is
+// decoded strictly and validated first, so a file the Worker loader would
+// reject (bad version or token, missing device or machine identity, unknown or
+// duplicate fields) can never earn a follow marker through matching identity
+// fields alone.
 func verifySavedWorker(owner, root string, serverID domain.ID, endpoint string) (exists bool, err error) {
 	raw, err := security.ReadPrivate(filepath.Join(root, credentialName), 16<<10)
 	defer clear(raw)
@@ -120,8 +147,11 @@ func verifySavedWorker(owner, root string, serverID domain.ID, endpoint string) 
 	if err != nil {
 		return true, unreadableEvidence("credential", err)
 	}
-	var saved workerCredentialIdentity
-	if json.Unmarshal(raw, &saved) != nil || saved.Type != domain.WorkerDevice || saved.ServerID != serverID || saved.Endpoint != endpoint {
+	var saved workerCredential
+	if domain.Decode(raw, &saved) != nil || saved.validate() != nil {
+		return true, recoveryRequired()
+	}
+	if saved.ServerID != serverID || saved.Endpoint != endpoint {
 		return true, recoveryRequired()
 	}
 	return true, VerifyOriginalPairing(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID)
