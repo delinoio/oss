@@ -60,15 +60,19 @@ type oauthAttempt struct {
 	StateDigest      string                   `json:"state_digest"`
 }
 type catalog struct {
-	Version        uint32                                 `json:"version"`
-	ServerID       domain.ID                              `json:"server_id"`
-	MachineID      domain.ID                              `json:"machine_id"`
-	WorkerDeviceID domain.ID                              `json:"worker_device_id"`
-	ReceiptKey     string                                 `json:"receipt_key"`
-	Entries        map[domain.ID]entry                    `json:"entries"`
-	Generations    map[string]domain.ManagedMCPDefinition `json:"generations"`
-	Receipts       map[domain.ID]receipt                  `json:"receipts"`
-	Attempts       map[domain.ID]oauthAttempt             `json:"attempts"`
+	Version        uint32    `json:"version"`
+	ServerID       domain.ID `json:"server_id"`
+	MachineID      domain.ID `json:"machine_id"`
+	WorkerDeviceID domain.ID `json:"worker_device_id"`
+	// ReceiptKey keys digests of requests that carry no secret input. Digests of
+	// secret-bearing requests use a key held only by the native credential vault;
+	// ReceiptKeyRef is the non-secret reference to it.
+	ReceiptKey    string                                 `json:"receipt_key"`
+	ReceiptKeyRef domain.ID                              `json:"receipt_key_ref,omitempty"`
+	Entries       map[domain.ID]entry                    `json:"entries"`
+	Generations   map[string]domain.ManagedMCPDefinition `json:"generations"`
+	Receipts      map[domain.ID]receipt                  `json:"receipts"`
+	Attempts      map[domain.ID]oauthAttempt             `json:"attempts"`
 }
 
 func unavailable() error {
@@ -105,7 +109,7 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 		c.ReceiptKey = base64.RawURLEncoding.EncodeToString(key)
 	} else if err != nil {
 		return empty, err
-	} else if domain.DecodeWithLimit(raw, &c, 16<<20) != nil || c.Version != 1 || c.ServerID != m.ServerID || c.MachineID != m.MachineID || c.WorkerDeviceID != m.WorkerDeviceID || c.Entries == nil || c.Generations == nil || c.Receipts == nil || c.Attempts == nil {
+	} else if domain.DecodeWithLimit(raw, &c, 16<<20) != nil || c.Version != 1 || c.ServerID != m.ServerID || c.MachineID != m.MachineID || c.WorkerDeviceID != m.WorkerDeviceID || c.Entries == nil || c.Generations == nil || c.Receipts == nil || c.Attempts == nil || c.ReceiptKeyRef != "" && c.ReceiptKeyRef.Validate() != nil {
 		return empty, unavailable()
 	}
 	key, err := base64.RawURLEncoding.DecodeString(c.ReceiptKey)
@@ -117,8 +121,25 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 			return empty, unavailable()
 		}
 	}
+	save := func() error {
+		b, e := json.Marshal(c)
+		if e != nil || len(b) > 16<<20 {
+			return unavailable()
+		}
+		return security.WriteAtomicOwned(path, b)
+	}
 	// Safe receipts contain only a keyed input digest and metadata. Neither
 	// credential bytes nor authorization codes are written to catalog history.
+	// A request that carries secret input is keyed by material that never enters
+	// the catalog, so the private catalog alone cannot be used to test guesses.
+	if q.Secrets != nil || q.CallbackURL != "" {
+		vaultKey, keyErr := m.vaultReceiptKey(ctx, &c, save)
+		if keyErr != nil {
+			return empty, keyErr
+		}
+		defer clear(vaultKey)
+		key = vaultKey
+	}
 	digestInput := q
 	digestInput.WorkerInstanceID = ""
 	encoded, _ := json.Marshal(digestInput)
@@ -194,13 +215,6 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 	}
 	if len(c.Receipts) >= 4096 || len(c.Entries) >= 256 && q.Action == domain.MCPSave && q.ExpectedRevision == 0 {
 		return empty, domain.Fail(domain.ResourceExhausted, "The Worker MCP catalog is full.", "Retain original operations and contact the administrator.")
-	}
-	save := func() error {
-		b, e := json.Marshal(c)
-		if e != nil || len(b) > 16<<20 {
-			return unavailable()
-		}
-		return security.WriteAtomicOwned(path, b)
 	}
 	id := q.DefinitionID
 	if q.Definition != nil {
@@ -337,6 +351,44 @@ func equalProfile(a, b *domain.MCPOAuthProfile) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
+}
+
+// vaultReceiptKey returns the digest key for secret-bearing requests from the
+// selected Worker's native credential vault. The key is created once; the
+// catalog stores only its non-secret reference. A crash between the vault write
+// and the catalog write leaves an unreferenced vault entry and a fresh key is
+// created next time, so an uncertain write never blocks later operations.
+func (m Manager) vaultReceiptKey(ctx context.Context, c *catalog, save func() error) ([]byte, error) {
+	if m.Secrets == nil {
+		return nil, domain.Fail(domain.Unavailable, "Worker credential storage is unavailable.", "Unlock the selected Worker's native credential store.")
+	}
+	if c.ReceiptKeyRef != "" {
+		key, err := m.Secrets.Get(ctx, credentials.Ref{Owner: m.WorkerDeviceID, ID: c.ReceiptKeyRef, Purpose: credentials.ManagedMCP})
+		if err != nil {
+			return nil, err
+		}
+		if len(key) != 32 {
+			clear(key)
+			return nil, unavailable()
+		}
+		return key, nil
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	id := domain.NewID()
+	if _, err := m.Secrets.Put(ctx, credentials.Ref{Owner: m.WorkerDeviceID, ID: id, Purpose: credentials.ManagedMCP}, key); err != nil {
+		clear(key)
+		return nil, err
+	}
+	c.ReceiptKeyRef = id
+	if err := save(); err != nil {
+		clear(key)
+		c.ReceiptKeyRef = ""
+		return nil, err
+	}
+	return key, nil
 }
 func (m Manager) putSecret(ctx context.Context, id, request domain.ID, b []byte) error {
 	if m.Secrets == nil {

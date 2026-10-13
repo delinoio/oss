@@ -3,7 +3,9 @@ package managedmcp
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -42,6 +44,18 @@ func (v *fixtureSecrets) Delete(_ context.Context, r credentials.Ref) error {
 	}
 	delete(v.values, r)
 	return nil
+}
+
+// definitionSecrets counts credentials owned by definitions, excluding the
+// Worker-owned receipt digest key.
+func definitionSecrets(m Manager) int {
+	count := 0
+	for ref := range m.Secrets.(*fixtureSecrets).values {
+		if ref.Owner != m.WorkerDeviceID {
+			count++
+		}
+	}
+	return count
 }
 func fixture(t *testing.T) (Manager, domain.ManagedMCPRequest, domain.ManagedMCPDefinition) {
 	t.Helper()
@@ -127,7 +141,7 @@ func TestManagedMCPCatalogIsolationRevisionsAndPrivateCredentials(t *testing.T) 
 	if len(must(t, m, q).Definitions) != 0 {
 		t.Fatal("deleted row remained current")
 	}
-	if len(m.Secrets.(*fixtureSecrets).values) != 1 {
+	if definitionSecrets(m) != 1 {
 		t.Fatal("historical credentials erased before cleanup")
 	}
 	if _, e = os.Stat(d.Command); !errors.Is(e, os.ErrNotExist) {
@@ -277,7 +291,7 @@ func TestManagedMCPOAuthExpiryCancellationAndLostExchange(t *testing.T) {
 			}
 			result, err := m.Execute(context.Background(), q)
 			if mode == "cancel" {
-				if err != nil || result.Operation.State != domain.MCPOperationCanceled || len(m.Secrets.(*fixtureSecrets).values) != 0 {
+				if err != nil || result.Operation.State != domain.MCPOperationCanceled || definitionSecrets(m) != 0 {
 					t.Fatal("cancellation not confirmed")
 				}
 			} else if err == nil {
@@ -294,7 +308,7 @@ func TestManagedMCPOAuthExpiryCancellationAndLostExchange(t *testing.T) {
 			if mode == "expired" && exchanges != 0 {
 				t.Fatal("expired authorization exchanged")
 			}
-			if mode == "cleanup-failed" && len(m.Secrets.(*fixtureSecrets).values) != 1 {
+			if mode == "cleanup-failed" && definitionSecrets(m) != 1 {
 				t.Fatal("failed cleanup erased ownership")
 			}
 		})
@@ -346,7 +360,64 @@ func TestManagedMCPHTTPManualCredentialsBindEndpointGeneration(t *testing.T) {
 	if strings.Contains(string(raw), "private-header") {
 		t.Fatal("manual HTTP secret persisted in metadata")
 	}
-	if len(m.Secrets.(*fixtureSecrets).values) != 1 {
+	if definitionSecrets(m) != 1 {
 		t.Fatal("original credential generation lost")
+	}
+}
+
+func TestManagedMCPSecretReceiptDigestKeyStaysOutsideCatalog(t *testing.T) {
+	m, q, d := fixture(t)
+	must(t, m, q)
+	auth := q
+	auth.Definition = nil
+	auth.DefinitionID = d.ID
+	auth.Action = domain.MCPAuthenticate
+	auth.ExpectedRevision = 1
+	auth.RequestID = domain.NewID()
+	auth.Secrets = &domain.MCPSecretInput{Environment: map[string]string{"TOKEN": "low-entropy"}}
+	must(t, m, auth)
+	raw, err := os.ReadFile(filepath.Join(m.Root, "managed-mcp", string(m.ServerID), string(m.WorkerDeviceID), "catalog.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c catalog
+	if json.Unmarshal(raw, &c) != nil || c.ReceiptKeyRef == "" {
+		t.Fatal("secret-bearing receipt key reference missing")
+	}
+	vaultKey := m.Secrets.(*fixtureSecrets).values[credentials.Ref{Owner: m.WorkerDeviceID, ID: c.ReceiptKeyRef, Purpose: credentials.ManagedMCP}]
+	if len(vaultKey) != 32 || strings.Contains(string(raw), base64.RawURLEncoding.EncodeToString(vaultKey)) {
+		t.Fatal("secret-bearing receipt key entered the catalog")
+	}
+	// Anyone holding only the catalog can recompute digests with its key. The
+	// secret-bearing receipt must not be reproducible that way.
+	catalogKey, err := base64.RawURLEncoding.DecodeString(c.ReceiptKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guess := auth
+	guess.WorkerInstanceID = ""
+	encoded, _ := json.Marshal(guess)
+	mac := hmac.New(sha256.New, catalogKey)
+	mac.Write(encoded)
+	if c.Receipts[auth.RequestID].Digest == hex.EncodeToString(mac.Sum(nil)) {
+		t.Fatal("catalog key can test guesses of secret input")
+	}
+	replay := auth
+	replay.WorkerInstanceID = domain.NewID()
+	if !must(t, m, replay).Replayed {
+		t.Fatal("secret-bearing replay was not recognized")
+	}
+	reused := auth
+	reused.Secrets = &domain.MCPSecretInput{Environment: map[string]string{"TOKEN": "different"}}
+	if _, err = m.Execute(context.Background(), reused); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("reused request identity accepted different secret input")
+	}
+	locked := m
+	locked.Secrets = nil
+	other := auth
+	other.RequestID = domain.NewID()
+	other.ExpectedRevision = 2
+	if _, err = locked.Execute(context.Background(), other); domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatal("secret-bearing digest was computed without the protected vault")
 	}
 }
