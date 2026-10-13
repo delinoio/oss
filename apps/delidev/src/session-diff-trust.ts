@@ -4,8 +4,11 @@ import { referenceKey, type BaseReference } from "./session-diff-model";
 interface OwnerTrust {
   /** Every invalidated reference, keyed so a later invalidation never replaces an earlier one. */
   invalidated: Map<string, BaseReference>;
-  /** The invalidated reference a tabbed non-branch descriptor dropped, until Branch is viewed again. */
-  departed?: BaseReference;
+  /**
+   * The invalidated reference each tabbed base-free comparison descriptor
+   * dropped, keyed by that descriptor, until the descriptor returns to Branch.
+   */
+  departed: Map<string, BaseReference>;
 }
 
 /**
@@ -39,7 +42,10 @@ export class DiffBaseTrust {
   }
   /** Returns true when the reference was not already invalidated. */
   invalidate(owner: string, reference: BaseReference) {
-    const trust = this.owners.get(owner) ?? { invalidated: new Map() },
+    const trust = this.owners.get(owner) ?? {
+        invalidated: new Map(),
+        departed: new Map(),
+      },
       key = referenceKey(reference);
     if (trust.invalidated.has(key)) return false;
     trust.invalidated.set(key, reference);
@@ -51,28 +57,45 @@ export class DiffBaseTrust {
   reselect(owner: string, reference: BaseReference) {
     const trust = this.owners.get(owner);
     if (!trust) return;
-    const removed = trust.invalidated.delete(referenceKey(reference));
-    const cleared = trust.departed !== undefined;
-    trust.departed = undefined;
+    const key = referenceKey(reference);
+    const removed = trust.invalidated.delete(key);
+    // Drop every dropped-selection record of that reference; others stay.
+    let cleared = false;
+    for (const [descriptor, departed] of trust.departed)
+      if (referenceKey(departed) === key) {
+        trust.departed.delete(descriptor);
+        cleared = true;
+      }
     if (removed || cleared) this.publish();
   }
-  /** Remembers the invalidated base a base-free descriptor is about to drop. */
-  depart(owner: string, reference: BaseReference) {
+  /**
+   * Remembers the invalidated base that the base-free comparison descriptor
+   * `descriptor` is about to drop. The record belongs to that descriptor only,
+   * so an unrelated retained base-free tab can neither consume nor overwrite it.
+   */
+  depart(owner: string, descriptor: string, reference: BaseReference) {
     const trust = this.owners.get(owner);
     if (!trust?.invalidated.has(referenceKey(reference))) return;
-    trust.departed = reference;
+    trust.departed.set(descriptor, reference);
   }
-  /** The dropped invalidated base, while it is still invalidated. */
-  departed(owner: string) {
-    const reference = this.owners.get(owner)?.departed;
+  /** Carries a descriptor's dropped base to the base-free descriptor it becomes. */
+  move(owner: string, from: string, to: string) {
+    const trust = this.owners.get(owner),
+      reference = trust?.departed.get(from);
+    if (!trust || !reference || from === to) return;
+    trust.departed.delete(from);
+    trust.departed.set(to, reference);
+  }
+  /** The base dropped by `descriptor`, while it is still invalidated. */
+  departed(owner: string, descriptor: string) {
+    const reference = this.owners.get(owner)?.departed.get(descriptor);
     return reference && this.isInvalidated(owner, reference)
       ? reference
       : undefined;
   }
-  /** Branch is displayed again, so the dropped selection has been republished or abandoned. */
-  settle(owner: string) {
-    const trust = this.owners.get(owner);
-    if (trust) trust.departed = undefined;
+  /** The descriptor returned to Branch, so its dropped selection has been republished. */
+  settle(owner: string, descriptor: string) {
+    this.owners.get(owner)?.departed.delete(descriptor);
   }
 }
 

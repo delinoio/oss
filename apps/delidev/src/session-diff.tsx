@@ -202,6 +202,9 @@ export function SessionDiff({
   );
 }
 
+const descriptorKey = (comparison: Comparison, path: string) =>
+  [comparison, path].join("\u0000");
+
 export function RepositoryDiff({
   sessionId,
   repository,
@@ -308,10 +311,6 @@ export function RepositoryDiff({
     });
     trust.invalidate(optionsOwner, baseRef);
   }, [options.data, explicitBaseKey, comparison, optionsOwner]);
-  useEffect(() => {
-    // Once Branch is displayed again, a dropped selection has been republished.
-    if (comparison === Comparison.Branch) trust.settle(optionsOwner);
-  }, [comparison, optionsOwner]);
   const supportedBase = Boolean(
     options.data &&
     chosenBase &&
@@ -545,11 +544,23 @@ export function RepositoryDiff({
     // A non-branch descriptor carries no base, which clears the local explicit
     // selection. Returning to Branch must re-publish the invalidated selection
     // itself, never the inventory default, until the Base control explicitly
-    // selects a reference.
+    // selects a reference. The dropped selection belongs to the base-free
+    // descriptor that dropped it, so unrelated retained tabs never consume it.
+    const dropping = descriptorKey(next, nextPath),
+      current = descriptorKey(comparison, path);
     if (baseRef && next !== Comparison.Branch)
-      trust.depart(optionsOwner, baseRef);
+      trust.depart(optionsOwner, dropping, baseRef);
+    else if (
+      !baseRef &&
+      comparison !== Comparison.Branch &&
+      next !== Comparison.Branch
+    )
+      trust.move(optionsOwner, current, dropping);
     const retained =
-      !explicit && !baseRef ? trust.departed(optionsOwner) : undefined;
+      !explicit && !baseRef && next === Comparison.Branch
+        ? trust.departed(optionsOwner, current)
+        : undefined;
+    if (retained) trust.settle(optionsOwner, current);
     const base = retained ?? nextBase;
     const value = {
       repository,

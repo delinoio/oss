@@ -2355,3 +2355,98 @@ it("keeps an invalidated base unavailable when it later becomes the inventory de
   await screen.findByRole("region", { name: "Git comparison" });
   expect(branchBaseNames(f.read).at(-1)).toBe("other");
 });
+
+it("tracks a dropped invalidated base per base-free comparison descriptor", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  // A retained base-free Working tree tab that predates the invalidation.
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "working-tree" },
+  });
+  await waitFor(() =>
+    expect(
+      f.comparisons().some((tab) => tab.comparison === "working-tree"),
+    ).toBe(true),
+  );
+  const workingTree = sessionTabKey(
+    f.comparisons().find((tab) => tab.comparison === "working-tree")!,
+  );
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "branch")).toBe(
+      true,
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("other"));
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  // The invalidated base is dropped by a different base-free descriptor.
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "staged")).toBe(
+      true,
+    ),
+  );
+  const staged = sessionTabKey(
+    f.comparisons().find((tab) => tab.comparison === "staged")!,
+  );
+  // Changing the unrelated Working tree tab to Branch must neither consume the
+  // dropped base nor receive it: it follows the inventory default.
+  act(() => f.store.select(f.sessionId, workingTree));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Comparison") as HTMLSelectElement).value,
+    ).toBe("working-tree"),
+  );
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+      baseValue("main"),
+    ),
+  );
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("main"));
+  // Returning from the descriptor that dropped it still republishes the
+  // invalidated base itself, which stays unavailable.
+  act(() => f.store.select(f.sessionId, staged));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Comparison") as HTMLSelectElement).value,
+    ).toBe("staged"),
+  );
+  const settled = branchReads(f.read).length;
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() => {
+    const snapshot = f.store.snapshot(f.sessionId),
+      tab = snapshot.tabs.find(
+        (value) => sessionTabKey(value) === snapshot.selected,
+      );
+    expect(tab).toMatchObject({
+      comparison: "branch",
+      base_ref: { name: "other" },
+    });
+  });
+  // The reference reappears, but its invalidation survives the round trip.
+  state.names = ["main", "other"];
+  await refreshWhenReady();
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(branchReads(f.read)).toHaveLength(settled);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+});
