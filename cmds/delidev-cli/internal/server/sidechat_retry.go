@@ -289,7 +289,9 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 		return err
 	}
 	cr, child, qr, _, err := sidechatRetryCandidate(tx, input.ChildSessionID)
-	if err != nil || qr.ID != input.Retry.QuestionID || qr.Revision != input.Retry.QuestionRevision || child.SidechatActiveRetry != input.Retry.GenerationID || child.AutomaticRemediationStopped || child.Archive != domain.NotArchived || child.Recovery != domain.NoRecovery || child.ActiveExecutionID != "" || child.PendingInputs != 0 || child.PendingSteerID != "" || child.CompactionJobID != "" || child.Execution == nil || !child.Execution.CleanupVerified || child.Execution.JobID != input.Retry.PreviousJobID || child.Execution.ExecutionID != input.Retry.PreviousExecutionID {
+	// Admission advances the child exactly once. Any later revision, such as a
+	// rename or budget change, is not part of the accepted retry and cannot renew it.
+	if err != nil || cr.Revision != input.Retry.ChildRevision+1 || qr.ID != input.Retry.QuestionID || qr.Revision != input.Retry.QuestionRevision || child.SidechatActiveRetry != input.Retry.GenerationID || child.AutomaticRemediationStopped || child.Archive != domain.NotArchived || child.Recovery != domain.NoRecovery || child.ActiveExecutionID != "" || child.PendingInputs != 0 || child.PendingSteerID != "" || child.CompactionJobID != "" || child.Execution == nil || !child.Execution.CleanupVerified || child.Execution.JobID != input.Retry.PreviousJobID || child.Execution.ExecutionID != input.Retry.PreviousExecutionID {
 		return retryConflict()
 	}
 	if err := requireSidechatParent(tx, child); err != nil {
@@ -310,7 +312,7 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 	if instanceErr != nil || instance != input.Retry.WorkerInstanceID || time.Since(seen) > domain.WorkerConnectionTimeout || input.Retry.WorkerDeviceID != child.Fork.WorkerDeviceID {
 		return retryConflict()
 	}
-	if err := checkedExecutionSource(tx, pr, parent, machine, input.SourceAssignment); err != nil {
+	if err := checkedHistoricalExecutionSource(tx, pr, parent, machine, input.SourceAssignment); err != nil {
 		return err
 	}
 	if input.SourceAssignment.AccountID != child.Fork.Snapshot.InitialAccountID || input.SourceAssignment.ConnectionID != child.Fork.Snapshot.ConnectionID || input.SourceAssignment.ConfigurationDigest != child.Fork.SidechatParentSnapshot.ConfigurationDigest {
@@ -339,6 +341,32 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 		}
 	}
 	return nil
+}
+
+// requireSidechatRetryExecutionOrigin resolves the published retry Fork that
+// created this execution and rechecks its initiating actor. Revocation after
+// Fork publication must stop the retained question from being sent, while the
+// original runtime stays recorded for cleanup. Any missing or mismatched Fork
+// job, generation, runtime or Worker identity denies without adopting another
+// authority.
+func requireSidechatRetryExecutionOrigin(tx *store.Tx, grant store.ExecutionGrant, input domain.ExecutionJobInput) error {
+	retry := input.SidechatRetry
+	if retry == nil || input.Fork == nil || input.Fork.JobID.Validate() != nil {
+		return retryConflict()
+	}
+	r, err := tx.Get(domain.JobKind, input.Fork.JobID)
+	if err != nil {
+		return err
+	}
+	job, err := store.Decode[domain.Job](r)
+	var fork domain.ForkJobInput
+	if err != nil || r.SessionID != input.SessionID || job.Type != domain.ForkSessionJob || job.State != domain.JobSucceeded || job.MachineID != grant.MachineID || job.InstanceID != retry.WorkerInstanceID || job.AssignedDeviceID != retry.WorkerDeviceID || domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil {
+		return retryConflict()
+	}
+	if fork.Retry == nil || fork.Retry.GenerationID != retry.GenerationID || fork.ChildSessionID != input.SessionID || fork.RuntimeID != input.Fork.RuntimeID || fork.Retry.WorkerInstanceID != retry.WorkerInstanceID || fork.Retry.WorkerDeviceID != retry.WorkerDeviceID || fork.Retry.QuestionID != retry.QuestionID || fork.Retry.PreviousJobID != retry.PreviousJobID || fork.Retry.PreviousExecutionID != retry.PreviousExecutionID {
+		return retryConflict()
+	}
+	return tx.RequireForkActor(fork.Actor)
 }
 
 // Reject only the current queued job. A retry owner can be released only when

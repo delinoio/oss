@@ -119,6 +119,9 @@ func (a *executionAuthority) checkedScope(tx *store.Tx, grant store.ExecutionGra
 	if input.SidechatRetry != nil && (!slices.Contains(machine.WorkerCapabilities, domain.SidechatQuestionRetryV1) || session.SidechatActiveRetry != input.SidechatRetry.GenerationID || session.AutomaticRemediationStopped || grant.InstanceID != input.SidechatRetry.WorkerInstanceID || grant.DeviceID != input.SidechatRetry.WorkerDeviceID) {
 		return empty, executionDenied()
 	}
+	if input.SidechatRetry != nil && requireSidechatRetryExecutionOrigin(tx, grant, input) != nil {
+		return empty, executionDenied()
+	}
 	if !session.OwnsExecution(input) {
 		return empty, executionDenied()
 	}

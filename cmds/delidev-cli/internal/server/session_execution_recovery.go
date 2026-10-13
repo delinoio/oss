@@ -353,13 +353,18 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 						g.Completed = true
 						session.SidechatCurrentAnswer = g.ExecutionID
 					}
-					session.SidechatActiveRetry = ""
+					// Recovery proves only this generation's own execution cleanup. A
+					// newer failed or uncertain Fork generation keeps its owner reservation.
+					if session.SidechatActiveRetry == g.ID {
+						session.SidechatActiveRetry = ""
+					}
 				}
 			}
 		}
 		session.Execution.CleanupVerified = true
 		session.Recovery, session.ActiveExecutionID = domain.NoRecovery, ""
-		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired {
+		// The retained problem belongs to the newer owner while it remains active.
+		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired && session.SidechatActiveRetry == "" {
 			session.Problem = nil
 		}
 		if session.Archive == domain.ArchivePending {
