@@ -21,10 +21,8 @@ export type OpenAppInformationLink = (
 // Decorative leading icons for Related information rows: tag (releases),
 // document (license) and file stack (notices).
 const relatedLinkIconPaths: Record<AppInformationLink, string> = {
-  [AppInformationLink.Releases]:
-    "M3 12V4h8l10 10-8 8L3 12Zm5-4h.01",
-  [AppInformationLink.License]:
-    "M6 3h8l5 5v13H6V3Zm8 0v5h5M9 13h7M9 17h7",
+  [AppInformationLink.Releases]: "M3 12V4h8l10 10-8 8L3 12Zm5-4h.01",
+  [AppInformationLink.License]: "M6 3h8l5 5v13H6V3Zm8 0v5h5M9 13h7M9 17h7",
   [AppInformationLink.Notices]:
     "M8 7V3h9l4 4v10h-4M3 8h10l4 4v9H3V8Zm9 0v4h4M6 16h7",
 };

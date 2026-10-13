@@ -182,7 +182,9 @@ it("groups the three related links in one list with decorative icons and unchang
     "License",
     "Open-source notices",
   ]);
-  expect(rows.map((row) => row.getAttribute("data-settings-search-target"))).toEqual([
+  expect(
+    rows.map((row) => row.getAttribute("data-settings-search-target")),
+  ).toEqual([
     SettingsSearchTarget.AppReleases,
     SettingsSearchTarget.AppLicense,
     SettingsSearchTarget.AppNotices,
@@ -199,7 +201,9 @@ it("groups the three related links in one list with decorative icons and unchang
     expect(row.querySelector(".app-information-link-external")).toBeTruthy();
   }
   expect(screen.getAllByRole("button", { name: /./ })).toHaveLength(3);
-  const notice = screen.getByText(/not a complete inventory of the installed package/);
+  const notice = screen.getByText(
+    /not a complete inventory of the installed package/,
+  );
   expect(notice.classList.contains("app-information-help")).toBe(true);
   expect(group.nextElementSibling).toBe(notice);
   expect(notice.textContent).toBe(
@@ -209,13 +213,19 @@ it("groups the three related links in one list with decorative icons and unchang
 it("keeps every related row disabled without dispatch when the opener is unavailable or inactive", () => {
   const openLink = vi.fn(async () => {});
   const view = render(<AppInformation />);
-  for (const row of view.container.querySelectorAll<HTMLButtonElement>(".app-information-link")) {
+  for (const row of view.container.querySelectorAll<HTMLButtonElement>(
+    ".app-information-link",
+  )) {
     expect(row.disabled).toBe(true);
     fireEvent.click(row);
   }
   view.unmount();
-  const inactive = render(<AppInformation active={false} openLink={openLink} />);
-  for (const row of inactive.container.querySelectorAll<HTMLButtonElement>(".app-information-link")) {
+  const inactive = render(
+    <AppInformation active={false} openLink={openLink} />,
+  );
+  for (const row of inactive.container.querySelectorAll<HTMLButtonElement>(
+    ".app-information-link",
+  )) {
     expect(row.disabled).toBe(true);
     fireEvent.click(row);
   }
@@ -224,11 +234,16 @@ it("keeps every related row disabled without dispatch when the opener is unavail
 it("disables all rows while one opening is in flight and dispatches once", async () => {
   let resolve!: () => void;
   const openLink = vi.fn(
-    () => new Promise<void>((done) => { resolve = done; }),
+    () =>
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
   );
   render(<AppInformation openLink={openLink} />);
   fireEvent.click(screen.getByRole("button", { name: "License" }));
-  expect(await screen.findByText("Opening in your default browser…")).toBeTruthy();
+  expect(
+    await screen.findByText("Opening in your default browser…"),
+  ).toBeTruthy();
   const rows = screen.getAllByRole<HTMLButtonElement>("button");
   expect(rows.every((row) => row.disabled)).toBe(true);
   fireEvent.click(rows[0]);
@@ -236,7 +251,8 @@ it("disables all rows while one opening is in flight and dispatches once", async
   await act(async () => resolve());
   await vi.waitFor(() =>
     expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "License" }).disabled,
+      screen.getByRole<HTMLButtonElement>("button", { name: "License" })
+        .disabled,
     ).toBe(false),
   );
 });
