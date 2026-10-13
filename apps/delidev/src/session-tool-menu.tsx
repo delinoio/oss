@@ -30,12 +30,20 @@ const enabledControls = (root: ParentNode | null | undefined) => [
  */
 export function SessionToolMenu({
   children,
-  active,
+  active: surfaceActive,
+  ready = true,
 }: {
   children: ReactNode;
+  /** Whether the Session is the selected, visible Sessions surface. */
   active: boolean;
+  /**
+   * Whether the connection is ready. Losing readiness retires the presentation
+   * like Session departure; regaining it never reopens the dialog.
+   */
+  ready?: boolean;
 }) {
   useLocale();
+  const active = surfaceActive && ready;
   const id = useId(),
     trigger = useRef<HTMLButtonElement>(null),
     dialog = useRef<HTMLDialogElement>(null),

@@ -44,12 +44,12 @@ function harness(
       return () => {};
     },
   };
-  const tree = (isActive: boolean) => (
+  const tree = (isActive: boolean, ready = true) => (
     <ShortcutPreferenceProvider bridge={bridge}>
       <ShortcutProvider>
         <Surfaces>
           <textarea aria-label="Draft" defaultValue="keep me" />
-          <SessionToolMenu active={isActive}>
+          <SessionToolMenu active={isActive} ready={ready}>
             <Rows selected={selected} />
           </SessionToolMenu>
           <button>Destination</button>
@@ -248,6 +248,42 @@ it("disposes without restoring focus when the session departs and ignores the ch
   expect(dialog().open).toBe(false);
   view.unmount();
   expect(document.querySelector("dialog")).toBeNull();
+});
+
+it("retires the dialog when connection readiness is lost, blocks reopening, and stays closed on recovery", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { view, tree, selected } = harness();
+  await act(async () => {});
+  const draft = screen.getByRole("textbox", { name: "Draft" });
+  const trigger = screen.getByRole("button", { name: "Open tool" });
+  fireEvent.click(trigger);
+  expect(dialog().open).toBe(true);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  // Same active Session, readiness lost: the modal closes without focus restore.
+  const destination = screen.getByRole("button", { name: "Destination" });
+  destination.focus();
+  view.rerender(tree(true, false));
+  expect(dialog().open).toBe(false);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(destination);
+  expect((draft as HTMLTextAreaElement).value).toBe("keep me");
+  // Neither the trigger nor the OpenTool chord opens it while unavailable.
+  fireEvent.click(trigger);
+  expect(dialog().open).toBe(false);
+  draft.focus();
+  fireEvent.keyDown(draft, { key: "t", code: "KeyT", ctrlKey: true });
+  expect(dialog().open).toBe(false);
+  // Recovery does not reopen; an explicit action does, and selection still
+  // closes first and invokes the original callback once.
+  view.rerender(tree(true, true));
+  expect(dialog().open).toBe(false);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.keyDown(draft, { key: "t", code: "KeyT", ctrlKey: true });
+  expect(dialog().open).toBe(true);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+  expect(dialog().open).toBe(false);
+  expect(selected).toHaveBeenCalledTimes(1);
+  expect((draft as HTMLTextAreaElement).value).toBe("keep me");
 });
 
 it("lets a committed custom primary+T override win, explains it, and restores the default immediately", async () => {

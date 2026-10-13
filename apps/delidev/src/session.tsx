@@ -915,6 +915,7 @@ export function SessionView({
   initialSkills,
   changeSkills,
   active = true,
+  connectionReady = true,
   embedded = false,
 }: {
   id: string;
@@ -928,6 +929,7 @@ export function SessionView({
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
+  connectionReady?: boolean;
   embedded?: boolean;
   openRunnerSettings?: () => void;
 }) {
@@ -2381,7 +2383,7 @@ export function SessionView({
               newPage={() => setBrowserDialog(true)}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
-            <SessionToolMenu key={id} active={active}>
+            <SessionToolMenu key={id} active={active} ready={connectionReady}>
               {tools.map((tool) => (
                 <button
                   role="menuitem"
