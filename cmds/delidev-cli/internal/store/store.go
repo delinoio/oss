@@ -702,7 +702,7 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	// Preserve identity and revision conflicts before checking display names.
 	if expected == 0 && (kind == domain.ProjectKind || kind == domain.RepositoryKind) {
-		if err := t.RequireUnusedID(id); err != nil {
+		if err := t.RequireUnusedCreateID(id); err != nil {
 			return Record{}, err
 		}
 	}

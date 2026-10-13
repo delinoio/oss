@@ -46,7 +46,7 @@ func validateRepositoryInspectionSource(source string, child domain.Job) error {
 func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
 	record, err := tx.Get(domain.RepositoryKind, id)
 	if expected == 0 && domain.SafeError(err).Code == domain.NotFound {
-		return tx.RequireUnusedID(id)
+		return tx.RequireUnusedCreateID(id)
 	}
 	if err != nil {
 		return err
