@@ -453,16 +453,80 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		authJoined = true
 	}
 	result.CleanupVerified = true
-	if result.Validate() != nil {
+	return finalizeNativeReviewResult(ctx, logger, jobRoot, result)
+}
+
+// finalizeNativeReviewResult validates the completed review, enforces the
+// aggregate encoded-size ceiling and durably retains the exact reported bytes.
+// An over-limit result is rejected before review-result.json is written. The
+// native send already happened, so callers must keep nativeSent true and never
+// derive a no-send proof from this error.
+func finalizeNativeReviewResult(ctx context.Context, logger *slog.Logger, jobRoot string, result domain.NativeCodeReviewResult) (json.RawMessage, error) {
+	if err := result.Validate(); err != nil {
+		if domain.SafeError(err).Code == domain.ResourceExhausted {
+			logger.WarnContext(ctx, "native_code_review_result_too_large", "findings", len(result.Findings), "responses", len(result.UsageRecords), "limit_bytes", domain.MaxWorkerJobOutputBytes)
+			return nil, domain.NativeCodeReviewResultTooLarge()
+		}
 		return nil, domain.NativeCodeReviewUnavailable()
 	}
-	output, err = json.Marshal(result)
+	output, err := json.Marshal(result)
 	if err != nil {
 		return nil, err
+	}
+	if len(output) > domain.MaxWorkerJobOutputBytes {
+		logger.WarnContext(ctx, "native_code_review_result_too_large", "findings", len(result.Findings), "responses", len(result.UsageRecords), "encoded_bytes", len(output), "limit_bytes", domain.MaxWorkerJobOutputBytes)
+		return nil, domain.NativeCodeReviewResultTooLarge()
 	}
 	if security.WriteAtomic(filepath.Join(jobRoot, "review-result.json"), output) != nil {
 		return nil, publicationUncertain()
 	}
 	logger.InfoContext(ctx, "native_code_review_completed", "findings", len(result.Findings), "responses", len(result.UsageRecords), "cleanup_verified", true)
 	return output, nil
+}
+
+// recoverNativeReviewResult settles a native review whose generic job journal
+// is still started only when the durable review-result.json written by
+// finalizeNativeReviewResult is present and bound to this exact assignment.
+// It reads local evidence only: it never starts, resumes or re-sends a native
+// review, and any missing or unverifiable evidence keeps the caller's
+// recovery-required problem.
+func recoverNativeReviewResult(ctx context.Context, config Config, resource *pb.Resource, job domain.Job) (json.RawMessage, bool) {
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	var input domain.NativeCodeReviewInput
+	if job.Type != domain.NativeCodeReviewJob || domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil {
+		return nil, false
+	}
+	logger = logger.With("job_id", resource.Id, "action_id", input.ActionID, "session_id", input.Source.SessionID)
+	path := filepath.Join(config.Root, "jobs", resource.Id, "review-result.json")
+	raw, err := security.ReadPrivate(path, domain.MaxWorkerJobOutputBytes)
+	if err != nil {
+		logger.InfoContext(ctx, "native_code_review_recovery_unavailable", "reason", "result_unreadable", "missing", errors.Is(err, os.ErrNotExist))
+		return nil, false
+	}
+	var result domain.NativeCodeReviewResult
+	if domain.DecodeWithLimit(raw, &result, domain.MaxWorkerJobOutputBytes) != nil || result.Validate() != nil {
+		logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "result_invalid")
+		return nil, false
+	}
+	// Only the exact bytes the original Worker produced are reusable.
+	canonical, err := json.Marshal(result)
+	if err != nil || !bytes.Equal(canonical, raw) {
+		logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "result_not_canonical")
+		return nil, false
+	}
+	if result.ActionID != input.ActionID || result.Selection.Target != input.Target || !result.CleanupVerified {
+		logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "result_not_bound_to_assignment")
+		return nil, false
+	}
+	for index, usage := range result.UsageRecords {
+		if usage.ContextRevision != input.ContextRevision || usage.SessionID != input.Source.SessionID || usage.ProjectID != domain.ID(resource.ProjectId) || usage.ExecutionID != input.ActionID || usage.AccountID != input.Source.AccountID || usage.ConnectionID != input.Source.ConnectionID || usage.ProviderID != input.Source.Configuration.ProviderID || usage.SubscriptionService != input.Source.Configuration.SubscriptionService || usage.ModelID != input.Source.Configuration.ModelID || usage.Harness != domain.Codex || usage.Sequence != uint64(index+1) {
+			logger.WarnContext(ctx, "native_code_review_recovery_rejected", "reason", "usage_not_bound_to_assignment", "usage_index", index)
+			return nil, false
+		}
+	}
+	logger.InfoContext(ctx, "native_code_review_recovered", "findings", len(result.Findings), "responses", len(result.UsageRecords), "cleanup_verified", true)
+	return json.RawMessage(raw), true
 }
