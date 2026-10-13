@@ -76,13 +76,14 @@ operation, revision and saved scope, replays the retained phase through the same
 offline writer with a settlement-only token. That token has no installer entry
 point, so replay never invokes installation and never changes the journal phase
 or generation. Launch keeps fresh installation admission busy until the pass
-ends, and Quit stops the pass between records. The launch pass walks the store
-in pages of at most 32 readable records in stable name order, moving a forward
-cursor until the directory ends, so retained records that stay unresolved
-(missing journal, rejected identity, failed settlement) cannot starve a later
-valid record on any launch; unreadable entries are reported but never consume
-the page bound. Every page is bounded and the cursor never moves backward, so the
-walk ends and each record is attempted once per pass. An original-scope
+ends, and Quit stops the pass between records. The launch pass streams the store in a single directory
+pass that reads entries lazily and visits each one as it is read, so memory stays
+constant and the work stays linear however many corrupt or retained entries the
+store holds. Retained records that stay unresolved (missing journal, rejected
+identity, failed settlement) cannot starve a later valid record on any launch,
+unreadable entries are reported without being deleted, and each entry is
+attempted once per pass. Quit is checked before every entry, so a very large
+damaged store cannot delay shutdown. An original-scope
 inspection reads only the record keyed by its own operation ID and never
 enumerates the directory. Corrupt, oversized, symlinked, misnamed,
 unknown-field, foreign-identity or rejected records stay on disk, are logged

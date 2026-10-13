@@ -433,8 +433,9 @@ impl Connector {
             }
             ControlFlow::Continue(())
         };
-        // The launch scope walks every page, so retained records that stay
-        // unresolved never hide later ones. An exact original-scope inspection
+        // The launch scope streams every entry in one directory pass, so
+        // retained records that stay unresolved never hide later ones and
+        // Quit is honored between entries. An exact original-scope inspection
         // reads only its own operation's record, so unrelated evidence cannot
         // starve it either.
         let walked = match scope {
@@ -1741,7 +1742,7 @@ print(json.dumps({'version': 1, 'result': descriptor}))
         }
     }
 
-    /// More unreadable entries than the record bound, all sorting before the
+    /// Many unreadable entries, all sorting before the
     /// valid record (UUID-v7 names start with a digit after `0-`).
     fn write_unreadable_prefix(fixture: &Fixture) -> Vec<PathBuf> {
         let directory = fixture.root.join(crate::updater_outcome::STORE_DIRECTORY);
@@ -1774,7 +1775,7 @@ print(json.dumps({'version': 1, 'result': descriptor}))
         let fixture = Fixture::new(None, Some("installing"));
         let record = fixture.record(Phase::Installed);
         fixture.store().persist(&record).unwrap();
-        // More syntactically valid records than a page, all sorting before the
+        // Many syntactically valid records, all sorting before the
         // valid one, whose journals Go rejects on every launch.
         let rejected: Vec<OutcomeRecord> = (0..40)
             .map(|index| {

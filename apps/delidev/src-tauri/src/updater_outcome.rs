@@ -16,7 +16,6 @@ use super::{
 /// Directory (below the connector root) that owns every retained record.
 pub(crate) const STORE_DIRECTORY: &str = "desktop-updates/native-outcomes";
 const RECORD_LIMIT: u64 = 4096;
-const MAX_ENTRIES: usize = 32;
 const RECORD_VERSION: u32 = 1;
 
 /// Closed kinds of retained evidence. Later contracts extend this enum rather
@@ -95,14 +94,6 @@ pub enum StoredEntry {
     /// Corrupt, oversized, foreign-named or otherwise unparsable evidence.
     /// The optional name is logged only when it is itself a canonical ID.
     Unreadable(Option<String>),
-}
-
-/// One bounded page of a store listing.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct ScanPage {
-    pub entries: Vec<StoredEntry>,
-    /// Cursor for the following page, or `None` when the listing ended.
-    pub next: Option<String>,
 }
 
 pub struct OutcomeStore {
@@ -305,81 +296,57 @@ impl OutcomeStore {
         })
     }
 
-    /// Lists the first page of retained entries in stable order. See
-    /// [`OutcomeStore::scan_page`]; callers that must reach every record walk
-    /// the pages with [`OutcomeStore::for_each`].
+    /// Collects every retained entry. This buffers the whole listing, so it is
+    /// only for tests and diagnostics; production passes stream through
+    /// [`OutcomeStore::for_each`].
     pub fn scan(&self) -> Result<Vec<StoredEntry>> {
-        Ok(self.scan_page(None)?.entries)
+        let mut entries = Vec::new();
+        self.for_each(|entry| {
+            entries.push(entry);
+            ControlFlow::Continue(())
+        })?;
+        Ok(entries)
     }
 
-    /// Lists one page of retained entries in stable name order, starting after
-    /// the name `after`. At most `MAX_ENTRIES` readable records are returned
-    /// per page, so a bounded pass always reaches them even behind any number
-    /// of corrupt, misnamed or otherwise unreadable entries; those are
-    /// reported without consuming the bound and are never deleted. When more
-    /// readable records follow, `next` is the cursor for the following page, so
-    /// walking the cursor visits every entry exactly once and records that stay
-    /// unresolved can never starve a later one.
-    /// Temporary files from an interrupted write are ignored and never trusted.
-    pub fn scan_page(&self, after: Option<&str>) -> Result<ScanPage> {
+    /// Streams every retained entry to `visit` in a single directory pass
+    /// until `visit` breaks. Directory entries are read lazily, so memory
+    /// stays constant and the work is linear in the number of entries no
+    /// matter how many corrupt, misnamed or otherwise unreadable entries the
+    /// store holds. Those are reported to `visit` and never deleted. Because
+    /// `visit` runs between directory reads, a caller can stop the walk (for
+    /// example on Quit) before the rest of a very large store is listed.
+    /// Retained records that stay unresolved never hide later ones: every
+    /// entry that exists for the whole walk is visited exactly once, and an
+    /// entry removed by `visit` itself is not revisited. Temporary and claimed
+    /// files from an interrupted write or retirement are dot-prefixed and are
+    /// ignored and never trusted.
+    pub fn for_each(&self, mut visit: impl FnMut(StoredEntry) -> ControlFlow<()>) -> Result<()> {
         if !self.check_dir(false)? {
-            return Ok(ScanPage::default());
+            return Ok(());
         }
-        let mut names: Vec<String> = fs::read_dir(&self.dir)
-            .map_err(|_| NativeFailure::StorageUnavailable)?
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .filter(|name| !name.starts_with('.'))
-            .filter(|name| after.is_none_or(|cursor| name.as_str() > cursor))
-            .collect();
-        names.sort();
-        let mut page = ScanPage::default();
-        let mut records = 0;
-        let mut examined = after.map(str::to_owned);
-        for name in names {
-            let stem = name.strip_suffix(".json").unwrap_or("");
-            if canonical_id(stem).is_err() {
-                page.entries.push(StoredEntry::Unreadable(None));
-                examined = Some(name);
+        let entries = fs::read_dir(&self.dir).map_err(|_| NativeFailure::StorageUnavailable)?;
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
                 continue;
             }
-            match self.read(stem) {
-                Ok(Some(record)) => {
-                    if records == MAX_ENTRIES {
-                        page.next = examined;
-                        break;
-                    }
-                    records += 1;
-                    page.entries.push(StoredEntry::Record(record));
+            let stem = name.strip_suffix(".json").unwrap_or("");
+            let entry = if canonical_id(stem).is_err() {
+                StoredEntry::Unreadable(None)
+            } else {
+                match self.read(stem) {
+                    Ok(Some(record)) => StoredEntry::Record(record),
+                    // A file that disappeared after listing is not evidence.
+                    Ok(None) => continue,
+                    Err(_) => StoredEntry::Unreadable(Some(stem.to_owned())),
                 }
-                // A file that disappeared after listing is not evidence.
-                Ok(None) => {}
-                Err(_) => page
-                    .entries
-                    .push(StoredEntry::Unreadable(Some(stem.to_owned()))),
-            }
-            examined = Some(name);
-        }
-        Ok(page)
-    }
-
-    /// Visits every retained entry page by page until `visit` breaks. Each
-    /// page is bounded, and the cursor only moves forward, so retained entries
-    /// that stay unresolved never hide later ones and the walk always ends.
-    pub fn for_each(&self, mut visit: impl FnMut(StoredEntry) -> ControlFlow<()>) -> Result<()> {
-        let mut after: Option<String> = None;
-        loop {
-            let page = self.scan_page(after.as_deref())?;
-            for entry in page.entries {
-                if visit(entry).is_break() {
-                    return Ok(());
-                }
-            }
-            match page.next {
-                Some(next) => after = Some(next),
-                None => return Ok(()),
+            };
+            if visit(entry).is_break() {
+                break;
             }
         }
+        Ok(())
     }
 
     /// Removes the record only when the stored bytes are exactly the bytes
@@ -440,6 +407,9 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
+
+    /// Larger than any small constant a walk could silently rely on.
+    const BULK: usize = 80;
 
     fn record(phase: Phase) -> OutcomeRecord {
         OutcomeRecord::outcome(
@@ -726,47 +696,13 @@ mod tests {
     }
 
     #[test]
-    fn scan_bounds_readable_records_not_unreadable_prefixes() {
-        let (_temp, root) = scope();
-        let store = OutcomeStore::new(&root);
-        store.persist(&record(Phase::Failed)).unwrap();
-        let directory = root.join(STORE_DIRECTORY);
-        for index in 0..(MAX_ENTRIES + 8) {
-            fs::write(directory.join(format!("0-corrupt-{index:02}.json")), b"{").unwrap();
-        }
-        let entries = store.scan().unwrap();
-        let records = entries
-            .iter()
-            .filter(|entry| matches!(entry, StoredEntry::Record(_)))
-            .count();
-        assert_eq!(records, 1);
-        assert_eq!(entries.len(), MAX_ENTRIES + 9);
-        // Valid records beyond the bound are deferred, never dropped.
-        for _ in 0..MAX_ENTRIES {
-            store.persist(&record(Phase::Failed)).unwrap();
-        }
-        let records = store
-            .scan()
-            .unwrap()
-            .iter()
-            .filter(|entry| matches!(entry, StoredEntry::Record(_)))
-            .count();
-        assert_eq!(records, MAX_ENTRIES);
-        assert_eq!(
-            fs::read_dir(&directory).unwrap().count(),
-            2 * MAX_ENTRIES + 9
-        );
-    }
-
-    #[test]
-    fn pages_visit_every_entry_exactly_once_behind_retained_prefixes() {
+    fn walk_visits_every_entry_exactly_once_behind_retained_prefixes() {
         let (_temp, root) = scope();
         let store = OutcomeStore::new(&root);
         let directory = root.join(STORE_DIRECTORY);
-        // Unreadable names interleave with more readable records than a page.
-        let total = 2 * MAX_ENTRIES + 5;
+        // Unreadable names interleave with many readable records.
         let mut expected = Vec::new();
-        for index in 0..total {
+        for index in 0..BULK {
             let id = format!("00000000-0000-7000-8000-{index:012}");
             let stored = OutcomeRecord::outcome(&id, &id, 3, &id, None, Phase::Failed).unwrap();
             store.persist(&stored).unwrap();
@@ -775,14 +711,8 @@ mod tests {
                 fs::write(directory.join(format!("{id}-corrupt.json")), b"{").unwrap();
             }
         }
-        let first = store.scan_page(None).unwrap();
-        let records = first
-            .entries
-            .iter()
-            .filter(|entry| matches!(entry, StoredEntry::Record(_)))
-            .count();
-        assert_eq!(records, MAX_ENTRIES);
-        assert!(first.next.is_some());
+        // Dot-prefixed temporary and claimed files are never listed.
+        fs::write(directory.join(".stale.tmp"), b"{").unwrap();
         let mut seen = Vec::new();
         let mut unreadable = 0;
         store
@@ -794,21 +724,21 @@ mod tests {
                 ControlFlow::Continue(())
             })
             .unwrap();
-        assert_eq!(seen, expected, "every record in name order, once");
-        assert_eq!(unreadable, (0..total).step_by(7).count());
-        // Following the cursor ends: the final page reports no further cursor.
-        let mut after = None;
-        let mut pages = 0;
-        loop {
-            let page = store.scan_page(after.as_deref()).unwrap();
-            pages += 1;
-            match page.next {
-                Some(next) => after = Some(next),
-                None => break,
-            }
+        seen.sort_by(|a, b| a.operation_id.cmp(&b.operation_id));
+        assert_eq!(seen, expected, "every record, once");
+        assert_eq!(unreadable, (0..BULK).step_by(7).count());
+        assert_eq!(store.scan().unwrap().len(), BULK + unreadable);
+    }
+
+    #[test]
+    fn walk_stops_between_entries_when_the_visitor_breaks() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        store.persist(&record(Phase::Failed)).unwrap();
+        let directory = root.join(STORE_DIRECTORY);
+        for index in 0..BULK {
+            fs::write(directory.join(format!("0-corrupt-{index:02}.json")), b"{").unwrap();
         }
-        assert_eq!(pages, 3);
-        // Stopping between records ends the walk.
         let mut visited = 0;
         store
             .for_each(|_| {
@@ -816,7 +746,7 @@ mod tests {
                 ControlFlow::Break(())
             })
             .unwrap();
-        assert_eq!(visited, 1);
+        assert_eq!(visited, 1, "a stop request ends the walk mid-directory");
     }
 
     #[test]
@@ -828,7 +758,7 @@ mod tests {
         let stored = record(Phase::Uncertain);
         store.persist(&stored).unwrap();
         let directory = root.join(STORE_DIRECTORY);
-        for index in 0..(MAX_ENTRIES + 8) {
+        for index in 0..(BULK) {
             fs::write(directory.join(format!("0-corrupt-{index:02}.json")), b"{").unwrap();
         }
         assert_eq!(
