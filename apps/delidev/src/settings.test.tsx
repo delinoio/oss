@@ -2298,7 +2298,10 @@ describe("reopened repository editors", () => {
 
   it.each([
     ["denied", () => new ConnectError("Denied fixture", Code.PermissionDenied)],
-    ["untyped aborted", () => new ConnectError("Aborted fixture", Code.Aborted)],
+    [
+      "untyped aborted",
+      () => new ConnectError("Aborted fixture", Code.Aborted),
+    ],
   ])(
     "keeps a definitive %s rejection in the generic presentation when an editor reopens",
     async (_name, failure) => {

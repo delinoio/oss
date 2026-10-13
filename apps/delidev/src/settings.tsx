@@ -256,11 +256,7 @@ function restoreRepositorySave(
     });
     return undefined;
   }
-  const accepted = acceptedRepositorySave(
-    initial.id,
-    request,
-    retained.job,
-  );
+  const accepted = acceptedRepositorySave(initial.id, request, retained.job);
   console.info("delidev.settings.repository_save_restored", {
     phase: accepted ? "job" : "input",
   });
