@@ -850,7 +850,7 @@ function Occurrence({
           />
         </p>
         <pre>{text(selection.prompt)}</pre>
-        <small>{productLabel(PresentationKind.Schedule, resource.id)}</small>
+        <small>{productLabel(PresentationKind.Occurrence, resource.id)}</small>
       </Disclosure>
     </article>
   );
