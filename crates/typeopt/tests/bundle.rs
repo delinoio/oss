@@ -317,6 +317,152 @@ fn keeps_chunks_with_eval_unchanged() {
     assert!(saved(&report) > 0, "{report:#}");
 }
 
+/// A module chunk `sub.js` made of `snippet` and an optimizable function,
+/// imported by an optimizable `index.js`. Returns the temp dir, the chunk
+/// text and the report of an optimization whose Node behavior is unchanged.
+fn syntax_boundary_case(snippet: &str) -> (tempfile::TempDir, String, Value) {
+    let sub = format!(
+        "{snippet};function own(n){{return{{verticalSpacing:n,horizontalSpacing:n}}}}const \
+         s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);export{{}};"
+    );
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import"./sub.js";function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);"#,
+        ),
+        ("sub.js", &sub),
+    ]);
+    (temp, sub, report)
+}
+
+/// Mentions of `eval` and `importScripts` that cannot run code or load a
+/// script (feature checks, property names, property keys) do not make a
+/// chunk a boundary: it is optimized and Node output is unchanged.
+#[test]
+fn optimizes_chunks_that_only_mention_eval_or_import_scripts() {
+    for snippet in [
+        r#"const g=typeof self!=="undefined"&&typeof self.importScripts"#,
+        r#"console.log(typeof importScripts,typeof eval)"#,
+        r#"console.log(typeof (importScripts),typeof (eval),typeof ((eval)))"#,
+        r#"const g=typeof self!=="undefined"&&typeof (self.importScripts)"#,
+        r#"console.log(typeof (globalThis.eval),typeof (globalThis["importScripts"]))"#,
+        r#"const o={eval:1,importScripts:2};console.log(o.eval,o.importScripts)"#,
+        r#"const o={"eval":1,eval(){return 2},get importScripts(){return 3}};console.log(o.eval(),o.importScripts)"#,
+        r#"class K{eval(){return 1}importScripts=2}console.log(new K().eval(),new K().importScripts)"#,
+        r#"const w={importScripts:()=>1};console.log(typeof w.importScripts,w["eval"])"#,
+        r#"const{eval:ev}={eval:5};console.log(ev)"#,
+        r#"const{importScripts:load}={importScripts:5};console.log(load)"#,
+        r#"let ev;({eval:ev}={eval:5});console.log(ev)"#,
+    ] {
+        let (temp, sub, report) = syntax_boundary_case(snippet);
+        assert_ne!(out(temp.path(), "sub.js"), sub, "{snippet}: {report:#}");
+        assert!(saved(&report) > 0, "{snippet}: {report:#}");
+    }
+}
+
+/// Module import and export names such as `import { eval as helper }` and
+/// `export { helper as eval }` name an export, not the global `eval`, so
+/// their chunks are optimized.
+#[test]
+fn optimizes_chunks_that_name_module_exports_eval_or_import_scripts() {
+    let lib = r#"function pick(){return{verticalSpacing:1,horizontalSpacing:2}}function run(){const p=pick();return p.verticalSpacing+p.horizontalSpacing}export{run as eval,run as importScripts};"#;
+    let sub = r#"import{eval as helper,importScripts as other}from"./lib.js";export{eval as again,importScripts as more}from"./lib.js";function own(n){return{leftSpacing:n,rightSpacing:n}}function wrapped(){const o=own(2);return o.leftSpacing+o.rightSpacing}export{wrapped as eval,wrapped as importScripts};console.log(helper(),other(),wrapped());"#;
+    let namespace = r#"function own(n){return{upperSpacing:n,lowerSpacing:n}}function total(){const o=own(3);return o.upperSpacing+o.lowerSpacing}export{total};export*as eval from"./lib.js";"#;
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import"./sub.js";import"./namespace.js";console.log("index");"#,
+        ),
+        ("lib.js", lib),
+        ("sub.js", sub),
+        ("namespace.js", namespace),
+    ]);
+    for (chunk, original) in [
+        ("sub.js", sub),
+        ("lib.js", lib),
+        ("namespace.js", namespace),
+    ] {
+        assert_ne!(out(temp.path(), chunk), original, "{chunk}: {report:#}");
+    }
+}
+
+/// A call or an alias of the global `eval` or `importScripts` keeps the
+/// chunk unchanged while the rest of the bundle is optimized.
+#[test]
+fn keeps_chunks_that_use_eval_or_import_scripts_as_values() {
+    for snippet in [
+        r#"const e=eval;console.log(e("1+1"))"#,
+        r#"console.log(eval("1+1"))"#,
+        r#"console.log(globalThis.eval("1+1"))"#,
+        r#"console.log(globalThis["eval"]("1+1"))"#,
+        r#"const o={eval};console.log(typeof o.eval)"#,
+        r#"globalThis.__never&&importScripts("a.js")"#,
+        r#"globalThis.__never&&self.importScripts("a.js")"#,
+        r#"globalThis.__never&&globalThis.importScripts("a.js")"#,
+        r#"const f=typeof importScripts=="function"?importScripts:null;console.log(f)"#,
+        r#"const f=globalThis.importScripts;console.log(f)"#,
+        r#"typeof importScripts=="function"&&importScripts("vendor.js")"#,
+        r#"function f(){const{importScripts:load}=self;return load("a.js")}globalThis.__never&&f()"#,
+        r#"const{importScripts:load}=(globalThis);console.log(load)"#,
+        r#"globalThis.__never&&(importScripts)("a.js")"#,
+        r#"console.log((0,eval)("1+1"))"#,
+        r#"const{eval:ev}=globalThis;console.log(ev("1+1"))"#,
+        r#"let load;({importScripts:load}=globalThis);globalThis.__never&&load("a.js")"#,
+    ] {
+        let (temp, sub, report) = syntax_boundary_case(snippet);
+        assert_eq!(out(temp.path(), "sub.js"), sub, "{snippet}: {report:#}");
+        assert!(saved(&report) > 0, "{snippet}: {report:#}");
+    }
+}
+
+/// Debug logging names the rule that made each chunk a boundary.
+#[test]
+fn logs_the_rule_that_makes_a_chunk_a_boundary() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import"./evaluating.js";import"./loading.js";console.log(1);"#,
+        ),
+        (
+            "evaluating.js",
+            r#"const e=eval;console.log(e("1"));export{};"#,
+        ),
+        (
+            "loading.js",
+            r#"globalThis.__never&&self.importScripts("a.js");export{};"#,
+        ),
+    ]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(output.status.success());
+    let log = String::from_utf8_lossy(&output.stderr);
+    let line = |chunk: &str| {
+        log.lines()
+            .find(|l| l.contains("bundle chunk is a boundary") && l.contains(chunk))
+            .unwrap_or_else(|| panic!("no boundary log for {chunk}: {log}"))
+            .to_string()
+    };
+    assert!(line("evaluating.js").contains("eval-reference"), "{log}");
+    assert!(line("loading.js").contains("import-scripts-call"), "{log}");
+}
+
+/// A `with` statement keeps its chunk unchanged. Modules are strict code, so
+/// the chunk is not run by Node here.
+#[test]
+fn keeps_chunks_with_with_statements_unchanged() {
+    let with = r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}with({a:1}){own(a)}export{};"#;
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);export{};"#,
+        ),
+        ("with.js", with),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "with.js"), with);
+    assert!(saved(&report) > 0, "{report:#}");
+}
+
 /// A chunk that uses `import.meta` is an ES module even without imports or
 /// exports.
 #[test]
@@ -410,6 +556,35 @@ fn keeps_exports_that_classic_workers_reach() {
     let only = bundle(&[("sw.js", worker)]);
     optimize(only.path(), &[]);
     assert_eq!(out(only.path(), "sw.js"), worker);
+}
+
+/// A script that a worker loads through any callee form of `importScripts`
+/// is a classic script, even when another chunk also imports it statically.
+#[test]
+fn keeps_scripts_loaded_by_every_import_scripts_callee_form() {
+    let vendor = r#"function legacyHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var legacyState=legacyHelper();"#;
+    for call in [
+        r#"importScripts("./vendor.js")"#,
+        r#"self.importScripts("./vendor.js")"#,
+        r#"self["importScripts"]("./vendor.js")"#,
+        r#"globalThis[`importScripts`]("./vendor.js")"#,
+        r#"(self.importScripts)("./vendor.js")"#,
+        r#"(self["importScripts"])("./vendor.js")"#,
+    ] {
+        let worker = format!("globalThis.__never&&{call};");
+        let temp = bundle(&[
+            (
+                "index.js",
+                r#"import"./vendor.js";function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);"#,
+            ),
+            ("vendor.js", vendor),
+            ("sw.js", &worker),
+        ]);
+        let report = optimize(temp.path(), &[]);
+        same_behavior(temp.path());
+        assert_eq!(out(temp.path(), "vendor.js"), vendor, "{call}: {report:#}");
+        assert_eq!(out(temp.path(), "sw.js"), worker, "{call}");
+    }
 }
 
 #[test]
