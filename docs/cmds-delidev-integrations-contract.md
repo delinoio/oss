@@ -563,7 +563,11 @@ remediation operations remain unchanged. Unsupported peers retain a flat list,
 Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
 
 Workspace requests bind the original local repository revision and at most 20
-accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+accepted-page PR numbers. Repository scope comes only from the authenticated
+identity and numeric repository metadata reads, which fail the request when
+unavailable or invalid; every accepted seed, including the first, is then read as
+an ordinary detail, so an unreadable seed in any position leaves a readable
+workspace incomplete (`seed_unavailable`, `access_unavailable`) instead of failing it. The adapter validates numeric GitHub repository and PR
 identities, exact head-repository identity and base/head branch relationships in
 all states. Context rows are labeled and never increase filtered match counts.
 Each component renders once under its earliest accepted matching seed, parents

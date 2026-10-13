@@ -114,7 +114,8 @@ func TestWorkspaceAmbiguityAndDrift(t *testing.T) {
 		})
 	}
 	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, func(n int, item map[string]any) {
-		if n >= 3 {
+		// The first read is the traversal; the second is the final reobservation.
+		if n >= 2 {
 			item["head"].(map[string]any)["sha"] = strings.Repeat("c", 40)
 		}
 	})
@@ -475,5 +476,86 @@ func TestWorkspaceDeadlineIsFrozenAtFirstAttempt(t *testing.T) {
 	}
 	if budget.Attempts() != 2 {
 		t.Fatal("attempts were not counted", budget.Attempts())
+	}
+}
+
+// failPaths wraps the fixture transport so the listed request paths answer with
+// the given status and an empty JSON object.
+func failPaths(c *Client, status int, paths ...string) {
+	original := c.http.Transport
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		for _, p := range paths {
+			if r.URL.Path == p {
+				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+			}
+		}
+		return original.RoundTrip(r)
+	})
+}
+
+func TestWorkspaceUnreadableSeedRemainsIncompleteRegardlessOfOrder(t *testing.T) {
+	for _, status := range []int{404, 403} {
+		for _, seeds := range [][]string{{"1", "2"}, {"2", "1"}} {
+			t.Run(strconv.Itoa(status)+"-"+strings.Join(seeds, ","), func(t *testing.T) {
+				c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}, 2: {"main", "b"}}, nil)
+				failPaths(c, status, "/repos/fixture-owner/repo/pulls/1")
+				value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds)
+				if e != nil {
+					t.Fatal("unreadable seed aborted the observation", e)
+				}
+				if value.State != domain.PRWorkspaceIncomplete || !contains(value.Reasons, "seed_unavailable") || !contains(value.Reasons, "access_unavailable") {
+					t.Fatal("unreadable seed was not reported as incomplete", value.State, value.Reasons)
+				}
+				if len(value.Nodes) != 1 || value.Nodes[0].Item.Number != "2" || !value.Nodes[0].Seed {
+					t.Fatal("readable seed did not survive", value.Nodes)
+				}
+				if value.Repository.ID != "37" || value.Identity.ID != "17" {
+					t.Fatal("scope was not established", value.Repository, value.Identity)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkspaceScopeFailuresStillAbortWithoutFabricatedScope(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+	}{{"identity", "/user"}, {"repository metadata", "/repos/fixture-owner/repo"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}, 2: {"main", "b"}}, nil)
+			failPaths(c, 404, tc.path)
+			value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1", "2"})
+			if e == nil {
+				t.Fatal("scope failure returned an observation")
+			}
+			if len(value.Nodes) != 0 || value.Repository.ID != "" || value.Identity.ID != "" {
+				t.Fatal("scope was fabricated", value)
+			}
+		})
+	}
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}}, nil)
+	original := c.http.Transport
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/repos/fixture-owner/repo" {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"not-numeric"}`))}, nil
+		}
+		return original.RoundTrip(r)
+	})
+	if _, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}); e == nil {
+		t.Fatal("invalid repository metadata returned an observation")
+	}
+}
+
+func TestWorkspaceReadableSeedsInAnyOrderStayComplete(t *testing.T) {
+	for _, seeds := range [][]string{{"1", "2"}, {"2", "1"}} {
+		c := workspaceFixture(t, map[int][2]string{1: {"main", "a"}, 2: {"main", "b"}}, nil)
+		value, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", seeds)
+		if e != nil || value.State != domain.PRWorkspaceComplete || len(value.Reasons) != 0 || len(value.Nodes) != 2 {
+			t.Fatal("readable seeds were not complete", seeds, e, value.State, value.Reasons)
+		}
+		if value.Repository.ID != "37" || value.Repository.Owner != "fixture-owner" || value.Repository.Name != "repo" {
+			t.Fatal("repository metadata changed", value.Repository)
+		}
 	}
 }

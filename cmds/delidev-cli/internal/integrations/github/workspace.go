@@ -69,9 +69,10 @@ const (
 	workspaceDeadline = 30 * time.Second
 	// workspaceProviderReads is the cumulative provider read cap across attempts.
 	workspaceProviderReads = 40
-	// workspaceInitialReads is charged when an attempt begins: the identity,
-	// repository metadata and first pull request detail read of QueryRepository.
-	workspaceInitialReads = 3
+	// workspaceInitialReads is charged when an attempt begins: the identity and
+	// repository metadata reads that establish the scope. Every seed detail read,
+	// including the first, is charged individually as it is issued.
+	workspaceInitialReads = 2
 )
 
 // WorkspaceBudget carries the fixed adapter deadline and cumulative provider
@@ -154,11 +155,13 @@ func (c *Client) WorkspaceWithBudget(ctx context.Context, token []byte, owner, n
 	if len(seeds) == 0 || len(seeds) > 20 {
 		return result, queryUnavailable()
 	}
-	first, err := c.QueryRepository(ctx, token, owner, name, domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryDetail, Number: seeds[0]})
+	// Scope comes from identity and repository metadata only, so an unreadable
+	// first seed is incomplete evidence like any other seed, never an RPC error.
+	identity, repository, err := c.repositoryScope(ctx, token, owner, name)
 	if err != nil {
 		return result, err
 	}
-	result.Identity, result.Repository = first.Identity, first.Repository
+	result.Identity, result.Repository = identity, *repository
 	seenSeeds := map[string]bool{}
 	for _, n := range seeds {
 		if !domain.PositiveDecimal(n) || seenSeeds[n] {
