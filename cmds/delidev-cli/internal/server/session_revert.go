@@ -76,6 +76,11 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 		}
 		input.Version = 4
 		input.Revert = &domain.SessionRevertTarget{MessageID: message, InputID: target.InputID, NativeTurnID: turn, Prompt: queuedSessionInput(queued), ContextRevision: session.ContextRevision}
+		if done.Version == 2 {
+			// Carry the target execution's retained checkpoint identity so the Worker can
+			// resolve its own original selected-skill proof.
+			input.Revert.ExecutionID, input.Revert.CheckpointDigest = target.ExecutionID, done.NativeCheckpointDigest
+		}
 		if input.Validate() != nil {
 			return nil, domain.CompactionUncertain()
 		}

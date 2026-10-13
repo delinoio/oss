@@ -437,6 +437,23 @@ removed context targets, active input/Steer, unsettled responses/tools/subagents
 queued inputs, pending Fork ownership or missing cleanup. Freeze one actor-bound
 mutation receipt. A replay cannot change its target, prompt or generation.
 
+The frozen target also carries the retained native checkpoint reference of the
+execution that accepted it (`execution_id` and `checkpoint_digest`, both absent
+only for text-only compatibility and for jobs accepted before the reference was
+carried). Selected skills are authenticated by a separate native skill digest
+that prompt digests do not cover. Before the native claim the Worker resolves
+that digest only from the immutable retained input proof for the exact target
+input id and prompt digest: the source checkpoint when the target belongs to the
+source execution, otherwise the target execution's own checkpoint read by its
+frozen digest and bound to the session, machine, native thread, turn and input.
+The latest source input and freshly observed history are never the expected
+proof. A prompt that selected skills with a missing, unreadable, unbound or zero
+proof fails before the claim and native send with the safe uncertain failure and
+settles only through the existing no-claim/no-send cleanup proof. Removed,
+changed or reordered observed skills reject through the harness comparison
+before the claim. A text-only prompt keeps the zero digest. No migration or new
+allocation is required.
+
 The original resolved native process resumes the same private history with its
 original settings. The closed 0.162.0 response profile uses `thread/revert` with
 `beforeTurnId`, excluding that turn and later turns. `thread/rollback` is absent.

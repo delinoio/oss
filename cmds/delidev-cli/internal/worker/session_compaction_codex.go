@@ -373,7 +373,14 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	var retained codex.CompactedCheckpoint
 	usages := []domain.NativeResponseUsage{}
 	if i.Revert != nil {
-		target := codex.HistoricalInput{ID: i.Revert.InputID, PromptDigest: i.Revert.Prompt.InputDigest()}
+		// The expected selected-skill digest comes only from the original retained
+		// target proof. A missing proof for a skilled target is rejected here,
+		// before the native claim and before any wire send.
+		target, err := resolveRevertTarget(config.Root, source, i, logger)
+		if err != nil {
+			preSendFailure = err
+			return nil, err
+		}
 		retained, err = native.RevertThread(ctx, i.ActionID, source.Native, target, domain.ID(i.Revert.NativeTurnID), func(intent codex.RevertIntent) error {
 			// Callback entry is the uncertainty fence, even if durable writing
 			// fails. Never downgrade a partially persisted claim to no-send.

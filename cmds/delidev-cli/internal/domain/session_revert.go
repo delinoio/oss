@@ -11,10 +11,21 @@ type SessionRevertTarget struct {
 	NativeTurnID    NativeIdentity `json:"native_turn_id"`
 	Prompt          SessionInput   `json:"prompt"`
 	ContextRevision uint64         `json:"context_revision"`
+	// ExecutionID and CheckpointDigest identify the immutable retained native
+	// checkpoint of the execution that accepted this target input. They let the
+	// Worker resolve the original selected-skill proof for a target that predates
+	// the latest source execution. Both are absent for text-only compatibility
+	// and for jobs accepted before this proof was carried.
+	ExecutionID      ID     `json:"execution_id,omitempty"`
+	CheckpointDigest string `json:"checkpoint_digest,omitempty"`
 }
 
 func (t SessionRevertTarget) Validate() error {
 	if UniqueIDs([]ID{t.MessageID, t.InputID}) != nil || t.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || t.Prompt.Validate() != nil {
+		return CompactionUncertain()
+	}
+	// The retained checkpoint reference is all-or-nothing and digest-shaped.
+	if (t.ExecutionID == "") != (t.CheckpointDigest == "") || t.ExecutionID != "" && (t.ExecutionID.Validate() != nil || !validCompactionDigest(t.CheckpointDigest)) {
 		return CompactionUncertain()
 	}
 	return nil

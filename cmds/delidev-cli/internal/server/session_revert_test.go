@@ -60,6 +60,9 @@ func TestRevertPublicReceiptExactTargetHistoryAndContextRevision(t *testing.T) {
 			if domain.Decode(accepted.Msg.Job.DocumentJson, &job) != nil || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Version != 4 || !reflect.DeepEqual(input.Assignment, f.input) || input.Revert.Prompt.Prompt != f.input.Input.Prompt {
 				t.Fatal("Revert replaced original execution or prompt")
 			}
+			if input.Revert.ExecutionID != f.input.ExecutionID || input.Revert.CheckpointDigest == "" {
+				t.Fatal("Revert target did not carry its own retained checkpoint reference")
+			}
 			result := domain.SessionCompactionResult{Version: 4, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{Revert: true, ContextRevision: 1, JobID: domain.ID(accepted.Msg.Job.Id), ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, CheckpointDigest: strings.Repeat("a", 64), NativeDigest: strings.Repeat("b", 64)}, Revert: &domain.SessionRevertResult{Target: *input.Revert, NativeThreadID: input.Completion.NativeThreadID, RetainedTurnIDs: []domain.NativeIdentity{}, HistoryDigest: strings.Repeat("c", 64), ContextRevision: 1}}
 			raw, _ := json.Marshal(result)
 			_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.revert-result", nil, func(tx *store.Tx) (any, error) {
