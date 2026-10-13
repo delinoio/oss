@@ -289,3 +289,78 @@ it("reports full residency for fully resident pages", async () => {
   expect(pagesResident(chain.getSnapshot())).toBe(true);
   expect(pagesResident({ pages: [], payloadPages: [] })).toBe(true);
 });
+
+it("runs the accepted observer for every reached page, including evicted ones, while payloads stay bounded", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  const observed: string[] = [];
+  const observing = (token: string): ReturnType<typeof reader> =>
+    reader(token, new AbortController().signal).then((batch) => ({
+      ...batch,
+      accepted: () => observed.push(token || "0"),
+    }));
+  await chain.refresh(observing);
+  for (let index = 0; index < 3; index++) await chain.append(observing);
+  observed.length = 0;
+  // Page "0" (token "") is no longer inside the three-page payload window.
+  expect(chain.getSnapshot().payloadPages.map((page) => page.token)).toEqual([
+    "1",
+    "2",
+    "3",
+  ]);
+  await chain.refresh(observing);
+  expect(observed).toEqual(["0", "1", "2", "3"]);
+  expect(chain.getSnapshot().payloadPages.map((page) => page.token)).toEqual([
+    "1",
+    "2",
+    "3",
+  ]);
+});
+
+it("does not run the accepted observer for canceled, superseded or boundary-rejected reads", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(reader);
+  for (let index = 0; index < 2; index++) await chain.append(reader);
+  const accepted = vi.fn();
+  let release!: (value: Awaited<ReturnType<typeof reader>>) => void;
+  const pending = chain.refresh(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  chain.suspend();
+  chain.activate();
+  release({
+    ...(await reader("", new AbortController().signal)),
+    accepted,
+  });
+  await pending;
+  expect(accepted).not.toHaveBeenCalled();
+  // A changed continuation boundary rejects the refresh before observation.
+  await chain.refresh(async (token) => ({
+    ...(await reader(token, new AbortController().signal)),
+    nextPageToken: "",
+    accepted,
+  }));
+  expect(accepted).not.toHaveBeenCalled();
+  expect(chain.getSnapshot().error?.failure.code).toBe(
+    FailureCode.CursorExpired,
+  );
+});
+
+it("keeps a read accepted when its observer throws", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  await chain.refresh(async (token) => ({
+    ...(await reader(token, new AbortController().signal)),
+    accepted: () => {
+      throw new Error("observer failed");
+    },
+  }));
+  warn.mockRestore();
+  expect(chain.getSnapshot().loaded).toBe(true);
+  expect(chain.getSnapshot().error).toBeUndefined();
+});

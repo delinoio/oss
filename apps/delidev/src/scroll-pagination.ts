@@ -15,6 +15,10 @@ export interface PaginationBatch<Row extends PaginationRow, Payload = never> {
   rows: Row[];
   nextPageToken: string;
   payload?: Payload[];
+  /** Runs once after generation, abort, boundary and continuation checks
+   * accept this read and before any payload is evicted. Rejected, canceled and
+   * superseded reads never call it. A throwing callback never fails the read. */
+  accepted?: () => void;
 }
 export interface PaginationPage<Row extends PaginationRow> {
   rows: Row[];
@@ -330,6 +334,15 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
             },
           });
           return;
+        }
+        // The accepted read is the only point where an evictable page's
+        // documents are still available to domain projections.
+        try {
+          batch.accepted?.();
+        } catch {
+          console.warn("delidev.pagination.accepted_observer_failed", {
+            stage,
+          });
         }
         const acceptedBatch = {
           rows: batch.rows,

@@ -101,6 +101,7 @@ type Service struct {
 	integrationForeground map[domain.ID]int
 	prAvatarMu            sync.Mutex
 	prAvatars             map[string]*prAvatarEntry
+	prAvatarSequence      uint64
 	integrationOnce       sync.Once
 	integrationGate       chan struct{}
 	integrationChecks     map[domain.ID]*integrationCheck

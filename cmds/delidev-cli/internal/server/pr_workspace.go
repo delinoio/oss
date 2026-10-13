@@ -23,8 +23,10 @@ type prAvatarEntry struct {
 	revision            uint64
 	profile, generation domain.ID
 	actorID, locator    string
-	created             time.Time
-	png                 []byte
+	// sequence orders insertion for oldest-first eviction. Wall-clock time is
+	// too coarse on some platforms (Windows) to break ties deterministically.
+	sequence uint64
+	png      []byte
 }
 
 func (s *Service) prScope(id domain.ID, selected repositoryIntegrationSelection, remote domain.RemoteRepository) domain.PRReadScope {
@@ -56,16 +58,17 @@ func (s *Service) avatarReference(ctx context.Context, id domain.ID, selected re
 	}
 	if len(s.prAvatars) >= 64 {
 		var oldest string
-		var at time.Time
+		var at uint64
 		for ref, e := range s.prAvatars {
-			if oldest == "" || e.created.Before(at) {
-				oldest, at = ref, e.created
+			if oldest == "" || e.sequence < at {
+				oldest, at = ref, e.sequence
 			}
 		}
 		delete(s.prAvatars, oldest)
 	}
 	ref := string(domain.NewID())
-	s.prAvatars[ref] = &prAvatarEntry{actor: actor, repository: id, revision: selected.record.Revision, profile: selected.repository.IntegrationID, generation: selected.profile.Connection.GenerationID, actorID: actorID, locator: locator, created: time.Now()}
+	s.prAvatarSequence++
+	s.prAvatars[ref] = &prAvatarEntry{actor: actor, repository: id, revision: selected.record.Revision, profile: selected.repository.IntegrationID, generation: selected.profile.Connection.GenerationID, actorID: actorID, locator: locator, sequence: s.prAvatarSequence}
 	return ref
 }
 func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Request[pb.GetPullRequestWorkspaceRequest]) (*connect.Response[pb.GetPullRequestWorkspaceResponse], error) {

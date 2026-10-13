@@ -1171,6 +1171,19 @@ export function SessionView({
     id,
     conversationActive && live.generation > 0,
     20,
+    undefined,
+    undefined,
+    // Accepted list reads update compact interaction projections for every
+    // reached page, including pages whose payload is about to be evicted.
+    (rows) => {
+      for (const row of rows)
+        if (
+          row.sessionId === id &&
+          row.kind === EntityKind.INTERACTION &&
+          supportsResourceSchema(row)
+        )
+          interactionPresentation.observe(row);
+    },
   );
   const [acknowledged, setAcknowledged] = useState<Resource>();
   useRetainedMutationNotifications((key, _request, result) => {
