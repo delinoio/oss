@@ -193,7 +193,7 @@ child cwd and runtime workspace roots. Path import may name only the exact
 validated rollout returned for the original Worker-private runtime. Reject
 incomplete, active, paginated, child, goal and unsupported histories. The initial
 profile supports complete user/assistant text and reasoning turns (at most 128
-turns / 4 MiB, with a 64 MiB rollout); API Fork and Sidechat retain the text/reasoning profile. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. Unknown
+turns / 4 MiB, with a 64 MiB rollout); API Fork and Sidechat retain the text/reasoning profile. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. The private `thread/turns/list` page and each retained turn are decoded with the admitted native frame limit (16 MiB when the enlarged original-history profile is active, otherwise the 1 MiB native frame), not the fixed 1 MiB public document limit, so private function outputs that fit the active frame are accepted even above 1 MiB; the 128-turn / 4 MiB aggregate history bound is unchanged and still applies to the original page bytes. Unknown
 creation or cleanup outcomes retain uncertainty and never authorize replay.
 
 Project forks default to separate detached worktrees at every actual source

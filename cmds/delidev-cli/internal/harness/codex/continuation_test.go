@@ -34,6 +34,42 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		write(id, map[string]any{})
 		return true
 	}
+	if method == "fixture/large-history" {
+		// The fixture builds oversized private history locally because the client
+		// request frame is bounded below the native response frame.
+		var params struct {
+			Turns []struct {
+				ID      domain.ID `json:"id"`
+				Outputs [][]int   `json:"outputs"`
+			} `json:"turns"`
+		}
+		if domain.Decode(raw, &params) != nil || f.thread == nil {
+			os.Exit(66)
+		}
+		turns := []any{}
+		for _, spec := range params.Turns {
+			items := []any{map[string]any{"type": "userMessage", "id": string(domain.NewID()), "clientId": string(domain.NewID()), "content": []any{map[string]any{"type": "text", "text": "Original input", "text_elements": []any{}}}}, map[string]any{"type": "agentMessage", "id": string(domain.NewID()), "text": "fixture-private-history"}}
+			for _, fields := range spec.Outputs {
+				content := []any{}
+				for index, size := range fields {
+					fill := strings.Repeat(string(rune('a'+index%2)), size)
+					if index%2 == 0 {
+						content = append(content, map[string]any{"type": "input_image", "image_url": fill})
+					} else {
+						content = append(content, map[string]any{"type": "encrypted_content", "encrypted_content": fill})
+					}
+				}
+				items = append(items, map[string]any{"type": "functionCallOutput", "id": string(domain.NewID()), "name": "tool", "output": content})
+			}
+			turn := fixtureTurn(spec.ID, TurnCompleted)
+			turn["items"], turn["itemsView"] = items, "full"
+			turns = append(turns, turn)
+		}
+		page, _ := json.Marshal(map[string]any{"data": turns, "nextCursor": "opaque-older-turns", "backwardsCursor": "opaque-reverse-cursor"})
+		f.history = page
+		write(id, map[string]any{})
+		return true
+	}
 	if method != "thread/turns/list" {
 		return false
 	}
@@ -43,7 +79,7 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		Direction string    `json:"sortDirection"`
 		View      string    `json:"itemsView"`
 	}
-	if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || !(params.Limit == 1 && params.Direction == "desc" || (f.mode == "thread-continuation-sidechat" || f.mode == "thread-continuation-sleep" || f.mode == "thread-continuation-function-output" || f.mode == "thread-continuation-dynamic-history") && params.Limit == 50 && params.Direction == "asc") || params.View != "full" {
+	if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || !(params.Limit == 1 && params.Direction == "desc" || (f.mode == "thread-continuation-sidechat" || f.mode == "thread-continuation-sleep" || f.mode == "thread-continuation-function-output" || f.mode == "thread-continuation-dynamic-history" || f.mode == "thread-managed-image-enabled") && params.Limit == 50 && params.Direction == "asc") || params.View != "full" {
 		os.Exit(61)
 	}
 	if file := os.Getenv("DELIDEV_CODEX_CAPTURE"); file != "" {

@@ -159,7 +159,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			Next *string           `json:"nextCursor"`
 			Back *string           `json:"backwardsCursor"`
 		}
-		if response.ErrorCode != nil || domain.Decode(response.Result, &page) != nil || page.Data == nil || len(page.Data) > 50 {
+		if response.ErrorCode != nil || domain.DecodeBounded(response.Result, &page, c.nativeFrameLimit()) != nil || page.Data == nil || len(page.Data) > 50 {
 			return nil, unsupportedFork()
 		}
 		for _, raw := range page.Data {
@@ -169,7 +169,9 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			}
 			seen[string(turn.ID)] = true
 			var wire turnWire
-			if domain.Decode(raw, &wire) != nil {
+			// Private native turns may carry original function-output bytes up to the
+			// admitted native frame; the aggregate 4 MiB history bound still applies.
+			if domain.DecodeBounded(raw, &wire, c.nativeFrameLimit()) != nil {
 				return nil, unsupportedFork()
 			}
 			for _, item := range wire.Items {
