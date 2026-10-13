@@ -53,12 +53,11 @@ function row(
 }
 
 const project = row(EntityKind.PROJECT, "Entrance project");
-const projectSession = row(
-  EntityKind.SESSION,
-  "Entrance session",
-  project.id,
-  { workspace: "worktree", outcome: "succeeded", archive: "active" },
-);
+const projectSession = row(EntityKind.SESSION, "Entrance session", project.id, {
+  workspace: "worktree",
+  outcome: "succeeded",
+  archive: "active",
+});
 
 function transport(): Transport {
   return createRouterTransport((router) => {

@@ -803,7 +803,10 @@ function Shell({
                           </div>
                         ))}
                         {!selected ? (
-                          <section className="page welcome" {...welcomeEntrance}>
+                          <section
+                            className="page welcome"
+                            {...welcomeEntrance}
+                          >
                             <h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2>
                             <p>
                               {copy("App.selectARetainedSessionOrStart_a9de9e")}

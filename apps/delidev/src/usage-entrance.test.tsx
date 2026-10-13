@@ -204,9 +204,13 @@ it("plays the price-detail navigation to Prices once and keeps one entrance acti
   expect(contentEntering()).toBe("y4");
   dispatchAnimation(content());
   const table = screen.getByRole("table");
-  fireEvent.click(within(table).getByRole("button", { name: "Entrance model" }));
+  fireEvent.click(
+    within(table).getByRole("button", { name: "Entrance model" }),
+  );
   expect(
-    screen.getByRole("tab", { name: "Model prices" }).getAttribute("aria-selected"),
+    screen
+      .getByRole("tab", { name: "Model prices" })
+      .getAttribute("aria-selected"),
   ).toBe("true");
   expect(contentEntering()).toBe("y4");
   expect(pageEntering()).toBeNull();
