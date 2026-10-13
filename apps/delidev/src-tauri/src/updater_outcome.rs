@@ -209,6 +209,15 @@ impl OutcomeStore {
     pub fn persist(&self, record: &OutcomeRecord) -> Result<()> {
         record.validate()?;
         self.check_dir(true)?;
+        // A new store directory is only a directory entry in its parent until
+        // that parent is synced. Sync it on every persistence so a crash after
+        // the directory was created but before this sync cannot lose it.
+        #[cfg(unix)]
+        if let Some(parent) = self.dir.parent() {
+            File::open(parent)
+                .and_then(|d| d.sync_all())
+                .map_err(|_| NativeFailure::StorageUnavailable)?;
+        }
         match self.read(&record.operation_id)? {
             Some(existing) if existing == *record => return Ok(()),
             Some(_) => return Err(NativeFailure::InvalidEvidence),
@@ -460,6 +469,35 @@ mod tests {
             Err(NativeFailure::StorageUnavailable)
         ));
         assert!(!root.join("desktop-updates").exists());
+    }
+
+    #[test]
+    fn persistence_fails_closed_when_the_parent_cannot_be_synced() {
+        let (_temp, root) = scope();
+        let parent = root.join("desktop-updates");
+        // Write and search without read permission: the directory can gain
+        // the store entry but cannot be opened to fsync it.
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o300)).unwrap();
+        let unreadable = File::open(&parent).is_err();
+        let store = OutcomeStore::new(&root);
+        let stored = record(Phase::Failed);
+        let result = store.persist(&stored);
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        if !unreadable {
+            // Privileged runners bypass directory permissions.
+            return;
+        }
+        assert!(matches!(result, Err(NativeFailure::StorageUnavailable)));
+        assert!(
+            !root
+                .join(STORE_DIRECTORY)
+                .join(format!("{}.json", stored.operation_id))
+                .exists(),
+            "an outcome is never reported retained before the parent is durable"
+        );
+        // Once the parent can be synced the same record persists.
+        store.persist(&stored).unwrap();
+        assert_eq!(store.scan().unwrap(), vec![StoredEntry::Record(stored)]);
     }
 
     #[test]
