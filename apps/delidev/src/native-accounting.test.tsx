@@ -323,7 +323,11 @@ it("omits the original-session table when only day aggregates exist", () => {
 it("renders the session table with rows while day and model tables follow their own arrays", () => {
   const source = renderNativeSource({
     groups: [
-      { sessionId: "session", providerId: "anthropic", model: { nativeId: "m" } },
+      {
+        sessionId: "session",
+        providerId: "anthropic",
+        model: { nativeId: "m" },
+      },
     ],
     models: [{ providerId: "anthropic", model: { nativeId: "m" } }],
   });
@@ -349,6 +353,8 @@ it("renders no table region when groups, days and models are all empty", () => {
     within(source).queryByRole("region", { name: `${claudeTitle} tables` }),
   ).toBeNull();
   expect(
-    within(source).getByText(/No original units are recorded for these filters/),
+    within(source).getByText(
+      /No original units are recorded for these filters/,
+    ),
   ).toBeTruthy();
 });

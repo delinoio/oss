@@ -191,101 +191,106 @@ function NativeSummary({
             tabIndex={0}
           >
             {data.groups.length ? (
-            <table>
-              <caption>
-                <LocalizedText
-                  id="native-accounting.byOriginalSessionAccountAndModel_4d92e1"
-                  components={{ s0: <>{title}</> }}
-                />
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    {copy("native-accounting.sessionProject_59a44c")}
-                  </th>
-                  <th scope="col">
-                    {copy("native-accounting.account_7e1b0d")}
-                  </th>
-                  <th scope="col">
-                    {copy("native-accounting.modelApi_6a8129")}
-                  </th>
-                  <th scope="col">{copy("native-accounting.units_9fb666")}</th>
-                  <th scope="col">
-                    {copy("native-accounting.knownCategories_2b133a")}
-                  </th>
-                  <th scope="col">
-                    {copy("native-accounting.historicalEstimate_178dcf")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.groups.map((group) => (
-                  <tr
-                    key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.model?.nativeId ?? ""}`}
-                  >
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => open(group.sessionId)}
-                      >
-                        {productLabel(
-                          PresentationKind.Session,
-                          group.sessionId,
-                        )}
-                      </button>
-                      <p>
-                        {group.projectId
-                          ? productLabel(
-                              PresentationKind.Project,
-                              group.projectId,
-                            )
-                          : copy("native-accounting.extra.f634bca1f142")}
-                      </p>
-                    </td>
-                    <td>
-                      {productLabel(PresentationKind.Account, group.accountId)}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          selectPrice?.({
-                            nativeId: group.model?.nativeId ?? "",
-                            providerId: group.providerId,
-                            subscriptionService: group.subscriptionService,
-                          })
-                        }
-                      >
-                        {productLabel(
-                          PresentationKind.Model,
-                          group.model?.nativeId,
-                        )}
-                      </button>
-                      <p>
-                        {sourceLabel(
-                          group.providerId,
-                          group.subscriptionService,
-                          productLabel,
-                        )}
-                      </p>
-                    </td>
-                    <td>
-                      {group.totals?.units.toLocaleString(displayLocale())}
-                    </td>
-                    <td>
-                      {dimensions().map(([label, key]) => (
-                        <p key={key}>
-                          {label}: {nativeMeasure(group.totals?.[key])}
-                        </p>
-                      ))}
-                    </td>
-                    <td>
-                      <Estimates totals={group.totals} />
-                    </td>
+              <table>
+                <caption>
+                  <LocalizedText
+                    id="native-accounting.byOriginalSessionAccountAndModel_4d92e1"
+                    components={{ s0: <>{title}</> }}
+                  />
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      {copy("native-accounting.sessionProject_59a44c")}
+                    </th>
+                    <th scope="col">
+                      {copy("native-accounting.account_7e1b0d")}
+                    </th>
+                    <th scope="col">
+                      {copy("native-accounting.modelApi_6a8129")}
+                    </th>
+                    <th scope="col">
+                      {copy("native-accounting.units_9fb666")}
+                    </th>
+                    <th scope="col">
+                      {copy("native-accounting.knownCategories_2b133a")}
+                    </th>
+                    <th scope="col">
+                      {copy("native-accounting.historicalEstimate_178dcf")}
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.groups.map((group) => (
+                    <tr
+                      key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.model?.nativeId ?? ""}`}
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => open(group.sessionId)}
+                        >
+                          {productLabel(
+                            PresentationKind.Session,
+                            group.sessionId,
+                          )}
+                        </button>
+                        <p>
+                          {group.projectId
+                            ? productLabel(
+                                PresentationKind.Project,
+                                group.projectId,
+                              )
+                            : copy("native-accounting.extra.f634bca1f142")}
+                        </p>
+                      </td>
+                      <td>
+                        {productLabel(
+                          PresentationKind.Account,
+                          group.accountId,
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            selectPrice?.({
+                              nativeId: group.model?.nativeId ?? "",
+                              providerId: group.providerId,
+                              subscriptionService: group.subscriptionService,
+                            })
+                          }
+                        >
+                          {productLabel(
+                            PresentationKind.Model,
+                            group.model?.nativeId,
+                          )}
+                        </button>
+                        <p>
+                          {sourceLabel(
+                            group.providerId,
+                            group.subscriptionService,
+                            productLabel,
+                          )}
+                        </p>
+                      </td>
+                      <td>
+                        {group.totals?.units.toLocaleString(displayLocale())}
+                      </td>
+                      <td>
+                        {dimensions().map(([label, key]) => (
+                          <p key={key}>
+                            {label}: {nativeMeasure(group.totals?.[key])}
+                          </p>
+                        ))}
+                      </td>
+                      <td>
+                        <Estimates totals={group.totals} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : null}
             {data.days.length ? (
               <table>
