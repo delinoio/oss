@@ -536,11 +536,13 @@ enum ScopeChange {
   None = "none",
   Generation = "generation",
   NumericRepository = "numeric-repository",
+  NodeId = "node-id",
 }
 it.each([
   [ScopeChange.None, true],
   [ScopeChange.Generation, false],
   [ScopeChange.NumericRepository, false],
+  [ScopeChange.NodeId, true],
 ])(
   "handles a reconnect scope change of %s (selection kept: %s)",
   async (change, kept) => {
@@ -558,7 +560,8 @@ it.each([
         }),
       });
     let generation = newRequestId(),
-      repositoryId = "37";
+      repositoryId = "37",
+      nodeId = "R_37";
     const scope = () => ({
       repository_id: selected.id,
       repository_revision: "1",
@@ -568,7 +571,7 @@ it.each([
       repository: {
         provider: "github.com",
         id: repositoryId,
-        node_id: `R_${repositoryId}`,
+        node_id: nodeId,
         owner: "fixture-owner",
         name: "repo",
         private: true,
@@ -711,6 +714,7 @@ it.each([
       const listCalls = legacy.mock.calls.length;
       if (change === ScopeChange.Generation) generation = newRequestId();
       if (change === ScopeChange.NumericRepository) repositoryId = "38";
+      if (change === ScopeChange.NodeId) nodeId = "R_37_reencoded";
       await act(async () => {
         await client.invalidateQueries();
       });

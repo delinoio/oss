@@ -43,6 +43,7 @@ import {
   changeCounts,
   commitResult,
   sameReadScope,
+  sameSelectionScope,
   observationsConflict,
   orderWorkspace,
   workspaceResult,
@@ -1112,7 +1113,7 @@ export function PullRequestWorkspace({
       // generation and numeric repository that produced them. Enrichment from
       // another generation or repository identity disposes both instead of
       // silently rebinding the selected PR.
-      if (current && current !== scope && !sameReadScope(current, scope)) {
+      if (current && current !== scope && !sameSelectionScope(current, scope)) {
         selectionScope.current = undefined;
         setSelection(undefined);
         avatars.clear();

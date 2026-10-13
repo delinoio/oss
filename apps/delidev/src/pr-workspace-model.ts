@@ -66,6 +66,16 @@ export function sameReadScope(a: Document, b: Document): boolean {
     object(a.repository).node_id === object(b.repository).node_id
   );
 }
+/** Identities that bind a retained selection and its avatar cache: the profile
+ * generation and the numeric repository. Provider node IDs and other scope
+ * fields are intentionally excluded so an encoding change cannot dispose a
+ * valid selection. */
+export function sameSelectionScope(a: Document, b: Document): boolean {
+  return (
+    a.generation_id === b.generation_id &&
+    object(a.repository).id === object(b.repository).id
+  );
+}
 export function workspaceResult(
   raw: Uint8Array,
   selected: Resource,
