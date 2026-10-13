@@ -694,7 +694,7 @@ export function ConfigurationTransfer({
             </li>
           ))}
         </ol>
-        <fieldset disabled={blocked}>
+        <fieldset className="transfer-input-fieldset" disabled={blocked}>
           <legend className="transfer-input-legend">
             {copy("configuration-transfer.chooseAnExport_270d3d")}
           </legend>

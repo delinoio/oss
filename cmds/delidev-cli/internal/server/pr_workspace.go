@@ -23,6 +23,10 @@ type githubPullRequestWorkspaces interface {
 	WorkspaceWithBudget(context.Context, []byte, string, string, []string, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error)
 }
 
+// githubAvatarFetcher reads one sanitized avatar PNG; tests replace it,
+// production uses the GitHub adapter through the selected outbound route.
+type githubAvatarFetcher func(ctx context.Context, locator, actorID string) ([]byte, error)
+
 type prAvatarEntry struct {
 	actor               domain.Principal
 	repository          domain.ID
@@ -241,15 +245,25 @@ func (s *Service) ReadPullRequestAvatar(ctx context.Context, req *connect.Reques
 			return nil
 		}
 		var e error
-		png, e = gh.New(s.outboundResolver()).Avatar(ctx, locator, actorID)
+		fetch := s.githubAvatars
+		if fetch == nil {
+			fetch = gh.New(s.outboundResolver()).Avatar
+		}
+		fetched, e := fetch(ctx, locator, actorID)
 		if e != nil {
 			return e
 		}
+		// The reference may have been evicted while the network fetch ran without
+		// the lock. Bytes are returned only while the same entry still holds the
+		// reference, so an evicted scope never yields image bytes.
 		s.prAvatarMu.Lock()
-		if s.prAvatars[req.Msg.Reference] == entry {
-			entry.png = append([]byte{}, png...)
+		defer s.prAvatarMu.Unlock()
+		if s.prAvatars[req.Msg.Reference] != entry {
+			s.logger.Warn("pull_request_avatar_evicted_during_fetch", "repository_id", id, "correlation_id", correlation)
+			return domain.Fail(domain.PermissionDenied, "The avatar reference no longer belongs to this observation.", "Reload the selected workspace; no locator supplied by a client is fetched.")
 		}
-		s.prAvatarMu.Unlock()
+		entry.png = append([]byte{}, fetched...)
+		png = fetched
 		return nil
 	})
 	if e != nil {

@@ -206,7 +206,43 @@ func cloneSSHUser(value string) bool {
 	return true
 }
 
+// IsWindowsReservedDeviceName reports whether one path component resolves to a
+// Windows reserved device. Windows ignores any extension after the first dot
+// and trailing spaces in the stem, and compares case-insensitively, so every
+// caller that admits a new portable component shares this one predicate.
+func IsWindowsReservedDeviceName(component string) bool {
+	stem := strings.ToUpper(strings.TrimRight(strings.SplitN(component, ".", 2)[0], " "))
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+		"COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³":
+		return true
+	}
+	return len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '0' && stem[3] <= '9'
+}
+
+// isHistoricalReservedDeviceName is the narrower set that earlier releases
+// rejected. It only gates names that were already accepted and frozen.
+func isHistoricalReservedDeviceName(value string) bool {
+	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	return stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9')
+}
+
+// ValidateRepositoryCloneDirectory validates a newly accepted portable folder
+// name against the complete Windows reserved-device set.
 func ValidateRepositoryCloneDirectory(value string) error {
+	return validateRepositoryDirectory(value, IsWindowsReservedDeviceName)
+}
+
+// ValidateHistoricalRepositoryDirectory validates a name that was accepted and
+// frozen by an earlier release. It keeps the earlier reserved-name set so
+// recovery, restore, delete, snapshot and job replay never reject or rewrite
+// previously accepted names. New admission must use
+// ValidateRepositoryCloneDirectory.
+func ValidateHistoricalRepositoryDirectory(value string) error {
+	return validateRepositoryDirectory(value, isHistoricalReservedDeviceName)
+}
+
+func validateRepositoryDirectory(value string, reserved func(string) bool) error {
 	invalid := func() error {
 		return Fail(InvalidArgument, "Enter a portable repository folder name.", "Use one folder name without separators, reserved device names, trailing dots or spaces.")
 	}
@@ -218,8 +254,7 @@ func ValidateRepositoryCloneDirectory(value string) error {
 			return invalid()
 		}
 	}
-	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
-	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {
+	if reserved(value) {
 		return invalid()
 	}
 	return nil

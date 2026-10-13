@@ -555,6 +555,10 @@ its original accepted requests and recovery semantics are unchanged. Available
 body widths of at least 900 CSS pixels use independently scrolling 40/60 list
 and detail panes. Compact Back restores the retained list position and row focus.
 Repository, applied-filter or connection replacement disposes the selection.
+Enrichment whose profile generation or numeric repository identity differs from
+the selected PR's retained scope also disposes the selection and clears the
+avatar cache before new observations render; same-scope enrichment keeps it, and
+a change of the provider repository node ID alone never disposes it.
 
 System capability `PULL_REQUEST_WORKSPACE_V1` negotiates three independent reads:
 `GetPullRequestWorkspace`, `ListPullRequestCommits` and `ReadPullRequestAvatar`.
@@ -563,11 +567,19 @@ remediation operations remain unchanged. Unsupported peers retain a flat list,
 Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
 
 Workspace requests bind the original local repository revision and at most 20
-accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+accepted-page PR numbers. Repository scope comes only from the authenticated
+identity and numeric repository metadata reads, which fail the request when
+unavailable or invalid; every accepted seed, including the first, is then read as
+an ordinary detail, so an unreadable seed in any position leaves a readable
+workspace incomplete (`seed_unavailable`, `access_unavailable`) instead of failing it. The adapter validates numeric GitHub repository and PR
 identities, exact head-repository identity and base/head branch relationships in
 all states. Context rows are labeled and never increase filtered match counts.
-Each component renders once under its earliest accepted matching seed, parents
-before children and numeric sibling ties. Discovery retains at most 100 PRs,
+Each component renders once under its earliest resident matching seed (a seed
+whose page is still inside the three-page payload window; an evicted earlier
+seed never hides a component that still has a resident seed; ownership is computed
+across all resident pages, so matching seeds on two resident pages still render
+the component once), parents before
+children and numeric sibling ties. Components keep the accepted seed order. Discovery retains at most 100 PRs,
 depth 20 and 40 provider-page reads under the original query deadline. The graph
 rechecks every discovered relationship page, including empty boundaries, original PR refs and numeric repository identity before complete claims. Desktop enrichment and tabs must also match the retained original profile generation and numeric repository scope. Limits, missing source repositories, access
 failures and relationship drift remain incomplete; cycles and competing parents
@@ -576,6 +588,14 @@ no same-repository graph relationship; a PR whose head repository has a valid
 numeric identity different from the selected repository remains a complete flat
 node with no reason, while a missing head repository identity remains incomplete
 (`head_repository_unavailable`).
+
+Workspace nodes are body-free graph projections: the adapter validates each
+pull request description against its 128 KiB Detail limit but never retains it,
+so the 1 MiB response cap covers structure rather than up to 20 maximum-size
+descriptions. `PRWorkspace.Validate` and the desktop `validWorkspaceItem` accept
+only nodes without a `body` field and reject a node that carries one. The
+selected pull request's description still comes from its own Detail read with
+its existing limit and error handling.
 
 Each observed PR retains its own provider-reported additions/deletions, bound to
 its exact repository/PR/base/head. Commit counts come independently from commit
@@ -606,7 +626,9 @@ is introduced.
 
 Opaque avatar references retain their original actor, local repository revision,
 selected profile generation and numeric author in a bounded 64-entry memory
-cache. The authenticated byte read denies foreign, revoked and evicted scope.
+cache. The authenticated byte read denies foreign, revoked and evicted scope,
+including a reference evicted while the uncached network fetch is in flight: the
+fetched bytes are discarded and published only while the same cache entry remains.
 Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
 bounded known query fields are fetched through the selected outbound route. No
 PAT, client bearer, cookies or origin Authorization is attached, and redirects

@@ -111,12 +111,15 @@ function PendingUnlink({
   sessionId,
   associationId,
   refreshed,
+  productLabel,
 }: {
   sessionId: string;
   associationId: string;
   refreshed: () => void;
+  // Shared by every pending card so distinct opaque IDs receive distinct,
+  // stable fallback numbers instead of each card restarting at 1.
+  productLabel: ReturnType<typeof useProductLabels>;
 }) {
-  const productLabel = useProductLabels();
   const remove = usePRUnlink(sessionId, associationId, refreshed);
   const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
   const valid =
@@ -127,7 +130,9 @@ function PendingUnlink({
     original.mutation.expectedRevision < 1n << 63n;
   return (
     <article
-      aria-label={productLabel(PresentationKind.Resource, associationId)}
+      aria-label={copy("session-pull-requests.pendingPrUnlinkLabel_0e99be", {
+        label: productLabel(PresentationKind.Resource, associationId),
+      })}
     >
       <p>
         {copy("session-pull-requests.inline.60c1498ca3")}{" "}
@@ -158,6 +163,7 @@ function PendingUnlinks({
   refreshed: () => void;
 }) {
   useLocale();
+  const productLabel = useProductLabels();
   const prefix = `session-pr:unlink:${sessionId}:`;
   const intents = useRetainedMutationIntents(prefix).filter((intent) =>
     uuid(intent.key.slice(prefix.length)),
@@ -173,6 +179,7 @@ function PendingUnlinks({
           sessionId={sessionId}
           associationId={intent.key.slice(prefix.length)}
           refreshed={refreshed}
+          productLabel={productLabel}
         />
       ))}
     </section>

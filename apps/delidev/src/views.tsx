@@ -220,6 +220,10 @@ export function Search({
         activatedWhileWidePaneHidden.current = true;
       return;
     }
+    // The wide-only latch must not outlive the presentation it guards. Once the
+    // retained Search is explicitly shown in the compact drawer, that opening is
+    // a focusable first presentation. Ordinary wide expansion keeps the latch.
+    if (compact && drawerOpen) activatedWhileWidePaneHidden.current = false;
     if (
       !presentation.settled ||
       activatedWhileWidePaneHidden.current ||

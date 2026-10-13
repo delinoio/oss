@@ -94,12 +94,18 @@ func accountOAuthCommand(ctx context.Context, c client, o *options, args []strin
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}
+		if err := verifyOAuthReceipt(r.Msg.GetRequestId(), o); err != nil {
+			return nil, err
+		}
 		return map[string]any{"attempt": r.Msg.Attempt, "authorization_url": r.Msg.AuthorizationUrl, "request_id": r.Msg.RequestId, "replayed": r.Msg.Replayed, "flow": r.Msg.Flow.String(), "user_code": r.Msg.UserCode}, nil
 	}
 	if op == "cancel" {
 		r, err := c.accounts.CancelAccountOAuth(ctx, request(c, &pb.CancelAccountOAuthRequest{Mutation: m}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
+		}
+		if err := verifyOAuthReceipt(r.Msg.GetRequestId(), o); err != nil {
+			return nil, err
 		}
 		return oauthCLIResponse(r.Msg), nil
 	}
@@ -132,7 +138,22 @@ func accountOAuthCommand(ctx context.Context, c client, o *options, args []strin
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
+	if err := verifyOAuthReceipt(r.Msg.GetRequestId(), o); err != nil {
+		return nil, err
+	}
 	return oauthCLIResponse(r.Msg), nil
+}
+
+// verifyOAuthReceipt requires an OAuth start, complete or cancel response to
+// acknowledge the exact request ID the CLI dispatched. Empty, malformed or
+// foreign IDs are not adopted: the failure keeps the sent ID in the output
+// envelope for recovery, exposes no result value, and the mutation (including
+// any code exchange) is never repeated.
+func verifyOAuthReceipt(received string, o *options) error {
+	if received == string(o.requestID) {
+		return nil
+	}
+	return domain.Fail(domain.RecoveryRequired, "The OAuth receipt does not match.", "Preserve the original request ID.")
 }
 func oauthCLIResponse(r interface {
 	GetAttempt() *pb.AccountOAuthAttempt

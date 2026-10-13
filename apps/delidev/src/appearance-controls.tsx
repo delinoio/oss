@@ -11,7 +11,7 @@ import { newRequestId } from "@delinoio/delidev-api-client";
 import { useEntranceActivation } from "./entrance-motion";
 import { Modal } from "./ui";
 import { copy, useLocale, type MessageKey } from "./localization";
-import { useAppearance } from "./appearance";
+import { AppearanceOperation, useAppearance } from "./appearance";
 import {
   appearanceIdentity,
   colorTokens,
@@ -31,12 +31,14 @@ import {
 } from "./appearance-preferences";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 const label = (key: string) => copy(`appearance.v2.${key}` as MessageKey);
-export function ColorPreview({ draft }: { draft: ThemeFile }) {
+// The editor draft carries its UUIDv7 id, so it validates with the identity
+// shape; the strict no-ID shape belongs to theme file import and export.
+export function ColorPreview({ draft }: { draft: CustomTheme }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (
       typeof CSSStyleSheet.prototype.replaceSync !== "function" ||
-      !validTheme(draft)
+      !validTheme(draft, true)
     )
       return;
     const sheets = ["light", "dark"].map((mode) => {
@@ -85,7 +87,12 @@ function ThemeEditor({
   const { snapshot, operation, update } = useAppearance();
   const [draft, setDraft] = useState(initial),
     [error, setError] = useState(false),
-    [submitted, setSubmitted] = useState(false);
+    // The exact theme passed to `update`. It is never mutated, so completion
+    // reconciles against what was requested, not against later draft state.
+    [submitted, setSubmitted] = useState<CustomTheme>();
+  // Name and color edits are frozen while the submitted save is in flight.
+  const saving =
+    submitted !== undefined && operation === AppearanceOperation.Saving;
   // One explicit editor opening owns one entrance; drafts, saves and refetches
   // never restart it, and it never delays focus or dismissal.
   const entrance = useEntranceActivation(initial.id);
@@ -96,11 +103,11 @@ function ThemeEditor({
       snapshot.problem === null &&
       snapshot.revision > revision &&
       snapshot.preferences?.custom_themes.some(
-        (t) => appearanceIdentity(t) === appearanceIdentity(draft),
+        (t) => appearanceIdentity(t) === appearanceIdentity(submitted),
       )
     )
       close();
-  }, [submitted, snapshot, draft, revision, close]);
+  }, [submitted, snapshot, revision, close]);
   return (
     <Modal title={label("editTheme")} close={close} entrance={entrance}>
       <form
@@ -117,7 +124,7 @@ function ThemeEditor({
             setError(true);
             return;
           }
-          setSubmitted(true);
+          setSubmitted(draft);
           update({ ...p, custom_themes: [...custom, draft] }, revision);
         }}
       >
@@ -128,6 +135,7 @@ function ThemeEditor({
               error && (!draft.name.trim() || [...draft.name].length > 80)
             }
             value={draft.name}
+            disabled={saving}
             onChange={(event) => {
               setError(false);
               setDraft({ ...draft, name: event.target.value });
@@ -150,6 +158,7 @@ function ThemeEditor({
                         !validColors(draft[mode]))
                     }
                     value={draft[mode][token]}
+                    disabled={saving}
                     aria-label={`${label(mode)} ${token}`}
                     onChange={(event) => {
                       setError(false);

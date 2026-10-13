@@ -28,6 +28,7 @@ import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ProductIdentityProvider } from "./product-identity-labels";
 import { Settings } from "./settings";
+import { unoptedSettingsCategory } from "./entrance-test-support";
 
 // Issues 3180, 3184, 3185 and 3210: API Providers, Instructions, Project
 // defaults and Projects opt in to the shared 160ms Y4 category entrance, and
@@ -223,7 +224,7 @@ it.each(optedCategories)(
     const value = fixture();
     render(value.view(<Settings />));
     // The default landing category (AI Subscription) opted in too, so leave it first.
-    category("Repositories");
+    category(unoptedSettingsCategory);
     expect(column().getAttribute("data-entrance")).toBeNull();
     category(name);
     const node = column();
@@ -238,7 +239,7 @@ it.each(optedCategories)(
     expect(column()).toBe(node);
     expect(column().getAttribute("data-entrance")).toBeNull();
     // Leaving and returning is a new explicit activation.
-    category("Repositories");
+    category(unoptedSettingsCategory);
     expect(column().getAttribute("data-entrance")).toBeNull();
     category(name);
     expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -253,7 +254,7 @@ it.each(optedCategories)(
     category(name);
     const old = column();
     expect(old.getAttribute("data-entrance")).toBe("y4");
-    category("Repositories");
+    category(unoptedSettingsCategory);
     expect(document.contains(old)).toBe(false);
     dispatch(old);
     expect(column().getAttribute("data-entrance")).toBeNull();
@@ -300,7 +301,7 @@ it.each(optedCategories)(
     category(name);
     expect(column().getAttribute("data-entrance")).toBeNull();
     // OS reduced motion on a fresh activation settles it the same way.
-    category("Repositories");
+    category(unoptedSettingsCategory);
     category(name);
     expect(column().getAttribute("data-entrance")).toBe("y4");
     act(() => {
@@ -458,7 +459,7 @@ it("plays the Project defaults entrance only for explicit opening, not for draft
   );
   expect(fetchBox.checked).toBe(true);
   // The original lifecycle discards the draft on departure; a return plays again.
-  category("Repositories");
+  category(unoptedSettingsCategory);
   category(Opted.ProjectDefaults);
   await screen.findByRole("form", { name: "Project defaults form" });
   expect(column().getAttribute("data-entrance")).toBe("y4");

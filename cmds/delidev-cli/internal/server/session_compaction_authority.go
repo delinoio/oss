@@ -72,7 +72,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if err != nil {
 		return denied()
 	}
-	if i.Revert != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
+	if i.Revert != nil && (!machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) || i.Revert.RequiresProofCapability() && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionRevertTargetProofV1)) {
 		return denied()
 	}
 	if i.Revert == nil && i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {

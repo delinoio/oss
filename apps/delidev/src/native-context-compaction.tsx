@@ -82,8 +82,12 @@ export function NativeContextCompaction({
         />
       </p>
       <dl>
-        <dt>{copy("native-context-compaction.currentContextTokens_77a977")}</dt>
-        <dd>{copy("native-context-compaction.notReported_adadfa")}</dd>
+        <dt data-token-observation>
+          {copy("native-context-compaction.currentContextTokens_77a977")}
+        </dt>
+        <dd data-token-observation>
+          {copy("native-context-compaction.notReported_adadfa")}
+        </dd>
         <dt>
           {copy("native-context-compaction.originalContextReference_ad006e")}
         </dt>
