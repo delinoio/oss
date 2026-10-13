@@ -640,7 +640,7 @@ Review capture records tracked and untracked symlinks instead of rejecting them.
 
 Native review selections carry Git object names in the repository's own object format: canonical lowercase hex of exactly 40 characters (SHA-1) or 64 characters (SHA-256). `head_commit`, `base_commit` and a commit-target `reference` share this rule; a base-branch selection requires both commits to use the same width, and a commit-target selection requires its `reference` and `head_commit` to use the same width. Uppercase, non-hex, odd-length or other-length names are rejected. The 64-character lowercase hex `diff_revision`, `content_digest` and rollout digests are SHA-256 integrity digests, independent of the repository object format, and stay exact.
 
-Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged.
+Native review starts with exactly the selected proven repository as its sole `runtimeWorkspaceRoots` entry and cwd. Other prepared session repositories are not review inputs. The native adapter rejects omitted, additional or different roots before thread creation. The original preparation remains unchanged. The Worker's native review workspace manager carries the negotiated `NAMED_WORKSPACE_DIRECTORIES_V1` capability like every other Worker workspace path: a frozen named repository directory reaches capture when negotiated, and otherwise yields Unsupported before capture and settles as the existing no-send rejected proof. Unnamed reviews are unchanged.
 
 ## Workspace preparation group timing
 

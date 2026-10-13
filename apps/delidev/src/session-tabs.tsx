@@ -275,6 +275,29 @@ export class SessionTabsStore {
     if (last) this.select(id, SessionTabKind.Conversation);
   }
   /**
+   * Removes one acknowledged Page descriptor from every Session snapshot that
+   * still holds it, including inactive and retained Sessions. The native close
+   * is profile-scoped, so the descriptor is dead everywhere once it is
+   * acknowledged. Each affected Session follows the `closePage` selection rule
+   * only when its selected descriptor was removed; Sessions without the exact
+   * profile/page descriptor publish nothing, which keeps repeated
+   * acknowledgment idempotent. No native operation is issued.
+   */
+  closePageEverywhere(profile: string, pageId: string) {
+    const key = sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile,
+      id: pageId,
+      title: "",
+    });
+    const holders = [...this.sessions.entries()]
+      .filter(([, snapshot]) =>
+        snapshot.tabs.some((tab) => sessionTabKey(tab) === key),
+      )
+      .map(([id]) => id);
+    for (const id of holders) this.closePage(id, profile, pageId);
+  }
+  /**
    * Aligns the Page descriptors with one native inventory of the admitted
    * profile. Pages already listed keep their order and selection and only
    * refresh their label; newly discovered pages are appended in inventory

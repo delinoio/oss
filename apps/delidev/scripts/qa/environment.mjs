@@ -60,7 +60,9 @@ export class Environment {
     this.ownerNonce = randomUUID();
     this.serverRoot = join(root, "server");
     this.clientRoot = join(root, "client");
-    this.workerRoot = join(root, "worker");
+    // The fixed Local Worker scope is always <data-dir>/worker. Its transport
+    // verifies the owner-side pairing grant at <data-dir>/pairing-codes.
+    this.workerRoot = join(root, "server", "worker");
   }
   cli(args, options) {
     return this.processes.run(
@@ -79,7 +81,7 @@ export class Environment {
     );
     this.serverRoot = join(this.root, "server");
     this.clientRoot = join(this.root, "client");
-    this.workerRoot = join(this.root, "worker");
+    this.workerRoot = join(this.serverRoot, "worker");
     for (const path of [this.serverRoot, this.clientRoot, this.workerRoot])
       await mkdir(path, { mode: 0o700 });
     this.host = await createHost(this.assets, this);

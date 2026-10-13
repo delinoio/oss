@@ -291,8 +291,19 @@ func desktopHTTPClient(ctx context.Context, root string, credential Credential, 
 	if err != nil {
 		return err
 	}
-	if local {
-		client.Transport = &desktopruntime.LocalTransport{Base: client.Transport, Root: root, Owner: owner, ServerID: credential.ServerID}
+	if !local {
+		return nil
+	}
+	// Only the canonical owner scope (<data-dir>/worker) keeps the retained
+	// pairing grants LocalTransport verifies. A custom Worker scope whose
+	// directory is merely named "worker" has no owner identity beside it and
+	// keeps its direct pairing route, unless follow evidence already exists.
+	wrap, err := desktopruntime.RequiresLocalTransport(owner, root, credential.ServerID, credential.Endpoint)
+	if err != nil {
+		return err
+	}
+	if wrap {
+		client.Transport = &desktopruntime.LocalTransport{Base: client.Transport, Root: root, Owner: owner, ServerID: credential.ServerID, Endpoint: credential.Endpoint, PairingID: credential.PairingID}
 	}
 	return nil
 }

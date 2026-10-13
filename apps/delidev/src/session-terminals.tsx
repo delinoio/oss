@@ -39,6 +39,11 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { useRetainedMutationIntents, useRetainedMutation } from "./mutation";
 import { useSessionTabsStore } from "./session-tabs";
 import { hasPending, terminalFallback } from "./terminal-presentation";
@@ -104,6 +109,20 @@ export function SessionTerminals({
   statusTarget?: HTMLElement | null;
 }) {
   useLocale();
+  // `active` already means the session is active and a terminal tab is
+  // selected, so only the rising edge of the Terminal tool (not a terminal to
+  // terminal tab switch) is one activation. The Y2 entrance moves only the dock
+  // header, never the emulator, size owners or input queue, and nothing waits
+  // for it.
+  const toolActivations = useActivationCount(active);
+  const headerEntrance = useEntranceActivation(
+    `${session.id}:terminals:${toolActivations}`,
+    active,
+    EntranceMotion.Y2,
+    // The dock stays mounted while hidden, so leaving settles an in-flight
+    // entrance instead of leaving the attribute on an inactive tool.
+    true,
+  );
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
   const latest = useRef({
@@ -801,7 +820,7 @@ export function SessionTerminals({
           }}
         />
       ) : null}
-      <header className="terminal-dock-header">
+      <header className="terminal-dock-header" {...headerEntrance}>
         <h3>{copy("session-terminals.terminals_7482c4")}</h3>
         <button
           type="button"
