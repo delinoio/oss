@@ -515,3 +515,44 @@ func TestCredentialJSONExpectationAlsoScansEventStreamLabeledBodies(t *testing.T
 		guard.Close()
 	}
 }
+
+func TestCredentialJSONTextSequenceResetsDecoderAtRecordSeparator(t *testing.T) {
+	credential := domainCredentialFixture()
+	escaped := `\u0066ixture-password`
+	for _, mediaType := range []string{"application/json-seq", "application/vnd.fixture+json-seq; charset=utf-8"} {
+		for _, wire := range []string{
+			// An unterminated string must not carry its quote state into the next record.
+			"\x1e{\"a\":\"unterminated\n\x1e{\"value\":\"" + escaped + "\"}\n",
+			// An incomplete escape must not combine with the next record's bytes.
+			"\x1e\"\\u00\n\x1e\"" + escaped + "\"\n",
+			// A reflection split across a record boundary is two independent texts.
+			"\x1e\"fixture-pass\x1e\"" + escaped + "\"\n",
+		} {
+			for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+				guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+				output, err := io.ReadAll(guard)
+				if err == nil || strings.Contains(string(output), "password") {
+					t.Fatalf("JSON text sequence carried decoder state across records %q %q", mediaType, wire)
+				}
+				guard.Close()
+			}
+		}
+		// Separators inside valid sequences and a malformed record followed by
+		// safe records still stream their exact wire bytes.
+		safe := "\x1e{\"a\":\"unterminated\n\x1e{\"value\":\"safe\"}\n\x1e\"\\u00\n\x1e[\"\\u0073afe\"]\n"
+		for _, reader := range []io.Reader{strings.NewReader(safe), fragmentedReader{strings.NewReader(safe)}} {
+			guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+			output, err := io.ReadAll(guard)
+			if err != nil || string(output) != safe {
+				t.Fatal("JSON text sequence changed safe bytes", mediaType, err)
+			}
+			guard.Close()
+		}
+	}
+	// Other JSON framings are not record-separated by RS.
+	guard := newCredentialBody(io.NopCloser(strings.NewReader("")), credential, "application/json")
+	if guard.jsonGuard.sequence {
+		t.Fatal("ordinary JSON was framed as a text sequence")
+	}
+	guard.Close()
+}

@@ -52,6 +52,7 @@ func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, exp
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
 		if err == nil && mediaType != "" {
 			g.jsonGuard.framing = credentialFramingForMediaType(mediaType)
+			g.jsonGuard.sequence = credentialJSONTextSequenceMediaType(strings.ToLower(mediaType))
 			switch {
 			case g.jsonGuard.framing == credentialOpaque && expectJSON:
 				g.jsonGuard.framing = credentialOrdinary
@@ -154,6 +155,11 @@ func credentialRequestExpectsJSON(accept []string) bool {
 		}
 	}
 	return false
+}
+
+// Report whether a lower-case media type is an RFC 7464 JSON text sequence.
+func credentialJSONTextSequenceMediaType(mediaType string) bool {
+	return mediaType == "application/json-seq" || strings.HasSuffix(mediaType, "+json-seq")
 }
 
 func credentialJSONMediaType(mediaType string) bool {
