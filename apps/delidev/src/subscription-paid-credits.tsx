@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./subscription-paid-credits.css";
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { copy, useLocale } from "./localization";
 import { formatPaidCreditBalance } from "./paid-credit-format";
 export { formatPaidCreditBalance } from "./paid-credit-format";
@@ -12,6 +21,193 @@ export enum PaidCreditState {
   Unknown = "unknown",
   Observed = "observed",
   Failed = "failed",
+}
+/**
+ * Inline keeps the exact decimal in normal flow (Manage subscription and other
+ * consumers). Overlay renders it out of flow so opening or closing it never
+ * changes the geometry of the owning card, rail popover or Settings row.
+ */
+export enum ExactDisclosurePresentation {
+  Inline = "inline",
+  Overlay = "overlay",
+}
+export enum ExactDisclosurePlacement {
+  Right = "right",
+  Below = "below",
+  Above = "above",
+}
+const DISCLOSURE_EDGE = 8;
+const DISCLOSURE_GAP = 8;
+export interface DisclosureRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+export interface DisclosureSize {
+  width: number;
+  height: number;
+}
+/** Pure viewport placement: right of the trigger, else below, else above, always clamped. */
+export function placeExactDisclosure(
+  anchor: DisclosureRect,
+  box: DisclosureSize,
+  viewport: DisclosureSize,
+): { left: number; top: number; placement: ExactDisclosurePlacement } {
+  const maximumLeft = Math.max(
+    DISCLOSURE_EDGE,
+    viewport.width - box.width - DISCLOSURE_EDGE,
+  );
+  const maximumTop = Math.max(
+    DISCLOSURE_EDGE,
+    viewport.height - box.height - DISCLOSURE_EDGE,
+  );
+  const clamp = (value: number, maximum: number) =>
+    Math.round(Math.max(DISCLOSURE_EDGE, Math.min(value, maximum)));
+  const right = anchor.right + DISCLOSURE_GAP;
+  if (right + box.width <= viewport.width - DISCLOSURE_EDGE)
+    return {
+      left: clamp(right, maximumLeft),
+      top: clamp(anchor.top, maximumTop),
+      placement: ExactDisclosurePlacement.Right,
+    };
+  const left = clamp(anchor.left, maximumLeft);
+  if (
+    anchor.bottom + DISCLOSURE_GAP + box.height <=
+    viewport.height - DISCLOSURE_EDGE
+  )
+    return {
+      left,
+      top: clamp(anchor.bottom + DISCLOSURE_GAP, maximumTop),
+      placement: ExactDisclosurePlacement.Below,
+    };
+  if (anchor.top - DISCLOSURE_GAP - box.height >= DISCLOSURE_EDGE)
+    return {
+      left,
+      top: clamp(anchor.top - DISCLOSURE_GAP - box.height, maximumTop),
+      placement: ExactDisclosurePlacement.Above,
+    };
+  return {
+    left,
+    top: clamp(anchor.bottom + DISCLOSURE_GAP, maximumTop),
+    placement: ExactDisclosurePlacement.Below,
+  };
+}
+/** True when the trigger is scrolled fully outside the viewport or any clipping ancestor. */
+function anchorLost(anchor: HTMLElement) {
+  if (!anchor.isConnected) return true;
+  const bounds = anchor.getBoundingClientRect();
+  // An unmeasured (zero-size) trigger carries no clipping evidence.
+  if (bounds.right - bounds.left <= 0 && bounds.bottom - bounds.top <= 0)
+    return false;
+  const outside = (clip: DisclosureRect) =>
+    bounds.bottom <= clip.top ||
+    bounds.top >= clip.bottom ||
+    bounds.right <= clip.left ||
+    bounds.left >= clip.right;
+  if (
+    outside({
+      left: 0,
+      top: 0,
+      right: window.innerWidth,
+      bottom: window.innerHeight,
+    })
+  )
+    return true;
+  for (
+    let node = anchor.parentElement;
+    node && node !== document.body;
+    node = node.parentElement
+  ) {
+    const style = getComputedStyle(node);
+    if (
+      /(auto|scroll|hidden|clip)/.test(`${style.overflowX}${style.overflowY}`)
+    )
+      if (outside(node.getBoundingClientRect())) return true;
+  }
+  return false;
+}
+function ExactDisclosureOverlay({
+  id,
+  anchor,
+  onLost,
+  children,
+}: {
+  id: string;
+  anchor: RefObject<HTMLElement | null>;
+  onLost: () => void;
+  children: ReactNode;
+}) {
+  const node = useRef<HTMLSpanElement>(null);
+  const lost = useRef(onLost);
+  lost.current = onLost;
+  const supportsPopover =
+    typeof HTMLElement.prototype.showPopover === "function";
+  useLayoutEffect(() => {
+    const element = node.current,
+      source = anchor.current;
+    if (!element || !source) return;
+    // The manual top layer escapes parent overflow without becoming modal or
+    // moving focus; the element stays a DOM child of its owning parent so
+    // outside-pointer and Escape ownership checks keep treating it as inside.
+    if (supportsPopover) {
+      try {
+        element.showPopover();
+      } catch {
+        console.warn("delidev.subscription.paid_credit_disclosure_failed", {
+          phase: "show",
+          classification: "presentation-unavailable",
+        });
+      }
+    }
+    const place = () => {
+      if (anchorLost(source)) {
+        lost.current();
+        return;
+      }
+      const box = element.getBoundingClientRect();
+      const next = placeExactDisclosure(
+        source.getBoundingClientRect(),
+        { width: box.width, height: box.height },
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      element.style.left = `${next.left}px`;
+      element.style.top = `${next.top}px`;
+      element.dataset.placement = next.placement;
+    };
+    place();
+    const observer =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(place)
+        : undefined;
+    observer?.observe(element);
+    observer?.observe(source);
+    window.addEventListener("resize", place);
+    // Capture also sees scrolling of any ancestor container.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      try {
+        if (supportsPopover && element.matches(":popover-open"))
+          element.hidePopover();
+      } catch {
+        // The element is already detached or hidden.
+      }
+    };
+  }, [anchor, supportsPopover]);
+  return (
+    <span
+      ref={node}
+      id={id}
+      role="tooltip"
+      className="subscription-paid-exact subscription-paid-exact-overlay"
+      popover={supportsPopover ? "manual" : undefined}
+    >
+      {children}
+    </span>
+  );
 }
 export interface PaidCreditBucket {
   id: string;
@@ -57,7 +253,13 @@ export function paidCreditProjection(
   return result;
 }
 /** The disclosure owns only presentation; opening it never reads balance data. */
-export function PaidCreditValue({ bucket }: { bucket: PaidCreditBucket }) {
+export function PaidCreditValue({
+  bucket,
+  exactPresentation = ExactDisclosurePresentation.Inline,
+}: {
+  bucket: PaidCreditBucket;
+  exactPresentation?: ExactDisclosurePresentation;
+}) {
   useLocale();
   const formatted =
     bucket.balance === null ? null : formatPaidCreditBalance(bucket.balance);
@@ -140,9 +342,22 @@ export function PaidCreditValue({ bucket }: { bucket: PaidCreditBucket }) {
             </svg>
           </button>
           {open ? (
-            <span id={id} role="tooltip" className="subscription-paid-exact">
-              {copy("paid-credits.exact", { balance: bucket.balance })}
-            </span>
+            exactPresentation === ExactDisclosurePresentation.Overlay ? (
+              <ExactDisclosureOverlay
+                id={id}
+                anchor={trigger}
+                onLost={() => {
+                  pinned.current = false;
+                  setOpen(false);
+                }}
+              >
+                {copy("paid-credits.exact", { balance: bucket.balance })}
+              </ExactDisclosureOverlay>
+            ) : (
+              <span id={id} role="tooltip" className="subscription-paid-exact">
+                {copy("paid-credits.exact", { balance: bucket.balance })}
+              </span>
+            )
           ) : null}
         </>
       ) : null}
@@ -190,12 +405,14 @@ export function PaidCredits({
   compact = false,
   active = true,
   now: givenNow,
+  exactPresentation = ExactDisclosurePresentation.Inline,
 }: {
   buckets?: readonly PaidCreditBucket[];
   state: PaidCreditState;
   compact?: boolean;
   active?: boolean;
   now?: number;
+  exactPresentation?: ExactDisclosurePresentation;
 }) {
   useLocale();
   const [, tick] = useReducer((v) => v + 1, 0);
@@ -248,6 +465,7 @@ export function PaidCredits({
             <PaidCreditValue
               key={`${buckets[0].id}:${buckets[0].balance}`}
               bucket={buckets[0]}
+              exactPresentation={exactPresentation}
             />
           ) : (
             <p className="subscription-paid-empty">
@@ -269,6 +487,7 @@ export function PaidCredits({
               <PaidCreditValue
                 key={`${bucket.id}:${bucket.balance}`}
                 bucket={bucket}
+                exactPresentation={exactPresentation}
               />
               <PaidCreditObservation
                 buckets={[bucket]}

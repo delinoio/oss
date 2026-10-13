@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { i18n, SupportedLanguage } from "./localization";
 import {
+  ExactDisclosurePlacement,
+  ExactDisclosurePresentation,
+  placeExactDisclosure,
   PaidCredits,
   PaidCreditState,
   paidCreditProjection,
@@ -303,5 +306,180 @@ describe("paid-credit decimal display", () => {
     } finally {
       await i18n.changeLanguage(SupportedLanguage.English);
     }
+  });
+});
+
+describe("overlay exact disclosure", () => {
+  const rect = (left: number, top: number, size = 26) => ({
+    left,
+    top,
+    right: left + size,
+    bottom: top + size,
+  });
+  const viewport = { width: 1000, height: 700 };
+  const box = { width: 280, height: 60 };
+
+  it("places right of the trigger first, then below, then above, always clamped", () => {
+    expect(placeExactDisclosure(rect(100, 100), box, viewport)).toEqual({
+      left: 134,
+      top: 100,
+      placement: ExactDisclosurePlacement.Right,
+    });
+    expect(placeExactDisclosure(rect(800, 100), box, viewport)).toEqual({
+      left: 712,
+      top: 134,
+      placement: ExactDisclosurePlacement.Below,
+    });
+    expect(placeExactDisclosure(rect(800, 650), box, viewport)).toEqual({
+      left: 712,
+      top: 582,
+      placement: ExactDisclosurePlacement.Above,
+    });
+    const tiny = placeExactDisclosure(
+      rect(5, 5),
+      { width: 400, height: 400 },
+      { width: 300, height: 300 },
+    );
+    expect(tiny.left).toBe(8);
+    expect(tiny.top).toBe(8);
+    // Right placement near the bottom is clamped into the viewport.
+    expect(placeExactDisclosure(rect(100, 690), box, viewport).top).toBe(632);
+  });
+
+  describe("rendering", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+      delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+    });
+    const mount = (
+      exactPresentation = ExactDisclosurePresentation.Overlay,
+      compact = true,
+    ) =>
+      render(
+        <PaidCredits
+          buckets={[{ ...bucket, balance: "60961.1135370000" }]}
+          state={PaidCreditState.Observed}
+          now={now}
+          compact={compact}
+          exactPresentation={exactPresentation}
+        />,
+      );
+    const trigger = () =>
+      screen.getByRole("button", { name: "Show exact paid-credit balance" });
+
+    it("keeps Inline as the default in-flow presentation without positioning", () => {
+      mount(ExactDisclosurePresentation.Inline);
+      fireEvent.click(trigger());
+      const tip = screen.getByRole("tooltip");
+      expect(tip.className).toBe("subscription-paid-exact");
+      expect(tip.style.left).toBe("");
+      expect(tip.hasAttribute("popover")).toBe(false);
+    });
+
+    it("renders the full original decimal out of flow with the same accessible wiring", () => {
+      mount();
+      fireEvent.click(trigger());
+      const tip = screen.getByRole("tooltip");
+      expect(tip.className).toContain("subscription-paid-exact-overlay");
+      expect(tip.textContent).toBe("Exact balance: 60961.1135370000");
+      expect(trigger().getAttribute("aria-describedby")).toBe(tip.id);
+      expect(trigger().getAttribute("aria-controls")).toBe(tip.id);
+      expect(trigger().getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("uses a manual native popover when available and hides it on close", () => {
+      const show = vi.fn(),
+        hide = vi.fn();
+      Object.assign(HTMLElement.prototype, {
+        showPopover: show,
+        hidePopover: hide,
+      });
+      const matches = Element.prototype.matches;
+      vi.spyOn(Element.prototype, "matches").mockImplementation(function (
+        this: Element,
+        selector: string,
+      ) {
+        return selector === ":popover-open"
+          ? true
+          : matches.call(this, selector);
+      });
+      mount();
+      fireEvent.click(trigger());
+      const tip = screen.getByRole("tooltip");
+      expect(tip.getAttribute("popover")).toBe("manual");
+      expect(show).toHaveBeenCalledTimes(1);
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      expect(hide).toHaveBeenCalledTimes(1);
+    });
+
+    it("positions from measured geometry and re-places on resize and scroll", () => {
+      mount();
+      const button = trigger();
+      let top = 100;
+      vi.spyOn(button, "getBoundingClientRect").mockImplementation(
+        () => ({ left: 100, right: 126, top, bottom: top + 26 }) as DOMRect,
+      );
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: 1000,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: 700,
+      });
+      fireEvent.click(button);
+      const tip = screen.getByRole("tooltip");
+      expect(tip.style.left).toBe("134px");
+      expect(tip.style.top).toBe("100px");
+      top = 300;
+      act(() => {
+        window.dispatchEvent(new Event("scroll"));
+      });
+      expect(screen.getByRole("tooltip").style.top).toBe("300px");
+    });
+
+    it("dismisses when the trigger is scrolled out of the viewport", () => {
+      mount();
+      const button = trigger();
+      vi.spyOn(button, "getBoundingClientRect").mockImplementation(
+        () => ({ left: 100, right: 126, top: 100, bottom: 126 }) as DOMRect,
+      );
+      fireEvent.click(button);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      vi.spyOn(button, "getBoundingClientRect").mockImplementation(
+        () => ({ left: 100, right: 126, top: -80, bottom: -54 }) as DOMRect,
+      );
+      act(() => {
+        window.dispatchEvent(new Event("scroll"));
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      // A later click opens it again; pinned state was reset.
+      vi.restoreAllMocks();
+      vi.spyOn(button, "getBoundingClientRect").mockImplementation(
+        () => ({ left: 100, right: 126, top: 100, bottom: 126 }) as DOMRect,
+      );
+      fireEvent.click(button);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+    });
+
+    it("keeps hover, focus-leave and Escape focus semantics", () => {
+      mount();
+      const button = trigger();
+      vi.spyOn(button, "getBoundingClientRect").mockImplementation(
+        () => ({ left: 100, right: 126, top: 100, bottom: 126 }) as DOMRect,
+      );
+      fireEvent.mouseEnter(screen.getByText("60,961.11"));
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      fireEvent.mouseLeave(screen.getByText("60,961.11").parentElement!);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      button.focus();
+      fireEvent.focus(button);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      fireEvent.keyDown(button, { key: "Escape" });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      expect(document.activeElement).toBe(button);
+    });
   });
 });

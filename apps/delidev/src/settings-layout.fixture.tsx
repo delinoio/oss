@@ -171,6 +171,7 @@ Object.assign(window, { projectRowReads });
 const cleanupFixture = args.get("cleanupFixture") === "true";
 const accountStorageFixture = args.get("accountStorage") === "true";
 const subscriptionDetails = args.get("subscriptionDetails") === "true";
+const subscriptionPaidCredits = args.get("paidCredits") === "true";
 const subscriptionBackground =
   args.get("subscriptionBackground") === "true" ||
   accountStorageFixture ||
@@ -345,6 +346,21 @@ const subscription = create(ResourceSchema, {
     exclude_automatic: false,
     recovery_notifications: false,
     health: "disconnected",
+    ...(subscriptionPaidCredits
+      ? {
+          subscription: {
+            paid_credits: [
+              {
+                id: "codex",
+                has_credits: true,
+                unlimited: false,
+                balance: "60961.1135370000",
+                observed_at: new Date().toISOString(),
+              },
+            ],
+          },
+        }
+      : {}),
     quota: subscriptionDetails
       ? Array.from({ length: 3 }, (_, index) => ({
           id: `window-${index}`,
@@ -1203,6 +1219,9 @@ const fixtureTransport = createRouterTransport((router) => {
         ...(subscriptionBackground
           ? [
               SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              ...(subscriptionPaidCredits
+                ? [SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1]
+                : []),
               ...(cleanupFixture
                 ? [SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1]
                 : []),
