@@ -173,6 +173,18 @@ another native page. This resource Close is the one browser-specific exception t
 the presentation-only dismissal other tools use, and it remains separate from the
 16-page gate and from profile/account removal.
 
+An acknowledged close is profile-scoped, so its cleanup is not limited to the
+initiating Session: when the original Close is observed complete, or an
+observation without an original receipt proves the page is gone, the exact
+profile/page descriptor is removed from every Session snapshot in the shared tab
+store, including inactive and retained Sessions that are not polling. Each
+affected Session applies the same selection rule only when its own selected
+descriptor was removed (left neighbor, then Conversation after the last page);
+unrelated selections, ordering, the same page id under another profile and other
+pages are untouched. Repeated acknowledgment is idempotent, and pending, failed
+or uncertain closes retain the descriptor in every Session. The cleanup is
+store-level only and issues no extra native close.
+
 Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,
 refresh labels from observed URLs, and drop descriptors the inventory no longer
