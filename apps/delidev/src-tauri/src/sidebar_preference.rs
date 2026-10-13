@@ -729,6 +729,19 @@ fn delete_handle(file: &File) -> std::io::Result<()> {
     }
 }
 
+/// Verifies that a scratch pathname is gone after its object was unlinked.
+/// A POSIX-semantics delete removes the link from the visible namespace only
+/// once the delete handle is closed, so callers release that handle first;
+/// checking while it is open would report the owned scratch as a foreign entry.
+#[cfg(any(windows, test))]
+fn verify_unlinked(path: &Path) -> Result<(), SidebarProblem> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(SidebarProblem::Changed),
+        Err(_) => Err(SidebarProblem::WriteFailed),
+    }
+}
+
 /// Persistence barrier for a file object that was just published by a handle
 /// rename. `SetFileInformationByHandle` has no write-through option, so the
 /// verified handle is flushed (`FlushFileBuffers` on Windows) before the save
@@ -1070,11 +1083,9 @@ impl Scratch {
         // the pathname cannot be unlinked here.
         delete_handle(&file).map_err(|_| SidebarProblem::WriteFailed)?;
         self.consumed = true;
-        match fs::symlink_metadata(&self.path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Ok(_) => Err(SidebarProblem::Changed),
-            Err(_) => Err(SidebarProblem::WriteFailed),
-        }
+        // Release the delete handle before checking the pathname.
+        drop(file);
+        verify_unlinked(&self.path)
     }
 
     #[cfg(not(any(unix, windows)))]
@@ -2279,6 +2290,40 @@ mod tests {
         fs::remove_file(&second).unwrap();
         fs::write(&second, b"second").unwrap();
         assert!(identity(&File::open(second).unwrap()).unwrap().0 != original);
+    }
+
+    #[test]
+    fn unlink_verification_accepts_only_an_absent_pathname() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("scratch");
+        assert_eq!(verify_unlinked(&path), Ok(()));
+        fs::write(&path, b"retained").unwrap();
+        assert_eq!(verify_unlinked(&path), Err(SidebarProblem::Changed));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_cleanup_releases_the_delete_handle_before_checking_the_pathname() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let refused = store.update_with(
+            SidebarPreference::Collapsed,
+            initial.revision,
+            |path, preference, original, lease| {
+                persist_with(path, preference, original, lease, |step, _| {
+                    if step == PersistStep::DestinationVerified {
+                        Err(SidebarProblem::WriteFailed)
+                    } else {
+                        Ok(())
+                    }
+                })
+            },
+        );
+        // A refusal after bind removes only the owned scratch and stays a
+        // safe pre-publication failure, never an upgraded OutcomeUnknown.
+        assert_eq!(refused.problem, Some(SidebarProblem::WriteFailed));
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]

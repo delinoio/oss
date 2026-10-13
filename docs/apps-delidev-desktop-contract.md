@@ -5799,7 +5799,9 @@ file and parent identity; it cannot remove colliding or replaced evidence. A
 foreign entry found at the scratch pathname is retained, never reported as a
 fully successful save (OutcomeUnknown, explicit Reload), and the published
 preference stays available for recovery. Windows deletes through the verified
-handle. Unix cannot unlink by identity, so it first atomically claims the
+handle, closes that POSIX-semantics delete handle (the link leaves the visible
+namespace only then) and only afterward verifies that the scratch pathname is
+gone. Unix cannot unlink by identity, so it first atomically claims the
 pathname under a private `.sidebar_preference-*.claim` name, verifies the
 claimed entry's identity and unlinks only a verified claim; a foreign claim is
 moved back untouched. Documented residual risk: a Unix writer that observes the
