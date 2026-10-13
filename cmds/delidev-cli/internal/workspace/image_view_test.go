@@ -121,7 +121,7 @@ func TestImageViewUNCRoundTripPreservesOriginalAuthority(t *testing.T) {
 	if err != nil || ref.Location != "image.png" || ref.RepositoryID != m.Repositories[1].ID || ValidateImageViewReference(input, "windows", ref) != nil {
 		t.Fatal("longest original UNC root was not retained", err)
 	}
-	for _, bad := range []string{`\\other\share\repo\image.png`, `\\server\other\repo\image.png`, `\\Server\share\repo\image.png`, `\\server\share\repo-other\image.png`, `\\server\\repo\image.png`, `\\server`, `\\server\share`, `\\?\UNC\server\share\repo\image.png`, `\\.\C:\repo\image.png`, `\\server\share\repo\..\image.png`, `\\server\share\repo\.\image.png`, `\\server\share\repo\\image.png`, `\\server\share\repo\image.png:stream`, `C:repo\image.png`} {
+	for _, bad := range []string{`\\other\share\repo\image.png`, `\\server\other\repo\image.png`, `\\server\share\repo-other\image.png`, `\\server\\repo\image.png`, `\\server`, `\\server\share`, `\\?\UNC\server\share\repo\image.png`, `\\.\C:\repo\image.png`, `\\server\share\repo\..\image.png`, `\\server\share\repo\.\image.png`, `\\server\share\repo\\image.png`, `\\server\share\repo\image.png:stream`, `C:repo\image.png`} {
 		if _, err := ObserveImageViewLocation(input, "windows", bad, domain.NewID()); err == nil {
 			t.Fatalf("unscoped or malformed Windows observation accepted: %q", bad)
 		}
@@ -172,5 +172,124 @@ func TestImageViewPOSIXLiteralCharactersRoundTrip(t *testing.T) {
 		if ValidateImageViewReference(input, "windows", changed) == nil {
 			t.Fatalf("malformed Windows relative metadata accepted: %q", bad)
 		}
+	}
+}
+
+func TestImageViewPOSIXFilesystemRoot(t *testing.T) {
+	for _, workerOS := range []string{"linux", "darwin"} {
+		t.Run(workerOS, func(t *testing.T) {
+			input := localImageViewInput(t, "/")
+			var m Manifest
+			_ = json.Unmarshal(input.Manifest, &m)
+			digest := sha256.Sum256(input.Manifest)
+			ref, err := ObserveImageViewLocation(input, workerOS, "/image.png", domain.NewID())
+			if err != nil || ref.Location != "image.png" || ref.RepositoryID != m.Repositories[0].ID || ref.ManifestDigest != hex.EncodeToString(digest[:]) || ValidateImageViewReference(input, workerOS, ref) != nil {
+				t.Fatalf("filesystem root observation failed: %v %+v", err, ref)
+			}
+			nested, err := ObserveImageViewLocation(input, workerOS, "/a/b/image.png", domain.NewID())
+			if err != nil || nested.Location != "a/b/image.png" || ValidateImageViewReference(input, workerOS, nested) != nil {
+				t.Fatalf("nested location below filesystem root failed: %v", err)
+			}
+			for _, bad := range []string{"/", "/../image.png", "/a/../image.png", "//image.png", "/a//image.png", "https://example.com/image.png", "file:///image.png", "image.png"} {
+				if _, err := ObserveImageViewLocation(input, workerOS, bad, domain.NewID()); err == nil {
+					t.Fatalf("unscoped filesystem root observation accepted: %q", bad)
+				}
+			}
+		})
+	}
+}
+
+func TestImageViewPOSIXRootLongestMatchAndSiblings(t *testing.T) {
+	for _, workerOS := range []string{"linux", "darwin"} {
+		t.Run(workerOS, func(t *testing.T) {
+			input := localImageViewInput(t, "/", "/repo")
+			var m Manifest
+			_ = json.Unmarshal(input.Manifest, &m)
+			nested, err := ObserveImageViewLocation(input, workerOS, "/repo/image.png", domain.NewID())
+			if err != nil || nested.RepositoryID != m.Repositories[1].ID || nested.Location != "image.png" || ValidateImageViewReference(input, workerOS, nested) != nil {
+				t.Fatalf("longest root not selected: %v %+v", err, nested)
+			}
+			sibling, err := ObserveImageViewLocation(input, workerOS, "/repo-other/x.png", domain.NewID())
+			if err != nil || sibling.RepositoryID != m.Repositories[0].ID || sibling.Location != "repo-other/x.png" || ValidateImageViewReference(input, workerOS, sibling) != nil {
+				t.Fatalf("sibling must fall back to the outer root: %v %+v", err, sibling)
+			}
+			// A reference owned by the outer root must not claim a location the
+			// longer nested root owns.
+			stolen := nested
+			stolen.RepositoryID = m.Repositories[0].ID
+			stolen.Location = "repo/image.png"
+			if ValidateImageViewReference(input, workerOS, stolen) == nil {
+				t.Fatal("outer root claimed a location owned by the nested root")
+			}
+			// Without the outer root, '/repo-other' stays foreign.
+			single := localImageViewInput(t, "/repo")
+			for _, bad := range []string{"/repo-other/x.png", "/repo/../x.png", "/repo", "/repo/"} {
+				if _, err := ObserveImageViewLocation(single, workerOS, bad, domain.NewID()); err == nil {
+					t.Fatalf("unscoped observation accepted: %q", bad)
+				}
+			}
+		})
+	}
+}
+
+func TestImageViewWindowsRootsMatchCaseInsensitively(t *testing.T) {
+	input := localImageViewInput(t, `C:/repo`)
+	var m Manifest
+	_ = json.Unmarshal(input.Manifest, &m)
+	for _, location := range []string{`c:/Repo/Images/Foo.png`, `C:\REPO\Images\Foo.png`} {
+		ref, err := ObserveImageViewLocation(input, "windows", location, domain.NewID())
+		if err != nil || ref.Location != "Images/Foo.png" || ref.RepositoryID != m.Repositories[0].ID || ValidateImageViewReference(input, "windows", ref) != nil {
+			t.Fatalf("case variant rejected or spelling changed: %q %v %+v", location, err, ref)
+		}
+	}
+	for _, bad := range []string{`C:/Repo-other/x.png`, `c:/repo`, `c:/repo/`, `D:/repo/x.png`} {
+		if _, err := ObserveImageViewLocation(input, "windows", bad, domain.NewID()); err == nil {
+			t.Fatalf("foreign Windows observation accepted: %q", bad)
+		}
+	}
+
+	unc := localImageViewInput(t, `\\server\share\repo`, `\\server\share\repo\nested`)
+	_ = json.Unmarshal(unc.Manifest, &m)
+	ref, err := ObserveImageViewLocation(unc, "windows", `\\SERVER\Share\REPO\Nested\Image.PNG`, domain.NewID())
+	if err != nil || ref.RepositoryID != m.Repositories[1].ID || ref.Location != "Image.PNG" || ValidateImageViewReference(unc, "windows", ref) != nil {
+		t.Fatalf("UNC case variant did not select the nested root: %v %+v", err, ref)
+	}
+	outer, err := ObserveImageViewLocation(unc, "windows", `\\Server\SHARE\Repo\Images\Foo.png`, domain.NewID())
+	if err != nil || outer.RepositoryID != m.Repositories[0].ID || outer.Location != "Images/Foo.png" {
+		t.Fatalf("UNC case variant did not retain the outer root: %v %+v", err, outer)
+	}
+	for _, bad := range []string{`\\server\share\Repo-other\x.png`, `\\other\share\repo\x.png`, `\\server\other\repo\x.png`} {
+		if _, err := ObserveImageViewLocation(unc, "windows", bad, domain.NewID()); err == nil {
+			t.Fatalf("foreign UNC observation accepted: %q", bad)
+		}
+	}
+}
+
+func TestImageViewPOSIXRootsStayCaseSensitive(t *testing.T) {
+	for _, workerOS := range []string{"linux", "darwin"} {
+		t.Run(workerOS, func(t *testing.T) {
+			input := localImageViewInput(t, "/repo", "/Repo")
+			var m Manifest
+			_ = json.Unmarshal(input.Manifest, &m)
+			lower, err := ObserveImageViewLocation(input, workerOS, "/repo/Images/Foo.png", domain.NewID())
+			if err != nil || lower.RepositoryID != m.Repositories[0].ID || lower.Location != "Images/Foo.png" {
+				t.Fatalf("lower-case root: %v %+v", err, lower)
+			}
+			upper, err := ObserveImageViewLocation(input, workerOS, "/Repo/Images/Foo.png", domain.NewID())
+			if err != nil || upper.RepositoryID != m.Repositories[1].ID || upper.Location != "Images/Foo.png" {
+				t.Fatalf("upper-case root: %v %+v", err, upper)
+			}
+			single := localImageViewInput(t, "/repo")
+			if _, err := ObserveImageViewLocation(single, workerOS, "/REPO/x.png", domain.NewID()); err == nil {
+				t.Fatal("POSIX root matched case-insensitively")
+			}
+		})
+	}
+}
+
+func TestImageViewWindowsDriveRootStaysRejected(t *testing.T) {
+	input := localImageViewInput(t, `C:/`)
+	if _, err := ObserveImageViewLocation(input, "windows", `C:/image.png`, domain.NewID()); err == nil {
+		t.Fatal("Windows drive root admitted")
 	}
 }

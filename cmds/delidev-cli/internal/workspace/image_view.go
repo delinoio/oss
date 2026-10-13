@@ -37,10 +37,12 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 	}
 	selected := PreparedRepository{}
 	relative := ""
+	selectedLength := 0
 	for _, root := range roots {
-		base := normalizeWorkerPath(root.Path, workerOS)
-		if strings.HasPrefix(location, base+"/") && len(base) > len(normalizeWorkerPath(selected.Path, workerOS)) {
-			selected, relative = root, strings.TrimPrefix(location, base+"/")
+		rootPrefix := workerRootPrefix(root.Path, workerOS)
+		// The longest matching root wins; equal-length roots keep the first match.
+		if scoped, ok := scopeToRootPrefix(location, rootPrefix, workerOS); ok && len(rootPrefix) > selectedLength {
+			selected, relative, selectedLength = root, scoped, len(rootPrefix)
 		}
 	}
 	digest := sha256.Sum256(input.Manifest)
@@ -70,10 +72,58 @@ func ValidateImageViewReference(input domain.ExecutionJobInput, workerOS string,
 	if root == "" {
 		return ResultUncertain()
 	}
-	normalized := normalizeWorkerPath(root, workerOS)
-	expected, err := ObserveImageViewLocation(input, workerOS, normalized+"/"+observation.Location, observation.ReferenceID)
+	expected, err := ObserveImageViewLocation(input, workerOS, workerRootPrefix(root, workerOS)+observation.Location, observation.ReferenceID)
 	if err != nil || expected != observation {
 		return ResultUncertain()
 	}
 	return nil
+}
+
+// workerRootPrefix returns the normalized root followed by exactly one
+// separator. The filesystem root "/" already ends with its separator, so it must
+// not receive a second one.
+func workerRootPrefix(root, workerOS string) string {
+	return strings.TrimSuffix(normalizeWorkerPath(root, workerOS), "/") + "/"
+}
+
+// scopeToRootPrefix returns the part of a normalized absolute location below the
+// prepared root prefix. The prefix ends at a component boundary, so siblings
+// such as "/repo-other" never match "/repo". Windows paths compare ASCII letters
+// case-insensitively, while Linux and macOS compare bytes exactly. The returned
+// relative spelling always comes from the observed location. An empty relative
+// part (the root itself) is not a match.
+func scopeToRootPrefix(location, rootPrefix, workerOS string) (string, bool) {
+	if len(location) <= len(rootPrefix) {
+		return "", false
+	}
+	head := location[:len(rootPrefix)]
+	if workerOS == "windows" {
+		if !equalASCIIFold(head, rootPrefix) {
+			return "", false
+		}
+	} else if head != rootPrefix {
+		return "", false
+	}
+	return location[len(rootPrefix):], true
+}
+
+// equalASCIIFold folds only ASCII letters, so equal-length byte slicing stays
+// valid for the observed spelling. Non-ASCII bytes must match exactly.
+func equalASCIIFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if 'A' <= x && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if 'A' <= y && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
 }
