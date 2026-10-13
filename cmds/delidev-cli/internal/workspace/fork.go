@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -303,7 +304,31 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 func scanForkTreeBounded(ctx context.Context, source, target string, gitTree bool, entryLimit int) (string, error) {
 	return scanForkTreePinned(ctx, source, target, gitTree, entryLimit, nil)
 }
+
+// forkSymlinkPolicy selects how the tree scanner treats symbolic links.
+type forkSymlinkPolicy string
+
+const (
+	// forkSymlinkReject is the default: links are outside the copy profile.
+	forkSymlinkReject forkSymlinkPolicy = "reject"
+	// forkSymlinkRecord digests a link as its entry kind plus link text without
+	// following it. It is valid only for read-only scans that publish no copy.
+	forkSymlinkRecord forkSymlinkPolicy = "record"
+)
+
+const maxForkLinkTextBytes = 4096
+
 func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool, entryLimit int, original *forkGitMarker, budgets ...*snapshotCopyBudget) (string, error) {
+	return scanForkTreePolicy(ctx, forkSymlinkReject, source, target, gitTree, entryLimit, original, budgets...)
+}
+
+// scanForkTreePolicy walks the opened root. Under forkSymlinkRecord a symlink
+// is inspected with Lstat and Readlink only, never opened or followed, so a
+// dangling or outside-pointing link reads nothing beyond its own link text.
+func scanForkTreePolicy(ctx context.Context, symlinks forkSymlinkPolicy, source, target string, gitTree bool, entryLimit int, original *forkGitMarker, budgets ...*snapshotCopyBudget) (string, error) {
+	if symlinks == forkSymlinkRecord && target != "" || symlinks != forkSymlinkReject && symlinks != forkSymlinkRecord {
+		return "", forkUnsupported()
+	}
 	if entryLimit != maxForkEntries && entryLimit != maxOpenCodeForkEntries {
 		return "", forkUnsupported()
 	}
@@ -360,6 +385,28 @@ func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool
 			if err := budgets[0].take(size); err != nil {
 				return err
 			}
+		}
+		if symlinks == forkSymlinkRecord && before.Mode()&os.ModeSymlink != 0 {
+			link, err := root.Readlink(name)
+			if err != nil || !utf8.ValidString(link) || len(link) > maxForkLinkTextBytes {
+				return forkUnsupported()
+			}
+			// Link permission bits are platform-defined, so only the entry kind
+			// and exact link text are bound.
+			metadata, _ := json.Marshal(struct {
+				Name string
+				Kind string
+				Link string
+			}{name, "symlink", link})
+			hash.Write(metadata)
+			after, err := root.Lstat(name)
+			if err != nil || after.Mode()&os.ModeSymlink == 0 {
+				return forkSnapshotChanged()
+			}
+			if again, err := root.Readlink(name); err != nil || again != link {
+				return forkSnapshotChanged()
+			}
+			return nil
 		}
 		if !before.IsDir() && !before.Mode().IsRegular() {
 			return forkUnsupported()

@@ -3,6 +3,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -159,5 +160,132 @@ func TestNativeReviewSupportsSHA1AndSHA256ObjectFormats(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// symlinkRepository commits links to a file, a missing target and a directory
+// outside the repository so review capture meets each link shape.
+func symlinkRepository(t *testing.T) (root, outside string) {
+	t.Helper()
+	root = repository(t)
+	outside = t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("outside bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{"link-file": "tracked.txt", "link-dangling": "missing-target", "link-outside": outside, "link-outside-file": filepath.Join(outside, "secret.txt")} {
+		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+			t.Skip("symlinks are unavailable:", err)
+		}
+		gitTest(t, root, "add", name)
+	}
+	gitTest(t, root, "commit", "-m", "links")
+	return root, outside
+}
+
+func TestNativeReviewCapturesTrackedSymlinksWithoutFollowingThem(t *testing.T) {
+	m := manager(t)
+	source, outside := symlinkRepository(t)
+	source, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, _ := requestFor(source)
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	request := diffRequest(input, manifest, domain.DiffWorkingTree, ".")
+	observed, err := m.ReadWorkspace(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := domain.NativeCodeReviewTarget{Kind: domain.ReviewUncommitted, RepositoryID: input.PrimaryRepository, DiffRevision: observed.Diff.Revision}
+	reached := false
+	if err := m.WithNativeCodeReview(context.Background(), request, target, func(ctx context.Context, path string, selection domain.NativeCodeReviewSelection) error {
+		reached = true
+		return nil
+	}); err != nil || !reached {
+		t.Fatal("tracked symlinks prevented the native review callback", err)
+	}
+	// Changing a link target during the review is a stale Conflict.
+	err = m.WithNativeCodeReview(context.Background(), request, target, func(ctx context.Context, path string, selection domain.NativeCodeReviewSelection) error {
+		link := filepath.Join(path, "link-dangling")
+		if err := os.Remove(link); err != nil {
+			return err
+		}
+		return os.Symlink(filepath.Join(outside, "elsewhere"), link)
+	})
+	var failure *domain.Error
+	if !errors.As(err, &failure) || failure.Code != domain.Conflict {
+		t.Fatal("changed link target was not a stale conflict", err)
+	}
+}
+
+func TestForkScanSymlinkPolicyBindsLinkTextAndRejectsByDefault(t *testing.T) {
+	source, err := filepath.EvalSymlinks(repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("outside bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(source, "link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skip("symlinks are unavailable:", err)
+	}
+	scan := func(policy forkSymlinkPolicy, target string) (string, error) {
+		marker, err := captureForkRootMarker(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return scanForkTreePolicy(context.Background(), policy, source, target, true, maxForkEntries, &marker)
+	}
+	if _, err := scan(forkSymlinkReject, ""); err == nil {
+		t.Fatal("default policy accepted a symlink")
+	}
+	if _, err := scanForkTreeBounded(context.Background(), source, "", true, maxForkEntries); err == nil {
+		t.Fatal("fork scanner accepted a symlink")
+	}
+	if _, err := scan(forkSymlinkRecord, t.TempDir()); err == nil {
+		t.Fatal("recording scan was allowed to publish a copy")
+	}
+	first, err := scan(forkSymlinkRecord, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := scan(forkSymlinkRecord, ""); err != nil || again != first {
+		t.Fatal("recording digest is not stable", err)
+	}
+	// Bytes behind the link are never read, so editing them keeps the digest.
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("changed outside bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := scan(forkSymlinkRecord, ""); err != nil || again != first {
+		t.Fatal("link digest depends on bytes behind the link", err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.txt"), link); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := scan(forkSymlinkRecord, ""); err != nil || changed == first {
+		t.Fatal("link text change did not change the digest", err)
+	}
+	// A regular file at the same path binds a different entry kind.
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(link, []byte(filepath.Join(outside, "secret.txt")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if regular, err := scan(forkSymlinkRecord, ""); err != nil || regular == first {
+		t.Fatal("entry kind is not bound", err)
 	}
 }
