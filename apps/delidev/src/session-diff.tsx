@@ -619,8 +619,11 @@ export function RepositoryDiff({
     }
   };
   // A branch path is admitted only against a successfully negotiated, available
-  // base. Other comparisons are base-free and stay immediately submittable.
-  const pathAdmitted = comparison !== Comparison.Branch || supportedBase;
+  // base whose inventory is not being renewed or stale. Other comparisons are
+  // base-free and stay immediately submittable.
+  const pathAdmitted =
+    comparison !== Comparison.Branch ||
+    (supportedBase && !refreshing && !optionsStale);
   // Returns whether the submission was admitted; a denied submission keeps the
   // typed draft and publishes no tab and no read.
   const submitPath = (): boolean => {
@@ -631,6 +634,8 @@ export function RepositoryDiff({
         comparison,
         optionsPending: options.isPending,
         optionsFailed: options.isError,
+        optionsRefreshing: refreshing,
+        optionsStale,
       });
       return false;
     }

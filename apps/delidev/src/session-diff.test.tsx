@@ -20,6 +20,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionDiff } from "./session-diff";
+import { Comparison } from "./session-diff-model";
 import {
   SessionTabKind,
   SessionTabsStore,
@@ -1223,24 +1224,52 @@ it("does not publish a late options response after the comparison changes and re
   expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
 });
 
+// The Diff options form is gated while a refresh is pending, so the path scope
+// changes here through a selected tab descriptor, as the tabbed view does.
 it("does not publish a late options response after the path changes", async () => {
-  const { f, state, operations } = inventoryFixture(
-    [{ name: "main" }, { name: "late-next" }],
-    "main",
-  );
-  render(<f.View />);
+  const state = { defaultName: "main" };
+  const f = tabsFixture({
+    options: async (repository) => ({
+      documentJson: encode({
+        size: "0",
+        binary: false,
+        truncated: false,
+        diff_options: {
+          version: 1,
+          repository_id: repository,
+          choices: ["main", "late-next"].map((name) => ({
+            reference: { type: "local-branch", name },
+            available: true,
+            configured: false,
+          })),
+          default: { type: "local-branch", name: state.defaultName },
+        },
+      }),
+    }),
+  });
+  render(<f.Harness />);
   await screen.findByText("+<script>doNotRun()</script>");
   state.defaultName = "late-next";
+  const optionReads = () =>
+    f.read.mock.calls.filter(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).operation ===
+        "git-diff-options",
+    ).length;
   const options = holdNextRead(f);
-  const before = operations().length;
+  const before = optionReads();
   refreshDiff();
-  await waitFor(() => expect(operations()).toHaveLength(before + 1));
-  fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
-  fireEvent.change(screen.getByLabelText("Relative diff path"), {
-    target: { value: "src/main.ts" },
+  await waitFor(() => expect(optionReads()).toBe(before + 1));
+  act(() => {
+    f.store.open(f.sessionId, {
+      kind: SessionTabKind.Comparison,
+      repository: f.primary,
+      comparison: Comparison.Branch,
+      path: "src/main.ts",
+      base_ref: { type: "local-branch", name: "main" },
+    });
   });
-  fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
-  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:main"));
+  await waitFor(() => expect(branchReads(f.read).at(-1)?.path).toBe("src/main.ts"));
   options.release();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
@@ -1248,7 +1277,9 @@ it("does not publish a late options response after the path changes", async () =
       false,
     ),
   );
-  expect(operations()).not.toContain("git-diff:branch:late-next");
+  expect(
+    branchReads(f.read).map((q) => (q.base_ref as { name: string }).name),
+  ).not.toContain("late-next");
   expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
     JSON.stringify(["local-branch", "main", null]),
@@ -3016,4 +3047,51 @@ it("keeps path submission immediate and base-free for working-tree, staged and c
     );
   }
   for (const tab of f.comparisons()) expect(tab.base_ref).toBeUndefined();
+});
+
+it("denies branch path submission while an options refresh is pending or stale", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  const pathApplied = () => screen.queryByText("Relative diff path: src");
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  // The supported base is still observed, but the inventory is being renewed.
+  let submit = submitDraftPath("src");
+  expect(submit.disabled).toBe(true);
+  fireEvent.submit(submit.closest("form")!);
+  expect(pathApplied()).toBeNull();
+  expect(operations()).toHaveLength(before + 1);
+  options.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  // A failed renewal leaves the inventory stale, so the gate stays closed.
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(
+    "Refresh failed. The previous observation is stale and shown below.",
+  );
+  const failed = operations().length;
+  submit = submitDraftPath("src");
+  expect(submit.disabled).toBe(true);
+  fireEvent.submit(submit.closest("form")!);
+  expect(pathApplied()).toBeNull();
+  expect(operations()).toHaveLength(failed);
+  // An accepted refresh admits the retained draft again.
+  refreshDiff();
+  await waitFor(() =>
+    expect(
+      (submitDraftPath("src") as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(submitDraftPath("src"));
+  await screen.findByText("Relative diff path: src");
 });
