@@ -391,3 +391,89 @@ func TestDesktopWorkerLaunchVerifiesRetainedGrantBeforeSavedCredentialProbe(t *t
 		}
 	}
 }
+
+// A journal that exists but cannot be read safely must enter the recovery path
+// before any authenticated probe, with the same code as missing grant evidence.
+func TestDesktopWorkerUnreadablePairingJournalRequiresRecovery(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "owner")
+	f := startResidentFixture(t, root, "127.0.0.1:0")
+	f.launch(t)
+	defer f.quit(t)
+	if reply := f.request(t, "device.pair-local"); reply.Error != nil {
+		t.Fatal(reply.Error.Code)
+	}
+	clientCredential, err := worker.LoadCredential(filepath.Join(root, "desktop-client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := options{dataDir: root}
+	if _, err := desktopWorkerExecutable(context.Background(), o, []string{"--mode", "launch", "--client-id", string(clientCredential.DeviceID)}); err != nil {
+		t.Fatal("initial preparation", domain.SafeError(err).Code)
+	}
+	workerRoot := filepath.Join(root, "worker")
+	journalPath := filepath.Join(workerRoot, "local-pairing.json")
+	marker := filepath.Join(workerRoot, "desktop-runtime-follow.json")
+	originalJournal, err := security.ReadPrivate(journalPath, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := func() {
+		if err := os.Remove(journalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if err := security.WriteAtomic(journalPath, originalJournal); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+	}
+	vectors := map[string]func(){
+		"oversized": func() {
+			if err := security.WriteAtomic(journalPath, bytes.Repeat([]byte(" "), 8192)); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"malformed": func() {
+			if err := security.WriteAtomic(journalPath, []byte("{")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"permission unsafe": func() {
+			if err := os.Chmod(journalPath, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"symlinked": func() {
+			target := filepath.Join(t.TempDir(), "journal-target.json")
+			if err := os.WriteFile(target, originalJournal, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(journalPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, journalPath); err != nil {
+				t.Skip("symlinks are unavailable:", err)
+			}
+		},
+	}
+	for name, mutate := range vectors {
+		t.Run(name, func(t *testing.T) {
+			restore()
+			mutate()
+			for _, mode := range []string{"launch", "retry", "ensure"} {
+				_, err := desktopWorkerExecutable(context.Background(), o, []string{"--mode", mode, "--client-id", string(clientCredential.DeviceID)})
+				if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatalf("mode %s: unreadable journal did not require recovery: %v", mode, err)
+				}
+				if _, statErr := os.Stat(marker); statErr == nil {
+					t.Fatalf("mode %s: marker created from an unreadable journal", mode)
+				}
+			}
+		})
+	}
+	restore()
+	if _, err := desktopWorkerExecutable(context.Background(), o, []string{"--mode", "ensure", "--client-id", string(clientCredential.DeviceID)}); err != nil {
+		t.Fatal("restored journal no longer follows", domain.SafeError(err).Code)
+	}
+}

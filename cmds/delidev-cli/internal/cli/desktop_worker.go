@@ -67,7 +67,11 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 func verifyDesktopWorkerGrant(o options, root string, saved worker.Credential) error {
 	owner, local, err := desktopruntime.LocalRoot(root, saved.ServerID, saved.Endpoint)
 	if err != nil {
-		return err
+		// An oversized, symlinked, unsafe, malformed or foreign journal cannot
+		// prove the original grant. Report it at this boundary as the isolating
+		// recovery result instead of the raw storage or availability error.
+		slog.Warn("desktop_worker_registration", "phase", "local-pairing-journal", "code", domain.SafeError(err).Code)
+		return recoveryRequired()
 	}
 	if !local || owner != o.dataDir {
 		return recoveryRequired()
