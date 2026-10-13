@@ -49,9 +49,46 @@ it.each([
     pending: { request_id: "original" },
   },
   { state: "exited", cleanup_verified: true, pending: "malformed" },
+  { state: "exited", cleanup_verified: true, pending: {} },
+  { state: "exited", cleanup_verified: true, pending: [] },
+  { state: "exited", cleanup_verified: true, pending: 0 },
+  {
+    state: "exited",
+    cleanup_verified: true,
+    pending: { action: "close", request_id: "original" },
+  },
 ])("retains incomplete or unsettled cleanup %j", (data) => {
   const view = new TerminalPresentation();
   expect(view.observe("parent", resource(4n, data))).toBe(false);
+  expect(view.hidden("original")).toBe(false);
+});
+it.each([{}, { pending: null }])(
+  "treats missing or null pending as no operation %j",
+  (extra) => {
+    const view = new TerminalPresentation();
+    expect(
+      view.observe(
+        "parent",
+        resource(4n, { state: "exited", cleanup_verified: true, ...extra }),
+      ),
+    ).toBe(true);
+    expect(view.hidden("original")).toBe(true);
+  },
+);
+it("rejects stale revisions after a pending empty object is retained", () => {
+  const view = new TerminalPresentation();
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, { state: "exited", cleanup_verified: true, pending: {} }),
+    ),
+  ).toBe(false);
+  expect(
+    view.observe(
+      "parent",
+      resource(4n, { state: "exited", cleanup_verified: true }),
+    ),
+  ).toBe(false);
   expect(view.hidden("original")).toBe(false);
 });
 it("preserves a retained uncertain operation until its original resolution", () => {

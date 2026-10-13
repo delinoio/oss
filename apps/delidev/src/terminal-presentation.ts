@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
-import { document, object } from "./documents";
+import { document } from "./documents";
+
+/**
+ * A pending operation exists for any present, non-null value, including an
+ * empty object, a scalar or an array. Only a missing or null pending field
+ * means no operation.
+ */
+function hasPending(pending: unknown): boolean {
+  return pending !== undefined && pending !== null;
+}
 
 /** Connection-memory presentation tombstones never change server history. */
 export class TerminalPresentation {
@@ -41,9 +50,7 @@ export class TerminalPresentation {
     const data = document(resource);
     if (
       unsettled ||
-      (data.pending != null &&
-        (typeof data.pending !== "object" || Array.isArray(data.pending))) ||
-      Object.keys(object(data.pending)).length ||
+      hasPending(data.pending) ||
       data.state !== "exited" ||
       data.cleanup_verified !== true
     )

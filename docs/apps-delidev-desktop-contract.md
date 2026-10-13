@@ -1393,7 +1393,9 @@ Original authenticated inventory or stream resources dismiss a terminal only
 when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
 Connection-memory revision fences and original-ID tombstones prevent stale
 history restoration or reopening from reviving dismissed tabs. Pending or
-uncertain original controls retain their recovery presentation. An inactive exit
+uncertain original controls retain their recovery presentation; only a missing
+or null `pending` field means no operation, so an empty object, scalar or array
+`pending` value stays unsettled and never dismisses. An inactive exit
 preserves selection/focus; a selected exit chooses its nearest remaining left
 terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no
