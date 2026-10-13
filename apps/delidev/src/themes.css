@@ -423,7 +423,10 @@
 :root[data-show-time="false"] .transcript time {
   display: none;
 }
-:root[data-show-tokens="false"] .transcript [data-token-observation] {
+:root[data-show-tokens="false"] .transcript [data-token-observation],
+:root[data-show-tokens="false"]
+  .execution-configuration
+  [data-token-observation] {
   display: none;
 }
 :root[data-animation="false"] *,
@@ -505,7 +508,8 @@
 .appearance-palettes h3 {
   font-size: 14px;
 }
-:root[data-show-time="false"] .transcript [data-time-observation] {
+:root[data-show-time="false"] .transcript [data-time-observation],
+:root[data-show-time="false"] .execution-configuration [data-time-observation] {
   display: none;
 }
 

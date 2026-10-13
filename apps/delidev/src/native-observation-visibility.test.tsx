@@ -42,8 +42,8 @@ afterEach(() => {
   delete document.documentElement.dataset[Toggle.Time];
 });
 
-function rendered(node: React.ReactElement) {
-  const result = render(<div className="transcript">{node}</div>);
+function rendered(node: React.ReactElement, container = "transcript") {
+  const result = render(<div className={container}>{node}</div>);
   const hidden = (label: RegExp, value: string) => {
     const dt = [...result.container.querySelectorAll("dt")].find((item) =>
       label.test(item.textContent ?? ""),
@@ -280,51 +280,59 @@ describe("transcript token and time observation toggles", () => {
     expect(view.container.innerHTML).toBe(hiddenHtml);
   });
 
-  it.each([
-    [true, true],
-    [false, true],
-    [true, false],
-    [false, false],
-  ])("Grok tools terminal totals tokens=%s time=%s", (tokens, time) => {
-    setToggles(tokens, time);
-    const id = newRequestId();
-    const counts = {
-      input_tokens: "101",
-      output_tokens: "102",
-      cache_read_input_tokens: "0",
-      cache_creation_input_tokens: "0",
-      reasoning_tokens: "0",
-    };
-    const view = rendered(
-      <NativeGrokToolsTerminal
-        progress={{
-          execution_id: id,
-          native_thread_id: id,
-          native_turn_id: "526452fa-1956-42dd-b5f4-60e2b23dfe92",
-          outcome: "succeeded",
-          observed: { model: "original-model" },
-          grok_content: { responses: 1 },
-          grok_response_totals: counts,
-          grok_tools_terminal: {
-            kind: "closed-first-tools",
-            native_event_id: `${id}-10`,
-            timestamp_ms: "1",
-            elapsed_ms: "203",
-            model: "original-model",
-            reason: "end_turn",
-            counts,
-            total_tokens: "204",
-            model_calls: "1",
-            api_duration_ms: "2",
-            turns: "1",
-          },
-        }}
-      />,
-    );
-    expect(view.hidden(/input tokens/i, "101")).toBe(!tokens);
-    expect(view.hidden(/output tokens/i, "102")).toBe(!tokens);
-    expect(view.hidden(/total tokens/i, "204")).toBe(!tokens);
-    expect(view.hidden(/elapsed/i, "203")).toBe(!time);
-    expect(view.hidden(/model responses/i, "1")).toBe(false);
-  });
+  // The completed Grok tools terminal renders in the Session Info aside under
+  // `.execution-configuration`, outside `.transcript`, in production.
+  it.each([["transcript"], ["execution-configuration"]])(
+    "Grok tools terminal totals in %s",
+    (container) => {
+      const id = newRequestId();
+      const counts = {
+        input_tokens: "101",
+        output_tokens: "102",
+        cache_read_input_tokens: "0",
+        cache_creation_input_tokens: "0",
+        reasoning_tokens: "0",
+      };
+      const progress: Document = {
+        execution_id: id,
+        native_thread_id: id,
+        native_turn_id: "526452fa-1956-42dd-b5f4-60e2b23dfe92",
+        outcome: "succeeded",
+        observed: { model: "original-model" },
+        grok_content: { responses: 1 },
+        grok_response_totals: counts,
+        grok_tools_terminal: {
+          kind: "closed-first-tools",
+          native_event_id: `${id}-10`,
+          timestamp_ms: "1",
+          elapsed_ms: "203",
+          model: "original-model",
+          reason: "end_turn",
+          counts,
+          total_tokens: "204",
+          model_calls: "1",
+          api_duration_ms: "2",
+          turns: "1",
+        },
+      };
+      for (const [tokens, time] of [
+        [true, true],
+        [false, true],
+        [true, false],
+        [false, false],
+      ]) {
+        setToggles(tokens, time);
+        const view = rendered(
+          <NativeGrokToolsTerminal progress={progress} />,
+          container,
+        );
+        expect(view.hidden(/input tokens/i, "101")).toBe(!tokens);
+        expect(view.hidden(/output tokens/i, "102")).toBe(!tokens);
+        expect(view.hidden(/total tokens/i, "204")).toBe(!tokens);
+        expect(view.hidden(/elapsed/i, "203")).toBe(!time);
+        expect(view.hidden(/model responses/i, "1")).toBe(false);
+        view.unmount();
+      }
+    },
+  );
 });
