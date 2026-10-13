@@ -40,22 +40,36 @@ func resourceProjection(record store.Record) (*pb.Resource, error) {
 	return rpc.Resource(record), nil
 }
 
+// encodedSizes returns the binary and protobuf-JSON sizes of a message. The
+// transport may use either encoding, so callers bound the larger of the two.
+func encodedSizes(message proto.Message) (int, int, error) {
+	encoded, err := protojson.Marshal(message)
+	if err != nil {
+		return 0, 0, err
+	}
+	return proto.Size(message), len(encoded), nil
+}
+
 func resourceWireSize(resource *pb.Resource) (int, error) {
-	encoded, err := protojson.Marshal(resource)
+	binary, text, err := encodedSizes(resource)
 	if err != nil {
 		return 0, err
 	}
-	return max(proto.Size(resource), len(encoded)) + 16, nil
+	return max(binary, text) + 16, nil
 }
 
 // Dedicated page builders measure the complete response, including their cursor
 // and metadata. Counting raw documents misses JSON's Base64 expansion.
 func resourcePageFits(message proto.Message) (bool, error) {
-	encoded, err := protojson.Marshal(message)
+	return resourceMessageFits(message, maxResourcePageBytes)
+}
+
+func resourceMessageFits(message proto.Message, limit int) (bool, error) {
+	binary, text, err := encodedSizes(message)
 	if err != nil {
 		return false, err
 	}
-	return max(proto.Size(message), len(encoded)) <= maxResourcePageBytes, nil
+	return max(binary, text) <= limit, nil
 }
 func resourcePageTooLarge() error {
 	return domain.Fail(domain.ResourceExhausted, "One complete entry exceeds the response byte limit.", "Narrow the selected scope or inspect the original individual record.")
@@ -236,25 +250,56 @@ func (s *Service) GetSnapshot(ctx context.Context, req *connect.Request[pb.GetSn
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	result := &pb.GetSnapshotResponse{}
-	used := 0
+	correlation := req.Header().Get(rpc.CorrelationHeader)
 	for _, r := range records {
 		resource, err := s.resourceProjection(ctx, r)
 		if err != nil {
-			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-		}
-		size, err := resourceWireSize(resource)
-		if err != nil {
-			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-		}
-		if used+size > maxResourcePageBytes {
-			return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "The snapshot scope exceeds its response byte limit.", "Use a narrower session/project scope; do not treat partial state as a coherent snapshot."), req.Header().Get(rpc.CorrelationHeader))
+			return nil, rpc.Error(err, correlation)
 		}
 		result.Resources = append(result.Resources, resource)
-		used += size
+	}
+	typedJob := snapshotContainsLargeJob(result.Resources)
+	limit := maxResourcePageBytes
+	if typedJob {
+		limit = domain.MaxLargeJobSnapshotBytes
+		if resource := snapshotUnreadableDocument(result.Resources); resource != nil {
+			s.logSnapshotRejected("document_exceeds_bound", f, len(result.Resources), limit, resource)
+			return nil, rpc.Error(snapshotTooLarge(), correlation)
+		}
+	}
+	// Early rejection is a lower bound: the complete message is at least the sum
+	// of its resources in each individual encoding. The exact final measurement
+	// below, including the cursor, is authoritative for the typed-Job budget.
+	used, binaryTotal, textTotal := 0, 0, 0
+	for _, resource := range result.Resources {
+		binary, text, err := encodedSizes(resource)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		used += max(binary, text) + 16
+		binaryTotal, textTotal = binaryTotal+binary, textTotal+text
+		exceeded := used > limit
+		if typedJob {
+			exceeded = binaryTotal > limit || textTotal > limit
+		}
+		if exceeded {
+			s.logSnapshotRejected("aggregate_exceeds_budget", f, len(result.Resources), limit, resource)
+			return nil, rpc.Error(snapshotTooLarge(), correlation)
+		}
 	}
 	result.Cursor, err = s.Identity.EncodeCursor(security.Cursor{Scope: "events:" + string(f.SessionID), Sequence: sequence})
 	if err != nil {
-		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		return nil, rpc.Error(err, correlation)
+	}
+	if typedJob {
+		fits, err := resourceMessageFits(result, limit)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if !fits {
+			s.logSnapshotRejected("response_exceeds_budget", f, len(result.Resources), limit, nil)
+			return nil, rpc.Error(snapshotTooLarge(), correlation)
+		}
 	}
 	response := connect.NewResponse(result)
 	rpc.CopyCorrelation(response, req.Header())
