@@ -531,7 +531,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != state.Generation || (fork.Retry == nil && fork.SourceSessionID != jr.SessionID || fork.Retry != nil && fork.ChildSessionID != jr.SessionID) {
 					return nil, subscriptionDenied()
 				}
-				if err := validateForkAuthority(tx, fork); err != nil {
+				if err := validateForkAuthority(tx, fork, forkAuthorityTake); err != nil {
 					return nil, err
 				}
 				execution = fork.SourceAssignment
@@ -1184,7 +1184,7 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 	if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != lease.Generation || lease.ForkRevision == 0 || jr.Revision != lease.ForkRevision || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
 		return nil, subscriptionDenied()
 	}
-	if err := validateForkAuthority(tx, fork); err != nil {
+	if err := validateForkAuthority(tx, fork, forkAuthorityLease); err != nil {
 		return nil, err
 	}
 	return &fork, nil
