@@ -492,6 +492,8 @@ func TestManagedMCPElicitationRejectsUnpresentableSchemas(t *testing.T) {
 		"duplicate-enum":  {"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string", "enum": []any{"a", "a"}}}},
 		"required-ghost":  {"type": "object", "properties": map[string]any{}, "required": []any{"ghost"}},
 		"not-object":      {"type": "string"},
+		"formatted-uri":   {"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string", "format": "uri"}}},
+		"formatted-date":  {"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string", "format": "date-time"}}},
 	} {
 		if _, ok := decodeElicitationSchema("form", mcpJSON(t, schema)); ok {
 			t.Fatalf("%s schema accepted", name)
@@ -1109,5 +1111,12 @@ func TestManagedMCPFailedAutomaticCancelPausesInsteadOfClaimingRefusal(t *testin
 		if event.Kind == MetadataEvent && event.Metadata == MetadataMCPElicitationRefused {
 			t.Fatal("an undelivered cancel was reported as a refusal")
 		}
+	}
+}
+
+func TestManagedMCPPlainStringFieldsRemainPresentable(t *testing.T) {
+	schema := map[string]any{"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string"}}}
+	if _, ok := decodeElicitationSchema("form", mcpJSON(t, schema)); !ok {
+		t.Fatal("a plain string field became unpresentable")
 	}
 }

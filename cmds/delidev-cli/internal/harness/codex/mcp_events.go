@@ -433,6 +433,10 @@ func decodeElicitationSchema(mode string, raw json.RawMessage) (*elicitationRequ
 				field.Kind, field.Options = elicitationEnum, prop.Enum
 			case len(prop.OneOf) > 0:
 				field.Kind, field.Options = elicitationEnum, constLabels(prop.OneOf)
+			case prop.Format != nil && *prop.Format != "":
+				// uri, email, date and date-time content must match the requested schema,
+				// and the owner is not guided to a format that is never validated here.
+				return nil, false
 			default:
 				field.Kind = elicitationString
 			}
