@@ -270,6 +270,41 @@ impl State {
         Ok(replacement)
     }
 
+    // Another window's SelectTab can supersede children after a page mutation
+    // committed but before its UI-loop reconciliation runs, so the
+    // reconciliation then finds nothing to replace. Attribute those children to
+    // the profile's in-flight committed operation, whose receipt must still
+    // observe their close callbacks. Callers hold the state lock across the
+    // replacement and this registration, so no callback can precede it.
+    fn select_tab_tracking_outstanding(
+        &mut self,
+        profile: &str,
+        selected: &str,
+        unmap: impl FnMut(&View) -> Result<()>,
+    ) -> Result<TabReplacement> {
+        let replacement = self.select_tab(profile, selected, unmap)?;
+        self.track_outstanding_superseded(profile, &replacement.superseded);
+        Ok(replacement)
+    }
+
+    fn track_outstanding_superseded(&mut self, profile: &str, superseded: &[(String, u64)]) {
+        let Some(key) = self.page_busy.get(profile).cloned() else {
+            return;
+        };
+        if let Some(operation) = self
+            .page_operations
+            .get_mut(&key)
+            .filter(|operation| operation.receipt.metadata_committed)
+        {
+            operation.awaiting_close.extend(superseded.iter().cloned());
+            tracing::debug!(
+                operation = "browser_page_cleanup",
+                state = "superseded_by_selection",
+                awaiting_children = operation.awaiting_close.len()
+            );
+        }
+    }
+
     // A profile removal that began after the metadata commit but before the
     // UI-loop reconciliation owns the teardown of every child. The receipt
     // still waits for the close callback of each child that holds, or is
@@ -1667,7 +1702,8 @@ impl BrowserHost {
                 let selected = p.tabs.selected.clone();
                 // Profile tabs are shared: every live user observes the same
                 // selected tab.
-                let replacement = state.select_tab(profile, &selected, unmap_view)?;
+                let replacement =
+                    state.select_tab_tracking_outstanding(profile, &selected, unmap_view)?;
                 drop(state);
                 for browser in replacement.closing {
                     if let Some(host) = browser.host() {
@@ -5756,6 +5792,55 @@ esac
             .receipt
             .unwrap();
         assert_eq!(settled.phase, PagePhase::Completed);
+    }
+
+    #[test]
+    fn selection_superseding_children_before_reconciliation_keeps_the_receipt_pending() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        // A Create commits and selects a new page, but its UI-loop
+        // reconciliation has not run yet.
+        let request = page_request(PageAction::Create, Some("https://fixture.test/next"), None);
+        host.prepare_pages(OWNER, None, &record, &request, commit_fixture)
+            .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        {
+            // Another window's SelectTab replaces the stale child first and
+            // starts its asynchronous close.
+            let mut state = host.state.lock().unwrap();
+            let selected = state.profiles[&record.id].tabs.selected.clone();
+            let replacement = state
+                .select_tab_tracking_outstanding(&record.id, &selected, unmap_view)
+                .unwrap();
+            assert_eq!(replacement.superseded.len(), 1);
+        }
+        // The reconciliation now finds nothing to replace, yet the original
+        // child has not reported on_before_close.
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn selection_superseding_children_without_an_outstanding_operation_tracks_nothing() {
+        let (_temp, host, record, _view_id, _original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let page = create_page(&host, &record, "https://fixture.test/next");
+        let mut state = host.state.lock().unwrap();
+        let replacement = state
+            .select_tab_tracking_outstanding(&record.id, &page, unmap_view)
+            .unwrap();
+        assert_eq!(replacement.superseded.len(), 1);
+        assert!(
+            state
+                .page_operations
+                .values()
+                .all(|operation| operation.awaiting_close.is_empty())
+        );
     }
 
     #[test]

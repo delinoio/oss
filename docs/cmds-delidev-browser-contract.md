@@ -162,7 +162,10 @@ reconciliation, the reconciliation does not replace children; instead the receip
 awaits every native child of that profile until removal's own close requests
 report `on_before_close`, so it never reports completed cleanup early. Closing a
 page that no native child presents completes immediately.
-The `on_before_close` callback that empties a reconciled receipt's set settles it
+A page selection control from another window that supersedes children after the
+metadata commit but before this reconciliation registers those children on the
+profile's in-flight committed receipt as well, so the receipt never reports
+completed cleanup before their `on_before_close`. The `on_before_close` callback that empties a reconciled receipt's set settles it
 immediately, so an owner that unmounts before its next Observe cannot leave a
 `cleanup-pending` receipt that exhausts the page operation limit. Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate
