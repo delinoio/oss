@@ -39,6 +39,7 @@ import {
   copy,
   useLocale,
 } from "./localization";
+import type { MessageShape } from "@bufbuild/protobuf";
 import type { UsageEntry } from "./usage-entry";
 import { providerPresetNames } from "@delinoio/delidev-api-client";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -130,7 +131,12 @@ import {
   DeviceRevocationExit,
 } from "./device-settings";
 import { AccountConnection } from "./account-connection";
-import { MutationIntents, useRetainedMutation } from "./mutation";
+import {
+  MutationIntents,
+  useRetainedMutation,
+  useRetainedMutationSnapshot,
+  type RetainedMutationSnapshot,
+} from "./mutation";
 import { Failure, Problem } from "./ui";
 import { inventoryIdentity, useProviderPages } from "./model-pagination";
 import { useResourceScrollQuery } from "./resource-scroll-query";
@@ -200,6 +206,70 @@ interface RepositorySaveSubmission {
   jobId: string;
   repositoryId: string;
   expectedRevision: bigint;
+}
+
+interface RepositorySaveRestoration {
+  data: Document;
+  job?: Resource;
+  submission?: RepositorySaveSubmission;
+}
+
+// A connection-owned existing-Repository save outlives its editor. Rebuild the
+// submitted draft, accepted job and completion binding from that original
+// request so a reopened editor returns a deferred name collision to the draft.
+// This only reads retained state; it never authorizes another write.
+function restoreRepositorySave(
+  initial: Resource,
+  retained: RetainedMutationSnapshot,
+): RepositorySaveRestoration | undefined {
+  if (!retained.input) return undefined;
+  const request = retained.input as MessageShape<
+    typeof ConfigurationQuery.saveConfiguration.input
+  >;
+  if (
+    request.kind !== EntityKind.REPOSITORY ||
+    request.mutation?.id !== initial.id
+  ) {
+    console.warn("delidev.settings.repository_restoration_skipped", {
+      reason: "identity",
+    });
+    return undefined;
+  }
+  let data: Document;
+  try {
+    const parsed: unknown = JSON.parse(
+      new TextDecoder().decode(request.documentJson),
+    );
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("not an object");
+    data = parsed as Document;
+  } catch {
+    console.warn("delidev.settings.repository_restoration_skipped", {
+      reason: "document",
+    });
+    return undefined;
+  }
+  const job =
+    retained.job?.kind === EntityKind.JOB &&
+    isEntityId(retained.job.id) &&
+    supportsResourceSchema(retained.job)
+      ? retained.job
+      : undefined;
+  console.info("delidev.settings.repository_save_restored", {
+    phase: job ? "job" : "input",
+  });
+  return {
+    data,
+    job,
+    submission:
+      job && request.mutation.expectedRevision > 0n
+        ? {
+            jobId: job.id,
+            repositoryId: request.mutation.id,
+            expectedRevision: request.mutation.expectedRevision,
+          }
+        : undefined,
+  };
 }
 
 function RepositorySaveCompletion({
@@ -517,12 +587,27 @@ export function ConfigurationEditor({
     kind === EntityKind.ACCOUNT &&
     Boolean(initial && document(initial).type === "api");
   const source = inline || apiEditor ? baseline : initial;
-  const [data, setData] = useState<Document>(() =>
-    initial ? document(initial) : (initialData ?? newConfiguration(kind)),
+  const retainedSave = useRetainedMutationSnapshot(
+    `configuration:${kind}:${initial?.id ?? "new"}`,
   );
-  const [job, setJob] = useState<Resource | "unknown">();
-  const [repositorySave, setRepositorySave] =
-    useState<RepositorySaveSubmission>();
+  const [restoration] = useState(() =>
+    kind === EntityKind.REPOSITORY && initial
+      ? restoreRepositorySave(initial, retainedSave)
+      : undefined,
+  );
+  const [data, setData] = useState<Document>(() =>
+    restoration
+      ? restoration.data
+      : initial
+        ? document(initial)
+        : (initialData ?? newConfiguration(kind)),
+  );
+  const [job, setJob] = useState<Resource | "unknown" | undefined>(
+    restoration?.job,
+  );
+  const [repositorySave, setRepositorySave] = useState<
+    RepositorySaveSubmission | undefined
+  >(restoration?.submission);
   const completedRepositoryJobs = useRef(new Set<string>());
   const [childPending, setChildPending] = useState(false);
   const pendingSelections = useRef(new Set<string>());

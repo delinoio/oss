@@ -209,6 +209,25 @@ function useIntentRegistry(key: string) {
     connection = useContext(ConnectionContext);
   return connectionOwned(key) ? (connection ?? local) : local;
 }
+/** Reads the retained input and accepted job once, when the caller mounts.
+ * It never subscribes, sends or clears: a freshly constructed presenter uses it
+ * only to rehydrate the original draft from the connection-owned registry. */
+export interface RetainedMutationSnapshot {
+  input?: object;
+  job?: Resource;
+}
+export function useRetainedMutationSnapshot(
+  key: string,
+): RetainedMutationSnapshot {
+  const registry = useIntentRegistry(key);
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
+  const [snapshot] = useState<RetainedMutationSnapshot>(() => {
+    const entry = registry.entries.get(key);
+    return { input: entry?.input, job: entry?.job };
+  });
+  return snapshot;
+}
 export function useRepositoryConfigurationPending(id: string) {
   const intents = useRetainedMutationIntents(repositoryConfigurationPrefix);
   return intents.some(
