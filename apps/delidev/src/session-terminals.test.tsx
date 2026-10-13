@@ -495,80 +495,84 @@ it("gates initial reads and polling on advertised terminal support", async () =>
 it.each([
   { pending: undefined, dispatched: true },
   { pending: {}, dispatched: false },
-])("dispatches input for a running terminal only without present pending metadata (%j)", async ({ pending, dispatched }) => {
-  const session = create(ResourceSchema, {
-    id: newRequestId(),
-    kind: EntityKind.SESSION,
-    schemaVersion: 1,
-    revision: 7n,
-    documentJson: encode({ archive: "active" }),
-  });
-  const terminal = create(ResourceSchema, {
-    id: newRequestId(),
-    kind: EntityKind.TERMINAL,
-    sessionId: session.id,
-    schemaVersion: 1,
-    revision: 4n,
-    documentJson: encode({ state: "running", pending }),
-  });
-  const controlTerminal = vi.fn(async () => ({ terminal }));
-  let releaseStream = () => {};
-  const held = new Promise<void>((resolve) => {
-    releaseStream = resolve;
-  });
-  const transport = createRouterTransport((router) => {
-    router.service(SystemService, {
-      getStatus: () => ({
-        capabilities: [SystemCapability.SESSION_TERMINALS_V1],
-      }),
+])(
+  "dispatches input for a running terminal only without present pending metadata (%j)",
+  async ({ pending, dispatched }) => {
+    const session = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision: 7n,
+      documentJson: encode({ archive: "active" }),
     });
-    router.service(ResourceService, {
-      listResources: () => ({ resources: [terminal] }),
+    const terminal = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.TERMINAL,
+      sessionId: session.id,
+      schemaVersion: 1,
+      revision: 4n,
+      documentJson: encode({ state: "running", pending }),
     });
-    router.service(TerminalService, {
-      controlTerminal,
-      watchTerminalOutput: async function* () {
-        yield {
-          epoch: newRequestId(),
-          sequence: 0n,
-          heartbeat: true,
-          terminal,
-        };
-        await held;
-      },
+    const controlTerminal = vi.fn(async () => ({ terminal }));
+    let releaseStream = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseStream = resolve;
     });
-  });
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  const view = render(
-    <QueryClientProvider client={client}>
-      <TransportProvider transport={transport}>
-        <MutationIntents>
-          <SessionTerminals session={session} close={() => {}} />
-        </MutationIntents>
-      </TransportProvider>
-    </QueryClientProvider>,
-  );
-  try {
-    fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
-    const input = (await screen.findByRole("textbox", {
-      name: "Terminal input",
-    })) as HTMLTextAreaElement;
-    await waitFor(() => expect(document.activeElement).toBe(input));
-    fireEvent.change(input, { target: { value: "fixture line" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    if (dispatched) await waitFor(() => expect(controlTerminal).toHaveBeenCalled());
-    else {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(controlTerminal).not.toHaveBeenCalled();
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.SESSION_TERMINALS_V1],
+        }),
+      });
+      router.service(ResourceService, {
+        listResources: () => ({ resources: [terminal] }),
+      });
+      router.service(TerminalService, {
+        controlTerminal,
+        watchTerminalOutput: async function* () {
+          yield {
+            epoch: newRequestId(),
+            sequence: 0n,
+            heartbeat: true,
+            terminal,
+          };
+          await held;
+        },
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <MutationIntents>
+            <SessionTerminals session={session} close={() => {}} />
+          </MutationIntents>
+        </TransportProvider>
+      </QueryClientProvider>,
+    );
+    try {
+      fireEvent.click(await screen.findByRole("tab", { name: /Terminal 1/ }));
+      const input = (await screen.findByRole("textbox", {
+        name: "Terminal input",
+      })) as HTMLTextAreaElement;
+      await waitFor(() => expect(document.activeElement).toBe(input));
+      fireEvent.change(input, { target: { value: "fixture line" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      if (dispatched)
+        await waitFor(() => expect(controlTerminal).toHaveBeenCalled());
+      else {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(controlTerminal).not.toHaveBeenCalled();
+      }
+    } finally {
+      view.unmount();
+      releaseStream();
+      client.clear();
     }
-  } finally {
-    view.unmount();
-    releaseStream();
-    client.clear();
-  }
-});
+  },
+);
 
 it("keeps terminal input enabled while one control is pending and never steals focus on acknowledgment", async () => {
   const session = create(ResourceSchema, {
