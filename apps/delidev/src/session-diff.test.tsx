@@ -1470,9 +1470,9 @@ it("retires a pending options refresh when the transport is replaced and keeps t
     target: { value: f.other },
   });
   await waitFor(() =>
-    expect(
-      (screen.getByLabelText("Base") as HTMLSelectElement).value,
-    ).not.toBe(""),
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).not.toBe(
+      "",
+    ),
   );
   fireEvent.change(screen.getByLabelText("Base"), {
     target: { value: JSON.stringify(["local-branch", "trunk", null]) },
