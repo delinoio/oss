@@ -1431,6 +1431,100 @@ it("clears the stale marker when a reconnect invalidation accepts a fresh option
   await waitFor(() => expect(addReviewComment().disabled).toBe(false));
 });
 
+it("retires a pending options refresh when the transport is replaced and keeps the failure marker until the replacement answers", async () => {
+  const { f, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "trunk" }],
+    "main",
+  );
+  const unavailable = /This comparison is unavailable\./;
+  // A same-identity reconnect replaces the transport but retains the client.
+  const replacement = createRouterTransport((router) => {
+    router.service(SessionService, {
+      readSessionWorkspace: f.read,
+      readSessionReviewContext: () => {
+        throw new ConnectError("unsupported context", Code.Unimplemented);
+      },
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [] }),
+    });
+  });
+  function Reconnecting() {
+    const [transport, setTransport] = useState(f.transport);
+    return (
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={f.client}>
+          <MutationIntents>
+            <button onClick={() => setTransport(replacement)}>Reconnect</button>
+            <SessionDiff sessionId={f.sessionId} worktree close={() => {}} />
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  }
+  render(<Reconnecting />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  // An explicit repository and base keep the view and its scope unchanged
+  // across the transport change.
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Base") as HTMLSelectElement).value,
+    ).not.toBe(""),
+  );
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: JSON.stringify(["local-branch", "trunk", null]) },
+  });
+  await waitFor(() =>
+    expect(operations().at(-1)).toBe("git-diff:branch:trunk"),
+  );
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(unavailable);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  // Hold the next two options reads: the old transport's, then the
+  // replacement's (other reads, such as workspace roots, pass through).
+  const inner = f.read.getMockImplementation()!;
+  const gates: Gate[] = [];
+  const releases: (() => void)[] = [];
+  f.read.mockImplementation(async (request, context?: object) => {
+    const q = JSON.parse(new TextDecoder().decode(request.queryJson));
+    if (q.operation === "git-diff-options" && gates.length < 2) {
+      const gate: Gate = {
+        release: () => {},
+        signal: (context as { signal?: AbortSignal } | undefined)?.signal,
+      };
+      gates.push(gate);
+      await new Promise<void>((resolve) => releases.push(resolve));
+    }
+    return inner(request);
+  });
+  refreshDiff();
+  await waitFor(() => expect(gates).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(gates).toHaveLength(2));
+  const [old] = gates;
+  // The read of the old transport is cancelled and its late answer is fenced:
+  // the failure marker stays until the replacement transport answers.
+  await waitFor(() => expect(old.signal?.aborted).toBe(true));
+  releases[0]();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(screen.getByText(unavailable)).toBeTruthy();
+  releases[1]();
+  await waitFor(() => expect(screen.queryByText(unavailable)).toBeNull());
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);

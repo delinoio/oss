@@ -344,13 +344,21 @@ export function RepositoryDiff({
   ].join("\u0000");
   // Every distinct scope receives a monotonically increasing generation, so a
   // request issued under one scope can never be revived by returning to an
-  // equal scope later (ABA).
+  // equal scope later (ABA). A replaced transport (a same-identity reconnect
+  // keeps the query client) ends the scope the same way: the active options
+  // query is re-read through the replacement, so a response that was issued
+  // through the old transport must never overwrite it.
   const scopeGeneration = useRef(0),
     observedScope = useRef(scope),
+    observedTransport = useRef(transport),
     mounted = useRef(true),
     activeRefresh = useRef<readonly unknown[] | undefined>(undefined);
-  if (observedScope.current !== scope) {
+  if (
+    observedScope.current !== scope ||
+    observedTransport.current !== transport
+  ) {
     observedScope.current = scope;
+    observedTransport.current = transport;
     scopeGeneration.current += 1;
   }
   const cancelRefresh = () => {
@@ -366,9 +374,10 @@ export function RepositoryDiff({
       mounted.current = false;
     };
   }, []);
-  // Changing the scope or closing the view cancels the outstanding disposable
-  // options read; the generation fence still guards any response that races.
-  useEffect(() => cancelRefresh, [scope]);
+  // Changing the scope or transport, or closing the view, cancels the
+  // outstanding disposable options read; the generation fence still guards
+  // any response that races.
+  useEffect(() => cancelRefresh, [scope, transport]);
   const query = {
     operation: "git-diff",
     repository_id: repository,
