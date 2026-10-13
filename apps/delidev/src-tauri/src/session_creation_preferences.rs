@@ -495,6 +495,19 @@ enum WindowsFileIdentity {
     Legacy { volume: u32, file_index: u64 },
 }
 
+/// Confirms that `GetFileInformationByHandleEx(FileIdInfo)` failed because the
+/// file system or Windows version cannot report the extended identifier.
+#[cfg(windows)]
+fn extended_identity_unsupported(code: i32) -> bool {
+    use windows_sys::Win32::Foundation::{
+        ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED,
+    };
+    matches!(
+        code as u32,
+        ERROR_INVALID_FUNCTION | ERROR_INVALID_PARAMETER | ERROR_NOT_SUPPORTED
+    )
+}
+
 #[cfg(windows)]
 fn windows_file_identity(file: &File) -> Result<WindowsFileIdentity, Problem> {
     use std::os::windows::io::AsRawHandle;
@@ -521,9 +534,22 @@ fn windows_file_identity(file: &File) -> Result<WindowsFileIdentity, Problem> {
             file_id: extended.FileId.Identifier,
         });
     }
+    // Capture the error before any other call can overwrite it.
+    let code = std::io::Error::last_os_error().raw_os_error();
+    if !code.is_some_and(extended_identity_unsupported) {
+        // The extended identifier is supported on ReFS, where the legacy index
+        // is not guaranteed unique, so any other failure must not weaken the
+        // comparison.
+        tracing::warn!(
+            operation = "creation_preferences_lease",
+            code = "lease-extended-identity-failed",
+            os_error = ?code
+        );
+        return Err(Problem::WriteFailed);
+    }
     tracing::debug!(
         operation = "creation_preferences_lease",
-        code = "lease-extended-identity-unavailable"
+        code = "lease-extended-identity-unsupported"
     );
     let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
     // SAFETY: the handle is owned by `file` for the duration of the call and
@@ -1209,6 +1235,19 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .count();
         assert_eq!(leftovers, 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_unsupported_errors_allow_the_legacy_identity_fallback() {
+        // ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED, ERROR_INVALID_PARAMETER.
+        for code in [1, 50, 87] {
+            assert!(extended_identity_unsupported(code));
+        }
+        // ERROR_ACCESS_DENIED, ERROR_INVALID_HANDLE, ERROR_NOT_ENOUGH_MEMORY.
+        for code in [5, 6, 8] {
+            assert!(!extended_identity_unsupported(code));
+        }
     }
 
     #[cfg(unix)]
