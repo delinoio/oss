@@ -161,7 +161,13 @@ The authenticated owner or paired client is part of durable operation
 or changing its revision. One SQLite transaction defines the acknowledgment instant
 and processes all current unread entries belonging to that session in internal pages
 of at most 200. Query rows close before source validation and ordinary entry updates.
-Each changed entry retains its own revision and event. Other sessions and unscoped
+Each changed entry retains its own revision and event. Before marking an
+interaction-source entry read, the server decodes and validates the retained
+interaction document with the same checks as Inbox entry creation (native binding,
+payload type, execution/thread/turn identities, sequence bounds and a closure of
+open, native-closed or turn-ended). A malformed or contradictory document rejects
+the whole acknowledgment with a safe `recovery_required` error that carries no
+native content; source documents are never rewritten. Other sessions and unscoped
 operational/subscription-recovery alerts remain unchanged.
 
 The read changes and compact original session/count/UTC-time receipt commit together.
@@ -178,7 +184,13 @@ successful loading. Re-renders, polling, reconnects, pagination and newly arrivi
 alerts do not start another acknowledgment within that activation. The connection
 mutation registry retains exact original bytes across navigation. Failed or uncertain
 outcomes permit only original receipt reconciliation/retry on a later qualifying
-activation and never fabricate a replacement request. Accepted results invalidate the
+activation and never fabricate a replacement request. A qualifying visit that begins
+while an earlier acknowledgment for the same session and connection is still busy
+sends nothing and stays eligible; when that request settles, the visit is evaluated
+again against every gate. A positive settlement then admits one fresh request, and an
+uncertain settlement reconciles only the original retained bytes. A visit that no
+longer qualifies by then (session, connection, focus, capability or loaded state)
+sends nothing. Accepted results invalidate the
 original connection's Inbox and unread-count queries even after the sender leaves.
 The authoritative aggregate controls the existing badge; the client never decrements
 it locally. Native selection, freshness and publication fences, zero clearing, 99+
