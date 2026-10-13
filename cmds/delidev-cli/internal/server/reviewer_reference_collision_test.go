@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
@@ -201,5 +202,53 @@ func TestReviewerDistinctModelNamesKeepOrdinaryReferencesAndIsolatedReviewerSlot
 				t.Fatalf("%s crossed role boundaries", id)
 			}
 		}
+	}
+}
+
+func TestReviewerCollisionRejectsItemReferencesBeforeForwarding(t *testing.T) {
+	const itemBody = `{"model":"gpt-5.6-luna","input":[{"type":"item_reference","id":"item_from_reviewer"}]}`
+	for _, role := range []reviewerCollisionRole{collisionRoot, collisionChild} {
+		t.Run(string(role), func(t *testing.T) {
+			var forwarded atomic.Int64
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				forwarded.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": "resp_item_relay", "model": domain.CodexReviewerNativeModel, "output": []any{}})
+			}))
+			defer upstream.Close()
+			c := newReviewerCollision(t, role, upstream.URL)
+			// A child collision is exercised through the root lease's model binding,
+			// so the request still names the shared reviewer model.
+			response := c.fixture.request(t, c.fixture.token, itemBody)
+			_, _ = io.Copy(io.Discard, response.Body)
+			response.Body.Close()
+			if response.StatusCode == http.StatusOK || forwarded.Load() != 0 {
+				t.Fatalf("ambiguous item reference was forwarded: status=%d forwarded=%d", response.StatusCode, forwarded.Load())
+			}
+			// Full native history keeps relaying under the same ambiguous lease.
+			plain := c.fixture.request(t, c.fixture.token, `{"model":"gpt-5.6-luna","input":[{"type":"message","role":"user","content":"hello"}]}`)
+			_, _ = io.Copy(io.Discard, plain.Body)
+			plain.Body.Close()
+			if plain.StatusCode != http.StatusOK || forwarded.Load() != 1 {
+				t.Fatalf("full-history ambiguous request stopped relaying: status=%d forwarded=%d", plain.StatusCode, forwarded.Load())
+			}
+		})
+	}
+}
+
+func TestReviewerDistinctModelNamesKeepOrdinaryItemReferences(t *testing.T) {
+	var forwarded atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "resp_item_ordinary", "output": []any{}})
+	}))
+	defer upstream.Close()
+	c := newReviewerCollision(t, collisionDistinct, upstream.URL)
+	response := c.fixture.request(t, c.fixture.token, `{"model":"fixture-model","input":[{"type":"item_reference","id":"item_ordinary"}]}`)
+	_, _ = io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || forwarded.Load() != 1 {
+		t.Fatalf("ordinary root item reference lost relay: status=%d forwarded=%d", response.StatusCode, forwarded.Load())
 	}
 }

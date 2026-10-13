@@ -656,6 +656,12 @@ func ambiguousReferenceLease(logger *slog.Logger, source *apiproxy.Lease, role s
 		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", kind)
 		return domain.Fail(domain.PermissionDenied, "The native state reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")
 	}
+	// Responses item references are provider-owned history too; the proxy does
+	// not route them through AuthorizeReference, so fence them explicitly.
+	request.AuthorizeItemReference = func(ctx context.Context) error {
+		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", "item")
+		return domain.Fail(domain.PermissionDenied, "The native item reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")
+	}
 	return &request
 }
 
