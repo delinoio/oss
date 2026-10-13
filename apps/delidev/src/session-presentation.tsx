@@ -112,6 +112,8 @@ export function SessionProblemNotice({
 }) {
   useLocale();
   const quota = failureCause(code, cause) === FailureCause.QuotaExhausted;
+  const quotaExplanation = quota ? copy("session.quotaExplanation") : "";
+  const quotaGuidance = quota ? copy("session.quotaGuidance") : "";
   const title = quota
     ? copy("session.quotaTitle")
     : code === FailureCode.Unauthenticated
@@ -126,10 +128,20 @@ export function SessionProblemNotice({
             : (fallbackTitle ?? copy("session.attentionRequired"));
   return (
     <SessionNotice title={title} details={details}>
-      <p>{quota ? copy("session.quotaExplanation") : message}</p>
-      {quota || guidance ? (
-        <p>{quota ? copy("session.quotaGuidance") : guidance}</p>
-      ) : null}
+      {quota ? (
+        <>
+          <p>{quotaExplanation}</p>
+          <p>{quotaGuidance}</p>
+          {/* Original safe evidence stays exact and visible after the localized catalog copy. */}
+          {message && message !== quotaExplanation ? <p>{message}</p> : null}
+          {guidance && guidance !== quotaGuidance ? <p>{guidance}</p> : null}
+        </>
+      ) : (
+        <>
+          <p>{message}</p>
+          {guidance ? <p>{guidance}</p> : null}
+        </>
+      )}
       {children}
       <Disclosure>
         <DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>

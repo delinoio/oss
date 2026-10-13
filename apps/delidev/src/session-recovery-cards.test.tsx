@@ -56,6 +56,12 @@ it.each([
         )
         .closest("details"),
     ).toBeNull();
+    expect(
+      screen.getByText("Original safe cause.").closest("details"),
+    ).toBeNull();
+    expect(
+      screen.getByText("Original supported guidance.").closest("details"),
+    ).toBeNull();
   }
 });
 it("retains separate cards, original actions and localized quota without automatic actions", async () => {
@@ -96,4 +102,136 @@ it("retains separate cards, original actions and localized quota without automat
   await act(async () => {
     await i18n.changeLanguage("en");
   });
+});
+
+const quotaExplanationEn =
+  "All configured account sources have confirmed quota exhaustion.";
+const quotaGuidanceEn =
+  "Wait for observed quota recovery or explicitly configure another source.";
+
+it("shows localized quota copy followed by the exact original message and guidance", () => {
+  const message = "  <b>Exact</b> safe message & more\nsecond line ";
+  const guidance = "Use `this` supported guidance: <i>as is</i>.";
+  const { container } = render(
+    <SessionProblemNotice
+      code="missing_input"
+      cause="quota_exhausted"
+      message={message}
+      guidance={guidance}
+      correlationId="corr-1"
+    />,
+  );
+  const paragraphs = Array.from(container.querySelectorAll("p")).map(
+    (node) => node.textContent,
+  );
+  expect(paragraphs).toEqual([
+    quotaExplanationEn,
+    quotaGuidanceEn,
+    message,
+    guidance,
+  ]);
+  expect(container.querySelector("b, i")).toBeNull();
+  const details = screen.getByText("Technical details").closest("details");
+  expect(details?.textContent).toContain("missing_input");
+  expect(details?.textContent).toContain("quota_exhausted");
+  expect(details?.textContent).toContain("corr-1");
+  expect(details?.textContent).not.toContain("Exact");
+});
+
+it("renders no empty or duplicate quota paragraph when guidance is missing or empty", () => {
+  for (const guidance of [undefined, ""]) {
+    const { container, unmount } = render(
+      <SessionProblemNotice
+        code="missing_input"
+        cause="quota_exhausted"
+        message="Only the message."
+        guidance={guidance}
+      />,
+    );
+    const paragraphs = Array.from(container.querySelectorAll("p")).map(
+      (node) => node.textContent,
+    );
+    expect(paragraphs).toEqual([
+      quotaExplanationEn,
+      quotaGuidanceEn,
+      "Only the message.",
+    ]);
+    unmount();
+  }
+  const { container } = render(
+    <SessionProblemNotice
+      code="missing_input"
+      cause="quota_exhausted"
+      message=""
+      guidance={quotaGuidanceEn}
+    />,
+  );
+  expect(
+    Array.from(container.querySelectorAll("p")).map((node) => node.textContent),
+  ).toEqual([quotaExplanationEn, quotaGuidanceEn]);
+});
+
+it("keeps nonquota cards on their original message and guidance", () => {
+  const { container } = render(
+    <SessionProblemNotice
+      code="unauthenticated"
+      message="Sign in again."
+      guidance="Open Settings."
+      cause="some_cause"
+      correlationId="corr-2"
+    >
+      <button>Original action</button>
+    </SessionProblemNotice>,
+  );
+  expect(
+    Array.from(container.querySelectorAll("p")).map((node) => node.textContent),
+  ).toEqual(["Sign in again.", "Open Settings."]);
+  expect(screen.getByText("Authentication required")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Original action" })).toBeTruthy();
+  const details = screen.getByText("Technical details").closest("details");
+  expect(details?.textContent).toContain("some_cause");
+  expect(details?.textContent).toContain("corr-2");
+});
+
+it("changes only quota catalog copy on locale change and keeps the mounted card", async () => {
+  const message = "Original safe cause.";
+  const guidance = "Original supported guidance.";
+  const { container } = render(
+    <SessionProblemNotice
+      code="missing_input"
+      cause="quota_exhausted"
+      message={message}
+      guidance={guidance}
+    >
+      <button>Original action</button>
+    </SessionProblemNotice>,
+  );
+  const alert = screen.getByRole("alert");
+  const action = screen.getByRole("button", { name: "Original action" });
+  action.focus();
+  const before = Array.from(container.querySelectorAll("p")).map(
+    (node) => node.textContent,
+  );
+  await act(async () => {
+    await i18n.changeLanguage("ko");
+  });
+  try {
+    expect(screen.getByRole("alert")).toBe(alert);
+    expect(screen.getByRole("button", { name: "Original action" })).toBe(
+      action,
+    );
+    expect(document.activeElement).toBe(action);
+    const after = Array.from(container.querySelectorAll("p")).map(
+      (node) => node.textContent,
+    );
+    expect(after).toHaveLength(4);
+    expect(after[0]).not.toBe(before[0]);
+    expect(after[1]).not.toBe(before[1]);
+    expect(after[2]).toBe(message);
+    expect(after[3]).toBe(guidance);
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+  }
 });
