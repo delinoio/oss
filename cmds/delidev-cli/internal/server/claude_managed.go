@@ -745,7 +745,9 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 	if diagnostic != nil && diagnostic.Validate() != nil {
 		return subscriptionDenied()
 	}
-	defer delete(s.subscriptionProgress, o.ID)
+	// The approval code is single-use input. Whatever the outcome, the finished
+	// operation retains neither it nor its presentation.
+	defer s.clearClaudeLoginInput(o.ID)
 	success := result == domain.SubscriptionSucceeded && cleanup
 	login := o.Action == domain.SubscriptionLogin
 	commitment := ""

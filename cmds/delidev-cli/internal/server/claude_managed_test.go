@@ -992,3 +992,21 @@ func TestManagedClaudeUncommittedFinishRemovesTheStagedToken(t *testing.T) {
 		t.Fatalf("state %v", got.State)
 	}
 }
+
+// The approval code is single-use input and is never retained after the
+// operation finishes, even when the child exited before the server consumed it.
+func TestManagedClaudeFinishClearsAnUnconsumedApprovalCode(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := []byte("fixture-approval#unconsumed")
+	f.service.claudeLoginCodes = map[domain.ID][]byte{domain.ID(op.OperationId): code}
+	done := f.run()
+	close(f.native.finish)
+	awaitServerFixture(t, done)
+	if _, retained := f.service.claudeLoginCodes[domain.ID(op.OperationId)]; retained || strings.Contains(string(code), "fixture-approval") {
+		t.Fatal("a finished operation retained its approval code")
+	}
+}
