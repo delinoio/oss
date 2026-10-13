@@ -52,6 +52,7 @@
   --danger-text: #b42332;
   --danger-border: #d9a5ab;
   --success-text: #246547;
+  --pr-merged: #6f42c1;
   --execution-running: #087b78;
   --conversation-background: #f7f6f2;
   --conversation-text: #483519;
@@ -113,6 +114,7 @@
   --danger-text: #ffb6bf;
   --danger-border: #a7777e;
   --success-text: #9ed9b7;
+  --pr-merged: #b794f6;
   --execution-running: #72d9ce;
   --conversation-background: #24251f;
   --conversation-text: #ded2ba;
@@ -175,6 +177,7 @@
     --danger-text: #ffb6bf;
     --danger-border: #a7777e;
     --success-text: #9ed9b7;
+    --pr-merged: #b794f6;
     --execution-running: #72d9ce;
     --conversation-background: #24251f;
     --conversation-text: #ded2ba;

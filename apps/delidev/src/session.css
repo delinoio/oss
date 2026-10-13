@@ -1637,7 +1637,7 @@
   background: var(--success-text);
 }
 .session-pr-dot-merged {
-  background: var(--accent);
+  background: var(--pr-merged);
 }
 .session-pr-dot-closed {
   background: var(--danger-text);
