@@ -88,6 +88,16 @@ func TestScheduleRejectsAmbiguousOrForeignSelection(t *testing.T) {
 	}
 }
 
+func TestOccurrenceAcceptsFrozenDirectoryNames(t *testing.T) {
+	definition := scheduleDefinitionFixture()
+	definition.Overlap = ScheduleWaitOverlap
+	now := scheduleTime(t, "2026-09-25T00:00:00Z")
+	value := ScheduleOccurrence{ScheduleID: NewID(), ConfigurationRevision: 1, Sequence: 1, Trigger: CronOccurrence, DueAt: now, AcceptedAt: now, Selection: definition.Selection(), Overlap: ScheduleWaitOverlap, State: OccurrenceWaiting, DirectoryNames: []OccurrenceDirectoryName{{RepositoryID: NewID(), Name: "alpha"}}}
+	if err := value.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOccurrenceIdentityTimeAndStateValidation(t *testing.T) {
 	definition := scheduleDefinitionFixture()
 	definition.Overlap = ScheduleWaitOverlap
@@ -96,7 +106,7 @@ func TestOccurrenceIdentityTimeAndStateValidation(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"fractional-due", "future-due", "offset-due", "unknown-state", "waiting-owned", "missing-origin", "foreign-origin", "missing-finish", "missing-skip-reason", "failed-without-problem", "manual-earlier"} {
+	for _, scenario := range []string{"fractional-due", "future-due", "offset-due", "unknown-state", "waiting-owned", "missing-origin", "foreign-origin", "missing-finish", "missing-skip-reason", "failed-without-problem", "manual-earlier", "names-duplicate", "names-invalid", "names-local"} {
 		t.Run(scenario, func(t *testing.T) {
 			raw, _ := json.Marshal(base)
 			var value ScheduleOccurrence
@@ -129,6 +139,15 @@ func TestOccurrenceIdentityTimeAndStateValidation(t *testing.T) {
 			case "failed-without-problem":
 				value.State = OccurrenceFailed
 				value.FinishedAt = &now
+			case "names-duplicate":
+				id := NewID()
+				value.DirectoryNames = []OccurrenceDirectoryName{{RepositoryID: id, Name: "alpha"}, {RepositoryID: id, Name: "beta"}}
+			case "names-invalid":
+				value.DirectoryNames = []OccurrenceDirectoryName{{RepositoryID: NewID(), Name: "a/b"}}
+			case "names-local":
+				value.Selection.Workspace = Local
+				value.LocalOrigin = &LocalOrigin{MachineID: value.Selection.MachineID, DeviceID: NewID()}
+				value.DirectoryNames = []OccurrenceDirectoryName{{RepositoryID: NewID(), Name: "alpha"}}
 			case "manual-earlier":
 				value.Trigger = ManualOccurrence
 				value.AcceptedAt = value.AcceptedAt.Add(time.Second)
