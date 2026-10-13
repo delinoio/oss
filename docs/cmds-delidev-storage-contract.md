@@ -328,9 +328,9 @@ The Worker binds generic managed-copy removal to the objects that ownership
 validation observed. Once the job/process/journal validation finishes, it captures
 the identity of every inventoried managed path (device/inode and file type, plus
 size and modification time for regular files) or records proven absence, before
-workspace retirement. `security.RemoveOwnedTreeIdentity` compares the path and the
-walk root against that identity before traversal and unlinks nothing on mismatch:
-a renamed-and-replaced process directory, a same-content foreign journal or file,
+workspace retirement. `security.RemoveOwnedTreeIdentity` opens the path once
+without following links, compares that object with the captured identity, and
+unlinks nothing on mismatch: a renamed-and-replaced process directory, a same-content foreign journal or file,
 and a copy restored at a path that was proven absent stay intact, keep cleanup
 pending and are never acknowledged. Unchanged originals delete, an original that
 already vanished counts as removed, and proven absence stays absent. The Worker's
@@ -340,6 +340,32 @@ empty private regular files. The captured identity lives for one attempt; a late
 retry re-validates and captures again and does not carry a prior attempt's baseline
 across restarts. `security.RemoveOwnedTree` remains for callers without an earlier
 validated identity.
+
+A captured identity (`security.PathIdentity`) is read from an open handle, never
+from a path-based stat, and holds the validated object open. It records object
+kind, device and inode (the NTFS volume serial and file index on Windows), birth
+time where the platform reports one (Linux statx, macOS, Windows), and size plus
+modification time for regular files. While the handle is open the operating system
+cannot reuse the object's inode for a new object, so within one attempt a matching
+record proves the same object. On Unix the removal is anchored to that object: the
+parent is opened once, the object is opened relative to it and compared, and every
+descendant is listed, opened and unlinked relative to its already-open parent
+directory, never by path. A directory swapped in for the root or for a
+subdirectory after it was opened is not entered, symlinks are unlinked and never
+followed, and a directory on another device is pending cleanup. Directory contents
+cannot be lost to a swapped name because `unlinkat` refuses non-empty directories;
+the check-then-unlink of one name is not atomic on POSIX, so a process that can
+write the parent directory could still swap that single name between the final
+comparison and the unlink and lose a file or an empty directory. Windows has no
+descriptor-relative unlink: removal there is a path walk that re-binds the root to
+its captured identity before every unlink, which narrows but does not close the
+window, and it has not been exercised on a Windows host in this change (it is
+cross-compiled and vetted only). Objects that cannot be opened without following
+links (symlinks, sockets) are never traversed or removed through and keep cleanup
+pending. An identity whose handle was released (the budget is 1,024 held handles
+per attempt) or restored from storage has no held handle and is only as strong as
+its record, so inode reuse is excluded only by birth time where reported, size and
+modification time.
 
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked

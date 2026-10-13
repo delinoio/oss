@@ -70,6 +70,7 @@ func TestRemoveOwnedTreeIdentityRejectsReplacements(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer identity.Close()
 	if err := os.Rename(dir, filepath.Join(root, "managed", "moved")); err != nil {
 		t.Fatal(err)
 	}
@@ -144,5 +145,98 @@ func TestRemoveOwnedTreeIdentityAcceptsOriginalAlreadyRemoved(t *testing.T) {
 	}
 	if err := RemoveOwnedTreeIdentity(context.Background(), root, path, identity); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPathIdentityHoldsObjectSoReplacementCannotReuseItsInode(t *testing.T) {
+	root := removeFixtureRoot(t)
+	dir := filepath.Join(root, "managed", "dir")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := CapturePathIdentity(dir)
+	if err != nil || !identity.Held() {
+		t.Fatal("capture did not hold the object", identity, err)
+	}
+	defer identity.Close()
+	// Delete the validated directory and recreate the path. While the handle is
+	// open the original inode stays allocated, so the replacement is a different
+	// object even though a bare device/inode comparison would otherwise be free
+	// to see a reused number.
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, filepath.Join(dir, "sentinel"), "foreign")
+	replacement, err := CapturePathIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replacement.Close()
+	if replacement.Record().Inode == identity.Record().Inode {
+		t.Fatal("replacement reused the inode of a held object")
+	}
+	requirePending(t, RemoveOwnedTreeIdentity(context.Background(), root, dir, identity))
+	if _, err := os.Lstat(filepath.Join(dir, "sentinel")); err != nil {
+		t.Fatal("replacement directory was removed", err)
+	}
+}
+
+func TestPathIdentityRecordRebindsOnlyToTheSameObject(t *testing.T) {
+	root := removeFixtureRoot(t)
+	dir := filepath.Join(root, "managed", "dir")
+	file := filepath.Join(root, "managed", "file.json")
+	writeFixture(t, filepath.Join(dir, "owned"), "owned")
+	writeFixture(t, file, "owned")
+	for _, path := range []string{dir, file} {
+		captured, err := CapturePathIdentity(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record := captured.Record()
+		captured.Close()
+		// Restoring the record binds the same object.
+		restored, err := ReopenPathIdentity(path, record)
+		if err != nil || !restored.Held() {
+			t.Fatal("record did not rebind to its object", err)
+		}
+		restored.Close()
+		// A same-content replacement at the path never rebinds.
+		if err := os.Rename(path, path+".moved"); err != nil {
+			t.Fatal(err)
+		}
+		if path == dir {
+			writeFixture(t, filepath.Join(dir, "owned"), "owned")
+		} else {
+			writeFixture(t, file, "owned")
+		}
+		if _, err := ReopenPathIdentity(path, record); err == nil {
+			t.Fatal("record rebound to a replacement")
+		}
+		// A vanished original counts as removed.
+		if err := os.RemoveAll(path); err != nil {
+			t.Fatal(err)
+		}
+		vanished, err := ReopenPathIdentity(path, record)
+		if err != nil || vanished.Held() {
+			t.Fatal("vanished original was not accepted", err)
+		}
+		if err := RemoveOwnedTreeIdentity(context.Background(), root, path, vanished); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRemoveOwnedTreeRebindsToTheValidatedObjectOnly(t *testing.T) {
+	root := removeFixtureRoot(t)
+	dir := filepath.Join(root, "managed", "dir")
+	writeFixture(t, filepath.Join(dir, "owned"), "owned")
+	if err := RemoveOwnedTree(context.Background(), root, dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatal("baseline removal left the directory", err)
 	}
 }
