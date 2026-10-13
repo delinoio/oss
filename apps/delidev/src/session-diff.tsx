@@ -550,17 +550,21 @@ export function RepositoryDiff({
       current = descriptorKey(comparison, path);
     if (baseRef && next !== Comparison.Branch)
       trust.depart(optionsOwner, dropping, baseRef);
+    else if (comparison === Comparison.Branch && next !== Comparison.Branch)
+      trust.forget(optionsOwner, dropping);
     else if (
       !baseRef &&
       comparison !== Comparison.Branch &&
       next !== Comparison.Branch
     )
       trust.move(optionsOwner, current, dropping);
+    // The record stays with the retained base-free descriptor, so every later
+    // return to Branch republishes the same invalidated selection until it is
+    // explicitly reselected.
     const retained =
       !explicit && !baseRef && next === Comparison.Branch
         ? trust.departed(optionsOwner, current)
         : undefined;
-    if (retained) trust.settle(optionsOwner, current);
     const base = retained ?? nextBase;
     const value = {
       repository,

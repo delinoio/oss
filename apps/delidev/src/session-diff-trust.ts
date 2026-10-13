@@ -6,7 +6,9 @@ interface OwnerTrust {
   invalidated: Map<string, BaseReference>;
   /**
    * The invalidated reference each tabbed base-free comparison descriptor
-   * dropped, keyed by that descriptor, until the descriptor returns to Branch.
+   * dropped, keyed by that descriptor. The record survives every return to
+   * Branch because the descriptor's tab stays retained; it ends when the
+   * reference is explicitly reselected or the descriptor drops another base.
    */
   departed: Map<string, BaseReference>;
 }
@@ -75,8 +77,15 @@ export class DiffBaseTrust {
    */
   depart(owner: string, descriptor: string, reference: BaseReference) {
     const trust = this.owners.get(owner);
-    if (!trust?.invalidated.has(referenceKey(reference))) return;
-    trust.departed.set(descriptor, reference);
+    if (!trust) return;
+    if (trust.invalidated.has(referenceKey(reference)))
+      trust.departed.set(descriptor, reference);
+    // A departure from a still-trusted base supersedes an older record.
+    else trust.departed.delete(descriptor);
+  }
+  /** The descriptor was left from Branch without an invalidated base. */
+  forget(owner: string, descriptor: string) {
+    this.owners.get(owner)?.departed.delete(descriptor);
   }
   /** Carries a descriptor's dropped base to the base-free descriptor it becomes. */
   move(owner: string, from: string, to: string) {
@@ -92,10 +101,6 @@ export class DiffBaseTrust {
     return reference && this.isInvalidated(owner, reference)
       ? reference
       : undefined;
-  }
-  /** The descriptor returned to Branch, so its dropped selection has been republished. */
-  settle(owner: string, descriptor: string) {
-    this.owners.get(owner)?.departed.delete(descriptor);
   }
 }
 

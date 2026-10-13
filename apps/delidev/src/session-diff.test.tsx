@@ -2450,3 +2450,60 @@ it("tracks a dropped invalidated base per base-free comparison descriptor", asyn
   expect(comparisonRegion()).toBeNull();
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
 });
+
+it("keeps the dropped invalidated base for a retained base-free tab after it returned to Branch once", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("other"));
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "staged")).toBe(
+      true,
+    ),
+  );
+  const staged = sessionTabKey(
+    f.comparisons().find((tab) => tab.comparison === "staged")!,
+  );
+  // The first return republishes the invalidated base.
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() =>
+    expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(""),
+  );
+  // The retained Staged tab still remembers the base it dropped, so a second
+  // switch to Branch cannot fall back to the inventory default.
+  act(() => f.store.select(f.sessionId, staged));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Comparison") as HTMLSelectElement).value,
+    ).toBe("staged"),
+  );
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() => {
+    const snapshot = f.store.snapshot(f.sessionId),
+      tab = snapshot.tabs.find(
+        (value) => sessionTabKey(value) === snapshot.selected,
+      );
+    expect(tab).toMatchObject({
+      comparison: "branch",
+      base_ref: { name: "other" },
+    });
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(branchBaseNames(f.read)).toEqual(["main", "other"]);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+});
