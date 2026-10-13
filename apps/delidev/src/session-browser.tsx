@@ -415,6 +415,9 @@ function NativeSessionBrowser({
   // The last shared-selection reconciliation sent natively, so a failed
   // SelectTab is never retried without a new selection or native state.
   const reconciled = useRef("");
+  // The view ID whose native child exists. `presentation` is claimed when an
+  // open starts, so selection reconciliation waits for this to be published.
+  const [nativeView, setNativeView] = useState("");
   const capabilities = useQuery(
     BrowserQuery.getBrowserCapabilities,
     {},
@@ -907,6 +910,7 @@ function NativeSessionBrowser({
         hideRequired = false;
         closed = true;
         if (presentation.current === viewId) presentation.current = "";
+        if (!disposed) setNativeView("");
         if (hideRetry !== undefined) {
           window.clearTimeout(hideRetry);
           hideRetry = undefined;
@@ -973,6 +977,7 @@ function NativeSessionBrowser({
             await hide();
             return;
           }
+          setNativeView(viewId);
           setState(result);
         } catch {
           failed = true;
@@ -1051,6 +1056,7 @@ function NativeSessionBrowser({
       observer.disconnect();
       visibility.disconnect();
       window.clearInterval(timer);
+      setNativeView("");
       void hide();
     };
     // Reopening after a modal restores the native page without another registration.
@@ -1081,6 +1087,7 @@ function NativeSessionBrowser({
   useEffect(() => {
     if (
       !presentation.current ||
+      nativeView !== presentation.current ||
       !active ||
       !selectedPage ||
       selectedPage.profile !== profileId ||
@@ -1099,7 +1106,14 @@ function NativeSessionBrowser({
     if (reconciled.current === attempt) return;
     reconciled.current = attempt;
     void control(BrowserAction.SelectTab, selectedPage.id);
-  }, [active, selectedPage?.id, profileId, state?.tabs.selected, busy]);
+  }, [
+    active,
+    selectedPage?.id,
+    profileId,
+    state?.tabs.selected,
+    busy,
+    nativeView,
+  ]);
   useEffect(() => {
     // Shared labels follow the latest observed URL of owned pages only; the
     // store ignores unknown pages and unchanged labels.

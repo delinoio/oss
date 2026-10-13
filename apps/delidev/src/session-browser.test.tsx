@@ -1087,6 +1087,37 @@ it("reconciles only the latest shared selection once after a busy action settles
   expect(selects()).toHaveLength(1);
 });
 
+it("defers shared selection until the pending native open completes", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  let release!: () => void;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "open_browser")
+      await new Promise<void>((resolve) => (release = resolve));
+    return base(operation, args);
+  });
+  mount(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  // The opened page is already the native selection, so completion leaves the
+  // observed selection unchanged.
+  f.model.selected = f.model.pages[0].id;
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/1" }));
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("tab", { name: "https://fixture.test/2" }));
+  const selects = () =>
+    native.mock.calls.filter(
+      ([operation, args]) =>
+        operation === "control_browser" && args.action === "select-tab",
+    );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(0);
+  await act(async () => release());
+  await waitFor(() => expect(selects()).toHaveLength(1));
+  expect(selects()[0][1]).toMatchObject({ tabId: f.model.pages[1].id });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selects()).toHaveLength(1);
+});
+
 it("does not retry a failed shared-selection reconciliation without a new selection", async () => {
   const f = fixture({ pages: 2 });
   const base = native.getMockImplementation()!;

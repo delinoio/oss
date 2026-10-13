@@ -190,7 +190,9 @@ changing identity: each observed URL refreshes only the label of the existing
 exact profile/page descriptor, never its order, selection or any foreign profile
 page. When a busy action settles, the native page is reconciled once to the
 current shared selection; a failed reconciliation is not retried until the
-selection or native state changes. Profile explanation uses the original
+selection or native state changes. Reconciliation also waits until a pending
+native open has published its view, then selects the current shared page once.
+Profile explanation uses the original
 accessible Modal and native visibility boundary.
 Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
