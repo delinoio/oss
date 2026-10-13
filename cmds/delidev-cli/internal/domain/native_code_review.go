@@ -77,6 +77,10 @@ func (s NativeCodeReviewSelection) Validate() error {
 	} else if s.BaseCommit != "" {
 		return NativeCodeReviewUnavailable()
 	}
+	if s.Target.Kind == ReviewCommit && len(s.Target.Reference) != len(s.HeadCommit) {
+		// The selected commit and the resolved head come from one repository.
+		return NativeCodeReviewUnavailable()
+	}
 	return nil
 }
 

@@ -230,6 +230,12 @@ func TestNativeCodeReviewObjectIDsFollowRepositoryObjectFormat(t *testing.T) {
 	if selection(ReviewBaseBranch, "main", sha256ID, sha1ID).Validate() == nil {
 		t.Fatal("mixed object formats accepted")
 	}
+	if selection(ReviewCommit, sha1ID, sha256ID, "").Validate() == nil {
+		t.Fatal("SHA-1 commit reference with a SHA-256 head accepted")
+	}
+	if selection(ReviewCommit, sha256ID, sha1ID, "").Validate() == nil {
+		t.Fatal("SHA-256 commit reference with a SHA-1 head accepted")
+	}
 	// The content digest remains an exact 64-character SHA-256 value.
 	weak := selection(ReviewUncommitted, "", sha1ID, "")
 	weak.ContentDigest = strings.Repeat("c", 40)
