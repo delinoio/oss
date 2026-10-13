@@ -292,6 +292,30 @@ fn prefixless_relative_html_urls_are_document_relative_references() {
 }
 
 #[test]
+fn javascript_escapes_are_decoded_before_resolving_specifiers() {
+    if !pinned_node() {
+        return;
+    }
+    let main_js = r#"
+import "./lazy\x2d12345678.js";
+import("./lazy\u002d12345678.js");
+import("./lazy\u{2d}12345678.js");
+import('./lazy\
+-12345678.js');
+import(`./lazy\5512345678.js`);
+import("./gone\x2d12345678.js");
+"#;
+    // Every escape spells the existing `lazy-12345678.js` (`\55` is an octal
+    // "-", limited to two digits here); only `gone-12345678.js` is
+    // absent from both builds.
+    let (_temp, outcome) = two_builds(ENTRY_HTML, main_js, &[LAZY], &[LAZY]);
+    assert!(!outcome.success);
+    let expected = vec!["assets/main-12345678.js -> ./gone-12345678.js".to_string()];
+    assert_eq!(broken(&outcome, "original"), expected);
+    assert_eq!(broken(&outcome, "optimized"), expected);
+}
+
+#[test]
 fn different_hash_asset_in_another_build_keeps_exact_target_unresolved() {
     if !pinned_node() {
         return;

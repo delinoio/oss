@@ -65,6 +65,43 @@ const URL_SCHEME = /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/)/;
 function isIdentifierCharacter(character) {
   return character !== undefined && /[\w$]/.test(character);
 }
+const SIMPLE_ESCAPES = { n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v" };
+// Decode the escape sequence that starts at the backslash `text[at]`. Returns
+// the runtime characters and the index after the sequence. A line
+// continuation contributes nothing; a malformed escape keeps its character.
+function readEscape(text, at) {
+  const next = text[at + 1];
+  if (next === undefined) return ["", at + 1];
+  if (next in SIMPLE_ESCAPES) return [SIMPLE_ESCAPES[next], at + 2];
+  if (next === "\n" || next === "\u2028" || next === "\u2029")
+    return ["", at + 2];
+  if (next === "\r") return ["", text[at + 2] === "\n" ? at + 3 : at + 2];
+  const code = (digits, end) =>
+    /^[0-9A-Fa-f]+$/.test(digits) && Number.parseInt(digits, 16) <= 0x10ffff
+      ? [String.fromCodePoint(Number.parseInt(digits, 16)), end]
+      : null;
+  if (next === "x") {
+    const decoded = code(text.slice(at + 2, at + 4), at + 4);
+    if (decoded && text.length >= at + 4) return decoded;
+  } else if (next === "u") {
+    if (text[at + 2] === "{") {
+      const close = text.indexOf("}", at + 3);
+      const decoded =
+        close === -1 ? null : code(text.slice(at + 3, close), close + 1);
+      if (decoded) return decoded;
+    } else {
+      const decoded = code(text.slice(at + 2, at + 6), at + 6);
+      if (decoded && text.length >= at + 6) return decoded;
+    }
+  } else if (/[0-7]/.test(next)) {
+    // Legacy octal escapes take up to three digits, at most \377.
+    const limit = next <= "3" ? 3 : 2;
+    let end = at + 1;
+    while (end < at + 1 + limit && /[0-7]/.test(text[end] ?? "")) end++;
+    return [String.fromCharCode(Number.parseInt(text.slice(at + 1, end), 8)), end];
+  }
+  return [next, at + 2];
+}
 // Scan JavaScript for module specifiers. Comments, string literals and
 // template literals are skipped so quoted text never counts as an import.
 function scanModuleSpecifiers(text) {
@@ -89,11 +126,10 @@ function scanModuleSpecifiers(text) {
       i++;
       while (i < text.length && text[i] !== character && text[i] !== "\n") {
         if (text[i] === "\\") {
-          value += text[i];
-          i++;
-        }
-        value += text[i] ?? "";
-        i++;
+          const [decoded, end] = readEscape(text, i);
+          value += decoded;
+          i = end;
+        } else value += text[i++];
       }
       i++;
       const [before, last] = previous;
@@ -109,9 +145,10 @@ function scanModuleSpecifiers(text) {
       i++;
       while (i < text.length && !(text[i] === "`" && depth === 0)) {
         if (text[i] === "\\") {
-          if (depth === 0) value += text[i];
-          i++;
-          if (depth === 0) value += text[i] ?? "";
+          const [decoded, end] = readEscape(text, i);
+          if (depth === 0) value += decoded;
+          i = end;
+          continue;
         } else if (text[i] === "$" && text[i + 1] === "{") {
           depth++;
           substituted = true;
