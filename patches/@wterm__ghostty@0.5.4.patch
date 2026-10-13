@@ -57,7 +57,7 @@
          this._cols = cols;
          this._rows = rows;
          this.wasm.exports.resize(this.termPtr, cols, rows);
-@@ -177,14 +191,51 @@
+@@ -177,14 +191,64 @@
      writeString(str, afterChunk) {
          if (this._disposed || this.termPtr === 0)
              return;
@@ -83,11 +83,24 @@
 +            if (continuation) this._clipboardUtf8Remaining--;
 +            else this._clipboardUtf8Remaining = byte >= 0xc2 && byte <= 0xdf ? 1 : byte >= 0xe0 && byte <= 0xef ? 2 : byte >= 0xf0 && byte <= 0xf4 ? 3 : 0;
 +            if (this._discardingClipboard) {
-+                if (byte === 7 || (byte === 0x9c && !continuation) || (this._clipboardEscape && byte === 92)) {
++                if (this._clipboardEscape) {
++                    // ESC leaves the OSC string state: ESC \ is ST, and any other byte starts a new sequence.
 +                    this._discardingClipboard = false;
 +                    this._clipboardEscape = false;
-+                } else this._clipboardEscape = byte === 27;
-+                continue;
++                    if (byte === 92) continue;
++                    // Reprocess the pending ESC together with this byte through the normal prefix logic.
++                    this._clipboardPrefix = [27];
++                } else if (byte === 7 || (byte === 0x9c && !continuation)) {
++                    this._discardingClipboard = false;
++                    continue;
++                } else if (byte === 0x18 || byte === 0x1a) {
++                    // CAN and SUB cancel the OSC string silently; the parser never saw it, so drop them too.
++                    this._discardingClipboard = false;
++                    continue;
++                } else {
++                    this._clipboardEscape = byte === 27;
++                    continue;
++                }
 +            }
 +            const prefix = this._clipboardPrefix;
 +            if (prefix.length === 0 && byte !== 27 && (byte !== 0x9d || continuation)) {
