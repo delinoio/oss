@@ -9,6 +9,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import {
   ConfigurationService,
@@ -1130,4 +1131,46 @@ it("fences a late export failure after an import draft event without releasing t
     screen.getByRole("button", { name: "Preview configuration changes" }),
   ).toBeTruthy();
   expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("marks the transfer-owned fieldsets that carry the blocked disabled attribute", async () => {
+  const value = fixture();
+  value.apply.mockResolvedValueOnce({
+    resultJson: new TextEncoder().encode("invalid"),
+  });
+  const { container } = render(value.view());
+  load(value.bundle);
+  const input = container.querySelector("fieldset.transfer-input-fieldset");
+  expect(input).not.toBeNull();
+  expect(input!.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Preview configuration changes" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Apply reviewed configuration" }),
+  );
+  await screen.findByText(/The import outcome is unavailable/);
+  const mapping = container.querySelector("fieldset.transfer-mapping");
+  expect(input!.hasAttribute("disabled")).toBe(true);
+  expect(mapping).not.toBeNull();
+  expect(mapping!.hasAttribute("disabled")).toBe(true);
+  expect(input!.querySelector("textarea")!.matches(":disabled")).toBe(true);
+  // Inherited disablement leaves no own attribute on the control, which is why the styles anchor on the fieldset.
+  expect(input!.querySelector("textarea")!.hasAttribute("disabled")).toBe(false);
+});
+
+it("styles controls under disabled transfer fieldsets without matching outer-only disablement", () => {
+  const css = readFileSync("src/configuration-transfer.css", "utf8");
+  const fieldsets =
+    ":is(fieldset.transfer-input-fieldset, fieldset.transfer-mapping)[disabled]";
+  const normalized = css.replace(/\s+/g, " ");
+  expect(normalized).toContain(
+    `.configuration-transfer ${fieldsets} :is(button, input, select, textarea), .configuration-transfer :is(button, input, select, textarea)[disabled] { opacity: 1; color: var(--muted); background: var(--surface-muted); border-color: var(--border); cursor: default; }`,
+  );
+  expect(normalized).toContain(
+    `.configuration-transfer ${fieldsets} input::file-selector-button, .configuration-transfer input[disabled]::file-selector-button { border-color: var(--border); background: var(--surface-muted); color: var(--muted); cursor: default; }`,
+  );
+  // The muted treatment must never key off :disabled, which outer fieldset disablement also matches.
+  expect(css).not.toMatch(/\.configuration-transfer[^{]*:disabled/);
+  expect(css).not.toContain(".settings-task-background");
 });
