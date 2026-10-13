@@ -1112,8 +1112,7 @@ async function openThemeEditor(value: ReturnType<typeof fixture>) {
   fireEvent.click(duplicate);
   return view;
 }
-const editorInputs = () =>
-  screen.getAllByRole("textbox") as HTMLInputElement[];
+const editorInputs = () => screen.getAllByRole("textbox") as HTMLInputElement[];
 
 test("a pending custom theme save freezes the draft and closes on the submitted snapshot", async () => {
   scheme(false);
