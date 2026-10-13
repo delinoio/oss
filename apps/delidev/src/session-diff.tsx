@@ -618,6 +618,34 @@ export function RepositoryDiff({
       setBaseRef(base);
     }
   };
+  // A branch path is admitted only against a successfully negotiated, available
+  // base. Other comparisons are base-free and stay immediately submittable.
+  const pathAdmitted = comparison !== Comparison.Branch || supportedBase;
+  // Returns whether the submission was admitted; a denied submission keeps the
+  // typed draft and publishes no tab and no read.
+  const submitPath = (): boolean => {
+    if (!pathAdmitted || (comparison === Comparison.Branch && !chosenBase)) {
+      console.debug("delidev.diff.path_submission_denied", {
+        sessionId,
+        repository,
+        comparison,
+        optionsPending: options.isPending,
+        optionsFailed: options.isError,
+      });
+      return false;
+    }
+    if (comparison === Comparison.Branch && onNegotiated && chosenBase) {
+      // The selection still awaits its own negotiation: publish through the
+      // current-owner callback so pending cleanup stays authoritative.
+      onNegotiated({
+        repository,
+        comparison,
+        path: pathDraft,
+        base_ref: chosenBase,
+      });
+    } else choose(comparison, pathDraft);
+    return true;
+  };
   const failureCodeMessage = (code?: Code) =>
     code === Code.PermissionDenied
       ? copy("session-diff.permissionFailure")
@@ -754,8 +782,7 @@ export function RepositoryDiff({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              choose(comparison, pathDraft);
-              closeMenu();
+              if (submitPath()) closeMenu();
             }}
           >
             <label>
@@ -768,7 +795,9 @@ export function RepositoryDiff({
                 spellCheck={false}
               />
             </label>
-            <button>{copy("session-diff.comparePath_31d172")}</button>
+            <button disabled={!pathAdmitted}>
+              {copy("session-diff.comparePath_31d172")}
+            </button>
           </form>
           <button type="button" onClick={closeMenu}>
             {copy("session-diff.closeOptions")}
