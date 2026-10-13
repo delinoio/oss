@@ -4497,6 +4497,68 @@ it("discards a pending Search read after the connection is replaced", async () =
   info.mockRestore();
 });
 
+it("clears a pending Search opening when a same-identity reconnect replaces the transport", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const original = fixture([], [], [], false, true),
+    replacement = fixture([], [], [], false, true);
+  const child = sidechatOf(original.session);
+  original.extraResources.push(child);
+  original.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  original.readHook.current = async (request, readSignal) => {
+    if (request.id !== child.id) return;
+    signal = readSignal;
+    await gate;
+  };
+  const authority = {
+      endpoint: "http://127.0.0.1:9090",
+      serverId: newRequestId(),
+    },
+    deviceId = newRequestId();
+  const view = render(
+    <App
+      transport={original.transport}
+      pairingAuthority={authority}
+      currentDeviceId={deviceId}
+    />,
+  );
+  await searchRetained(original);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  view.rerender(
+    <App
+      transport={replacement.transport}
+      pairingAuthority={authority}
+      currentDeviceId={deviceId}
+      connectionEpoch={1}
+    />,
+  );
+  // The shell is retained, but the opening owned by the old transport is gone
+  // even while its read has not settled.
+  expect(
+    screen.getByRole("textbox", { name: "Search conversations" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  expect(sidechatTabs()).toHaveLength(0);
+  info.mockRestore();
+});
+
 it("keeps the chosen destination when a pending Search read settles after leaving Search", async () => {
   const info = vi.spyOn(console, "info").mockImplementation(() => {});
   const value = fixture([], [], [], false, true);

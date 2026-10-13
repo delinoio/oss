@@ -225,6 +225,11 @@ function Shell({
     supersedeSearchOpening();
     setSearchOpening(undefined);
   };
+  // A same-identity reconnect keeps this shell but replaces the transport that
+  // owns the pending read, which would otherwise leave its status stuck.
+  useLayoutEffect(() => {
+    resetSearchOpening();
+  }, [transport]);
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
     useState(0);
