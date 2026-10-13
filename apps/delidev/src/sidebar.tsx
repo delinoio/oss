@@ -1346,8 +1346,11 @@ export function Sidebar({
         if (!active || active === document.body || active === opener) {
           (element.hidden || collapsed
             ? railTarget()
-            : (element.querySelector<HTMLElement>("[aria-current='page']") ??
-              railTarget())
+            : (element.querySelector<HTMLElement>(
+                // Pane rows use aria-current="true" while navigation buttons
+                // use "page"; accept any valid current token.
+                "[aria-current]:not([aria-current='false'])",
+              ) ?? railTarget())
           )?.focus({ preventScroll: true });
         }
       }

@@ -4128,6 +4128,33 @@ it.each([
 );
 
 it(
+  "moves focus from the closed compact opener to the selected session row when widening",
+  async () => {
+    const resize = viewport();
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    const row = await screen.findByRole("button", {
+      name: /General Chat Retained session/,
+    });
+    fireEvent.click(row);
+    await screen.findByRole("heading", { name: "Retained session" });
+    act(() => resize(true));
+    const opener = document.querySelector<HTMLButtonElement>(
+      ".sidebar-context-trigger",
+    )!;
+    opener.focus();
+    expect(document.activeElement).toBe(opener);
+    act(() => resize(false));
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.classList.contains("sidebar-session-row")).toBe(true);
+    expect(focused.getAttribute("aria-current")).toBe("true");
+    expect(focused.closest("[inert], [hidden]")).toBeNull();
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
   "keeps focus and selection on a composer input across both breakpoint directions",
   async () => {
     const resize = viewport();
