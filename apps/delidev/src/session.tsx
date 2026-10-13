@@ -3276,6 +3276,7 @@ export function SessionView({
                 >
                   <SessionFiles
                     active={active && panel === SessionPanel.Files}
+                    previewing={tabs.tab.kind === SessionTabKind.File}
                     sessionId={id}
                     close={closePanel}
                     openFile={(repository, path) =>
