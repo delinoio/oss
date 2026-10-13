@@ -386,10 +386,37 @@ func (s *Service) finishAccessCredit(ctx context.Context, id domain.ID, original
 		if !sameAccessCredit(o, original) || o.Phase != domain.SubscriptionObservationSending || !o.CleanupConfirmed {
 			return subscriptionDenied()
 		}
-		terminal = outcome.Valid() || o.Outcome.Valid() || !o.EverSent
+		// Only a durably recorded outcome (or a never-sent attempt) authorizes
+		// retiring the credential; an in-memory outcome whose checkpoint failed
+		// does not.
+		terminal = o.Outcome.Valid() || !o.EverSent
 		return nil
 	}); err != nil {
 		return err
+	}
+	if !terminal && outcome.Valid() {
+		// The provider returned a valid outcome but its checkpoint failed. Record
+		// it before any credential retirement so a later failure or crash still
+		// leaves the consumed outcome and the captured reference for reconciliation.
+		if _, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.server.credit.outcome.finish", struct {
+			Account, Attempt domain.ID
+			Outcome          domain.SubscriptionResetOutcome
+		}{id, original.AttemptID, outcome}, func(tx *store.Tx) (any, error) {
+			r, a, err := subscriptionAccount(tx, id, 0)
+			if err != nil {
+				return nil, err
+			}
+			o := a.Subscription.ServerCredit
+			if !sameAccessCredit(o, original) || o.Phase != domain.SubscriptionObservationSending || !o.CleanupConfirmed {
+				return nil, subscriptionDenied()
+			}
+			o.Outcome = outcome
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return struct{}{}, err
+		}); err != nil {
+			return err
+		}
+		terminal = true
 	}
 	if terminal {
 		if err := s.retireServerCreditReference(ctx, id, original); err != nil {

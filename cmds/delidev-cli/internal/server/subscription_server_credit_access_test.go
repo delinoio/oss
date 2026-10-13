@@ -440,3 +440,31 @@ func TestAccessCreditCapabilityIsAdvertisedWithHistoricalCapability(t *testing.T
 		t.Fatal("capability negotiation lost an independent capability")
 	}
 }
+
+// A valid provider outcome whose checkpoint fails must be recorded durably
+// before the rotated credential is retired, so a failed retirement or crash
+// cannot strand an ambiguous spend.
+func TestAccessCreditRecordsOutcomeBeforeRetiringCredentialWhenCheckpointFails(t *testing.T) {
+	f, n, lease := newAccessCreditFixture(t, accessCreditOptions{details: true, active: true})
+	_, before := f.record()
+	captured := before.Subscription.Generation
+	n.duringConsume = func() {
+		rotateExecution(t, f, lease, "second")
+		// Deny only the in-flight checkpoint, which needs the send claim.
+		mutateCreditAccount(t, f, func(a *domain.Account) { a.Subscription.ServerCredit.SendClaimed = false })
+	}
+	f.secrets.deleteError = domain.Fail(domain.Unavailable, "Fixture cleanup failure.", "")
+	requestAccessCredit(t, f, requestServerCredit(f))
+	f.service.runServerCredit(creditContext(), f.input.AccountID)
+	_, a := f.record()
+	o := a.Subscription.ServerCredit
+	if n.count() != 1 || o == nil || !o.EverSent || o.Outcome != domain.SubscriptionReset {
+		t.Fatal("the provider outcome was not durably recorded before retirement", o)
+	}
+	if !referenceExists(t, f, captured) {
+		t.Fatal("the credential was retired before its outcome was durable")
+	}
+	if n.count() != 1 {
+		t.Fatal("recovery resent consumption")
+	}
+}
