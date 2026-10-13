@@ -254,7 +254,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	var closeManagedRPC func()
 	managedCleanup, managedSuccess := false, false
 	managedUnusedOriginal := false
-	managedPreNativeCleanup := false
+	managedPreNativeCleanup, managedHelperRetained := false, false
 	defer func() {
 		if closeManagedRPC != nil {
 			defer closeManagedRPC()
@@ -296,12 +296,22 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		managedPreNativeCleanup = true
 		defer func() {
 			if managedPreNativeCleanup {
-				managedCleanup = cleanupUnusedExecutionAuthentication(nativeHome, managed.response.Bundle) == nil
+				var authErr error
+				managedCleanup, authErr = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+				if managedHelperRetained {
+					// The original native tree was joined, so authentication cleanup
+					// runs independently; unretired helpers still retain the lease.
+					logExecutionAuthenticationCleanup(config.Logger, owner, authErr)
+				}
 				if managedCleanup {
 					// This closed pre-native outcome returns unused original bytes;
 					// it does not claim native execution or authentication success.
 					managedLatest = bytes.Clone(managed.response.Bundle)
 					managedUnusedOriginal = true
+				} else if managedHelperRetained {
+					if authErr != nil {
+						output, returned = nil, errors.Join(returned, subscription.Invalid())
+					}
 				} else {
 					output, returned = nil, subscription.Invalid()
 				}
@@ -393,12 +403,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	// Once startup may own a process, only independently joined native cleanup
 	// may authorize removal. A definite failed Open already proves that closure;
-	// recovery-required startup must retain its authentication and lease.
+	// recovery-required startup must retain its authentication and lease, except
+	// that a joined tree with failed helper retirement still runs authentication
+	// cleanup while keeping the lease.
 	managedPreNativeCleanup = false
 	config.startup.setPhase(domain.StartupInitialize)
 	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
-		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
+		managedHelperRetained = codex.NativeJoinedHelperRetirementFailed(err)
+		managedPreNativeCleanup = managedHelperRetained || domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, err
 	}
 	managedBundleAttempted := false

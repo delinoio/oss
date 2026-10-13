@@ -85,6 +85,9 @@ func init() {
 				response["newMeaning"] = "unknown"
 			}
 			write(request.ID, response)
+			if strings.HasPrefix(mode, helperFixturePrefix) && !createHelperFixtureAliases() {
+				os.Exit(44)
+			}
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "remoteControl/status/changed", "params": map[string]any{"status": "disabled", "installationId": "fixture-installation", "serverName": "fixture-server", "environmentId": nil}, "emittedAtMs": time.Now().UnixMilli()})
 		case "initialized":
 			if !initialized || notified || len(request.ID) > 0 {
@@ -96,7 +99,7 @@ func init() {
 				os.Exit(7)
 			}
 			threads := []string{}
-			if mode == "existing-thread" {
+			if mode == "existing-thread" || mode == helperFixturePreCapture {
 				threads = append(threads, "foreign-thread")
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
@@ -216,6 +219,10 @@ func init() {
 			}
 			os.Exit(8)
 		}
+	}
+	if strings.HasSuffix(mode, "-hang") {
+		// Ignore stdin EOF so a graceful close cannot join this original process.
+		time.Sleep(time.Minute)
 	}
 	os.Exit(0)
 }
