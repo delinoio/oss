@@ -397,6 +397,12 @@ func nativeRecoveryClaimVersion(input domain.ExecutionJobInput) uint32 {
 	return 1
 }
 
+// Recovery admission must not reinterpret the executable selection. Compare the
+// full harness, explicit path and executable digest; a missing side fails closed.
+func sameExecutionStartupSelection(current, retained *domain.ExecutionStartupSelection) bool {
+	return current != nil && retained != nil && *current == *retained
+}
+
 // The child owns its immutable creation marker independently of its parent.
 // Legacy seeds may derive it only from the exact retained completed Fork input.
 func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain.Session, input domain.ExecutionJobInput, history, device domain.ID) (domain.ID, error) {
@@ -408,7 +414,9 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	if f.OpenCodeCreationProof != nil {
-		if !f.VerifyOpenCodeCreation(row.ID) {
+		// The proof binds the retained Fork record, not the current assignment, so
+		// the current startup selection must equal the retained one before admission.
+		if !f.VerifyOpenCodeCreation(row.ID) || !sameExecutionStartupSelection(input.Startup, f.Startup) {
 			return "", domain.ExecutionRecoveryUncertain()
 		}
 		return f.OpenCodeCreationRequestID, nil
@@ -431,6 +439,15 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 	selected, _ := json.Marshal(f.Startup)
 	originalSelection, _ := json.Marshal(seed.Startup)
 	if !bytes.Equal(actual, expected) || !bytes.Equal(selected, originalSelection) {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	// Older children may have no retained selection; the surviving original seed
+	// is then the only evidence of the selection the current assignment must match.
+	retained := f.Startup
+	if retained == nil {
+		retained = seed.Startup
+	}
+	if !sameExecutionStartupSelection(input.Startup, retained) {
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	if f.OpenCodeCreationRequestID != "" && f.OpenCodeCreationRequestID != seed.OpenCode.Fork {

@@ -183,7 +183,7 @@ func TestManagedSidechatServerCreditOwnerRejectsBeforeForkJob(t *testing.T) {
 }
 
 func TestManagedSidechatProtectedFinishPrecedesPublication(t *testing.T) {
-	for _, fault := range []string{"valid", "missing-finish", "unconfirmed-cleanup", "changed-generation", "missing-capability"} {
+	for _, fault := range []string{"valid", "missing-finish", "unconfirmed-cleanup", "changed-generation", "missing-capability", "refresh-pending", "observation-active", "server-observation-active"} {
 		t.Run(fault, func(t *testing.T) {
 			f, generation, bundle := managedSidechatFixture(t)
 			job, input, creation := acceptManagedSidechat(t, f)
@@ -212,8 +212,11 @@ func TestManagedSidechatProtectedFinishPrecedesPublication(t *testing.T) {
 					t.Fatal("Finish receipt replay", err)
 				}
 			}
-			if fault == "changed-generation" || fault == "missing-capability" {
+			if fault == "changed-generation" || fault == "missing-capability" || unsettledManagedForkFault(fault) {
 				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.changed-sidechat-authority", fault, func(tx *store.Tx) (any, error) {
+					if unsettledManagedForkFault(fault) {
+						return nil, markManagedForkAccountUnsettled(tx, f.input.AccountID, domain.ID(f.machine.Id), fault)
+					}
 					if fault == "changed-generation" {
 						r, a, err := accountFromTx(tx, f.input.AccountID, 0)
 						if err != nil {
@@ -311,7 +314,7 @@ func TestManagedSidechatRefusesIndependentForkAndChangedTakeAuthority(t *testing
 }
 
 func TestManagedIndependentForkProtectedFinishPrecedesPublication(t *testing.T) {
-	for _, fault := range []string{"valid", "missing-finish", "unconfirmed-cleanup", "changed-generation", "missing-capability"} {
+	for _, fault := range []string{"valid", "missing-finish", "unconfirmed-cleanup", "changed-generation", "missing-capability", "refresh-pending", "observation-active", "server-observation-active"} {
 		t.Run(fault, func(t *testing.T) {
 			f, generation, bundle := managedIndependentFixture(t)
 			job, input, creation := acceptManagedIndependent(t, f)
@@ -340,8 +343,11 @@ func TestManagedIndependentForkProtectedFinishPrecedesPublication(t *testing.T) 
 					t.Fatal("Finish receipt replay", err)
 				}
 			}
-			if fault == "changed-generation" || fault == "missing-capability" {
+			if fault == "changed-generation" || fault == "missing-capability" || unsettledManagedForkFault(fault) {
 				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.changed-sidechat-authority", fault, func(tx *store.Tx) (any, error) {
+					if unsettledManagedForkFault(fault) {
+						return nil, markManagedForkAccountUnsettled(tx, f.input.AccountID, domain.ID(f.machine.Id), fault)
+					}
 					if fault == "changed-generation" {
 						r, a, err := accountFromTx(tx, f.input.AccountID, 0)
 						if err != nil {
@@ -457,6 +463,57 @@ func TestManagedIndependentForkAdmissionRequiresOwnCapabilityAndSettledAccount(t
 			_, err = sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(parent.ID), ExpectedRevision: parent.Revision}, ExpectedTurnId: string(f.turn), Name: "Refused"}))
 			if err == nil {
 				t.Fatal("unproved managed Fork admitted")
+			}
+		})
+	}
+}
+
+// unsettledManagedForkFault names account states that admission refuses and
+// that must also be refused when the Fork claim or publication revalidates.
+func unsettledManagedForkFault(fault string) bool {
+	return fault == "refresh-pending" || fault == "observation-active" || fault == "server-observation-active"
+}
+
+func markManagedForkAccountUnsettled(tx *store.Tx, account, machine domain.ID, fault string) error {
+	r, a, err := accountFromTx(tx, account, 0)
+	if err != nil {
+		return err
+	}
+	actor := domain.Principal{Type: domain.OwnerDevice}
+	switch fault {
+	case "refresh-pending":
+		a.Subscription.Pending = &domain.SubscriptionOperation{ID: domain.NewID(), Action: domain.SubscriptionRefresh, MachineID: machine, Actor: actor, Phase: domain.SubscriptionQueued}
+	case "observation-active":
+		a.Subscription.Observation = &domain.SubscriptionObservationOperation{ID: domain.NewID(), Action: domain.SubscriptionQuota, MachineID: machine, Actor: actor, ConnectionID: a.Connection.ID, Generation: a.Subscription.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: time.Now().UTC()}
+	case "server-observation-active":
+		a.Subscription.ServerQuota = &domain.ServerQuotaOperation{ID: domain.NewID(), Epoch: domain.NewID(), FinishID: domain.NewID(), ConnectionID: a.Connection.ID, Generation: a.Subscription.Generation, Actor: actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: time.Now().UTC()}
+	}
+	_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	return err
+}
+
+func TestManagedForkAuthorityRequiresSettledAccountExceptWhileOwningLease(t *testing.T) {
+	phases := []forkAuthorityPhase{forkAuthorityClaim, forkAuthorityTake, forkAuthorityLease, forkAuthorityPublication}
+	for _, fault := range []string{"settled", "refresh-pending", "observation-active", "server-observation-active"} {
+		t.Run(fault, func(t *testing.T) {
+			f, _, _ := managedIndependentFixture(t)
+			_, input, _ := acceptManagedIndependent(t, f)
+			if fault != "settled" {
+				if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.unsettled-fork-account", fault, func(tx *store.Tx) (any, error) {
+					return nil, markManagedForkAccountUnsettled(tx, f.input.AccountID, domain.ID(f.machine.Id), fault)
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, phase := range phases {
+				err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error { return validateForkAuthority(tx, input, phase) })
+				// The lease phase belongs to the Fork's own Take..Finish ownership: a
+				// later logout or observation request must not strand its Finish.
+				if wantRejected := fault != "settled" && phase != forkAuthorityLease; wantRejected && err == nil {
+					t.Fatal("unsettled account accepted", fault, phase)
+				} else if !wantRejected && err != nil {
+					t.Fatal("settled boundary rejected", fault, phase, err)
+				}
 			}
 		})
 	}

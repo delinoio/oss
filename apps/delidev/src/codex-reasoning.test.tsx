@@ -307,6 +307,109 @@ it.each([
   expect(container.querySelector(".message-codex-reasoning")).toBeNull();
   expect(container.querySelector("article > header")).toBeTruthy();
 });
+const envelope = (extra: Record<string, unknown>, state = "complete") =>
+  transcriptResource({
+    role: "artifact",
+    state,
+    artifact: artifact(),
+    ...extra,
+  });
+it.each([
+  { name: "phase", extra: { phase: "analysis" } },
+  {
+    name: "input_id",
+    extra: { input_id: "01960dcb-e1fa-7000-8000-000000000001" },
+  },
+  {
+    name: "inherited",
+    extra: {
+      inherited: { source_session_id: "01960dcb-e1fa-7000-8000-000000000002" },
+    },
+  },
+  { name: "turn_timing", extra: { turn_timing: {} } },
+  { name: "unknown field", extra: { future_field: true } },
+  { name: "empty tool", extra: { tool: {} } },
+  { name: "progress", extra: { progress: {} } },
+  { name: "numeric text", extra: { text: 42 } },
+  { name: "object text", extra: { text: { content: "retained" } } },
+  { name: "array text", extra: { text: ["retained"] } },
+  { name: "boolean text", extra: { text: false } },
+  { name: "null text", extra: { text: null } },
+  { name: "nonempty text", extra: { text: "retained" } },
+  { name: "numeric native_id", extra: { native_id: 7 } },
+  { name: "negative sequence", extra: { first_sequence: -1 } },
+  { name: "non-array attachments", extra: { attachments: {} } },
+])(
+  "retains the generic artifact fallback for the mixed envelope $name",
+  ({ extra }) => {
+    for (const state of ["complete", "streaming"]) {
+      const value = artifact();
+      if (state === "streaming")
+        delete (value as { completed?: unknown }).completed;
+      const { container, unmount } = render(
+        <TranscriptItem
+          resource={transcriptResource({
+            role: "artifact",
+            state,
+            artifact: value,
+            ...extra,
+          })}
+        />,
+      );
+      expect(container.querySelector(".message-codex-reasoning")).toBeNull();
+      expect(container.querySelector("article > header")).toBeTruthy();
+      unmount();
+    }
+  },
+);
+it.each([
+  { name: "absent text", extra: {} },
+  { name: "empty text", extra: { text: "" } },
+  {
+    name: "common metadata",
+    extra: {
+      text: "",
+      execution_id: "01960dcb-e1fa-7000-8000-000000000003",
+      native_thread_id: "thread",
+      native_turn_id: "turn",
+      native_id: "native",
+      first_sequence: 1,
+      last_sequence: 4,
+      context_revision: 2,
+      attachments: [],
+    },
+  },
+])(
+  "selects the dedicated disclosure for a valid envelope with $name",
+  ({ extra }) => {
+    const { container } = render(<TranscriptItem resource={envelope(extra)} />);
+    expect(container.querySelector(".message-codex-reasoning")).toBeTruthy();
+    expect(container.querySelector("details")?.open).toBe(false);
+  },
+);
+it.each([
+  ["streaming", { started: snapshot() }],
+  [
+    "complete",
+    {
+      started: snapshot([" Résumé 한국어 "], ["  content\n\t "]),
+      completed: snapshot([" Résumé 한국어 "], ["  content\n\t "]),
+    },
+  ],
+  ["complete", { started: snapshot([], [""]), completed: snapshot([], [""]) }],
+])("keeps the dedicated disclosure for a valid %s snapshot", (state, value) => {
+  const { container } = render(
+    <TranscriptItem
+      resource={transcriptResource({
+        role: "artifact",
+        state,
+        artifact: value,
+      })}
+    />,
+  );
+  expect(container.querySelector(".message-codex-reasoning")).toBeTruthy();
+  expect(container.querySelector("details")?.open).toBe(false);
+});
 it.each(["\u0000", "\ud800", "한".repeat(90000)])(
   "rejects invalid or oversized source text without summary generation",
   (text) => {

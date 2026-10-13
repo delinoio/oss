@@ -109,10 +109,29 @@ pub fn run_optimized(root: &Path) -> Output {
         };
         fs::write(&target, code).unwrap();
     }
+    // External packages are not rewritten; the optimized program resolves
+    // them from a verbatim copy of the project's `node_modules`.
+    let packages = root.join("node_modules");
+    if packages.is_dir() {
+        copy_dir(&packages, &run.join("node_modules"));
+    }
     Command::new("node")
         .arg(run.join("main.js"))
         .output()
         .unwrap()
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
 }
 
 /// Runs the original sources and the optimized output and asserts equal

@@ -347,4 +347,75 @@ describe("terminal presentation numbers", () => {
       new SessionTabsStore().terminalPresentation("s").number("next"),
     ).toBe(1);
   });
+
+  describe("Sidechat child identity", () => {
+    const draft = { text: "Keep", start: 1, end: 2, focus: false };
+    const pending = (store: SessionTabsStore) => {
+      store.open("parent", {
+        kind: SessionTabKind.PendingSidechat,
+        requestId: "request",
+        name: "Pending",
+      });
+    };
+    it.each([
+      ["empty", ""],
+      ["parent", "parent"],
+    ])(
+      "rejects a published %s child id without mutating ownership",
+      (_, id) => {
+        const store = new SessionTabsStore();
+        pending(store);
+        const before = store.snapshot("parent");
+        expect(
+          store.publishSidechat(
+            "parent",
+            "request",
+            { kind: SessionTabKind.Sidechat, id, name: "Bad" },
+            draft,
+          ),
+        ).toBe(false);
+        expect(store.snapshot("parent")).toBe(before);
+        expect(store.sidechats("parent")).toEqual([]);
+        expect(store.parent(id)).toBeUndefined();
+        expect(store.childDraft(id)).toBeUndefined();
+      },
+    );
+    it("publishes a distinct nonempty child once in place", () => {
+      const store = new SessionTabsStore();
+      pending(store);
+      expect(
+        store.publishSidechat(
+          "parent",
+          "request",
+          { kind: SessionTabKind.Sidechat, id: "child", name: "Child" },
+          draft,
+        ),
+      ).toBe(true);
+      expect(store.parent("child")).toBe("parent");
+      expect(store.sidechats("parent")).toHaveLength(1);
+      expect(store.childDraft("child")).toEqual(draft);
+      expect(store.snapshot("parent").tabs).toHaveLength(2);
+    });
+    it("ignores opening a Sidechat equal to its parent or an ancestor", () => {
+      const store = new SessionTabsStore();
+      store.open("root", {
+        kind: SessionTabKind.Sidechat,
+        id: "child",
+        name: "Child",
+      });
+      store.open("child", {
+        kind: SessionTabKind.Sidechat,
+        id: "child",
+        name: "Self",
+      });
+      store.open("child", {
+        kind: SessionTabKind.Sidechat,
+        id: "root",
+        name: "Ancestor",
+      });
+      expect(store.sidechats("child")).toEqual([]);
+      expect(store.parent("root")).toBeUndefined();
+      expect(store.snapshot("child").tabs).toHaveLength(1);
+    });
+  });
 });

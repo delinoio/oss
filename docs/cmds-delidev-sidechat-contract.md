@@ -42,8 +42,14 @@ usage charge. Child queue/transcript/execution state remains independent.
 `SendSidechatFindings` and `session sidechat send` submit an explicit bounded
 selection of complete assistant messages at exact child/message/parent revisions.
 The server builds text from those original messages, then uses the existing
-queue/explicit Steer admission rules and UUID-v7 receipt. No automatic merge or
-unselected transcript transfer is permitted. Account switching, terminals,
+queue/explicit Steer admission rules and UUID-v7 receipt. Once a same-question
+retry exists, only replies from the selected answer generation are transferable:
+the server rejects any message whose execution is a retry execution or the
+original question execution recorded by the first retry unless it equals the
+child's current answer, inside the same atomic mutation with a conflict and no
+parent input. Failed or uncertain retries keep the previous answer selected and
+transferable; sessions without retries keep the original rules. No automatic
+merge or unselected transcript transfer is permitted. Account switching, terminals,
 forwarding, Git writes, PR automation and workspace mutations cannot expand a
 Sidechat's read-only authority.
 
@@ -94,6 +100,8 @@ gate before atomic claim; a scan wake never grants native cleanup authority.
   Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
+
+- A Sidechat whose frozen source preparation names any repository directory requires the `named-workspace-directories-v1` Worker capability, like an independent Fork of the same source. Admission, claim-time authority and Worker preflight (`ForkRequiresNamedDirectories`) reject an unsupported or downgraded Worker with the Unsupported named-directory outcome before job creation, source inspection or native work. Unnamed Worktree, Local and General Chat sources are unchanged; the child still owns only reference metadata, with parent-dependent lifetime and no UUID-path fallback.
 
 ### cmds/delidev-cli/internal/store constraints
 
@@ -321,6 +329,12 @@ metadata-only workspace references, native read-only enforcement and durable
 parent-dependent cleanup remain unchanged. Independent Fork keeps its separate
 form and native/workspace lifetime.
 
+The published child Session ID must be nonempty and distinct from the original
+parent; a malformed succeeded readback stays unverified and permits only original
+job status reads. A definite creation rejection offers no parent-read retry, and
+reopening a retained pending Sidechat from another Session routes to the original
+parent without any new Fork, input, Resume or findings transfer.
+
 ## Session-tab presentation
 
 A retained Sidechat is presented inside its original parent workspace as a typed
@@ -421,7 +435,9 @@ noninteractive popover opens after 300 ms hover or immediately on focus, shares
 Escape, departure, inactive presentation or unmount without moving focus.
 Disabled actions remain focusable with localized guidance. Previous generations
 use a read-only history disclosure over the original bounded transcript payload
-window; the active answer remains visible during work. Capability uncertainty
+window; the active answer remains visible during work. The findings picker
+offers only the selected answer generation, using the same current-answer filter
+as the transcript. Capability uncertainty
 retains the original request controller across presentation changes. There is no
 new pending Cancel action or automatic findings transfer.
 

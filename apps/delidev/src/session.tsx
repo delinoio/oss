@@ -69,6 +69,7 @@ import {
 import {
   paginationIdentity,
   paginationRevision,
+  pagesResident,
   ReadStage,
 } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
@@ -121,7 +122,7 @@ import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
-import { CodexReasoning, codexReasoning } from "./codex-reasoning";
+import { CodexReasoning, codexReasoningMessage } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
 import { BudgetEvidence, SessionBudget } from "./session-budget";
 import {
@@ -578,20 +579,7 @@ export const TranscriptItem = memo(function TranscriptItem({
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
-  const reasoning =
-    data.role === "artifact" &&
-    data.tool == null &&
-    data.progress == null &&
-    !text(data.text) &&
-    [
-      "grok_text",
-      "claude",
-      "claude_tool",
-      "claude_progress",
-      "claude_interruption",
-    ].every((key) => !Object.hasOwn(data, key))
-      ? codexReasoning(data.artifact, text(data.state))
-      : undefined;
+  const reasoning = codexReasoningMessage(data, text(data.state));
   if (reasoning)
     return (
       <article
@@ -1722,9 +1710,7 @@ export function SessionView({
       Boolean(interactions.error || live.error) ||
       live.state !== ConnectionState.Live,
     continuation: Boolean(interactions.nextPageToken),
-    resident: interactions.pages.every((page) =>
-      interactions.payloadPages.some((payload) => payload.token === page.token),
-    ),
+    resident: pagesResident(interactions),
     displayed: displayedRequests.length,
     pending: new Set([
       ...pendingQuestionKeys,
@@ -1785,9 +1771,7 @@ export function SessionView({
   );
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
   // controls reachable; retained IDs alone cannot establish an empty queue.
-  const completeQueuePayloads = queue.pages.every((page) =>
-    queue.payloadPages.some((payload) => payload.token === page.token),
-  );
+  const completeQueuePayloads = pagesResident(queue);
   const queueFailed = useRef(false);
   if (queue.error) queueFailed.current = true;
   else if (!queue.isPending && !queue.loading) queueFailed.current = false;
@@ -2054,7 +2038,10 @@ export function SessionView({
       !queue.nextPageToken,
     queue: pending,
   });
-  // Hide-boundary freshness only. A refresh keeps its retained pages displayed
+  // Hide-boundary freshness only. A terminal token proves traversal, not
+  // payload completeness: every retained page must still have its payload
+  // resident (at most three stay), else evicted pages could hide a response,
+  // follow-up or interaction. A refresh keeps its retained pages displayed
   // (the startup list stays), but retained pages are not current proof that no
   // response, follow-up or interaction arrived, so Info stays visible meanwhile.
   const startupTranscriptCurrent =
@@ -2062,19 +2049,22 @@ export function SessionView({
     !messages.error &&
     !messages.isPending &&
     !messages.isFetching &&
-    !messages.nextPageToken;
+    !messages.nextPageToken &&
+    pagesResident(messages);
   const startupQueueCurrent =
     Boolean(queue.data) &&
     !queue.error &&
     !queue.isPending &&
     !queue.isFetching &&
-    !queue.nextPageToken;
+    !queue.nextPageToken &&
+    pagesResident(queue);
   const startupInteractionsCurrent =
     Boolean(interactions.data) &&
     !interactions.error &&
     !interactions.isPending &&
     !interactions.isFetching &&
-    !interactions.nextPageToken;
+    !interactions.nextPageToken &&
+    pagesResident(interactions);
   const startupBudgetCurrent =
     budgetEvidence?.id === id && budgetEvidence.status === BudgetEvidence.Ready;
   // A projected later follow-up (not the original Queued/Claimed/Accepted

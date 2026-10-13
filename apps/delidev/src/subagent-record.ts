@@ -27,6 +27,12 @@ enum Status {
   Unavailable = "unavailable",
 }
 type Guard = (value: unknown) => boolean;
+/** Closed native harness values a validated child record can carry. */
+export enum SubagentHarness {
+  Codex = "codex",
+  ClaudeCode = "claude-code",
+  OpenCode = "opencode",
+}
 export type SubagentRow = {
   resource: Resource;
   record: Document;
@@ -417,8 +423,7 @@ function validate(
       value,
       {
         execution_id: uuid,
-        harness: (h) =>
-          h === "codex" || h === "claude-code" || h === "opencode",
+        harness: (h) => Object.values(SubagentHarness).includes(h as never),
         native_version: model,
         root_id: label,
         first_sequence: sequence,
@@ -658,4 +663,22 @@ export function validateSubagentPage(
     // require the current page to contain the complete retained hierarchy.
   }
   return rows;
+}
+
+/**
+ * Retains only the closed harness value of one validated child resource so the
+ * capability warning survives bounded payload eviction. No output, usage or
+ * identity beyond the pagination row is kept, and it grants no child control.
+ */
+export function subagentSafeRow(
+  resource: Resource,
+  sessionId: string,
+): { harness?: SubagentHarness } {
+  const harness = validateSubagentPage([resource], sessionId)?.[0]?.record
+    .harness;
+  return {
+    harness: Object.values(SubagentHarness).includes(harness as never)
+      ? (harness as SubagentHarness)
+      : undefined,
+  };
 }
