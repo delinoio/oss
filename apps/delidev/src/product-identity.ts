@@ -130,12 +130,69 @@ export function productMetadata(
   );
 }
 
+/** Marks one array element in a JSON path; a string key can never equal it. */
+const arrayElement = Symbol("array element");
+type PathSegment = string | typeof arrayElement;
+
+/** Parse a documented path such as `plan.changes[].source_id` into segments. */
+function jsonPath(path: string): readonly PathSegment[] {
+  return path.split(".").flatMap((part) => {
+    const segments: PathSegment[] = [];
+    let name = part;
+    let elements = 0;
+    while (name.endsWith("[]")) {
+      name = name.slice(0, -2);
+      elements++;
+    }
+    if (name) segments.push(name);
+    for (let index = 0; index < elements; index++)
+      segments.push(arrayElement);
+    return segments;
+  });
+}
+
+/** Context-sensitive projection rules layered over the key-based field map.
+ * `kinds` project a string value only at an exact path, so one key name can mean
+ * different things in different places. `externalKeys` name keys whose whole
+ * subtree is external identity and keeps its original bytes. */
+export interface PathProjection {
+  readonly kinds: ReadonlyArray<{
+    readonly path: readonly PathSegment[];
+    readonly kind: PresentationKind;
+  }>;
+  readonly externalKeys: ReadonlySet<string>;
+}
+
+function pathProjection(
+  kinds: ReadonlyArray<readonly [string, PresentationKind]>,
+  externalKeys: readonly string[],
+): PathProjection {
+  return {
+    kinds: kinds.map(([path, kind]) => ({ path: jsonPath(path), kind })),
+    externalKeys: new Set(externalKeys),
+  };
+}
+
+function pathKind(
+  projection: PathProjection,
+  path: readonly PathSegment[],
+): PresentationKind | undefined {
+  return projection.kinds.find(
+    (rule) =>
+      rule.path.length === path.length &&
+      rule.path.every((segment, index) => segment === path[index]),
+  )?.kind;
+}
+
 /** Project declared JSON fields without parsing or rounding numeric tokens.
- * The lexer keeps source/native subtrees and every other byte intact. */
+ * The lexer keeps source/native subtrees and every other byte intact. The
+ * optional path projection adds exact-path kinds and external subtrees that
+ * take precedence over the key-based field map. */
 export function productMetadataJSON(
   raw: string,
   fields: Readonly<Record<string, PresentationKind>>,
   label: IdentityLabel,
+  paths?: PathProjection,
 ): string {
   interface Frame {
     object: boolean;
@@ -143,6 +200,7 @@ export function productMetadataJSON(
     expectsKey: boolean;
     protected: boolean;
     kind?: PresentationKind;
+    path: readonly PathSegment[];
   }
   const stack: Frame[] = [];
   const tokens =
@@ -151,15 +209,23 @@ export function productMetadataJSON(
     const parent = stack[stack.length - 1];
     const protectedValue = Boolean(
       parent?.protected ||
-      (parent?.object && parent.key && sourceContent.test(parent.key)),
+      (parent?.object &&
+        parent.key !== undefined &&
+        (sourceContent.test(parent.key) || paths?.externalKeys.has(parent.key))),
     );
-    const kind = parent?.object ? fields[parent.key ?? ""] : parent?.kind;
+    const valuePath: readonly PathSegment[] = parent
+      ? [...parent.path, parent.object ? (parent.key ?? "") : arrayElement]
+      : [];
+    const kind =
+      (paths && !protectedValue ? pathKind(paths, valuePath) : undefined) ??
+      (parent?.object ? fields[parent.key ?? ""] : parent?.kind);
     if (token === "{" || token === "[") {
       stack.push({
         object: token === "{",
         expectsKey: token === "{",
         protected: protectedValue,
         kind,
+        path: valuePath,
       });
       return token;
     }
@@ -222,3 +288,23 @@ export const generatedIdentityFields: Readonly<
   primary_repository: PresentationKind.Repository,
   repositories: PresentationKind.Repository,
 };
+
+const configurationDocuments = ["before", "after"] as const;
+/** Configuration import preview rules. Paths are scoped to the signed plan, so
+ * the generic map stays free of ambiguous keys: `source_id` names other
+ * identifiers elsewhere and `ids` means Agent in one place and Account in
+ * another. Reviewer selectors carry external GitHub actor and App identity. */
+export const configurationPreviewPaths: PathProjection = pathProjection(
+  [
+    ["plan.changes[].source_id", PresentationKind.Resource],
+    ...configurationDocuments.flatMap(
+      (document) =>
+        [
+          [`plan.changes[].${document}.templates[]`, PresentationKind.Template],
+          [`plan.changes[].${document}.agents.ids[]`, PresentationKind.Agent],
+          [`plan.changes[].${document}.accounts.ids[]`, PresentationKind.Account],
+        ] as const,
+    ),
+  ],
+  ["reviewer_selectors"],
+);
