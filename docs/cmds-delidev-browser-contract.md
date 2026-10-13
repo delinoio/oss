@@ -249,6 +249,25 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+Raw child closure is child-only. The raw child's life-span handler owns
+`do_close` for non-popup children: on macOS and Windows it returns 1 and completes
+destruction of exactly that child's own native host on the UI loop (removing its
+`NSView` from its superview, or `DestroyWindow` on its `HWND`), so CEF never
+sends its default parent-window close (`performClose:` / `WM_CLOSE`) to the
+containing product window and `on_before_close` still fires once per child. On
+Linux `do_close` keeps CEF's default (0), and popups keep the default. The
+handler binds the exact Browser identifier at creation; destruction is claimed
+at most once and only for that identifier, so duplicate or late close callbacks
+cannot destroy a replacement child or product views, and `child_closed` keeps
+its generation filter. New Tab, selected-tab replacement, tab close and panel
+disposal therefore never hide, close or minimize the product window; explicit
+product-window close still hides to the tray through `CloseRequested`, and Quit
+still joins. Close diagnostics are structured `browser_view` tracing events
+(`close_requested`, `destroyed`, `destroy_failed`) carrying only the platform,
+popup flag, numeric browser identifier and outcome, never URLs, credentials or
+page content. Fixture and build results prove only the disposition, identity and
+idempotency rules; macOS, Windows and Linux native acceptance is recorded
+separately.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
