@@ -699,6 +699,199 @@ Object.defineProperty(Array.prototype, "includes", {
     assert!(skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()));
 }
 
+/// An ESM package whose runtime file is `index.js` and whose declaration is
+/// `index.d.ts`, laid out under `node_modules/<name>`.
+fn package(name: &str, runtime: &str, declaration: &str) -> Vec<(String, String)> {
+    vec![
+        (
+            format!("node_modules/{name}/package.json"),
+            format!(
+                r#"{{"name":"{name}","type":"module","exports":"./index.js","types":"./index.d.ts"}}"#
+            ),
+        ),
+        (
+            format!("node_modules/{name}/index.d.ts"),
+            declaration.to_owned(),
+        ),
+        (format!("node_modules/{name}/index.js"), runtime.to_owned()),
+    ]
+}
+
+/// Runs the project with only intrinsic specialization and again with every
+/// pass, asserting that both keep behavior and the `.slice()` call, and that
+/// intrinsic specialization reports the conservative skip.
+fn assert_slice_preserved(files: &[(&str, &str)], expected: &str) {
+    for keep in [&[IS][..], &[][..]] {
+        let temp = project(files);
+        let report = if keep.is_empty() {
+            optimize(temp.path(), &[])
+        } else {
+            optimize(temp.path(), &args(&only(keep)))
+        };
+        same_behavior(temp.path());
+        let optimized = run_optimized(temp.path());
+        assert_eq!(
+            String::from_utf8_lossy(&optimized.stdout),
+            expected,
+            "{report:#}"
+        );
+        let main = emitted(temp.path(), "main.ts");
+        assert!(main.contains(".slice()"), "{main}");
+        assert_eq!(applied(&report, IS), 0, "{report:#}");
+        assert!(
+            skipped_reasons(&report, IS).contains(&"intrinsic_may_be_replaced".to_owned()),
+            "{report:#}"
+        );
+    }
+}
+
+fn with_packages<'a>(
+    files: &'a [(&'a str, &'a str)],
+    packages: &'a [(String, String)],
+) -> Vec<(&'a str, &'a str)> {
+    files
+        .iter()
+        .copied()
+        .chain(packages.iter().map(|(p, c)| (p.as_str(), c.as_str())))
+        .collect()
+}
+
+#[test]
+fn intrinsics_respect_patches_from_external_packages() {
+    let packages = package(
+        "patch-slice",
+        "Array.prototype.slice = function () { return [9]; };\n",
+        "export {};\n",
+    );
+    let files = with_packages(
+        &[(
+            "main.ts",
+            "import \"patch-slice\";\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &packages,
+    );
+    assert_slice_preserved(&files, "[9]\n");
+}
+
+#[test]
+fn intrinsics_keep_patched_method_effects_from_external_packages() {
+    let packages = package(
+        "patch-slice",
+        "Array.prototype.slice = function () { console.log(\"slice\"); return [9]; };\n",
+        "export {};\n",
+    );
+    let files = with_packages(
+        &[(
+            "main.ts",
+            "import \"patch-slice\";\nconsole.log(JSON.stringify([1].slice()));\nconsole.log(JSON.\
+             stringify([2].slice()));\n",
+        )],
+        &packages,
+    );
+    assert_slice_preserved(&files, "slice\n[9]\nslice\n[9]\n");
+}
+
+#[test]
+fn intrinsics_treat_declaration_only_packages_as_unknown_runtime() {
+    let packages = package(
+        "patch-lib",
+        "export function setup() { Array.prototype.slice = function () { return [9]; }; }\n",
+        "export declare function setup(): void;\n",
+    );
+    let files = with_packages(
+        &[(
+            "main.ts",
+            "import { setup } from \
+             \"patch-lib\";\nsetup();\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &packages,
+    );
+    assert_slice_preserved(&files, "[9]\n");
+}
+
+#[test]
+fn intrinsics_respect_transitive_external_imports() {
+    let mut packages = package("outer", "import \"inner\";\n", "export {};\n");
+    packages.extend(package(
+        "inner",
+        "Array.prototype.slice = function () { return [9]; };\n",
+        "export {};\n",
+    ));
+    let files = with_packages(
+        &[(
+            "main.ts",
+            "import \"outer\";\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &packages,
+    );
+    assert_slice_preserved(&files, "[9]\n");
+}
+
+#[test]
+fn intrinsics_respect_external_dynamic_imports_and_reexports() {
+    let packages = package(
+        "patch-slice",
+        "Array.prototype.slice = function () { return [9]; };\nexport const ready = true;\n",
+        "export declare const ready: boolean;\n",
+    );
+    let dynamic = with_packages(
+        &[(
+            "main.ts",
+            "export {};\nawait \
+             import(\"patch-slice\");\nconsole.log(JSON.stringify([1].slice()));\n",
+        )],
+        &packages,
+    );
+    assert_slice_preserved(&dynamic, "[9]\n");
+    let reexport = with_packages(
+        &[
+            (
+                "main.ts",
+                "import \"./bridge.ts\";\nconsole.log(JSON.stringify([1].slice()));\n",
+            ),
+            ("bridge.ts", "export { ready } from \"patch-slice\";\n"),
+        ],
+        &packages,
+    );
+    assert_slice_preserved(&reexport, "[9]\n");
+}
+
+#[test]
+fn type_only_package_imports_keep_intrinsics_specializable() {
+    let packages = package(
+        "types-only",
+        "throw new Error(\"never loaded at runtime\");\n",
+        "export type Value = number;\n",
+    );
+    let files = with_packages(
+        &[(
+            "main.ts",
+            "import type { Value } from \"types-only\";\nexport type { Value } from \
+             \"types-only\";\nconst v: Value = 5;\nconsole.log(JSON.stringify([v, 6].slice()));\n",
+        )],
+        &packages,
+    );
+    let (temp, report) = run(&files, &[IS]);
+    let main = emitted(temp.path(), "main.ts");
+    assert!(applied(&report, IS) >= 1, "{report:#}");
+    assert!(!main.contains(".slice()"), "{main}");
+}
+
+#[test]
+fn node_builtin_imports_keep_intrinsics_specializable() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            "import \"node:os\";\nconsole.log(JSON.stringify([5, 6].slice()));\n",
+        ),
+        ("host.d.ts", "declare module \"node:os\";\n"),
+    ];
+    let (temp, report) = run(files, &[IS]);
+    let main = emitted(temp.path(), "main.ts");
+    assert!(applied(&report, IS) >= 1, "{report:#}");
+    assert!(!main.contains(".slice()"), "{main}");
+}
+
 #[test]
 fn intrinsics_disabled_never_run() {
     let temp = project(IS_FILES);
