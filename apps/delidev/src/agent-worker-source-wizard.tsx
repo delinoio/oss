@@ -11,6 +11,7 @@ import { WizardAccountNavigation } from "./wizard-account-navigation";
 import { useProviderPages } from "./model-pagination";
 import { useWizardAccounts } from "./wizard-pagination";
 import { ScrollPicker } from "./scroll-picker";
+import { useEntranceActivation } from "./entrance-motion";
 import { revealWorkerModelOption } from "./worker-model-results";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -1196,6 +1197,18 @@ export function AgentWorkerSourceWizard({
   const inTask = useInSettingsTask();
   const [evidence, setEvidence] = useState<Record<string, Evidence>>({});
   const [step, setStep] = useState(Step.Harness);
+  // Counts only user-selected step changes. The count is the entrance
+  // activation key, so automatic routing through fail(), model refresh,
+  // discovery, typing and polling never replay the step heading entrance.
+  const [stepRequests, setStepRequests] = useState(0);
+  const stepEntrance = useEntranceActivation(
+    String(stepRequests),
+    stepRequests > 0,
+  );
+  const selectStep = (target: Step) => {
+    setStep(target);
+    setStepRequests((value) => value + 1);
+  };
   useLocale();
   const [problem, setProblem] = useProductMessage("");
   const [focusKey, setFocusKey] = useState("");
@@ -1203,6 +1216,20 @@ export function AgentWorkerSourceWizard({
   const [focusAttempt, setFocusAttempt] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null),
     form = useRef<HTMLFormElement>(null);
+  const stepEntranceRef = stepEntrance.ref;
+  // The heading ref keeps focus ownership; the entrance ref attaches to the
+  // same static element so motion never replaces it.
+  const headingRef = useCallback(
+    (node: HTMLHeadingElement | null) => {
+      heading.current = node;
+      const cleanup = stepEntranceRef?.(node);
+      return () => {
+        if (heading.current === node) heading.current = null;
+        if (typeof cleanup === "function") cleanup();
+      };
+    },
+    [stepEntranceRef],
+  );
   const displayedKey = routes.some((route) => route.key === selectedKey)
     ? selectedKey
     : routes[0]?.key;
@@ -1393,7 +1420,7 @@ export function AgentWorkerSourceWizard({
   };
   const advance = () => {
     if (validate(step)) {
-      setStep(step + 1);
+      selectStep(step + 1);
       setProblem("");
       focus();
     }
@@ -1498,7 +1525,11 @@ export function AgentWorkerSourceWizard({
           ),
         )}
       </ol>
-      <h3 ref={heading} tabIndex={-1}>
+      <h3
+        ref={headingRef}
+        tabIndex={-1}
+        data-entrance={stepEntrance["data-entrance"]}
+      >
         {stepName(step)}
       </h3>
       <fieldset disabled={mutation.busy || mutation.uncertain}>
@@ -1509,7 +1540,7 @@ export function AgentWorkerSourceWizard({
             change={chooseHarness}
             confirm={(harness) => {
               chooseHarness(harness);
-              setStep(Step.Accounts);
+              selectStep(Step.Accounts);
               setProblem("");
               focus();
             }}
@@ -1523,7 +1554,7 @@ export function AgentWorkerSourceWizard({
               type="button"
               disabled={blocked}
               onClick={() => {
-                setStep(Step.Harness);
+                selectStep(Step.Harness);
                 focus();
               }}
             >
@@ -1714,7 +1745,7 @@ export function AgentWorkerSourceWizard({
                 type="button"
                 disabled={blocked}
                 onClick={() => {
-                  setStep(step - 1);
+                  selectStep(step - 1);
                   setProblem("");
                   focus();
                 }}
