@@ -143,6 +143,20 @@ export function SessionDiff({
     repository ??
     available?.find((root) => root.primary)?.repository_id ??
     available?.[0]?.repository_id;
+  // The header remounts with `key={selectedRepository}`, and a fresh node that
+  // carries the entrance attribute would start the animation again. Only the
+  // repository whose header first mounted may carry this activation's entrance;
+  // any later repository change (even back to the first one) consumes it.
+  const [entranceRepository, setEntranceRepository] = useState<
+    string | null | undefined
+  >();
+  let entranceOwner = entranceRepository;
+  if (entranceOwner === undefined && selectedRepository)
+    entranceOwner = selectedRepository;
+  else if (entranceOwner && entranceOwner !== selectedRepository)
+    entranceOwner = null;
+  if (entranceOwner !== entranceRepository)
+    setEntranceRepository(entranceOwner);
   const chooseRepository = (value: string) => {
     setRepository(value);
     if (!openComparison) return;
@@ -200,7 +214,9 @@ export function SessionDiff({
           worktree={worktree}
           acceptedDeletionId={acceptedDeletionId}
           close={close}
-          entrance={headerEntrance}
+          entrance={
+            entranceOwner === selectedRepository ? headerEntrance : undefined
+          }
           repositoryControl={
             <label className="diff-select">
               <span className="diff-control-label">

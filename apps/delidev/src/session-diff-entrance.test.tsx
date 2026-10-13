@@ -199,6 +199,43 @@ it("does not replay for repository, path, comparison, refresh or tab changes and
   expect(aside.scrollTop).toBe(37);
 });
 
+it("does not replay when the repository changes before the entrance finishes", async () => {
+  const f = fixture();
+  render(<f.View />);
+  await screen.findByText("+exact-diff-line");
+  const first = header();
+  expect(first.getAttribute("data-entrance")).toBe("y2");
+  // Change repositories while the initial entrance is still in flight.
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText<HTMLSelectElement>("Diff repository").value,
+    ).toBe(f.other),
+  );
+  await screen.findByText("+exact-diff-line");
+  // The keyed child remounted, so the replacement header is a new node.
+  expect(header()).not.toBe(first);
+  expect(entranceNodes().length).toBe(0);
+  // Returning to the first repository inside the same visit never replays.
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.primary },
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText<HTMLSelectElement>("Diff repository").value,
+    ).toBe(f.primary),
+  );
+  await screen.findByText("+exact-diff-line");
+  expect(entranceNodes().length).toBe(0);
+  // A new open is a new activation and plays once again.
+  f.setOpen(false);
+  f.setOpen(true);
+  await screen.findByText("+exact-diff-line");
+  expect(entranceNodes().length).toBe(1);
+});
+
 it("replays only for a new open and leaves no stale attribute after rapid re-entry", async () => {
   const f = fixture();
   render(<f.View />);
