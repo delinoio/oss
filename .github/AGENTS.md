@@ -5,6 +5,7 @@
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
 - Resolve CI platform matrices before runner allocation. Do not allocate macOS or iOS runners in CI; retain owning release gates.
+- `queue: max` is allowed only for the Linux package publisher job and the workflow-level `delidev-mobile-beta` group (`cancel-in-progress: false`). The mobile group holds 100 pending runs with no dispatch-order guarantee. At capacity, stop dispatching and rerun the capacity-cancelled original run once; never replace the dispatch. Follow the mobile contract runbook.
 
 ## Owning contracts
 

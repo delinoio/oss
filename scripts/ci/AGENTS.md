@@ -6,6 +6,8 @@
 
 - Propagate the explicit CI execution mode and exact planner comparison to every selector and result check. Do not infer full validation from a manual event alone.
 
+- Keep the actionlint `queue: max` compatibility adapter in `workflows.mjs` limited to the two exact declarations in its allow-list (Linux publisher job-level, mobile beta workflow-level). Mask only the validated queue line and reject all other queue declarations.
+
 ## Owning contracts
 
 - [Repository Workflow Contract](../../docs/repository-workflow-contract.md)

@@ -4,6 +4,8 @@
 - This file covers `apps/delidev-mobile/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+- Keep the `delidev-mobile-beta` workflow concurrency at group `delidev-mobile-beta`, `cancel-in-progress: false` and `queue: max`. At the 100-pending capacity, stop dispatching, rerun the capacity-cancelled original run once, and never replace the dispatch or regenerate the candidate.
+
 ## Owning contracts
 
 - [DeliDev mobile client contract](../../docs/apps-delidev-mobile-contract.md)
