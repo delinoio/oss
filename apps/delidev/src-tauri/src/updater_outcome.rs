@@ -393,12 +393,48 @@ impl OutcomeStore {
                 .map_err(|_| NativeFailure::StorageUnavailable)?;
             return Ok(());
         }
-        // No-replace restore: if another writer already published a record,
-        // keep the claimed evidence under its hidden name instead.
-        if fs::hard_link(&claimed, &path).is_ok() {
-            let _ = fs::remove_file(&claimed);
-        }
+        self.restore_claimed(&claimed, &path, &record.operation_id);
         Err(NativeFailure::InvalidEvidence)
+    }
+
+    /// Returns evidence that was claimed but did not match the verified bytes
+    /// to its canonical name. The restore never replaces: when another writer
+    /// already published that name, both records are evidence of a conflicting
+    /// outcome. The claimed one is then renamed to a visible, non-canonical
+    /// quarantine name, because dot-prefixed files are never listed and so
+    /// would be neither replayed nor reported on later launches. A listing
+    /// reports the quarantined file as unreadable evidence and keeps it.
+    fn restore_claimed(&self, claimed: &Path, path: &Path, operation_id: &str) {
+        match fs::hard_link(claimed, path) {
+            Ok(()) => {
+                let _ = fs::remove_file(claimed);
+                return;
+            }
+            Err(e) => tracing::warn!(
+                operation = "desktop_update_outcome_restore",
+                state = "canonical-name-unavailable",
+                id = operation_id,
+                kind = ?e.kind()
+            ),
+        }
+        let quarantine = self.dir.join(format!(
+            "{operation_id}.{}.conflict.json",
+            uuid::Uuid::now_v7()
+        ));
+        match fs::rename(claimed, &quarantine) {
+            Ok(()) => tracing::warn!(
+                operation = "desktop_update_outcome_restore",
+                state = "claimed-evidence-quarantined",
+                id = operation_id
+            ),
+            // The claimed file stays on disk under its hidden name.
+            Err(e) => tracing::error!(
+                operation = "desktop_update_outcome_restore",
+                state = "claimed-evidence-stranded",
+                id = operation_id,
+                kind = ?e.kind()
+            ),
+        }
     }
 }
 
@@ -747,6 +783,55 @@ mod tests {
             })
             .unwrap();
         assert_eq!(visited, 1, "a stop request ends the walk mid-directory");
+    }
+
+    #[test]
+    fn restore_never_leaves_claimed_evidence_hidden_when_the_name_is_taken() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        let claimed_record = record(Phase::Installed);
+        store.persist(&claimed_record).unwrap();
+        let directory = root.join(STORE_DIRECTORY);
+        let path = directory.join(format!("{}.json", claimed_record.operation_id));
+        // Model a claim whose canonical name another writer then published.
+        let claimed = directory.join(format!(".{}.claim.retire", claimed_record.operation_id));
+        fs::rename(&path, &claimed).unwrap();
+        let mut rival = claimed_record.clone();
+        rival.phase = Phase::Failed;
+        store.persist(&rival).unwrap();
+        let rival_bytes = fs::read(&path).unwrap();
+        store.restore_claimed(&claimed, &path, &claimed_record.operation_id);
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            rival_bytes,
+            "the published record is never replaced"
+        );
+        assert!(!claimed.exists(), "the claimed file is no longer hidden");
+        let hidden = fs::read_dir(&directory)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with('.')
+            })
+            .count();
+        assert_eq!(hidden, 0);
+        // The quarantined evidence is reported on every later listing and kept.
+        let entries = store.scan().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.contains(&StoredEntry::Record(rival)));
+        assert!(entries.contains(&StoredEntry::Unreadable(None)));
+        let quarantined = fs::read_dir(&directory)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.to_string_lossy().ends_with(".conflict.json"))
+            .unwrap();
+        assert_eq!(
+            fs::read(quarantined).unwrap(),
+            serde_json::to_vec(&claimed_record).unwrap()
+        );
     }
 
     #[test]

@@ -70,7 +70,11 @@ offline `native-outcome` response echoes the recorded phase for the same
 identities, and only when the stored bytes still equal, byte for byte, the bytes
 written for the verified record: the name is atomically claimed, the claimed
 bytes are verified, and only then is the claim unlinked. A differently encoded
-or replaced file is restored and retained. On the next launch a bounded
+or replaced file is restored and retained; when another writer has already
+published the canonical name, the claimed file is renamed to a visible
+`<operation-id>.<uuid>.conflict.json` quarantine name instead of staying under its
+hidden dot-prefixed claim name, so the next listing reports both records as
+retained evidence. On the next launch a bounded
 background pass, and each original-scope `native-inspect` for the exact server,
 operation, revision and saved scope, replays the retained phase through the same
 offline writer with a settlement-only token. That token has no installer entry
