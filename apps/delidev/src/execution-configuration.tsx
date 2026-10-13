@@ -6,7 +6,11 @@ import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokToolsTerminal } from "./native-grok-interactions";
 import { NativeGrokTerminal, NativeGrokStop } from "./native-grok";
-import { isEntityId, type Resource } from "@delinoio/delidev-api-client";
+import {
+  isEntityId,
+  subscriptionService,
+  type Resource,
+} from "@delinoio/delidev-api-client";
 import { memo, type ReactNode } from "react";
 import { Harness, Routing } from "./configuration-fields";
 import { NativeClaudePermissionProgress } from "./native-claude-progress";
@@ -49,6 +53,75 @@ function positiveRevision(value: unknown): boolean {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+const sourceModelKeyPrefix = "source:";
+// Mirrors the server bound on the decoded source model identity document.
+const sourceModelKeyMaxBytes = 1024;
+const sourceModelKeyPayload = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Validates the internal source-scoped model key of a saved execution
+ * configuration. The server never stores a resource UUID here: the key is
+ * `source:` followed by the unpadded base64url JSON of the exact source
+ * (one API provider ID or one subscription service) and native model ID. The
+ * decoded identity must agree with the snapshot's own source attribution and
+ * native model, matching the server's frozen-identity check.
+ */
+function sourceModelKeyMatches(
+  key: string,
+  configuration: Document,
+  nativeModel: string,
+): boolean {
+  if (!key.startsWith(sourceModelKeyPrefix)) return false;
+  const payload = key.slice(sourceModelKeyPrefix.length);
+  if (!sourceModelKeyPayload.test(payload) || payload.length % 4 === 1)
+    return false;
+  let identity: Document;
+  try {
+    const binary = atob(payload.replaceAll("-", "+").replaceAll("_", "/"));
+    if (binary.length > sourceModelKeyMaxBytes) return false;
+    const decoded: unknown = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(
+        Uint8Array.from(binary, (char) => char.charCodeAt(0)),
+      ),
+    );
+    if (
+      decoded === null ||
+      typeof decoded !== "object" ||
+      Array.isArray(decoded)
+    )
+      return false;
+    identity = decoded as Document;
+  } catch {
+    return false;
+  }
+  if (
+    Object.keys(identity).some(
+      (name) =>
+        name !== "provider_id" &&
+        name !== "subscription_service" &&
+        name !== "native_id",
+    )
+  )
+    return false;
+  const provider = identity.provider_id;
+  const service = identity.subscription_service;
+  const hasProvider = provider !== undefined;
+  const hasService = service !== undefined;
+  return (
+    hasProvider !== hasService &&
+    identity.native_id === nativeModel &&
+    (!hasProvider ||
+      (typeof provider === "string" &&
+        isEntityId(provider) &&
+        provider === configuration.provider_id &&
+        configuration.subscription_service === undefined)) &&
+    (!hasService ||
+      (subscriptionService(service) !== undefined &&
+        service === configuration.subscription_service &&
+        configuration.provider_id === undefined))
+  );
+}
+
 export type SavedExecutionSnapshot =
   { ready: false } | { ready: true; nativeModel: string; effort: string };
 
@@ -57,9 +130,11 @@ export type SavedExecutionSnapshot =
  *
  * This is the single readiness predicate shared by the Session information
  * chips and the Diagnostics saved-configuration section. It mirrors the
- * required keys of the server execution configuration (identities are
- * canonical UUIDs, the harness is one of the closed supported set, revisions
- * are positive integers and the structural keys have their expected types).
+ * required keys of the server execution configuration (execution and Agent
+ * identities are canonical UUIDs, the model key is the source-scoped key of
+ * the saved native model rather than a UUID, the harness is one of the closed
+ * supported set, revisions are positive integers and the structural keys have
+ * their expected types).
  * Reasoning effort is exact direct input: it is never validated against a
  * value list, and an empty or absent value is simply omitted. Nothing is
  * inferred from the current Agent, resumed executions or native observations.
@@ -78,13 +153,17 @@ export function savedExecutionSnapshot(
     typeof configuration.agent_id === "string" &&
     isEntityId(configuration.agent_id) &&
     typeof configuration.model_key === "string" &&
-    isEntityId(configuration.model_key) &&
     positiveRevision(configuration.agent_revision) &&
     positiveRevision(configuration.model_revision) &&
     typeof configuration.harness === "string" &&
     supportedHarnesses.has(configuration.harness) &&
     typeof nativeModel === "string" &&
     nativeModel !== "" &&
+    sourceModelKeyMatches(
+      configuration.model_key,
+      configuration,
+      nativeModel,
+    ) &&
     (effort === undefined || typeof effort === "string") &&
     configuration.options !== null &&
     typeof configuration.options === "object" &&

@@ -12,6 +12,7 @@ import {
   SavedExecutionChips,
   savedExecutionSnapshot,
 } from "./execution-configuration";
+import { sourceModelKey } from "./source-model-key-fixture";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(
   props: ComponentProps<typeof OriginalExecutionConfiguration>,
@@ -33,12 +34,16 @@ function fixture(harness = "codex") {
     "Original first template 지침.\n  Keep indentation. <script>privateScript()</script>";
   const second =
     "Original second template.\nDo not use the later edited template.";
+  const provider = newRequestId();
   const configuration = {
     agent_id: newRequestId(),
     agent_revision: 3,
-    model_key: newRequestId(),
+    model_key: sourceModelKey({
+      provider_id: provider,
+      native_id: "original-model",
+    }),
     model_revision: 7,
-    provider_id: newRequestId(),
+    provider_id: provider,
     harness,
     native_model: "original-model",
     effort: "high",
@@ -162,9 +167,85 @@ const invalidSnapshots: [string, Mutation][] = [
     },
   ],
   [
-    "a non-canonical model key",
+    "a model key without the source prefix",
     (_, configuration) => {
       configuration.model_key = "model-1";
+    },
+  ],
+  [
+    "a resource UUID in place of the source model key",
+    (_, configuration) => {
+      configuration.model_key = newRequestId();
+    },
+  ],
+  [
+    "a source model key with a malformed payload",
+    (_, configuration) => {
+      configuration.model_key = "source:***";
+    },
+  ],
+  [
+    "a source model key whose payload is not JSON",
+    (_, configuration) => {
+      configuration.model_key = "source:bm90LWpzb24";
+    },
+  ],
+  [
+    "a source model key for a different native model",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        native_id: "another-model",
+      });
+    },
+  ],
+  [
+    "a source model key for a different provider",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        provider_id: newRequestId(),
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key for a subscription service while a provider is saved",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        subscription_service: "chatgpt",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key naming both a provider and a subscription service",
+    (_, configuration) => {
+      configuration.model_key = sourceModelKey({
+        provider_id: configuration.provider_id as string,
+        subscription_service: "chatgpt",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key with an unsupported subscription service",
+    (_, configuration) => {
+      delete configuration.provider_id;
+      configuration.subscription_service = "unknown";
+      configuration.model_key = sourceModelKey({
+        subscription_service: "unknown",
+        native_id: "original-model",
+      });
+    },
+  ],
+  [
+    "a source model key with a non-canonical provider id",
+    (_, configuration) => {
+      configuration.provider_id = "provider-1";
+      configuration.model_key = sourceModelKey({
+        provider_id: "provider-1",
+        native_id: "original-model",
+      });
     },
   ],
   [
@@ -274,6 +355,51 @@ it.each(invalidSnapshots)(
     view.unmount();
   },
 );
+
+it("accepts the source-scoped model key of API provider and subscription snapshots", () => {
+  const api = fixture();
+  expect((api.configuration as Record<string, unknown>).model_key).toMatch(
+    /^source:[A-Za-z0-9_-]+$/,
+  );
+  expect(savedExecutionSnapshot(api.resource).ready).toBe(true);
+  for (const [service, harness] of [
+    ["chatgpt", "codex"],
+    ["claude", "claude-code"],
+    ["grok", "grok-build"],
+    ["opencode_go", "opencode"],
+  ]) {
+    const value = fixture(harness);
+    const configuration = value.configuration as Record<string, unknown>;
+    delete configuration.provider_id;
+    configuration.subscription_service = service;
+    configuration.model_key = sourceModelKey({
+      subscription_service: service,
+      native_id: "original-model",
+    });
+    const resource = { ...value.resource, documentJson: encode(value.data) };
+    expect(savedExecutionSnapshot(resource)).toEqual({
+      ready: true,
+      nativeModel: "original-model",
+      effort: "high",
+    });
+  }
+});
+
+it("accepts a source model key whose native model ID is not ASCII", () => {
+  const value = fixture();
+  const configuration = value.configuration as Record<string, unknown>;
+  configuration.native_model = "모델/<preview>&v2";
+  configuration.model_key = sourceModelKey({
+    provider_id: configuration.provider_id as string,
+    native_id: "모델/<preview>&v2",
+  });
+  const resource = { ...value.resource, documentJson: encode(value.data) };
+  expect(savedExecutionSnapshot(resource)).toEqual({
+    ready: true,
+    nativeModel: "모델/<preview>&v2",
+    effort: "high",
+  });
+});
 
 it("accepts every supported harness and keeps unspecified effort omitted", () => {
   for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) {
