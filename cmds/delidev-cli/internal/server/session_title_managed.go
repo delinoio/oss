@@ -383,8 +383,14 @@ func managedTitleResult(tx *store.Tx, record store.Record, job domain.Job, input
 	if err != nil || proof.Job != record.ID || proof.JobRevision != record.Revision || proof.Account != input.AccountID || proof.Machine != job.MachineID || proof.Instance != job.InstanceID || proof.Device != job.AssignedDeviceID || proof.Generation != input.Managed.Generation {
 		return domain.AuxiliaryTitleResult{}, unconfirmed
 	}
+	// The receipt is immutable and bound to the exact job revision, Worker
+	// instance, device and settled generation, so it already proves the Finish.
+	// The account is checked only for its frozen connection: after the Finish
+	// releases it, a queued primary job may legitimately lease it or advance its
+	// generation before this report arrives, and that must not turn a proven
+	// title into permanent uncertainty.
 	_, account, err := subscriptionAccount(tx, proof.Account, 0)
-	if err != nil || account.Subscription == nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != proof.Finish || account.Connection == nil || account.Connection.ID != input.ConnectionID {
+	if err != nil || account.Subscription == nil || account.Connection == nil || account.Connection.ID != input.ConnectionID {
 		return domain.AuxiliaryTitleResult{}, unconfirmed
 	}
 	if canceled, err := tx.JobCancellationRequested(record.ID); err != nil || canceled {

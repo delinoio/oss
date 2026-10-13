@@ -286,6 +286,30 @@ func TestManagedTitleSucceedsOnceAfterProtectedFinish(t *testing.T) {
 	})
 }
 
+// A primary job may lease the released account between the protected Finish and
+// the title report. The immutable Finish receipt still proves the title.
+func TestManagedTitlePublishesAfterLaterAccountUse(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{})
+	record, finish := f.runToFinish(t)
+	f.mutate(t, "later-primary-use", func(tx *store.Tx) error {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return err
+		}
+		a.Subscription.Generation = domain.NewID()
+		a.Subscription.Lease = &domain.SubscriptionLease{ID: domain.NewID(), OperationID: domain.NewID(), Revision: 1, Action: domain.SubscriptionExecute, MachineID: f.input.MachineID, InstanceID: f.instance, DeviceID: f.authorityFixture.device, Epoch: domain.NewID(), Generation: a.Subscription.Generation, StartedAt: time.Now().UTC()}
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return err
+	})
+	if err := f.report(record, f.result(finish, "Plan the migration", true), nil); err != nil {
+		t.Fatal(err)
+	}
+	session := f.session(t)
+	if session.Name != "Plan the migration" || session.TitleState != domain.TitleSucceeded {
+		t.Fatalf("later primary account use discarded a proven title: %+v", session)
+	}
+}
+
 // Scenario 2: held account keeps the title queued; primary work has priority.
 func TestManagedTitleStaysQueuedWhileAccountIsBusy(t *testing.T) {
 	f := newManagedTitleFixture(t, managedTitleOptions{})
