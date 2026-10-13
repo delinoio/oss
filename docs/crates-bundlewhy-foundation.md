@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust (workspace edition) with tokio, hyper 1 and serde. The analyzed project's build runs in Node.js 22 or newer through the adapters. Rust is a documented deviation from the repository Go default; see [the project index](project-bundlewhy.md).
+Rust (workspace edition) with tokio, hyper 1 and serde. The analyzed project's build runs in Node.js 22.18 or newer through the adapters (the first 22.x release that strips TypeScript types by default, which TypeScript Rspack configurations require). Rust is a documented deviation from the repository Go default; see [the project index](project-bundlewhy.md).
 
 ## Users and Operators
 
@@ -56,11 +56,11 @@ Each rule has a stable identifier, a category, conditions with outcomes, evidenc
 | `minifier/minification-disabled`       | Both   | Dead-code elimination | Confirmed                                                                                    | Configuration disables minification                                                          |
 | `minifier/direct-eval-blocks-mangling` | Both   | Name mangling         | Confirmed with an engine-reported `EVAL` log or eval bailout, Inferred from source otherwise | Direct `eval` in a module whose long local names survive in the generated chunk              |
 
-Inlining and constant folding are `COVERAGE_STATE_UNAVAILABLE` for both engines: neither engine exposes those decisions and no verified detector exists. Module concatenation is covered for both engines. Missing source maps mark the affected chunk's attribution `UNAVAILABLE`, fall back to generated locations and record `BW_SOURCE_MAP_MISSING`. A partial collection keeps usable results, sets `RUN_STATUS_PARTIAL` and marks affected categories `COVERAGE_STATE_PARTIAL`. Retained code alone is never reported as a defect.
+Inlining and constant folding are `COVERAGE_STATE_UNAVAILABLE` for both engines: neither engine exposes those decisions and no verified detector exists. Module concatenation is covered for both engines. Missing source maps mark the affected chunk's attribution `UNAVAILABLE`, fall back to generated locations and record `BW_SOURCE_MAP_MISSING`. A partial collection keeps usable results, sets `RUN_STATUS_PARTIAL` and marks affected categories `COVERAGE_STATE_PARTIAL`; an emitted chunk that cannot be read marks dead-code elimination and name mangling partial. The env-condition scan ignores string, template, comment and regular expression literal text. Retained code alone is never reported as a defect.
 
 ### Dependency paths and locations
 
-Dependency paths are the shortest static importer chains from an entry to the module (up to three). Locations use original source positions when a source map maps them; otherwise generated chunk positions. Snippets carry at most nine lines of 240 characters each.
+Dependency paths are the shortest static importer chains from an entry to the module (up to three). Dynamic `import()` edges are not part of a dependency path. Locations use original source positions when a source map maps them; otherwise generated chunk positions. Snippets carry at most nine lines of 240 characters each.
 
 ### Sizes
 
@@ -68,7 +68,7 @@ Each emitted JavaScript chunk records raw, gzip (level 9) and Brotli (quality 11
 
 ### Lifecycle
 
-Every run gets a new UUID v7 directory. Progress stages are `DETECTING`, `BUILDING`, `COLLECTING`, `ANALYZING`, `MEASURING`, `SAVING` and `FINISHED`. Ctrl+C or `CancelRun` terminates the owned adapter process (its process group on Unix), writes a `RUN_STATUS_CANCELLED` bundle with `BW_RUN_CANCELLED` and keeps the `INCOMPLETE` marker. A bundle left `RUNNING` by an interrupted process reopens as `RUN_STATUS_FAILED` with `BW_RUN_INTERRUPTED`. There is no automatic retry or resume; a retry is a new run. Project `package.json`, the selected configuration and lockfiles are hashed before and after the build; a change is reported as `BW_PROJECT_MODIFIED`.
+Every run gets a new UUID v7 directory. Progress stages are `DETECTING`, `BUILDING`, `COLLECTING`, `ANALYZING`, `MEASURING`, `SAVING` and `FINISHED`. Ctrl+C or `CancelRun` terminates the owned adapter process (its process group on Unix), writes a `RUN_STATUS_CANCELLED` bundle with `BW_RUN_CANCELLED` and keeps the `INCOMPLETE` marker. A bundle left `RUNNING` by an interrupted process reopens as `RUN_STATUS_FAILED` with `BW_RUN_INTERRUPTED`. There is no automatic retry or resume; a retry is a new run. Project `package.json`, the selected configuration and lockfiles are hashed before and after the build; a change is reported as `BW_PROJECT_MODIFIED`, downgrades a complete run to `RUN_STATUS_PARTIAL`, keeps the `INCOMPLETE` marker and makes `analyze` exit with a failure code.
 
 ### Error codes
 
@@ -80,7 +80,7 @@ Every run gets a new UUID v7 directory. Progress stages are `DETECTING`, `BUILDI
 
 ## Security
 
-Project configuration, plugins and adapters execute with the user's permissions; bundlewhy supports trusted local projects and does not sandbox plugin filesystem or network effects. The server binds `127.0.0.1` on an OS-assigned port, requires a per-run 256-bit bearer token (delivered in the URL fragment), rejects requests whose `Host` is not the bound address and whose `Origin` is not exactly the server origin, and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a CSP without network sources. RPC methods take no filesystem paths: sources are looked up by bundle-local identifiers and runs by UUID within the output directory. Saved bundles are untrusted: structure, enum values, identifiers and display paths are validated, and stale checks read only project-relative paths without `..` that stay inside the recorded project root. Exported HTML embeds JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped and a CSP that forbids network access. Reports that include source content are not claimed to be secret-free.
+Project configuration, plugins and adapters execute with the user's permissions; bundlewhy supports trusted local projects and does not sandbox plugin filesystem or network effects. The server binds `127.0.0.1` on an OS-assigned port, requires a per-run 256-bit bearer token (delivered in the URL fragment), rejects requests whose `Host` is not the bound address and whose `Origin` is not exactly the server origin, and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a CSP without network sources. RPC methods take no filesystem paths: sources are looked up by bundle-local identifiers and runs by UUID within the output directory. Saved bundles are untrusted: structure, enum values, identifiers and display paths are validated, and stale checks read only project-relative paths without `..` that resolve (after symlinks) to regular files of at most 16 MiB inside the recorded project root. Source files are identified by their resolved path, so distinct installed copies that share a display path stay distinct. `--exclude-sources` also removes diagnostic snippets from result bundles and exports. Exported HTML embeds JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped and a CSP that forbids network access. Reports that include source content are not claimed to be secret-free.
 
 ## Logging
 

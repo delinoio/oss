@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Adapters are dependency-free ESM for Node.js 22 or newer. They run in the analyzed project's directory and load the project's own `vite` or `@rspack/core`. The launcher is CommonJS using Node.js built-ins.
+Adapters are dependency-free ESM for Node.js 22.18 or newer. They run in the analyzed project's directory and load the project's own `vite` or `@rspack/core`. The launcher is CommonJS using Node.js built-ins.
 
 ## Users and Operators
 

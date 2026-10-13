@@ -180,12 +180,46 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
     Ok(bundle)
 }
 
+/// Largest project file read for a stale check.
+const MAX_STALE_CHECK_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Reads a project file for a stale check only when it resolves to a regular
+/// file inside the project root and is not larger than the limit. Special
+/// files (for example `/dev/zero`) and symlinks leaving the root are refused.
+fn read_project_file(canonical_root: &Path, relative: &Path) -> Option<Vec<u8>> {
+    let resolved = std::fs::canonicalize(canonical_root.join(relative)).ok()?;
+    if !resolved.starts_with(canonical_root) {
+        return None;
+    }
+    let metadata = std::fs::metadata(&resolved).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_STALE_CHECK_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(
+            std::fs::File::open(&resolved).ok()?,
+            MAX_STALE_CHECK_BYTES + 1,
+        ),
+        &mut bytes,
+    )
+    .ok()?;
+    (bytes.len() as u64 <= MAX_STALE_CHECK_BYTES).then_some(bytes)
+}
+
 /// Marks sources whose current project file differs from the saved hash.
 pub fn mark_stale(bundle: &mut ResultBundle) {
     let root = PathBuf::from(&bundle.project_root);
     if bundle.project_root.is_empty() || !root.is_absolute() {
         return;
     }
+    // The root comes from an untrusted bundle; it must resolve to a directory.
+    let Some(canonical_root) = std::fs::canonicalize(&root)
+        .ok()
+        .filter(|path| path.is_dir())
+    else {
+        return;
+    };
     let mut stale = 0usize;
     for source in &mut bundle.sources {
         let Some(relative) = bundle
@@ -195,9 +229,8 @@ pub fn mark_stale(bundle: &mut ResultBundle) {
         else {
             continue;
         };
-        let path = root.join(relative);
-        let is_stale =
-            std::fs::read(&path).map_or(true, |bytes| sha256_hex(&bytes) != source.sha256);
+        let is_stale = read_project_file(&canonical_root, &relative)
+            .is_none_or(|bytes| sha256_hex(&bytes) != source.sha256);
         source.stale = is_stale;
         stale += usize::from(is_stale);
     }
@@ -302,6 +335,26 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_checks_refuse_special_files_and_escaping_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(dir.path().join("outside.js"), "original").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("outside.js"), project.join("escape.js"))
+            .unwrap();
+        std::os::unix::fs::symlink("/dev/zero", project.join("zero.js")).unwrap();
+        let canonical = std::fs::canonicalize(&project).unwrap();
+        assert!(read_project_file(&canonical, Path::new("escape.js")).is_none());
+        assert!(read_project_file(&canonical, Path::new("zero.js")).is_none());
+        std::fs::write(project.join("inside.js"), "ok").unwrap();
+        assert_eq!(
+            read_project_file(&canonical, Path::new("inside.js")).unwrap(),
+            b"ok"
+        );
     }
 
     #[test]

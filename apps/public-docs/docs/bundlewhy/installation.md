@@ -6,7 +6,7 @@ bundlewhy is not yet published to npm. Version 0.1.0 is in development. The npm 
 
 ## Requirements
 
-- Node.js 22 or newer. bundlewhy runs your project's build through Node.js.
+- Node.js 22.18 or newer. bundlewhy runs your project's build through Node.js.
 - A local Vite or Rspack project at a version listed on the [supported engines](/bundlewhy/supported-engines) page, with its dependencies installed.
 - A desktop browser for the local web UI.
 

@@ -181,7 +181,6 @@ impl<'a> Context<'a> {
             let importers: Vec<&str> = module
                 .importers
                 .iter()
-                .chain(&module.dynamic_importers)
                 .map(String::as_str)
                 .filter(|importer| self.modules.contains_key(importer))
                 .collect();

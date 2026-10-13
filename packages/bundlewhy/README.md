@@ -38,7 +38,7 @@ Results stay in the directory you choose until you delete them. Nothing is uploa
 
 ## Platforms
 
-Node.js 22 or newer on macOS arm64, Linux x64 (glibc) or Windows x64.
+Node.js 22.18 or newer on macOS arm64, Linux x64 (glibc) or Windows x64.
 
 ## Support
 

@@ -113,6 +113,13 @@ pub fn render(
         summary.content_included = include_sources && summary.content_included;
         summary.stale = false;
     }
+    if !include_sources {
+        // Snippets are source excerpts and must not survive a source-free
+        // export.
+        for diagnostic in &mut analysis.diagnostics {
+            diagnostic.snippet = None;
+        }
+    }
     let payload = serde_json::json!({ "analysis": analysis, "sources": sources });
     let data = format!(
         "<script type=\"application/json\" id=\"bundlewhy-report\">{}</script>",
@@ -159,6 +166,10 @@ mod tests {
             status: RunStatus::Complete,
             diagnostics: vec![Diagnostic {
                 title: "<img src=x onerror=alert(1)>".to_owned(),
+                snippet: Some(crate::model::CodeSnippet {
+                    text: "const snippetSecret = 1;".to_owned(),
+                    ..crate::model::CodeSnippet::default()
+                }),
                 ..Diagnostic::default()
             }],
             ..Analysis::default()
@@ -173,6 +184,7 @@ mod tests {
         assert!(!html.contains(REPORT_MARKER));
         assert!(!html.contains("<img"));
         assert!(!html.contains("secret"));
+        assert!(!html.contains("snippetSecret"));
         assert!(html.contains("REPORT_MODE_EXPORTED"));
         assert!(html.contains("connect-src 'none'"));
         assert!(html.contains("default-src 'none'"));
@@ -180,5 +192,6 @@ mod tests {
         assert!(html.contains(&script_hash));
         let with_sources = render(ui, &analysis, &sources, true);
         assert!(with_sources.contains("secret"));
+        assert!(with_sources.contains("snippetSecret"));
     }
 }

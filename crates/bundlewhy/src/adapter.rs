@@ -165,7 +165,7 @@ pub async fn run(
                     "Node.js executable {} was not found",
                     options.node.display()
                 ),
-                "Install Node.js 22 or newer and make `node` available on PATH, or set \
+                "Install Node.js 22.18 or newer and make `node` available on PATH, or set \
                  BUNDLEWHY_NODE.",
             )
         } else {

@@ -136,7 +136,10 @@ impl SourceStore {
     /// Adds a file from disk and returns its source ID and content.
     pub fn add_file(&mut self, project_root: &Path, path: &Path) -> Option<(String, String)> {
         let classified = classify(project_root, path);
-        if let Some(existing) = self.files.get(&classified.display) {
+        // Key by the resolved path: distinct installed copies (for example two
+        // pnpm versions) can share the shortened display path.
+        let key = normalize(path).to_string_lossy().into_owned();
+        if let Some(existing) = self.files.get(&key) {
             return Some((existing.id.clone(), existing.content.clone()));
         }
         let content = match std::fs::read(path) {
@@ -147,7 +150,7 @@ impl SourceStore {
                 return None;
             }
         };
-        let id = source_id(&classified.display);
+        let id = source_id(&key);
         let file = SourceFile {
             id: id.clone(),
             path: classified.display.clone(),
@@ -160,7 +163,7 @@ impl SourceStore {
         if let Some(relative) = classified.project_relative {
             self.project_relative.insert(id.clone(), relative);
         }
-        self.files.insert(classified.display, file);
+        self.files.insert(key, file);
         Some((id, content))
     }
 
@@ -213,6 +216,37 @@ mod tests {
                 "{unsafe_path}"
             );
         }
+    }
+
+    #[test]
+    fn distinct_copies_with_the_same_display_path_stay_distinct() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for (version, body) in [
+            ("pkg@1", "export const v = 1;"),
+            ("pkg@2", "export const v = 2;"),
+        ] {
+            let package = dir
+                .path()
+                .join("node_modules/.pnpm")
+                .join(version)
+                .join("node_modules/pkg");
+            std::fs::create_dir_all(&package).unwrap();
+            std::fs::write(package.join("index.js"), body).unwrap();
+            paths.push(package.join("index.js"));
+        }
+        let mut store = SourceStore::new(true);
+        let first = store.add_file(dir.path(), &paths[0]).unwrap();
+        let second = store.add_file(dir.path(), &paths[1]).unwrap();
+        assert_ne!(first.0, second.0);
+        assert_eq!(second.1, "export const v = 2;");
+        let files = store.into_files();
+        assert_eq!(files.len(), 2);
+        assert!(
+            files
+                .iter()
+                .all(|file| file.path == "node_modules/pkg/index.js")
+        );
     }
 
     #[test]

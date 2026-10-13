@@ -61,7 +61,11 @@ pub fn engine_identity(bundler: BundlerChoice, collection: &Collection) -> Engin
     }
 }
 
-fn coverage(collection: &Collection, missing_maps: usize) -> Vec<CategoryCoverage> {
+fn coverage(
+    collection: &Collection,
+    missing_maps: usize,
+    failed_chunks: usize,
+) -> Vec<CategoryCoverage> {
     let rules = rules::rules_by_category(&collection.bundler);
     OptimizationCategory::ALL
         .into_iter()
@@ -92,6 +96,19 @@ fn coverage(collection: &Collection, missing_maps: usize) -> Vec<CategoryCoverag
                         collection.minifier
                     ),
                 ),
+                // Both categories scan generated chunk text; a chunk that
+                // could not be read leaves part of the output unscanned.
+                OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
+                    if failed_chunks > 0 =>
+                {
+                    (
+                        CoverageState::Partial,
+                        format!(
+                            "{failed_chunks} emitted chunk(s) could not be read and were not \
+                             scanned; findings in them are missing."
+                        ),
+                    )
+                }
                 OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
                     if missing_maps > 0 =>
                 {
@@ -123,6 +140,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         .map_or_else(|| input.project_root.clone(), PathBuf::from);
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
+    let mut failed_chunks = 0usize;
     for chunk in &collection.chunks {
         match Chunk::load(
             &input.build_dir,
@@ -132,12 +150,15 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             &context_dir,
         ) {
             Ok(loaded) => chunks.push(loaded),
-            Err(error) => problems.push(problem(
-                ErrorCode::CollectionFailed,
-                ProblemSeverity::Warning,
-                format!("Chunk {} could not be read: {error}", chunk.file),
-                "Start a new run; do not modify the run directory while it is being analyzed.",
-            )),
+            Err(error) => {
+                failed_chunks += 1;
+                problems.push(problem(
+                    ErrorCode::CollectionFailed,
+                    ProblemSeverity::Warning,
+                    format!("Chunk {} could not be read: {error}", chunk.file),
+                    "Start a new run; do not modify the run directory while it is being analyzed.",
+                ));
+            }
         }
     }
     let missing_maps: Vec<String> = chunks
@@ -182,7 +203,13 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         chunks,
         SourceStore::new(input.include_sources),
     );
-    let diagnostics = rules::run(&mut context);
+    let mut diagnostics = rules::run(&mut context);
+    if !input.include_sources {
+        // Snippets are source excerpts; excluding sources excludes them too.
+        for diagnostic in &mut diagnostics {
+            diagnostic.snippet = None;
+        }
+    }
     let root = input.project_root.clone();
     let display = |path: &Path| classify(&root, path).display;
     let chunk_sizes = context
@@ -232,7 +259,7 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
         },
         engine: Some(engine_identity(input.bundler, collection)),
         diagnostics,
-        coverage: coverage(collection, missing_maps.len()),
+        coverage: coverage(collection, missing_maps.len(), failed_chunks),
         chunks: chunk_sizes,
         problems,
         config_summary,
@@ -265,6 +292,14 @@ mod tests {
 
     /// Relocates a committed fixture collection and build into a temp dir.
     fn run_fixture(bundler: BundlerChoice, edit: impl Fn(&mut serde_json::Value)) -> Fixture {
+        run_fixture_with(bundler, true, edit)
+    }
+
+    fn run_fixture_with(
+        bundler: BundlerChoice,
+        include_sources: bool,
+        edit: impl Fn(&mut serde_json::Value),
+    ) -> Fixture {
         let fixture_root = manifest_dir().join("tests/fixtures").join(bundler.as_str());
         let project = manifest_dir()
             .join("../../packages/bundlewhy/fixtures")
@@ -297,7 +332,7 @@ mod tests {
             bundler,
             collection: &collection,
             build_dir: build,
-            include_sources: true,
+            include_sources,
             started_at: String::new(),
         });
         Fixture { _dir: dir, output }
@@ -605,6 +640,46 @@ mod tests {
             .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
             .unwrap();
         assert_eq!(dce.state, CoverageState::Partial);
+    }
+
+    #[test]
+    fn excluded_sources_remove_snippets() {
+        let fixture = run_fixture_with(BundlerChoice::Vite, false, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert!(!analysis.diagnostics.is_empty());
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.snippet.is_none())
+        );
+        assert!(
+            fixture
+                .output
+                .sources
+                .iter()
+                .all(|source| source.content.is_empty())
+        );
+    }
+
+    #[test]
+    fn unreadable_chunks_mark_generated_code_categories_partial() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            value["chunks"][0]["file"] = serde_json::json!("missing-chunk.js");
+        });
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        for category in [
+            OptimizationCategory::DeadCodeElimination,
+            OptimizationCategory::NameMangling,
+        ] {
+            let entry = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == category)
+                .unwrap();
+            assert_eq!(entry.state, CoverageState::Partial, "{category:?}");
+        }
     }
 
     #[test]

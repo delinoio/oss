@@ -244,7 +244,7 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
         });
     };
 
-    let (mut result_bundle, error) = match result {
+    let (mut result_bundle, mut error) = match result {
         Ok(collection) => {
             log.event(
                 "engine",
@@ -388,6 +388,21 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             "bundlewhy does not write project files; a build plugin or another process changed \
              them. Review the changes with your version control.",
         ));
+        // Results derived while protected inputs changed are not complete and
+        // must not look successful to automation.
+        if result_bundle.analysis.status == RunStatus::Complete {
+            result_bundle.analysis.status = RunStatus::Partial;
+        }
+        if error.is_none() {
+            error = Some(BwError::new(
+                ErrorCode::ProjectModified,
+                format!(
+                    "Protected project files changed during the run: {}",
+                    modified.join(", ")
+                ),
+                "Review the changes with your version control, then start a new run.",
+            ));
+        }
     }
 
     set_stage(RunStage::Saving, "Saving results");

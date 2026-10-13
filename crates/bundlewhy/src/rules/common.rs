@@ -109,6 +109,140 @@ fn duplicate_packages(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraf
     }
 }
 
+/// Byte ranges of string literals, template literal text, comments and regular
+/// expression literals in JavaScript. Text there is never a property read.
+///
+/// This is a lexical scan, not a parser. Regular expression literals are
+/// recognized by the preceding token (an operator, punctuation or keyword such
+/// as `return`), which matches minified bundler output.
+fn non_code_ranges(code: &str) -> Vec<(usize, usize)> {
+    let bytes = code.as_bytes();
+    let mut ranges = Vec::new();
+    // Open `${` substitutions; each entry is the brace depth inside it.
+    let mut templates: Vec<usize> = Vec::new();
+    let mut previous_significant: Option<u8> = None;
+    let mut index = 0usize;
+    let regex_allowed = |previous: Option<u8>, start: usize| -> bool {
+        match previous {
+            None => true,
+            Some(byte) if b"(,=:[!&|?{};+-*%<>~^".contains(&byte) => true,
+            Some(byte) if byte.is_ascii_alphabetic() => {
+                let head = &code[..start];
+                let trimmed = head.trim_end();
+                [
+                    "return", "typeof", "case", "do", "else", "in", "of", "void", "yield",
+                    "delete", "throw", "new",
+                ]
+                .iter()
+                .any(|keyword| {
+                    trimmed.ends_with(keyword)
+                        && !trimmed[..trimmed.len() - keyword.len()].ends_with(|character: char| {
+                            character.is_alphanumeric() || character == '_' || character == '$'
+                        })
+                })
+            }
+            _ => false,
+        }
+    };
+    // Scans a quoted string or template text starting after the opener.
+    let scan_until = |mut position: usize, terminator: u8, template: bool| -> (usize, bool) {
+        while position < bytes.len() {
+            match bytes[position] {
+                b'\\' => position += 2,
+                byte if byte == terminator => return (position + 1, false),
+                b'$' if template && bytes.get(position + 1) == Some(&b'{') => {
+                    return (position + 2, true);
+                }
+                b'\n' if !template => return (position, false),
+                _ => position += 1,
+            }
+        }
+        (bytes.len(), false)
+    };
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match byte {
+            b'\'' | b'"' => {
+                let (end, _) = scan_until(index + 1, byte, false);
+                ranges.push((index, end));
+                index = end;
+                previous_significant = Some(b'"');
+            }
+            b'`' => {
+                let (end, opened) = scan_until(index + 1, b'`', true);
+                ranges.push((index, end));
+                if opened {
+                    templates.push(0);
+                }
+                index = end;
+                previous_significant = Some(b'"');
+            }
+            b'}' if templates.last() == Some(&0) => {
+                templates.pop();
+                let (end, opened) = scan_until(index + 1, b'`', true);
+                ranges.push((index, end));
+                if opened {
+                    templates.push(0);
+                }
+                index = end;
+                previous_significant = Some(b'"');
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                let end = code[index..]
+                    .find('\n')
+                    .map_or(bytes.len(), |offset| index + offset);
+                ranges.push((index, end));
+                index = end;
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                let end = code[index + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |offset| index + 2 + offset + 2);
+                ranges.push((index, end));
+                index = end;
+            }
+            b'/' if regex_allowed(previous_significant, index) => {
+                let mut position = index + 1;
+                let mut in_class = false;
+                while position < bytes.len() {
+                    match bytes[position] {
+                        b'\\' => position += 1,
+                        b'[' => in_class = true,
+                        b']' => in_class = false,
+                        b'/' if !in_class => break,
+                        b'\n' => break,
+                        _ => {}
+                    }
+                    position += 1;
+                }
+                let end = (position + 1).min(bytes.len());
+                ranges.push((index, end));
+                index = end;
+                previous_significant = Some(b'"');
+            }
+            _ => {
+                if let Some(depth) = templates.last_mut() {
+                    if byte == b'{' {
+                        *depth += 1;
+                    } else if byte == b'}' {
+                        *depth -= 1;
+                    }
+                }
+                if !byte.is_ascii_whitespace() {
+                    previous_significant = Some(byte);
+                }
+                index += 1;
+            }
+        }
+    }
+    ranges
+}
+
+fn in_ranges(ranges: &[(usize, usize)], offset: usize) -> bool {
+    let index = ranges.partition_point(|(start, _)| *start <= offset);
+    index > 0 && offset < ranges[index - 1].1
+}
+
 fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     let vite = context.collection.bundler == "vite";
     // Vite replaces `process.env` with `{}` in client builds; Rspack leaves
@@ -121,10 +255,16 @@ fn unresolved_env_conditions(context: &mut Context<'_>, drafts: &mut Vec<Diagnos
     .expect("static regex");
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
     for index in 0..context.chunks.len() {
+        let ignored = non_code_ranges(&context.chunks[index].code);
         let matches: Vec<(usize, String)> = pattern
             .captures_iter(&context.chunks[index].code)
             .filter_map(|captures| {
                 let whole = captures.get(0)?;
+                // Text inside strings, templates, comments or regular
+                // expressions is not a runtime read.
+                if in_ranges(&ignored, whole.start()) {
+                    return None;
+                }
                 // Vite's `(` belongs to the preceding mapping segment; the
                 // `{}` replacement maps to the original `process.env` read.
                 let offset = if vite {
@@ -447,6 +587,27 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_code_ranges_cover_strings_comments_templates_and_regexes() {
+        let code = r#"a("process.env.A");/* process.env.B */x=`process.env.C ${process.env.D} t`;// process.env.E
+y=/process.env.F/.test(z),process.env.G"#;
+        let ranges = non_code_ranges(code);
+        let ignored =
+            |name: &str| in_ranges(&ranges, code.find(&format!("process.env.{name}")).unwrap());
+        for name in ["A", "B", "C", "E", "F"] {
+            assert!(ignored(name), "{name} should be ignored");
+        }
+        for name in ["D", "G"] {
+            assert!(!ignored(name), "{name} is code");
+        }
+        // Division is not a regular expression.
+        let division = "a=b/2,process.env.H/3";
+        assert!(!in_ranges(
+            &non_code_ranges(division),
+            division.find("process").unwrap()
+        ));
+    }
 
     #[test]
     fn finds_direct_eval_but_not_member_eval() {
