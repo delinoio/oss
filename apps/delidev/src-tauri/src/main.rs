@@ -3033,6 +3033,144 @@ mod product_window_tests {
         assert!(recheck_record(&windows, &forged).is_err());
     }
 
+    fn local(windows: &ProductWindows) -> WindowAuthority {
+        let mut registry = windows.registry.lock().unwrap();
+        let entry = registry.reserve(Role::Local, true).unwrap();
+        registry.ready(&entry).unwrap();
+        WindowAuthority {
+            entry,
+            local_revision: registry.local_revision,
+            saved: None,
+        }
+    }
+
+    // The retained updater worker takes only these retained native owners: no
+    // window handle exists to reach a CEF URL getter or the UI loop.
+    #[test]
+    fn retained_updater_authority_accepts_only_the_exact_original_saved_scope() {
+        let oauth = delidev_desktop::oauth::OAuthHost::default();
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let label = original.entry.label.clone();
+        let epoch = oauth.window_epoch(&label).unwrap();
+        let check = || updater_host::retained_authority(&oauth, &windows, &label, &original, epoch);
+        assert!(check().is_ok());
+
+        // A same-profile sibling remains independent of the original window.
+        let _sibling = saved(&windows, "profile");
+        assert!(check().is_ok());
+
+        windows
+            .bindings
+            .lock()
+            .unwrap()
+            .get_mut(&label)
+            .unwrap()
+            .profile
+            .device_id = "replacement".into();
+        assert_eq!(check(), Err(NativeFailure::InvalidEvidence));
+    }
+
+    #[test]
+    fn retained_updater_authority_rejects_changed_epoch_instance_barrier_and_departure() {
+        let oauth = delidev_desktop::oauth::OAuthHost::default();
+        let windows = ProductWindows::default();
+        let original = saved(&windows, "profile");
+        let label = original.entry.label.clone();
+        let epoch = oauth.window_epoch(&label).unwrap();
+
+        // Removal barrier for the saved profile.
+        windows.removals.lock().unwrap().insert(
+            "profile".into(),
+            SavedBinding {
+                profile: original.saved.clone().unwrap(),
+                instance: "removal".into(),
+                closing: true,
+            },
+        );
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        windows.removals.lock().unwrap().clear();
+        assert!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch).is_ok()
+        );
+
+        // Changed window instance.
+        let mut replaced = original.clone();
+        replaced.entry.instance = "other-instance".into();
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &replaced, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+
+        // Changed role.
+        let mut forged = original.clone();
+        forged.entry.role = Role::Local;
+        forged.saved = None;
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &forged, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+
+        // OAuth window epoch advanced after begin.
+        oauth.close_window(&label).unwrap();
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        let epoch = oauth.window_epoch(&label).unwrap();
+        assert!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch).is_ok()
+        );
+
+        // A closing or removed window is a definitive permission failure.
+        windows
+            .registry
+            .lock()
+            .unwrap()
+            .begin_close(&label, false)
+            .unwrap();
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::PermissionDenied)
+        );
+        windows
+            .registry
+            .lock()
+            .unwrap()
+            .remove(&label, &original.entry.instance);
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::PermissionDenied)
+        );
+    }
+
+    #[test]
+    fn retained_updater_authority_rejects_changed_local_revision_and_role() {
+        let oauth = delidev_desktop::oauth::OAuthHost::default();
+        let windows = ProductWindows::default();
+        let original = local(&windows);
+        let label = original.entry.label.clone();
+        let epoch = oauth.window_epoch(&label).unwrap();
+        assert!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch).is_ok()
+        );
+        windows.registry.lock().unwrap().local_revision += 1;
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &original, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        let mut forged = original;
+        forged.local_revision = windows.registry.lock().unwrap().local_revision;
+        forged.entry.role = Role::Saved("profile".into());
+        assert_eq!(
+            updater_host::retained_authority(&oauth, &windows, &label, &forged, epoch),
+            Err(NativeFailure::InvalidEvidence)
+        );
+    }
+
     fn staged_tabs() -> (
         tempfile::TempDir,
         std::path::PathBuf,
