@@ -173,10 +173,10 @@ impl OutcomeStore {
         Ok(true)
     }
 
-    /// Reads one record. `Ok(None)` means the file does not exist.
-    fn read(&self, operation_id: &str) -> Result<Option<OutcomeRecord>> {
-        let path = self.path(operation_id);
-        let metadata = match fs::symlink_metadata(&path) {
+    /// Reads the bounded raw bytes of one regular file. `Ok(None)` means the
+    /// file does not exist.
+    fn read_bytes(path: &Path) -> Result<Option<Vec<u8>>> {
+        let metadata = match fs::symlink_metadata(path) {
             Ok(v) => v,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(NativeFailure::StorageUnavailable),
@@ -186,7 +186,7 @@ impl OutcomeStore {
             return Err(NativeFailure::InvalidEvidence);
         }
         let mut bytes = Vec::new();
-        File::open(&path)
+        File::open(path)
             .map_err(|_| NativeFailure::StorageUnavailable)?
             .take(RECORD_LIMIT + 1)
             .read_to_end(&mut bytes)
@@ -194,6 +194,14 @@ impl OutcomeStore {
         if bytes.len() as u64 > RECORD_LIMIT {
             return Err(NativeFailure::InvalidEvidence);
         }
+        Ok(Some(bytes))
+    }
+
+    /// Reads one record. `Ok(None)` means the file does not exist.
+    fn read(&self, operation_id: &str) -> Result<Option<OutcomeRecord>> {
+        let Some(bytes) = Self::read_bytes(&self.path(operation_id))? else {
+            return Ok(None);
+        };
         let record: OutcomeRecord =
             serde_json::from_slice(&bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
         record.validate()?;
@@ -327,25 +335,56 @@ impl OutcomeStore {
         Ok(entries)
     }
 
-    /// Removes the record only when the stored bytes still equal the exact
-    /// record that was verified as settled. Anything else is retained.
+    /// Removes the record only when the stored bytes are exactly the bytes
+    /// written for the record that was verified as settled. A differently
+    /// encoded or replaced file is retained, even when it parses to an equal
+    /// record.
     pub fn retire(&self, record: &OutcomeRecord) -> Result<()> {
+        self.retire_with(record, || {})
+    }
+
+    /// `window` runs between the early comparison and the removal so tests can
+    /// model a writer racing the retirement.
+    fn retire_with(&self, record: &OutcomeRecord, window: impl FnOnce()) -> Result<()> {
         if !self.check_dir(false)? {
             return Ok(());
         }
-        match self.read(&record.operation_id)? {
-            None => Ok(()),
-            Some(existing) if existing == *record => {
-                fs::remove_file(self.path(&record.operation_id))
-                    .map_err(|_| NativeFailure::StorageUnavailable)?;
-                #[cfg(unix)]
-                File::open(&self.dir)
-                    .and_then(|d| d.sync_all())
-                    .map_err(|_| NativeFailure::StorageUnavailable)?;
-                Ok(())
-            }
-            Some(_) => Err(NativeFailure::InvalidEvidence),
+        let expected = serde_json::to_vec(record).map_err(|_| NativeFailure::InvalidEvidence)?;
+        let path = self.path(&record.operation_id);
+        match Self::read_bytes(&path)? {
+            None => return Ok(()),
+            Some(stored) if stored == expected => {}
+            Some(_) => return Err(NativeFailure::InvalidEvidence),
         }
+        window();
+        // Take exclusive ownership of whatever now holds the name with an
+        // atomic rename, then verify and delete only that object. A file that
+        // replaced the verified one in the meantime is restored, never
+        // unlinked.
+        let claimed = self.dir.join(format!(
+            ".{}.{}.retire",
+            record.operation_id,
+            uuid::Uuid::now_v7()
+        ));
+        match fs::rename(&path, &claimed) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(NativeFailure::StorageUnavailable),
+        }
+        if matches!(Self::read_bytes(&claimed), Ok(Some(stored)) if stored == expected) {
+            fs::remove_file(&claimed).map_err(|_| NativeFailure::StorageUnavailable)?;
+            #[cfg(unix)]
+            File::open(&self.dir)
+                .and_then(|d| d.sync_all())
+                .map_err(|_| NativeFailure::StorageUnavailable)?;
+            return Ok(());
+        }
+        // No-replace restore: if another writer already published a record,
+        // keep the claimed evidence under its hidden name instead.
+        if fs::hard_link(&claimed, &path).is_ok() {
+            let _ = fs::remove_file(&claimed);
+        }
+        Err(NativeFailure::InvalidEvidence)
     }
 }
 
@@ -456,6 +495,70 @@ mod tests {
         store.retire(&stored).unwrap();
         assert!(store.scan().unwrap().is_empty());
         store.retire(&stored).unwrap();
+    }
+
+    #[test]
+    fn retire_keeps_semantically_equal_records_with_different_bytes() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        let stored = record(Phase::Installed);
+        store.persist(&stored).unwrap();
+        let path = root
+            .join(STORE_DIRECTORY)
+            .join(format!("{}.json", stored.operation_id));
+        let pretty = serde_json::to_vec_pretty(&stored).unwrap();
+        fs::write(&path, &pretty).unwrap();
+        assert!(store.load(&stored.operation_id).unwrap().is_some());
+        assert!(matches!(
+            store.retire(&stored),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), pretty);
+        fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        store.retire(&stored).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn retire_never_unlinks_a_record_replaced_after_verification() {
+        let (_temp, root) = scope();
+        let store = OutcomeStore::new(&root);
+        let stored = record(Phase::Installed);
+        store.persist(&stored).unwrap();
+        let directory = root.join(STORE_DIRECTORY);
+        let path = directory.join(format!("{}.json", stored.operation_id));
+        let mut replacement = stored.clone();
+        replacement.phase = Phase::Failed;
+        let replacement_bytes = serde_json::to_vec(&replacement).unwrap();
+        let result = store.retire_with(&stored, || {
+            let temporary = directory.join("replacement.tmp");
+            fs::write(&temporary, &replacement_bytes).unwrap();
+            fs::rename(&temporary, &path).unwrap();
+        });
+        assert!(matches!(result, Err(NativeFailure::InvalidEvidence)));
+        assert_eq!(fs::read(&path).unwrap(), replacement_bytes);
+        let hidden = fs::read_dir(&directory)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with('.')
+            })
+            .count();
+        assert_eq!(hidden, 0, "the claimed file is restored, not left behind");
+        // A second replacement is restored the same way.
+        let result = store.retire_with(&replacement, || {
+            let temporary = directory.join("replacement.tmp");
+            fs::write(&temporary, serde_json::to_vec(&stored).unwrap()).unwrap();
+            fs::rename(&temporary, &path).unwrap();
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            serde_json::to_vec(&stored).unwrap()
+        );
     }
 
     #[test]

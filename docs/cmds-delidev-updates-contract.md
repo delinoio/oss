@@ -53,8 +53,10 @@ persistence so a newly created store directory is durable) and published with a 
 after the preceding read is reread and accepted only when identical), bounded to 4 KiB, and an existing record for
 the same operation is never replaced with different content. The record is
 retired only after the offline `native-outcome` response echoes the recorded
-phase for the same identities, and only when the stored bytes still equal the
-verified record. On the next launch a bounded background pass, and each
+phase for the same identities, and only when the stored bytes still equal, byte for
+byte, the bytes written for the verified record: the name is atomically claimed,
+the claimed bytes are verified, and only then is the claim unlinked. A
+differently encoded or replaced file is restored and retained. On the next launch a bounded background pass, and each
 original-scope `native-inspect` for the exact server, operation, revision and
 saved scope, replays the retained phase through the same offline writer with a
 settlement-only token. That token has no installer entry point, so replay never
