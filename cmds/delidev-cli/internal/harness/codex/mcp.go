@@ -302,6 +302,11 @@ func (c *Client) validateMCPConfig(config map[string]json.RawMessage) error {
 			}
 			return *value, true
 		}
+		// A lower layer can set environment_id; a non-local value routes the server
+		// outside the selected Worker's owned process tree.
+		if environment, ok := text("environment_id"); !ok || environment != "local" {
+			return mcpMismatch("environment")
+		}
 		command, ok1 := text("command")
 		cwd, ok2 := text("cwd")
 		endpoint, ok3 := text("url")

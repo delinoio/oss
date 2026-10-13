@@ -226,6 +226,8 @@ func TestManagedMCPInventoryRequiresTheExactSelectedConfiguration(t *testing.T) 
 		"layered-oauth":       func(s map[string]map[string]any) { s["web_aaaa"]["oauth"] = map[string]any{"client_id": "x"} },
 		"layered-tool-policy": func(s map[string]map[string]any) { s["web_aaaa"]["default_tools_approval_mode"] = "approve" },
 		"disabled":            func(s map[string]map[string]any) { s["web_aaaa"]["enabled"] = false },
+		"remote-environment":  func(s map[string]map[string]any) { s["fx_bbbb"]["environment_id"] = "remote-1" },
+		"missing-environment": func(s map[string]map[string]any) { delete(s["web_aaaa"], "environment_id") },
 		"header-redirected": func(s map[string]map[string]any) {
 			s["web_aaaa"]["env_http_headers"] = map[string]any{"X-Api-Key": "HOME"}
 		},
