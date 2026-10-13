@@ -119,7 +119,22 @@ export class InteractionPresentationStore {
   observe(row: Resource): InteractionProjection {
     const prior = this.projections.get(row.id);
     if (prior && prior.revision >= row.revision) return prior;
-    const next = interactionProjection(row);
+    const observed = interactionProjection(row);
+    // A newer document that drops or changes the established question identity
+    // is a contradictory observation: keep the original question flag and
+    // answer mutation key so retained receipt recovery stays reachable, and
+    // surface it as unavailable without any response authority.
+    const next =
+      prior?.question &&
+      (!observed.question || observed.mutationKey !== prior.mutationKey)
+        ? {
+            ...observed,
+            question: true,
+            mutationKey: prior.mutationKey,
+            presentation: InteractionPresentation.Pending,
+            unavailable: true,
+          }
+        : observed;
     this.projections.set(row.id, next);
     return next;
   }
