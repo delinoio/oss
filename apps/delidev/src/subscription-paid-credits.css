@@ -102,7 +102,7 @@
   color: var(--text);
   line-height: 1.4;
   z-index: 1;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.16);
+  box-shadow: 0 4px 16px var(--shadow-soft);
 }
 .subscription-paid-empty {
   margin: 0;
