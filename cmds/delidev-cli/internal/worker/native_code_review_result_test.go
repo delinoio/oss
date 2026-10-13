@@ -243,14 +243,13 @@ func TestNativeReviewRecoveryLeavesNonReviewAndFinishedJournalsUnchanged(t *test
 		job.Input = json.RawMessage(`{"path":"/fixture"}`)
 		job.ParentID = ""
 		rawJob, _ := json.Marshal(job)
-		resource := *f.resource
-		resource.DocumentJson = rawJob
+		resource := &pb.Resource{Id: f.resource.Id, SessionId: f.resource.SessionId, ProjectId: f.resource.ProjectId, Revision: f.resource.Revision, DocumentJson: rawJob}
 		stale := f.original
 		stale.Digest = executionInputDigest(rawJob)
 		if err := writeJSON(filepath.Join(f.root, "jobs", string(f.id)+".json"), stale); err != nil {
 			t.Fatal(err)
 		}
-		result, err := runJob(context.Background(), Config{Root: f.root}, f.instance, &resource, job)
+		result, err := runJob(context.Background(), Config{Root: f.root}, f.instance, resource, job)
 		if err != nil || result.Problem == nil || result.Problem.Code != domain.RecoveryRequired || len(result.Output) != 0 {
 			t.Fatalf("non-review journal consulted a review result: %v %+v", err, result)
 		}
