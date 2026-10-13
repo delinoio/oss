@@ -6373,6 +6373,14 @@ problem history or separate stack-dependencies section. Pending PR actions remai
 above the workspace. Existing server/CLI inspection and recovery surfaces survive.
 Unknown counts and failed decorative images remain accessible fallbacks.
 
+The stack-context workspace query keeps `retry: false` and stays pending while the
+server resumes a read that selection or tab work displaced; the selected detail
+remains usable meanwhile. A pending read shows no incomplete notice, cancellation
+warning or Retry stack context. The query publishes the final server observation
+without issuing another workspace RPC. Only a terminal failure or invalid
+observation shows the incomplete notice, Problem and explicit Retry stack context.
+Unmounting or scope replacement discards a late result.
+
 ### Contextual session recovery cards
 
 Session and General Chat Conversation retain one recovery region immediately

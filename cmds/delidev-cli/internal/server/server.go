@@ -110,6 +110,7 @@ type Service struct {
 	ownedPAT              *credentials.PATStore
 	github                githubIdentity
 	githubQueries         githubRepositoryQueries
+	githubWorkspaces      githubPullRequestWorkspaces
 	githubRepositories    githubRepositoryInventory
 	terminalOutputMu      sync.Mutex
 	terminalOutputChanged chan struct{}
