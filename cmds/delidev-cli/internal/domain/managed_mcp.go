@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -147,6 +148,10 @@ type MCPSecretInput struct {
 	Headers     map[string]string `json:"headers,omitempty"`
 }
 
+// MaxMCPSecretPayloadBytes mirrors the protected vault's total secret bound. The
+// serialized credential object must fit it before any operation is recorded.
+const MaxMCPSecretPayloadBytes = 64 << 10
+
 func (s MCPSecretInput) Validate(t MCPTransport) error {
 	if len(s.Environment)+len(s.Headers) == 0 || len(s.Environment)+len(s.Headers) > 64 || t == MCPStdio && len(s.Headers) > 0 || t == MCPStreamableHTTP && len(s.Environment) > 0 {
 		return Fail(InvalidArgument, "MCP credentials do not match the transport.", "Use environment values for stdio or headers for HTTP.")
@@ -160,6 +165,9 @@ func (s MCPSecretInput) Validate(t MCPTransport) error {
 		if k == "" || len(k) > 128 || strings.ContainsAny(k, "\r\n: \x00") || Text(v, "MCP secret", 8192, true) != nil || strings.ContainsAny(v, "\r\n") {
 			return Fail(InvalidArgument, "Invalid MCP header credential.", "Provide bounded header names and values.")
 		}
+	}
+	if raw, err := json.Marshal(s); err != nil || len(raw) > MaxMCPSecretPayloadBytes {
+		return Fail(InvalidArgument, "The MCP credentials exceed the protected storage bound.", "Provide fewer or shorter credential values.")
 	}
 	return nil
 }

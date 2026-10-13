@@ -484,3 +484,35 @@ func TestManagedMCPDefinitiveTokenRejectionSettlesTheAttempt(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedMCPSecretBoundMatchesTheVaultAndIsCheckedBeforeAnyReceipt(t *testing.T) {
+	if domain.MaxMCPSecretPayloadBytes != credentials.MaxSecretBytes {
+		t.Fatal("the credential payload bound drifted from the vault bound")
+	}
+	m, q, d := fixture(t)
+	q.Definition = &d
+	must(t, m, q)
+	auth := q
+	auth.Definition = nil
+	auth.DefinitionID = d.ID
+	auth.Action = domain.MCPAuthenticate
+	auth.ExpectedRevision = 1
+	auth.RequestID = domain.NewID()
+	environment := map[string]string{}
+	for i := 0; i < 9; i++ {
+		environment["TOKEN_"+string(rune('A'+i))] = strings.Repeat("v", 8192)
+	}
+	auth.Secrets = &domain.MCPSecretInput{Environment: environment}
+	if _, err := m.Execute(context.Background(), auth); domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatalf("an oversized credential payload was recorded: %v", err)
+	}
+	// No STARTED receipt remains, so the definition is still editable.
+	edit := q
+	edit.RequestID = domain.NewID()
+	edit.ExpectedRevision = 1
+	edited := d
+	edited.Revision = 2
+	edited.Name = "Edited after the refused credentials"
+	edit.Definition = &edited
+	must(t, m, edit)
+}

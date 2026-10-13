@@ -29,3 +29,20 @@ func TestManagedMCPStdioWorkingDirectoryIsBoundedText(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedMCPSecretPayloadMustFitTheVaultBound(t *testing.T) {
+	values := func(count, size int) map[string]string {
+		result := map[string]string{}
+		for i := 0; i < count; i++ {
+			result[strings.Repeat("K", 8)+string(rune('A'+i))] = strings.Repeat("v", size)
+		}
+		return result
+	}
+	if err := (MCPSecretInput{Environment: values(4, 8192)}).Validate(MCPStdio); err != nil {
+		t.Fatalf("a payload within the bound was rejected: %v", err)
+	}
+	// Every value is individually legal, but the serialized object exceeds the vault bound.
+	if err := (MCPSecretInput{Environment: values(9, 8192)}).Validate(MCPStdio); SafeError(err).Code != InvalidArgument {
+		t.Fatalf("an oversized aggregate was accepted: %v", err)
+	}
+}
