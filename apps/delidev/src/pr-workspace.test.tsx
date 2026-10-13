@@ -702,7 +702,9 @@ it.each([
       );
       await waitFor(() => expect(create_).toHaveBeenCalled());
       fireEvent.click(
-        screen.getByRole("button", { name: /#102 Complete original title 102/ }),
+        screen.getByRole("button", {
+          name: /#102 Complete original title 102/,
+        }),
       );
       await screen.findAllByText("Scoped body");
       expect(revoke).not.toHaveBeenCalled();
