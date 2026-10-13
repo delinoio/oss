@@ -472,6 +472,9 @@ func (s *Service) acceptPRFix(ctx context.Context, request domain.ID, operation 
 				return nil, domain.Fail(domain.Unsupported, "The selected Agent lacks the manual PR Git profile.", "Configure a verified Codex Agent; no harness fallback is performed.")
 			}
 			session = acceptedSession(domain.CreateSession{Name: "PR #" + target.Target.Number + " fix", NameMode: domain.ManualSessionName, AgentID: policy.AgentID, MachineID: policy.MachineID, ProjectID: input.ProjectID, Workspace: domain.Worktree, Source: domain.ManualSession}, nil, actor.DeviceID)
+			if err := requireExecutionJobBudget(tx, session, plan.Preparation, domain.SessionInput{Prompt: prompt, Mode: domain.ExecuteMode}); err != nil {
+				return nil, err
+			}
 			if err := queueSessionWorkspace(tx, id, &session, plan.Preparation); err != nil {
 				return nil, err
 			}

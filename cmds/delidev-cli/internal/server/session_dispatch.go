@@ -339,7 +339,19 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
 		return empty, err
 	}
-	return input, input.Validate()
+	if err := input.Validate(); err != nil {
+		return empty, err
+	}
+	// Recheck the real serialized bytes before any caller publishes the job.
+	// The limit is shared with admission and is never raised.
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return empty, err
+	}
+	if err := domain.RequireExecutionJobInput(raw, nil); err != nil {
+		return empty, err
+	}
+	return input, nil
 }
 
 // Source operations recheck current policy and workspace ownership without

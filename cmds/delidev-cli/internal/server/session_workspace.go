@@ -321,6 +321,15 @@ func (s *Service) PrepareSessionWorkspace(ctx context.Context, req *connect.Requ
 				return nil, err
 			}
 		}
+		var first domain.SessionInput
+		if queued, err := tx.OldestQueuedInput(r.ID); err == nil {
+			if value, err := store.Decode[domain.QueuedInput](queued); err == nil {
+				first = domain.SessionInput{Prompt: value.Prompt, Mode: value.Mode, Skills: value.Skills, Attachments: value.Attachments}
+			}
+		}
+		if err := requireExecutionJobBudget(tx, session, input, first); err != nil {
+			return nil, err
+		}
 		if err := queueSessionWorkspace(tx, r.ID, &session, input); err != nil {
 			return nil, err
 		}

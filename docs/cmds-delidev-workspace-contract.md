@@ -673,3 +673,17 @@ preparation settlement freezes elapsed time; failed, canceled, uncertain and Sto
 settlements freeze unfinished time without implying preparation success. The
 Worker's operation report shape and original workspace/native cleanup authority
 remain unchanged. Missing historical timing cannot be derived from Job timestamps.
+
+## Execution Job document budget
+
+An execution Job inlines the workspace preparation request, the prepared manifest, the first session input, the frozen configuration (applied templates and joined instructions) and the Job wrapper in one document, which keeps the ordinary 1,048,576-byte entity limit. That limit is never raised for execution assignments.
+
+One shared calculation (`domain.ExecutionJobBudget`, with `PrepareRequest.MaxManifestBytes` for the manifest) bounds the serialized document. It measures the real serialized preparation, the session input after JSON escaping (a prompt of `<` characters costs six bytes each), the Agent Worker's current ordered templates stored once as templates and once as joined instructions, and every PR remediation target. The manifest bound uses maximum-size generated digests and commits, every accepted remote URL, directory name and checkout path, and documented reserves for the Worker data root (512 bytes), unresolved Git reference names (256 bytes), the remaining bounded configuration fields (8 KiB), the bounded scalar assignment fields (16 KiB) and the Job wrapper including fields added after queueing (16 KiB).
+
+Two enforcement points use that calculation:
+
+- Admission (session creation, schedule occurrence selection, manual PR fix workspace creation and explicit workspace preparation) rejects an oversized combination with `ResourceExhausted` before any workspace job, clone or session write exists. The saved input, drafts, configuration and queued inputs stay unchanged. A scheduled occurrence records a failed occurrence with the same problem instead of retrying.
+- Dispatch (`checkedExecutionAssignment`, shared by first execution, continuation, Fork, startup retry, account switch and Sidechat retry) rechecks the actual serialized `ExecutionJobInput` plus the wrapper reserve before the Job is published. Fields only known at dispatch (continuation progress, observed Worker paths) are therefore still enforced, and an oversized assignment is rejected with `ResourceExhausted` instead of failing permanently at the store.
+
+Small and single-repository jobs remain dispatchable. Existing immutable jobs and cleanup paths never run the admission calculation and stay readable.
+
