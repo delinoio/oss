@@ -906,6 +906,52 @@ fn rehashes_rewritten_hashed_text_assets() {
     }
 }
 
+/// A CSS asset that spells `url( name )` with whitespace still follows the
+/// renamed chunk it references, and its own hash changes.
+#[test]
+fn rewrites_spaced_css_url_references() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<link rel="stylesheet" href="/assets/style-FFFF1111.css"><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    );
+    chunks.push((
+        "assets/style-FFFF1111.css",
+        "@import url( /assets/index-AAAAAAAA.js );a{b:url(/assets/settings-BBBBBBBB.js)}c{d:url( https://cdn.example/assets/index-AAAAAAAA.js )}",
+    ));
+    let run = || {
+        let temp = bundle(&chunks);
+        optimize(temp.path(), &[]);
+        let assets = listing(&temp.path().join("out/assets"));
+        let style = assets
+            .iter()
+            .find(|a| a.starts_with("style-"))
+            .unwrap()
+            .clone();
+        let css = fs::read_to_string(temp.path().join("out/assets").join(&style)).unwrap();
+        (assets, style, css)
+    };
+    let (assets, style, css) = run();
+    assert_ne!(style, "style-FFFF1111.css", "{assets:?}");
+    assert!(!css.contains("url( /assets/index-AAAAAAAA.js )"), "{css}");
+    // The external URL keeps its name.
+    assert!(
+        css.contains("url( https://cdn.example/assets/index-AAAAAAAA.js )"),
+        "{css}"
+    );
+    for part in css.split("url(").skip(1).take(2) {
+        let name = part
+            .trim_start()
+            .split([' ', ')'])
+            .next()
+            .unwrap()
+            .trim_start_matches("/assets/");
+        assert!(assets.contains(&name.to_owned()), "{name} {assets:?}");
+    }
+    // Repeated runs publish the same names and bytes.
+    assert_eq!(run(), (assets, style, css));
+}
+
 /// A reference spelled with escapes cannot be rewritten: the original chunk
 /// (and what it imports) stays under its old name next to the renamed one.
 #[test]

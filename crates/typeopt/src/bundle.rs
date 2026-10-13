@@ -898,10 +898,11 @@ fn files_under(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 /// Byte offsets where `name` occurs as a file reference: after a path
-/// separator, quote, `(` or `=`, and before a quote, `)`, `?`, `#`,
-/// whitespace, `>`, `,`, the end of the text or a `.map` suffix, and not in
-/// an absolute or protocol-relative URL. Other occurrences (prose, data or
-/// other hosts' files that merely share the name) stay unchanged.
+/// separator, quote, `(` (also `url(` followed by whitespace) or `=`, and
+/// before a quote, `)`, `?`, `#`, whitespace, `>`, `,`, the end of the text or
+/// a `.map` suffix, and not in an absolute or protocol-relative URL. Other
+/// occurrences (prose, data or other hosts' files that merely share the name)
+/// stay unchanged.
 fn references(text: &str, name: &str) -> Vec<usize> {
     let mut found = Vec::new();
     let mut from = 0;
@@ -927,12 +928,17 @@ fn references(text: &str, name: &str) -> Vec<usize> {
             &decode_backslash_escapes_lossy(&text[token_start..at]),
         ));
         let external = token.contains("://") || token.starts_with("//");
-        // An unquoted HTML attribute value may follow `=` after whitespace.
-        let after_assignment = text[..at]
-            .trim_end_matches([' ', '\t', '\n', '\r', '\u{c}'])
-            .ends_with('=');
+        // An unquoted HTML attribute value may follow `=` after whitespace,
+        // and a CSS `url(` token may be followed by whitespace before its
+        // unquoted value (`url( name )`).
+        let spaced = text[..at].trim_end_matches([' ', '\t', '\n', '\r', '\u{c}']);
+        let after_assignment = spaced.ends_with('=');
+        let after_css_url = spaced.strip_suffix('(').is_some_and(|head| {
+            head.len() >= 3 && head.as_bytes()[head.len() - 3..].eq_ignore_ascii_case(b"url")
+        });
         let leads = matches!(before, Some('/' | '"' | '\'' | '`' | '(' | '='))
-            || (before.is_some_and(|c| c.is_ascii_whitespace()) && after_assignment);
+            || (before.is_some_and(|c| c.is_ascii_whitespace())
+                && (after_assignment || after_css_url));
         if leads && follows && !external {
             found.push(at);
         }
@@ -1609,6 +1615,22 @@ see index-DnKDBunT.js later;"xindex-DnKDBunT.jsx""#;
             references("<script type=module src = index-DnKDBunT.js>", name).len(),
             1
         );
+        // A CSS `url(` token may be followed by whitespace; prose and other
+        // hosts' files stay unchanged.
+        assert_eq!(references("a{b:url( index-DnKDBunT.js )}", name).len(), 1);
+        assert_eq!(
+            references("a{b:URL(\n\tindex-DnKDBunT.js\n)}", name).len(),
+            1
+        );
+        assert_eq!(references("a{b:url(index-DnKDBunT.js)}", name).len(), 1);
+        assert_eq!(references("a{b:url( 'index-DnKDBunT.js' )}", name).len(), 1);
+        assert!(references("a{b:url( https://cdn.example/index-DnKDBunT.js )}", name).is_empty());
+        assert!(references("foo( index-DnKDBunT.js )", name).is_empty());
+        assert!(references("see ( index-DnKDBunT.js )", name).is_empty());
+        let spaced = "a{b:url( index-DnKDBunT.js )}";
+        let renamed = BTreeMap::from([(name.to_owned(), "index-NEW12345.js".to_owned())]);
+        assert_eq!(rewrite(spaced, &renamed), "a{b:url( index-NEW12345.js )}");
+        assert_eq!(rewrite(spaced, &renamed), rewrite(spaced, &renamed));
     }
 
     #[test]
