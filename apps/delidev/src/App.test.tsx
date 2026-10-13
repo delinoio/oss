@@ -4116,11 +4116,12 @@ it.each([
     expect(focused).not.toBe(document.body);
     expect(focused.getAttribute("aria-current")).toBe("page");
     expect(focused.closest("[inert], [hidden]")).toBeNull();
-    if (collapsed) expect(focused.classList.contains("sidebar-rail-button")).toBe(true);
+    if (collapsed)
+      expect(focused.classList.contains("sidebar-rail-button")).toBe(true);
     expect(update.mock.calls.length).toBe(writes);
-    expect(
-      document.querySelector(".app.sidebar-collapsed") !== null,
-    ).toBe(collapsed);
+    expect(document.querySelector(".app.sidebar-collapsed") !== null).toBe(
+      collapsed,
+    );
     expectNoNavigationWrites(value);
   },
   fullShellTimeoutMs,
@@ -4133,7 +4134,9 @@ it(
     const value = fixture();
     render(<App transport={value.transport} />);
     fireEvent.click(await screen.findByRole("button", { name: "New session" }));
-    const input = await screen.findByRole("textbox", { name: "First message" });
+    const input = await screen.findByRole<HTMLInputElement>("textbox", {
+      name: "First message",
+    });
     fireEvent.change(input, { target: { value: "draft message" } });
     input.focus();
     input.setSelectionRange(2, 7);
