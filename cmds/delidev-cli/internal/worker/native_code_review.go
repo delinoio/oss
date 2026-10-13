@@ -438,12 +438,29 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		authJoined = true
 	}
 	result.CleanupVerified = true
-	if result.Validate() != nil {
+	return finalizeNativeReviewResult(ctx, logger, jobRoot, result)
+}
+
+// finalizeNativeReviewResult validates the completed review, enforces the
+// aggregate encoded-size ceiling and durably retains the exact reported bytes.
+// An over-limit result is rejected before review-result.json is written. The
+// native send already happened, so callers must keep nativeSent true and never
+// derive a no-send proof from this error.
+func finalizeNativeReviewResult(ctx context.Context, logger *slog.Logger, jobRoot string, result domain.NativeCodeReviewResult) (json.RawMessage, error) {
+	if err := result.Validate(); err != nil {
+		if domain.SafeError(err).Code == domain.ResourceExhausted {
+			logger.WarnContext(ctx, "native_code_review_result_too_large", "findings", len(result.Findings), "responses", len(result.UsageRecords), "limit_bytes", domain.MaxWorkerJobOutputBytes)
+			return nil, domain.NativeCodeReviewResultTooLarge()
+		}
 		return nil, domain.NativeCodeReviewUnavailable()
 	}
-	output, err = json.Marshal(result)
+	output, err := json.Marshal(result)
 	if err != nil {
 		return nil, err
+	}
+	if len(output) > domain.MaxWorkerJobOutputBytes {
+		logger.WarnContext(ctx, "native_code_review_result_too_large", "findings", len(result.Findings), "responses", len(result.UsageRecords), "encoded_bytes", len(output), "limit_bytes", domain.MaxWorkerJobOutputBytes)
+		return nil, domain.NativeCodeReviewResultTooLarge()
 	}
 	if security.WriteAtomic(filepath.Join(jobRoot, "review-result.json"), output) != nil {
 		return nil, publicationUncertain()
