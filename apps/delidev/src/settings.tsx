@@ -2066,6 +2066,7 @@ const entranceCategories: ReadonlyMap<SettingsCategory, EntranceTarget> =
     [SettingsCategory.Transfer, EntranceTarget.Surface],
     [SettingsCategory.Backups, EntranceTarget.Surface],
     [SettingsCategory.ApiAccounts, EntranceTarget.Surface],
+    [SettingsCategory.SubscriptionAccounts, EntranceTarget.Surface],
     [SettingsCategory.Diagnostics, EntranceTarget.Heading],
     [SettingsCategory.AppInformation, EntranceTarget.Heading],
   ]);
