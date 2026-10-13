@@ -2759,7 +2759,11 @@ encrypted-content presence only. Locator values and opaque encrypted bytes stay
 in the original protected native history and its digest, and logs record only
 shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
 result observation. A Worker whose server did not negotiate the capability
-keeps the observation private and the original turn continues.
+keeps the observation private and the original turn continues. That private
+path still validates the observation and retains its native item identity and
+completion lifecycle, so it consumes one shared native item slot, rejects an ID
+already owned by a message, tool, artifact or dynamic tool, and blocks any later
+item family from claiming that ID. It publishes no function-output event.
 
 The lifecycle digest covers the authoritative history item, including private
 locator and ciphertext bytes, not the media-stripped notification.
