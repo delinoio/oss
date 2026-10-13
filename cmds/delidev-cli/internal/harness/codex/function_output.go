@@ -174,7 +174,9 @@ func decodeFunctionOutput(raw json.RawMessage) (string, *domain.FunctionOutput, 
 				Encrypted *string                     `json:"encrypted_content"`
 			}
 			var present map[string]json.RawMessage
-			if domain.Decode(rawPart, &present) != nil || domain.Decode(rawPart, &part) != nil {
+			// A private locator or ciphertext may fill the admitted native frame, so
+			// the content part uses the same bound as its already length-checked item.
+			if domain.DecodeBounded(rawPart, &present, functionOutputRawLimit) != nil || domain.DecodeBounded(rawPart, &part, functionOutputRawLimit) != nil {
 				return "", nil, incompatible()
 			}
 			allowed := map[string]bool{"type": true}

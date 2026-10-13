@@ -25,9 +25,12 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
-	CodeReviewModel       string `json:"-"`
-	DynamicTools          bool
-	ManagedForkHistory    bool
+	CodeReviewModel    string `json:"-"`
+	DynamicTools       bool
+	ManagedForkHistory bool
+	// FrameProfile explicitly selects the native transport and decoder frame
+	// limit. The zero value keeps the one-MiB native frame.
+	FrameProfile          FrameProfile
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
 	EnableImageGeneration bool
@@ -138,6 +141,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, incompatible()
 	}
 	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
+		return nil, incompatible()
+	}
+	// The enlarged Fork history frame belongs only to the managed independent
+	// Fork route, for both the source inspection and the paused child.
+	if config.FrameProfile != DefaultFrameProfile && (config.FrameProfile != ForkHistoryFrameProfile || !config.ManagedForkHistory || config.API != nil) {
 		return nil, incompatible()
 	}
 	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
@@ -305,7 +313,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
 	process.ObserveStartup(config.Process, domain.StartupSettings, domain.StartupProgressRunning)
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations)
+		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations, "frame_profile", config.FrameProfile)
 	}
 	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase

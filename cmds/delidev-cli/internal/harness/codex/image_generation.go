@@ -124,10 +124,27 @@ func (c *Client) nativeFrameLimit() int {
 	return nativewire.MaxFrame
 }
 
+// FrameProfile is the closed set of native frame limits a caller may request.
+type FrameProfile string
+
+const (
+	// DefaultFrameProfile keeps the one-MiB native frame unless the original
+	// image-observation routes below admit the enlarged profile.
+	DefaultFrameProfile FrameProfile = ""
+	// ForkHistoryFrameProfile admits the enlarged native frame for managed
+	// independent Fork history. It is explicit, never inferred from image
+	// generation, and Open accepts it only with ManagedForkHistory.
+	ForkHistoryFrameProfile FrameProfile = "fork_history"
+)
+
 // Freeze one frame profile before launch for both the transport and decoders.
 // A private storage root alone does not admit generation. Read-only Sidechat
 // borrows original parent history without enabling the generation feature.
+// Managed independent Fork requests the same enlarged frame explicitly.
 func (config Config) imageObservationProfile() bool {
+	if config.FrameProfile == ForkHistoryFrameProfile {
+		return config.Mode == ThreadProtocol && config.ManagedAuthentication && config.ManagedForkHistory && config.API == nil && config.Sidechat == ""
+	}
 	if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.ImageRoot == "" {
 		return false
 	}
