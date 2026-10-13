@@ -1891,6 +1891,8 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Files Back retains original inner and enclosing Session scroll owner snapshots under the same controller/repository identity; restore selected focus with preventScroll and restore only connected original ancestors containing the returned tree. Replacement repositories/connections cannot receive old scroll state.
 
+- `entrance-motion.ts`/`.css` own the shared 160ms Y4 entrance primitive and replay-safe `useEntranceActivation` hook under `apps-delidev-desktop-contract.md#shared-restrained-entrance-motion-and-appearance`. Keep keyframes static, add no inline style or dependency, and let each Settings category opt in through `entranceCategories` with its own contract text.
+
 - Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
 
 - `claude-runners-layout.fixture.tsx` is isolated bounded synthetic Runner inventory evidence. Keep its marker outside product bundles; disabled options and manual steps never grant Runner eligibility or native/account acceptance.
@@ -3472,6 +3474,23 @@ native-owned across trusted windows and restart, outside server backups/portable
 transfer. Complete snapshots share original revision, atomic persistence and
 uncertain-save recovery. Product/browser/native validation retains the repository
 policy; report actual performed evidence separately from skipped acceptance.
+
+#### Shared restrained entrance motion and Appearance
+
+Desktop only. `entrance-motion.ts` and `entrance-motion.css` (relative to `apps/delidev/src`) own one shared, statically scoped 160ms entrance primitive: `translateY(4px)` to `none` with `ease-out`, keyframe `entrance-y4`, selected by the activation-scoped attribute `data-entrance="y4"` (`EntranceMotion.Y4`). It never changes opacity, scale, height or geometry, has no bounce, stagger, fill mode, exit animation, dependency, inline style, CSP exception, telemetry or per-frame/content logging, and its resting transform is `none` with fully opaque surfaces. The 120ms `translateY(2px)` (`entrance-y2`, `EntranceMotion.Y2`) and 120ms `translateX(4px)` (`entrance-x4`, `EntranceMotion.X4`) siblings live in the same stylesheet with the same rules; any further primitive is added by the screen that first needs it. The primitive excludes native, fixed and portal positioning hosts and their ancestors. A native dialog that mounts beneath an animated surface (`Modal` calls `settleEnclosingEntrances` before `showModal`) settles that surface's in-flight entrance in the same commit, so no dialog host ever has an animated ancestor; the dialog's own inner block still plays its single entrance and focus never waits.
+
+`useEntranceActivation(activation, enabled)` owns one explicit activation. A new activation key plays the motion once (a key that arrives while the previous entrance is still running resets and re-declares the attribute, forcing a style flush, so the animation restarts instead of continuing the old timeline), only when the surface opted in, Animation is not Off (`data-animation` is not `false`) and OS reduced motion is not requested. The attribute clears on the element's own `animationend`/`animationcancel` (descendant animations are ignored; an `animationcancel` queued by the intentional restart reset is ignored while an animation of the same name is still running, checked through `getAnimations()`) or, as a generation-fenced fallback, after 240ms. Switching Animation Off or enabling OS reduced motion mid-flight clears it immediately through the existing global `animation: none !important` suppression in `themes.css`; re-enabling never replays the current activation. Rendering, reads, refetch, polling, pagination, typing/streaming, async progress, errors, permission changes, same-category reselection and Strict Mode replay never restart it. Rapid departure and re-entry replace the keyed surface, so a stale completion cannot affect the new activation or retain an inactive surface. Focus, navigation, dismissal, disposal, RPC, draft/selection/scroll ownership and mounted controller identity never wait for animation completion.
+
+Settings opts categories in through `entranceCategories` in `settings.tsx`; the activation key is the category opening (`selection.key`) held by `SettingsVisit`, and the attribute lands on the category content column (heading and body) inside `SettingsWorkspace`. Appearance is the first opted-in category: its explicit category opening and its custom-theme editor (`Modal` with the `entrance` prop, one activation per explicit open) use the primitive. `Modal` applies the attribute to an inner block that wraps the dialog header and body, never to the native `<dialog>` host, so the top-layer modal host and its geometry stay stable. Theme, language and date selectors, autosave, import, deletion and every save keep their immediate behavior, and an open editor keeps its dialog, draft, focus and controller identity. Each additional category or task opts in only with its own approved contract text.
+
+#### Conversation entrance motion
+
+Desktop only. `SessionView` (`session.tsx`) opts the shared Session/General Chat surface into two entrances from `entrance-motion.ts`. Neither transforms the transcript, composer, progress, approvals, live message content or any scroll root, and neither waits on focus, navigation, disposal, RPC or draft/selection/scroll ownership.
+
+- Session heading and toolbar: the `div.session-header-entrance` wrapper inside `header.session-header` plays the 120ms `translateY(2px)` Y2 entrance once per explicit session activation. The header itself becomes a scroll root in compact widths and heights, so it never carries the transform; the wrapper mirrors the header's flex layout through inherited properties. `useActivationCount(active)` counts rising edges of the existing `active` prop (selection, or returning to a retained session), and the activation key is that count with the session ID. Renders, reads, refetch, polling, pagination, typing/streaming, async progress, errors, permission changes and startup projection never restart it. Embedded Sidechat panes and inactive sessions never animate. Opening the Session actions popup (`SessionActions`) settles any in-flight enclosing entrance in the same commit through `settleEnclosingEntrances`, so the transformed wrapper never caps the popup's z-index beneath the later navigation siblings; focus moves to the first action without waiting for the motion.
+- Session Info heading: the persistent Info card never animates when it merely appears, including when startup presentation reveals it. Only an explicit opening (`showInfo`: Show details and the recovery or budget entries) increments an opening counter and plays the 120ms `translateX(4px)` X4 entrance on the `header` inside `aside.session-information`. A later explicit opening plays again; there is no exit animation, and Info keeps its controllers, disclosures and focus.
+
+Animation Off (`data-animation=false`) and OS reduced motion prevent the motion and clear an in-flight entrance immediately; re-enabling never replays the current activation. Rapid leave and re-entry replace the activation key, so a stale completion cannot affect a new activation. Shared 160ms Y4 rules in the section above (no inline style, dependency, CSP exception, telemetry or per-frame logging) apply unchanged. `session-entrance.test.tsx` covers activation-only play, no replay, preference changes and controller identity with synthetic fixtures; it grants no native or account acceptance.
 
 #### Runner Devices flat list presentation
 
@@ -5133,10 +5152,32 @@ unsupported capability and unresolved scope remain unknown; late old-scope resul
 cannot publish. Observe complete whitespace-delimited tokens even with the panel
 dismissed through the existing query owner, without polling or locked reads.
 Names match exactly; a valid caret completion prefix and a bare `$` remain ordinary.
+The caret exemption follows the caret position, not panel visibility: dismissing the
+panel with Escape leaves the valid prefix ordinary until the caret moves away.
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+Absence analysis builds one Set of exact current inventory names, then makes one
+lazy pass with one Set lookup per complete token plus one precomputed caret-prefix
+decision; it never scans the inventory per token. The unavailable count is exact
+for any draft size, while at most 256 absent ranges are materialized. If the exact
+count exceeds 256, paint no token overlay (no partial prefix), leave the native
+textarea text visible, and report the exact count through the localized status and
+the textarea description; editing back to 256 or fewer restores the full aligned
+overlay. Painted absent and selected ranges together stay within 256 ranges so the
+mirror holds at most 512 spans.
+An explicit retained binding is confirmed unavailable, with no selected decoration,
+when its exact four-field selection (Worker device, inventory, skill and content
+revision) is absent from a complete successful current-scope inventory, even if an
+entry with the same display name exists. Such a token joins the same budgeted
+unavailable count and status once, whether its name, its selection or both are
+absent. A binding whose four fields match keeps selected styling. Loading, failed,
+disabled or unsupported inventory keeps the selected decoration and fabricates no
+absence, and composition suppresses both. Presentation never mutates bindings or
+send guards; explicit reselection binds the new current selection through the
+existing completion acceptance without moving text, caret or focus. Selected
+decorations remain bounded to 16 and unbound manual tokens stay plain.
 Keep one mounted polite atomic count region in the shared composer wrapper,
 independent of panel visibility, and retain the textarea's count description and
 hidden painted mirror. Announce only changed counts proven by a complete current
@@ -6331,6 +6372,14 @@ The ordinary workspace contains no CI/rules/reviewer verification grid, Overview
 problem history or separate stack-dependencies section. Pending PR actions remains
 above the workspace. Existing server/CLI inspection and recovery surfaces survive.
 Unknown counts and failed decorative images remain accessible fallbacks.
+
+The stack-context workspace query keeps `retry: false` and stays pending while the
+server resumes a read that selection or tab work displaced; the selected detail
+remains usable meanwhile. A pending read shows no incomplete notice, cancellation
+warning or Retry stack context. The query publishes the final server observation
+without issuing another workspace RPC. Only a terminal failure or invalid
+observation shows the incomplete notice, Problem and explicit Retry stack context.
+Unmounting or scope replacement discards a late result.
 
 ### Contextual session recovery cards
 

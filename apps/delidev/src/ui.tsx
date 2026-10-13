@@ -3,6 +3,10 @@ import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
 import {
+  settleEnclosingEntrances,
+  type EntranceProps,
+} from "./entrance-motion";
+import {
   useLayoutEffect,
   useId,
   useRef,
@@ -137,6 +141,7 @@ export function Modal({
   initialFocus,
   focusClose = false,
   trapFocus = false,
+  entrance,
 }: {
   title: string;
   close: () => void;
@@ -146,6 +151,8 @@ export function Modal({
   initialFocus?: RefObject<HTMLElement | null>;
   focusClose?: boolean;
   trapFocus?: boolean;
+  /** Optional activation-scoped entrance from useEntranceActivation. */
+  entrance?: EntranceProps;
 }) {
   useLocale();
   const id = useId();
@@ -155,6 +162,9 @@ export function Modal({
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
+    // A native dialog never sits beneath an animated ancestor: an in-flight
+    // category entrance settles before the first paint of the dialog.
+    settleEnclosingEntrances(dialog);
     dialog.showModal();
     (focusClose ? closeButton.current : initialFocus?.current)?.focus();
     return () => {
@@ -162,6 +172,23 @@ export function Modal({
       if (opener?.isConnected) opener.focus();
     };
   }, [visible, initialFocus, focusClose]);
+  const content = (
+    <>
+      <header>
+        <h2 id={id}>{title}</h2>
+        <SettingsActionButton
+          icon={SettingsActionIcon.Cancel}
+          ref={closeButton}
+          type="button"
+          onClick={close}
+          aria-label={copy("ui.close_0fbe2a", { v0: title })}
+        >
+          {copy("ui.close_7d9eb7")}
+        </SettingsActionButton>
+      </header>
+      {children}
+    </>
+  );
   return (
     <DialogSurface
       ref={ref}
@@ -199,19 +226,14 @@ export function Modal({
         }
       }}
     >
-      <header>
-        <h2 id={id}>{title}</h2>
-        <SettingsActionButton
-          icon={SettingsActionIcon.Cancel}
-          ref={closeButton}
-          type="button"
-          onClick={close}
-          aria-label={copy("ui.close_0fbe2a", { v0: title })}
-        >
-          {copy("ui.close_7d9eb7")}
-        </SettingsActionButton>
-      </header>
-      {children}
+      {entrance ? (
+        // The native modal host stays untouched; only this inner block moves.
+        <div ref={entrance.ref} data-entrance={entrance["data-entrance"]}>
+          {content}
+        </div>
+      ) : (
+        content
+      )}
     </DialogSurface>
   );
 }

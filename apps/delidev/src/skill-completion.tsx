@@ -2,6 +2,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useId,
   useRef,
   useState,
@@ -48,12 +49,93 @@ export enum SkillAvailability {
   Unavailable = "unavailable",
   Unknown = "unknown",
 }
+const SKILL_RANGE_PATTERN = /(?:^|\s)\$([^\s$]+)(?=$|\s)/gu;
+// Lazily walks complete whitespace-delimited tokens so large drafts never
+// materialize an array of every occurrence.
+function* iterateSkillRanges(value: string): Generator<SkillToken> {
+  for (const match of value.matchAll(SKILL_RANGE_PATTERN))
+    yield {
+      start: match.index! + match[0].length - match[1]!.length - 1,
+      end: match.index! + match[0].length,
+      prefix: match[1]!,
+    };
+}
 export function skillRanges(value: string): SkillToken[] {
-  return [...value.matchAll(/(?:^|\s)\$([^\s$]+)(?=$|\s)/gu)].map((match) => ({
-    start: match.index! + match[0].length - match[1]!.length - 1,
-    end: match.index! + match[0].length,
-    prefix: match[1]!,
-  }));
+  return [...iterateSkillRanges(value)];
+}
+function hasSkillRange(value: string): boolean {
+  return iterateSkillRanges(value).next().done === false;
+}
+// Painted overlay budget: two spans per range keeps the mirror within 512 spans.
+export const MAX_PAINTED_SKILL_RANGES = 256;
+export const MAX_SELECTED_SKILL_RANGES = 16;
+export interface SkillTokenAnalysis {
+  // Exact number of confirmed-absent complete tokens, independent of painting.
+  unavailableCount: number;
+  // Painted absent ranges; empty when the exact count exceeds the paint budget.
+  unavailable: SkillToken[];
+  // Painted explicit selections that are not confirmed absent.
+  selected: SkillToken[];
+}
+export interface SkillTokenAnalysisInput {
+  // Exact current inventory names; undefined when absence cannot be confirmed.
+  names?: ReadonlySet<string>;
+  // The caret-owned token start and whether its prefix matches any inventory name.
+  caret?: { start: number; prefixAvailable: boolean };
+  // The valid retained explicit selection for a complete token, if any.
+  bound?: (range: SkillToken) => SkillSelection | undefined;
+  // Exact four-field selections in the current inventory; undefined when unknown.
+  selectionKeys?: ReadonlySet<string>;
+}
+// The backend requires all four selection fields to match exactly.
+export function skillSelectionKey(selection: SkillSelection): string {
+  return [
+    selection.workerDeviceId,
+    selection.inventoryId,
+    selection.skillId,
+    selection.contentRevision,
+  ].join("|");
+}
+// One lazy pass: one Set lookup per complete token, an exact absence count and
+// at most MAX_PAINTED_SKILL_RANGES materialized ranges.
+export function analyzeSkillTokens(
+  value: string,
+  { names, caret, bound, selectionKeys }: SkillTokenAnalysisInput,
+): SkillTokenAnalysis {
+  const unavailable: SkillToken[] = [],
+    selected: SkillToken[] = [];
+  let unavailableCount = 0;
+  if (names || bound) {
+    for (const range of iterateSkillRanges(value)) {
+      const selection = bound?.(range);
+      if (
+        (names &&
+          !names.has(range.prefix) &&
+          !(caret && range.start === caret.start && caret.prefixAvailable)) ||
+        // A same-named replacement cannot satisfy an explicit binding whose
+        // exact selection is absent from the confirmed inventory.
+        (selection &&
+          selectionKeys &&
+          !selectionKeys.has(skillSelectionKey(selection)))
+      ) {
+        unavailableCount++;
+        if (unavailable.length < MAX_PAINTED_SKILL_RANGES)
+          unavailable.push(range);
+        continue;
+      }
+      if (selection && selected.length < MAX_SELECTED_SKILL_RANGES)
+        selected.push(range);
+      if (!names && selected.length === MAX_SELECTED_SKILL_RANGES) break;
+    }
+  }
+  // Beyond the budget the native text stays untouched; the count alone reports it.
+  if (unavailableCount > MAX_PAINTED_SKILL_RANGES)
+    return { unavailableCount, unavailable: [], selected: [] };
+  return {
+    unavailableCount,
+    unavailable,
+    selected: selected.slice(0, MAX_PAINTED_SKILL_RANGES - unavailable.length),
+  };
 }
 // A malformed or mixed snapshot cannot prove absence in the current scope.
 function completeInventory(entries: readonly SkillEntry[]): boolean {
@@ -187,8 +269,10 @@ export function useSkillCompletion({
   editable.current = active && !disabled;
   const canEdit = () =>
     editable.current && skillCompletionAnchorUsable(textarea.current);
-  const token =
-    !dismissed && !composing.current ? skillToken(value, caret) : undefined;
+  // The caret token describes where the user is typing and is independent of
+  // panel dismissal; only the panel, query and keyboard ownership honor dismissal.
+  const caretToken = !composing.current ? skillToken(value, caret) : undefined;
+  const token = !dismissed ? caretToken : undefined;
   const contextChanged =
     previousScope.current.scope !== scope ||
     (!retainTransportContext && previousScope.current.transport !== transport);
@@ -201,7 +285,7 @@ export function useSkillCompletion({
       setSelected(0);
     }
   }, [scope, transport, contextChanged, machineId, agentId]);
-  const ranges = skillRanges(value);
+  const hasRanges = hasSkillRange(value);
   const query = useQuery(
     SkillQuery.listSkills,
     { machineId, agentId, sessionId, projectId },
@@ -210,7 +294,7 @@ export function useSkillCompletion({
         active &&
         enabled &&
         !disabled &&
-        (!!token || ranges.length > 0) &&
+        (!!token || hasRanges) &&
         !!machineId &&
         !!agentId &&
         !contextChanged,
@@ -281,22 +365,77 @@ export function useSkillCompletion({
   const validIndex = enabledIndices.includes(selected)
     ? selected
     : (enabledIndices[0] ?? -1);
-  const unavailable =
-    inventoryKnown && !composing.current
-      ? ranges.filter(
-          (range) =>
-            !inventory.some((entry) => entry.name === range.prefix) &&
-            !(
-              token &&
-              range.start === token.start &&
-              inventory.some((entry) =>
-                entry.name
-                  .toLocaleLowerCase()
-                  .startsWith(token.prefix.toLocaleLowerCase()),
-              )
+  // Unavailable presentation describes confirmed absence, while selected styling
+  // describes retained explicit authority. Unknown reads and pending locks must
+  // not invent or erase either, so both come from one budgeted lazy pass.
+  const skills = inventoryKnown ? query.data!.skills : undefined,
+    scanSuppressed = composing.current || composition,
+    caretStart = caretToken?.start,
+    caretPrefix = caretToken?.prefix;
+  const analysis = useMemo(() => {
+    if (scanSuppressed) return analyzeSkillTokens("", {});
+    const selectionKeys = skills
+      ? new Set(skills.map((entry) => skillSelectionKey(entry.selection!)))
+      : undefined;
+    const names = skills
+      ? new Set(skills.map((entry) => entry.name))
+      : undefined;
+    const caretLower = caretPrefix?.toLocaleLowerCase();
+    const caret =
+      skills && caretStart !== undefined && caretLower !== undefined
+        ? {
+            start: caretStart,
+            prefixAvailable: skills.some((entry) =>
+              entry.name.toLocaleLowerCase().startsWith(caretLower),
             ),
-        )
-      : [];
+          }
+        : undefined;
+    let bound: SkillTokenAnalysisInput["bound"];
+    if (
+      bindings.length &&
+      !contextChanged &&
+      isEntityId(machineId) &&
+      isEntityId(agentId)
+    ) {
+      const bindingsByRange = new Map<string, SkillTokenBinding[]>();
+      for (const binding of bindings) {
+        const key = `${binding.start}:${binding.end}:${binding.token}`,
+          matches = bindingsByRange.get(key);
+        if (matches) matches.push(binding);
+        else bindingsByRange.set(key, [binding]);
+      }
+      bound = (range) => {
+        const matches = bindingsByRange.get(
+            `${range.start}:${range.end}:$${range.prefix}`,
+          ),
+          binding = matches?.[0];
+        return matches?.length !== 1 ||
+          !binding ||
+          binding.stale ||
+          binding.ambiguous ||
+          (binding.context && binding.context !== scope) ||
+          !isEntityId(binding.selection.skillId) ||
+          !isEntityId(binding.selection.inventoryId) ||
+          !isEntityId(binding.selection.workerDeviceId) ||
+          !/^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
+          ? undefined
+          : binding.selection;
+      };
+    }
+    return analyzeSkillTokens(value, { names, caret, bound, selectionKeys });
+  }, [
+    value,
+    skills,
+    scanSuppressed,
+    caretStart,
+    caretPrefix,
+    bindings,
+    contextChanged,
+    machineId,
+    agentId,
+    scope,
+  ]);
+  const { unavailable, unavailableCount, selected: selectedRanges } = analysis;
   const confirmedCount = useRef<{
     scope: string;
     transport: typeof transport;
@@ -328,7 +467,7 @@ export function useSkillCompletion({
       setAnnouncement(undefined);
       return;
     }
-    const count = unavailable.length,
+    const count = unavailableCount,
       previous = confirmedCount.current.count;
     if (previous === count) return;
     confirmedCount.current.count = count;
@@ -336,14 +475,7 @@ export function useSkillCompletion({
     // need a localized update even when the completion panel is dismissed.
     if (count > 0 || (previous !== undefined && previous > 0))
       setAnnouncement({ scope, transport, locale, count });
-  }, [
-    scope,
-    transport,
-    locale,
-    inventoryKnown,
-    composition,
-    unavailable.length,
-  ]);
+  }, [scope, transport, locale, inventoryKnown, composition, unavailableCount]);
   const announcedCount =
     inventoryKnown &&
     !composition &&
@@ -468,43 +600,6 @@ export function useSkillCompletion({
           value.slice(binding.start, binding.end) !== binding.token),
     ) ||
     distinct.size > 16;
-  // Selection styling describes retained explicit authority, not inventory
-  // availability. Unknown reads and pending locks must not invent or erase it.
-  const selectedRanges: SkillToken[] = [];
-  if (
-    !composition &&
-    !contextChanged &&
-    isEntityId(machineId) &&
-    isEntityId(agentId)
-  ) {
-    const bindingsByRange = new Map<string, SkillTokenBinding[]>();
-    for (const binding of bindings) {
-      const key = `${binding.start}:${binding.end}:${binding.token}`,
-        matches = bindingsByRange.get(key);
-      if (matches) matches.push(binding);
-      else bindingsByRange.set(key, [binding]);
-    }
-    for (const range of ranges) {
-      const matches = bindingsByRange.get(
-          `${range.start}:${range.end}:$${range.prefix}`,
-        ),
-        binding = matches?.[0];
-      if (
-        matches?.length !== 1 ||
-        !binding ||
-        binding.stale ||
-        binding.ambiguous ||
-        (binding.context && binding.context !== scope) ||
-        !isEntityId(binding.selection.skillId) ||
-        !isEntityId(binding.selection.inventoryId) ||
-        !isEntityId(binding.selection.workerDeviceId) ||
-        !/^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
-      )
-        continue;
-      selectedRanges.push(range);
-      if (selectedRanges.length === 16) break;
-    }
-  }
   useLayoutEffect(() => {
     if (!keyboardNavigation.current) return;
     keyboardNavigation.current = false;
@@ -641,7 +736,7 @@ export function useSkillCompletion({
       setDismissed(false);
     },
     attributes: {
-      "aria-describedby": unavailable.length ? `${id}-unavailable` : undefined,
+      "aria-describedby": unavailableCount ? `${id}-unavailable` : undefined,
       "aria-controls": visible && candidates.length ? id : undefined,
       "aria-autocomplete": "list" as const,
       "aria-expanded": visible,
@@ -649,6 +744,7 @@ export function useSkillCompletion({
         visible && validIndex >= 0 ? `${id}-${validIndex}` : undefined,
     },
     unavailable,
+    unavailableCount,
     availability: inventoryKnown
       ? SkillAvailability.Available
       : SkillAvailability.Unknown,
@@ -657,6 +753,7 @@ export function useSkillCompletion({
         textarea={textarea}
         value={value}
         ranges={unavailable}
+        unavailableCount={unavailableCount}
         selected={selectedRanges}
         descriptionId={`${id}-unavailable`}
         announcedCount={announcedCount}
@@ -673,6 +770,7 @@ function SkillText({
   textarea,
   value,
   ranges,
+  unavailableCount,
   selected,
   descriptionId,
   announcedCount,
@@ -681,6 +779,7 @@ function SkillText({
   textarea: RefObject<HTMLTextAreaElement | null>;
   value: string;
   ranges: SkillToken[];
+  unavailableCount: number;
   selected: SkillToken[];
   descriptionId: string;
   announcedCount?: number;
@@ -688,15 +787,11 @@ function SkillText({
 }) {
   const frame = useRef<HTMLDivElement>(null),
     content = useRef<HTMLDivElement>(null);
-  // Reuse the one mirror, with confirmed absence taking precedence over an
-  // explicit selection. Both sets come from the same nonoverlapping token scan.
+  // Reuse the one mirror. The analysis keeps absent and selected ranges disjoint
+  // (confirmed absence wins) and bounded to 256 painted ranges (512 spans).
   const painted = [
     ...ranges.map((range) => ({ ...range, selected: false })),
-    ...selected
-      .filter(
-        (range) => !ranges.some((missing) => missing.start === range.start),
-      )
-      .map((range) => ({ ...range, selected: true })),
+    ...selected.map((range) => ({ ...range, selected: true })),
   ].sort((a, b) => a.start - b.start);
   useLayoutEffect(() => {
     const input = textarea.current,
@@ -788,25 +883,19 @@ function SkillText({
             ? copy("skills.tokensUnavailable", { count: announcedCount })
             : copy("skills.tokensAvailable")}
       </span>
+      {unavailableCount ? (
+        <span id={descriptionId} className="sidebar-sr-only" aria-hidden="true">
+          {copy("skills.tokensUnavailable", { count: unavailableCount })}
+        </span>
+      ) : null}
       {painted.length ? (
-        <>
-          <div ref={frame} className="skill-text-overlay" aria-hidden="true">
-            <div ref={content}>
-              {segments}
-              {value.slice(end)}
-              {"\u200b"}
-            </div>
+        <div ref={frame} className="skill-text-overlay" aria-hidden="true">
+          <div ref={content}>
+            {segments}
+            {value.slice(end)}
+            {"\u200b"}
           </div>
-          {ranges.length ? (
-            <span
-              id={descriptionId}
-              className="sidebar-sr-only"
-              aria-hidden="true"
-            >
-              {copy("skills.tokensUnavailable", { count: ranges.length })}
-            </span>
-          ) : null}
-        </>
+        </div>
       ) : null}
     </div>
   );

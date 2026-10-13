@@ -10,6 +10,11 @@ import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
 import { useSessionNameEditor } from "./session-name-editor";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { SessionToolMenu } from "./session-tool-menu";
 import { NativeAutoReview } from "./native-auto-review";
 import { useSessionRevert } from "./session-revert";
@@ -1031,6 +1036,19 @@ export function SessionView({
   const information = useRef<HTMLElement>(null);
   const sessionHeading = useRef<HTMLHeadingElement>(null);
   const [startupInfoHidden, setStartupInfoHidden] = useState(false);
+  // Explicit session activation (selection, or returning to a retained session)
+  // owns one 120ms Y2 header entrance. Reads, streaming, edits and preference
+  // changes never restart it, and nothing waits for it to finish. Embedded
+  // Sidechat panes belong to their own tool motion and never animate here.
+  const sessionActivations = useActivationCount(active);
+  const headerEntrance = useEntranceActivation(
+    `${id}:${sessionActivations}`,
+    active && !embedded,
+    EntranceMotion.Y2,
+  );
+  // Only an explicit Info reveal (Show details or a recovery/budget entry)
+  // counts as opening; Info itself stays mounted and persistent.
+  const [infoOpenings, setInfoOpenings] = useState(0);
   const [prEmpty, setPREmpty] = useState(false),
     [subagentsEmpty, setSubagentsEmpty] = useState(false);
   const [diagnosticsTarget, setDiagnosticsTarget] =
@@ -1912,6 +1930,7 @@ export function SessionView({
   };
   // Revealing Info preserves the selected resource and its original controller.
   const showInfo = (_opener: HTMLButtonElement, target = InfoTarget.Status) => {
+    setInfoOpenings((count) => count + 1);
     setInfoReveal({ target });
   };
   const problem = object(data.problem);
@@ -2188,6 +2207,11 @@ export function SessionView({
       tabs.tab.kind,
     ) ||
     (hideStartupInfo && startupInfoHidden);
+  const infoEntrance = useEntranceActivation(
+    `${id}:info:${infoOpenings}`,
+    infoOpenings > 0 && !infoHidden,
+    EntranceMotion.X4,
+  );
   return (
     <SessionActivityProvider
       active={
@@ -2230,89 +2254,91 @@ export function SessionView({
         }}
       >
         <header className="session-header">
-          <div className="session-heading">
-            <SessionHarness resource={session}>
-              <div className="session-heading-line">
-                <h2
-                  ref={sessionHeading}
-                  tabIndex={-1}
-                  onDoubleClick={(event) => {
-                    if (session) editName?.(session.id, event.currentTarget);
-                  }}
-                >
-                  {productResourceName(productLabel, session)}
-                </h2>
-                <p
-                  className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
-                  role="status"
-                >
-                  {connectionLabel}
-                </p>
-              </div>
-            </SessionHarness>
-          </div>
-          <div
-            className="session-controls"
-            hidden={
-              !embedded &&
-              [
-                SessionTabKind.Sidechat,
-                SessionTabKind.PendingSidechat,
-              ].includes(tabs.tab.kind)
-            }
-            inert={
-              !embedded &&
-              [
-                SessionTabKind.Sidechat,
-                SessionTabKind.PendingSidechat,
-              ].includes(tabs.tab.kind)
-            }
-          >
-            <button
-              type="button"
-              disabled={!session || control.busy || control.uncertain}
-              onClick={() => action(SessionAction.STOP)}
-            >
-              {copy("session.stop_cae7d5")}
-            </button>
-            <button
-              type="button"
-              disabled={
-                !session ||
-                control.busy ||
-                control.uncertain ||
-                runnerRemediationPending ||
-                !sessionControlEligibility(session, budgetBlocked).resume
+          <div className="session-header-entrance" {...headerEntrance}>
+            <div className="session-heading">
+              <SessionHarness resource={session}>
+                <div className="session-heading-line">
+                  <h2
+                    ref={sessionHeading}
+                    tabIndex={-1}
+                    onDoubleClick={(event) => {
+                      if (session) editName?.(session.id, event.currentTarget);
+                    }}
+                  >
+                    {productResourceName(productLabel, session)}
+                  </h2>
+                  <p
+                    className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
+                    role="status"
+                  >
+                    {connectionLabel}
+                  </p>
+                </div>
+              </SessionHarness>
+            </div>
+            <div
+              className="session-controls"
+              hidden={
+                !embedded &&
+                [
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
               }
-              onClick={() => action(SessionAction.RESUME)}
+              inert={
+                !embedded &&
+                [
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
+              }
             >
-              {startupRetry
-                ? copy("session.startupRetry")
-                : copy("session.resume_d640c7")}
-            </button>
-            <SessionActions>
-              {session ? (
-                <SessionForkAction
-                  source={session}
-                  disabled={control.busy || control.uncertain}
-                />
-              ) : null}
               <button
                 type="button"
                 disabled={!session || control.busy || control.uncertain}
-                onClick={() =>
-                  action(
-                    text(data.archive) === "archived"
-                      ? SessionAction.RESTORE
-                      : SessionAction.ARCHIVE,
-                  )
-                }
+                onClick={() => action(SessionAction.STOP)}
               >
-                {text(data.archive) === "archived"
-                  ? copy("session.restore_a76e13")
-                  : copy("session.archive_66f480")}
+                {copy("session.stop_cae7d5")}
               </button>
-            </SessionActions>
+              <button
+                type="button"
+                disabled={
+                  !session ||
+                  control.busy ||
+                  control.uncertain ||
+                  runnerRemediationPending ||
+                  !sessionControlEligibility(session, budgetBlocked).resume
+                }
+                onClick={() => action(SessionAction.RESUME)}
+              >
+                {startupRetry
+                  ? copy("session.startupRetry")
+                  : copy("session.resume_d640c7")}
+              </button>
+              <SessionActions>
+                {session ? (
+                  <SessionForkAction
+                    source={session}
+                    disabled={control.busy || control.uncertain}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!session || control.busy || control.uncertain}
+                  onClick={() =>
+                    action(
+                      text(data.archive) === "archived"
+                        ? SessionAction.RESTORE
+                        : SessionAction.ARCHIVE,
+                    )
+                  }
+                >
+                  {text(data.archive) === "archived"
+                    ? copy("session.restore_a76e13")
+                    : copy("session.archive_66f480")}
+                </button>
+              </SessionActions>
+            </div>
           </div>
         </header>
         {!embedded ? (
@@ -3326,7 +3352,7 @@ export function SessionView({
             className="session-information"
             aria-labelledby={`info-title-${id}`}
           >
-            <header>
+            <header {...infoEntrance}>
               <h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>
                 {copy("session.sessionInformation")}
               </h2>
