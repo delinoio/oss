@@ -618,6 +618,24 @@ reflogs and nonstandard refs retain their exact bytes. The detached child HEAD
 is the immutable selected fork-point commit; setting it does not append or
 replace the copied history. Git configuration relocates only the child's
 worktree location and retained remote URL. Original repositories are unchanged.
+Every traversal of that Git copy (initial administration inspection, common
+store copy, selected administration overlay, copied-Git validation and both
+source rechecks) uses the 100,000-entry Fork bound; the shared aggregate
+allowance still bounds the total. Ordinary snapshot Git copies keep the
+8,192-entry bound.
+
+The copied `config` and `config.worktree` are excluded from the file-digest
+comparison because normalization rewrites them, so they are proven against an
+expected-config proof instead. The proof is built from the frozen source config
+files read at inspection time (each must match its inventory digest) as ordered
+`git config --list -z` records, plus the accepted RepositorySpec remote
+selection (`RemoteURL`, `PreferredRemote` defaulting to `origin`). Before Ready
+and across the native Fork boundary the child must equal that proof: every
+setting other than `core.bare=false`, `core.worktree=..` (in `config`, and in
+`config.worktree` only when the source has one) and the single selected
+`remote.<name>.url` is unchanged and in its original file and relative order;
+`config.worktree` presence follows the source. Any other difference returns the
+Fork snapshot Conflict. Config values and remote URLs are never logged.
 
 Fresh child root and Git-directory identities are journaled before copying.
 Each copied regular file has independent storage and synchronized publication;
