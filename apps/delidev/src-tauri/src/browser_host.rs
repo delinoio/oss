@@ -306,15 +306,17 @@ impl State {
         }
     }
 
+    // The profile's in-flight operation may not have published
+    // `metadata_committed` yet: its staged replacement can already be on disk
+    // while `prepare_pages` is still reacquiring this lock. Register the
+    // identities now; `prepare_pages` discards them when the mutation outcome
+    // turns out to be a failure, and keeps them when it is recorded as
+    // committed.
     fn track_outstanding_superseded(&mut self, profile: &str, superseded: &[(String, u64)]) {
         let Some(key) = self.page_busy.get(profile).cloned() else {
             return;
         };
-        if let Some(operation) = self
-            .page_operations
-            .get_mut(&key)
-            .filter(|operation| operation.receipt.metadata_committed)
-        {
+        if let Some(operation) = self.page_operations.get_mut(&key) {
             operation.awaiting_close.extend(superseded.iter().cloned());
             tracing::debug!(
                 operation = "browser_page_cleanup",
@@ -1194,7 +1196,12 @@ impl BrowserHost {
                     }
                     operation.tabs = tabs;
                 }
-                Err(code) => operation.receipt.failure = Some(code),
+                Err(code) => {
+                    // Nothing was committed, so no child closed during the
+                    // mutation belongs to this receipt.
+                    operation.awaiting_close.clear();
+                    operation.receipt.failure = Some(code);
+                }
             }
             Self::settle_page_operation(operation);
         }
@@ -6009,6 +6016,70 @@ esac
         let receipt = host.page_receipt(&key).unwrap();
         assert_eq!(receipt.phase, PagePhase::Completed);
         assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn window_close_during_metadata_publication_keeps_the_receipt_pending() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let request = page_request(PageAction::Close, None, Some(&original.tab));
+        // The window closes after the staged replacement is published but
+        // before `prepare_pages` records `metadata_committed`.
+        host.prepare_pages(OWNER, None, &record, &request, |staged, committed| {
+            host.close_window("fixture").unwrap();
+            commit_fixture(staged, committed)
+        })
+        .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn selection_during_metadata_publication_keeps_the_receipt_pending() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let page = create_page(&host, &record, "https://fixture.test/next");
+        let request = page_request(PageAction::Close, None, Some(&page));
+        // Another window's SelectTab supersedes the child while the Close of
+        // the selected page is still publishing its metadata.
+        host.prepare_pages(OWNER, None, &record, &request, |staged, committed| {
+            host.state
+                .lock()
+                .unwrap()
+                .select_tab_tracking_outstanding(&record.id, &page, unmap_view)
+                .unwrap();
+            commit_fixture(staged, committed)
+        })
+        .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(!receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn closes_during_a_failed_metadata_publication_are_not_awaited() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let request = page_request(PageAction::Close, None, Some(&original.tab));
+        host.prepare_pages(OWNER, None, &record, &request, |_staged, _committed| {
+            host.close_window("fixture").unwrap();
+            Err(NativeFailure::SidecarFailed)
+        })
+        .unwrap();
+        let key = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        let state = host.state.lock().unwrap();
+        let operation = &state.page_operations[&key];
+        assert!(!operation.receipt.metadata_committed);
+        assert_eq!(operation.receipt.phase, PagePhase::Failed);
+        assert!(operation.awaiting_close.is_empty());
     }
 
     #[test]

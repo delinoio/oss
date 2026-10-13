@@ -164,8 +164,12 @@ report `on_before_close`, so it never reports completed cleanup early. Closing a
 page that no native child presents completes immediately.
 A page selection control from another window that supersedes children after the
 metadata commit but before this reconciliation registers those children on the
-profile's in-flight committed receipt as well, so the receipt never reports
-completed cleanup before their `on_before_close`. The same registration applies when a lifecycle close (a superseding
+profile's in-flight receipt as well, so the receipt never reports
+completed cleanup before their `on_before_close`. Registration starts while the
+mutation is in flight, before the receipt records `metadata_committed`, because
+a close can land after the staged replacement publishes and before that flag is
+set; a mutation that fails discards the registrations and a committed one keeps
+them. The same registration applies when a lifecycle close (a superseding
 reservation, a hide, or a window close) removes a view that owns or is creating a native child after the metadata commit but before
 reconciliation, so reconciliation never finds nothing to await while that child's `CloseBrowser` is still pending. The `on_before_close` callback that empties a reconciled receipt's set settles it
 immediately, so an owner that unmounts before its next Observe cannot leave a
