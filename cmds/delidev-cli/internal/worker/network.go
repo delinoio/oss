@@ -153,11 +153,17 @@ func (c *networkClientCloser) CloseIdleConnections() {
 	}
 }
 func networkHTTPClient(ctx context.Context, root string, credential Credential) (*http.Client, *networkClientCloser, error) {
+	return networkHTTPClientWithHeaders(ctx, root, credential, 0)
+}
+func networkHTTPClientWithHeaders(ctx context.Context, root string, credential Credential, headerTimeout time.Duration) (*http.Client, *networkClientCloser, error) {
 	runtime, err := openWorkerNetwork(ctx, root, credential, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	client, base := rpc.HTTPClient()
+	if headerTimeout > 0 {
+		base.ResponseHeaderTimeout = headerTimeout
+	}
 	if runtime != nil {
 		client.Transport = &outbound.Transport{Base: base, Resolve: runtime.resolver}
 	}
@@ -235,14 +241,23 @@ func maintainWorkerNetwork(ctx context.Context, config Config, client delidevv1c
 }
 
 func networkHTTPClientFor(ctx context.Context, config Config, credential Credential) (*http.Client, func(), error) {
+	return networkHTTPClientForHeaders(ctx, config, credential, 0)
+}
+
+// A positive headerTimeout replaces the short control-plane response-header
+// bound. Native inference relays may legitimately wait for provider headers.
+func networkHTTPClientForHeaders(ctx context.Context, config Config, credential Credential, headerTimeout time.Duration) (*http.Client, func(), error) {
 	if config.network == nil {
-		client, closer, err := networkHTTPClient(ctx, config.Root, credential)
+		client, closer, err := networkHTTPClientWithHeaders(ctx, config.Root, credential, headerTimeout)
 		if err != nil {
 			return nil, nil, err
 		}
 		return client, closer.CloseIdleConnections, nil
 	}
 	client, base := rpc.HTTPClient()
+	if headerTimeout > 0 {
+		base.ResponseHeaderTimeout = headerTimeout
+	}
 	client.Transport = &outbound.Transport{Base: base, Resolve: config.network.resolver}
 	if err := desktopHTTPClient(ctx, config.Root, credential, client); err != nil {
 		base.CloseIdleConnections()
@@ -251,15 +266,26 @@ func networkHTTPClientFor(ctx context.Context, config Config, credential Credent
 	return client, base.CloseIdleConnections, nil
 }
 
+// injectedDesktopTarget reports the in-memory native-closed target that this
+// root and credential may follow, if any.
+func injectedDesktopTarget(ctx context.Context, root string, credential Credential) *desktopruntime.Target {
+	target := desktopruntime.FromContext(ctx)
+	if target == nil || target.ServerID != credential.ServerID {
+		return nil
+	}
+	if root == filepath.Join(target.Root, "worker") || root == filepath.Join(target.Root, "desktop-client") || strings.HasPrefix(root, filepath.Join(target.Root, "desktop-recoveries")+string(filepath.Separator)) {
+		return target
+	}
+	return nil
+}
+
 func desktopHTTPClient(ctx context.Context, root string, credential Credential, client *http.Client) error {
-	if target := desktopruntime.FromContext(ctx); target != nil && target.ServerID == credential.ServerID {
+	if target := injectedDesktopTarget(ctx, root, credential); target != nil {
 		// Only native-closed operations can inject this in-memory target. The
 		// exact original grant and credential remain unchanged on disk.
-		if root == filepath.Join(target.Root, "worker") || root == filepath.Join(target.Root, "desktop-client") || strings.HasPrefix(root, filepath.Join(target.Root, "desktop-recoveries")+string(filepath.Separator)) {
-			copy := *target
-			client.Transport = &desktopruntime.Transport{Base: client.Transport, Resolve: func() (desktopruntime.Target, error) { return copy, nil }}
-			return nil
-		}
+		copy := *target
+		client.Transport = &desktopruntime.Transport{Base: client.Transport, Resolve: func() (desktopruntime.Target, error) { return copy, nil }}
+		return nil
 	}
 	owner, local, err := desktopruntime.LocalRoot(root, credential.ServerID, credential.Endpoint)
 	if err != nil {

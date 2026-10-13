@@ -91,6 +91,16 @@ There are at most 16 concurrent authorized requests, with no wait queue; request
 
 - Bound local connections, headers, copy buffers and deadlines. Cancel and join every listener, socket, tunnel and observation with the original runtime. Listener readiness does not establish native route use or inference success.
 
+### cmds/delidev-cli/internal/nativeforward constraints
+
+- Follow the network and native API relay contracts. This package owns one ephemeral loopback listener bound to one execution token and the fixed Responses relay paths (`/api-proxy/v1/responses` and `/api-proxy/v1/responses/compact`); it is never a public RPC or generic proxy.
+
+- Authenticate before dialing: require loopback peers, the exact listener `Host`, one `Authorization` bearer equal to the execution token, no `X-Api-Key`, `Origin`, `Cookie`, `Sec-Fetch-Site` or `Upgrade`, `POST`, an exact route and no query. Buffer the request body under the relay limits (32 MiB, or 1 MiB for the title profile) before any upstream contact. At most 16 requests run concurrently.
+
+- Send through the caller-selected HTTP client only (the Worker's desktop-runtime transport). Do not retry, follow redirects (a 3xx reply is a classified failure) or fall back to another address. The response header wait matches the relay (10 minutes); stream with flushing under the relay's 256 MiB bound, and abort rather than cleanly end a truncated stream. Strip hop-by-hop and forwarding headers.
+
+- Cancel and join every request, stream and the listener on `Close` (execution Stop, native exit, failure or context cancellation) before reporting cleanup success; an unconfirmed join is `recovery_required`. Log only the closed stage, code, execution and correlation identifiers, never endpoints, tokens, paths or native content.
+
 ### cmds/delidev-cli/internal/outbound constraints
 
 - Plaintext loopback HTTP destinations require Direct or an explicit matching host/IP/CIDR and optional-port bypass. Reject other selected proxy routes before opening any connection; never transmit the account key through CONNECT/SOCKS5 or silently select Direct. Verified HTTPS loopback destinations retain explicit proxy routing.
@@ -107,7 +117,7 @@ There are at most 16 concurrent authorized requests, with no wait queue; request
 
 - Follow `cmds-delidev-proxy-contract.md` for native API forwarding. The server relay requires digest-only Worker registration tied to an exact durable claimed execution and the current server process epoch; the Worker now registers and delivers scoped authority for immutable first Codex assignments, with public first dispatch supplying the immutable checked assignment. Recheck live session/input/Worker/account authority on every request, scope native references to session/account/connection/model, and join relay cleanup before credential deletion or server resource closure. Fix every request to its immutable account connection/provider/model/operation scope, cancel on authority loss, and verify native reference ownership. Never retry or redirect upstream requests, translate protocol families, inherit ambient proxies, derive usage from traffic, expose general proxy keys, or persist/relay reflected protected values before complete checks. Preserve native completion/failure and possible acceptance after interrupted transport.
 
-- Codex API execution uses only the registered execution token in a private explicit environment and the fixed proxy path on the paired server origin. Never place it in argv/config/history or pass upstream keys to the Worker. Verify effective native provider authority before thread start/resume because managed policy can outrank session flags. Reject alternate auth/headers/query authority, exclude the token from child shells and preserve native retry behavior; the relay itself never retries. The Worker job loop now binds the immutable first assignment, private runtime, workspace lease, durable event outbox and terminal cleanup report. Public first dispatch integrates this runner; unimplemented native event families must still fail explicitly.
+- Codex API execution uses only the registered execution token in a private explicit environment and the fixed proxy path on the paired server origin, or on the execution-owned private forwarder origin when a fixed Local desktop Worker follows a relocated runtime on a Direct route (see the network contract). Never place it in argv/config/history or pass upstream keys to the Worker. Verify effective native provider authority before thread start/resume because managed policy can outrank session flags. Reject alternate auth/headers/query authority, exclude the token from child shells and preserve native retry behavior; the relay itself never retries. The Worker job loop now binds the immutable first assignment, private runtime, workspace lease, durable event outbox and terminal cleanup report. Public first dispatch integrates this runner; unimplemented native event families must still fail explicitly.
 
 ## Storage
 
