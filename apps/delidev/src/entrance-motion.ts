@@ -133,13 +133,18 @@ export function usePresentationCount(
  * it settled. A new key while the previous entrance is still running restarts
  * the CSS animation, because an unchanged declaration would otherwise continue
  * the old timeline. Turning motion off mid-flight clears the attribute
- * immediately, so re-enabling never replays the current activation. No exit
- * motion exists.
+ * immediately, so re-enabling never replays the current activation. By
+ * default `enabled` is only read when an activation starts, because several
+ * surfaces enable it for a single request render; a retained surface whose
+ * in-flight entrance must end when it stops being enabled (for example a tab
+ * of a destination that becomes inactive) opts in with `clearWhenDisabled`.
+ * No exit motion exists.
  */
 export function useEntranceActivation(
   activation: string,
   enabled = true,
   motion = EntranceMotion.Y4,
+  clearWhenDisabled = false,
 ): EntranceProps {
   const [state, setState] = useState(() => ({
     activation,
@@ -160,6 +165,11 @@ export function useEntranceActivation(
       ),
     [activation],
   );
+  // Opt-in: clear an in-flight entrance when the surface stops being enabled,
+  // so a later activation never stacks a second transform on a stale one.
+  useEffect(() => {
+    if (clearWhenDisabled && !enabled) settle();
+  }, [clearWhenDisabled, enabled, settle]);
   useEffect(() => {
     if (!active) return;
     const settleWhenDisabled = () => {
@@ -217,7 +227,12 @@ export function useEntranceActivation(
           return;
         settle();
       };
-      const settleNow = () => settle();
+      // A top-layer host measures its anchor right after requesting the settle,
+      // so clear the attribute synchronously; the state update follows.
+      const settleNow = () => {
+        node.removeAttribute("data-entrance");
+        settle();
+      };
       node.addEventListener("animationend", finished);
       node.addEventListener("animationcancel", finished);
       node.addEventListener(ENTRANCE_SETTLE_EVENT, settleNow);

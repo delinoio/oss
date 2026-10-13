@@ -4,14 +4,26 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   EntranceMotion,
+  settleEnclosingEntrances,
   useActivationCount,
   useEntranceActivation,
 } from "./entrance-motion";
 
-function Harness({ enabled = true }: { enabled?: boolean }) {
+function Harness({
+  enabled = true,
+  clearWhenDisabled = false,
+}: {
+  enabled?: boolean;
+  clearWhenDisabled?: boolean;
+}) {
   const [activation, setActivation] = useState("first");
   const [text, setText] = useState("");
-  const entrance = useEntranceActivation(activation, enabled);
+  const entrance = useEntranceActivation(
+    activation,
+    enabled,
+    EntranceMotion.Y4,
+    clearWhenDisabled,
+  );
   return (
     <div>
       <div data-testid="surface" {...entrance}>
@@ -311,3 +323,35 @@ function MotionRestartHarness() {
     </div>
   );
 }
+
+it("clears the attribute synchronously when an enclosed host requests a settle", () => {
+  render(
+    <div>
+      <Harness />
+    </div>,
+  );
+  expect(entering()).toBe("y4");
+  // No act() flush: a top-layer host measures its anchor right after the call.
+  settleEnclosingEntrances(screen.getByTestId("spinner"));
+  expect(entering()).toBeNull();
+  act(() => {});
+  expect(entering()).toBeNull();
+});
+
+it("keeps a request-scoped entrance running when enabled turns off unless the surface opts in to clearing", () => {
+  const { rerender, unmount } = render(<Harness />);
+  expect(entering()).toBe("y4");
+  rerender(<Harness enabled={false} />);
+  expect(entering()).toBe("y4");
+  unmount();
+  const view = render(<Harness clearWhenDisabled />);
+  expect(entering()).toBe("y4");
+  view.rerender(<Harness enabled={false} clearWhenDisabled />);
+  expect(entering()).toBeNull();
+  view.rerender(<Harness clearWhenDisabled />);
+  expect(entering()).toBeNull();
+  act(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  });
+  expect(entering()).toBe("y4");
+});

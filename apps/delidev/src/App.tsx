@@ -25,6 +25,11 @@ import { RunnerRemediationProvider } from "./runner-remediation";
 import { RunnerPreferenceProvider } from "./runner-device-preferences";
 import { SessionControlProvider } from "./session-control";
 import { LocalizedText, copy, useLocale } from "./localization";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import type { UsageEntry } from "./usage-entry";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
 import {
@@ -148,6 +153,16 @@ function Shell({
   useLocale();
   const [surface, setSurfaceState] = useState(Surface.Sessions);
   useShortcutSurface(surface);
+  // Home activation (a rising edge of the Sessions surface) owns one 160ms Y4
+  // entrance on the welcome content. Selecting a session, reads and retries keep
+  // the key unchanged, and the hook lives here so the welcome section mounting
+  // later never starts a replay.
+  const homeActivations = useActivationCount(surface === Surface.Sessions);
+  const welcomeEntrance = useEntranceActivation(
+    `welcome:${homeActivations}`,
+    surface === Surface.Sessions,
+    EntranceMotion.Y4,
+  );
   const openHelp = useShortcutHelp();
   const holdHelp = useHeldShortcutHelp();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
@@ -788,7 +803,10 @@ function Shell({
                           </div>
                         ))}
                         {!selected ? (
-                          <section className="page welcome">
+                          <section
+                            className="page welcome"
+                            {...welcomeEntrance}
+                          >
                             <h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2>
                             <p>
                               {copy("App.selectARetainedSessionOrStart_a9de9e")}

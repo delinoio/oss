@@ -11,6 +11,12 @@ import {
   useLocale,
 } from "./localization";
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  EntranceMotion,
+  settleEnclosingEntrances,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -276,6 +282,35 @@ export function Usage({
   const [detail, setDetail] = useState<PriceSelection>();
 
   const [tab, setTab] = useState(UsageTab.Overview);
+  // Explicit destination activation owns one 160ms Y4 entrance on the page; an
+  // explicit internal-tab selection owns one on the content below the tab strip,
+  // so the strip itself never moves. Refresh, range and source changes, polling
+  // and data updates change neither key, and values render immediately.
+  const [tabSelections, setTabSelections] = useState(0);
+  const selectTab = (next: UsageTab) => {
+    if (next === tab) return;
+    setTab(next);
+    setTabSelections((count) => count + 1);
+  };
+  const destinationActivations = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `usage:${destinationActivations}`,
+    active,
+    EntranceMotion.Y4,
+  );
+  const tabEntrance = useEntranceActivation(
+    `usage-tab:${tabSelections}`,
+    active && tabSelections > 0,
+    EntranceMotion.Y4,
+    // Leaving Usage ends the tab entrance so a return never stacks transforms.
+    true,
+  );
+  const tabStrip = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    // Only one entrance is active at a time: a tab selection during the page
+    // entrance settles the page so no 8px of transforms stack. Nothing waits.
+    if (tabSelections > 0) settleEnclosingEntrances(tabStrip.current);
+  }, [tabSelections]);
   const tabId = useId();
   const pricesTab = useRef<HTMLButtonElement>(null);
   const pendingPriceFocus = useRef(false);
@@ -345,7 +380,7 @@ export function Usage({
   const selectPrice = (identity: PriceSelection) => {
     pendingPriceFocus.current = true;
     setDetail({ ...identity, history: retainedPrices(data, identity) });
-    setTab(UsageTab.Prices);
+    selectTab(UsageTab.Prices);
   };
   const emptySummary = emptyRecordedSummary(data?.totals);
   const responseGroups =
@@ -548,8 +583,10 @@ export function Usage({
         hidden={!active}
         className="page usage-page"
         aria-busy={result.isFetching}
+        {...pageEntrance}
       >
         <div
+          ref={tabStrip}
           className="tab-strip usage-tabs"
           role="tablist"
           aria-label={copy("usage.analysisTabs")}
@@ -565,7 +602,7 @@ export function Usage({
               aria-controls={`${tabId}-${value}-panel`}
               aria-selected={tab === value}
               tabIndex={tab === value ? 0 : -1}
-              onClick={() => setTab(value)}
+              onClick={() => selectTab(value)}
               onFocus={(event) => revealTabItem(event.currentTarget)}
               onKeyDown={(event) => {
                 const next =
@@ -580,7 +617,7 @@ export function Usage({
                           : undefined;
                 if (!next) return;
                 event.preventDefault();
-                setTab(next);
+                selectTab(next);
                 window.document.getElementById(`${tabId}-${next}-tab`)?.focus();
               }}
             >
@@ -588,560 +625,575 @@ export function Usage({
             </button>
           ))}
         </div>
-        <div hidden={tab === UsageTab.Prices}>
-          <header className="usage-header">
-            <div>
-              <h1>{copy("usage.tokenUsage_00f594")}</h1>
-              <p>
+        <div className="usage-content" {...tabEntrance}>
+          <div hidden={tab === UsageTab.Prices}>
+            <header className="usage-header">
+              <div>
+                <h1>{copy("usage.tokenUsage_00f594")}</h1>
+                <p>
+                  {copy(
+                    "usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa",
+                  )}
+                </p>
+              </div>
+              <div className="usage-header-actions">
+                <button
+                  type="button"
+                  disabled={result.isFetching}
+                  onClick={() => void result.refetch()}
+                >
+                  {copy("usage.refresh_0e9161")}
+                </button>
+              </div>
+            </header>
+            <div
+              className="usage-applied"
+              role="group"
+              aria-label={copy("usage.appliedConditions_bc3af3")}
+            >
+              <span>
+                {data
+                  ? `${compactAppliedTime(data.fromUnixMs, appliedZone)} – ${compactAppliedTime(data.untilUnixMs, appliedZone)}`
+                  : pendingRange(selection)}
+              </span>
+              <span>{appliedZone}</span>
+              <span>
                 {copy(
-                  "usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa",
+                  conditions.length
+                    ? "usage.filteredScope"
+                    : "usage.allSources",
+                )}
+              </span>
+              <Disclosure>
+                <DisclosureSummary>
+                  {copy("usage.appliedDetails")}
+                </DisclosureSummary>
+                <div className="usage-applied-exact">
+                  <span>
+                    {data ? (
+                      <TimestampText
+                        id="usage.exclusive_fd9e0a"
+                        values={{
+                          v0: formatAppliedTime(data.fromUnixMs, appliedZone),
+                          v1: formatAppliedTime(data.untilUnixMs, appliedZone),
+                        }}
+                      />
+                    ) : (
+                      pendingRange(selection)
+                    )}
+                  </span>
+                  <span>
+                    <LocalizedText
+                      id="usage.timezone_9229e0"
+                      components={{ s0: <>{appliedZone}</> }}
+                    />
+                  </span>
+                  <span>
+                    {copy("usage.responseTimesShowWhenTheServer_c28198")}
+                  </span>
+                  {conditions.length ? (
+                    <span>{conditions.join(" · ")}</span>
+                  ) : (
+                    <span>
+                      {copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}
+                    </span>
+                  )}
+                </div>
+              </Disclosure>
+            </div>
+            {draftChanged ? (
+              <p className="usage-draft-state" role="status">
+                {copy(
+                  invalid
+                    ? "usage.invalidFiltersRetained"
+                    : "usage.waitingForDateInput",
                 )}
               </p>
-            </div>
-            <div className="usage-header-actions">
-              <button
-                type="button"
-                disabled={result.isFetching}
-                onClick={() => void result.refetch()}
-              >
-                {copy("usage.refresh_0e9161")}
-              </button>
-            </div>
-          </header>
-          <div
-            className="usage-applied"
-            role="group"
-            aria-label={copy("usage.appliedConditions_bc3af3")}
-          >
-            <span>
-              {data
-                ? `${compactAppliedTime(data.fromUnixMs, appliedZone)} – ${compactAppliedTime(data.untilUnixMs, appliedZone)}`
-                : pendingRange(selection)}
-            </span>
-            <span>{appliedZone}</span>
-            <span>
-              {copy(
-                conditions.length ? "usage.filteredScope" : "usage.allSources",
-              )}
-            </span>
-            <Disclosure>
-              <DisclosureSummary>
-                {copy("usage.appliedDetails")}
-              </DisclosureSummary>
-              <div className="usage-applied-exact">
-                <span>
-                  {data ? (
-                    <TimestampText
-                      id="usage.exclusive_fd9e0a"
-                      values={{
-                        v0: formatAppliedTime(data.fromUnixMs, appliedZone),
-                        v1: formatAppliedTime(data.untilUnixMs, appliedZone),
-                      }}
-                    />
-                  ) : (
-                    pendingRange(selection)
-                  )}
-                </span>
-                <span>
-                  <LocalizedText
-                    id="usage.timezone_9229e0"
-                    components={{ s0: <>{appliedZone}</> }}
-                  />
-                </span>
-                <span>
-                  {copy("usage.responseTimesShowWhenTheServer_c28198")}
-                </span>
-                {conditions.length ? (
-                  <span>{conditions.join(" · ")}</span>
-                ) : (
-                  <span>
-                    {copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}
-                  </span>
-                )}
+            ) : null}
+            <Problem error={result.error} summary={copy("usage.readHelp")} />
+            {result.isFetching ? (
+              <p className="usage-loading" role="status">
+                {data
+                  ? copy("usage.refreshingThisAppliedRange_349e6c")
+                  : copy("usage.loadingTokenUsage_ded2ab")}
+              </p>
+            ) : null}
+            {data && result.error ? (
+              <p className="notice">
+                {copy("usage.theRefreshFailedTheseAreThe_a67de1")}
+              </p>
+            ) : null}
+            {!data && result.isPending ? (
+              <div className="usage-skeletons" aria-hidden="true">
+                <div />
+                <div />
+                <div />
+                <div />
               </div>
-            </Disclosure>
+            ) : null}
+            {data ? (
+              <>
+                <div className="usage-coverage">
+                  <strong>{copy("usage.incompleteCoverage_0922dc")}</strong>
+                  <Disclosure>
+                    <DisclosureSummary>
+                      {copy("usage.coverageDetails")}
+                    </DisclosureSummary>
+                    <span>
+                      <LocalizedText
+                        id="usage.acceptedExecutionsHaveNoResponseUsage_9f2beb"
+                        components={{
+                          s0: (
+                            <>
+                              {data.acceptedExecutionsWithoutResponse.toLocaleString(
+                                displayLocale(),
+                              )}
+                            </>
+                          ),
+                        }}
+                      />
+                    </span>
+                    <span>
+                      <LocalizedText
+                        id="usage.nativeContextActionsHaveNoExact_9bc220"
+                        components={{
+                          s0: (
+                            <>
+                              {data.acceptedCompactionsWithoutResponse.toLocaleString(
+                                displayLocale(),
+                              )}
+                            </>
+                          ),
+                        }}
+                      />
+                    </span>
+                    <span>
+                      {data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES
+                        ? copy(
+                            "usage.observedRootResponsesOnlyMissingOlder_ae66ec",
+                          )
+                        : copy("usage.thisServerSTelemetryCoverageIs_d25728")}
+                    </span>
+                    <p>{copy("usage.responseTimesShowWhenTheServer_c28198")}</p>
+                  </Disclosure>
+                </div>
+                {result.error ? (
+                  <p className="usage-stale-indicator" role="status">
+                    {copy("usage.staleValuesFromTheLastSuccessful_26becd")}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
           </div>
-          {draftChanged ? (
-            <p className="usage-draft-state" role="status">
-              {copy(
-                invalid
-                  ? "usage.invalidFiltersRetained"
-                  : "usage.waitingForDateInput",
-              )}
-            </p>
-          ) : null}
-          <Problem error={result.error} summary={copy("usage.readHelp")} />
-          {result.isFetching ? (
-            <p className="usage-loading" role="status">
-              {data
-                ? copy("usage.refreshingThisAppliedRange_349e6c")
-                : copy("usage.loadingTokenUsage_ded2ab")}
-            </p>
-          ) : null}
-          {data && result.error ? (
-            <p className="notice">
-              {copy("usage.theRefreshFailedTheseAreThe_a67de1")}
-            </p>
-          ) : null}
-          {!data && result.isPending ? (
-            <div className="usage-skeletons" aria-hidden="true">
-              <div />
-              <div />
-              <div />
-              <div />
-            </div>
-          ) : null}
-          {data ? (
-            <>
-              <div className="usage-coverage">
-                <strong>{copy("usage.incompleteCoverage_0922dc")}</strong>
-                <Disclosure>
-                  <DisclosureSummary>
-                    {copy("usage.coverageDetails")}
-                  </DisclosureSummary>
-                  <span>
-                    <LocalizedText
-                      id="usage.acceptedExecutionsHaveNoResponseUsage_9f2beb"
-                      components={{
-                        s0: (
-                          <>
-                            {data.acceptedExecutionsWithoutResponse.toLocaleString(
-                              displayLocale(),
-                            )}
-                          </>
-                        ),
-                      }}
-                    />
-                  </span>
-                  <span>
-                    <LocalizedText
-                      id="usage.nativeContextActionsHaveNoExact_9bc220"
-                      components={{
-                        s0: (
-                          <>
-                            {data.acceptedCompactionsWithoutResponse.toLocaleString(
-                              displayLocale(),
-                            )}
-                          </>
-                        ),
-                      }}
-                    />
-                  </span>
-                  <span>
-                    {data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES
-                      ? copy(
-                          "usage.observedRootResponsesOnlyMissingOlder_ae66ec",
-                        )
-                      : copy("usage.thisServerSTelemetryCoverageIs_d25728")}
-                  </span>
-                  <p>{copy("usage.responseTimesShowWhenTheServer_c28198")}</p>
-                </Disclosure>
-              </div>
-              {result.error ? (
-                <p className="usage-stale-indicator" role="status">
-                  {copy("usage.staleValuesFromTheLastSuccessful_26becd")}
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-        <div
-          role="tabpanel"
-          id={`${tabId}-${UsageTab.Prices}-panel`}
-          aria-labelledby={`${tabId}-${UsageTab.Prices}-tab`}
-          hidden={tab !== UsageTab.Prices}
-        >
-          <SettingsLifetime>
-            {() => (
-              <MutationIntents>
-                <UsageModelPrices
-                  selection={detail}
-                  select={setDetail}
-                  active={active && tab === UsageTab.Prices}
-                  data={data}
-                />
-              </MutationIntents>
-            )}
-          </SettingsLifetime>
-        </div>
-        <div
-          role="tabpanel"
-          id={`${tabId}-${UsageTab.Overview}-panel`}
-          aria-labelledby={`${tabId}-${UsageTab.Overview}-tab`}
-          hidden={tab !== UsageTab.Overview}
-        >
-          {data ? <UsageOverview data={data} timeZone={appliedZone} /> : null}
-        </div>
-        {!data ? (
           <div
             role="tabpanel"
-            id={`${tabId}-${UsageTab.History}-panel`}
-            aria-labelledby={`${tabId}-${UsageTab.History}-tab`}
-            hidden={tab !== UsageTab.History}
-          />
-        ) : null}
-        {data ? (
-          <>
+            id={`${tabId}-${UsageTab.Prices}-panel`}
+            aria-labelledby={`${tabId}-${UsageTab.Prices}-tab`}
+            hidden={tab !== UsageTab.Prices}
+          >
+            <SettingsLifetime>
+              {() => (
+                <MutationIntents>
+                  <UsageModelPrices
+                    selection={detail}
+                    select={setDetail}
+                    active={active && tab === UsageTab.Prices}
+                    data={data}
+                  />
+                </MutationIntents>
+              )}
+            </SettingsLifetime>
+          </div>
+          <div
+            role="tabpanel"
+            id={`${tabId}-${UsageTab.Overview}-panel`}
+            aria-labelledby={`${tabId}-${UsageTab.Overview}-tab`}
+            hidden={tab !== UsageTab.Overview}
+          >
+            {data ? <UsageOverview data={data} timeZone={appliedZone} /> : null}
+          </div>
+          {!data ? (
             <div
               role="tabpanel"
               id={`${tabId}-${UsageTab.History}-panel`}
               aria-labelledby={`${tabId}-${UsageTab.History}-tab`}
               hidden={tab !== UsageTab.History}
-            >
-              <section
-                className="usage-summary"
-                aria-labelledby="usage-summary-title"
+            />
+          ) : null}
+          {data ? (
+            <>
+              <div
+                role="tabpanel"
+                id={`${tabId}-${UsageTab.History}-panel`}
+                aria-labelledby={`${tabId}-${UsageTab.History}-tab`}
+                hidden={tab !== UsageTab.History}
               >
-                <h2 id="usage-summary-title">
-                  {copy("usage.knownTokenTotals_17a07e")}
-                </h2>
-                <dl className="usage-metrics-primary">
-                  {primaryMeasures().map(([label, key]) => (
-                    <MeasureCard
-                      key={key}
-                      primary
-                      label={label}
-                      emptySummary={emptySummary}
-                      value={data.totals?.[key]}
-                    />
-                  ))}
-                  <div className="usage-metric usage-recorded-responses">
-                    <dt>{copy("usage.recordedResponses")}</dt>
-                    <dd>
-                      {data.totals?.responses.toLocaleString(displayLocale()) ??
-                        copy("usage.extra.ca1844969742")}
-                    </dd>
-                    <small>{copy("usage.exactResponseRecords")}</small>
-                  </div>
-                </dl>
-                <Disclosure className="usage-summary-breakdown">
-                  <DisclosureSummary>
-                    {copy("usage.tokenBreakdown_c7576a")}
-                  </DisclosureSummary>
-                  <dl className="usage-metrics-secondary">
-                    {secondaryMeasures().map(([label, key]) => (
+                <section
+                  className="usage-summary"
+                  aria-labelledby="usage-summary-title"
+                >
+                  <h2 id="usage-summary-title">
+                    {copy("usage.knownTokenTotals_17a07e")}
+                  </h2>
+                  <dl className="usage-metrics-primary">
+                    {primaryMeasures().map(([label, key]) => (
                       <MeasureCard
                         key={key}
+                        primary
                         label={label}
                         emptySummary={emptySummary}
                         value={data.totals?.[key]}
                       />
                     ))}
+                    <div className="usage-metric usage-recorded-responses">
+                      <dt>{copy("usage.recordedResponses")}</dt>
+                      <dd>
+                        {data.totals?.responses.toLocaleString(
+                          displayLocale(),
+                        ) ?? copy("usage.extra.ca1844969742")}
+                      </dd>
+                      <small>{copy("usage.exactResponseRecords")}</small>
+                    </div>
                   </dl>
-                  <p className="usage-subset-note">
-                    {copy("usage.cachedInputIsPartOfInput_fa92e1")}
-                  </p>
-                </Disclosure>
-              </section>
-              <section
-                className="usage-trends"
-                aria-label={copy("usage.dailyAndModelTrends")}
-              >
-                {responseAnalytics?.granularity === UsageTimeGranularity.DAY ? (
-                  <UsageCharts
-                    analytics={responseAnalytics}
-                    timeZone={appliedZone}
-                  />
-                ) : (
-                  <p className="usage-charts-unavailable" role="status">
-                    {copy("usage.dailyAndModelChartsAreUnavailable_a70ff8")}
-                  </p>
-                )}
-              </section>
-              <section
-                className="usage-detail"
-                aria-labelledby="usage-detail-title"
-              >
-                <h2 id="usage-detail-title">
-                  {copy("usage.sessionModelAndAccountDetails_778c53")}
-                </h2>
-                {responseGroups.length ? (
-                  <div
-                    className="usage-table usage-response-table"
-                    role="region"
-                    aria-label={copy(
-                      "usage.sessionModelAndAccountUsageTable_fc350c",
-                    )}
-                    tabIndex={0}
-                  >
-                    <table>
-                      <caption>
-                        {copy(
-                          "usage.knownResponseSubtotalsWithOriginalSession_e1cb71",
-                        )}
-                      </caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">
-                            {copy("usage.sessionProject_59a44c")}
-                          </th>
-                          <th scope="col">{copy("usage.account_7e1b0d")}</th>
-                          <th scope="col">{copy("usage.modelApi_6a8129")}</th>
-                          <th scope="col">
-                            {copy("usage.extra.dd856eeb5046")}
-                          </th>
-                          <th scope="col">
-                            {copy("usage.extra.a9b50ea0c4a7")}
-                          </th>
-                          <th scope="col">
-                            {copy("usage.extra.6e3886ad15d2")}
-                          </th>
-                          <th scope="col">{copy("usage.recordedResponses")}</th>
-                          <th scope="col">
-                            {copy("usage.tokenPriceEstimate_ed3009")}
-                          </th>
-                          <th scope="col">{copy("usage.rowDetails")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {responseGroups.map((group) => (
-                          <tr
-                            key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.model?.nativeId ?? ""}:${group.modelName}`}
-                          >
-                            <td
-                              data-label={copy("usage.sessionProject_59a44c")}
+                  <Disclosure className="usage-summary-breakdown">
+                    <DisclosureSummary>
+                      {copy("usage.tokenBreakdown_c7576a")}
+                    </DisclosureSummary>
+                    <dl className="usage-metrics-secondary">
+                      {secondaryMeasures().map(([label, key]) => (
+                        <MeasureCard
+                          key={key}
+                          label={label}
+                          emptySummary={emptySummary}
+                          value={data.totals?.[key]}
+                        />
+                      ))}
+                    </dl>
+                    <p className="usage-subset-note">
+                      {copy("usage.cachedInputIsPartOfInput_fa92e1")}
+                    </p>
+                  </Disclosure>
+                </section>
+                <section
+                  className="usage-trends"
+                  aria-label={copy("usage.dailyAndModelTrends")}
+                >
+                  {responseAnalytics?.granularity ===
+                  UsageTimeGranularity.DAY ? (
+                    <UsageCharts
+                      analytics={responseAnalytics}
+                      timeZone={appliedZone}
+                    />
+                  ) : (
+                    <p className="usage-charts-unavailable" role="status">
+                      {copy("usage.dailyAndModelChartsAreUnavailable_a70ff8")}
+                    </p>
+                  )}
+                </section>
+                <section
+                  className="usage-detail"
+                  aria-labelledby="usage-detail-title"
+                >
+                  <h2 id="usage-detail-title">
+                    {copy("usage.sessionModelAndAccountDetails_778c53")}
+                  </h2>
+                  {responseGroups.length ? (
+                    <div
+                      className="usage-table usage-response-table"
+                      role="region"
+                      aria-label={copy(
+                        "usage.sessionModelAndAccountUsageTable_fc350c",
+                      )}
+                      tabIndex={0}
+                    >
+                      <table>
+                        <caption>
+                          {copy(
+                            "usage.knownResponseSubtotalsWithOriginalSession_e1cb71",
+                          )}
+                        </caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">
+                              {copy("usage.sessionProject_59a44c")}
+                            </th>
+                            <th scope="col">{copy("usage.account_7e1b0d")}</th>
+                            <th scope="col">{copy("usage.modelApi_6a8129")}</th>
+                            <th scope="col">
+                              {copy("usage.extra.dd856eeb5046")}
+                            </th>
+                            <th scope="col">
+                              {copy("usage.extra.a9b50ea0c4a7")}
+                            </th>
+                            <th scope="col">
+                              {copy("usage.extra.6e3886ad15d2")}
+                            </th>
+                            <th scope="col">
+                              {copy("usage.recordedResponses")}
+                            </th>
+                            <th scope="col">
+                              {copy("usage.tokenPriceEstimate_ed3009")}
+                            </th>
+                            <th scope="col">{copy("usage.rowDetails")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {responseGroups.map((group) => (
+                            <tr
+                              key={`${group.sessionId}:${group.accountId}:${group.providerId}:${subscriptionServiceLabel(group.subscriptionService)}:${group.model?.nativeId ?? ""}:${group.modelName}`}
                             >
-                              <button
-                                type="button"
-                                onClick={() => open(group.sessionId)}
+                              <td
+                                data-label={copy("usage.sessionProject_59a44c")}
                               >
-                                {group.sessionName ||
-                                  copy("usage.session_6959b4")}
-                              </button>
-                              <p>
-                                {group.projectId
-                                  ? group.projectName ||
-                                    copy("usage.project_985959")
-                                  : copy("usage.generalChat_f634bc")}
-                              </p>
-                            </td>
-                            <td data-label={copy("usage.account_7e1b0d")}>
-                              <span>
-                                {group.accountName ||
-                                  copy("usage.extra.415673677e87")}
-                              </span>
-                            </td>
-                            <td data-label={copy("usage.modelApi_6a8129")}>
-                              <button
-                                type="button"
-                                disabled={!group.model?.nativeId}
-                                onClick={() =>
-                                  selectPrice({
-                                    nativeId: group.model?.nativeId ?? "",
-                                    providerId: group.providerId,
-                                    subscriptionService:
-                                      group.subscriptionService,
-                                  })
-                                }
-                              >
-                                {group.model?.nativeId
-                                  ? productLabel(
-                                      PresentationKind.Model,
-                                      group.model.nativeId,
-                                      group.modelName,
-                                    )
-                                  : copy("usage.extra.a99bc331d9ad")}
-                              </button>
-                              <p>
-                                {group.subscriptionService
-                                  ? copy("usage.subscriptionService_67a163", {
-                                      v0: subscriptionServiceLabel(
+                                <button
+                                  type="button"
+                                  onClick={() => open(group.sessionId)}
+                                >
+                                  {group.sessionName ||
+                                    copy("usage.session_6959b4")}
+                                </button>
+                                <p>
+                                  {group.projectId
+                                    ? group.projectName ||
+                                      copy("usage.project_985959")
+                                    : copy("usage.generalChat_f634bc")}
+                                </p>
+                              </td>
+                              <td data-label={copy("usage.account_7e1b0d")}>
+                                <span>
+                                  {group.accountName ||
+                                    copy("usage.extra.415673677e87")}
+                                </span>
+                              </td>
+                              <td data-label={copy("usage.modelApi_6a8129")}>
+                                <button
+                                  type="button"
+                                  disabled={!group.model?.nativeId}
+                                  onClick={() =>
+                                    selectPrice({
+                                      nativeId: group.model?.nativeId ?? "",
+                                      providerId: group.providerId,
+                                      subscriptionService:
                                         group.subscriptionService,
-                                      ),
                                     })
-                                  : group.providerName ||
-                                    copy("usage.provider_472590")}
-                              </p>
-                            </td>
-                            <td
-                              data-label={copy("usage.extra.dd856eeb5046")}
-                              className="usage-number"
-                            >
-                              {measure(group.totals?.input)}
-                            </td>
-                            <td
-                              data-label={copy("usage.extra.a9b50ea0c4a7")}
-                              className="usage-number"
-                            >
-                              {measure(group.totals?.output)}
-                            </td>
-                            <td
-                              data-label={copy("usage.extra.6e3886ad15d2")}
-                              className="usage-number"
-                            >
-                              <strong>{measure(group.totals?.total)}</strong>
-                            </td>
-                            <td
-                              data-label={copy("usage.recordedResponses")}
-                              className="usage-number"
-                            >
-                              {group.totals?.responses.toLocaleString(
-                                displayLocale(),
-                              ) ?? copy("usage.extra.ca1844969742")}
-                            </td>
-                            <td
-                              data-label={copy(
-                                "usage.tokenPriceEstimate_ed3009",
-                              )}
-                              className="usage-number"
-                            >
-                              <CompactEstimate value={group.estimates} />
-                            </td>
-                            <td className="usage-row-detail">
-                              <Disclosure>
-                                <DisclosureSummary>
-                                  {copy("usage.rowDetails")}
-                                </DisclosureSummary>
-                                <div>
-                                  <dl className="usage-original-identities">
-                                    {[
-                                      [
-                                        copy("usage.session_6959b4"),
-                                        productLabel(
-                                          PresentationKind.Session,
-                                          group.sessionId,
-                                          group.sessionName,
+                                  }
+                                >
+                                  {group.model?.nativeId
+                                    ? productLabel(
+                                        PresentationKind.Model,
+                                        group.model.nativeId,
+                                        group.modelName,
+                                      )
+                                    : copy("usage.extra.a99bc331d9ad")}
+                                </button>
+                                <p>
+                                  {group.subscriptionService
+                                    ? copy("usage.subscriptionService_67a163", {
+                                        v0: subscriptionServiceLabel(
+                                          group.subscriptionService,
                                         ),
-                                      ],
-                                      [
-                                        copy("usage.project_985959"),
-                                        productLabel(
-                                          PresentationKind.Project,
-                                          group.projectId,
-                                          group.projectName,
-                                        ),
-                                      ],
-                                      [
-                                        copy("usage.account_7e1b0d"),
-                                        productLabel(
-                                          PresentationKind.Account,
-                                          group.accountId,
-                                          group.accountName,
-                                        ),
-                                      ],
-                                      [
-                                        copy("usage.provider_472590"),
-                                        productLabel(
-                                          PresentationKind.Provider,
-                                          group.providerId,
-                                          group.providerName,
-                                        ),
-                                      ],
-                                      [
-                                        copy("usage.model_5e2c61"),
-                                        productLabel(
-                                          PresentationKind.Model,
-                                          group.model?.nativeId,
-                                          group.modelName,
-                                        ),
-                                      ],
-                                    ].map(([label, id]) => (
-                                      <div key={label}>
-                                        <dt>{label}</dt>
+                                      })
+                                    : group.providerName ||
+                                      copy("usage.provider_472590")}
+                                </p>
+                              </td>
+                              <td
+                                data-label={copy("usage.extra.dd856eeb5046")}
+                                className="usage-number"
+                              >
+                                {measure(group.totals?.input)}
+                              </td>
+                              <td
+                                data-label={copy("usage.extra.a9b50ea0c4a7")}
+                                className="usage-number"
+                              >
+                                {measure(group.totals?.output)}
+                              </td>
+                              <td
+                                data-label={copy("usage.extra.6e3886ad15d2")}
+                                className="usage-number"
+                              >
+                                <strong>{measure(group.totals?.total)}</strong>
+                              </td>
+                              <td
+                                data-label={copy("usage.recordedResponses")}
+                                className="usage-number"
+                              >
+                                {group.totals?.responses.toLocaleString(
+                                  displayLocale(),
+                                ) ?? copy("usage.extra.ca1844969742")}
+                              </td>
+                              <td
+                                data-label={copy(
+                                  "usage.tokenPriceEstimate_ed3009",
+                                )}
+                                className="usage-number"
+                              >
+                                <CompactEstimate value={group.estimates} />
+                              </td>
+                              <td className="usage-row-detail">
+                                <Disclosure>
+                                  <DisclosureSummary>
+                                    {copy("usage.rowDetails")}
+                                  </DisclosureSummary>
+                                  <div>
+                                    <dl className="usage-original-identities">
+                                      {[
+                                        [
+                                          copy("usage.session_6959b4"),
+                                          productLabel(
+                                            PresentationKind.Session,
+                                            group.sessionId,
+                                            group.sessionName,
+                                          ),
+                                        ],
+                                        [
+                                          copy("usage.project_985959"),
+                                          productLabel(
+                                            PresentationKind.Project,
+                                            group.projectId,
+                                            group.projectName,
+                                          ),
+                                        ],
+                                        [
+                                          copy("usage.account_7e1b0d"),
+                                          productLabel(
+                                            PresentationKind.Account,
+                                            group.accountId,
+                                            group.accountName,
+                                          ),
+                                        ],
+                                        [
+                                          copy("usage.provider_472590"),
+                                          productLabel(
+                                            PresentationKind.Provider,
+                                            group.providerId,
+                                            group.providerName,
+                                          ),
+                                        ],
+                                        [
+                                          copy("usage.model_5e2c61"),
+                                          productLabel(
+                                            PresentationKind.Model,
+                                            group.model?.nativeId,
+                                            group.modelName,
+                                          ),
+                                        ],
+                                      ].map(([label, id]) => (
+                                        <div key={label}>
+                                          <dt>{label}</dt>
+                                          <dd>
+                                            {id ||
+                                              copy("usage.extra.ca1844969742")}
+                                          </dd>
+                                        </div>
+                                      ))}
+                                      <div>
+                                        <dt>
+                                          {copy(
+                                            "usage.subscriptionService_0e16df",
+                                          )}
+                                        </dt>
                                         <dd>
-                                          {id ||
-                                            copy("usage.extra.ca1844969742")}
+                                          {subscriptionServiceLabel(
+                                            group.subscriptionService,
+                                          ) || copy("usage.extra.ca1844969742")}
                                         </dd>
                                       </div>
-                                    ))}
-                                    <div>
-                                      <dt>
-                                        {copy(
-                                          "usage.subscriptionService_0e16df",
-                                        )}
-                                      </dt>
-                                      <dd>
-                                        {subscriptionServiceLabel(
-                                          group.subscriptionService,
-                                        ) || copy("usage.extra.ca1844969742")}
-                                      </dd>
-                                    </div>
-                                  </dl>
-                                  <Measures value={group.totals} />
-                                  <p>
-                                    <LocalizedText
-                                      id="usage.responses_5238cc"
-                                      components={{
-                                        s0: (
-                                          <>
-                                            {group.totals?.responses.toLocaleString(
-                                              displayLocale(),
-                                            )}
-                                          </>
-                                        ),
-                                        s1: (
-                                          <>
-                                            {group.totals?.total
-                                              ?.unavailableResponses
-                                              ? copy(
-                                                  "usage.unavailable_e4701b",
-                                                  {
-                                                    v0: group.totals.total
-                                                      .unavailableResponses,
-                                                  },
-                                                )
-                                              : ""}
-                                          </>
-                                        ),
-                                      }}
-                                    />
-                                  </p>
-                                  <EstimateAmounts value={group.estimates} />
-                                </div>
-                              </Disclosure>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p>{copy("usage.noExactResponseUsageIsRecorded_d85b24")}</p>
-                )}
-              </section>
+                                    </dl>
+                                    <Measures value={group.totals} />
+                                    <p>
+                                      <LocalizedText
+                                        id="usage.responses_5238cc"
+                                        components={{
+                                          s0: (
+                                            <>
+                                              {group.totals?.responses.toLocaleString(
+                                                displayLocale(),
+                                              )}
+                                            </>
+                                          ),
+                                          s1: (
+                                            <>
+                                              {group.totals?.total
+                                                ?.unavailableResponses
+                                                ? copy(
+                                                    "usage.unavailable_e4701b",
+                                                    {
+                                                      v0: group.totals.total
+                                                        .unavailableResponses,
+                                                    },
+                                                  )
+                                                : ""}
+                                            </>
+                                          ),
+                                        }}
+                                      />
+                                    </p>
+                                    <EstimateAmounts value={group.estimates} />
+                                  </div>
+                                </Disclosure>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p>{copy("usage.noExactResponseUsageIsRecorded_d85b24")}</p>
+                  )}
+                </section>
 
-              <Disclosure className="usage-definitions">
-                <DisclosureSummary>
-                  {copy("usage.accountingDefinitions")}
-                </DisclosureSummary>
-                <p>{copy("usage.responseTimesShowWhenTheServer_c28198")}</p>
-                <p>{copy("usage.cachedInputIsPartOfInput_fa92e1")}</p>
-              </Disclosure>
+                <Disclosure className="usage-definitions">
+                  <DisclosureSummary>
+                    {copy("usage.accountingDefinitions")}
+                  </DisclosureSummary>
+                  <p>{copy("usage.responseTimesShowWhenTheServer_c28198")}</p>
+                  <p>{copy("usage.cachedInputIsPartOfInput_fa92e1")}</p>
+                </Disclosure>
 
-              <GrokAccounting
-                data={data}
-                open={open}
-                disclosures={disclosures}
-                selectPrice={selectPrice}
-              />
-              <NativeAccounting
-                data={data}
-                open={open}
-                disclosures={disclosures}
-                selectPrice={selectPrice}
-              />
+                <GrokAccounting
+                  data={data}
+                  open={open}
+                  disclosures={disclosures}
+                  selectPrice={selectPrice}
+                />
+                <NativeAccounting
+                  data={data}
+                  open={open}
+                  disclosures={disclosures}
+                  selectPrice={selectPrice}
+                />
 
-              <section
-                className="usage-costs"
-                aria-labelledby="usage-cost-title"
-              >
-                <h2 id="usage-cost-title">
-                  {copy("usage.costEvidence_9ab3af")}
-                </h2>
-                <p>
-                  <LocalizedText
-                    id="usage.unavailableNoVerifiedAttributableChargeIs_35ada6"
-                    components={{
-                      s0: <strong>{copy("usage.actualApiCost_c88286")}</strong>,
-                    }}
+                <section
+                  className="usage-costs"
+                  aria-labelledby="usage-cost-title"
+                >
+                  <h2 id="usage-cost-title">
+                    {copy("usage.costEvidence_9ab3af")}
+                  </h2>
+                  <p>
+                    <LocalizedText
+                      id="usage.unavailableNoVerifiedAttributableChargeIs_35ada6"
+                      components={{
+                        s0: (
+                          <strong>{copy("usage.actualApiCost_c88286")}</strong>
+                        ),
+                      }}
+                    />
+                  </p>
+                  <EstimateCosts
+                    totals={data.estimates}
+                    pricing={data.pricing}
                   />
-                </p>
-                <EstimateCosts totals={data.estimates} pricing={data.pricing} />
-                <p>{copy("usage.completeTokenPriceCategoriesDoNot_ddbf3a")}</p>
-              </section>
-            </div>
-          </>
-        ) : null}
+                  <p>
+                    {copy("usage.completeTokenPriceCategoriesDoNot_ddbf3a")}
+                  </p>
+                </section>
+              </div>
+            </>
+          ) : null}
+        </div>
       </section>
     </>
   );
