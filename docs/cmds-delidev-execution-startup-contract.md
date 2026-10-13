@@ -163,7 +163,8 @@ accepted delivery/cleanup combination; the correction is independent of those fa
 and never grants resend authority. The server guidance and the desktop recovery
 guidance both lead with the selected correction, and the session recovery card
 renders that correction exactly once (a separate correction is shown only when the
-guidance does not already contain it). These settled observations do not prove the
+guidance does not already contain it); the technical details disclosure repeats only
+the delivery and cleanup facts and never the correction. These settled observations do not prove the
 execution outcome or grant resend authority.
 
 Retry is explicit and available only after positive input-not-sent and original

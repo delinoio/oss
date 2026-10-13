@@ -6,6 +6,7 @@ import {
   canRetryExecutionStartup,
   executionStartupFailure,
   ExecutionStartupDetails,
+  startupRecoveryFacts,
   startupRecoveryGuidance,
 } from "./execution-startup";
 import { copy, i18n } from "./localization";
@@ -58,7 +59,12 @@ for (const language of ["en", "ko"])
           render(<ExecutionStartupDetails failure={failure} />);
           fireEvent.click(screen.getByText(copy("session.startupDetails")));
           const guidance = startupRecoveryGuidance(failure);
-          expect(screen.getByText(guidance)).toBeTruthy();
+          // The technical details reuse only the delivery/cleanup facts, because
+          // the recovery card already shows the correction.
+          const facts = startupRecoveryFacts(failure);
+          expect(screen.getByText(facts)).toBeTruthy();
+          expect(guidance).toBe(`${copy(correctionKey)} ${facts}`);
+          expect(facts).not.toContain(copy(correctionKey));
           expect(
             guidance.includes(copy("session.startupDeliveryUncertain")),
           ).toBe(delivery === 2 || delivery === 4);

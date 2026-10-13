@@ -161,7 +161,9 @@ export function startupCorrection(failure: Document): string {
 }
 
 // Delivery and cleanup are independent facts. Presentation cannot grant retry.
-export function startupRecoveryGuidance(failure: Document): string {
+// These facts exclude the cause-specific correction so surfaces that already
+// show the correction elsewhere can reuse them without repeating it.
+export function startupRecoveryFacts(failure: Document): string {
   const delivery =
     failure.input_delivery === InputDelivery.Acknowledged
       ? copy("session.startupDeliveryAcknowledged")
@@ -172,9 +174,13 @@ export function startupRecoveryGuidance(failure: Document): string {
     failure.cleanup === Cleanup.Confirmed
       ? copy("session.startupCleanupConfirmed")
       : copy("session.startupCleanupUncertain");
-  // The cause-specific correction never depends on delivery or cleanup facts and
-  // never grants resend authority, so it is always part of the guidance.
-  return `${startupCorrection(failure)} ${delivery} ${cleanup} ${copy("session.startupRecoverOriginal")}`;
+  return `${delivery} ${cleanup} ${copy("session.startupRecoverOriginal")}`;
+}
+
+// The cause-specific correction never depends on delivery or cleanup facts and
+// never grants resend authority, so it is always part of the guidance.
+export function startupRecoveryGuidance(failure: Document): string {
+  return `${startupCorrection(failure)} ${startupRecoveryFacts(failure)}`;
 }
 
 // Renders the startup correction and recovery guidance for the session
@@ -254,7 +260,7 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
       <p>
         {failure.state === StartupState.Failed
           ? copy("session.startupManualSteps")
-          : startupRecoveryGuidance(failure)}
+          : startupRecoveryFacts(failure)}
       </p>
       <button
         type="button"

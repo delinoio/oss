@@ -5,6 +5,7 @@ import { newRequestId } from "@delinoio/delidev-api-client";
 import {
   canRetryExecutionStartup,
   executionStartupFailure,
+  ExecutionStartupDetails,
   StartupRecoverySummary,
 } from "./execution-startup";
 import type { Document } from "./documents";
@@ -365,6 +366,34 @@ describe.each(["en", "ko"])("startup recovery card (%s)", (language) => {
       expect(canRetryExecutionStartup({ ...session, recovery: "none" })).toBe(
         false,
       );
+    },
+  );
+  it.each(startupCauses)(
+    "shows the %s correction once across the summary and opened details",
+    async (code, key) => {
+      await i18n.changeLanguage(language);
+      const session = startupSession({
+        state: 3,
+        problem_code: code,
+        input_delivery: 2,
+        cleanup: 2,
+      });
+      const failure = executionStartupFailure(session) as Document;
+      const { container } = render(
+        <SessionNotice
+          title="Recovery required"
+          severity={SessionNoticeSeverity.Warning}
+        >
+          <StartupRecoverySummary failure={failure} />
+          <ExecutionStartupDetails failure={failure} />
+        </SessionNotice>,
+      );
+      fireEvent.click(screen.getByText(copy("session.startupDetails")));
+      expect(occurrences(container, copy(key))).toBe(1);
+      // The opened details still carry the delivery and cleanup facts.
+      expect(
+        occurrences(container, copy("session.startupRecoverOriginal")),
+      ).toBe(2);
     },
   );
   it("falls back to the device correction for unknown causes and rejects malformed metadata", async () => {
