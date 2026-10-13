@@ -186,6 +186,21 @@ function fixture(
             </button>
             <button
               onClick={() => {
+                account = create(ResourceSchema, {
+                  ...account,
+                  revision: account.revision + 1n,
+                  documentJson: encode({
+                    ...data,
+                    padding: "x".repeat(1 << 20),
+                  }),
+                });
+                setCurrent(account);
+              }}
+            >
+              Oversize fixture document
+            </button>
+            <button
+              onClick={() => {
                 // The owner keeps `visible` true while a request is in flight,
                 // so a poll can report the disconnection with `visible` unchanged.
                 account = create(ResourceSchema, {
@@ -1324,6 +1339,29 @@ it("keeps the saved quota observation visible for a disconnected account on a se
   await waitFor(() => expect(value.status).toHaveBeenCalled());
   expect(await screen.findByText(/Last successful observation/)).toBeTruthy();
   expect(screen.getByText(/The latest refresh failed/)).toBeTruthy();
+});
+
+it("keeps a local preference save failure visible after the account disconnects", async () => {
+  const value = fixture();
+  render(<value.Harness />);
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Notify me of observed quota recovery/,
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Oversize fixture document" }),
+  );
+  fireEvent.click(checkbox);
+  const failure =
+    "Account preferences could not be saved. Reload the current account before saving.";
+  await screen.findByText(failure);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  expect((await screen.findByText(failure)).getAttribute("role")).toBe("alert");
 });
 
 it("keeps every independent retained failure visible after the account disconnects", async () => {

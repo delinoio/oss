@@ -637,7 +637,8 @@ export function SubscriptionQuotaControls({
     // status footer. No interactive quota, credit or preference control is
     // admitted here; the guards above stay the only source of eligibility.
     // Independent retained operations keep independent failure evidence, so
-    // every present error is shown rather than the first one only.
+    // every present error is shown rather than the first one only. A local
+    // preference failure never reached a mutation, so it is retained separately.
     const retainedErrors = [
       status.error,
       consent.error,
@@ -652,7 +653,7 @@ export function SubscriptionQuotaControls({
     return (
       <>
         {savedObservation ? <LastQuotaObservation state={state} /> : null}
-        {retainedErrors.length > 0 ? (
+        {retainedErrors.length > 0 || preferenceProblem ? (
           <section
             className="reset-credit-results"
             aria-label={copy("subscription-quota.resultsTitle")}
@@ -661,6 +662,7 @@ export function SubscriptionQuotaControls({
             {retainedErrors.map((error, index) => (
               <Problem key={index} error={error} />
             ))}
+            {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
           </section>
         ) : null}
         {footer?.()}
