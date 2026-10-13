@@ -61,6 +61,14 @@ identity and original pairing request. Pairing accepts the existing version-1
 client grant document only when its HTTPS endpoint matches the explicit origin.
 The original token and request are stored before the first pairing call. Receipt
 retry reuses them; it cannot obtain a second grant, device or machine.
+The Add-profile modal retains the prepared profile ID after `preparePair`
+succeeds. While pairing is unverified, repeated Pair presses call only
+`pair(id)` (labelled with the existing original-pairing retry copy), and the
+name, origin and grant inputs are read-only. The retained ID is cleared only
+after verified pairing, explicit dismissal (which keeps the protected profile
+and its Settings-list retry) or when the profile is forgotten or paired
+elsewhere. A failed `preparePair` retains nothing; a new grant after dismissal
+is a separate profile creation.
 
 One unresolved mutation per profile is durably stored before sending, using the
 original generated protobuf JSON and exact request ID. Create, Send, Steer,
