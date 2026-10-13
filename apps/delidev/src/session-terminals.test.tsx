@@ -2437,7 +2437,10 @@ function navigationFixture(options: { rejectFirst?: boolean } = {}) {
     },
     addedTab: () => document.getElementById(`terminal-tab-${added.id}`),
     createButton: () =>
-      screen.getByRole("button", { name: "Create terminal", hidden: true }),
+      screen.getByRole("button", {
+        name: "Create terminal",
+        hidden: true,
+      }) as HTMLButtonElement,
     cleanup() {
       view.unmount();
       client.clear();
