@@ -567,7 +567,11 @@ remediation operations remain unchanged. Unsupported peers retain a flat list,
 Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
 
 Workspace requests bind the original local repository revision and at most 20
-accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+accepted-page PR numbers. Repository scope comes only from the authenticated
+identity and numeric repository metadata reads, which fail the request when
+unavailable or invalid; every accepted seed, including the first, is then read as
+an ordinary detail, so an unreadable seed in any position leaves a readable
+workspace incomplete (`seed_unavailable`, `access_unavailable`) instead of failing it. The adapter validates numeric GitHub repository and PR
 identities, exact head-repository identity and base/head branch relationships in
 all states. Context rows are labeled and never increase filtered match counts.
 Each component renders once under its earliest resident matching seed (a seed
@@ -584,6 +588,14 @@ no same-repository graph relationship; a PR whose head repository has a valid
 numeric identity different from the selected repository remains a complete flat
 node with no reason, while a missing head repository identity remains incomplete
 (`head_repository_unavailable`).
+
+Workspace nodes are body-free graph projections: the adapter validates each
+pull request description against its 128 KiB Detail limit but never retains it,
+so the 1 MiB response cap covers structure rather than up to 20 maximum-size
+descriptions. `PRWorkspace.Validate` and the desktop `validWorkspaceItem` accept
+only nodes without a `body` field and reject a node that carries one. The
+selected pull request's description still comes from its own Detail read with
+its existing limit and error handling.
 
 Each observed PR retains its own provider-reported additions/deletions, bound to
 its exact repository/PR/base/head. Commit counts come independently from commit
@@ -614,7 +626,9 @@ is introduced.
 
 Opaque avatar references retain their original actor, local repository revision,
 selected profile generation and numeric author in a bounded 64-entry memory
-cache. The authenticated byte read denies foreign, revoked and evicted scope.
+cache. The authenticated byte read denies foreign, revoked and evicted scope,
+including a reference evicted while the uncached network fetch is in flight: the
+fetched bytes are discarded and published only while the same cache entry remains.
 Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
 bounded known query fields are fetched through the selected outbound route. No
 PAT, client bearer, cookies or origin Authorization is attached, and redirects

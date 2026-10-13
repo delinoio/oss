@@ -167,7 +167,9 @@ function validWorkspaceItem(item: Document, scope: Document) {
     typeof item.draft === "boolean" &&
     typeof item.merged === "boolean" &&
     (item.mergeable == null || typeof item.mergeable === "boolean") &&
-    bounded(item.body, 128 << 10, false) &&
+    // Graph nodes never carry the description; the selected PR's own Detail read
+    // supplies the bounded body.
+    item.body === undefined &&
     bounded(item.base_ref, 1024) &&
     bounded(item.head_ref, 1024) &&
     sha(item.base_sha) &&
