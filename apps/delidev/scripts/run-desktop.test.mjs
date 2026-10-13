@@ -610,3 +610,292 @@ test(
     assert.deepEqual(result, { code: null, signal: "SIGTERM" });
   },
 );
+
+const spawnDevServerUrl = new URL(
+  "../../../scripts/spawn-dev-server.mjs",
+  import.meta.url,
+).href;
+const diagnosticsUrl = new URL("./desktop-diagnostics.mjs", import.meta.url)
+  .href;
+
+// Runs `body` in an isolated Node process so process.exit behavior and
+// uncaught errors are observed without affecting the test runner.
+async function runIsolated(body) {
+  const child = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+      import { PassThrough, Writable } from 'node:stream';
+      import fs from 'node:fs';
+      import { captureDesktopDiagnostics } from ${JSON.stringify(diagnosticsUrl)};
+      import { spawnDevServer, exitLikeChild } from ${JSON.stringify(spawnDevServerUrl)};
+      ${body}
+    `,
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let stdout = "",
+    stderr = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  child.stderr.on("data", (chunk) => (stderr += chunk));
+  const startedAt = Date.now();
+  const [code, signal] = await once(child, "exit");
+  return { code, signal, stdout, stderr, elapsed: Date.now() - startedAt };
+}
+
+function delayedFileFixture(file, delay) {
+  return `
+    const file = ${JSON.stringify(file)};
+    const incomplete = [];
+    const out = new Writable({
+      highWaterMark: 65536,
+      write(chunk, _encoding, callback) {
+        setTimeout(() => { fs.appendFileSync(file, chunk); callback(); }, ${delay});
+      },
+    });
+    const stdout = new PassThrough();
+    const finish = captureDesktopDiagnostics([], {
+      stdout: out, stderr() {}, incomplete: (code) => incomplete.push(code),
+    })({ stdout, stderr: null });
+  `;
+}
+
+for (const [name, input, expected] of [
+  ["a terminated line", "safe tail\n", "safe tail\n"],
+  ["an unterminated tail", "safe tail", "safe tail"],
+]) {
+  test(`captured output waits for a delayed below-watermark write of ${name} before exit`, async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "delidev-diagnostics-test-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const file = join(root, "output");
+    const result = await runIsolated(`
+      ${delayedFileFixture(file, 40)}
+      stdout.end(${JSON.stringify(input)});
+      await finish();
+      fs.writeFileSync(${JSON.stringify(file + ".incomplete")}, incomplete.join(','));
+      exitLikeChild({ code: 7, signal: null });
+    `);
+    assert.equal(result.code, 7, result.stderr);
+    assert.equal(readFileSync(file, "utf8"), expected);
+    assert.equal(readFileSync(`${file}.incomplete`, "utf8"), "");
+  });
+}
+
+test("captured output stops waiting for a held write at the bound and keeps the exit code", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "delidev-diagnostics-test-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = join(root, "output");
+  const result = await runIsolated(`
+    ${delayedFileFixture(file, 10_000)}
+    stdout.end('held output\\n');
+    await finish();
+    fs.writeFileSync(${JSON.stringify(file + ".incomplete")}, incomplete.join(','));
+    exitLikeChild({ code: 7, signal: null });
+  `);
+  assert.equal(result.code, 7, result.stderr);
+  assert.ok(result.elapsed < 5_000, `exit took ${result.elapsed}ms`);
+  assert.equal(readFileSync(`${file}.incomplete`, "utf8"), "output-drain-timeout");
+});
+
+test("captured output does not complete before a below-watermark write callback", async () => {
+  const stdout = new PassThrough();
+  const callbacks = [];
+  const destination = new Writable({
+    highWaterMark: 1024,
+    write(_chunk, _encoding, callback) {
+      callbacks.push(callback);
+    },
+  });
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: destination,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout, stderr: null });
+  let settled = false;
+  const completion = drain().then(() => {
+    settled = true;
+  });
+  stdout.write("first\n");
+  stdout.end("tail");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(destination.writableLength > 0, true);
+  assert.equal(settled, false);
+  // The newline-terminated line settles first; the tail is still outstanding.
+  callbacks.shift()();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(settled, false);
+  while (callbacks.length === 0) await new Promise(setImmediate);
+  callbacks.shift()();
+  await completion;
+  assert.deepEqual(incomplete, []);
+  assert.equal(destination.writableEnded, false);
+  assert.equal(destination.listenerCount("error"), 0);
+});
+
+test("function and synchronous destinations finish promptly without ending shared streams", async () => {
+  const received = [];
+  const synchronous = new Writable({
+    write(chunk, _encoding, callback) {
+      received.push(chunk.toString());
+      callback();
+    },
+  });
+  const stdout = new PassThrough(),
+    stderr = new PassThrough();
+  const functionOutput = [];
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: synchronous,
+    stderr: (value) => functionOutput.push(value),
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout, stderr });
+  stdout.end("line\ntail");
+  stderr.end("error line\n");
+  const startedAt = Date.now();
+  await drain();
+  assert.ok(Date.now() - startedAt < 90);
+  assert.deepEqual(received, ["line\n", "tail"]);
+  assert.deepEqual(functionOutput, ["error line\n"]);
+  assert.deepEqual(incomplete, []);
+  assert.equal(synchronous.writableEnded, false);
+  assert.equal(synchronous.listenerCount("error"), 0);
+});
+
+function failingSink(writes, { delay = 0 } = {}) {
+  return new Writable({
+    highWaterMark: 65536,
+    write(chunk, _encoding, callback) {
+      writes.push(chunk.toString());
+      const failure = Object.assign(new Error("test downstream closed"), {
+        code: "EPIPE",
+      });
+      if (delay) setTimeout(() => callback(failure), delay);
+      else setImmediate(() => callback(failure));
+    },
+  });
+}
+
+for (const target of ["stdout", "stderr"]) {
+  test(`a failed ${target} sink is owned, stops forwarding and reports safe incomplete output`, async () => {
+    const input = new PassThrough();
+    const writes = [];
+    const incomplete = [];
+    const healthy = [];
+    const sink = failingSink(writes);
+    const other = target === "stdout" ? "stderr" : "stdout";
+    const stream = { stdout: null, stderr: null };
+    stream[target] = input;
+    const otherInput = new PassThrough();
+    stream[other] = otherInput;
+    const drain = captureDesktopDiagnostics([], {
+      [target]: sink,
+      [other]: (value) => healthy.push(value),
+      incomplete: (code) => incomplete.push(code),
+    })(stream);
+    assert.equal(sink.listenerCount("error"), 1);
+    input.write("first\n");
+    otherInput.end("healthy\n");
+    await drain();
+    // Later input is discarded: the failed sink receives no further writes and
+    // the child pipe is still consumed.
+    input.write("second\n");
+    input.end("third");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual(writes, ["first\n"]);
+    assert.deepEqual(incomplete, ["output-write-failed"]);
+    assert.deepEqual(healthy, ["healthy\n"]);
+    assert.equal(input.readableFlowing, true);
+    assert.equal(sink.destroyed, true);
+    assert.equal(sink.listenerCount("error"), 0);
+  });
+}
+
+test("a sink error before input end is classified without an unhandled error", async () => {
+  const input = new PassThrough();
+  const writes = [];
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: failingSink(writes),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.write("early\n");
+  await drain();
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
+test("a sink error after input end with an outstanding write is owned", async () => {
+  const input = new PassThrough();
+  const writes = [];
+  const incomplete = [];
+  const sink = failingSink(writes, { delay: 20 });
+  const drain = captureDesktopDiagnostics([], {
+    stdout: sink,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.end("tail without newline");
+  await drain();
+  assert.deepEqual(writes, ["tail without newline"]);
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
+test("a sink error after the drain bound is still owned until the write settles", async () => {
+  const input = new PassThrough();
+  const writes = [];
+  const incomplete = [];
+  const sink = failingSink(writes, { delay: 160 });
+  const drain = captureDesktopDiagnostics([], {
+    stdout: sink,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.end("late\n");
+  await drain();
+  assert.deepEqual(incomplete, ["output-drain-timeout"]);
+  // The listener must survive until the late write error has been emitted.
+  assert.equal(sink.listenerCount("error"), 1);
+  await new Promise((resolve) => sink.once("close", resolve));
+  assert.deepEqual(incomplete, ["output-drain-timeout"]);
+  assert.equal(sink.listenerCount("error"), 0);
+});
+
+test("a failed sink does not bypass the managed child lifecycle or exit code", async () => {
+  const result = await runIsolated(`
+    const sink = new Writable({
+      write(_chunk, _encoding, callback) {
+        setImmediate(() => callback(Object.assign(new Error('closed'), { code: 'EPIPE' })));
+      },
+    });
+    const incomplete = [];
+    const captureOutput = captureDesktopDiagnostics([], {
+      stdout: sink, stderr() {}, incomplete: (code) => incomplete.push(code),
+    });
+    const before = process.listenerCount('SIGTERM');
+    let cleaned = false;
+    let outcome;
+    try {
+      outcome = await spawnDevServer(
+        process.execPath,
+        ['-e', "process.stdout.write('first\\\\n'); setTimeout(() => { process.stdout.write('second\\\\n'); process.exitCode = 5; }, 50);"],
+        { stdio: ['ignore', 'pipe', 'pipe'], shell: false },
+        { captureOutput },
+      );
+    } finally {
+      cleaned = process.listenerCount('SIGTERM') === before;
+      console.log('lifecycle-finally ' + cleaned);
+    }
+    console.log(JSON.stringify({ outcome, incomplete }));
+    exitLikeChild(outcome);
+  `);
+  assert.equal(result.code, 5, result.stderr);
+  assert.match(result.stdout, /lifecycle-finally true/);
+  assert.match(
+    result.stdout,
+    /\{"outcome":\{"code":5,"signal":null\},"incomplete":\["output-write-failed"\]\}/,
+  );
+  assert.doesNotMatch(result.stderr, /Unhandled 'error'/);
+});

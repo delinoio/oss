@@ -4444,11 +4444,22 @@ publishing safe diagnostic text. Normalize ANSI color sequences for matching so
 that they cannot split a private argument; retain ordinary colored diagnostics
 when no redaction is required. Incremental UTF-8 decoding preserves split
 characters; each line is bounded to 64 KiB and an oversized line is omitted.
-After the original child exits, drain for at most 100 ms. If a descendant retains
-an inherited pipe, close only the reader, discard its partial line and report
-`diagnostics-incomplete` with `output-drain-timeout`. Read failures report the
-separate `output-read-failed` classification. Neither outcome changes the original
-child exit code or signal. Signing retains its private output capture. Final
+After the original child exits, drain for at most 100 ms. Capture completes only
+after every accepted destination write, including an unterminated final line,
+has settled through its write callback; a write that returned `true` is not
+treated as delivered. Function destinations are synchronous, and shared process
+stdout/stderr are never ended to flush them. If a descendant retains an
+inherited pipe or an accepted write is still incomplete at the bound, close only
+the reader, discard its partial line and report `diagnostics-incomplete` with
+`output-drain-timeout`. Read failures report the separate `output-read-failed`
+classification. The launcher owns an `error` listener on each Writable
+destination from before the first write. A destination error stops all further
+forwarding to that sink, keeps consuming and discarding the child's pipe, and
+reports `output-write-failed` independently for stdout and stderr. The listener
+is removed only when no outstanding write can still emit an error; a failed
+destination keeps it until the destination closes. No outcome changes the
+original child exit code or signal, and the managed child lifecycle (signal
+handler removal and build-lock release) still runs. Signing retains its private output capture. Final
 build-lock cleanup failure reports `cleanup-uncertain` with
 `build-lock-release-failed`, without logging exception paths or replacing an
 already observed child result. These observations establish neither native
