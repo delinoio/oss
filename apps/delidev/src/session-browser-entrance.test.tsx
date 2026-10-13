@@ -64,7 +64,10 @@ function fixture() {
   const transport = createRouterTransport((router) =>
     router.service(BrowserService, {
       registerBrowserProfile: async () => ({ profile }),
-      listBrowserProfiles: async () => ({ profiles: [profile], nextPageToken: "" }),
+      listBrowserProfiles: async () => ({
+        profiles: [profile],
+        nextPageToken: "",
+      }),
       getBrowserCapabilities: () => ({
         capabilities: [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1],
       }),

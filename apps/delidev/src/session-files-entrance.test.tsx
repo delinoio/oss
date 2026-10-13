@@ -3,7 +3,13 @@ import { useState } from "react";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
@@ -41,7 +47,9 @@ function fixture() {
         await new Promise<void>((resolve) => {
           release = resolve;
         });
-        return reply({ entries: [{ name: "late.txt", kind: "file", size: "1" }] });
+        return reply({
+          entries: [{ name: "late.txt", kind: "file", size: "1" }],
+        });
       }
       return reply({
         entries: [
@@ -152,7 +160,9 @@ it("animates the Files header once per activation and never the tree", async () 
   expect(filesHeader().getAttribute("data-entrance")).toBeNull();
   // Refresh and directory expansion do not replay the entrance.
   fireEvent.click(screen.getByRole("button", { name: "Refresh files" }));
-  fireEvent.click(await screen.findByRole("treeitem", { name: "folder Folder" }));
+  fireEvent.click(
+    await screen.findByRole("treeitem", { name: "folder Folder" }),
+  );
   await waitFor(() => expect(f.reads("directory")).toBeGreaterThan(1));
   expect(filesHeader()).toBe(node);
   expect(entranceNodes().length).toBe(0);

@@ -134,8 +134,7 @@ function fixture() {
   };
 }
 
-const header = () =>
-  document.querySelector<HTMLElement>("header.diff-navbar")!;
+const header = () => document.querySelector<HTMLElement>("header.diff-navbar")!;
 const entranceNodes = () => document.querySelectorAll("[data-entrance]");
 
 beforeEach(() => {

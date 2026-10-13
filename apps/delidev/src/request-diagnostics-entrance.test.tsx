@@ -74,7 +74,9 @@ function fixture() {
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <input aria-label="Conversation draft" defaultValue="Retained draft" />
-        {open ? <RequestDiagnostics sessionId={session} close={() => {}} /> : null}
+        {open ? (
+          <RequestDiagnostics sessionId={session} close={() => {}} />
+        ) : null}
       </QueryClientProvider>
     </TransportProvider>
   );
