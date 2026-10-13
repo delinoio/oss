@@ -552,6 +552,39 @@ it("keeps the unsupported copy while a later fetch is in flight and recovers onc
   expect(screen.queryByText(UNSUPPORTED_COPY)).toBeNull();
 });
 
+it("retains the recovered-support copy while a later fetch is in flight and drops it once the read settles unsupported", async () => {
+  const f = fixture();
+  f.status.mockResolvedValue({ capabilities: [] });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  await screen.findByLabelText("Profile name");
+  f.status.mockResolvedValue({
+    capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1],
+  });
+  await act(async () => {
+    await f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await screen.findByText(RECOVERED_COPY);
+  let release!: () => void;
+  f.status.mockImplementation(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { capabilities: [] };
+  });
+  act(() => {
+    void f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  expect(screen.getByText(RECOVERED_COPY)).toBeTruthy();
+  expect(screen.queryByText(UNSUPPORTED_COPY)).toBeNull();
+  await act(async () => {
+    release();
+  });
+  await screen.findByText(UNSUPPORTED_COPY);
+  expect(screen.queryByText(RECOVERED_COPY)).toBeNull();
+});
+
 it("does not inspect a new token after support becomes unavailable", async () => {
   const f = fixture();
   render(f.view());
