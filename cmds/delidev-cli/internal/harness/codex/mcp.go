@@ -386,6 +386,10 @@ func classifyMCP(entry mcpStatusEntry) domain.MCPStartupOutcome {
 	if entry.RuntimeStatus != nil {
 		status = *entry.RuntimeStatus
 	}
+	// A connected server whose tool discovery failed exposes no usable catalog.
+	if status == "connected" && entry.ToolsError != nil {
+		return domain.MCPStartupFailed
+	}
 	switch status {
 	case "connected":
 		return domain.MCPStartupReady

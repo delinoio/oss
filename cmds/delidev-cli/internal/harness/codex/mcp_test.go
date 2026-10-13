@@ -1040,3 +1040,13 @@ func TestManagedMCPExpectedHTTPOriginMatchesNativeNormalization(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedMCPConnectedServerWithToolDiscoveryFailureIsNotReady(t *testing.T) {
+	connected, failure := "connected", "tools/list failed"
+	if got := classifyMCP(mcpStatusEntry{RuntimeStatus: &connected}); got != domain.MCPStartupReady {
+		t.Fatalf("a connected server with a catalog was not ready: %v", got)
+	}
+	if got := classifyMCP(mcpStatusEntry{RuntimeStatus: &connected, ToolsError: &failure}); got != domain.MCPStartupFailed {
+		t.Fatalf("a connected server without a tool catalog was classified %v", got)
+	}
+}
