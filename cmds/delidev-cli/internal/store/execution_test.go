@@ -562,3 +562,105 @@ func TestSourceRoutingAdmitsEveryCodexSubscriptionPermission(t *testing.T) {
 		})
 	}
 }
+
+// multiFormatFixture converts the fixture into an OpenCode route whose provider
+// legacy tuple (Messages/API key) differs from the selected account's declared
+// Chat Completions/Bearer profile.
+func (f executionFixture) multiFormatFixture(t *testing.T, connectionAuth domain.Authentication, accountProtocol domain.APIProtocol) {
+	t.Helper()
+	chat := domain.ProviderAPIFormat{Protocol: domain.OpenAIChat, Endpoint: "https://chat.example.com/v1", Authentication: domain.BearerAuth}
+	legacy := domain.ProviderAPIFormat{Protocol: domain.AnthropicMessages, Endpoint: "https://messages.example.com", Authentication: domain.APIKeyAuth}
+	_, err := f.store.Mutate(context.Background(), domain.NewID(), "fixture.multi-format", f.provider, func(tx *Tx) (any, error) {
+		pr, provider, err := decodeEntity[domain.Provider](tx, domain.ProviderKind, f.provider)
+		if err != nil {
+			return nil, err
+		}
+		provider.Protocol, provider.Endpoint, provider.Authentication = legacy.Protocol, legacy.Endpoint, legacy.Authentication
+		provider.APIFormats = []domain.ProviderAPIFormat{legacy, chat}
+		if _, err := tx.Put(pr.Kind, pr.ID, pr.Revision, "", "", provider); err != nil {
+			return nil, err
+		}
+		ar, agent, err := decodeEntity[domain.Agent](tx, domain.AgentKind, f.agent)
+		if err != nil {
+			return nil, err
+		}
+		agent.Harness = domain.OpenCode
+		if _, err := tx.Put(ar.Kind, ar.ID, ar.Revision, "", "", agent); err != nil {
+			return nil, err
+		}
+		for _, id := range f.accounts {
+			r, account, err := decodeEntity[domain.Account](tx, domain.AccountKind, id)
+			if err != nil {
+				return nil, err
+			}
+			connection := domain.NewID()
+			now := time.Now().UTC()
+			account.APIProtocol = accountProtocol
+			profile := chat
+			if accountProtocol == "" {
+				profile = legacy
+			}
+			account.Connection = &domain.AccountConnection{ID: connection, Authentication: connectionAuth, APIFormat: &profile, ConnectedAt: now}
+			account.Validation = &domain.AccountValidation{RequestID: domain.NewID(), ConnectionID: connection, ObservedAt: now, State: domain.Observed, Authentication: domain.CredentialAccepted}
+			if _, err := tx.Put(r.Kind, r.ID, r.Revision, "", "", account); err != nil {
+				return nil, err
+			}
+		}
+		return f.provider, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInitialExecutionAdmitsAccountWithResolvedNonLegacyProfile(t *testing.T) {
+	s, _ := openTest(t)
+	f := newExecutionFixture(t, s)
+	f.multiFormatFixture(t, domain.BearerAuth, domain.OpenAIChat)
+	session, input := f.session(t, domain.DispatchReady)
+	if _, err := f.claim(domain.NewID(), session, input); err != nil {
+		t.Fatalf("resolved Chat/Bearer account was refused by initial dispatch: %v", err)
+	}
+	claimed := readExecutionSession(t, s, session)
+	if claimed.InitialExecution == nil || claimed.InitialExecution.InitialAccountID != f.accounts[0] || claimed.Dispatch != domain.DispatchClaimed {
+		t.Fatal("initial dispatch did not claim the selected account")
+	}
+}
+
+func TestInitialExecutionRejectsConnectionAuthenticationDifferentFromResolvedProfile(t *testing.T) {
+	s, _ := openTest(t)
+	f := newExecutionFixture(t, s)
+	// The account declares the Chat/Bearer profile but its connection holds an
+	// API-key credential, so the resolved profile no longer matches.
+	f.multiFormatFixture(t, domain.APIKeyAuth, domain.OpenAIChat)
+	session, input := f.session(t, domain.DispatchReady)
+	// Source routing resolves the same profile and blocks the account first, so
+	// the mismatch is refused without selecting it or freezing any state.
+	_, err := f.claim(domain.NewID(), session, input)
+	assertCode(t, err, domain.MissingInput)
+	if readExecutionSession(t, s, session).InitialExecution != nil {
+		t.Fatal("mismatched connection froze a session configuration")
+	}
+	if err := s.Read(context.Background(), func(tx *Tx) error {
+		r, _, err := tx.Routing(f.agent)
+		if r.ID != "" {
+			t.Fatal("rejected dispatch advanced routing")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInitialExecutionKeepsLegacyAccountWithoutAPIProtocolOnLegacyProfile(t *testing.T) {
+	s, _ := openTest(t)
+	f := newExecutionFixture(t, s)
+	// No api_protocol: the legacy Messages/API-key tuple applies, which an
+	// OpenCode route cannot use, exactly as before.
+	f.multiFormatFixture(t, domain.APIKeyAuth, "")
+	session, input := f.session(t, domain.DispatchReady)
+	_, err := f.claim(domain.NewID(), session, input)
+	if err == nil {
+		t.Fatal("legacy Messages account was admitted for an OpenCode route")
+	}
+}
