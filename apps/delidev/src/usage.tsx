@@ -51,6 +51,7 @@ import { NativeAccounting } from "./native-accounting";
 import { UsageOverview } from "./usage-overview";
 import {
   UsageModelPrices,
+  modelPresentationId,
   retainedPrices,
   type PriceSelection,
 } from "./usage-prices";
@@ -385,6 +386,27 @@ export function Usage({
   const emptySummary = emptyRecordedSummary(data?.totals);
   const responseGroups =
     data?.groups.filter((group) => (group.totals?.responses ?? 0) > 0) ?? [];
+  // Register every rendered identity before any row reads its label, so
+  // duplicate observed names are numbered on the first committed render.
+  for (const group of responseGroups) {
+    productLabel(PresentationKind.Session, group.sessionId, group.sessionName);
+    productLabel(PresentationKind.Project, group.projectId, group.projectName);
+    productLabel(PresentationKind.Account, group.accountId, group.accountName);
+    productLabel(
+      PresentationKind.Provider,
+      group.providerId,
+      group.providerName,
+    );
+    productLabel(
+      PresentationKind.Model,
+      modelPresentationId(
+        group.model?.nativeId,
+        group.providerId,
+        group.subscriptionService,
+      ),
+      group.modelName,
+    );
+  }
   const responseAnalytics = data?.analytics
     ? {
         ...data.analytics,
@@ -981,7 +1003,11 @@ export function Usage({
                                   {group.model?.nativeId
                                     ? productLabel(
                                         PresentationKind.Model,
-                                        group.model.nativeId,
+                                        modelPresentationId(
+                                          group.model?.nativeId,
+                                          group.providerId,
+                                          group.subscriptionService,
+                                        ),
                                         group.modelName,
                                       )
                                     : copy("usage.extra.a99bc331d9ad")}
@@ -1038,48 +1064,55 @@ export function Usage({
                                   </DisclosureSummary>
                                   <div>
                                     <dl className="usage-original-identities">
-                                      {[
+                                      {(
                                         [
-                                          copy("usage.session_6959b4"),
-                                          productLabel(
-                                            PresentationKind.Session,
-                                            group.sessionId,
-                                            group.sessionName,
-                                          ),
-                                        ],
-                                        [
-                                          copy("usage.project_985959"),
-                                          productLabel(
-                                            PresentationKind.Project,
-                                            group.projectId,
-                                            group.projectName,
-                                          ),
-                                        ],
-                                        [
-                                          copy("usage.account_7e1b0d"),
-                                          productLabel(
-                                            PresentationKind.Account,
-                                            group.accountId,
-                                            group.accountName,
-                                          ),
-                                        ],
-                                        [
-                                          copy("usage.provider_472590"),
-                                          productLabel(
-                                            PresentationKind.Provider,
-                                            group.providerId,
-                                            group.providerName,
-                                          ),
-                                        ],
-                                        [
-                                          copy("usage.model_5e2c61"),
-                                          productLabel(
-                                            PresentationKind.Model,
-                                            group.model?.nativeId,
-                                            group.modelName,
-                                          ),
-                                        ],
-                                      ].map(([label, id]) => (
+                                          [
+                                            copy("usage.session_6959b4"),
+                                            productLabel(
+                                              PresentationKind.Session,
+                                              group.sessionId,
+                                              group.sessionName,
+                                            ),
+                                          ],
+                                          [
+                                            copy("usage.project_985959"),
+                                            productLabel(
+                                              PresentationKind.Project,
+                                              group.projectId,
+                                              group.projectName,
+                                            ),
+                                          ],
+                                          [
+                                            copy("usage.account_7e1b0d"),
+                                            productLabel(
+                                              PresentationKind.Account,
+                                              group.accountId,
+                                              group.accountName,
+                                            ),
+                                          ],
+                                          [
+                                            copy("usage.provider_472590"),
+                                            productLabel(
+                                              PresentationKind.Provider,
+                                              group.providerId,
+                                              group.providerName,
+                                            ),
+                                          ],
+                                          [
+                                            copy("usage.model_5e2c61"),
+                                            // The exact native model ID is the
+                                            // original identity; the generated
+                                            // label never replaces it.
+                                            group.model?.nativeId ? (
+                                              <code>
+                                                {group.model.nativeId}
+                                              </code>
+                                            ) : (
+                                              ""
+                                            ),
+                                          ],
+                                        ] as [string, ReactNode][]
+                                      ).map(([label, id]) => (
                                         <div key={label}>
                                           <dt>{label}</dt>
                                           <dd>
