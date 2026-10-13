@@ -566,7 +566,7 @@ function NativeSessionBrowser({
           original.action === PageAction.Close &&
           !value.state.tabs.tabs.some((page) => page.id === original.page_id)
         ) {
-          tabsStore.closePage(session.id, profileId, original.page_id!);
+          tabsStore.closePageEverywhere(profileId, original.page_id!);
           finishOperation();
           focusSelectedTab();
         } else {
@@ -602,7 +602,7 @@ function NativeSessionBrowser({
       setOperationFailure(undefined);
       if (receipt.phase === PagePhase.Completed) {
         if (original.action === PageAction.Close) {
-          tabsStore.closePage(session.id, profileId, original.page_id!);
+          tabsStore.closePageEverywhere(profileId, original.page_id!);
           if (focusClosure) focusSelectedTab();
         } else {
           const page = value.state.tabs.tabs.find(

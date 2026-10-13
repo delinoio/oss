@@ -34,6 +34,8 @@ import {
   SessionTabsProvider,
   sessionTabKey,
   useSessionTabs,
+  useSessionTabsStore,
+  type SessionTabsStore,
 } from "./session-tabs";
 
 const native = vi.hoisted(() => vi.fn());
@@ -765,6 +767,160 @@ it("closing the last page selects Conversation, keeps the profile and leaves zer
   expect(tabNames()).toEqual(["Conversation"]);
   expect(pageCalls("create")).toHaveLength(0);
   expect(f.model.pages).toHaveLength(0);
+});
+
+/**
+ * Mounts the workspace for the fixture session beside a second, unmounted
+ * Session that shares the same tabs store, exactly like a retained inactive
+ * Session whose browser manager is not polling.
+ */
+function mountWithRetainedSession(f: Fixture) {
+  const captured: { store?: SessionTabsStore } = {};
+  function Probe() {
+    captured.store = useSessionTabsStore();
+    return null;
+  }
+  render(
+    <TransportProvider transport={f.transport}>
+      <QueryClientProvider client={f.client}>
+        <MutationIntents>
+          <SessionTabsProvider>
+            <Probe />
+            <Workspace f={f} />
+          </SessionTabsProvider>
+        </MutationIntents>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  return captured as { store: SessionTabsStore };
+}
+const retained = "retained-session";
+const pageTab = (profile: string, id: string, title = id) => ({
+  kind: SessionTabKind.Page as const,
+  profile,
+  id,
+  title,
+  label: title,
+});
+const retainedKeys = (store: SessionTabsStore) =>
+  store.snapshot(retained).tabs.map(sessionTabKey);
+
+it("removes an acknowledged page from retained sessions, keeping foreign profiles and other pages", async () => {
+  const f = fixture({ pages: 2 });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const [first, second] = f.model.pages;
+  const store = captured.store;
+  store.open(retained, pageTab(f.profileId, second.id));
+  store.open(retained, pageTab(f.profileId, first.id));
+  store.open(retained, pageTab("foreign-profile", first.id));
+  // The closed page is the selected descriptor of the retained session.
+  store.select(retained, sessionTabKey(pageTab(f.profileId, first.id)));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(retainedKeys(store)).toEqual([
+    SessionTabKind.Conversation,
+    sessionTabKey(pageTab(f.profileId, second.id)),
+    sessionTabKey(pageTab("foreign-profile", first.id)),
+  ]);
+  expect(store.snapshot(retained).selected).toBe(
+    sessionTabKey(pageTab(f.profileId, second.id)),
+  );
+  // One native close only; the cleanup is store-level.
+  expect(pageCalls("close")).toHaveLength(1);
+  expect(calls("open_browser")).toHaveLength(0);
+});
+
+it("keeps an unrelated selected tab of a retained session when its page descriptor is removed", async () => {
+  const f = fixture({ pages: 1 });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const [first] = f.model.pages;
+  const store = captured.store;
+  store.open(retained, pageTab(f.profileId, first.id));
+  store.open(retained, { kind: SessionTabKind.Diagnostics });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+  expect(retainedKeys(store)).toEqual([
+    SessionTabKind.Conversation,
+    SessionTabKind.Diagnostics,
+  ]);
+  expect(store.snapshot(retained).selected).toBe(SessionTabKind.Diagnostics);
+});
+
+it("removes the page from retained sessions when a lost Close is observed without an admission", async () => {
+  const f = fixture({ pages: 2 });
+  const base = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) => {
+    if (operation === "browser_pages" && args.request.action === "close") {
+      // Another owner removed the page, but this request never reached the
+      // native command: no receipt exists for the original operation.
+      f.model.pages = f.model.pages.filter(
+        (page) => page.id !== args.request.page_id,
+      );
+      f.model.selected = f.model.pages[0]?.id ?? "";
+      f.model.requests.push(args.request);
+      throw new Error("request lost");
+    }
+    return base(operation, args);
+  });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  const [first, second] = f.model.pages;
+  const store = captured.store;
+  store.open(retained, pageTab(f.profileId, first.id));
+  store.open(retained, pageTab(f.profileId, second.id));
+  store.select(retained, sessionTabKey(pageTab(f.profileId, first.id)));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const alert = await screen.findByRole("alert");
+  expect(retainedKeys(store)).toContain(
+    sessionTabKey(pageTab(f.profileId, first.id)),
+  );
+  fireEvent.click(within(alert).getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(retainedKeys(store)).toEqual([
+    SessionTabKind.Conversation,
+    sessionTabKey(pageTab(f.profileId, second.id)),
+  ]);
+  expect(store.snapshot(retained).selected).toBe(SessionTabKind.Conversation);
+  expect(pageCalls("close")).toHaveLength(1);
+});
+
+it("retains the descriptor in every session while a close fails or stays unconfirmed", async () => {
+  const f = fixture({ pages: 1 });
+  const captured = mountWithRetainedSession(f);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  const [first] = f.model.pages;
+  const store = captured.store;
+  store.open(retained, pageTab(f.profileId, first.id));
+  const before = store.snapshot(retained);
+  f.model.outcome = "fail";
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const failed = await screen.findByRole("alert");
+  expect(failed.textContent).toContain("The browser action failed");
+  expect(store.snapshot(retained)).toBe(before);
+  fireEvent.click(within(failed).getByRole("button", { name: "Dismiss" }));
+  f.model.outcome = "cleanup-pending";
+  f.model.settleOnObserve = false;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Close fixture.test/1 tab" }),
+  );
+  const pending = await screen.findByRole("alert");
+  expect(pending.textContent).toContain("native view cleanup is not confirmed");
+  expect(store.snapshot(retained)).toBe(before);
+  // Confirmation by observation finally removes it everywhere.
+  f.model.settleOnObserve = true;
+  fireEvent.click(within(pending).getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(tabNames()).toEqual(["Conversation"]));
+  expect(retainedKeys(store)).toEqual([SessionTabKind.Conversation]);
 });
 
 it("aligns this workspace with pages opened or closed by another owner", async () => {
