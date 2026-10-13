@@ -89,6 +89,5 @@
   "claude-subscription.server.recovery": "The server must confirm cleanup before another sign-in can start.",
   "claude-subscription.server.failed": "Claude sign-in failed. No account was connected. Try again with a new account.",
   "claude-subscription.server.tokenLimits": "This account uses a Claude sign-in token saved on the selected server. The token expires, cannot use Remote Control or Claude connectors, and cannot be renewed here. To reconnect, add a new Claude account.",
-  "claude-subscription.server.updateServer": "This server cannot create Claude accounts without a Runner Device. Update the server, then try again.",
   "claude-subscription.server.account": "Saved on the server"
 }

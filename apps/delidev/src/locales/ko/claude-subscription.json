@@ -89,6 +89,5 @@
   "claude-subscription.server.recovery": "다른 로그인을 시작하려면 서버가 먼저 정리를 확인해야 합니다.",
   "claude-subscription.server.failed": "Claude 로그인에 실패했습니다. 연결된 계정이 없습니다. 새 계정으로 다시 시도하세요.",
   "claude-subscription.server.tokenLimits": "이 계정은 선택한 서버에 저장된 Claude 로그인 토큰을 사용합니다. 토큰은 만료되며 원격 제어나 Claude 커넥터를 사용할 수 없고 여기에서 갱신할 수 없습니다. 다시 연결하려면 새 Claude 계정을 추가하세요.",
-  "claude-subscription.server.updateServer": "이 서버는 실행 장치 없이 Claude 계정을 만들 수 없습니다. 서버를 업데이트한 뒤 다시 시도하세요.",
   "claude-subscription.server.account": "서버에 저장됨"
 }
