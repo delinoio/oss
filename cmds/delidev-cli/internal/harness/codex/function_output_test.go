@@ -142,6 +142,45 @@ func TestFunctionOutputUsesCorrelatedFullHistoryForMediaProjection(t *testing.T)
 	}
 }
 
+func TestFunctionOutputLifecycleCoversProtectedHistoryBytes(t *testing.T) {
+	c, _, _, _ := boundTurnFixture(t, "ready")
+	result, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.PlanMode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextKind(t, c, TurnStartedEvent)
+	nextKind(t, c, MessageCompletedEvent)
+	// The media-stripped notification stays identical across the lifecycle.
+	filtered := `{"type":"functionCallOutput","id":"original-output","name":"fixture_tool","namespace":"original_namespace","output":[{"type":"input_text","text":"<script>inert()</script>"},{"type":"encrypted_content","encrypted_content":"private-encrypted-sentinel"},{"type":"input_text","text":"last"}]}`
+	publish := func(history string, completed bool) {
+		turn := map[string]any{
+			"id": result.TurnID, "items": []json.RawMessage{json.RawMessage(history)}, "itemsView": "full",
+			"status": TurnRunning, "startedAt": int64(1), "completedAt": nil, "durationMs": nil, "error": nil,
+		}
+		fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": []any{turn}, "nextCursor": nil, "backwardsCursor": nil}})
+		method := "item/started"
+		if completed {
+			method = "item/completed"
+		}
+		fixtureSignal(t, c, "notify", map[string]any{
+			"method": method,
+			"params": functionOutputFixture(c, result.TurnID, completed, filtered),
+		})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	publish(richFunctionOutput, false)
+	if event, err := c.NextEvent(ctx); err != nil || event.Kind != FunctionOutputEvent {
+		t.Fatalf("authoritative start was not observed: %v", err)
+	}
+	// Only a protected locator changes; the public notification does not.
+	changed := strings.Replace(richFunctionOutput, "private-image-sentinel", "changed-image-sentinel", 1)
+	publish(changed, true)
+	if event, err := c.NextEvent(ctx); err == nil && event.Kind == FunctionOutputEvent {
+		t.Fatal("changed protected history bytes completed the original function output")
+	}
+}
+
 func TestFunctionOutputRejectsUncorrelatedHistoryProjection(t *testing.T) {
 	notification := json.RawMessage(`{"type":"functionCallOutput","id":"original-output","name":"fixture_tool","output":[{"type":"input_text","text":"changed"}]}`)
 	if functionOutputNotificationMatches(notification, json.RawMessage(richFunctionOutput)) {

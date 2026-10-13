@@ -2717,6 +2717,9 @@ shape counts. Never fetch, open, decrypt, replay or reconstruct content from a
 result observation. A Worker whose server did not negotiate the capability
 keeps the observation private and the original turn continues.
 
+The lifecycle digest covers the authoritative history item, including private
+locator and ciphertext bytes, not the media-stripped notification.
+
 An original item start/completion retains one ToolMessage and immutable
 thread/turn/item identity. A completed-only item creates one completed result
 observation without an invented start. Changed original content, duplicate

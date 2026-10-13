@@ -670,7 +670,7 @@ func (c *Client) observeMessageLocked(ctx context.Context, native nativewire.Eve
 		if native.Method == "item/completed" {
 			stage = domain.FunctionOutputCompleted
 		}
-		if err := c.retainFunctionOutput(params.Item, id, params.TurnID, stage); err != nil {
+		if err := c.retainFunctionOutput(item, id, params.TurnID, stage); err != nil {
 			return Event{}, err
 		}
 		// Log only closed shape facts; text, locators and ciphertext stay private.
