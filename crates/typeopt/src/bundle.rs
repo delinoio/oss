@@ -817,6 +817,13 @@ fn update_chunk_map(
         (ChunkMap::File(path), Err(error)) => {
             tracing::warn!(%error, "dropping an unreadable chunk source map");
             std::fs::remove_file(path)?;
+            // An explicit trailing directive would point at the deleted map;
+            // a hidden adjacent map has no directive to remove.
+            if let Some(comment) = map_reference(text) {
+                let (start, end) = (comment.start, comment.end);
+                let updated = format!("{}{}", &text[..start], &text[end..]);
+                std::fs::write(target, &updated).context("cannot write an edited chunk")?;
+            }
             Ok(Some(false))
         }
         (ChunkMap::Inline(url), Err(error)) => {
