@@ -338,27 +338,24 @@ it("recovers a failed remediation read through the Refresh button with the exact
   await screen.findByRole("article", { name: "Remediation attempt 2" });
   expect(f.history).toHaveBeenCalledTimes(2);
   expect(f.history.mock.calls[1][0]).toEqual(f.history.mock.calls[0][0]);
-  expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
   expect(f.resume).not.toHaveBeenCalled();
 });
 
 it("reloads the first page from Refresh when the retained read failure is an expired cursor", async () => {
   const f = fixture();
   f.history.mockRejectedValueOnce(
-    new ConnectError(
-      "Cursor expired",
-      Code.FailedPrecondition,
-      undefined,
-      [
-        {
-          desc: ErrorDetailSchema,
-          value: create(ErrorDetailSchema, {
-            code: "cursor_expired",
-            guidance: "Reload this list to accept a new chain.",
-          }),
-        },
-      ],
-    ),
+    new ConnectError("Cursor expired", Code.FailedPrecondition, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, {
+          code: "cursor_expired",
+          guidance: "Reload this list to accept a new chain.",
+        }),
+      },
+    ]),
   );
   render(f.view());
   await screen.findByRole("button", { name: "Retry current read" });
@@ -383,7 +380,9 @@ it("refreshes a healthy history from Refresh without a failure path", async () =
   );
   await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
   await screen.findByRole("article", { name: "Remediation attempt 2" });
-  expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
 });
 
 it("recovers a prior read failure after a successful resume without replaying the mutation", async () => {
@@ -417,7 +416,9 @@ it("recovers a prior read failure after a successful resume without replaying th
   await waitFor(() => expect(f.resume).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(f.history).toHaveBeenCalledTimes(3));
   await waitFor(() =>
-    expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull(),
+    expect(
+      screen.queryByRole("button", { name: "Retry current read" }),
+    ).toBeNull(),
   );
   expect(f.resume).toHaveBeenCalledTimes(2);
 });
