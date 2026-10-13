@@ -57,6 +57,8 @@ it("renders each exact branch component once in seed order without summing count
   ]);
   expect(rows[1].node.counts).toEqual({ additions: "24", deletions: "8" });
 });
+const number = (row: { node: Record<string, unknown> }) =>
+  (row.node.item as { number: string }).number;
 it("keeps a component visible once under its earliest resident seed when an earlier seed is evicted", () => {
   const nodes = [101, 102, 103, 104, 105].map((number) => ({
     item: { number: String(number) },
@@ -84,7 +86,7 @@ it("keeps a component visible once under its earliest resident seed when an earl
   expect(
     evicted.filter((row) => new Set(["103", "104", "105"]).has(row.owner)),
   ).toHaveLength(5);
-  const numbers = evicted.map((row) => row.node.item.number);
+  const numbers = evicted.map(number);
   expect(new Set(numbers).size).toBe(numbers.length);
   // Restoring page 1 returns ownership to the earliest resident seed.
   const restored = orderWorkspace(
@@ -94,7 +96,7 @@ it("keeps a component visible once under its earliest resident seed when an earl
     false,
     new Set(accepted),
   );
-  expect(restored.map((row) => [row.node.item.number, row.owner])).toEqual([
+  expect(restored.map((row) => [number(row), row.owner])).toEqual([
     ["101", "101"],
     ["102", "101"],
     ["104", "101"],
@@ -109,7 +111,7 @@ it("keeps a component visible once under its earliest resident seed when an earl
     false,
     new Set(["103"]),
   );
-  expect(hidden.find((row) => row.node.item.number === "104")?.owner).toBe(
+  expect(hidden.find((row) => number(row) === "104")?.owner).toBe(
     "101",
   );
 });
