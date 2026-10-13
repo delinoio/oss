@@ -319,7 +319,7 @@ func TestManagedTitlePublishesAfterLaterAccountUse(t *testing.T) {
 // Scenario 2: held account keeps the title queued; primary work has priority.
 func TestManagedTitleStaysQueuedWhileAccountIsBusy(t *testing.T) {
 	f := newManagedTitleFixture(t, managedTitleOptions{})
-	for _, name := range []string{"leased", "refreshing", "primary-queued"} {
+	for _, name := range []string{"leased", "refreshing", "recovery-fenced", "primary-queued"} {
 		t.Run(name, func(t *testing.T) {
 			var release func()
 			setAccount := func(change func(state *domain.SubscriptionState)) {
@@ -344,6 +344,31 @@ func TestManagedTitleStaysQueuedWhileAccountIsBusy(t *testing.T) {
 					state.Pending = &domain.SubscriptionOperation{ID: domain.NewID(), Action: domain.SubscriptionRefresh, MachineID: f.input.MachineID, Actor: domain.Principal{Type: domain.OwnerDevice}, Phase: domain.SubscriptionQueued}
 				})
 				release = func() { setAccount(func(state *domain.SubscriptionState) { state.Pending = nil }) }
+			case "recovery-fenced":
+				// A failed primary cleanup fences the same generation and identity and
+				// marks the account failed; the reconcilable fence is not lost authority.
+				var health domain.AccountHealth
+				f.mutate(t, "fence", func(tx *store.Tx) error {
+					r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+					if err != nil {
+						return err
+					}
+					health = a.Health
+					a.Subscription.RecoveryRequired, a.Health = true, domain.AccountFailed
+					_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+					return err
+				})
+				release = func() {
+					f.mutate(t, "unfence", func(tx *store.Tx) error {
+						r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+						if err != nil {
+							return err
+						}
+						a.Subscription.RecoveryRequired, a.Health = false, health
+						_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+						return err
+					})
+				}
 			case "primary-queued":
 				primary := domain.NewID()
 				f.mutate(t, "primary", func(tx *store.Tx) error {

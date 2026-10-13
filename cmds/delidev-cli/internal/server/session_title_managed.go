@@ -156,14 +156,20 @@ func (s *Service) validateManagedTitle(tx *store.Tx, record store.Record, job do
 		return result, managedTitleDenied()
 	}
 	state := account.Subscription
-	if state == nil || state.RecoveryRequired || account.Connection == nil || account.Connection.ID != input.ConnectionID || state.Generation != input.Managed.Generation || state.IdentityCommitment != input.Managed.IdentityCommitment {
+	// A recovery fence on the exact frozen generation and identity is
+	// reconcilable, so admission keeps the title queued behind it instead of
+	// retiring it. Take and custody still refuse a fenced account.
+	fenceAdmitted := phase == managedTitleAdmission && state != nil && state.RecoveryRequired
+	if state == nil || state.RecoveryRequired && !fenceAdmitted || account.Connection == nil || account.Connection.ID != input.ConnectionID || state.Generation != input.Managed.Generation || state.IdentityCommitment != input.Managed.IdentityCommitment {
 		return result, managedTitleDenied()
 	}
 	result.Account, result.AccountRecord = account, accountRecord
 	if phase == managedTitleCustody {
 		return result, nil
 	}
-	if !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted {
+	// Recording the fence marks the account failed; that health is the fence
+	// itself, not a separate loss of authority.
+	if !account.Enabled || account.Health != domain.AccountReady && !(fenceAdmitted && account.Health == domain.AccountFailed) || account.Removal != nil || account.ConfirmedExhausted {
 		return result, managedTitleDenied()
 	}
 	if s.executionAuthority == nil {
@@ -301,10 +307,11 @@ func accountHasPrimaryWork(tx *store.Tx, account domain.ID, except domain.ID) (b
 	return false, nil
 }
 
-// managedTitleAccountBusy reports a transient reason the title must stay queued.
+// managedTitleAccountBusy reports a transient reason the title must stay queued,
+// including a reconcilable recovery fence.
 func managedTitleAccountBusy(tx *store.Tx, accountID domain.ID, account domain.Account, title store.Record) (bool, error) {
 	state := account.Subscription
-	if state == nil || state.Lease != nil || state.Pending != nil || state.ExclusiveServerObservationActive() || state.ServerOperation != nil && state.ServerOperation.NativeStarted || state.Observation != nil && state.Observation.Active() {
+	if state == nil || state.Lease != nil || state.Pending != nil || state.RecoveryRequired || state.ExclusiveServerObservationActive() || state.ServerOperation != nil && state.ServerOperation.NativeStarted || state.Observation != nil && state.Observation.Active() {
 		return true, nil
 	}
 	return accountHasPrimaryWork(tx, accountID, title.ID)
