@@ -212,3 +212,68 @@ func TestManagedClaudeRecoveryReportsOnlyOriginalCleanup(t *testing.T) {
 		t.Fatal("a foreign Worker cleaned a lease it did not own")
 	}
 }
+
+// A Take response lost after the lease committed, or whose fields could not be
+// persisted, leaves the original durable claim without a generation. The server
+// lease carries the settled generation; recovery still reports cleanup only.
+func TestManagedClaudeRecoveryAcceptsThePreDeliveryJournal(t *testing.T) {
+	f, client := newManagedClaudeFixture(t)
+	if _, _, err := f.begin(t); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(f.config.Root, "managed-auth", string(f.lease)+".json")
+	raw, err := security.ReadPrivate(path, 16<<10)
+	var journal managedSubscriptionJournal
+	if err != nil || domain.Decode(raw, &journal) != nil {
+		t.Fatal("original journal missing", err)
+	}
+	original := journal
+	state := &domain.SubscriptionState{ClaudeCredential: domain.ClaudeCredentialServerToken, RecoveryRequired: true, Generation: f.generation, Lease: &domain.SubscriptionLease{ID: f.lease, OperationID: journal.Operation, InstanceID: journal.Instance, MachineID: f.credential.MachineID, Generation: f.generation, Revision: 3, Action: domain.SubscriptionExecute}}
+	account := domain.Account{Subscription: state}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	rewrite := func(mutate func(*managedSubscriptionJournal)) {
+		t.Helper()
+		j := original
+		mutate(&j)
+		if err := writeJSON(path, j); err != nil {
+			t.Fatal(err)
+		}
+		f.mu.Lock()
+		f.finishes = nil
+		f.mu.Unlock()
+	}
+	preDelivery := func(j *managedSubscriptionJournal) {
+		j.Generation, j.LeaseRevision, j.ExecutionStarted, j.State = "", 0, false, managedClaimed
+	}
+	// The pre-delivery claim is the exact original claim and is recoverable.
+	rewrite(preDelivery)
+	if err := runManagedClaudeRecovery(ctx, f.config, client, f.credential, f.account, account); err != nil {
+		t.Fatalf("the empty pre-delivery journal was rejected: %v", err)
+	}
+	f.mu.Lock()
+	if len(f.finishes) != 1 || !f.finishes[0].CleanupConfirmed || f.finishes[0].Succeeded || f.finishes[0].GenerationId != string(f.generation) || f.finishes[0].Mutation.ExpectedRevision != 3 {
+		f.mu.Unlock()
+		t.Fatal("pre-delivery recovery reported anything but original cleanup under the server lease identity")
+	}
+	f.mu.Unlock()
+	// Contradicting evidence still fails closed and reports nothing.
+	for name, mutate := range map[string]func(*managedSubscriptionJournal){
+		"foreign generation":         func(j *managedSubscriptionJournal) { preDelivery(j); j.Generation = domain.NewID() },
+		"execution without delivery": func(j *managedSubscriptionJournal) { preDelivery(j); j.ExecutionStarted = true },
+		"foreign lease revision":     func(j *managedSubscriptionJournal) { preDelivery(j); j.LeaseRevision = 9 },
+		"foreign operation":          func(j *managedSubscriptionJournal) { preDelivery(j); j.Operation = domain.NewID() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			rewrite(mutate)
+			if runManagedClaudeRecovery(ctx, f.config, client, f.credential, f.account, account) == nil {
+				t.Fatal("a contradicting journal was recovered")
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.finishes) != 0 {
+				t.Fatal("a rejected journal reported cleanup")
+			}
+		})
+	}
+}

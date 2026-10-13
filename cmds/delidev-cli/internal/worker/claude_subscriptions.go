@@ -623,7 +623,16 @@ func runManagedClaudeRecovery(ctx context.Context, config Config, client delidev
 	path := filepath.Join(config.Root, "managed-auth", string(original.ID)+".json")
 	raw, err := security.ReadPrivate(path, 16<<10)
 	var journal managedSubscriptionJournal
-	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.Lease != original.ID || journal.Account != accountID || journal.Operation != original.OperationID || journal.Instance != original.InstanceID || journal.Finish.Validate() != nil || journal.NativeProfileID != "" || journal.Generation != original.Generation {
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.Lease != original.ID || journal.Account != accountID || journal.Operation != original.OperationID || journal.Instance != original.InstanceID || journal.Finish.Validate() != nil || journal.NativeProfileID != "" {
+		return subscription.Invalid()
+	}
+	// The durable claim precedes the protected delivery. If the Take response was
+	// lost, or its fields could not be persisted, the journal still has no
+	// generation or lease revision and never started an execution while the server
+	// lease carries the settled generation. That exact original claim is accepted;
+	// once any field was persisted it must agree with the server lease.
+	preDelivery := journal.Generation == "" && journal.LeaseRevision == 0 && !journal.ExecutionStarted
+	if !preDelivery && journal.Generation != original.Generation || journal.LeaseRevision != 0 && journal.LeaseRevision != original.Revision {
 		return subscription.Invalid()
 	}
 	// The token lived only in the original execution child's environment. Joined
@@ -644,6 +653,6 @@ func runManagedClaudeRecovery(ctx context.Context, config Config, client delidev
 		return subscription.Invalid()
 	}
 	lease := &managedSubscriptionLease{client: client, credential: credential, instance: original.InstanceID, account: accountID, finishID: journal.CleanupFinish, journalPath: path, journal: journal, response: &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), GenerationId: string(original.Generation), LeaseRevision: original.Revision}}
-	config.Logger.InfoContext(ctx, "claude_managed_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID)
+	config.Logger.InfoContext(ctx, "claude_managed_original_cleanup_confirmed", "lease_id", original.ID, "account_id", accountID, "pre_delivery", preDelivery)
 	return lease.finishClaude(nil, true, false)
 }
