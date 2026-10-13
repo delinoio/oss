@@ -204,3 +204,30 @@ test("Revert text is readable at rest and on hover in every admitted palette", (
     }
   }
 });
+
+test("the shared entrance primitive is a static opaque 160ms Y4 ease-out keyframe", () => {
+  const css = readFileSync(
+    join(directory, "entrance-motion.css"),
+    "utf8",
+  ).replace(/\/\*[\s\S]*?\*\//gu, "");
+  expect(css).toMatch(
+    /@keyframes entrance-y4\s*\{\s*from\s*\{\s*transform:\s*translateY\(4px\);\s*\}\s*to\s*\{\s*transform:\s*none;\s*\}\s*\}/u,
+  );
+  expect(css).toMatch(
+    /\[data-entrance="y4"\]\s*\{\s*animation:\s*entrance-y4 160ms ease-out;\s*\}/u,
+  );
+  // No fill mode keeps the resting transform none after the motion.
+  expect(css).not.toMatch(
+    /forwards|both|opacity|scale|bounce|cubic-bezier|steps\(|height|animation-delay/u,
+  );
+  expect(css).not.toMatch(/style=|@import|url\(/u);
+});
+
+test("Animation Off and reduced motion suppress entrance animations", () => {
+  expect(source).toMatch(
+    /:root\[data-animation="false"\] \*,[^{]+\{\s*animation: none !important;/u,
+  );
+  expect(source).toMatch(
+    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,[^{]+\{\s*animation: none !important;/u,
+  );
+});
