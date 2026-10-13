@@ -1053,12 +1053,16 @@ export function SessionView({
   const [startupInfoHidden, setStartupInfoHidden] = useState(false);
   // Explicit session activation (selection, or returning to a retained session)
   // owns one 120ms Y2 header entrance. Reads, streaming, edits and preference
-  // changes never restart it, and nothing waits for it to finish. Embedded
-  // Sidechat panes belong to their own tool motion and never animate here.
-  const sessionActivations = useActivationCount(active);
+  // changes never restart it, and nothing waits for it to finish. An embedded
+  // Sidechat pane plays the same entrance on its own header for each rising
+  // edge of its tab selection, but its mount is never an activation: a pane
+  // that mounts selected because its pending tab was promoted, or one that is
+  // published in the background, must not animate until a later explicit
+  // re-selection.
+  const sessionActivations = useActivationCount(active, !embedded);
   const headerEntrance = useEntranceActivation(
     `${id}:${sessionActivations}`,
-    active && !embedded,
+    active && sessionActivations > 0,
     EntranceMotion.Y2,
   );
   // Only an explicit Info reveal (Show details or a recovery/budget entry)
