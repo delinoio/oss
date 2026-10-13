@@ -57,7 +57,7 @@ func nativeReviewMayIgnoreMetadata(event codex.Event, threadID, turnID domain.ID
 		return false
 	}
 	switch event.Metadata {
-	case codex.NativeReviewItemPending, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.SkillsChangedDiscarded, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.WindowsSandboxSetupDiscarded, codex.WindowsSandboxWarningDiscarded:
+	case codex.NativeReviewItemPending, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.SkillsChangedDiscarded, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.WindowsSandboxSetupDiscarded, codex.WindowsSandboxWarningDiscarded, codex.CurrentTimeReplySent:
 		return true
 	default:
 		return false

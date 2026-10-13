@@ -66,6 +66,17 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 		}
 	}
 	switch method {
+	case "fixture/current-time":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "currentTime/read", "params": params["params"]})
+		write(id, map[string]any{})
+		if f.mode == "thread-turn-current-time-closed-input" {
+			// Keep stdout live after closing the native read end. The original
+			// response must fail its physical pipe write, then join this owner.
+			if os.Stdin.Close() != nil || os.WriteFile(os.Getenv("DELIDEV_CODEX_CAPTURE")+".current-time-input-closed", nil, 0o600) != nil {
+				os.Exit(38)
+			}
+			time.Sleep(30 * time.Second)
+		}
 	case "fixture/write-fence":
 		if len(id) != 0 {
 			os.Exit(37)

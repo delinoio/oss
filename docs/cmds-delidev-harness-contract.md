@@ -297,7 +297,39 @@ Each frame/request/response is capped at 1 MiB. Pending outgoing requests and in
 
 Callers allocate and durably record UUID-v7 operation identities before side-effecting sends. The transport never retries and rejects reuse of a sent identity. Cancellation before a write does not consume the identity. A missing acknowledgment after transmission is recoverable uncertainty; late definitive responses retain their original request identity for reconciliation. Response delivery serialized with timeout wins when already observed. Blocked writes terminate the owned scope instead of leaving an unbounded writer or authorizing another send. Raw native error messages/data never escape the adapter transport; only their numeric classification is retained.
 
-Server requests carry a per-arrival token in addition to their native numeric/string identity. Exactly one concurrent reply may claim that outstanding request, and replaced/already-claimed interactions fail. The adapter must validate answers against the original typed request and current authorization before replying. Successful pipe delivery proves only transmission; native acknowledgment/state must establish semantic acceptance. The transport now exposes exact-arrival request retirement for native cancellation/resolution: it writes no response, cannot remove a replacement arrival and refuses in-flight response ownership. An already absent request is not semantic acceptance. The adapter must establish native ownership before invoking this primitive. Notifications and late replies use the bounded event path; no automatic answer, approval or prompt is synthesized.
+Server requests carry a per-arrival token in addition to their native numeric/string identity. Exactly one concurrent reply may claim that outstanding request, and replaced/already-claimed interactions fail. The adapter must validate answers against the original typed request and current authorization before replying. Successful pipe delivery proves only transmission; native acknowledgment/state must establish semantic acceptance. The transport now exposes exact-arrival request retirement for native cancellation/resolution: it writes no response, cannot remove a replacement arrival and refuses in-flight response ownership. An already absent request is not semantic acceptance. The adapter must establish native ownership before invoking this primitive. Notifications and late replies use the bounded event path; no automatic human answer, approval or prompt is synthesized. A generated technical response claims the exact outstanding arrival under the write gate before its bounded synchronous producer runs. Rejected ownership does not invoke that producer. Production, encoding or uncertain pipe failure after the claim fences the original response without resampling; independent process cleanup remains required.
+
+### Codex current-time technical service
+
+An emitted `currentTime/read` server request may receive one private response
+from the original bound root execution. Require exactly one bounded `threadId`
+field matching that root, a valid original numeric/string request ID and the
+retained connection arrival token. Foreign, unbound, paused or recovery-required
+execution and wrong envelope kinds cannot obtain a successful response. The
+[experimental native Rust protocol](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/src/protocol/v2/current_time.rs)
+defines `{currentTimeAt: i64}` as whole Unix seconds. Its observed request shape,
+not a numeric native-version gate, admits this service.
+
+Claim the exact pending arrival before sampling the executing Worker's clock
+once, immediately before reply generation. Use whole Unix seconds, without
+borrowing desktop time, native emission timestamps, stored values or an external
+clock. Same-ID response transmission grants no semantic acceptance, approval,
+input, account, tool, retry or completion authority. Ordinary execution, the
+isolated title consumer and the dedicated native code-review consumer discard the
+content-free sent metadata; native review still rejects it when its thread or
+turn differs from the original review. Logs contain
+only closed service and delivery classifications. Stale/replaced tokens,
+repeated attempts, stopped connections and uncertain delivery cannot resample
+or resend. Retain at most 4,096 current-time request-ID claims on the original
+connection, with numeric and textual IDs in separate namespaces. Record each
+claim after nativewire admits the original arrival and before sampling. Keep
+claims after successful transmission and uncertain failure. A fresh arrival
+token for a claimed ID grants no second sample or write. Never evict claims;
+bound exhaustion fails closed and requires original-connection reconciliation.
+Other request families retain their existing transport ID lifecycle. Existing
+recovery and original process cleanup remain independent.
+The adapter does not enable external-clock configuration or alter native polling.
+No public protocol allocation or database migration is added.
 
 ### Codex app-server profile
 

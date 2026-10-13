@@ -336,15 +336,53 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	if err != nil || event.Kind != ServerRequest {
 		return domain.Fail(domain.InvalidArgument, "A native server request is required.", "Reply to the original pending interaction.")
 	}
+	raw, err := c.resultEnvelope(event, result)
+	if err != nil {
+		return err
+	}
+	return c.replyEnvelope(ctx, event, key, raw)
+}
+
+func (c *Connection) resultEnvelope(event Event, result any) ([]byte, error) {
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
-		return domain.Fail(domain.InvalidArgument, "Invalid native response.", "Use the original interaction's typed response schema.")
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid native response.", "Use the original interaction's typed response schema.")
 	}
 	raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Result: resultJSON})
 	if err != nil || len(raw) > MaxFrame {
-		return domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
+		return nil, domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
 	}
-	return c.replyEnvelope(ctx, event, key, raw)
+	return raw, nil
+}
+
+// ReplyGenerated claims the exact outstanding arrival before producing a value.
+// The producer must be a bounded synchronous operation with no native calls.
+// A stale, canceled or replaced arrival never invokes it. Once claimed, even a
+// production/encoding failure retains uncertainty and cannot authorize resampling.
+func (c *Connection) ReplyGenerated(ctx context.Context, event Event, produce func() (any, error)) error {
+	key, err := idKey(event.ID)
+	if err != nil || event.Kind != ServerRequest || event.Token.Validate() != nil || produce == nil {
+		return domain.Fail(domain.InvalidArgument, "The original native server request is required.", "Retain its exact request and arrival identity before responding.")
+	}
+	if err := c.acquire(ctx); err != nil {
+		return err
+	}
+	defer c.release()
+	if err := c.claimReply(event, key); err != nil {
+		return err
+	}
+	result, err := produce()
+	if err != nil {
+		c.fail(uncertain())
+		return uncertain()
+	}
+	raw, err := c.resultEnvelope(event, result)
+	var checked envelope
+	if err != nil || domain.Decode(raw, &checked) != nil {
+		c.fail(uncertain())
+		return uncertain()
+	}
+	return c.sendClaimedReply(ctx, key, raw)
 }
 
 // RefuseExternalTokenRefresh answers only the exact pending token callback with a fixed safe error.
@@ -370,15 +408,31 @@ func (c *Connection) replyEnvelope(ctx context.Context, event Event, key string,
 		return err
 	}
 	defer c.release()
+	if err := c.claimReply(event, key); err != nil {
+		return err
+	}
+	return c.sendClaimedReply(ctx, key, raw)
+}
+
+func (c *Connection) claimReply(event Event, key string) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.problem != nil {
+		return c.problem
+	}
+	if c.closing {
+		return domain.Fail(domain.Canceled, "The native connection is closing.", "Reconcile the previous execution before opening a replacement.")
+	}
 	original, ok := c.incoming[key]
 	if !ok || original.token != event.Token || original.replying {
-		c.mu.Unlock()
 		return domain.Fail(domain.Conflict, "The native interaction was already answered or replaced.", "Reload the current interaction before responding.")
 	}
 	original.replying = true
 	c.incoming[key] = original
-	c.mu.Unlock()
+	return nil
+}
+
+func (c *Connection) sendClaimedReply(ctx context.Context, key string, raw []byte) error {
 	if err := c.write(ctx, raw); err != nil {
 		return err
 	}

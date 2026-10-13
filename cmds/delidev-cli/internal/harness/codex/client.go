@@ -52,6 +52,8 @@ type Client struct {
 	reviewProtected      security.ProtectedJSON
 	safety               modelSafetyLedger
 	managedForkHistory   bool
+	currentTimeClock     func() time.Time
+	currentTimeClaims    map[currentTimeRequestKey]struct{}
 	quotaUsed            atomic.Bool
 	skillsRoot           string
 	imageRoot            string
