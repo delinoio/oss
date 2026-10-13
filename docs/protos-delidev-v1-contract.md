@@ -1386,6 +1386,16 @@ closed context-job version 4 and exact observation-only recovery version 2; no
 new job kind or database migration is allocated. Capabilities grant only the
 implemented product operation, never native/account/platform acceptance.
 
+Worker `CODEX_SESSION_REVERT_TARGET_PROOF_V1 = 64`
+negotiates the optional `execution_id` and `checkpoint_digest` fields of the
+frozen Revert target. An older Worker strictly rejects those fields, so the
+server freezes them only for a skilled target that an earlier execution accepted.
+Every skilled Revert target, with or without those fields, requires the original
+Worker to advertise 64, and the same Worker must advertise 64 again before the
+lease or dispatch authority admits such a job. A text-only Revert keeps the
+original envelope under capability 36 alone. No System
+capability, RPC, field in any other message or database migration is added.
+
 ## Image rejection startup metadata
 
 ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKind owns UNSPECIFIED=0 and IMAGE_INPUT_REJECTED=1, recorded in allocations.json in the complete feature change. Zero remains omitted with legacy wire and JSON compatibility. Nonzero provenance requires the complete Failed/Input/Codex/Unsupported/NotSent/confirmed-cleanup profile and original authenticated claim, ready-process and native-thread checks under the direct startup and image-input contracts. Unknown or mixed values fail closed. No capability, RPC or migration is added.

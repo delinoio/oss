@@ -13466,6 +13466,13 @@
       "number": 63
     },
     {
+      "issue": 2279,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_SESSION_REVERT_TARGET_PROOF_V1",
+      "number": 64
+    },
+    {
       "declaration": "NativeCodeReviewTargetKind",
       "issue": 2019,
       "kind": "enum",
