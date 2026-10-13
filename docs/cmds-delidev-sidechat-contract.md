@@ -42,8 +42,14 @@ usage charge. Child queue/transcript/execution state remains independent.
 `SendSidechatFindings` and `session sidechat send` submit an explicit bounded
 selection of complete assistant messages at exact child/message/parent revisions.
 The server builds text from those original messages, then uses the existing
-queue/explicit Steer admission rules and UUID-v7 receipt. No automatic merge or
-unselected transcript transfer is permitted. Account switching, terminals,
+queue/explicit Steer admission rules and UUID-v7 receipt. Once a same-question
+retry exists, only replies from the selected answer generation are transferable:
+the server rejects any message whose execution is a retry execution or the
+original question execution recorded by the first retry unless it equals the
+child's current answer, inside the same atomic mutation with a conflict and no
+parent input. Failed or uncertain retries keep the previous answer selected and
+transferable; sessions without retries keep the original rules. No automatic
+merge or unselected transcript transfer is permitted. Account switching, terminals,
 forwarding, Git writes, PR automation and workspace mutations cannot expand a
 Sidechat's read-only authority.
 
@@ -389,7 +395,9 @@ noninteractive popover opens after 300 ms hover or immediately on focus, shares
 Escape, departure, inactive presentation or unmount without moving focus.
 Disabled actions remain focusable with localized guidance. Previous generations
 use a read-only history disclosure over the original bounded transcript payload
-window; the active answer remains visible during work. Capability uncertainty
+window; the active answer remains visible during work. The findings picker
+offers only the selected answer generation, using the same current-answer filter
+as the transcript. Capability uncertainty
 retains the original request controller across presentation changes. There is no
 new pending Cancel action or automatic findings transfer.
 
