@@ -9,6 +9,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 // dropTitleCapability removes the managed title capability from the original
@@ -102,5 +103,75 @@ func TestManagedTitleTakeStillRequiresCurrentCapability(t *testing.T) {
 	}
 	if _, account := f.record(); account.Subscription.Lease != nil || account.Subscription.RecoveryRequired {
 		t.Fatalf("a refused Take left custody state: %+v", account.Subscription)
+	}
+}
+
+// Every definite no-delivery denial after the lease commits releases the exact
+// title lease. Account logout, disablement or removal accepted in that window
+// must not leave a recovery fence, because the logout itself needs the lease
+// released to run.
+func TestManagedTitleAccountLossBeforeDeliveryReleasesLease(t *testing.T) {
+	for _, name := range []string{"logout", "disabled", "removal"} {
+		t.Run(name, func(t *testing.T) {
+			f := newManagedTitleFixture(t, managedTitleOptions{})
+			record, err := f.claim()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var logoutOperation string
+			change := func() error {
+				switch name {
+				case "logout":
+					r, _ := f.record()
+					response, err := f.client.RequestSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.RequestSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT}))
+					if err == nil {
+						logoutOperation = response.Msg.OperationId
+					}
+					return err
+				default:
+					_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.account-loss", nil, func(tx *store.Tx) (any, error) {
+						r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+						if err != nil {
+							return nil, err
+						}
+						if name == "disabled" {
+							a.Enabled = false
+						} else {
+							a.Removal = &domain.AccountRemoval{RequestID: domain.NewID()}
+						}
+						return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+					})
+					return err
+				}
+			}
+			hookErr, restore := f.hookOnce(change)
+			defer restore()
+			response, err := f.takeTitle(record.Revision)
+			if *hookErr != nil {
+				t.Fatal(*hookErr)
+			}
+			if err == nil || response != nil {
+				t.Fatal("a title received protected credentials after its account was lost")
+			}
+			_, account := f.record()
+			if account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Health == domain.AccountFailed {
+				t.Fatalf("an undelivered title lease fenced the account: health=%s %+v", account.Health, account.Subscription)
+			}
+			if name == "logout" {
+				if account.Health != domain.AccountRevoked || account.Subscription.Pending == nil {
+					t.Fatalf("the accepted logout was lost: %+v", account)
+				}
+				// The released account lets the accepted logout take its own lease.
+				f.service.accountSecrets = f.secrets
+				if _, err := f.take(&pb.RequestSubscriptionResponse{OperationId: logoutOperation}, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT); err != nil {
+					t.Fatal("the accepted logout cannot run after an undelivered title lease", err)
+				}
+			}
+			// The one-time inference claim stays consumed, so the title can never send.
+			f.service.accountSecrets = f.secrets
+			if _, err := f.takeTitle(record.Revision); err == nil {
+				t.Fatal("a released undelivered title received credentials on retry")
+			}
+		})
 	}
 }

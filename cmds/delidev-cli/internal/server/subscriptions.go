@@ -680,23 +680,41 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	// Every error below returns before any bundle crosses the boundary. For a
+	// managed title that is a definite no-delivery outcome, so its exact lease is
+	// released instead of fencing the account for recovery; every other lease
+	// keeps the conservative recovery fence.
+	releaseUndeliveredTitle := func(reason string) {
+		if titleRevision == 0 {
+			return
+		}
+		if releaseErr := s.releaseUndeliveredTitleLease(ctx, input.Account, input.Lease, input.Machine, input.Instance, leaseRevision); releaseErr != nil {
+			// The lease stays owned, so the deferred recovery fence still applies.
+			s.logger.WarnContext(ctx, "subscription_title_lease_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "reason", reason, "code", domain.SafeError(releaseErr).Code)
+			return
+		}
+		owned = false
+		s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", reason)
+	}
 	var bundle []byte
 	if generation != "" {
 		vault, err := s.secrets()
 		if err != nil {
+			releaseUndeliveredTitle("vault-unavailable")
 			return nil, rpc.Error(err, c)
 		}
 		bundle, err = vault.Get(ctx, credentials.Ref{Owner: input.Account, ID: generation, Purpose: credentials.AccountLogin})
 		if err != nil {
+			releaseUndeliveredTitle("vault-read-failed")
 			return nil, rpc.Error(err, c)
 		}
 		if _, _, err := subscription.Parse(bundle); err != nil {
 			clear(bundle)
+			releaseUndeliveredTitle("bundle-invalid")
 			return nil, rpc.Error(err, c)
 		}
 	}
 	// Authorization after native I/O prevents revocation from winning during Get.
-	titleCanceled := false
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -710,9 +728,6 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				return subscriptionDenied()
 			}
 			if canceled, err := tx.JobCancellationRequested(input.Operation); err != nil || canceled {
-				// A canceled managed title never delivers the bundle below, so its
-				// lease has a definite no-delivery release instead of recovery.
-				titleCanceled = err == nil && a.Subscription.Lease.TitleRevision != 0
 				return subscriptionDenied()
 			}
 			if lease := a.Subscription.Lease; lease.TitleRevision != 0 {
@@ -735,15 +750,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	})
 	if err != nil {
 		clear(bundle)
-		if titleCanceled {
-			if releaseErr := s.releaseUndeliveredTitleLease(ctx, input.Account, input.Lease, input.Machine, input.Instance, leaseRevision); releaseErr != nil {
-				// The lease stays owned, so the deferred recovery fence still applies.
-				s.logger.WarnContext(ctx, "subscription_title_lease_release_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(releaseErr).Code)
-			} else {
-				owned = false
-				s.logger.InfoContext(ctx, "subscription_title_lease_released", "account_id", input.Account, "lease_id", input.Lease, "reason", "canceled-before-delivery")
-			}
-		}
+		releaseUndeliveredTitle("denied-before-delivery")
 		return nil, rpc.Error(err, c)
 	}
 	s.logger.InfoContext(ctx, "subscription_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "action", action)
@@ -1157,11 +1164,18 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 }
 
 // releaseUndeliveredTitleLease releases the exact EXECUTE lease of a managed
-// title that was canceled after the lease committed but before TakeSubscription
-// returned any credential. No bundle crossed the boundary and no generation
-// changed, so the account stays ready instead of entering recovery. The caller
+// title whose TakeSubscription is returning an error after the lease committed
+// but before any credential was returned: cancellation, account logout, disable
+// or removal, an invalid vault read or a lost custody lineage. No bundle crossed
+// the boundary and no generation changed, so the account stays ready (or keeps
+// its accepted logout runnable) instead of entering recovery. The one-time
+// inference claim stays consumed, so the title can never send. The release is a
+// bounded write detached from request cancellation, so a client disconnect
+// cannot turn a definite no-delivery outcome into a recovery fence. The caller
 // holds the accounts gate.
 func (s *Service) releaseUndeliveredTitleLease(ctx context.Context, account, lease, machine, instance domain.ID, revision uint64) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.title-release", struct{ Account, Lease domain.ID }{account, lease}, func(tx *store.Tx) (any, error) {
 		r, a, err := s.subscriptionLease(ctx, tx, account, lease, machine, instance)
 		if err != nil {
@@ -1170,9 +1184,6 @@ func (s *Service) releaseUndeliveredTitleLease(ctx context.Context, account, lea
 		state := a.Subscription
 		held := state.Lease
 		if state.RecoveryRequired || held.Action != domain.SubscriptionExecute || held.TitleRevision == 0 || held.Revision != revision {
-			return nil, subscriptionDenied()
-		}
-		if canceled, err := tx.JobCancellationRequested(held.OperationID); err != nil || !canceled {
 			return nil, subscriptionDenied()
 		}
 		state.Lease = nil
