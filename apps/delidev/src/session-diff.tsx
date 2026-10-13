@@ -41,6 +41,11 @@ export type ComparisonDescriptor = {
   comparison: Comparison;
   path: string;
   base_ref?: BaseReference;
+  /**
+   * The invalidated explicit base that a base-free tab dropped. The tab owns
+   * it, so it is neither part of the tab identity nor kept after it closes.
+   */
+  dropped_base?: BaseReference;
 };
 
 function comparisonOriginKey(value: ComparisonDescriptor) {
@@ -65,7 +70,10 @@ export function SessionDiff({
   worktree: boolean;
   close: () => void;
   selected?: ComparisonDescriptor;
-  openComparison?: (value: ComparisonDescriptor) => void;
+  openComparison?: (
+    value: ComparisonDescriptor,
+    options?: { inheritDropped?: boolean },
+  ) => void;
 }) {
   useLocale();
   const panelRoot = useRef<HTMLElement>(null);
@@ -202,9 +210,6 @@ export function SessionDiff({
   );
 }
 
-const descriptorKey = (comparison: Comparison, path: string) =>
-  [comparison, path].join("\u0000");
-
 export function RepositoryDiff({
   sessionId,
   repository,
@@ -221,7 +226,10 @@ export function RepositoryDiff({
   worktree: boolean;
   acceptedDeletionId?: string;
   initial?: Omit<ComparisonDescriptor, "repository">;
-  openComparison?: (value: ComparisonDescriptor) => void;
+  openComparison?: (
+    value: ComparisonDescriptor,
+    options?: { inheritDropped?: boolean },
+  ) => void;
   /**
    * Set while a repository selection awaits its own negotiated base. Called at
    * most once per base with the exact typed descriptor of the displayed branch
@@ -544,38 +552,52 @@ export function RepositoryDiff({
     // A non-branch descriptor carries no base, which clears the local explicit
     // selection. Returning to Branch must re-publish the invalidated selection
     // itself, never the inventory default, until the Base control explicitly
-    // selects a reference. The dropped selection belongs to the base-free
-    // descriptor that dropped it, so unrelated retained tabs never consume it.
-    const dropping = descriptorKey(next, nextPath),
-      current = descriptorKey(comparison, path);
-    if (baseRef && next !== Comparison.Branch)
-      trust.depart(optionsOwner, dropping, baseRef);
-    else if (comparison === Comparison.Branch && next !== Comparison.Branch)
-      trust.forget(optionsOwner, dropping);
-    else if (
-      !baseRef &&
-      comparison !== Comparison.Branch &&
-      next !== Comparison.Branch
-    )
-      trust.move(optionsOwner, current, dropping);
-    // The record stays with the retained base-free descriptor, so every later
-    // return to Branch republishes the same invalidated selection until it is
+    // selects a reference. The base-free tab owns the base it dropped on its
+    // descriptor, so unrelated tabs never consume it, closing the tab ends it
+    // and it never depends on the options cache.
+    const droppedBase = initial?.dropped_base,
+      inheritDropped =
+        !baseRef &&
+        comparison !== Comparison.Branch &&
+        next !== Comparison.Branch;
+    // Dropping an invalidated explicit base records it on the base-free tab. A
+    // base-free tab opening another base-free tab shares its own record, which
+    // an already open destination keeps in preference.
+    const dropped =
+      next === Comparison.Branch
+        ? undefined
+        : baseRef
+          ? trust.isInvalidated(optionsOwner, baseRef)
+            ? baseRef
+            : undefined
+          : inheritDropped && droppedBase
+            ? droppedBase
+            : undefined;
+    // The record stays with the retained base-free tab, so every later return
+    // to Branch republishes the same invalidated selection until it is
     // explicitly reselected.
     const retained =
-      !explicit && !baseRef && next === Comparison.Branch
-        ? trust.departed(optionsOwner, current)
+      !explicit &&
+      !baseRef &&
+      next === Comparison.Branch &&
+      droppedBase &&
+      trust.isInvalidated(optionsOwner, droppedBase)
+        ? droppedBase
         : undefined;
     const base = retained ?? nextBase;
-    const value = {
+    const value: ComparisonDescriptor = {
       repository,
       comparison: next,
       path: nextPath,
       ...(next === Comparison.Branch && options.data && base
         ? { base_ref: base }
         : {}),
+      ...(dropped ? { dropped_base: dropped } : {}),
     };
-    if (openComparison) openComparison(value);
-    else {
+    if (openComparison) {
+      if (inheritDropped) openComparison(value, { inheritDropped });
+      else openComparison(value);
+    } else {
       setComparison(next);
       setPath(nextPath);
       setBaseRef(base);

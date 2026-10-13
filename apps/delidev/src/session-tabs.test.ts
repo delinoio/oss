@@ -7,7 +7,54 @@ import {
   SessionTabKind,
   sessionTabKey,
 } from "./session-tabs";
-import { Comparison } from "./session-diff-model";
+import { Comparison, type BaseReference } from "./session-diff-model";
+describe("comparison tab dropped bases", () => {
+  const a: BaseReference = { type: "local-branch", name: "a" },
+    b: BaseReference = { type: "local-branch", name: "b" },
+    tab = (comparison: Comparison, dropped_base?: BaseReference) => ({
+      kind: SessionTabKind.Comparison as const,
+      repository: "repo",
+      comparison,
+      path: ".",
+      ...(dropped_base ? { dropped_base } : {}),
+    });
+  const dropped = (store: SessionTabsStore, comparison: Comparison) =>
+    store
+      .snapshot("s")
+      .tabs.find(
+        (value) =>
+          value.kind === SessionTabKind.Comparison &&
+          value.comparison === comparison,
+      ) as { dropped_base?: unknown } | undefined;
+  it("keeps the record out of the tab identity", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.Staged, a));
+    store.open("s", tab(Comparison.Staged));
+    expect(store.snapshot("s").tabs).toHaveLength(2);
+  });
+  it("replaces the record on an ordinary open and ends it with the tab", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.Staged, a));
+    store.open("s", tab(Comparison.Staged, b));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toEqual(b);
+    store.open("s", tab(Comparison.Staged));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toBeUndefined();
+    store.open("s", tab(Comparison.Staged, a));
+    store.close("s", sessionTabKey(tab(Comparison.Staged)));
+    store.open("s", tab(Comparison.Staged));
+    expect(dropped(store, Comparison.Staged)?.dropped_base).toBeUndefined();
+  });
+  it("never overwrites the record an open destination owns when inheriting", () => {
+    const store = new SessionTabsStore();
+    store.open("s", tab(Comparison.WorkingTree, b));
+    store.open("s", tab(Comparison.WorkingTree, a), { inheritDropped: true });
+    expect(dropped(store, Comparison.WorkingTree)?.dropped_base).toEqual(b);
+    store.open("s", tab(Comparison.Creation, a), { inheritDropped: true });
+    expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
+    store.open("s", tab(Comparison.Creation), { inheritDropped: true });
+    expect(dropped(store, Comparison.Creation)?.dropped_base).toEqual(a);
+  });
+});
 describe("connection session tab descriptors", () => {
   it("pins Conversation and preserves append order with exact resource identities", () => {
     const store = new SessionTabsStore();

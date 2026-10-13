@@ -39,6 +39,12 @@ export type SessionTab =
       comparison: Comparison;
       path: string;
       base_ref?: BaseReference;
+      /**
+       * The invalidated explicit base that this base-free tab dropped. It is
+       * owned by the tab (not part of its identity), so closing the tab ends
+       * it and a recreated tab starts without it.
+       */
+      dropped_base?: BaseReference;
     }
   | { kind: SessionTabKind.Terminal; id: string }
   | {
@@ -114,7 +120,17 @@ export class SessionTabsStore {
     this.sessions.set(id, value);
     for (const callback of this.listeners) callback();
   }
-  open(id: string, tab: SessionTab) {
+  /**
+   * `inheritDropped` keeps the `dropped_base` that an already open destination
+   * Comparison tab owns; the incoming value only fills a destination without
+   * one. Without it the incoming `dropped_base` (or its absence) replaces the
+   * destination's.
+   */
+  open(
+    id: string,
+    tab: SessionTab,
+    options?: { inheritDropped?: boolean },
+  ) {
     if (
       tab.kind === SessionTabKind.Terminal &&
       this.terminalPresentation(id).hidden(tab.id)
@@ -135,7 +151,15 @@ export class SessionTabsStore {
       (value) => sessionTabKey(value) === key,
     );
     const tabs = [...previous.tabs];
+    const existing = previous.tabs[found];
     if (found < 0) tabs.push(tab);
+    else if (
+      options?.inheritDropped &&
+      tab.kind === SessionTabKind.Comparison &&
+      existing?.kind === SessionTabKind.Comparison &&
+      existing.dropped_base
+    )
+      tabs[found] = { ...tab, dropped_base: existing.dropped_base };
     else tabs[found] = tab;
     this.publish(id, { tabs, selected: key });
   }

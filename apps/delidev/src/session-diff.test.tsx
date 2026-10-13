@@ -20,8 +20,6 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionDiff } from "./session-diff";
-import { type BaseReference } from "./session-diff-model";
-import { DiffBaseTrust } from "./session-diff-trust";
 import {
   SessionTabKind,
   SessionTabsStore,
@@ -1786,11 +1784,12 @@ function tabsFixture(
                 selected={
                   tab?.kind === SessionTabKind.Comparison ? tab : undefined
                 }
-                openComparison={(value) =>
-                  store.open(f.sessionId, {
-                    kind: SessionTabKind.Comparison,
-                    ...value,
-                  })
+                openComparison={(value, options) =>
+                  store.open(
+                    f.sessionId,
+                    { kind: SessionTabKind.Comparison, ...value },
+                    options,
+                  )
                 }
               />
             ) : null}
@@ -2568,19 +2567,58 @@ it("keeps the dropped invalidated base on a retained base-free tab that opens an
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
 });
 
-it("never overwrites the record a destination base-free descriptor already owns", () => {
-  const trust = new DiffBaseTrust(),
-    owner = "session:repo",
-    a: BaseReference = { type: "local-branch", name: "a" },
-    b: BaseReference = { type: "local-branch", name: "b" };
-  trust.invalidate(owner, a);
-  trust.invalidate(owner, b);
-  trust.depart(owner, "staged:.", a);
-  trust.depart(owner, "working-tree:.", b);
-  trust.move(owner, "staged:.", "working-tree:.");
-  expect(trust.departed(owner, "staged:.")).toBe(a);
-  expect(trust.departed(owner, "working-tree:.")).toBe(b);
-  trust.move(owner, "staged:.", "staged:src");
-  expect(trust.departed(owner, "staged:.")).toBe(a);
-  expect(trust.departed(owner, "staged:src")).toBe(a);
+it("does not republish a dropped invalidated base for a recreated base-free tab after its tab closed", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("other"));
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "staged")).toBe(
+      true,
+    ),
+  );
+  const staged = f.comparisons().find((tab) => tab.comparison === "staged")!;
+  expect(staged).toMatchObject({ dropped_base: { name: "other" } });
+  // Closing the tab ends the record with it.
+  act(() => f.store.close(f.sessionId, sessionTabKey(staged)));
+  state.names = ["main", "other"];
+  // An unrelated base-free tab with the same comparison and path is created.
+  act(() =>
+    f.store.open(f.sessionId, {
+      kind: SessionTabKind.Comparison,
+      repository: staged.repository,
+      comparison: staged.comparison,
+      path: staged.path,
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Comparison") as HTMLSelectElement).value,
+    ).toBe("staged"),
+  );
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("main"));
+  const snapshot = f.store.snapshot(f.sessionId),
+    tab = snapshot.tabs.find(
+      (value) => sessionTabKey(value) === snapshot.selected,
+    );
+  expect(tab).toMatchObject({
+    comparison: "branch",
+    base_ref: { name: "main" },
+  });
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+    baseValue("main"),
+  );
 });
