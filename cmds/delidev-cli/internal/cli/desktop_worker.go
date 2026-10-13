@@ -60,6 +60,31 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 	return nil
 }
 
+// verifyDesktopWorkerGrant proves the saved fixed Local Worker's retained
+// original grant from files alone. Edited or stale credential and journal
+// endpoints never reach a listener or a follow marker, so callers run it before
+// any authenticated probe of the saved credential.
+func verifyDesktopWorkerGrant(o options, root string, saved worker.Credential) error {
+	owner, local, err := desktopruntime.LocalRoot(root, saved.ServerID, saved.Endpoint)
+	if err != nil {
+		// An oversized, symlinked, unsafe, malformed or foreign journal cannot
+		// prove the original grant. Report it at this boundary as the isolating
+		// recovery result instead of the raw storage or availability error.
+		slog.Warn("desktop_worker_registration", "phase", "local-pairing-journal", "code", domain.SafeError(err).Code)
+		return recoveryRequired()
+	}
+	if !local || owner != o.dataDir {
+		return recoveryRequired()
+	}
+	// The Worker boundary reports unreadable evidence as the isolating recovery
+	// result; desktop client recovery keeps storage errors instead.
+	if err := desktopruntime.VerifyOriginalPairing(owner, root, saved.ServerID, saved.Endpoint, saved.PairingID); err != nil {
+		slog.Warn("desktop_worker_registration", "phase", "original-pairing", "code", domain.SafeError(err).Code)
+		return err
+	}
+	return nil
+}
+
 // Recovery authenticates the retained registration without issuing a grant.
 // A revoked Worker must remain diagnostic rather than cycling generations.
 func desktopWorkerRegistration(ctx context.Context, o options, root, expected string) error {
@@ -75,12 +100,8 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 		return recoveryRequired()
 	}
 	if o.desktop != nil {
-		owner, local, err := desktopruntime.LocalRoot(root, saved.ServerID, saved.Endpoint)
-		if err != nil {
+		if err := verifyDesktopWorkerGrant(o, root, saved); err != nil {
 			return err
-		}
-		if !local || owner != o.dataDir {
-			return recoveryRequired()
 		}
 	}
 	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
@@ -96,7 +117,7 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 		return recoveryRequired()
 	}
 	if o.desktop != nil {
-		return desktopruntime.Follow(root, saved.ServerID)
+		return desktopruntime.FollowVerified(o.dataDir, root, saved.ServerID, saved.Endpoint, saved.PairingID)
 	}
 	return nil
 }
