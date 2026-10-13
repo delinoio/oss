@@ -329,7 +329,30 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 	return response, nil
 }
 
-func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
+// forkAuthorityPhase names the boundary that revalidates a Fork's frozen
+// authority. It decides whether the managed account must still be settled.
+type forkAuthorityPhase string
+
+const (
+	// forkAuthorityClaim runs before a Worker claims the Fork job.
+	forkAuthorityClaim forkAuthorityPhase = "claim"
+	// forkAuthorityTake runs while the Fork requests its protected EXECUTE Take.
+	forkAuthorityTake forkAuthorityPhase = "take"
+	// forkAuthorityLease runs while the Fork owns its lease (staging and
+	// protected Finish). Logout or observation requests accepted during the
+	// lease must not strand the original Finish and cleanup obligations.
+	forkAuthorityLease forkAuthorityPhase = "lease"
+	// forkAuthorityPublication runs after the original protected Finish.
+	forkAuthorityPublication forkAuthorityPhase = "publication"
+)
+
+// managedForkAccountSettled mirrors Fork admission: refresh/login/logout
+// lifecycle work and server or Worker observations own the account exclusively.
+func managedForkAccountSettled(state *domain.SubscriptionState) bool {
+	return state.Pending == nil && !state.ServerObservationActive() && (state.Observation == nil || !state.Observation.Active())
+}
+
+func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput, phase forkAuthorityPhase) error {
 	if input.Retry != nil {
 		return validateSidechatRetryForkAuthority(tx, input)
 	}
@@ -391,6 +414,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 		if err != nil || account.Subscription == nil || account.Subscription.RecoveryRequired || account.Connection == nil || account.Connection.ID != input.SourceAssignment.ConnectionID || account.Subscription.Generation != input.SubscriptionGeneration {
 			return subscriptionDenied()
 		}
+		if phase != forkAuthorityLease && !managedForkAccountSettled(account.Subscription) {
+			return subscriptionDenied()
+		}
 	}
 	if err := validateForkSharing(input); err != nil {
 		return err
@@ -425,7 +451,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 				}
 			}
 		}
-		if err := validateForkAuthority(tx, authorityInput); err != nil {
+		if err := validateForkAuthority(tx, authorityInput, forkAuthorityPublication); err != nil {
 			problem = domain.Fail(domain.RecoveryRequired, "Fork publication lost its original authority.", "Preserve the accepted native child and reconcile its original job before another fork.")
 		}
 		_, machine, err := activeMachine(tx, job.MachineID)

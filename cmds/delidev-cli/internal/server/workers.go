@@ -631,7 +631,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 						var input domain.ForkJobInput
 						problem := domain.Decode(j.Input, &input)
 						if problem == nil {
-							problem = validateForkAuthority(tx, input)
+							problem = validateForkAuthority(tx, input, forkAuthorityClaim)
 						}
 						if problem != nil {
 							failed, generation, err := failForkBeforeClaim(tx, r, j, problem)

@@ -370,6 +370,57 @@ impl<'c> Ctx<'c> {
         self.file_of(&source_file_info(get_source_file_of_node(node)).file_name)
     }
 
+    /// Whether `typeof name` evaluates without throwing. A name that
+    /// resolves to no declaration, or only to ambient declarations (project
+    /// `.d.ts` files, `declare` statements and libraries), creates no
+    /// runtime lexical binding in application code, so `typeof` reads the
+    /// host global and never throws. A declared binding of the application
+    /// still throws while it is in its temporal dead zone and needs the
+    /// ordinary identifier initialization proof. An imported binding is
+    /// always an application binding: its declaration file may describe a
+    /// module that initializes later in a cycle.
+    fn typeof_operand_safe(&mut self, operand: Node) -> bool {
+        let symbol = self.resolve(operand);
+        if symbol.is_nil() {
+            return true;
+        }
+        let imported = {
+            let local = self.checker.get_symbol_at_location(operand);
+            local.is_some() && self.checker.sym(local).flags.intersects(SymbolFlags::Alias)
+        };
+        if !imported {
+            let declarations = self.checker.sym(symbol).declarations.to_vec();
+            if !declarations.is_empty()
+                && declarations.iter().all(|&d| {
+                    d.flags().intersects(NodeFlags::Ambient)
+                        || has_syntactic_modifier(d, ModifierFlags::Ambient)
+                })
+            {
+                return true;
+            }
+            // Declaration kinds the ordinary identifier proof does not cover.
+            let declaration = self.checker.sym(symbol).value_declaration;
+            if declaration.is_some() {
+                match declaration.kind() {
+                    // A class binding is lexical: it is initialized only
+                    // after its declaration ran in the same function.
+                    SyntaxKind::ClassDeclaration => {
+                        return declared_before(declaration, operand);
+                    }
+                    // A top-level non-const enum emits a hoisted `var`.
+                    SyntaxKind::EnumDeclaration
+                        if declaration.parent().kind() == SyntaxKind::SourceFile
+                            && !has_syntactic_modifier(declaration, ModifierFlags::Const) =>
+                    {
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.is_pure(operand)
+    }
+
     /// Whether the expression evaluates without observable effects and
     /// without throwing. Conservative: unknown forms are impure.
     pub fn is_pure(&mut self, node: Node) -> bool {
@@ -404,7 +455,7 @@ impl<'c> Ctx<'c> {
                     return false;
                 }
                 match declaration.kind() {
-                    SyntaxKind::Parameter => true,
+                    SyntaxKind::Parameter => parameter_initialized(declaration, node),
                     SyntaxKind::VariableDeclaration => {
                         let list = declaration.parent();
                         let block_scoped = list
@@ -412,18 +463,18 @@ impl<'c> Ctx<'c> {
                             .intersects(NodeFlags::Let | NodeFlags::Const | NodeFlags::Using);
                         // Declared earlier in the same file and not inside
                         // a loop body that could re-enter the TDZ.
-                        !block_scoped
-                            || (get_source_file_of_node(declaration)
-                                == get_source_file_of_node(node)
-                                && declaration.end() <= node.pos()
-                                && same_function(declaration, node))
+                        !block_scoped || declared_before(declaration, node)
                     }
                     _ => false,
                 }
             }
             SyntaxKind::TypeOfExpression => {
                 let operand = skip_outer(node.expression());
-                operand.kind() == SyntaxKind::Identifier || self.is_pure(operand)
+                if operand.kind() == SyntaxKind::Identifier {
+                    self.typeof_operand_safe(operand)
+                } else {
+                    self.is_pure(operand)
+                }
             }
             SyntaxKind::VoidExpression => self.is_pure(node.expression()),
             SyntaxKind::PrefixUnaryExpression => {
@@ -733,6 +784,31 @@ pub(crate) fn skip_outer(mut node: Node) -> Node {
 fn is_module_export_name(node: Node) -> bool {
     let parent = node.parent();
     parent.property_name().is_some() && parent.name() == node && parent.property_name() != node
+}
+
+/// Whether `parameter` is certainly bound when `read` executes. Parameters
+/// are initialized left to right, so a read inside a parameter list entry
+/// (default initializer or binding pattern) observes that same parameter or
+/// any later one in its temporal dead zone. Reads in the function body, or
+/// in the entry of a later parameter, see an initialized binding.
+fn parameter_initialized(parameter: Node, read: Node) -> bool {
+    let function = parameter.parent();
+    !function.parameters().iter().any(|p| {
+        let mut node = read;
+        while node.is_some() && node != p {
+            node = node.parent();
+        }
+        node == p && parameter.pos() >= p.pos()
+    })
+}
+
+/// Whether a lexical `declaration` precedes `read` in the same file and the
+/// same function, outside any loop body that could re-enter its temporal
+/// dead zone.
+fn declared_before(declaration: Node, read: Node) -> bool {
+    get_source_file_of_node(declaration) == get_source_file_of_node(read)
+        && declaration.end() <= read.pos()
+        && same_function(declaration, read)
 }
 
 fn same_function(a: Node, b: Node) -> bool {
