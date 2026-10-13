@@ -1269,7 +1269,9 @@ it("does not publish a late options response after the path changes", async () =
       base_ref: { type: "local-branch", name: "main" },
     });
   });
-  await waitFor(() => expect(branchReads(f.read).at(-1)?.path).toBe("src/main.ts"));
+  await waitFor(() =>
+    expect(branchReads(f.read).at(-1)?.path).toBe("src/main.ts"),
+  );
   options.release();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
@@ -3088,9 +3090,7 @@ it("denies branch path submission while an options refresh is pending or stale",
   // An accepted refresh admits the retained draft again.
   refreshDiff();
   await waitFor(() =>
-    expect(
-      (submitDraftPath("src") as HTMLButtonElement).disabled,
-    ).toBe(false),
+    expect((submitDraftPath("src") as HTMLButtonElement).disabled).toBe(false),
   );
   fireEvent.click(submitDraftPath("src"));
   await screen.findByText("Relative diff path: src");
