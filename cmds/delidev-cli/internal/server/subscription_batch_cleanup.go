@@ -381,19 +381,44 @@ func finishFailedCleanupAccount(tx *store.Tx, parent, child domain.ID, outcome p
 	return err
 }
 
-func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context, parent, child domain.ID, actor domain.Principal) error {
+// failedSubscriptionCleanupCompletion reports whether one cleanup run committed
+// the final DELETED outcome of a child itself. Only the run whose
+// configuration.delete mutation commits non-replayed owns that transition; a
+// run that finds the child already terminal merely observed another run's work.
+type failedSubscriptionCleanupCompletion int
+
+const (
+	// The run did not commit a DELETED outcome. It observed terminal children
+	// or retained the child; it never owns a deletion transition.
+	failedSubscriptionCleanupObserved failedSubscriptionCleanupCompletion = iota
+	// The run committed the child's DELETED outcome and its deletion receipt.
+	failedSubscriptionCleanupCompletedHere
+)
+
+func (c failedSubscriptionCleanupCompletion) String() string {
+	if c == failedSubscriptionCleanupCompletedHere {
+		return "completed_here"
+	}
+	return "observed"
+}
+
+func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context, parent, child domain.ID, actor domain.Principal) (failedSubscriptionCleanupCompletion, error) {
 	bounded, cancel := context.WithTimeout(parentCtx, 30*time.Second)
 	defer cancel()
 	ctx := domain.WithPrincipal(bounded, actor)
+	if s.beforeFailedCleanupAccountGate != nil {
+		s.beforeFailedCleanupAccountGate(ctx, child)
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		if parentCtx.Err() != nil {
-			return err
+			return failedSubscriptionCleanupObserved, err
 		}
-		return s.retainFailedSubscriptionCleanupAccount(parentCtx, parent, child, pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE, err)
+		return failedSubscriptionCleanupObserved, s.retainFailedSubscriptionCleanupAccount(parentCtx, parent, child, pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE, err)
 	}
 	defer unlock()
 	reason := pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CHANGED
+	completion := failedSubscriptionCleanupObserved
 	var in failedCleanupAccount
 	var out failedCleanupCheckpoint
 	var account domain.Account
@@ -427,7 +452,7 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 		return nil
 	})
 	if err == nil && terminal {
-		return nil
+		return failedSubscriptionCleanupObserved, nil
 	}
 	if err == nil && in.Target == subscriptionCleanupFailedLogin && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed {
 		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED
@@ -499,7 +524,8 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 		}
 		err = s.checkAccountDeletionLocked(ctx, string(in.DeleteRequestID), string(in.AccountID), out.Revision, input, nil)
 		if err == nil {
-			_, err = s.Store.Mutate(ctx, in.DeleteRequestID, "configuration.delete", input, func(tx *store.Tx) (any, error) {
+			var deleted store.Result
+			deleted, err = s.Store.Mutate(ctx, in.DeleteRequestID, "configuration.delete", input, func(tx *store.Tx) (any, error) {
 				if err := deleteConfigurationTx(tx, domain.AccountKind, in.AccountID, out.Revision); err != nil {
 					return nil, err
 				}
@@ -511,15 +537,19 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 					Deleted bool   `json:"deleted"`
 				}{string(in.AccountID), true}, nil
 			})
+			// A replayed receipt means another commit already owns this deletion.
+			if err == nil && !deleted.Replayed {
+				completion = failedSubscriptionCleanupCompletedHere
+			}
 		}
 	}
 	if err == nil {
-		return nil
+		return completion, nil
 	}
 	if parentCtx.Err() != nil {
-		return err
+		return failedSubscriptionCleanupObserved, err
 	}
-	return s.retainFailedSubscriptionCleanupAccount(parentCtx, parent, child, reason, err)
+	return failedSubscriptionCleanupObserved, s.retainFailedSubscriptionCleanupAccount(parentCtx, parent, child, reason, err)
 }
 
 func (s *Service) retainFailedSubscriptionCleanupAccount(parentCtx context.Context, parent, child domain.ID, reason pb.FailedSubscriptionCleanupReason, attempt error) error {
@@ -558,7 +588,8 @@ func (s *Service) runFailedSubscriptionCleanups(parent context.Context) {
 			if owner.Err() != nil {
 				return
 			}
-			if err := s.runFailedSubscriptionCleanup(owner, row); err != nil && owner.Err() == nil {
+			// The background controller never reports ownership to a caller.
+			if _, err := s.runFailedSubscriptionCleanup(owner, row); err != nil && owner.Err() == nil {
 				s.logger.WarnContext(owner, "failed_subscription_cleanup_attempt_failed", "job_id", row.ID, "code", domain.SafeError(err).Code)
 			}
 		}
@@ -569,13 +600,19 @@ func (s *Service) runFailedSubscriptionCleanups(parent context.Context) {
 		}
 	}
 }
-func (s *Service) runFailedSubscriptionCleanup(ctx context.Context, row store.Record) error {
+
+// runFailedSubscriptionCleanup drives every nonterminal child of one batch. Its
+// completion is CompletedHere only when this run itself committed a child's
+// DELETED outcome; terminal children seen by the scan or by the locked terminal
+// check in the per-account runner stay Observed.
+func (s *Service) runFailedSubscriptionCleanup(ctx context.Context, row store.Record) (failedSubscriptionCleanupCompletion, error) {
+	completion := failedSubscriptionCleanupObserved
 	j, in, _, err := decodeFailedCleanup(row)
 	if err != nil || in.Input.ServerID != s.Identity.ServerID {
-		return failedCleanupUnavailable()
+		return completion, failedCleanupUnavailable()
 	}
 	if j.State.Terminal() {
-		return nil
+		return completion, nil
 	}
 	var after domain.ID
 	for {
@@ -586,18 +623,22 @@ func (s *Service) runFailedSubscriptionCleanup(ctx context.Context, row store.Re
 			return err
 		})
 		if err != nil {
-			return err
+			return completion, err
 		}
 		for _, child := range children {
 			j, _, _, err := decodeFailedCleanupAccount(child, row.ID)
 			if err != nil {
-				return err
+				return completion, err
 			}
 			if j.State.Terminal() {
 				continue
 			}
-			if err := s.runFailedSubscriptionCleanupAccount(ctx, row.ID, child.ID, in.Input.Actor); err != nil {
-				return err
+			ran, err := s.runFailedSubscriptionCleanupAccount(ctx, row.ID, child.ID, in.Input.Actor)
+			if ran == failedSubscriptionCleanupCompletedHere {
+				completion = failedSubscriptionCleanupCompletedHere
+			}
+			if err != nil {
+				return completion, err
 			}
 		}
 		if len(children) < 50 {
@@ -607,11 +648,11 @@ func (s *Service) runFailedSubscriptionCleanup(ctx context.Context, row store.Re
 	}
 	current, err := s.Store.Get(ctx, domain.JobKind, row.ID)
 	if err != nil {
-		return err
+		return completion, err
 	}
 	m, err := failedCleanupMessage(current)
 	if err == nil {
-		s.logger.InfoContext(ctx, "failed_subscription_cleanup_progress", "job_id", row.ID, "processed", m.Processed, "deleted", m.Deleted, "retained", m.Retained)
+		s.logger.InfoContext(ctx, "failed_subscription_cleanup_progress", "job_id", row.ID, "processed", m.Processed, "deleted", m.Deleted, "retained", m.Retained, "completion", completion.String())
 	}
-	return err
+	return completion, err
 }
