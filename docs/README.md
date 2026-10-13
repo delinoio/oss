@@ -52,6 +52,14 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
+### bundlewhy
+
+- [Project index](project-bundlewhy.md)
+- [Rust core, CLI and local server](crates-bundlewhy-foundation.md)
+- [Web UI](apps-bundlewhy-web-contract.md)
+- [Connect protocol v1](protos-bundlewhy-v1-contract.md)
+- [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
+
 ### typeopt
 
 - [Project index](project-typeopt.md)
