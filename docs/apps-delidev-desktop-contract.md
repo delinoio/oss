@@ -345,7 +345,18 @@ follows the committed map) and the Files entry badge/ARIA share the effective
 platform binding. The Files row in the Open tool dialog shows a decorative
 muted shortcut hint (Command+E or Ctrl+E) that wraps inside the original row
 geometry; the hint and its `aria-keyshortcuts` are omitted while suppressed, and
-English/Korean Help and Settings explain the suppression. Owned Help closes
+English/Korean Help and Settings explain the suppression. The preference
+controller exposes an initial-read readiness flag that is false only while the
+first read of the current bridge is unsettled and defaults to true outside a
+provider. While it is false the empty startup overrides are not a committed map:
+every `readOnlyShortcutSuppression` policy ID (Files primary+E and the same-race
+Open tool primary+T) has no bindings, is disabled with the localized
+`shortcuts.preferencesPending` reason, runs no callback and advertises no hint or
+`aria-keyshortcuts`, consistently in dispatch, Help and the read-only Settings
+catalog. Editable defaults are never gated. After the read settles, success,
+read failure and the unavailable fallback use the committed-map rules above; later
+refreshes and saves keep the last accepted bindings and never re-enter the gate.
+Owned Help closes
 before the callback and retains destination focus. Existing terminal, native
 Browser, capture, modal, handled-event, repeat, IME, modifier and hidden/inert
 fences remain. Opening Files adds no execution, recovery, RPC, migration or
@@ -489,7 +500,7 @@ and follow the [heartbeat projection contract](protos-delidev-v1-contract.md#mac
 
 ## Model request Diagnostics panel
 
-The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
+The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Validate catalog and builtin reviewer identity independently: an unspecified attribution requires the exact catalog `model` (bounded `nativeId`, provider/subscription match, no deprecated `modelId`); the closed `CODEX_REVIEWER` attribution requires no `model`, no `modelId`, no subscription service, the Codex harness and the proxy-HTTP source and renders the canonical reviewer model `gpt-5.6-luna`; any other attribution value or malformed catalog record rejects the whole page, so a valid reviewer record never blanks adjacent catalog records. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
 
 ## Session Diagnostics spacing
 
@@ -1463,8 +1474,10 @@ render, search, selection, announcements and window queries, recreates both
 native screens and parser state on the same core, and retains dimensions and
 attachment focus. Disabled input suppresses keyboard, IME, paste, mouse, focus
 reports and parser replies while selection and copy remain usable. The Ghostty
-patch discards fragmented OSC 52 writes and queries before parsing and silences
-the raw WASM log import. OSC 8 remains inert, and title, working-directory and
+patch discards fragmented OSC 52 writes and queries before parsing, ends the
+discard on BEL, ESC `\`, standalone C1 ST, CAN, SUB or any other ESC-introduced
+sequence (which is then parsed normally; repeated ESC bytes collapse to the newest
+pending ESC so no orphan ESC reaches the parser), and silences the raw WASM log import. OSC 8 remains inert, and title, working-directory and
 shell-integration callbacks stay disconnected. Diagnostics contain only stable
 stage/category values.
 

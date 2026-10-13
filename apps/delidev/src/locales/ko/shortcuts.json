@@ -8,6 +8,7 @@
   "shortcuts.toolSuppressed": "저장된 사용자 지정 단축키가 Command 또는 Control + T를 사용하므로 기본 도구 열기 단축키가 비활성화되었습니다.",
   "shortcuts.openFiles": "파일 열기",
   "shortcuts.filesSuppressed": "저장된 사용자 지정 단축키가 Command 또는 Control + E를 사용하므로 기본 파일 단축키가 비활성화되었습니다.",
+  "shortcuts.preferencesPending": "저장된 단축키 설정을 불러오는 동안에는 사용자 지정 단축키에 영향을 받는 기본 단축키가 비활성화됩니다.",
   "shortcuts.openTerminals": "터미널 열기",
   "shortcuts.terminalsUnavailable": "읽기 전용 사이드챗에서는 터미널을 사용할 수 없습니다.",
   "shortcuts.terminalCreate": "새 터미널(터미널 입력에 포커스가 있을 때)",

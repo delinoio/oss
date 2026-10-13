@@ -1025,6 +1025,20 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 			}
 		}
 	}
+	if job.Type == domain.ExecuteSessionJob {
+		// Settle the exact retained startup-failure report before the terminal
+		// report so confirmed no-send/cleanup proof is not lost to transport
+		// failure. A rejected or inconsistent report stays uncertain and the
+		// terminal report proceeds without fabricated proof.
+		outcome := reconcileExecutionStartupReport(ctx, jobConfig, jobConfig.execution, job, result.Problem != nil)
+		if outcome == startupReplayRetry {
+			config.Logger.WarnContext(ctx, "execution_startup_report_pending", "job_id", resource.Id)
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
+			return publicationUncertain()
+		}
+	}
 	if err := prepareStorageRetirement(config, job, result); err != nil {
 		return err
 	}

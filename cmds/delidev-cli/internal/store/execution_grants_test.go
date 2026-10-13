@@ -63,6 +63,13 @@ func TestExecutionGrantAndNativeReferenceIsolationSurviveRestart(t *testing.T) {
 		if _, err := tx.ExecutionGrantForJob(domain.NewID()); domain.SafeError(err).Code != domain.PermissionDenied {
 			t.Fatal("missing native authority was accepted")
 		}
+		found, ok, err := tx.FindExecutionGrantForJob(grant.JobID)
+		if err != nil || !ok || found.ServerEpoch != grant.ServerEpoch || found.DeviceID != grant.DeviceID || found.InstanceID != grant.InstanceID || found.Digest != nil {
+			t.Fatal("optional grant lookup lost grant scope or disclosed its digest")
+		}
+		if missing, ok, err := tx.FindExecutionGrantForJob(domain.NewID()); err != nil || ok || missing.ServerEpoch != "" {
+			t.Fatal("missing pre-registration grant was not reported as absent")
+		}
 		for _, field := range []string{"same", "session", "account", "connection", "model", "kind", "native"} {
 			candidate := ref
 			switch field {

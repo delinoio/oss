@@ -11,6 +11,7 @@ const types = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".woff2": "font/woff2",
+  ".wasm": "application/wasm",
 };
 async function body(request) {
   const chunks = [];
@@ -117,7 +118,7 @@ export async function createHost(assets, environment) {
         throw new QaError("asset-unavailable");
       response.setHeader(
         "Content-Security-Policy",
-        `default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' ${environment.endpoint || "'none'"}; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+        `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' ${environment.endpoint || "'none'"}; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
       );
       response.writeHead(200, {
         "Content-Type": types[extname(file)] ?? "application/octet-stream",

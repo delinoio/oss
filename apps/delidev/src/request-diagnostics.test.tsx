@@ -15,17 +15,32 @@ import {
   SystemCapability,
   newRequestId,
   RequestDiagnosticSchema,
+  RequestDiagnosticAttribution as Attribution,
   RequestDiagnosticSource as Source,
   RequestDiagnosticState as State,
   RequestDiagnosticOperation as Operation,
   ListRequestDiagnosticsResponseSchema,
+  type RequestDiagnostic,
 } from "@delinoio/delidev-api-client";
 import {
   RequestDiagnostics,
   validateDiagnosticPage,
 } from "./request-diagnostics";
 
-function fixture(supported = true) {
+// A builtin reviewer record has a closed attribution and no catalog model.
+function reviewerRow(catalog: RequestDiagnostic) {
+  const id = newRequestId();
+  return create(RequestDiagnosticSchema, {
+    ...catalog,
+    id,
+    correlationId: id,
+    nativeResponseId: "resp_reviewer",
+    model: undefined,
+    attribution: Attribution.CODEX_REVIEWER,
+  });
+}
+
+function fixture(supported = true, withReviewer = false) {
   const session = newRequestId(),
     execution = newRequestId(),
     id = newRequestId();
@@ -54,8 +69,9 @@ function fixture(supported = true) {
     finishedAt: "2026-09-30T00:00:01Z",
   });
   row.model!.providerId = row.providerId;
+  const reviewer = reviewerRow(row);
   const read = vi.fn(async () => ({
-    records: [row],
+    records: withReviewer ? [row, reviewer] : [row],
     nextPageToken: "opaque-page",
   }));
   const transport = createRouterTransport((router) => {
@@ -572,4 +588,79 @@ it("keeps externally observed UUID-shaped request/response IDs even when they ma
   expect(screen.getByText(f.row.id)).toBeTruthy();
   expect(screen.getAllByText(external)).toHaveLength(2);
   expect(f.read).toHaveBeenCalledTimes(1);
+});
+
+it("renders a builtin reviewer record beside a catalog root record without borrowing a catalog model", async () => {
+  const f = fixture(true, true);
+  render(<f.View />);
+  await screen.findByText("resp_reviewer");
+  expect(screen.getByText("exact-original-native")).toBeTruthy();
+  expect(screen.getByText("gpt-5.6-luna")).toBeTruthy();
+  expect(screen.getAllByRole("article")).toHaveLength(2);
+});
+
+it("validates reviewer and catalog identity independently", () => {
+  const f = fixture();
+  const reviewer = reviewerRow(f.row);
+  const page = create(ListRequestDiagnosticsResponseSchema, {
+    records: [f.row, reviewer],
+  });
+  const validated = validateDiagnosticPage(page, f.session, "");
+  expect(validated.records[0]!.model!.nativeId).toBe("exact-original-native");
+  expect(validated.records[1]!.model).toBeUndefined();
+});
+
+it("keeps legacy catalog records without attribution unchanged and rejects malformed catalog identity", () => {
+  const f = fixture();
+  expect(f.row.attribution).toBe(Attribution.UNSPECIFIED);
+  const validate = (row: RequestDiagnostic) =>
+    validateDiagnosticPage(
+      create(ListRequestDiagnosticsResponseSchema, {
+        records: [row, reviewerRow(f.row)],
+      }),
+      f.session,
+      "",
+    );
+  expect(validate(f.row).records).toHaveLength(2);
+  const malformed: Array<(row: RequestDiagnostic) => void> = [
+    (row) => (row.model = undefined),
+    (row) => (row.model!.nativeId = ""),
+    (row) => (row.model!.nativeId = "x".repeat(257)),
+    (row) => (row.model!.providerId = newRequestId()),
+    (row) => (row.modelId = "deprecated-model-id"),
+  ];
+  for (const mutate of malformed) {
+    const row = create(RequestDiagnosticSchema, {
+      ...f.row,
+      model: create(ModelIdentitySchema, f.row.model!),
+    });
+    mutate(row);
+    expect(() => validate(row)).toThrow("unavailable");
+  }
+});
+
+it("rejects unknown attribution and reviewer records that borrow a catalog model or leave the reviewer boundary", () => {
+  const f = fixture();
+  const mutations: Array<(row: RequestDiagnostic) => void> = [
+    (row) => (row.attribution = 99 as Attribution),
+    (row) => (row.model = create(ModelIdentitySchema, f.row.model!)),
+    (row) => (row.modelId = "borrowed-catalog-model"),
+    (row) => (row.harness = "claude-code"),
+    (row) => {
+      row.source = Source.NATIVE_INPUT;
+      row.operation = Operation.INPUT;
+    },
+    (row) => (row.subscriptionService = SubscriptionServiceIdentity.CHATGPT),
+  ];
+  for (const mutate of mutations) {
+    const row = reviewerRow(f.row);
+    mutate(row);
+    expect(() =>
+      validateDiagnosticPage(
+        create(ListRequestDiagnosticsResponseSchema, { records: [f.row, row] }),
+        f.session,
+        "",
+      ),
+    ).toThrow("unavailable");
+  }
 });
