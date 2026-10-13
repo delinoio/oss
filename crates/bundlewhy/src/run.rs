@@ -539,6 +539,9 @@ fn incomplete_bundle(
     let mut identity = engine_identity(selection.bundler, &crate::collect::Collection::default());
     identity.bundler_package = spec.package.to_owned();
     identity.bundler_version = "unknown".to_owned();
+    // No engine version was discovered, so support is unknown rather than
+    // "unsupported selected".
+    identity.support = crate::model::EngineSupport::Unspecified;
     identity.diagnostic_notice =
         "No diagnostic build finished; no findings were collected.".to_owned();
     analysis.engine = Some(identity);

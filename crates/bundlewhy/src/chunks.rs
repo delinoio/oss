@@ -31,7 +31,12 @@ pub fn join_source_root(root: &str, source: &str) -> String {
         return source.to_owned();
     }
     let source = source.strip_prefix("./").unwrap_or(source);
-    format!("{}/{source}", root.trim_end_matches('/'))
+    // Never trim the root: `webpack:///` must keep its scheme delimiter.
+    if root.ends_with('/') {
+        format!("{root}{source}")
+    } else {
+        format!("{root}/{source}")
+    }
 }
 
 /// Resolves a source-map `sources` entry to an absolute path.
@@ -387,6 +392,18 @@ mod tests {
             "webpack://app/src/a.js"
         );
         assert_eq!(join_source_root("", "./src/a.js"), "./src/a.js");
+        assert_eq!(
+            join_source_root("webpack:///", "./src/a.js"),
+            "webpack:///src/a.js"
+        );
+        assert_eq!(
+            resolve_map_source(
+                &join_source_root("webpack:///", "./src/a.js"),
+                Path::new("/out"),
+                Path::new("/app")
+            ),
+            Some(PathBuf::from("/app/src/a.js"))
+        );
         assert_eq!(join_source_root("/root/", "/abs/a.js"), "/abs/a.js");
         assert_eq!(
             resolve_map_source(

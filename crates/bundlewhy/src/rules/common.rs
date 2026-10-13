@@ -765,7 +765,14 @@ fn direct_eval_mangling(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDr
         let Some(source) = context.module_source(module) else {
             continue;
         };
-        let source_eval = direct_eval_line(&source);
+        // A local binding named `eval` makes `eval(...)` an ordinary call that
+        // cannot observe the surrounding scope.
+        let shadowed = declared_names(&source).iter().any(|name| name == "eval");
+        let source_eval = if shadowed {
+            None
+        } else {
+            direct_eval_line(&source)
+        };
         if rolldown_log.is_none() && rspack_bailout.is_none() && source_eval.is_none() {
             continue;
         }
@@ -894,6 +901,25 @@ y=/process.env.F/.test(z),process.env.G"#;
             &non_code_ranges(division),
             division.find("process").unwrap()
         ));
+    }
+
+    #[test]
+    fn shadowed_eval_bindings_are_collected() {
+        assert!(
+            declared_names("function run(eval) { eval(code); }")
+                .iter()
+                .any(|name| name == "eval")
+        );
+        assert!(
+            declared_names("const eval = (x) => x; eval(y);")
+                .iter()
+                .any(|name| name == "eval")
+        );
+        assert!(
+            !declared_names("function run(code) { eval(code); }")
+                .iter()
+                .any(|name| name == "eval")
+        );
     }
 
     #[test]

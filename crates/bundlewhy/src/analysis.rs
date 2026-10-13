@@ -239,7 +239,9 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
              rewrite source maps.",
         ));
     }
-    if !collection.default_minifier {
+    // With minification off no minifier ran; only the disabled condition
+    // applies.
+    if collection.minify_enabled && !collection.default_minifier {
         problems.push(problem(
             ErrorCode::MinifierNonDefault,
             ProblemSeverity::Warning,
@@ -296,9 +298,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     if let Some(on_measuring) = input.on_measuring {
         on_measuring();
     }
+    // Poll cancellation before each chunk: Brotli quality 11 is the most
+    // expensive step, and a cancelled run discards this output anyway.
     let chunk_sizes = context
         .chunks
         .iter()
+        .take_while(|_| !input.cancelled.is_some_and(|cancelled| cancelled()))
         .map(|chunk| measure(chunk, display))
         .collect();
     let unreadable_sources = context.sources.unreadable.len();
@@ -935,6 +940,48 @@ mod tests {
                 "src/effects/register.js"
             )
             .is_some()
+        );
+    }
+
+    #[test]
+    fn cancellation_stops_chunk_measurement() {
+        let fixture_dir = manifest_dir().join("tests/fixtures/rspack");
+        let collection: Collection = serde_json::from_str(
+            &std::fs::read_to_string(fixture_dir.join("collect.json")).unwrap(),
+        )
+        .unwrap();
+        let always = || true;
+        let output = analyze(&AnalysisInput {
+            run_id: "test-run".to_owned(),
+            project_root: PathBuf::from("/__bundlewhy_project__"),
+            project_name: "p".to_owned(),
+            bundler: BundlerChoice::Rspack,
+            collection: &collection,
+            build_dir: fixture_dir.join("build"),
+            include_sources: false,
+            started_at: String::new(),
+            on_measuring: None,
+            cancelled: Some(&always),
+        });
+        assert!(output.analysis.chunks.is_empty());
+    }
+
+    #[test]
+    fn disabled_minification_does_not_claim_a_non_default_minifier() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            value["minifyEnabled"] = serde_json::json!(false);
+            value["defaultMinifier"] = serde_json::json!(false);
+        });
+        let problems = &fixture.output.analysis.problems;
+        assert!(
+            problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFICATION_DISABLED")
+        );
+        assert!(
+            !problems
+                .iter()
+                .any(|entry| entry.code == "BW_MINIFIER_NON_DEFAULT")
         );
     }
 
