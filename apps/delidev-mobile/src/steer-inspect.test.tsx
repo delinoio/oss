@@ -99,7 +99,12 @@ const legacyPending: Pending = {
 };
 
 type Queue =
-  | { sessionId?: string; revision?: bigint; id?: string; schemaVersion?: number }
+  | {
+      sessionId?: string;
+      revision?: bigint;
+      id?: string;
+      schemaVersion?: number;
+    }
   | "missing"
   | "failure";
 
@@ -182,7 +187,9 @@ function fixture(queue: Queue, pending: Pending = legacyPending) {
 }
 async function inspect() {
   const button = await screen.findByRole("button", { name: en.inspect });
-  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() =>
+    expect((button as HTMLButtonElement).disabled).toBe(false),
+  );
   fireEvent.click(button);
 }
 const retryButton = () =>
