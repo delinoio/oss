@@ -51,6 +51,8 @@ Authorized session metadata retains typed owner, mode, state and bounded reason:
 
 - A claimed managed (version-3) title reserves its account between auxiliary admission and its own Take. Keep `managedTitleReservation` enforced in primary `TakeSubscription`, Worker/server refresh admission and Worker observation admission, keep its lapse conditions (inference claim, cancellation, non-claimed job, non-live claiming instance) exact, and add a regression test for every new account-owner admission path.
 
+- Managed title lifecycle changes must follow the [lifecycle model](#managed-title-lifecycle-model): custody checks never consult current Worker capabilities or session visibility, every definite no-delivery Take failure after the lease commits releases the exact lease with a write detached from request cancellation, and a candidate-specific busy account defers only its own title (tagged `managed_title_account_busy`) so the auxiliary scan continues.
+
 - Automatic title jobs belong exclusively to auxiliary admission and delivery under `cmds-delidev-session-titles-contract.md`. Primary `WatchWork` skips queued and already auxiliary-claimed titles before generic claim and delivery, preserving ordinary dispatch and targeted controls. Keep original title authority, per-Worker/server capacity and capability gates.
 
 ### cmds/delidev-cli/internal/worker constraints
@@ -72,6 +74,30 @@ The existing `TakeSubscription` and `FinishSubscription` RPCs with `SUBSCRIPTION
 The Worker writes a durable send intent, requests the protected EXECUTE lease, installs the bundle in a private runtime and launches the original executable with the [managed title profile](cmds-delidev-harness-contract.md#codex-managed-automatic-title-profile). It proves fixed instructions, an empty workspace, disabled tools/MCP/plugins/hooks/skills/ambient instructions and zero request/stream retries before sending; an unproven profile is refused before input. The 30-second, 4 KiB and 256-byte bounds, bounded reasoning handling and single attempt without repair are unchanged. Before reporting, the Worker captures the final bundle, joins native shutdown, compares and removes the plaintext file, reconciles processes, removes the runtime and completes the protected Finish. The version-2 result names that Finish; publication requires the claimed inference, the receipt bound to the exact job revision, Worker instance/device and settled generation, and the account's frozen connection. The receipt is immutable, so a later primary lease or generation on the released account does not invalidate it. A missing or inconsistent receipt records an uncertain title without applying text and keeps the original recovery fence. Manual rename, Stop, Archive, deletion, cancellation, creator revocation, generation and budget checks are preserved; publication revalidates the frozen creator because device revocation does not cancel title jobs, and a canceled or creator-revoked success keeps its valid usage but discards text as `skipped`/`authority-lost`. Existing terminal title operations receive no backfill.
 
 Observed usage is attributed to `session-title` with the chatgpt subscription service, no provider, the original execution, account, connection and model; missing native usage stays unavailable. Installed-native isolation and real ChatGPT account title acceptance are not established by synthetic fixtures and are recorded separately.
+
+### Managed title lifecycle model
+
+Keep this model in sync with `session_title_managed.go`, `TakeSubscription`, `FinishSubscription`, `claimManagedTitleJob` and `WatchAuxiliaryWork`. Every new account-owner path or title transition must be checked against each state below.
+
+| State       | Title job                                         | Account                                   | Authority checked                                                                                 |
+| ----------- | ------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Q queued    | queued                                            | no reservation                            | none; the account may be busy, fenced or lost                                                     |
+| R reserved  | claimed, no inference claim                       | no lease, exclusively reserved            | admission: complete assignment, capability, original Worker process                               |
+| L leased    | claimed, inference claim committed                | EXECUTE lease with the title job revision | Take: complete assignment plus capability, creator and live Worker                                |
+| D delivered | claimed                                           | same lease, bundle delivered              | custody: immutable job revision, Worker instance and device, generation and identity lineage only |
+| F finished  | claimed, receipt written                          | lease released, generation advanced       | publication: receipt, cancellation and creator checks                                             |
+| T settled   | succeeded, failed, canceled, skipped or uncertain | no title ownership                        | none                                                                                              |
+
+Transitions: Q to R by admission only when the account has no lease, pending operation, observation, fence or eligible primary work (a busy account defers only its own title and the scan continues); R to L only by `TakeSubscription`, which commits the lease and the one-time inference claim together; L to D when the bundle is returned; L back to the account without a lease (title stays claimed until the Worker reports) when Take fails after the lease for any definite no-delivery reason; D to F by a successful, cleaned `FinishSubscription`; F to T by the Worker report. A failed Finish, a lost owner (Worker stream loss, instance replacement, revocation, server restart) or an unconfirmed release keeps the lease and records the recovery fence.
+
+Race outcomes by competing event:
+
+- Primary Take, Fork, compaction or review Take, refresh request and Worker observation request: refused with the typed busy result while the title is in R; allowed in Q (admission re-checks), refused by the existing lease rules in L and D, allowed in F.
+- Account logout, disable or removal: Q retires the title as `skipped`; R refuses Take without a lease; L releases the lease (the accepted logout then runs); D finishes under the immutable lineage and the logout runs after the lease is released; F publishes only if the frozen connection still exists, otherwise the title is uncertain and its text is discarded.
+- Cancellation (Stop, Archive, rename): Q retires; R lapses the reservation and refuses Take; L releases the lease; D lets the Worker abort and complete protected Finish; F discards text and keeps usage.
+- Worker capability change (same-process reattach): refused at admission and Take only; L, D and F use the immutable lineage.
+- Worker instance replacement, stream loss or revocation: R lapses; L, D and unfinished F keep the recovery fence; the job becomes uncertain.
+- Creator device revocation: refused at Take, discarded at publication, and ignored by custody.
 
 ## Storage
 
