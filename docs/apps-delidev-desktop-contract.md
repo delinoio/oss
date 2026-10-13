@@ -5781,6 +5781,21 @@ execution absent or the original execution); a rejected-before-start, removed,
 uncertain, foreign or later row, or a stale queue read, retains Info. A later
 follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
+Every hiding path additionally requires, at the visibility boundary only: a
+complete current transcript, queue and interaction read (payload present, no
+error, not pending, not fetching and no continuation token), and current
+successful non-blocking session budget evidence. A refresh that retains stale
+pages (`isFetching`) keeps the retained startup presentation but restores Info
+until the read settles; the fence is not applied to the progress projection, so
+routine refreshes cause no startup-list flicker. Pending, absent, failed or
+unavailable budget evidence, and evidence of another session identity, retain
+Info and its existing Retry; threshold-reached remains blocking. The budget
+controller reports a closed status (Pending, Failed, Ready, Blocked) keyed to the
+session ID without a new RPC or query owner. A projected later local follow-up in
+the Preparing, Sending, Rejected or Uncertain phase retains Info before any
+enqueue response; original-input Queued, Claimed and Accepted projections do not.
+Embedded Sidechat children and `sidechat_parent_snapshot` sessions keep their own
+Info in every initial execution phase.
 Before hiding focused Info, move focus to its original connected, enabled and
 visible composer, or to the Session heading when the composer is unavailable.
 Restoration does not move focus. Retain Info controller and query activity while

@@ -16,7 +16,7 @@ import {
   newRequestId,
   type SetSessionBudgetRequest,
 } from "@delinoio/delidev-api-client";
-import { SessionBudget } from "./session-budget";
+import { BudgetEvidence, SessionBudget } from "./session-budget";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 function fixture() {
@@ -59,7 +59,8 @@ function fixture() {
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   const changed = vi.fn(),
-    blocked = vi.fn();
+    blocked = vi.fn(),
+    evidence = vi.fn();
   const renderView = () => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
@@ -68,6 +69,7 @@ function fixture() {
             resource={resource}
             changed={changed}
             blocked={blocked}
+            evidence={evidence}
           />
         </MutationIntents>
       </QueryClientProvider>
@@ -80,6 +82,7 @@ function fixture() {
     write,
     changed,
     blocked,
+    evidence,
     renderView,
     get view() {
       return view;
@@ -114,6 +117,35 @@ it("sets an exact optional budget and exposes unavailable evidence without claim
   });
   expect(screen.getByText(/does not verify budget compliance/)).toBeTruthy();
   expect(f.changed).toHaveBeenCalledTimes(1);
+  expect(f.blocked).toHaveBeenLastCalledWith(false);
+});
+it.each([
+  { state: BudgetState.DISABLED, expected: BudgetEvidence.Ready },
+  { state: BudgetState.THRESHOLD_REACHED, expected: BudgetEvidence.Blocked },
+])("reports typed budget evidence $expected for $state", async (c) => {
+  const f = fixture();
+  f.view = create(SessionBudgetViewSchema, { ...f.view, state: c.state });
+  render(f.renderView());
+  expect(f.evidence).toHaveBeenCalledWith(
+    f.resource.id,
+    BudgetEvidence.Pending,
+  );
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(f.resource.id, c.expected),
+  );
+});
+it("reports failed budget evidence without blocking execution", async () => {
+  const f = fixture();
+  f.read.mockImplementation(() => {
+    throw new ConnectError("Budget unavailable", Code.Unavailable);
+  });
+  render(f.renderView());
+  await waitFor(() =>
+    expect(f.evidence).toHaveBeenLastCalledWith(
+      f.resource.id,
+      BudgetEvidence.Failed,
+    ),
+  );
   expect(f.blocked).toHaveBeenLastCalledWith(false);
 });
 it("announces a reached threshold and preserves the original uncertain mutation across a changed session", async () => {
