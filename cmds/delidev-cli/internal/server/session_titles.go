@@ -330,7 +330,9 @@ func finishSessionTitle(tx *store.Tx, record store.Record, job domain.Job, expec
 			}
 		}
 	}
-	if result.UsageRecord != nil && (reported == nil || input.IsManaged() && reported.Code == domain.Canceled) {
+	// A managed result is populated only after its receipt and output validated,
+	// so its usage stays attributed even when publication is discarded.
+	if result.UsageRecord != nil && (reported == nil || input.IsManaged()) {
 		if _, _, err := tx.PutResponseUsage(domain.NewID(), *result.UsageRecord); err != nil {
 			return store.Record{}, err
 		}

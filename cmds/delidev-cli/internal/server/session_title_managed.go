@@ -396,5 +396,11 @@ func managedTitleResult(tx *store.Tx, record store.Record, job domain.Job, input
 	if canceled, err := tx.JobCancellationRequested(record.ID); err != nil || canceled {
 		return result, domain.Fail(domain.Canceled, "The automatic title was canceled before publication.", "Keep the current session title; the credential finish is already settled.")
 	}
+	// Revoking a client device does not cancel title jobs, so the frozen creator
+	// must still be authorized at publication. The valid result keeps its usage
+	// attribution, but its text is discarded.
+	if managedTitleActorValid(tx, input.Managed.ActorDeviceID) != nil {
+		return result, domain.Fail(domain.PermissionDenied, "The session creator lost authority before the automatic title was published.", "Keep the current session title; the credential finish is already settled.")
+	}
 	return result, nil
 }

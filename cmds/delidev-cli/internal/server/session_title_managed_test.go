@@ -111,6 +111,11 @@ func newManagedTitleFixture(t *testing.T, options managedTitleOptions) *managedT
 		session.NameMode, session.NameOwner, session.NameGeneration = domain.AutomaticSessionName, domain.AutomaticNameOwner, 1
 		session.TitleState, session.TitleReason, session.TitleOperationID, session.TitleJobID = domain.TitleWaiting, domain.TitleReasonNone, "", ""
 		session.CreatedBy = options.creator
+		if options.creator != "" {
+			if _, err := tx.Put(domain.DeviceKind, options.creator, 0, "", "", domain.Device{Name: "Client", Type: domain.ClientDevice}); err != nil {
+				return nil, err
+			}
+		}
 		session.Name = "New session"
 		initial := domain.InitialExecution{ID: original.ExecutionID, InputID: original.InputID, Configuration: original.Configuration, ConfigurationDigest: digest, InitialAccountID: original.AccountID, ConnectionID: original.ConnectionID, AcceptedAt: now}
 		session.InitialExecution = &initial
@@ -508,6 +513,58 @@ func TestManagedTitleDeniesRevokedActor(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A creator revoked after the protected Finish but before the report cannot
+// rename the session: RevokeDevice does not cancel title jobs, so publication
+// revalidates the frozen actor and keeps the valid usage without the text.
+func TestManagedTitleDiscardsTextWhenCreatorIsRevokedBeforePublication(t *testing.T) {
+	client := domain.NewID()
+	f := newManagedTitleFixture(t, managedTitleOptions{creator: client})
+	record, finish := f.runToFinish(t)
+	f.mutate(t, "revoke-creator", func(tx *store.Tx) error {
+		r, err := tx.Get(domain.DeviceKind, client)
+		if err != nil {
+			return err
+		}
+		device, err := store.Decode[domain.Device](r)
+		if err != nil {
+			return err
+		}
+		device.Revoked = true
+		_, err = tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", device)
+		return err
+	})
+	output := f.result(finish, "Revoked title", true)
+	if err := f.report(record, output, nil); err != nil {
+		t.Fatal(err)
+	}
+	session := f.session(t)
+	if session.Name != "New session" || session.TitleState != domain.TitleSkipped || session.TitleReason != domain.TitleReasonAuthorityLost {
+		t.Fatalf("a revoked creator's title was published: %+v", session)
+	}
+	var usage domain.AuxiliaryTitleResult
+	if err := json.Unmarshal(output, &usage); err != nil {
+		t.Fatal(err)
+	}
+	f.mutate(t, "usage-kept", func(tx *store.Tx) error {
+		if _, replayed, err := tx.PutResponseUsage(domain.NewID(), *usage.UsageRecord); err != nil || !replayed {
+			t.Fatal("the discarded title lost its valid usage attribution", replayed, err)
+		}
+		return nil
+	})
+}
+
+// A creator that stays authorized publishes normally.
+func TestManagedTitlePublishesForAuthorizedClientCreator(t *testing.T) {
+	f := newManagedTitleFixture(t, managedTitleOptions{creator: domain.NewID()})
+	record, finish := f.runToFinish(t)
+	if err := f.report(record, f.result(finish, "Client title", false), nil); err != nil {
+		t.Fatal(err)
+	}
+	if session := f.session(t); session.Name != "Client title" || session.TitleState != domain.TitleSucceeded {
+		t.Fatalf("an authorized client creator's title was discarded: %+v", session)
 	}
 }
 
