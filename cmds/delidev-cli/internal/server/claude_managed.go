@@ -434,10 +434,19 @@ func managedClaudeCredentialCleanupPending(a domain.Account) bool {
 	return o != nil && o.CleanupPhase == domain.SubscriptionCredentialCleanupPending && o.State == domain.SubscriptionSucceeded && !o.NativeStarted && a.Subscription.Pending == nil
 }
 
+// managedClaudeRestoredGeneration selects a server-token account whose
+// connection was cleared by a database restore while its historical generation
+// and recovery fence were retained. The vault is outside the restored image, so
+// the old generation is never authorized again: recovery only retires it.
+func managedClaudeRestoredGeneration(a domain.Account) bool {
+	st := a.Subscription
+	return a.ManagedClaudeAccount() && a.Removal == nil && st.ServerOperation != nil && st.Lease == nil && st.RecoveryRequired && a.Connection == nil && st.Generation != ""
+}
+
 // managedClaudeNeedsRecovery selects an interrupted server operation whose
 // native child is no longer owned by a live goroutine in this server epoch.
 func managedClaudeNeedsRecovery(a domain.Account) bool {
-	if managedClaudeCredentialCleanupPending(a) {
+	if managedClaudeRestoredGeneration(a) || managedClaudeCredentialCleanupPending(a) {
 		return true
 	}
 	st := a.Subscription
@@ -1018,7 +1027,7 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 	defer unlock()
 	var o domain.ServerSubscriptionOperation
 	var generation domain.ID
-	checkpoint := false
+	checkpoint, restored := false, false
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -1032,7 +1041,9 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 		}
 		o = *a.Subscription.ServerOperation
 		generation = a.Subscription.Generation
-		checkpoint = managedClaudeCredentialCleanupPending(a)
+		// A restored generation outranks its checkpoint: every reference is retired.
+		restored = managedClaudeRestoredGeneration(a)
+		checkpoint = !restored && managedClaudeCredentialCleanupPending(a)
 		return nil
 	})
 	if err != nil {
@@ -1065,7 +1076,8 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 	if err != nil {
 		return err
 	}
-	if o.Action == domain.SubscriptionLogin {
+	if o.Action == domain.SubscriptionLogin && !(restored && !o.Active()) {
+		// A restored settled login never owned a native child in this image.
 		if err := reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), o); err != nil {
 			return err
 		}
@@ -1085,7 +1097,17 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 		st.RecoveryRequired = false
 		st.Pending = nil
 		st.ServerOperation.NativeStarted = false
-		if o.Action == domain.SubscriptionLogin {
+		st.ServerOperation.CleanupPhase = ""
+		if restored && !st.ServerOperation.Active() {
+			// The restored operation already settled; only its retired generation and
+			// recovery fence are removed, so the account reads as a logged-out account.
+			a.Connection = nil
+			a.Health = domain.AccountDisconnected
+			a.Validation, a.Catalog, a.Quota = nil, nil, nil
+			a.ConfirmedExhausted = false
+			st.Generation = ""
+			st.IdentityCommitment = ""
+		} else if o.Action == domain.SubscriptionLogin {
 			st.ServerOperation.State = domain.SubscriptionFailed
 			if st.ServerOperation.ClaudeDiagnostic == nil {
 				st.ServerOperation.ClaudeDiagnostic = claudeDiagnostic(operation, domain.NativeSubscriptionCleanup, "", domain.Fail(domain.RecoveryRequired, "Interrupted.", "Connect a new account."))

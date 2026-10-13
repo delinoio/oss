@@ -1017,3 +1017,121 @@ func TestManagedClaudeFinishClearsAnUnconsumedApprovalCode(t *testing.T) {
 		t.Fatal("a finished operation retained its approval code")
 	}
 }
+
+// restoreManagedClaudeImage applies the account transformation of a database
+// restore: the connection is cleared, the historical generation, operation and
+// lease are retained, and the account is recovery-required.
+func (f *managedFixture) restoreManagedClaudeImage() {
+	f.t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-claude-restore", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		a.Health = domain.AccountDisconnected
+		a.Connection, a.Removal, a.Validation, a.Catalog = nil, nil, nil, nil
+		a.RetainedConnections = nil
+		a.Subscription.RecoveryRequired = true
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return nil, err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// A restored connected account keeps its historical generation and recovery
+// fence. Nothing else recovers it, so the scanner must retire the generation and
+// its vault references and leave an ordinary logged-out account.
+func TestManagedClaudeRestoredGenerationIsRetiredByRecovery(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	f.secrets.values[stale] = []byte("stale-generation")
+	f.restoreManagedClaudeImage()
+	_, account := f.record()
+	o := account.Subscription.ServerOperation
+	if !managedClaudeRestoredGeneration(account) || !managedClaudeNeedsRecovery(account) {
+		t.Fatal("a restored settled generation was not selected for recovery")
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, o.ID); err != nil {
+		t.Fatalf("restored generation recovery failed: %v", err)
+	}
+	_, account = f.record()
+	st := account.Subscription
+	if account.Connection != nil || account.Health != domain.AccountDisconnected || st.Generation != "" || st.IdentityCommitment != "" || st.RecoveryRequired || st.Pending != nil || st.Lease != nil {
+		t.Fatal("recovery did not clear the restored generation and fence")
+	}
+	if len(f.secrets.values[ref]) != 0 || len(f.secrets.values[stale]) != 0 {
+		t.Fatal("recovery kept a vault reference of the quarantined generation")
+	}
+	if st.ServerOperation.State != domain.SubscriptionSucceeded || st.ServerOperation.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
+		t.Fatal("recovery rewrote the settled operation or left it selectable")
+	}
+	// A restored account never signs in again: reconnecting means a new account.
+	if freshManagedClaudeLogin(account) {
+		t.Fatal("a recovered restored account accepted another login")
+	}
+	if err := account.Validate(); err != nil {
+		t.Fatalf("recovered account is invalid: %v", err)
+	}
+}
+
+// A restored account whose settled login still owes a cleanup checkpoint retires
+// the historical generation too, not only its stale references.
+func TestManagedClaudeRestoredGenerationWithCheckpointRetiresEveryReference(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	f.secrets.values[stale] = []byte("stale-generation")
+	f.secrets.deleteError = errors.New("vault deletion unavailable")
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	f.secrets.deleteError = nil
+	f.restoreManagedClaudeImage()
+	_, account := f.record()
+	if !managedClaudeCredentialCleanupPending(account) || !managedClaudeRestoredGeneration(account) {
+		t.Fatal("the restored account lost its checkpoint")
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, account.Subscription.ServerOperation.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if len(f.secrets.values[ref]) != 0 || len(f.secrets.values[stale]) != 0 || account.Subscription.Generation != "" || account.Subscription.RecoveryRequired || managedClaudeNeedsRecovery(account) {
+		t.Fatal("checkpoint recovery preserved the quarantined generation")
+	}
+}
+
+// The original Worker's cleanup of a restored lease releases only the lease. It
+// must not mark the disconnected account ready or drop the recovery fence.
+func TestManagedClaudeRestoredLeaseCleanupKeepsTheRecoveryFence(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	lease, err := f.take(a, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.restoreManagedClaudeImage()
+	if err := f.finishLease(a, lease, true, false); err != nil {
+		t.Fatal(err)
+	}
+	_, account := f.record()
+	if account.Subscription.Lease != nil || account.Health == domain.AccountReady || account.Connection != nil || !account.Subscription.RecoveryRequired {
+		t.Fatal("restored lease cleanup marked the disconnected account ready or dropped its fence")
+	}
+	if !managedClaudeNeedsRecovery(account) {
+		t.Fatal("the released restored generation was stranded outside the scanner")
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, account.Subscription.ServerOperation.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Subscription.Generation != "" || account.Subscription.RecoveryRequired || account.Health != domain.AccountDisconnected || len(f.secrets.values[ref]) != 0 {
+		t.Fatal("recovery did not retire the restored generation after lease cleanup")
+	}
+}

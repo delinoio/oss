@@ -260,7 +260,13 @@ func (s *Service) finishManagedClaudeExecution(ctx context.Context, req *connect
 		} else {
 			st.Lease = nil
 			st.RecoveryRequired = false
-			if o := st.ServerOperation; o != nil && o.Action == domain.SubscriptionLogout && o.Active() && st.Pending != nil && st.Pending.ID == o.ID {
+			if a.Connection == nil && st.Generation != "" {
+				// A database restore cleared the connection but retained the historical
+				// generation and this lease. The Worker's cleanup releases only the
+				// lease; the recovery fence and disconnected health stay so the server
+				// scan retires the quarantined generation instead of marking it ready.
+				st.RecoveryRequired = true
+			} else if o := st.ServerOperation; o != nil && o.Action == domain.SubscriptionLogout && o.Active() && st.Pending != nil && st.Pending.ID == o.ID {
 				// An accepted logout queued behind this lease keeps readiness revoked.
 				// A claimable operation of the current epoch is admitted by the next
 				// scan; an operation fenced by a restart or an earlier fence is not
