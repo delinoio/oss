@@ -172,7 +172,13 @@ func (s MCPSecretInput) Validate(t MCPTransport) error {
 			return Fail(InvalidArgument, "Invalid MCP environment credential.", "Provide bounded names and values.")
 		}
 	}
+	foldedHeaders := map[string]bool{}
 	for k, v := range s.Headers {
+		// HTTP field names are case-insensitive, so two spellings target one header.
+		if foldedHeaders[strings.ToLower(k)] {
+			return Fail(InvalidArgument, "Duplicate MCP header credential.", "Provide each header name once, ignoring letter case.")
+		}
+		foldedHeaders[strings.ToLower(k)] = true
 		if k == "" || len(k) > 128 || strings.ContainsAny(k, "\r\n: \x00") || Text(v, "MCP secret", 8192, true) != nil || len(v) < MinMCPSecretBytes || strings.ContainsAny(v, "\r\n") {
 			return Fail(InvalidArgument, "Invalid MCP header credential.", "Provide bounded header names and values.")
 		}

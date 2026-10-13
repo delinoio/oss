@@ -77,3 +77,14 @@ func TestManagedMCPSecretValuesMustBeLongEnoughForTheFrameGuard(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedMCPHeaderCredentialsRejectCaseFoldedDuplicates(t *testing.T) {
+	duplicate := MCPSecretInput{Headers: map[string]string{"X-API-Key": "first-header-secret", "x-api-key": "second-header-secret"}}
+	if err := duplicate.Validate(MCPStreamableHTTP); SafeError(err).Code != InvalidArgument {
+		t.Fatalf("differently cased duplicates were accepted: %v", err)
+	}
+	distinct := MCPSecretInput{Headers: map[string]string{"X-Api-Key": "first-header-secret", "X-Other": "second-header-secret"}}
+	if err := distinct.Validate(MCPStreamableHTTP); err != nil {
+		t.Fatalf("distinct headers were rejected: %v", err)
+	}
+}

@@ -206,8 +206,14 @@ func configureManagedMCP(config *Config) ([]mcpBinding, error) {
 				sort.Strings(names)
 				binding.headerEnv = map[string]string{}
 				parts := []string{}
+				// HTTP field names are case-insensitive: two spellings would target one header.
+				folded := map[string]bool{}
 				for position, name := range names {
 					value := server.Headers[name]
+					if folded[strings.ToLower(name)] {
+						return nil, mcpUnavailable()
+					}
+					folded[strings.ToLower(name)] = true
 					if name == "" || strings.ContainsAny(name, "\r\n: \x00\"\\") || value == "" || (server.BearerToken != "" && strings.EqualFold(name, "authorization")) {
 						return nil, mcpUnavailable()
 					}

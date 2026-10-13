@@ -155,11 +155,14 @@ func TestManagedMCPLaunchRejectsUnsafeSelections(t *testing.T) {
 		})
 	}
 	for name, mutate := range map[string]func(*ManagedMCPServer){
-		"http-with-command":        func(s *ManagedMCPServer) { s.Command = "/bin/true" },
-		"http-with-env":            func(s *ManagedMCPServer) { s.Environment = map[string]string{"X": "y"} },
-		"http-credential-url":      func(s *ManagedMCPServer) { s.Endpoint = "https://user:pw@example.test/mcp" },
-		"http-plain-remote":        func(s *ManagedMCPServer) { s.Endpoint = "http://example.test/mcp" },
-		"header-injection":         func(s *ManagedMCPServer) { s.Headers = map[string]string{"X-A\r\nB": "v"} },
+		"http-with-command":   func(s *ManagedMCPServer) { s.Command = "/bin/true" },
+		"http-with-env":       func(s *ManagedMCPServer) { s.Environment = map[string]string{"X": "y"} },
+		"http-credential-url": func(s *ManagedMCPServer) { s.Endpoint = "https://user:pw@example.test/mcp" },
+		"http-plain-remote":   func(s *ManagedMCPServer) { s.Endpoint = "http://example.test/mcp" },
+		"header-injection":    func(s *ManagedMCPServer) { s.Headers = map[string]string{"X-A\r\nB": "v"} },
+		"case-folded-headers": func(s *ManagedMCPServer) {
+			s.Headers = map[string]string{"X-API-Key": "first-header-secret", "x-api-key": "second-header-secret"}
+		},
 		"short-header-secret":      func(s *ManagedMCPServer) { s.Headers = map[string]string{"X-Api-Key": "abc"} },
 		"short-bearer-secret":      func(s *ManagedMCPServer) { s.BearerToken = "tok" },
 		"bearer-and-authorization": func(s *ManagedMCPServer) { s.BearerToken = "t"; s.Headers = map[string]string{"Authorization": "x"} },
