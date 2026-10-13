@@ -46,7 +46,7 @@ use super::{
 };
 use crate::{
     compiler::api::*,
-    optimizer::{Object, Occurrence, Preservation, Property},
+    optimizer::{EscapeSink, Object, Occurrence, Preservation, Property},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -80,6 +80,8 @@ const NO_TOKEN: Value = Value::MAX;
 struct Cell {
     values: BTreeSet<Value>,
     unknown: bool,
+    /// Where the `unknown` flag came from (the first origin to reach it).
+    origin: Option<EscapeSink>,
 }
 
 #[derive(Clone, Copy)]
@@ -131,6 +133,7 @@ impl Graph {
             queued: Vec::new(),
         };
         graph.cell(true);
+        graph.cells[UNKNOWN as usize].origin = Some(EscapeSink::UntrackedValue);
         graph.cell(false);
         graph
     }
@@ -140,6 +143,7 @@ impl Graph {
         self.cells.push(Cell {
             values: BTreeSet::new(),
             unknown,
+            origin: None,
         });
         self.succ.push(Vec::new());
         self.watchers.push(Vec::new());
@@ -172,7 +176,10 @@ impl Graph {
         let target = &mut self.cells[to as usize];
         let before = (target.values.len(), target.unknown);
         target.values.extend(source.values);
-        target.unknown |= source.unknown;
+        if source.unknown && !target.unknown {
+            target.unknown = true;
+            target.origin = source.origin;
+        }
         before != (target.values.len(), target.unknown)
     }
 
@@ -187,10 +194,12 @@ impl Graph {
         }
     }
 
-    fn set_unknown(&mut self, cell: CellId) {
+    fn set_unknown(&mut self, cell: CellId, origin: EscapeSink) {
         debug_assert!(cell > EMPTY);
-        if !self.cells[cell as usize].unknown {
-            self.cells[cell as usize].unknown = true;
+        let target = &mut self.cells[cell as usize];
+        if !target.unknown {
+            target.unknown = true;
+            target.origin = Some(origin);
             self.enqueue(cell);
         }
     }
@@ -199,7 +208,11 @@ impl Graph {
         if let Some(&cell) = self.fields.get(&(object, name)) {
             return cell;
         }
-        let cell = self.cell(self.escaped[object as usize]);
+        let escaped = self.escaped[object as usize];
+        let cell = self.cell(escaped);
+        if escaped {
+            self.cells[cell as usize].origin = Some(EscapeSink::PreservedContainer);
+        }
         self.fields.insert((object, name), cell);
         self.object_fields[object as usize].push(cell);
         cell
@@ -255,7 +268,7 @@ impl Graph {
                 || objects.len() != values.values.len()
                 || (key_unknown && !objects.is_empty()))
         {
-            self.set_unknown(other);
+            self.set_unknown(other, EscapeSink::UntrackedLoad);
         }
         for object in objects {
             for &(token, name) in &names {
@@ -279,7 +292,7 @@ impl Graph {
         }
         self.escaped[object as usize] = true;
         for field in self.object_fields[object as usize].clone() {
-            self.set_unknown(field);
+            self.set_unknown(field, EscapeSink::PreservedContainer);
         }
     }
 
@@ -370,17 +383,17 @@ struct Use {
 /// `Preservation` is not `Copy`; uses keep a compact reason.
 #[derive(Clone, Copy)]
 enum Preservation2 {
-    Escapes,
+    Escapes(EscapeSink),
     Unsupported,
     Operation,
 }
 
 impl Preservation2 {
-    fn reason(self) -> Preservation {
+    fn reason(self) -> (Preservation, Option<EscapeSink>) {
         match self {
-            Preservation2::Escapes => Preservation::Escapes,
-            Preservation2::Unsupported => Preservation::ExternalOrUnsupportedShape,
-            Preservation2::Operation => Preservation::ObservableOperation,
+            Preservation2::Escapes(sink) => (Preservation::Escapes, Some(sink)),
+            Preservation2::Unsupported => (Preservation::ExternalOrUnsupportedShape, None),
+            Preservation2::Operation => (Preservation::ObservableOperation, None),
         }
     }
 }
@@ -410,7 +423,7 @@ struct Builder<'a, 'c> {
     accesses: Vec<Access>,
     stores: Vec<Store>,
     annotations: Vec<(Node, CellId)>,
-    sinks: Vec<CellId>,
+    sinks: Vec<(CellId, EscapeSink)>,
     constraints: Vec<CellId>,
     /// `(receiver, key)` of every analyzed computed access.
     computed_keys: Vec<(CellId, CellId)>,
@@ -421,6 +434,8 @@ struct Builder<'a, 'c> {
 /// Everything decided from the current cells.
 struct Evaluation {
     reasons: Vec<Option<Preservation>>,
+    /// Escape causes of objects whose reason is `escapes`.
+    sinks: Vec<Option<EscapeSink>>,
     occurrences: Vec<Vec<(usize, Occurrence)>>,
     parents: Vec<usize>,
 }
@@ -789,6 +804,7 @@ impl Builder<'_, '_> {
             start: node.pos() as usize,
             properties: Vec::new(),
             preservation: None,
+            escape_sink: None,
         };
         let mut reason = None;
         if !is_external_module(source) || in_namespace(node) {
@@ -916,7 +932,7 @@ impl Builder<'_, '_> {
                 continue;
             };
             if receiver == UNKNOWN {
-                self.graph.set_unknown(cell);
+                self.graph.set_unknown(cell, EscapeSink::UntrackedLoad);
             } else if receiver != EMPTY {
                 self.graph
                     .flow(receiver, Key::Name(key.text()), cell, false);
@@ -1057,8 +1073,8 @@ impl Builder<'_, '_> {
                         let cell = self.graph.cell(false);
                         self.bindings.insert(symbol, cell);
                         if !module || in_namespace(node) || !self.internal(symbol) {
-                            self.graph.set_unknown(cell);
-                            self.sinks.push(cell);
+                            self.graph.set_unknown(cell, EscapeSink::ExternalBinding);
+                            self.sinks.push((cell, EscapeSink::ExternalBinding));
                         }
                         cell
                     }
@@ -1072,7 +1088,12 @@ impl Builder<'_, '_> {
                     _ => self.supported_pattern(node.parent()),
                 };
                 if !understood {
-                    self.graph.set_unknown(cell);
+                    let origin = if node.kind() == SyntaxKind::Parameter {
+                        EscapeSink::UnsummarizedParameter
+                    } else {
+                        EscapeSink::UnsupportedBinding
+                    };
+                    self.graph.set_unknown(cell, origin);
                 }
                 if node.kind() != SyntaxKind::BindingElement {
                     self.annotate(node.type_(), cell);
@@ -1105,11 +1126,11 @@ impl Builder<'_, '_> {
                     kind => {
                         if !Self::value_reference(r.node, kind) {
                             // Namespace member or qualified access.
-                            self.graph.set_unknown(cell);
-                            self.sinks.push(cell);
+                            self.graph.set_unknown(cell, EscapeSink::QualifiedReference);
+                            self.sinks.push((cell, EscapeSink::QualifiedReference));
                         } else if assignment_target(r.node).is_some() && !simple_assignment(r.node)
                         {
-                            self.graph.set_unknown(cell);
+                            self.graph.set_unknown(cell, EscapeSink::CompoundWrite);
                         }
                     }
                 }
@@ -1348,7 +1369,7 @@ impl Builder<'_, '_> {
     /// context of `node`'s parent.
     fn context(&self, node: Node) -> (Option<Preservation2>, bool) {
         const ACCEPT: (Option<Preservation2>, bool) = (None, false);
-        const ESCAPE: (Option<Preservation2>, bool) = (Some(Preservation2::Escapes), true);
+        let escape = |sink| (Some(Preservation2::Escapes(sink)), true);
         // Write targets: a plain assignment, destructuring or loop target
         // does not read the old value; compound writes and updates do.
         let target = assignment_target(node);
@@ -1363,7 +1384,7 @@ impl Builder<'_, '_> {
             {
                 ACCEPT
             } else {
-                ESCAPE
+                escape(EscapeSink::CompoundWrite)
             };
         }
         let parent = node.parent();
@@ -1397,7 +1418,11 @@ impl Builder<'_, '_> {
                         | SyntaxKind::ElementAccessExpression => true,
                         _ => false,
                     };
-                    if tracked { ACCEPT } else { ESCAPE }
+                    if tracked {
+                        ACCEPT
+                    } else {
+                        escape(EscapeSink::UntrackedAssignment)
+                    }
                 }
                 SyntaxKind::AmpersandAmpersandToken
                 | SyntaxKind::BarBarToken
@@ -1406,7 +1431,7 @@ impl Builder<'_, '_> {
                 SyntaxKind::EqualsEqualsEqualsToken | SyntaxKind::ExclamationEqualsEqualsToken => {
                     (None, true)
                 }
-                _ => ESCAPE,
+                _ => escape(EscapeSink::OperatorOperand),
             },
             SyntaxKind::VariableDeclaration if parent.initializer() == node => {
                 let name = parent.name();
@@ -1417,7 +1442,7 @@ impl Builder<'_, '_> {
                     {
                         ACCEPT
                     } else {
-                        ESCAPE
+                        escape(EscapeSink::UntrackedBinding)
                     }
                 } else if self.supported_pattern(name) {
                     (None, true)
@@ -1429,35 +1454,40 @@ impl Builder<'_, '_> {
                 if self.owners.contains_key(&parent.parent()) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(EscapeSink::UnsummarizedParameter)
                 }
             }
             SyntaxKind::BindingElement if parent.initializer() == node => {
                 if self.supported_pattern(parent.parent()) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(EscapeSink::UnsupportedPattern)
                 }
             }
             SyntaxKind::CallExpression if parent.expression() != node => {
                 if self.target(parent).is_some() {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(match indirect_callee(parent.expression()).kind() {
+                        SyntaxKind::Identifier => EscapeSink::CallArgumentFunction,
+                        SyntaxKind::PropertyAccessExpression
+                        | SyntaxKind::ElementAccessExpression => EscapeSink::CallArgumentMethod,
+                        _ => EscapeSink::CallArgumentOther,
+                    })
                 }
             }
             SyntaxKind::ReturnStatement => {
                 if self.owners.contains_key(&owner(parent)) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(EscapeSink::UnsummarizedReturn)
                 }
             }
             SyntaxKind::ArrowFunction if parent.body() == node => {
                 if self.owners.contains_key(&parent) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(EscapeSink::UnsummarizedReturn)
                 }
             }
             // Receivers: accesses are analyzed separately. A key literal as
@@ -1465,7 +1495,9 @@ impl Builder<'_, '_> {
             SyntaxKind::PropertyAccessExpression if parent.expression() == node => (None, true),
             SyntaxKind::ElementAccessExpression if parent.expression() == node => (None, true),
             // Keys: objects are converted to strings.
-            SyntaxKind::ElementAccessExpression => (Some(Preservation2::Escapes), false),
+            SyntaxKind::ElementAccessExpression => {
+                (Some(Preservation2::Escapes(EscapeSink::ComputedKey)), false)
+            }
             SyntaxKind::PropertyAssignment if parent.initializer() == node => {
                 // Only static names are modeled as fields.
                 if self.allocations.contains_key(&parent.parent())
@@ -1476,18 +1508,18 @@ impl Builder<'_, '_> {
                 {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(EscapeSink::UntrackedObjectField)
                 }
             }
             SyntaxKind::ShorthandPropertyAssignment if parent.name() == node => {
                 if self.allocations.contains_key(&parent.parent()) {
                     ACCEPT
                 } else {
-                    ESCAPE
+                    escape(EscapeSink::UntrackedObjectField)
                 }
             }
             SyntaxKind::DeleteExpression => (Some(Preservation2::Operation), true),
-            _ => ESCAPE,
+            kind => escape(other_context(kind)),
         }
     }
 
@@ -1495,46 +1527,52 @@ impl Builder<'_, '_> {
         let objects = self.objects.len();
         let total = objects + self.token_info.len();
         let mut reasons = self.intrinsic.clone();
+        // The escape cause recorded with each object's first `escapes` reason.
+        let mut sinks: Vec<Option<EscapeSink>> = vec![None; objects];
         let mut token_escaped = vec![false; self.token_info.len()];
         let mut occurrences: Vec<Vec<(usize, Occurrence)>> = vec![Vec::new(); objects];
         let mut parents: Vec<usize> = (0..total).collect();
         let graph = &self.graph;
         let preserve = |reasons: &mut Vec<Option<Preservation>>,
+                        sinks: &mut Vec<Option<EscapeSink>>,
                         token_escaped: &mut Vec<bool>,
                         cell: CellId,
-                        reason: Option<Preservation>,
+                        reason: Option<(Preservation, Option<EscapeSink>)>,
                         tokens: bool| {
             for &value in &graph.cells[cell as usize].values {
                 if graph.is_object(value) {
-                    if let Some(reason) = &reason {
-                        reasons[value as usize].get_or_insert(reason.clone());
+                    if let Some((reason, sink)) = &reason {
+                        mark(reasons, sinks, value as usize, reason, *sink);
                     }
                 } else if tokens {
                     token_escaped[(value - graph.objects) as usize] = true;
                 }
             }
         };
-        for &cell in &self.sinks {
+        for &(cell, sink) in &self.sinks {
             preserve(
                 &mut reasons,
+                &mut sinks,
                 &mut token_escaped,
                 cell,
-                Some(Preservation::Escapes),
+                Some((Preservation::Escapes, Some(sink))),
                 true,
             );
         }
         for &cell in &self.constraints {
             preserve(
                 &mut reasons,
+                &mut sinks,
                 &mut token_escaped,
                 cell,
-                Some(Preservation::TypeConstraint),
+                Some((Preservation::TypeConstraint, None)),
                 true,
             );
         }
         for u in &self.uses {
             preserve(
                 &mut reasons,
+                &mut sinks,
                 &mut token_escaped,
                 u.cell,
                 u.objects.map(Preservation2::reason),
@@ -1554,7 +1592,13 @@ impl Builder<'_, '_> {
                     continue;
                 }
                 if cell.unknown {
-                    reasons[value as usize].get_or_insert(Preservation::Escapes);
+                    mark(
+                        &mut reasons,
+                        &mut sinks,
+                        value as usize,
+                        &Preservation::Escapes,
+                        Some(cell.origin.unwrap_or(EscapeSink::UntrackedValue)),
+                    );
                 }
                 match first {
                     None => first = Some(value as usize),
@@ -1571,31 +1615,44 @@ impl Builder<'_, '_> {
                 && !cell.values.is_empty()
                 && cell.values.iter().all(|&v| graph.is_object(v));
             if !owned {
-                preserve(&mut reasons, &mut token_escaped, key, None, true);
+                preserve(
+                    &mut reasons,
+                    &mut sinks,
+                    &mut token_escaped,
+                    key,
+                    None,
+                    true,
+                );
             }
         }
         // Writes into unknown receivers or unresolved keys escape the value.
         for store in &self.stores {
             let receiver = &graph.cells[store.receiver as usize];
-            let unresolved = store.receiver == UNKNOWN
+            let untracked_receiver = store.receiver == UNKNOWN
                 || receiver.unknown
-                || receiver.values.iter().any(|&v| !graph.is_object(v))
-                || match store.key {
-                    Key::Name(_) => false,
-                    Key::Dynamic => true,
-                    Key::Cell(cell) => {
-                        let keys = &graph.cells[cell as usize];
-                        keys.unknown
-                            || keys.values.is_empty()
-                            || keys.values.iter().any(|&v| graph.is_object(v))
-                    }
+                || receiver.values.iter().any(|&v| !graph.is_object(v));
+            let unresolved_key = match store.key {
+                Key::Name(_) => false,
+                Key::Dynamic => true,
+                Key::Cell(cell) => {
+                    let keys = &graph.cells[cell as usize];
+                    keys.unknown
+                        || keys.values.is_empty()
+                        || keys.values.iter().any(|&v| graph.is_object(v))
+                }
+            };
+            if untracked_receiver || unresolved_key {
+                let sink = if untracked_receiver {
+                    EscapeSink::UntrackedReceiverStore
+                } else {
+                    EscapeSink::DynamicKeyStore
                 };
-            if unresolved {
                 preserve(
                     &mut reasons,
+                    &mut sinks,
                     &mut token_escaped,
                     store.value,
-                    Some(Preservation::Escapes),
+                    Some((Preservation::Escapes, Some(sink))),
                     true,
                 );
             }
@@ -1630,7 +1687,13 @@ impl Builder<'_, '_> {
             let mixed = receiver.unknown || members.len() != receiver.values.len();
             for &object in &members {
                 if mixed {
-                    reasons[object].get_or_insert(Preservation::Escapes);
+                    mark(
+                        &mut reasons,
+                        &mut sinks,
+                        object,
+                        &Preservation::Escapes,
+                        Some(EscapeSink::MixedReceiverAccess),
+                    );
                 }
                 if access.operation {
                     reasons[object].get_or_insert(Preservation::ObservableOperation);
@@ -1722,13 +1785,14 @@ impl Builder<'_, '_> {
                 }
             }
         }
-        // Region preservation.
-        let mut region = vec![None::<Preservation>; total];
+        // Region preservation. A region keeps the escape cause of the member
+        // whose reason it adopts.
+        let mut region = vec![None::<(Preservation, Option<EscapeSink>)>; total];
         for element in 0..total {
             let reason = if element < objects {
-                reasons[element].clone()
+                reasons[element].clone().map(|r| (r, sinks[element]))
             } else if token_escaped[element - objects] {
-                Some(Preservation::DynamicAccess)
+                Some((Preservation::DynamicAccess, None))
             } else {
                 None
             };
@@ -1737,14 +1801,15 @@ impl Builder<'_, '_> {
                 region[r].get_or_insert(reason);
             }
         }
-        for (object, reason) in reasons.iter_mut().enumerate() {
+        for object in 0..objects {
             let r = root(&mut parents, object);
-            if let Some(region) = &region[r] {
-                reason.get_or_insert(region.clone());
+            if let Some((reason, sink)) = &region[r] {
+                mark(&mut reasons, &mut sinks, object, reason, *sink);
             }
         }
         Evaluation {
             reasons,
+            sinks,
             occurrences,
             parents,
         }
@@ -1916,6 +1981,7 @@ impl Builder<'_, '_> {
         );
         let Evaluation {
             reasons,
+            sinks,
             occurrences,
             mut parents,
         } = evaluation;
@@ -1927,6 +1993,7 @@ impl Builder<'_, '_> {
                     .push(occurrence);
             }
             objects[index].preservation = reasons[index].clone();
+            objects[index].escape_sink = sinks[index];
         }
         let mut merged = std::collections::BTreeMap::<usize, Object>::new();
         for (index, object) in objects.into_iter().enumerate() {
@@ -1934,6 +2001,7 @@ impl Builder<'_, '_> {
             if let Some(target) = merged.get_mut(&id) {
                 if target.preservation.is_none() {
                     target.preservation = object.preservation;
+                    target.escape_sink = object.escape_sink;
                 }
                 for property in object.properties {
                     if let Some(existing) = target
@@ -1961,6 +2029,61 @@ impl Builder<'_, '_> {
             }
         }
         Ok(merged.into_values().collect())
+    }
+}
+
+/// Records `reason` (with its escape cause) unless the object already has a
+/// reason; the first reason wins.
+fn mark(
+    reasons: &mut [Option<Preservation>],
+    sinks: &mut [Option<EscapeSink>],
+    object: usize,
+    reason: &Preservation,
+    sink: Option<EscapeSink>,
+) {
+    if reasons[object].is_none() {
+        reasons[object] = Some(reason.clone());
+        sinks[object] = if *reason == Preservation::Escapes {
+            sink
+        } else {
+            None
+        };
+    }
+}
+
+/// The callee of an indirect call `(0, callee)(...)`, which bundlers emit
+/// for calls into CommonJS interop namespaces, or the callee itself.
+fn indirect_callee(callee: Node) -> Node {
+    let callee = skip_outer(callee);
+    if callee.kind() == SyntaxKind::BinaryExpression
+        && callee.operator_token().kind() == SyntaxKind::CommaToken
+    {
+        skip_outer(callee.right())
+    } else {
+        callee
+    }
+}
+
+/// The escape cause of a value in a context that `Builder::context` does not
+/// model.
+fn other_context(parent: SyntaxKind) -> EscapeSink {
+    match parent {
+        SyntaxKind::NewExpression => EscapeSink::ConstructorArgument,
+        SyntaxKind::ArrayLiteralExpression => EscapeSink::ArrayElement,
+        SyntaxKind::SpreadElement | SyntaxKind::SpreadAssignment => EscapeSink::Spread,
+        SyntaxKind::TemplateSpan | SyntaxKind::TaggedTemplateExpression => EscapeSink::Template,
+        SyntaxKind::JsxExpression | SyntaxKind::JsxAttribute | SyntaxKind::JsxSpreadAttribute => {
+            EscapeSink::Jsx
+        }
+        SyntaxKind::AwaitExpression | SyntaxKind::YieldExpression => EscapeSink::AwaitOrYield,
+        SyntaxKind::ThrowStatement => EscapeSink::Throw,
+        SyntaxKind::PropertyDeclaration => EscapeSink::ClassMember,
+        SyntaxKind::ExportAssignment => EscapeSink::ExportDefault,
+        // Includes a `new` callee, a call callee and other syntax positions.
+        _ => {
+            tracing::trace!(?parent, "value escapes through an unclassified context");
+            EscapeSink::OtherContext
+        }
     }
 }
 

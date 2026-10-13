@@ -447,6 +447,7 @@ fn preserved(candidate: &Candidate, reason: Preservation) -> impl Iterator<Item 
     candidate.mappings.iter().map(move |m| Mapping {
         renamed: m.original.clone(),
         preservation: Some(reason.clone()),
+        escape_sink: None,
         ..m.clone()
     })
 }

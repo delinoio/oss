@@ -824,3 +824,70 @@ fn property_results_are_deterministic_and_check_matches_output() {
         );
     assert_eq!(String::from_utf8(first).unwrap(), second);
 }
+
+#[test]
+fn escape_preservations_report_their_first_cause() {
+    let cases: [(&str, serde_json::Value); 8] = [
+        (
+            "export {}; const obj = {longProperty: 3}; console.log(JSON.stringify(obj));",
+            serde_json::json!({"call_argument_method": 1}),
+        ),
+        (
+            "export {}; declare function consume(value: unknown): void; const obj = \
+             {longProperty: 3}; consume(obj);",
+            serde_json::json!({"call_argument_function": 1}),
+        ),
+        (
+            "export {}; const obj = {longProperty: 3}; console.log(new WeakRef(obj));",
+            serde_json::json!({"constructor_argument": 1}),
+        ),
+        (
+            "export {}; const obj = {longProperty: 3}; const holder = {obj}; \
+             console.log(JSON.stringify(holder));",
+            serde_json::json!({"call_argument_method": 1, "preserved_container": 1}),
+        ),
+        (
+            "export {}; const obj = {longProperty: 3}; console.log({...obj});",
+            serde_json::json!({"spread": 1}),
+        ),
+        (
+            "export {}; const obj = {longProperty: 3}; console.log('longProperty' in obj);",
+            serde_json::json!({"operator_operand": 1}),
+        ),
+        (
+            "export {}; declare function make(): {longProperty: number}; const value = \
+             Math.random() > 2 ? {longProperty: 3} : make(); console.log(value.longProperty);",
+            serde_json::json!({"untracked_value": 1}),
+        ),
+        (
+            "export {}; const obj = {longProperty: 3}; const bag = {first: 1}; const key = \
+             String(Math.random()); (bag as any)[key] = obj; console.log(bag.first);",
+            serde_json::json!({"dynamic_key_store": 1}),
+        ),
+    ];
+    for (code, expected) in cases {
+        let temp = project(&[("main.ts", code)]);
+        let report = check(temp.path(), &[]);
+        assert_eq!(report["escape_sinks"], expected, "{code}\n{report:#}");
+        let escapes = report["preservation_reasons"]["escapes"]
+            .as_u64()
+            .unwrap_or(0);
+        let attributed: u64 = expected
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|v| v.as_u64().unwrap())
+            .sum();
+        assert_eq!(escapes, attributed, "{code}");
+    }
+    // Mappings name the cause next to the preservation reason.
+    let temp = project(&[(
+        "main.ts",
+        "export {}; const obj = {longProperty: 3}; console.log(JSON.stringify(obj));",
+    )]);
+    optimize(temp.path(), &[]);
+    let all = mappings(temp.path());
+    let preserved = mapping(&all, "longProperty");
+    assert_eq!(preserved[0]["preservation"], "escapes");
+    assert_eq!(preserved[0]["escape_sink"], "call_argument_method");
+}

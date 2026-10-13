@@ -7,6 +7,7 @@ use serde::Serialize;
 
 use crate::{
     compiler::Snapshot,
+    optimizer::{EscapeSink, Preservation},
     passes::{PassId, PassSet},
     pipeline::Outcome,
     plan::{Phase, Reason},
@@ -27,6 +28,8 @@ pub struct Report {
     pub renamed_properties: usize,
     pub changed_occurrences: usize,
     pub preservation_reasons: BTreeMap<String, usize>,
+    /// Properties preserved as `escapes`, by the first escape cause.
+    pub escape_sinks: BTreeMap<EscapeSink, usize>,
     pub passes: PassConfig,
     pub rounds: usize,
     pub round_limit_reached: bool,
@@ -207,6 +210,15 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
             *preservation_reasons.entry(key).or_default() += 1;
         }
     }
+    let mut escape_sinks = BTreeMap::new();
+    for mapping in &outcome.mappings {
+        if mapping.preservation == Some(Preservation::Escapes)
+            && let Some(sink) = mapping.escape_sink
+        {
+            *escape_sinks.entry(sink).or_default() += 1;
+        }
+    }
+    tracing::debug!(?escape_sinks, "escape causes of preserved properties");
     let renamed: Vec<_> = outcome
         .mappings
         .iter()
@@ -228,6 +240,7 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
         renamed_properties: renamed.len(),
         changed_occurrences: renamed.iter().map(|m| m.occurrences).sum(),
         preservation_reasons,
+        escape_sinks,
         passes: PassConfig {
             enabled: passes.enabled(),
             disabled: passes.disabled(),

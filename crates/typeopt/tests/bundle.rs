@@ -1969,3 +1969,26 @@ fn bundle_output_is_deterministic() {
         assert_eq!(out(one.path(), chunk), out(two.path(), chunk));
     }
 }
+
+#[test]
+fn escape_causes_see_through_indirect_calls_and_exposed_exports() {
+    // `(0, ns.fn)(value)` is a method call into an interop namespace; an
+    // export of a dynamically imported chunk is reachable through the
+    // namespace object.
+    let (_temp, report) = run(&[
+        (
+            "index.js",
+            r#"export{};const ns={record(v){return JSON.stringify(v)}};const local={longProperty:3};console.log((0,ns.record)(local));import("./lazy.js").then(m=>console.log(m.table.firstLabel));"#,
+        ),
+        (
+            "lazy.js",
+            r#"const table={firstLabel:"a",secondLabel:"b"};export{table};"#,
+        ),
+    ]);
+    assert_eq!(
+        report["escape_sinks"]["call_argument_method"], 1,
+        "{report:#}"
+    );
+    assert_eq!(report["escape_sinks"]["external_binding"], 2, "{report:#}");
+    assert!(report["escape_sinks"].get("call_argument_other").is_none());
+}

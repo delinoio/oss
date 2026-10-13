@@ -23,6 +23,85 @@ pub enum Preservation {
     RecheckFailed,
 }
 
+/// The first cause of an `escapes` preservation: the context, unknown-value
+/// origin or unresolved operation that made an object (or the region it
+/// joins) reachable by code the analysis does not model. IDs are stable
+/// report keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EscapeSink {
+    /// A binding visible outside the analyzed modules: script scope,
+    /// namespace member, exported or referenced from JavaScript.
+    ExternalBinding,
+    /// A binding referenced through a namespace or qualified name.
+    QualifiedReference,
+    /// A compound assignment, update, or destructuring or loop write that
+    /// reads or replaces the value with an untracked one.
+    CompoundWrite,
+    /// Assigned to a binding the analysis does not track.
+    UntrackedAssignment,
+    /// The initializer of a declaration whose binding is not tracked.
+    UntrackedBinding,
+    /// A binding the analysis does not understand, such as a declaration
+    /// without an initializer outside a variable statement.
+    UnsupportedBinding,
+    /// An operand of an operator other than `&&`, `||`, `??`, `,`, `===`,
+    /// `!==` and `!`.
+    OperatorOperand,
+    /// A parameter, or parameter default, of a function without a trusted
+    /// summary.
+    UnsummarizedParameter,
+    /// Returned from a function without a trusted summary.
+    UnsummarizedReturn,
+    /// An argument of a call whose identifier callee has no trusted summary.
+    CallArgumentFunction,
+    /// An argument of a method call (`receiver.method(value)`).
+    CallArgumentMethod,
+    /// An argument of any other callee expression.
+    CallArgumentOther,
+    /// An argument of `new`.
+    ConstructorArgument,
+    /// The initializer of a destructuring pattern that is not flat.
+    UnsupportedPattern,
+    /// Used as a computed key, which converts it to a string.
+    ComputedKey,
+    /// A field value of an object literal that is not tracked or uses a
+    /// computed name.
+    UntrackedObjectField,
+    /// An array literal element.
+    ArrayElement,
+    /// A spread element or spread assignment.
+    Spread,
+    /// A template literal substitution or tagged template.
+    Template,
+    /// A JSX attribute, child or spread.
+    Jsx,
+    /// An `await` or `yield` operand.
+    AwaitOrYield,
+    /// A thrown value.
+    Throw,
+    /// A class member initializer.
+    ClassMember,
+    /// `export default` or `export =` value.
+    ExportDefault,
+    /// Read from a field of an untracked or mixed receiver, or destructured
+    /// from an untracked value.
+    UntrackedLoad,
+    /// Stored in a field of an object that is itself preserved.
+    PreservedContainer,
+    /// Joined with a value of an expression the analysis does not model,
+    /// such as the result of a call without a summary.
+    UntrackedValue,
+    /// Stored into a receiver that may hold untracked values.
+    UntrackedReceiverStore,
+    /// Stored through an unresolved computed key.
+    DynamicKeyStore,
+    /// Accessed through a receiver that may also hold untracked values.
+    MixedReceiverAccess,
+    /// Any other expression context.
+    OtherContext,
+}
+
 #[derive(Clone, Debug)]
 pub struct Occurrence {
     /// Module containing the occurrence. Object regions can span modules.
@@ -51,6 +130,8 @@ pub struct Object {
     pub start: usize,
     pub properties: Vec<Property>,
     pub preservation: Option<Preservation>,
+    /// Set with an `escapes` preservation.
+    pub escape_sink: Option<EscapeSink>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -61,6 +142,9 @@ pub struct Mapping {
     pub renamed: String,
     pub occurrences: usize,
     pub preservation: Option<Preservation>,
+    /// The first cause of an `escapes` preservation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub escape_sink: Option<EscapeSink>,
 }
 
 /// How groups relate when allocating names.
@@ -97,6 +181,7 @@ struct Group {
     /// Indices of (object, property) pairs that form this identity.
     members: Vec<(usize, usize)>,
     preservation: Option<Preservation>,
+    escape_sink: Option<EscapeSink>,
     unit: usize,
 }
 
@@ -134,6 +219,7 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
                 groups.push(Group {
                     members: Vec::new(),
                     preservation: None,
+                    escape_sink: None,
                     unit: if strategy.disambiguate {
                         o
                     } else {
@@ -148,6 +234,7 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
             groups[index].members.push((o, p));
             if let Some(reason) = &object.preservation {
                 groups[index].preservation = Some(reason.clone());
+                groups[index].escape_sink = object.escape_sink;
             }
         }
     }
@@ -260,6 +347,11 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
                 renamed: renamed[g].clone().unwrap_or_else(|| property.name.clone()),
                 occurrences: property.occurrences.len(),
                 preservation: reasons[g].clone(),
+                escape_sink: if reasons[g] == Some(Preservation::Escapes) {
+                    group.escape_sink
+                } else {
+                    None
+                },
             };
             let Some(new_name) = &renamed[g] else {
                 preserved.push(mapping);
@@ -355,6 +447,7 @@ mod tests {
                 start: 0,
                 properties: vec![property("sharedLong", 2, 0), property("otherLong", 1, 60)],
                 preservation: None,
+                escape_sink: None,
             },
             Object {
                 file: "input.ts".into(),
@@ -364,6 +457,7 @@ mod tests {
                     property("otherLong", 2, 130),
                 ],
                 preservation: None,
+                escape_sink: None,
             },
         ]
     }
@@ -423,6 +517,7 @@ mod tests {
         assert_eq!(allocations.len(), 2);
         let mut preserved = objects();
         preserved[1].preservation = Some(Preservation::Escapes);
+        preserved[1].escape_sink = Some(EscapeSink::Spread);
         let (allocations, kept) = allocate(
             &mut preserved,
             Strategy {
@@ -432,6 +527,22 @@ mod tests {
         );
         assert!(allocations.is_empty());
         assert_eq!(kept.len(), 4);
+        // The name identity inherits the escape cause with the reason.
+        assert!(
+            kept.iter()
+                .all(|m| m.escape_sink == Some(EscapeSink::Spread))
+        );
+        // Other preservation reasons carry no escape cause.
+        let mut constrained = objects();
+        constrained[0].preservation = Some(Preservation::TypeConstraint);
+        let (_, kept) = allocate(
+            &mut constrained,
+            Strategy {
+                disambiguate: true,
+                ambiguate: true,
+            },
+        );
+        assert!(kept.iter().all(|m| m.escape_sink.is_none()));
     }
 
     #[test]
@@ -450,6 +561,7 @@ mod tests {
             start: 0,
             properties: vec![property("onlyLongName", 2, 0)],
             preservation: None,
+            escape_sink: None,
         }];
         let (allocations, _) = allocate(&mut single, all);
         assert_eq!(allocations.len(), 1);
