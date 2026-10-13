@@ -527,6 +527,9 @@ enum PersistStep {
     ScratchSynced,
     DestinationVerified,
     Published,
+    /// Parent-directory sync that makes a verified Unix rollback durable.
+    /// Failure is OutcomeUnknown.
+    RollbackSynced,
     /// Persistence barrier for the published file object (Windows flushes the
     /// verified handle; Unix relies on the later parent sync). Failure is
     /// OutcomeUnknown.
@@ -542,6 +545,10 @@ struct PublishFailure {
     problem: SidebarProblem,
     /// True when the destination pathname may differ from its observed state.
     touched: bool,
+    /// True when a verified rollback reversed a rename. The reversal is not
+    /// durable until the parent directory is synced, so the attempt stays
+    /// touched until then.
+    reversed: bool,
 }
 
 impl PublishFailure {
@@ -549,6 +556,16 @@ impl PublishFailure {
         Self {
             problem,
             touched: false,
+            reversed: false,
+        }
+    }
+
+    #[cfg(unix)]
+    fn reversed(problem: SidebarProblem) -> Self {
+        Self {
+            problem,
+            touched: false,
+            reversed: true,
         }
     }
 
@@ -557,6 +574,7 @@ impl PublishFailure {
         Self {
             problem,
             touched: true,
+            reversed: false,
         }
     }
 }
@@ -1000,7 +1018,7 @@ impl Scratch {
             };
         if restored {
             // The foreign entry stays at the scratch pathname as evidence.
-            Err(PublishFailure::untouched(SidebarProblem::Changed))
+            Err(PublishFailure::reversed(SidebarProblem::Changed))
         } else {
             tracing::error!(
                 operation = "sidebar_preference_publish",
@@ -1202,6 +1220,19 @@ fn persist_with(
         step(PersistStep::DestinationVerified, &scratch.path)?;
         if let Err(failure) = scratch.publish(path, &original.document) {
             published = failure.touched;
+            if failure.reversed {
+                // The reversal changed the namespace twice. Stay touched until
+                // the restored namespace is synced, so a failed barrier is
+                // OutcomeUnknown rather than an untouched Changed.
+                published = true;
+                lease.validate()?;
+                lease
+                    .parent
+                    .sync_all()
+                    .map_err(|_| SidebarProblem::OutcomeUnknown)?;
+                step(PersistStep::RollbackSynced, &scratch.path)?;
+                published = false;
+            }
             return Err(failure.problem);
         }
         published = true;
@@ -2123,6 +2154,47 @@ mod tests {
         assert_eq!(Some(inode(&path)), external_inode);
         // Our owned scratch returned to its pathname and was cleaned.
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verified_rollback_is_synced_before_it_is_reported() {
+        for existing in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sidebar_preference.json");
+            if existing {
+                fs::write(&path, EXISTING).unwrap();
+            }
+            let original_inode = existing.then(|| inode(&path));
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut steps = Vec::new();
+            let refused = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, scratch| {
+                        steps.push(step);
+                        if step == PersistStep::DestinationVerified {
+                            // Swapped in after binding: published, then
+                            // reversed.
+                            install_foreign(scratch, b"foreign scratch");
+                        }
+                        Ok(())
+                    })
+                },
+            );
+            let position = |wanted| steps.iter().position(|step| *step == wanted);
+            assert!(
+                position(PersistStep::DestinationVerified) < position(PersistStep::RollbackSynced)
+            );
+            assert!(position(PersistStep::RollbackSynced).is_some());
+            assert_eq!(position(PersistStep::Published), None);
+            assert_eq!(refused.sidebar_preference, SidebarPreference::Expanded);
+            // The destination is back to its observed state.
+            assert_eq!(path.exists(), existing);
+            assert_eq!(existing.then(|| inode(&path)), original_inode);
+        }
     }
 
     #[cfg(unix)]

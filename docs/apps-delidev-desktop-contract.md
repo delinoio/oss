@@ -5786,7 +5786,10 @@ document, a changed destination cannot be told apart from a late replacement of
 the displaced entry, so never reverse it into the destination: keep the entry at
 the scratch pathname as evidence, leave the destination untouched by any
 reversal and report OutcomeUnknown. Foreign bytes may be visible at the
-destination pathname for the duration of a verified rollback only. Unsupported platforms
+destination pathname for the duration of a verified rollback only. A reversed
+rename is not durable until the lease's parent directory is synced: keep the
+attempt touched through that sync and map a failed barrier to OutcomeUnknown,
+and only then report the safe Changed failure. Unsupported platforms
 or filesystems that refuse the atomic variants fail closed with WriteFailed and an
 unchanged destination; never fall back to a pathname rename or link.
 `SetFileInformationByHandle` rename has no write-through option, so after a
