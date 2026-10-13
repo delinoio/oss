@@ -3544,6 +3544,14 @@ committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
+The editor preview validates the identity-bearing custom theme draft (UUIDv7 `id`
+plus version, name and both color maps); the strict no-ID shape applies only to
+theme file import and export. An invalid id, token or contrast row installs no
+preview sheet. Submitting freezes the name and every color input while the save is
+pending and records the exact submitted theme. Acknowledged success closes the
+editor by comparing the persisted custom theme with that submitted snapshot, never
+with later draft state. Failure or an uncertain outcome keeps the original draft
+and the existing Reload recovery; Cancel and disposal behave as before.
 
 When session accent is disabled, focused content inside a user message keeps an
 outline with at least 3:1 contrast against `surface-selected`. Use the semantic
