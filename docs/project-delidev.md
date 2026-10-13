@@ -471,3 +471,5 @@ Fork preserve protected native history; restricted auxiliary profiles retain
 separate history and response boundaries. The desktop uses the original tool
 disclosure with independent reply and request rows. No backend, registry,
 automatic replay or storage migration is introduced.
+
+Server reset credits V2 uses System 101 under the [subscription contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2--issue-2970). Manual and automatic consumption run on the selected server with a distinct access-only native profile, independent of Runner registration, connectivity, verified installation or an active Execute. Execute and credential ownership are untouched; explicit-machine and historical operations keep their lanes. No migration or Worker protocol change.

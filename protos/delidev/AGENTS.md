@@ -39,3 +39,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev updates contract](../../docs/cmds-delidev-updates-contract.md)
 - [DeliDev current-user service contract](../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev v1 Connect contract](../../docs/protos-delidev-v1-contract.md)
+
+- Server reset credits V2 follows issue #2970 and `docs/cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits-v2--issue-2970`: System 101 consumes manual and automatic reset credits on the server with a distinct access-only native profile, with no Runner and beside an active Execute. New omitted-machine requests never fall back to a Runner; explicit-machine and historical operations keep their lanes. Cancel any pre-send binding change with zero spend, keep the captured reference until joined cleanup and checked retirement, never fail or release Execute for credit cleanup, and reconcile only by explicit same-key request. No RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is not performed.
