@@ -88,7 +88,8 @@ const nativeBridge: BrowserPreferenceBridge = {
       : () => {},
 };
 
-const identityPattern = /^[A-Za-z0-9._+()-](?:[A-Za-z0-9._+() -]{0,126}[A-Za-z0-9._+()-])?$/;
+const identityPattern =
+  /^[A-Za-z0-9._+()-](?:[A-Za-z0-9._+() -]{0,126}[A-Za-z0-9._+()-])?$/;
 export function parseBrowserChoice(raw: unknown): BrowserChoice {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Invalid browser choice");

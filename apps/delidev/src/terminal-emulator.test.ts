@@ -264,7 +264,11 @@ it("activates a plain printed URL under the pointer without consuming the event 
   expect(fake.instances[0].options.linksEnabled).toBe(false);
   const span = printRow(host, "visit https://example.com/path?q=1. now");
   pointAt(span, 12);
-  const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+  const event = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+  });
   span.dispatchEvent(event);
   expect(openLink).toHaveBeenCalledTimes(1);
   expect(openLink).toHaveBeenCalledWith("https://example.com/path?q=1");
@@ -286,14 +290,19 @@ it("does not activate during a text selection, secondary buttons or non-http tex
   const { host, openLink } = openWithLinks();
   await tick();
   await tick();
-  const span = printRow(host, "ftp://example.com javascript:alert(1) file:///etc/passwd https://ok.test/x");
+  const span = printRow(
+    host,
+    "ftp://example.com javascript:alert(1) file:///etc/passwd https://ok.test/x",
+  );
   pointAt(span, 4);
   span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
   pointAt(span, 25);
   span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
   pointAt(span, 70);
   span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 2 }));
-  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, shiftKey: true }));
+  span.dispatchEvent(
+    new MouseEvent("click", { bubbles: true, button: 0, shiftKey: true }),
+  );
   expect(openLink).not.toHaveBeenCalled();
   const selected = vi.spyOn(document, "getSelection").mockReturnValue({
     toString: () => "https",
@@ -310,11 +319,16 @@ it("joins a URL wrapped across full-width rows and removes its callbacks on disp
   await tick();
   await tick();
   // The mocked terminal is 80 columns wide.
-  const first = printRow(host, `${"x".repeat(5)} https://example.com/${"a".repeat(54)}`);
+  const first = printRow(
+    host,
+    `${"x".repeat(5)} https://example.com/${"a".repeat(54)}`,
+  );
   printRow(host, "bcd tail");
   pointAt(first, 10);
   first.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
-  expect(openLink).toHaveBeenCalledWith(`https://example.com/${"a".repeat(54)}bcd`);
+  expect(openLink).toHaveBeenCalledWith(
+    `https://example.com/${"a".repeat(54)}bcd`,
+  );
   screen.dispose();
   first.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
   expect(openLink).toHaveBeenCalledTimes(1);

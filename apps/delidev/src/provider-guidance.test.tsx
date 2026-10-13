@@ -99,19 +99,22 @@ it.each([
   ["browser-unavailable", "The selected browser is not installed"],
   ["browser-launch-failed", "could not be opened in the selected browser"],
   ["storage-unavailable", "Browser settings could not be read"],
-])("points a %s failure at the browser selection without retrying", async (code, expected) => {
-  native.invoke.mockReset();
-  native.invoke.mockRejectedValue(code);
-  render(
-    <ProviderGuidance
-      preset="gemini"
-      documentation="https://docs.invalid"
-      keyCreation="https://keys.invalid"
-    />,
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Open provider documentation" }),
-  );
-  expect((await screen.findByRole("status")).textContent).toContain(expected);
-  expect(native.invoke).toHaveBeenCalledTimes(1);
-});
+])(
+  "points a %s failure at the browser selection without retrying",
+  async (code, expected) => {
+    native.invoke.mockReset();
+    native.invoke.mockRejectedValue(code);
+    render(
+      <ProviderGuidance
+        preset="gemini"
+        documentation="https://docs.invalid"
+        keyCreation="https://keys.invalid"
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open provider documentation" }),
+    );
+    expect((await screen.findByRole("status")).textContent).toContain(expected);
+    expect(native.invoke).toHaveBeenCalledTimes(1);
+  },
+);

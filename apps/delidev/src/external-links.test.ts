@@ -11,7 +11,7 @@ import {
 
 it("finds only complete explicit http and https tokens and keeps surrounding punctuation outside", () => {
   const text =
-    "See https://example.com/path?q=1#part. Also (http://localhost:3000/a_(b)), \"https://[::1]:8080/x\"; ftp://x.test javascript:alert(1) example.com bare";
+    'See https://example.com/path?q=1#part. Also (http://localhost:3000/a_(b)), "https://[::1]:8080/x"; ftp://x.test javascript:alert(1) example.com bare';
   expect(findUrlTokens(text).map((token) => token.url)).toEqual([
     "https://example.com/path?q=1#part",
     "http://localhost:3000/a_(b)",
@@ -30,7 +30,8 @@ it("rejects credentials, malformed hosts and oversized tokens", () => {
 });
 
 it("splits without changing any character, whitespace or line break", () => {
-  const text = "line one\n\n  https://example.com/a  \n\tsecond https://x.test/b\r\nend";
+  const text =
+    "line one\n\n  https://example.com/a  \n\tsecond https://x.test/b\r\nend";
   const parts = splitLinkedText(text);
   expect(parts.map((part) => part.text).join("")).toBe(text);
   expect(parts.filter((part) => "url" in part)).toHaveLength(2);
@@ -73,5 +74,7 @@ it("maps native failure codes to stable categories", () => {
   expect(externalLinkFailure("invalid-input")).toBe(
     ExternalLinkFailure.InvalidInput,
   );
-  expect(externalLinkFailure(new Error("secret"))).toBe(ExternalLinkFailure.Other);
+  expect(externalLinkFailure(new Error("secret"))).toBe(
+    ExternalLinkFailure.Other,
+  );
 });

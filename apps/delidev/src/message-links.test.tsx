@@ -36,7 +36,10 @@ function renderRows(rows: Record<string, unknown>[]) {
 
 it("makes URLs in generic user and assistant text activatable while preserving the original text", () => {
   const data = transcriptRoleFixtures();
-  const user = { ...data.user, text: `Read  ${url}.\n\n  Then http://localhost:3000/` };
+  const user = {
+    ...data.user,
+    text: `Read  ${url}.\n\n  Then http://localhost:3000/`,
+  };
   const assistant = { ...data.assistant, text: `Done: ${url}` };
   renderRows([user, assistant]);
   const userMessage = screen.getByLabelText("User message");
@@ -45,7 +48,9 @@ it("makes URLs in generic user and assistant text activatable while preserving t
     [...userMessage.querySelectorAll("a")].map((link) => link.textContent),
   ).toEqual([url, "http://localhost:3000/"]);
   const assistantMessage = screen.getAllByLabelText("Assistant message")[0]!;
-  expect(assistantMessage.querySelector("pre")!.textContent).toBe(assistant.text);
+  expect(assistantMessage.querySelector("pre")!.textContent).toBe(
+    assistant.text,
+  );
   fireEvent.click(assistantMessage.querySelector("a")!);
   expect(native.invoke).toHaveBeenCalledWith("open_external_url", { url });
 });
@@ -53,9 +58,24 @@ it("makes URLs in generic user and assistant text activatable while preserving t
 it("keeps unknown roles and tool, artifact and progress records inert", () => {
   const rows = [
     { role: "unknown", state: "complete", text: `Unknown ${url}` },
-    { role: "assistant", state: "complete", text: `Tool ${url}`, tool: { started: { kind: "fixture" } } },
-    { role: "user", state: "complete", text: `Artifact ${url}`, artifact: { started: { kind: "fixture" } } },
-    { role: "assistant", state: "complete", text: `Progress ${url}`, progress: {} },
+    {
+      role: "assistant",
+      state: "complete",
+      text: `Tool ${url}`,
+      tool: { started: { kind: "fixture" } },
+    },
+    {
+      role: "user",
+      state: "complete",
+      text: `Artifact ${url}`,
+      artifact: { started: { kind: "fixture" } },
+    },
+    {
+      role: "assistant",
+      state: "complete",
+      text: `Progress ${url}`,
+      progress: {},
+    },
   ];
   const { container } = renderRows(rows);
   expect(container.querySelectorAll("a")).toHaveLength(0);

@@ -131,7 +131,8 @@ export function openTerminalScreen(
     const row = target?.closest(".term-row");
     if (!row || !host.contains(row)) return;
     const document = host.ownerDocument;
-    let node: Node | null | undefined, offset = 0;
+    let node: Node | null | undefined,
+      offset = 0;
     if (document.caretPositionFromPoint) {
       const position = document.caretPositionFromPoint(
         event.clientX,

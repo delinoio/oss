@@ -471,4 +471,5 @@ Fork preserve protected native history; restricted auxiliary profiles retain
 separate history and response boundaries. The desktop uses the original tool
 disclosure with independent reply and request rows. No backend, registry,
 automatic replay or storage migration is introduced.
+
 - Settings > System > Browser stores device-local General and Local browser destinations for external HTTP(S) links (native identities, natively discovered handlers, revisioned preference store), routes Provider guidance, App information, validated GitHub opening and activatable message/terminal URLs through them, and keeps OAuth/subscription authorization on the system default. No server RPC, capability number or migration is added. See the [desktop contract](apps-delidev-desktop-contract.md#browser-destinations-for-external-links), [localization contract](apps-delidev-localization-contract.md#browser-destination-copy), [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [browser contract](cmds-delidev-browser-contract.md#external-link-browser-destinations).

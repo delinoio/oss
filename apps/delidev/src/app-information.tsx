@@ -216,9 +216,7 @@ export function AppInformation({
         {opening ? (
           <p role="status">{copy("settings.appInformation.opening")}</p>
         ) : null}
-        {openError ? (
-          <p role="alert">{copy(openError)}</p>
-        ) : null}
+        {openError ? <p role="alert">{copy(openError)}</p> : null}
       </section>
     </div>
   );

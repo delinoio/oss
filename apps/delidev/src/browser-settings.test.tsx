@@ -85,8 +85,10 @@ function view(bridge: BrowserPreferenceBridge, active = true) {
     </SettingsActionScope>
   );
 }
-const general = () => screen.getByLabelText("General URL destination") as HTMLSelectElement;
-const local = () => screen.getByLabelText("Local URL destination") as HTMLSelectElement;
+const general = () =>
+  screen.getByLabelText("General URL destination") as HTMLSelectElement;
+const local = () =>
+  screen.getByLabelText("Local URL destination") as HTMLSelectElement;
 
 beforeEach(async () => {
   await i18n.changeLanguage(SupportedLanguage.English);
@@ -96,7 +98,9 @@ afterEach(cleanup);
 it("lists system default plus discovered browsers for both independent destinations", async () => {
   const { bridge } = fixture();
   render(view(bridge));
-  await waitFor(() => expect(within(general()).getAllByRole("option")).toHaveLength(3));
+  await waitFor(() =>
+    expect(within(general()).getAllByRole("option")).toHaveLength(3),
+  );
   for (const select of [general(), local()]) {
     expect(
       within(select)
@@ -124,9 +128,15 @@ it("persists the native identity, shows saving and reports success only after pe
       }),
   );
   render(view(bridge));
-  await waitFor(() => expect(within(local()).getAllByRole("option")).toHaveLength(3));
-  fireEvent.change(local(), { target: { value: "installed:com.google.Chrome" } });
-  await waitFor(() => expect(screen.getByText("Saving browser setting…")).toBeTruthy());
+  await waitFor(() =>
+    expect(within(local()).getAllByRole("option")).toHaveLength(3),
+  );
+  fireEvent.change(local(), {
+    target: { value: "installed:com.google.Chrome" },
+  });
+  await waitFor(() =>
+    expect(screen.getByText("Saving browser setting…")).toBeTruthy(),
+  );
   // The pending choice is not shown as saved and the controls stay locked.
   expect(screen.queryByText("Browser setting saved.")).toBeNull();
   expect(local().value).toBe("default");
@@ -139,7 +149,9 @@ it("persists the native identity, shows saving and reports success only after pe
     1,
   );
   await act(async () => finish());
-  await waitFor(() => expect(screen.getByText("Browser setting saved.")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByText("Browser setting saved.")).toBeTruthy(),
+  );
   expect(local().value).toBe("installed:com.google.Chrome");
   expect(general().value).toBe("default");
   expect(snapshot().choices.local).toEqual(installed("com.google.Chrome"));
@@ -153,13 +165,19 @@ it("never shows success when persistence fails and keeps the saved choice", asyn
     problem: BrowserPreferenceProblem.WriteFailed,
   }));
   render(view(bridge));
-  await waitFor(() => expect(within(general()).getAllByRole("option")).toHaveLength(3));
-  fireEvent.change(general(), { target: { value: "installed:org.mozilla.firefox.desktop" } });
+  await waitFor(() =>
+    expect(within(general()).getAllByRole("option")).toHaveLength(3),
+  );
+  fireEvent.change(general(), {
+    target: { value: "installed:org.mozilla.firefox.desktop" },
+  });
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("was not saved");
   expect(screen.queryByText("Browser setting saved.")).toBeNull();
   expect(general().value).toBe("default");
-  expect(screen.getByRole("button", { name: "Reload browser settings" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Reload browser settings" }),
+  ).toBeTruthy();
 });
 
 it("shows an unconfirmed outcome when the native call itself rejects", async () => {
@@ -168,9 +186,15 @@ it("shows an unconfirmed outcome when the native call itself rejects", async () 
     throw new Error("ipc down");
   });
   render(view(bridge));
-  await waitFor(() => expect(within(general()).getAllByRole("option")).toHaveLength(3));
-  fireEvent.change(general(), { target: { value: "installed:com.google.Chrome" } });
-  expect((await screen.findByRole("alert")).textContent).toContain("could not confirm");
+  await waitFor(() =>
+    expect(within(general()).getAllByRole("option")).toHaveLength(3),
+  );
+  fireEvent.change(general(), {
+    target: { value: "installed:com.google.Chrome" },
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "could not confirm",
+  );
   expect(screen.queryByText("Browser setting saved.")).toBeNull();
 });
 
@@ -180,17 +204,28 @@ it("reports a browser that disappeared before selection and refreshes the list",
     throw "browser-unavailable";
   });
   render(view(bridge));
-  await waitFor(() => expect(within(general()).getAllByRole("option")).toHaveLength(3));
-  fireEvent.change(general(), { target: { value: "installed:com.google.Chrome" } });
-  expect((await screen.findByRole("alert")).textContent).toContain("no longer installed");
+  await waitFor(() =>
+    expect(within(general()).getAllByRole("option")).toHaveLength(3),
+  );
+  fireEvent.change(general(), {
+    target: { value: "installed:com.google.Chrome" },
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "no longer installed",
+  );
   expect(general().value).toBe("default");
   await waitFor(() => expect(bridge.inventory).toHaveBeenCalledTimes(2));
-  expect(screen.queryByRole("button", { name: "Reset browser settings" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Reset browser settings" }),
+  ).toBeNull();
 });
 
 it("keeps an unavailable saved identity visible and selected", async () => {
   const { bridge } = fixture({
-    choices: { general: installed("gone.example.Browser"), local: systemDefault },
+    choices: {
+      general: installed("gone.example.Browser"),
+      local: systemDefault,
+    },
   });
   render(view(bridge));
   await waitFor(() =>
@@ -210,13 +245,15 @@ it("keeps an unavailable saved identity visible and selected", async () => {
 it("distinguishes discovery failure from no installed handlers and can refresh", async () => {
   const failing = fixture({}, new Error("discovery"));
   const first = render(view(failing.bridge));
-  expect((await screen.findByText(/could not be listed/)).textContent).toContain(
-    "system default browser is still available",
-  );
+  expect(
+    (await screen.findByText(/could not be listed/)).textContent,
+  ).toContain("system default browser is still available");
   expect(within(general()).getAllByRole("option")).toHaveLength(1);
   expect(screen.queryByText(/No other browsers/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Refresh browser list" }));
-  await waitFor(() => expect(failing.bridge.inventory).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(failing.bridge.inventory).toHaveBeenCalledTimes(2),
+  );
   first.unmount();
 
   const empty = fixture({}, { browsers: [] });
@@ -238,16 +275,22 @@ it("refreshes discovery each time the page opens", async () => {
 });
 
 it("surfaces corrupt storage, disables selection and resets only on explicit request", async () => {
-  const { bridge } = fixture({ problem: BrowserPreferenceProblem.InvalidDocument });
+  const { bridge } = fixture({
+    problem: BrowserPreferenceProblem.InvalidDocument,
+  });
   render(view(bridge));
   expect((await screen.findByRole("alert")).textContent).toContain("damaged");
   expect(general().disabled).toBe(true);
   expect(local().disabled).toBe(true);
   expect(bridge.reset).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Reset browser settings" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reset browser settings" }),
+  );
   await waitFor(() => expect(bridge.reset).toHaveBeenCalledWith(1));
   await waitFor(() => expect(general().disabled).toBe(false));
-  expect(screen.queryByRole("button", { name: "Reset browser settings" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Reset browser settings" }),
+  ).toBeNull();
   expect(general().value).toBe("default");
 });
 
@@ -255,23 +298,34 @@ it("offers reload instead of reset for transient storage problems", async () => 
   const { bridge } = fixture({ problem: BrowserPreferenceProblem.ReadFailed });
   render(view(bridge));
   await screen.findByRole("alert");
-  expect(screen.queryByRole("button", { name: "Reset browser settings" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Reload browser settings" }));
+  expect(
+    screen.queryByRole("button", { name: "Reset browser settings" }),
+  ).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reload browser settings" }),
+  );
   await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(2));
 });
 
 it("follows revisioned changes published by another window", async () => {
   const { bridge, publish } = fixture();
   render(view(bridge));
-  await waitFor(() => expect(within(general()).getAllByRole("option")).toHaveLength(3));
+  await waitFor(() =>
+    expect(within(general()).getAllByRole("option")).toHaveLength(3),
+  );
   act(() =>
     publish({
       revision: 2,
-      choices: { general: installed("com.google.Chrome"), local: installed("org.mozilla.firefox.desktop") },
+      choices: {
+        general: installed("com.google.Chrome"),
+        local: installed("org.mozilla.firefox.desktop"),
+      },
       problem: null,
     }),
   );
-  await waitFor(() => expect(general().value).toBe("installed:com.google.Chrome"));
+  await waitFor(() =>
+    expect(general().value).toBe("installed:com.google.Chrome"),
+  );
   expect(local().value).toBe("installed:org.mozilla.firefox.desktop");
   // An older revision cannot move the visible choices backward.
   act(() =>
@@ -287,22 +341,32 @@ it("follows revisioned changes published by another window", async () => {
 it("reports native capability as unavailable on web and mobile", () => {
   const { bridge } = fixture();
   render(view({ ...bridge, native: false }));
-  expect(screen.getByText("Browser selection is available only in the DeliDev desktop app.")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Browser selection is available only in the DeliDev desktop app.",
+    ),
+  ).toBeTruthy();
   expect(general().disabled).toBe(true);
   expect(bridge.read).not.toHaveBeenCalled();
   expect(bridge.inventory).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Refresh browser list" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Refresh browser list" }),
+  ).toBeNull();
 });
 
 it("renders the Korean catalog with 40px-capable native controls", async () => {
   await i18n.changeLanguage(SupportedLanguage.Korean);
   const { bridge } = fixture();
   render(view(bridge));
-  await waitFor(() => expect(screen.getByLabelText("일반 URL 열기 대상")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByLabelText("일반 URL 열기 대상")).toBeTruthy(),
+  );
   expect(screen.getByLabelText("로컬 URL 열기 대상")).toBeTruthy();
   expect(screen.getAllByText("시스템 기본 브라우저").length).toBeGreaterThan(0);
   expect(
-    screen.getByText("로그인 및 계정 인증 링크는 항상 시스템 기본 브라우저로 열립니다."),
+    screen.getByText(
+      "로그인 및 계정 인증 링크는 항상 시스템 기본 브라우저로 열립니다.",
+    ),
   ).toBeTruthy();
 });
 
@@ -310,20 +374,63 @@ it("validates native snapshots and inventories strictly", () => {
   expect(
     parseBrowserSnapshot({
       revision: 3,
-      choices: { general: { state: "system-default" }, local: { state: "installed", identity: "a.b" } },
+      choices: {
+        general: { state: "system-default" },
+        local: { state: "installed", identity: "a.b" },
+      },
       problem: null,
     }).choices.local,
   ).toEqual(installed("a.b"));
   for (const bad of [
-    { revision: 1, choices: { general: { state: "installed", identity: "/bin/sh" }, local: { state: "system-default" } }, problem: null },
-    { revision: 1, choices: { general: { state: "installed", identity: "a", path: "/x" }, local: { state: "system-default" } }, problem: null },
-    { revision: -1, choices: { general: { state: "system-default" }, local: { state: "system-default" } }, problem: null },
-    { revision: 1, choices: { general: { state: "system-default" } }, problem: null },
-    { revision: 1, choices: { general: { state: "system-default" }, local: { state: "system-default" } }, problem: "other" },
+    {
+      revision: 1,
+      choices: {
+        general: { state: "installed", identity: "/bin/sh" },
+        local: { state: "system-default" },
+      },
+      problem: null,
+    },
+    {
+      revision: 1,
+      choices: {
+        general: { state: "installed", identity: "a", path: "/x" },
+        local: { state: "system-default" },
+      },
+      problem: null,
+    },
+    {
+      revision: -1,
+      choices: {
+        general: { state: "system-default" },
+        local: { state: "system-default" },
+      },
+      problem: null,
+    },
+    {
+      revision: 1,
+      choices: { general: { state: "system-default" } },
+      problem: null,
+    },
+    {
+      revision: 1,
+      choices: {
+        general: { state: "system-default" },
+        local: { state: "system-default" },
+      },
+      problem: "other",
+    },
   ])
     expect(() => parseBrowserSnapshot(bad)).toThrow();
-  expect(parseBrowserInventory({ browsers: [{ identity: "a", name: "A" }] })).toHaveLength(1);
-  expect(() => parseBrowserInventory({ browsers: [{ identity: "a", name: "A", path: "/x" }] })).toThrow();
-  expect(() => parseBrowserInventory({ browsers: [{ identity: "../a", name: "A" }] })).toThrow();
+  expect(
+    parseBrowserInventory({ browsers: [{ identity: "a", name: "A" }] }),
+  ).toHaveLength(1);
+  expect(() =>
+    parseBrowserInventory({
+      browsers: [{ identity: "a", name: "A", path: "/x" }],
+    }),
+  ).toThrow();
+  expect(() =>
+    parseBrowserInventory({ browsers: [{ identity: "../a", name: "A" }] }),
+  ).toThrow();
   expect(() => parseBrowserInventory({ browsers: "x" })).toThrow();
 });

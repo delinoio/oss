@@ -11,10 +11,7 @@ import {
   type BrowserChoices,
   type BrowserInventoryEntry,
 } from "./browser-preference-controller";
-import {
-  SettingsActionButton,
-  SettingsActionIcon,
-} from "./settings-action";
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import "./browser-settings.css";
 
 export enum BrowserSlot {
@@ -29,7 +26,8 @@ enum InventoryStatus {
 const problemMessages: Record<BrowserPreferenceProblem, MessageKey> = {
   [BrowserPreferenceProblem.Unavailable]: "browser-settings.webUnavailable",
   [BrowserPreferenceProblem.ReadFailed]: "browser-settings.readFailed",
-  [BrowserPreferenceProblem.InvalidDocument]: "browser-settings.invalidDocument",
+  [BrowserPreferenceProblem.InvalidDocument]:
+    "browser-settings.invalidDocument",
   [BrowserPreferenceProblem.UnsupportedVersion]:
     "browser-settings.unsupportedVersion",
   [BrowserPreferenceProblem.WriteFailed]: "browser-settings.writeFailed",
@@ -207,11 +205,17 @@ export function BrowserSettings({ active = true }: { active?: boolean }) {
           );
         })}
       </div>
-      <p className="browser-settings-note">{copy("browser-settings.authNote")}</p>
+      <p className="browser-settings-note">
+        {copy("browser-settings.authNote")}
+      </p>
       <div
         id={`${id}-status`}
         className="browser-settings-status"
-        role={problem || outcome === BrowserSaveResult.NotInstalled ? "alert" : "status"}
+        role={
+          problem || outcome === BrowserSaveResult.NotInstalled
+            ? "alert"
+            : "status"
+        }
       >
         {message ? <p>{message}</p> : null}
         {native && status === InventoryStatus.Loading ? (
@@ -237,7 +241,9 @@ export function BrowserSettings({ active = true }: { active?: boolean }) {
           >
             {copy("browser-settings.refresh")}
           </SettingsActionButton>
-          {problem && !resettable && problem !== BrowserPreferenceProblem.Unavailable ? (
+          {problem &&
+          !resettable &&
+          problem !== BrowserPreferenceProblem.Unavailable ? (
             <SettingsActionButton
               icon={SettingsActionIcon.Retry}
               type="button"

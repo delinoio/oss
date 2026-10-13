@@ -23,7 +23,8 @@ afterEach(cleanup);
 
 it("renders the original text byte for byte and activates one complete URL", async () => {
   native.invoke.mockResolvedValue(undefined);
-  const text = "Open  https://example.com/path?q=1#part. now\n  and https://localhost:3000";
+  const text =
+    "Open  https://example.com/path?q=1#part. now\n  and https://localhost:3000";
   const { container } = render(<LinkedPre text={text} />);
   expect(container.querySelector("pre")!.textContent).toBe(text);
   const links = screen.getAllByRole("link");
@@ -60,22 +61,27 @@ it.each([
   ["browser-launch-failed", "could not be opened in the selected browser"],
   ["storage-unavailable", "Browser settings could not be read"],
   ["invalid-input", "Only http and https"],
-])("shows a localized error for %s with selection guidance and keeps the link usable", async (code, expected) => {
-  native.invoke.mockRejectedValue(code);
-  render(<LinkedPre text="https://example.com/" />);
-  fireEvent.click(screen.getByRole("link"));
-  const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toContain(expected);
-  expect(alert.textContent).toMatch(/Settings > Browser|http and https/);
-  expect(screen.getByRole("link")).toBeTruthy();
-  expect(native.invoke).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Dismiss link error" }));
-  expect(screen.queryByRole("alert")).toBeNull();
-});
+])(
+  "shows a localized error for %s with selection guidance and keeps the link usable",
+  async (code, expected) => {
+    native.invoke.mockRejectedValue(code);
+    render(<LinkedPre text="https://example.com/" />);
+    fireEvent.click(screen.getByRole("link"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(expected);
+    expect(alert.textContent).toMatch(/Settings > Browser|http and https/);
+    expect(screen.getByRole("link")).toBeTruthy();
+    expect(native.invoke).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss link error" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  },
+);
 
 it("keeps links inert outside the native desktop host", () => {
   native.isTauri.mockReturnValue(false);
-  const { container } = render(<LinkedPre text="see https://example.com/ now" />);
+  const { container } = render(
+    <LinkedPre text="see https://example.com/ now" />,
+  );
   expect(container.querySelectorAll("a,button")).toHaveLength(0);
   expect(container.querySelector("pre")!.textContent).toBe(
     "see https://example.com/ now",

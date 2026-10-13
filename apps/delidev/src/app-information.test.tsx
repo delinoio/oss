@@ -241,9 +241,7 @@ it("disables all rows while one opening is in flight and dispatches once", async
   );
   render(<AppInformation openLink={openLink} />);
   fireEvent.click(screen.getByRole("button", { name: "License" }));
-  expect(
-    await screen.findByText("Opening in your browser…"),
-  ).toBeTruthy();
+  expect(await screen.findByText("Opening in your browser…")).toBeTruthy();
   const rows = screen.getAllByRole<HTMLButtonElement>("button");
   expect(rows.every((row) => row.disabled)).toBe(true);
   fireEvent.click(rows[0]);
@@ -290,12 +288,15 @@ it.each([
   ["browser-unavailable", "The selected browser is not installed"],
   ["browser-launch-failed", "could not be opened in the selected browser"],
   ["storage-unavailable", "Browser settings could not be read"],
-])("points a %s failure at Settings > Browser and never retries", async (code, expected) => {
-  const openLink = vi.fn(async () => {
-    throw code;
-  });
-  render(<AppInformation openLink={openLink} />);
-  fireEvent.click(screen.getByRole("button", { name: "License" }));
-  expect((await screen.findByRole("alert")).textContent).toContain(expected);
-  expect(openLink).toHaveBeenCalledTimes(1);
-});
+])(
+  "points a %s failure at Settings > Browser and never retries",
+  async (code, expected) => {
+    const openLink = vi.fn(async () => {
+      throw code;
+    });
+    render(<AppInformation openLink={openLink} />);
+    fireEvent.click(screen.getByRole("button", { name: "License" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(expected);
+    expect(openLink).toHaveBeenCalledTimes(1);
+  },
+);

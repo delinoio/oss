@@ -353,15 +353,19 @@ it("indexes the Browser destinations in English and Korean for search and comman
   expect(
     matchSettings("general destination", browser).map((row) => row.target),
   ).toEqual([SettingsSearchTarget.BrowserGeneral]);
-  expect(
-    matchSettings("loopback", browser).map((row) => row.target),
-  ).toEqual([SettingsSearchTarget.BrowserLocal]);
+  expect(matchSettings("loopback", browser).map((row) => row.target)).toEqual([
+    SettingsSearchTarget.BrowserLocal,
+  ]);
   // Browser option values (names, executable paths) are never indexed.
   expect(matchSettings("firefox", browser)).toEqual([]);
   await i18n.changeLanguage("ko");
   expect(
     matchSettings("일반 URL", [
-      { category: SettingsCategory.Browser, label: "브라우저", help: "이 컴퓨터에 저장됩니다." },
+      {
+        category: SettingsCategory.Browser,
+        label: "브라우저",
+        help: "이 컴퓨터에 저장됩니다.",
+      },
     ]).map((row) => row.target),
   ).toEqual([SettingsSearchTarget.BrowserGeneral]);
 });
