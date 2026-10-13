@@ -30,7 +30,8 @@ function fixture(
     { id: "credit_1", reset_type: "codexRateLimits", status: "available" },
   ],
   lease?: { action: string; machine_id: string },
-  preferred = "",
+  // Retained positional slot: a preferred Runner no longer selects any lane.
+  _preferred = "",
   server = false,
   supported = true,
   phase = "",
@@ -42,10 +43,12 @@ function fixture(
   quotaError = "",
   automaticConsent = false,
   automaticPhase = "uncertain",
+  creditsV2 = true,
 ) {
   const machine = newRequestId(),
     connection = newRequestId(),
     generation = newRequestId(),
+    creditGeneration = newRequestId(),
     inventory = newRequestId();
   const data = {
     alias: "Quota fixture",
@@ -67,6 +70,9 @@ function fixture(
       server_credit: creditPhase
         ? {
             id: newRequestId(),
+            // The retained captured generation differs from the live one after
+            // an Execute rotation.
+            generation: creditGeneration,
             phase: creditPhase,
             cleanup_confirmed: cleanup,
             outcome: "",
@@ -125,6 +131,9 @@ function fixture(
           ...(serverCredits
             ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1]
             : []),
+          ...(creditsV2
+            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2]
+            : []),
           ...(supported
             ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]
             : [SystemCapability.SUBSCRIPTION_QUOTA_V1]),
@@ -149,7 +158,6 @@ function fixture(
           <MutationIntents>
             <SubscriptionQuotaControls
               current={current}
-              machine={preferred}
               active
               accepted={setCurrent}
               busyChanged={setBusy}
@@ -255,6 +263,7 @@ function fixture(
     machine,
     connection,
     generation,
+    creditGeneration,
     inventory,
   };
 }
@@ -386,7 +395,23 @@ it("blocks detail quota refresh while a different native lease kind owns the acc
 it.each([true, false])(
   "negotiates server quota without a Runner Device (supported: %s)",
   async (supported) => {
-    const value = fixture(undefined, undefined, "", true, supported);
+    const value = fixture(
+      undefined,
+      undefined,
+      "",
+      true,
+      supported,
+      "",
+      false,
+      "",
+      false,
+      false,
+      {},
+      "",
+      false,
+      "uncertain",
+      false,
+    );
     render(<value.Harness />);
     await screen.findByText(/Last successful observation/);
     const button = screen.getByRole("button", {
@@ -534,7 +559,7 @@ it.each([false, true])(
       await waitFor(() => expect(value.reconcile).toHaveBeenCalledTimes(1));
       expect(value.reconcile.mock.calls[0][0]).toMatchObject({
         connectionId: value.connection,
-        generationId: value.generation,
+        generationId: value.creditGeneration,
       });
     } else {
       expect(value.reconcile).not.toHaveBeenCalled();
@@ -1230,3 +1255,96 @@ it.each(["queued", "sending", "uncertain"])(
     expect(value.reconcile).not.toHaveBeenCalled();
   },
 );
+
+it("consumes beside an active Execute without selecting a Runner", async () => {
+  const runner = newRequestId(),
+    value = fixture(
+      undefined,
+      { action: "execute", machine_id: runner },
+      "",
+      false,
+      true,
+      "",
+      false,
+    );
+  render(<value.Harness />);
+  await selectExactCredit();
+  fireEvent.click(screen.getByRole("button", { name: "Consume reset credit" }));
+  await waitFor(() => expect(value.request).toHaveBeenCalledTimes(1));
+  expect(value.request.mock.calls[0][0]).toMatchObject({
+    machineId: "",
+    creditId: "credit_1",
+    confirmed: true,
+    generationId: value.generation,
+  });
+});
+
+it.each([
+  ["no credit capability", false, false],
+  ["historical server capability only", true, false],
+])(
+  "shows server-update guidance without a Runner fallback (%s)",
+  async (_name, historicalServer) => {
+    const value = fixture(
+      undefined,
+      undefined,
+      "",
+      false,
+      true,
+      "",
+      historicalServer,
+      "",
+      false,
+      false,
+      {},
+      "",
+      false,
+      "uncertain",
+      false,
+    );
+    render(<value.Harness />);
+    await screen.findByText(/Last successful observation/);
+    const use = screen.getByRole("button", { name: "Use" });
+    await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(true));
+    expect(
+      screen.getAllByText(
+        "Update the server to consume reset credits without a Runner Device.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(value.request).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps historical server-credit reconciliation on its original capability and captured generation", async () => {
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    true,
+    true,
+    "",
+    true,
+    "uncertain",
+    true,
+    false,
+    {},
+    "",
+    false,
+    "uncertain",
+    false,
+  );
+  render(<value.Harness />);
+  const reconcile = await screen.findByRole("button", {
+    name: "Check original operation result",
+  });
+  await waitFor(() =>
+    expect((reconcile as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(reconcile);
+  await waitFor(() => expect(value.reconcile).toHaveBeenCalledTimes(1));
+  expect(value.reconcile.mock.calls[0][0]).toMatchObject({
+    connectionId: value.connection,
+    generationId: value.creditGeneration,
+  });
+  expect(value.request).not.toHaveBeenCalled();
+});

@@ -214,7 +214,6 @@ function fixture() {
             {quota ? (
               <SubscriptionQuotaControls
                 current={account}
-                machine=""
                 active
                 accepted={saved}
                 busyChanged={() => {}}

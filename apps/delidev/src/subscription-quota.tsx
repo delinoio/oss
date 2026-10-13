@@ -63,29 +63,14 @@ const outcomeLabels: Record<string, string> = {
   },
 };
 
-export function quotaObservationMachine(
-  state: Record<string, unknown>,
-  preferred = "",
-): string {
-  const lease = object(state.lease);
-  return Object.keys(lease).length
-    ? text(lease.action) === "execute"
-      ? text(lease.machine_id)
-      : ""
-    : preferred || text(state.owner_machine_id);
-}
-
+// System 101 consumes with the sealed generation's access token on the server.
+// It needs no Runner and may coexist with an active Execute, so only the
+// negotiated capability and a settled generation gate it.
 export function serverCreditAvailable(
   state: Record<string, unknown>,
   supported: boolean,
 ): boolean {
-  return (
-    supported &&
-    !text(state.owner_machine_id) &&
-    !Object.keys(object(state.lease)).length &&
-    text(state.server_quota_generation) === text(state.generation) &&
-    isEntityId(text(state.generation))
-  );
+  return supported && isEntityId(text(state.generation));
 }
 
 export function serverQuotaAvailable(
@@ -120,7 +105,6 @@ export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
 
 export function SubscriptionQuotaControls({
   current,
-  machine,
   active,
   accepted,
   busyChanged,
@@ -128,7 +112,6 @@ export function SubscriptionQuotaControls({
   visible = true,
 }: {
   current: Resource;
-  machine: string;
   active: boolean;
   accepted: (resource: Resource) => void;
   busyChanged: (busy: boolean) => void;
@@ -150,18 +133,24 @@ export function SubscriptionQuotaControls({
     status.data?.capabilities.includes(
       SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
     ) === true;
+  // New requests need System 101 and never select a Runner. Historical
+  // capabilities only keep reconciling an already accepted operation.
   const serverCreditsSupported =
+    status.data?.capabilities.includes(
+      SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2,
+    ) === true;
+  const historicalServerCreditsSupported =
+    serverCreditsSupported ||
     status.data?.capabilities.includes(
       SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1,
     ) === true;
-  const creditsSupported = workerCreditsSupported || serverCreditsSupported;
+  const creditsSupported = serverCreditsSupported;
   const data = document(current),
     state = object(data.subscription),
     connection = text(object(data.connection).id),
     generation = text(state.generation),
     observation = object(state.observation),
     inventory = object(state.reset_credits);
-  const ownerMachine = quotaObservationMachine(state, machine);
   const serverAvailable = serverQuotaAvailable(state, serverSupported);
   const serverObservation = object(state.server_quota),
     serverCredit = object(state.server_credit);
@@ -176,9 +165,12 @@ export function SubscriptionQuotaControls({
     state,
     serverCreditsSupported,
   );
-  const creditLaneAvailable = isEntityId(ownerMachine)
-    ? workerCreditsSupported
-    : serverCreditReady;
+  const creditLaneAvailable = serverCreditReady;
+  // The original operation keeps its lane: a server credit reconciles with the
+  // server capabilities, a Worker observation with the Worker capability.
+  const reconcileLaneSupported = reconcilingServer
+    ? historicalServerCreditsSupported
+    : workerCreditsSupported;
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
   const [expanded, setExpanded] = useState(false);
   const [consentConfirmation, setConsentConfirmation] = useState<Resource>();
@@ -320,9 +312,8 @@ export function SubscriptionQuotaControls({
           generationId: generation,
         })
     : undefined;
-  const creditReady =
+  const creditAccountReady =
     active &&
-    creditLaneAvailable &&
     serviceAccount(current) &&
     data.subscription_service === "chatgpt" &&
     data.health === "ready" &&
@@ -332,6 +323,7 @@ export function SubscriptionQuotaControls({
     !state.pending &&
     !data.removal &&
     !busy;
+  const creditReady = creditAccountReady && creditLaneAvailable;
   const count = text(inventory.available_count);
   const countValid =
     /^(?:0|[1-9][0-9]{0,18})$/.test(count) &&
@@ -373,7 +365,7 @@ export function SubscriptionQuotaControls({
     selectionOpener.current = opener;
     focusConfirmation.current = true;
     setConfirmation({
-      machine: serverCreditReady ? "" : ownerMachine,
+      machine: "",
       account: current,
       creditId,
       ordinal,
@@ -393,9 +385,11 @@ export function SubscriptionQuotaControls({
     : status.error
       ? copy("subscription-quota.creditReadFailed")
       : !creditsSupported
-        ? copy(
-            "subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3",
-          )
+        ? workerCreditsSupported || historicalServerCreditsSupported
+          ? copy("subscription-quota.serverCreditsUnavailable")
+          : copy(
+              "subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3",
+            )
         : originalActive || busy
           ? copy("subscription-quota.creditPending")
           : !creditLaneAvailable || !creditReady
@@ -440,7 +434,7 @@ export function SubscriptionQuotaControls({
     confirmation.connection === connection &&
     confirmation.generation === generation &&
     confirmation.inventoryId === inventory.observation_id &&
-    confirmation.machine === (serverCreditReady ? "" : ownerMachine);
+    confirmation.machine === "";
   const saveRecoveryNotifications = (enabled: boolean) => {
     let documentJson: Uint8Array;
     try {
@@ -683,13 +677,6 @@ export function SubscriptionQuotaControls({
           {creditReason ? (
             <p role="status" className="reset-credit-secondary">
               {creditReason}
-            </p>
-          ) : null}
-          {creditsSupported &&
-          !isEntityId(ownerMachine) &&
-          !serverCreditsSupported ? (
-            <p role="status" className="reset-credit-secondary">
-              {copy("subscription-quota.serverCreditsUnavailable")}
             </p>
           ) : null}
           <div className="reset-credit-setting">
@@ -982,8 +969,8 @@ export function SubscriptionQuotaControls({
                   icon={SettingsActionIcon.Retry}
                   type="button"
                   disabled={
-                    !creditReady ||
-                    !creditsSupported ||
+                    !creditAccountReady ||
+                    !reconcileLaneSupported ||
                     (reconcilingServer &&
                       serverCredit.cleanup_confirmed !== true)
                   }
@@ -996,7 +983,11 @@ export function SubscriptionQuotaControls({
                       },
                       operationId: text(creditObservation.id),
                       connectionId: connection,
-                      generationId: generation,
+                      // A server credit follows its retained captured generation
+                      // across Execute rotations; it is never the live one.
+                      generationId: reconcilingServer
+                        ? text(serverCredit.generation) || generation
+                        : generation,
                     })
                   }
                 >

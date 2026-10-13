@@ -35,7 +35,7 @@
   "subscription-quota.extra.ca1844969742": "Unavailable",
   "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "Account preferences could not be saved. Reload the current account before saving.",
   "subscription-quota.serverQuotaUnsupported": "Update the selected server to refresh quota independently of the Runner Device.",
-  "subscription-quota.serverCreditsUnavailable": "Update the server to consume reset credits for an account without a Runner Device.",
+  "subscription-quota.serverCreditsUnavailable": "Update the server to consume reset credits without a Runner Device.",
   "subscription-quota.useCredit": "Use",
   "subscription-quota.hideDetails": "Hide details",
   "subscription-quota.viewDetails": "View details",
