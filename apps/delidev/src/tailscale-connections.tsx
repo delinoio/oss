@@ -344,6 +344,11 @@ function DeviceInventory({
       void operations.refetch();
     },
   );
+  // A retained input (uncertain or in flight) makes the hook ignore any new
+  // input, so row actions stay disabled until the original request is retried.
+  const resumeBlocked = resume.busy || resume.uncertain || Boolean(resume.input);
+  const cancelBlocked = cancel.busy || cancel.uncertain || Boolean(cancel.input);
+  const retainedHelpId = "tailscale-retained-request-help";
   const inventory = decode<Inventory>(discovery.data?.documentJson);
   const original = decode<Approval[]>(operations.data?.documentJson) ?? [];
   const retained = accepted
@@ -396,6 +401,29 @@ function DeviceInventory({
           {copy("tailscale.reconcile")}
         </button>
       ) : null}
+      {resume.uncertain ? (
+        <button
+          type="button"
+          disabled={resume.busy}
+          onClick={() => void resume.retry()}
+        >
+          {copy("tailscale.retryResume")}
+        </button>
+      ) : null}
+      {cancel.uncertain ? (
+        <button
+          type="button"
+          disabled={cancel.busy}
+          onClick={() => void cancel.retry()}
+        >
+          {copy("tailscale.retryCancel")}
+        </button>
+      ) : null}
+      {resume.uncertain || cancel.uncertain ? (
+        <p id={retainedHelpId} role="status">
+          {copy("tailscale.retainedRequestHelp")}
+        </p>
+      ) : null}
       {retained.length ? (
         <section>
           <h3>{copy("tailscale.operations")}</h3>
@@ -416,7 +444,10 @@ function DeviceInventory({
                 a.state === ApprovalState.Uncertain ? (
                   <button
                     type="button"
-                    disabled={resume.busy}
+                    disabled={resumeBlocked}
+                    aria-describedby={
+                      resume.uncertain ? retainedHelpId : undefined
+                    }
                     onClick={() => void resume.send({ requestId: a.id })}
                   >
                     {copy("tailscale.reconcile")}
@@ -425,7 +456,10 @@ function DeviceInventory({
                 {a.state === ApprovalState.Pending ? (
                   <button
                     type="button"
-                    disabled={cancel.busy}
+                    disabled={cancelBlocked}
+                    aria-describedby={
+                      cancel.uncertain ? retainedHelpId : undefined
+                    }
                     onClick={() => void cancel.send({ requestId: a.id })}
                   >
                     {copy("tailscale.cancel")}
