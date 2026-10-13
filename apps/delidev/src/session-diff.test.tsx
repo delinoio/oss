@@ -1359,6 +1359,49 @@ it("renders the correlation ID of a failed options refresh until a refresh is ac
   await waitFor(() => expect(screen.queryByText(correlationId)).toBeNull());
 });
 
+it("presents the current explicit refresh failure over an older options query failure", async () => {
+  const { f } = inventoryFixture([{ name: "main" }], "main");
+  const current = newRequestId();
+  const olderMessage =
+    /Branch comparison is unavailable on this server or Worker\./;
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  // The accepted options query retains its data but enters an error state,
+  // for example when a reconnect invalidation fails.
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Unsupported", Code.InvalidArgument),
+  );
+  await act(async () => {
+    await f.client.refetchQueries({
+      predicate: (query) => {
+        const data = query.state.data as
+          { documentJson?: Uint8Array } | undefined;
+        return (
+          Boolean(data?.documentJson) &&
+          new TextDecoder().decode(data!.documentJson).includes("diff_options")
+        );
+      },
+    });
+  });
+  await screen.findByText(olderMessage);
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: {
+          code: "unavailable",
+          guidance: "Retry the comparison shortly.",
+          correlationId: current,
+        },
+      },
+    ]),
+  );
+  refreshDiff();
+  await screen.findByText(current);
+  expect(screen.queryByText(olderMessage)).toBeNull();
+  expect(screen.getByText(/This comparison is unavailable\./)).toBeTruthy();
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);

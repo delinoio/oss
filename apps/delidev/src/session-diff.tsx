@@ -643,7 +643,7 @@ export function RepositoryDiff({
       {comparison === Comparison.Branch && options.isPending ? (
         <p role="status">{copy("session-diff.loadingOptions")}</p>
       ) : null}
-      {comparison === Comparison.Branch && options.error ? (
+      {comparison === Comparison.Branch && options.error && !refreshFailed ? (
         <>
           <Problem error={options.error} />
           <p role="alert">
@@ -653,10 +653,7 @@ export function RepositoryDiff({
           </p>
         </>
       ) : null}
-      {comparison === Comparison.Branch &&
-      !options.error &&
-      refreshFailure &&
-      refreshFailed ? (
+      {comparison === Comparison.Branch && refreshFailure && refreshFailed ? (
         <>
           <Failure failure={refreshFailure.failure} />
           {refreshFailure.failure.correlationId ? (
