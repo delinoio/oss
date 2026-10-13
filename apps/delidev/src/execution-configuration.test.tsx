@@ -10,6 +10,7 @@ import { encode } from "./documents";
 import {
   ExecutionConfiguration as OriginalExecutionConfiguration,
   SavedExecutionChips,
+  savedExecutionSnapshot,
 } from "./execution-configuration";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(
@@ -35,7 +36,7 @@ function fixture(harness = "codex") {
   const configuration = {
     agent_id: newRequestId(),
     agent_revision: 3,
-    model_id: newRequestId(),
+    model_key: newRequestId(),
     model_revision: 7,
     provider_id: newRequestId(),
     harness,
@@ -135,6 +136,118 @@ it("labels only immutable saved selections and omits unspecified effort", () => 
   expect(
     screen.getByRole("group", { name: "Saved model: Unavailable" }),
   ).toBeTruthy();
+});
+
+type Mutation = (
+  data: { initial_execution: { id: string } },
+  configuration: Record<string, unknown>,
+) => void;
+const invalidSnapshots: [string, Mutation][] = [
+  ["a non-canonical execution id", (data) => {
+    data.initial_execution.id = "not-a-uuid";
+  }],
+  ["an uppercase execution id", (data) => {
+    data.initial_execution.id = data.initial_execution.id.toUpperCase();
+  }],
+  ["a non-canonical agent id", (_, configuration) => {
+    configuration.agent_id = "agent-1";
+  }],
+  ["a non-canonical model key", (_, configuration) => {
+    configuration.model_key = "model-1";
+  }],
+  ["an unsupported harness", (_, configuration) => {
+    configuration.harness = "unknown-harness";
+  }],
+  ["a missing harness", (_, configuration) => {
+    delete configuration.harness;
+  }],
+  ["a missing agent revision", (_, configuration) => {
+    delete configuration.agent_revision;
+  }],
+  ["a missing model revision", (_, configuration) => {
+    delete configuration.model_revision;
+  }],
+  ["a missing native model", (_, configuration) => {
+    delete configuration.native_model;
+  }],
+  ["an empty native model", (_, configuration) => {
+    configuration.native_model = "";
+  }],
+  ["a non-string effort", (_, configuration) => {
+    configuration.effort = 5;
+  }],
+  ["missing options", (_, configuration) => {
+    delete configuration.options;
+  }],
+  ["non-array accounts", (_, configuration) => {
+    configuration.accounts = {};
+  }],
+  ["unsupported routing", (_, configuration) => {
+    configuration.routing = "random";
+  }],
+  ["missing templates", (_, configuration) => {
+    delete configuration.templates;
+  }],
+  ["missing instructions", (_, configuration) => {
+    delete configuration.instructions;
+  }],
+];
+
+it.each(invalidSnapshots)(
+  "rejects %s with unavailable chips and incomplete-snapshot guidance",
+  (_name, mutate) => {
+    const value = fixture();
+    const data = structuredClone(value.data);
+    mutate(
+      data,
+      data.initial_execution.configuration as Record<string, unknown>,
+    );
+    const resource = { ...value.resource, documentJson: encode(data) };
+    expect(savedExecutionSnapshot(resource).ready).toBe(false);
+    const view = render(
+      <>
+        <SavedExecutionChips resource={resource} />
+        <ExecutionConfiguration resource={resource} />
+      </>,
+    );
+    expect(
+      screen.getByRole("group", { name: "Saved model: Unavailable" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("original-model")).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: /Saved reasoning effort/ }),
+    ).toBeNull();
+    expect(
+      screen.getByText(/saved execution configuration is incomplete/i),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "Saved execution configuration" }),
+    ).toBeNull();
+    view.unmount();
+  },
+);
+
+it("accepts every supported harness and keeps unspecified effort omitted", () => {
+  for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) {
+    const value = fixture(harness);
+    const snapshot = savedExecutionSnapshot(value.resource);
+    expect(snapshot).toEqual({
+      ready: true,
+      nativeModel: "original-model",
+      effort: "high",
+    });
+  }
+  const value = fixture();
+  delete (value.configuration as Record<string, unknown>).effort;
+  const resource = {
+    ...value.resource,
+    documentJson: encode(value.data),
+  };
+  expect(savedExecutionSnapshot(resource)).toEqual({
+    ready: true,
+    nativeModel: "original-model",
+    effort: "",
+  });
 });
 
 it("keeps selected Grok context provenance separate from native context observation", () => {

@@ -6,9 +6,9 @@ import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokToolsTerminal } from "./native-grok-interactions";
 import { NativeGrokTerminal, NativeGrokStop } from "./native-grok";
-import { type Resource } from "@delinoio/delidev-api-client";
+import { isEntityId, type Resource } from "@delinoio/delidev-api-client";
 import { memo, type ReactNode } from "react";
-import { Harness } from "./configuration-fields";
+import { Harness, Routing } from "./configuration-fields";
 import { NativeClaudePermissionProgress } from "./native-claude-progress";
 import { NativeClaudeTerminal } from "./native-claude-terminal";
 import { NativeClaudeDenialCompletion } from "./native-claude-denial-completion";
@@ -40,39 +40,92 @@ function TechnicalEvidence({
   ) : null;
 }
 
-export function SavedExecutionChips({ resource }: { resource: Resource }) {
-  useLocale();
+const supportedHarnesses: ReadonlySet<string> = new Set(
+  Object.values(Harness),
+);
+const supportedRouting: ReadonlySet<string> = new Set(Object.values(Routing));
+
+// Revisions are server uint64 values. Imprecise (unsafe) integers stay valid
+// snapshot evidence because the revision display marks them unavailable.
+function positiveRevision(value: unknown): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+export type SavedExecutionSnapshot =
+  | { ready: false }
+  | { ready: true; nativeModel: string; effort: string };
+
+/**
+ * Validates the immutable initial execution snapshot of a Session resource.
+ *
+ * This is the single readiness predicate shared by the Session information
+ * chips and the Diagnostics saved-configuration section. It mirrors the
+ * required keys of the server execution configuration (identities are
+ * canonical UUIDs, the harness is one of the closed supported set, revisions
+ * are positive integers and the structural keys have their expected types).
+ * Reasoning effort is exact direct input: it is never validated against a
+ * value list, and an empty or absent value is simply omitted. Nothing is
+ * inferred from the current Agent, resumed executions or native observations.
+ */
+export function savedExecutionSnapshot(
+  resource: Resource,
+): SavedExecutionSnapshot {
+  if (resource.schemaVersion !== 1) return { ready: false };
   const initial = object(document(resource).initial_execution);
   const configuration = object(initial.configuration);
+  const nativeModel = configuration.native_model;
+  const effort = configuration.effort;
   const ready =
-    resource.schemaVersion === 1 &&
-    text(initial.id) &&
-    text(configuration.agent_id) &&
-    text(configuration.native_model);
+    typeof initial.id === "string" &&
+    isEntityId(initial.id) &&
+    typeof configuration.agent_id === "string" &&
+    isEntityId(configuration.agent_id) &&
+    typeof configuration.model_key === "string" &&
+    isEntityId(configuration.model_key) &&
+    positiveRevision(configuration.agent_revision) &&
+    positiveRevision(configuration.model_revision) &&
+    typeof configuration.harness === "string" &&
+    supportedHarnesses.has(configuration.harness) &&
+    typeof nativeModel === "string" &&
+    nativeModel !== "" &&
+    (effort === undefined || typeof effort === "string") &&
+    configuration.options !== null &&
+    typeof configuration.options === "object" &&
+    !Array.isArray(configuration.options) &&
+    Array.isArray(configuration.accounts) &&
+    Array.isArray(configuration.templates) &&
+    typeof configuration.routing === "string" &&
+    supportedRouting.has(configuration.routing) &&
+    typeof configuration.instructions === "string";
+  return ready
+    ? { ready: true, nativeModel, effort: text(effort) }
+    : { ready: false };
+}
+
+export function SavedExecutionChips({ resource }: { resource: Resource }) {
+  useLocale();
+  const snapshot = savedExecutionSnapshot(resource);
+  const model = snapshot.ready
+    ? snapshot.nativeModel
+    : copy("session.usageUnavailable");
   return (
     <div className="session-saved-selection">
       <span
         role="group"
         className="session-info-chip"
-        aria-label={copy("session.savedModel", {
-          model: ready
-            ? text(configuration.native_model)
-            : copy("session.usageUnavailable"),
-        })}
+        aria-label={copy("session.savedModel", { model })}
       >
-        {ready
-          ? text(configuration.native_model)
-          : copy("session.usageUnavailable")}
+        {model}
       </span>
-      {ready && text(configuration.effort) ? (
+      {snapshot.ready && snapshot.effort ? (
         <span
           role="group"
           className="session-info-chip"
           aria-label={copy("session.savedEffort", {
-            effort: text(configuration.effort),
+            effort: snapshot.effort,
           })}
         >
-          {text(configuration.effort)}
+          {snapshot.effort}
         </span>
       ) : null}
     </div>
@@ -328,11 +381,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
       };
   const templates = items(configuration.templates);
   const accounts = items(configuration.accounts);
-  const ready = Boolean(
-    text(initial.id) &&
-    text(configuration.agent_id) &&
-    text(configuration.native_model),
-  );
+  const ready = savedExecutionSnapshot(resource).ready;
   return (
     <div className="execution-configuration">
       {resource.schemaVersion !== 1 ? (
