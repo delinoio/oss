@@ -5591,7 +5591,13 @@ Keep edited drafts and offer the existing explicit restore action. Bound edit
 history to 1000 session owners; reject an edit rather than wrap or discard its
 guard. Mutation-owned presentation is limited to 1000 entries and 4 MiB, with a
 pending guard reserving the 1 MiB document bound for verified replacement text.
-Never evict a busy/uncertain guard or retain it across connection disposal.
+Never evict a busy/uncertain guard or retain it across connection disposal. Starting a later Revert carries the current retained restored-action identity
+into its new pending presentation, so a definite rejection of that attempt
+releases only its matching pending guard and never offers an already restored
+earlier prompt again. When a definite rejection leaves no pending, replacement
+or restored-action metadata, the presentation is deleted so its key count and
+bytes are freed and mounted readers are notified; meaningful restored
+identities, replacements, and busy or uncertain guards stay retained.
 
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Automatic and explicit restoration preserve the
