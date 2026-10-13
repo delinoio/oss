@@ -3,7 +3,6 @@ package subscription
 
 import (
 	"encoding/json"
-	"errors"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -85,7 +84,7 @@ func OpenClaudeToken(raw []byte, server, account, generation domain.ID) (ClaudeT
 	token := append([]byte(nil), envelope.Token[1:len(envelope.Token)-1]...)
 	if !domain.ClaudeSetupTokenValid(token) {
 		clear(token)
-		return ClaudeToken{}, errors.Join(ClaudeTokenInvalid())
+		return ClaudeToken{}, ClaudeTokenInvalid()
 	}
 	return ClaudeToken{Token: token}, nil
 }
