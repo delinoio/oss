@@ -1519,3 +1519,20 @@ The existing closed execution JSON adds an exclusive `function_output` payload;
 retained ToolMessage resources preserve the nullable namespace and ordered safe
 content. No RPC, SQLite migration or native dispatch authority is added. Follow
 [the harness contract](cmds-delidev-harness-contract.md#codex-native-function-outputs).
+
+## Original Codex dynamic tool publication
+
+System capability `CODEX_DYNAMIC_TOOLS_V1 = 102` and Worker capability
+`CODEX_DYNAMIC_TOOLS_V1 = 63` negotiate typed original dynamic lifecycle,
+unavailable reply delivery and request resolution in the existing event JSON.
+Original numeric request identities use canonical decimal strings for browser
+precision; text request identities retain their separate kind. Private journals
+preserve original ownership and wire spelling. Older peers grant no publication
+authority. Capability changes rotate the original attach receipt identity.
+No RPC, entity kind, global event version or database migration is added.
+
+The immutable original assignment records optional `native_dynamic_tools` only
+for a negotiated root Codex Worker. Legacy and restricted assignments grant no
+live dynamic responder. A failed/interrupted root with unresolved tool evidence
+can retain its terminal and verified cleanup in a version-1 completion; it cannot
+produce a continuation checkpoint or later input authority.

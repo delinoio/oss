@@ -538,3 +538,13 @@ without rewriting native history or its digest. A function output must not reuse
 another native item's identity. Result evidence never grants dispatch, media
 I/O, account authority, Fork mutation or cleanup proof. Restricted auxiliary
 profiles retain their separate closed history rules.
+
+## Original Codex dynamic-tool history
+
+Ordinary and managed root Fork history retain complete, validated original
+dynamic items without changing their private bytes or digest. Native false
+success remains an item outcome; it does not fabricate a root result. Historical
+items grant no reply, dispatch, adoption or media retrieval. The restricted
+read-only Sidechat history profile rejects dynamic items and never obtains an
+original request responder. Existing immutable account, checkpoint, workspace,
+accepted-input and independent cleanup boundaries apply unchanged.

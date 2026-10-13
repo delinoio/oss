@@ -30,6 +30,7 @@ const (
 	ExecutionResponseUsageObserved      ExecutionEventKind = "response-usage-observed"
 	ExecutionNoticeObserved             ExecutionEventKind = "notice-observed"
 	ExecutionFunctionOutputObserved     ExecutionEventKind = "function-output-observed"
+	ExecutionDynamicToolObserved        ExecutionEventKind = "dynamic-tool-observed"
 	ExecutionToolStarted                ExecutionEventKind = "tool-started"
 	ExecutionToolUpdated                ExecutionEventKind = "tool-updated"
 	ExecutionToolCompleted              ExecutionEventKind = "tool-completed"
@@ -187,6 +188,7 @@ type ExecutionMessageUpdate struct {
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
 	FunctionOutput     *FunctionOutputUpdate              `json:"function_output,omitempty"`
+	DynamicTool        *DynamicToolUpdate                 `json:"dynamic_tool,omitempty"`
 	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
 	GrokTool           *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
@@ -410,6 +412,10 @@ func (e ExecutionEvent) Validate() error {
 		} else if m.InputID != "" || (m.Phase != nil && *m.Phase != CommentaryMessage && *m.Phase != FinalMessage) {
 			return Fail(InvalidArgument, "Invalid native assistant message metadata.", "Preserve its typed phase without borrowing input ownership.")
 		}
+	case ExecutionDynamicToolObserved:
+		if e.DynamicTool == nil || e.DynamicTool.Validate() != nil {
+			return invalidTool()
+		}
 	case ExecutionFunctionOutputObserved:
 		if e.FunctionOutput == nil || e.FunctionOutput.Validate() != nil {
 			return invalidTool()
@@ -469,7 +475,7 @@ func (e ExecutionEvent) Validate() error {
 	if e.ClaudeTerminal != nil && (e.Kind != ExecutionTurnFinished || e.ClaudeTerminal.Validate() != nil || e.Outcome != e.ClaudeTerminal.Outcome() || e.ProblemCode != "") {
 		return invalidClaudeTerminal()
 	}
-	if (e.Kind != ExecutionFunctionOutputObserved && e.FunctionOutput != nil) || (e.Kind != ExecutionGrokToolObserved && e.GrokTool != nil) || (e.Kind != ExecutionGrokTextObserved && e.GrokText != nil) || (e.Kind != ExecutionGrokUsageObserved && e.GrokUsage != nil) || (e.Kind != ExecutionClaudeProgressObserved && e.ClaudeProgress != nil) || (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionGrokUsageObserved && e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionDynamicToolObserved && e.DynamicTool != nil) || (e.Kind != ExecutionFunctionOutputObserved && e.FunctionOutput != nil) || (e.Kind != ExecutionGrokToolObserved && e.GrokTool != nil) || (e.Kind != ExecutionGrokTextObserved && e.GrokText != nil) || (e.Kind != ExecutionGrokUsageObserved && e.GrokUsage != nil) || (e.Kind != ExecutionClaudeProgressObserved && e.ClaudeProgress != nil) || (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionGrokUsageObserved && e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {
@@ -554,6 +560,7 @@ type ForkMessageOrigin struct {
 
 type ExecutionMessage struct {
 	FunctionOutput     *FunctionOutput            `json:"function_output,omitempty"`
+	DynamicTool        *DynamicTool               `json:"dynamic_tool,omitempty"`
 	ContextRevision    uint64                     `json:"context_revision,omitempty"`
 	TurnTiming         *TurnTiming                `json:"turn_timing,omitempty"`
 	Attachments        []ImageAttachment          `json:"attachments,omitempty"`

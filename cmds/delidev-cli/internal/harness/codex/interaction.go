@@ -130,7 +130,7 @@ func (c *Client) retainInteractionLocked(native nativewire.Event, turn domain.ID
 	// The pinned server allocates monotonically increasing request IDs. Refuse
 	// reuse even after closure: resolved notifications contain no arrival token
 	// and could otherwise retire a replacement request with the same wire ID.
-	if s.native[key] != "" || s.arrivals[interaction.ID] != nil {
+	if s.native[key] != "" || s.arrivals[interaction.ID] != nil || c.dynamicNative[key] != "" {
 		return incompatible()
 	}
 	if len(s.arrivals) >= maxTrackedInteractions {

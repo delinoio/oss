@@ -54,7 +54,7 @@ func validationStage(method string) eventValidationStage {
 		return validationRemoteControl
 	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
 		return validationWindowsSandbox
-	case "currentTime/read":
+	case "currentTime/read", "item/tool/call":
 		return validationService
 	case "error":
 		return validationNativeError
@@ -125,6 +125,7 @@ const (
 	MetadataEvent                 EventKind = "metadata"
 	ModelSafetyEvent              EventKind = "model-safety"
 	UsageEvent                    EventKind = "usage"
+	DynamicToolEvent              EventKind = "dynamic-tool"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
 	FunctionOutputEvent           EventKind = "function-output"
@@ -171,6 +172,7 @@ type Message struct {
 }
 
 type Event struct {
+	DynamicTool         *domain.DynamicToolUpdate
 	FunctionOutput      *domain.FunctionOutput
 	FunctionOutputStage domain.FunctionOutputStage
 	NativeError         *NativeErrorObservation `json:"-"`
@@ -347,6 +349,9 @@ func (c *Client) observeEventContextLocked(ctx context.Context, native nativewir
 		return c.observeLateTurnLocked(native)
 	}
 	if native.Kind == nativewire.ServerRequest && c.execution != nil {
+		if native.Method == "item/tool/call" {
+			return c.observeDynamicRequestLocked(native)
+		}
 		return c.observeInteractionLocked(native)
 	}
 	if native.Kind != nativewire.Notification || c.execution == nil {
@@ -480,6 +485,9 @@ func (c *Client) observeEventContextLocked(ctx context.Context, native nativewir
 		}
 		return event, nil
 	case "serverRequest/resolved":
+		if event, handled, err := c.observeDynamicResolvedLocked(native); handled || err != nil {
+			return event, err
+		}
 		return c.observeInteractionClosedLocked(native)
 	case "thread/status/changed":
 		var params struct {
@@ -635,6 +643,11 @@ func (c *Client) observeMessageLocked(ctx context.Context, native nativewire.Eve
 	}
 	message := &Message{}
 	switch kind {
+	case "dynamicToolCall":
+		if !c.dynamicToolsEnabled || c.sidechat != "" {
+			return privateNative(native), nil
+		}
+		return c.observeDynamicItemLocked(native, params.TurnID, params.Item)
 	case "functionCallOutput":
 		// Restricted Sidechat and review-owned child turns keep results private;
 		// their history is not this execution's retained turn history.

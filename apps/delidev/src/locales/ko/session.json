@@ -171,5 +171,17 @@
   "session.budgetTitle": "세션 예산 한도에 도달했습니다",
   "session.recoveryTitle": "기존 작업 복구가 필요합니다",
   "session.recoveryRegion": "세션 복구",
-  "session.problemCause": "원인"
+  "session.problemCause": "원인",
+  "session.dynamicTool": "동적 도구",
+  "session.dynamicUnavailable": "동적 도구 관찰을 사용할 수 없습니다.",
+  "session.dynamicReplyDelivery": "응답 전달",
+  "session.dynamicNativeRequest": "네이티브 요청",
+  "session.dynamicNativeSuccess": "네이티브 성공",
+  "session.dynamicTransmitted": "전송됨",
+  "session.dynamicUncertain": "불확실",
+  "session.dynamicNotSent": "전송되지 않음",
+  "session.dynamicOpen": "열림",
+  "session.dynamicResolved": "해결됨",
+  "session.dynamicImageReference": "이미지 참조",
+  "session.dynamicAudioReference": "오디오 참조"
 }

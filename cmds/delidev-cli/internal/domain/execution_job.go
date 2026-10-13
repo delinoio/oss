@@ -34,6 +34,7 @@ type ExecutionJobInput struct {
 	Remediation         *PRFixExecution            `json:"remediation,omitempty"`
 	Continuation        *ExecutionContinuation     `json:"continuation,omitempty"`
 	// Frozen admission owns all output intents, including unpublished native calls.
+	NativeDynamicTools    bool `json:"native_dynamic_tools,omitempty"`
 	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
 }
 
@@ -93,6 +94,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 func (i ExecutionJobInput) Validate() error {
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
+	}
+	if i.NativeDynamicTools && (i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "") {
+		return Fail(Unsupported, "This assignment cannot observe original Codex dynamic tools.", "Preserve the negotiated original root execution owner.")
 	}
 	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "") {
 		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")

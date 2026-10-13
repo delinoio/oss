@@ -6148,3 +6148,15 @@ Show details opens the original Info target, including Budget and Recovery.
 No card grants sign-in, account switching, reset, send, Resume or new retry authority.
 Startup correction, delivery and cleanup remain independent visible facts;
 original no-send and confirmed-cleanup proof alone can permit startup retry.
+
+## Original dynamic-tool disclosure
+
+Use the original tool disclosure for bounded Codex dynamic observations. Show
+the native tool/namespace and independently observed lifecycle status. Expanded
+content shows the exact fixed unavailable text when an original reply was
+attempted, plus separate localized `Reply delivery` and `Native request` rows.
+Transmission or uncertainty never substitutes for native resolution, item
+completion, root outcome or cleanup. Preserve nullable native success and
+ordered inert text/image/audio reference rows. Do not display internal request
+identities, argument contents, media locators or dispatch/retry/approval controls.
+Unknown or malformed unions retain explicit unavailable presentation.

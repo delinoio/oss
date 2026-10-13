@@ -458,3 +458,14 @@ client contracts jointly own server-observed group timing and independent closed
 detailed disclosures. Private Session records project through additive typed
 Resource metadata while legacy document JSON and native ownership stay intact.
 No migration, Worker report or execution authority is added.
+
+## Original Codex dynamic tools
+
+The [harness contract](cmds-delidev-harness-contract.md#original-codex-dynamic-tools)
+owns closed original dynamic lifecycle, once-only durable unavailable replies
+and independent request/item/root/cleanup evidence. System 102 and Worker 63
+negotiate the additive inert transcript union. Complete context and ordinary
+Fork preserve protected native history; restricted auxiliary profiles retain
+separate history and response boundaries. The desktop uses the original tool
+disclosure with independent reply and request rows. No backend, registry,
+automatic replay or storage migration is introduced.
