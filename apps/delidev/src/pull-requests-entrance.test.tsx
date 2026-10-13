@@ -247,3 +247,19 @@ it("transitions only the selected state segment background in 120ms", () => {
   const transitions = checked?.[1].match(/transition[a-z-]*:/gu) ?? [];
   expect(transitions).toEqual(["transition:"]);
 });
+
+it("settles the page entrance before positioning the Refresh tooltip", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  await openPullRequests();
+  dispatchAnimation(page());
+  await chooseRepository();
+  // Leave and return so the retained results sit beneath a fresh entrance.
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await openPullRequests();
+  expect(entering()).toBe("y4");
+  const refresh = page().querySelector<HTMLButtonElement>(".pr-list-refresh");
+  expect(refresh).not.toBeNull();
+  fireEvent.pointerEnter(refresh!);
+  expect(entering()).toBeNull();
+});
