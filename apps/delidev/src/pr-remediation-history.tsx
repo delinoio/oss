@@ -166,6 +166,11 @@ export function PRRemediationHistory({
     ) &&
     (!history.data?.nextPageToken || rows.length > 0);
   const busy = history.isFetching || resume.busy || resume.uncertain;
+  // A history read must not overlap an in-flight resume: the accepted resume
+  // reloads from the first page, and the chain ignores a reload while a read
+  // is active, so an overlapping read could publish the pre-resume revision.
+  // The original-resume retry is likewise held while a history read runs.
+  const readBlocked = history.isFetching || resume.busy;
   usePaginationRefresh(
     IntegrationQuery.listPullRequestRemediationAttempts,
     request(""),
@@ -193,21 +198,21 @@ export function PRRemediationHistory({
         )}
       </p>
       {routineRefresh ? (
-        <button disabled={history.isFetching} onClick={refresh}>
+        <button disabled={readBlocked} onClick={refresh}>
           {copy("pr-remediation-history.refreshRemediationHistory_512d6b")}
         </button>
       ) : null}
       <Problem error={history.error || resume.error} />
       {history.error ? (
-        <button
-          disabled={history.isFetching}
-          onClick={traversal.refreshExplicit}
-        >
+        <button disabled={readBlocked} onClick={traversal.refreshExplicit}>
           {copy("ui.retryCurrentRead")}
         </button>
       ) : null}
       {resume.uncertain ? (
-        <button disabled={resume.busy} onClick={resume.retry}>
+        <button
+          disabled={resume.busy || history.isFetching}
+          onClick={resume.retry}
+        >
           {copy(
             "pr-remediation-history.retryOriginalAllowanceResumption_991985",
           )}

@@ -481,3 +481,84 @@ it("reloads the first page after an accepted resume instead of retrying a retain
   // continuation token is not retried.
   expect(tokens()).toEqual(["", "continuation-1", "", "continuation-1", ""]);
 });
+
+it("disables history reads while an allowance resumption is in flight so the post-resume reload cannot be skipped", async () => {
+  const f = fixture();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.resume.mockImplementationOnce(async (request) => {
+    await gate;
+    return { problemSet: f.set, requestId: request.mutation?.requestId };
+  });
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Resume automatic attempt allowance" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  await waitFor(() => expect(f.resume).toHaveBeenCalledTimes(1));
+  const refresh = screen.getByRole("button", {
+    name: "Refresh remediation history",
+  });
+  expect((refresh as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(refresh);
+  expect(f.history).toHaveBeenCalledTimes(1);
+  release();
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Refresh remediation history",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+});
+
+it("holds the original resumption retry while a history read is active", async () => {
+  const f = fixture();
+  f.resume.mockRejectedValueOnce(
+    new ConnectError("response lost", Code.Unavailable),
+  );
+  render(f.view());
+  await screen.findByRole("article", { name: "Remediation attempt 2" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Resume automatic attempt allowance" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm allowance resumption" }),
+  );
+  const retry = await screen.findByRole("button", {
+    name: "Retry original allowance resumption",
+  });
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  f.history.mockImplementationOnce(async () => {
+    await gate;
+    return { problemSet: f.set, attempts: f.attempts };
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh remediation history" }),
+  );
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
+  expect((retry as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(retry);
+  expect(f.resume).toHaveBeenCalledTimes(1);
+  release();
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Retry original allowance resumption",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+});
