@@ -247,19 +247,30 @@ fn shortcut_preferences_admit_product_webviews_and_deny_auxiliary_views() {
 
 #[test]
 fn numeric_session_selection_is_trusted_local_only() {
-    const COMMAND: &str = "browser_tab_shortcuts";
+    trusted_local_browser_command("browser_tab_shortcuts");
+}
+
+#[test]
+fn native_local_browser_pages_are_trusted_local_only() {
+    // Inventory, Create, Close and observation share one closed command. Raw
+    // external children, remote origins, the tray and auxiliary views cannot
+    // reach it.
+    trusted_local_browser_command("browser_pages");
+}
+
+fn trusted_local_browser_command(command: &str) {
     for target in [Target::MacOS, Target::Windows, Target::Linux] {
         let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
         let capabilities: BTreeMap<String, Capability> =
             serde_json::from_str(CAPABILITIES).unwrap();
         let app = &manifests[APP_ACL_KEY];
-        assert!(app.commands.iter().any(|command| command == COMMAND));
+        assert!(app.commands.iter().any(|value| value == command));
         assert!(
             app.permissions["browser-presentation"]
                 .commands
                 .allow
                 .iter()
-                .any(|command| command == COMMAND)
+                .any(|value| value == command)
         );
         let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
         let authority = RuntimeAuthority::new(
@@ -270,20 +281,20 @@ fn numeric_session_selection_is_trusted_local_only() {
         for label in ["main", "server-fixture"] {
             assert!(
                 authority
-                    .resolve_access(COMMAND, label, label, &Origin::Local)
+                    .resolve_access(command, label, label, &Origin::Local)
                     .is_some()
             );
             for child in ["external-fixture", "browser-fixture", "tray"] {
                 assert!(
                     authority
-                        .resolve_access(COMMAND, label, child, &Origin::Local)
+                        .resolve_access(command, label, child, &Origin::Local)
                         .is_none()
                 );
             }
             assert!(
                 authority
                     .resolve_access(
-                        COMMAND,
+                        command,
                         label,
                         label,
                         &Origin::Remote {

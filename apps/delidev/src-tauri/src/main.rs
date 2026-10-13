@@ -744,6 +744,44 @@ fn recheck_record(
     }
     Ok(())
 }
+// Retain the original native admission locks through atomic metadata
+// replacement. Registry/connection retirement cannot cross the captured
+// publication boundary.
+fn publish_browser_pages(
+    windows: &ProductWindows,
+    original: &WindowAuthority,
+    staged: delidev_desktop::browser::PrivateWrite,
+    committed: &mut bool,
+) -> Result<(), NativeFailure> {
+    let target = staged.target().to_path_buf();
+    let barriers = windows.removals.lock().map_err(|_| NativeFailure::Busy)?;
+    let registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+    let current = registry.admitted(&original.entry.label)?;
+    if current.instance != original.entry.instance
+        || current.role != original.entry.role
+        || (original.saved.is_none() && registry.local_revision != original.local_revision)
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    let bindings = windows.bindings.lock().map_err(|_| NativeFailure::Busy)?;
+    if let Some(expected) = &original.saved
+        && (barriers.contains_key(&expected.id)
+            || !bindings.get(&current.label).is_some_and(|binding| {
+                !binding.closing
+                    && binding.instance == current.instance
+                    && binding.profile.same_authority(expected)
+            }))
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    staged.replace_with_commit(committed)?;
+    drop(bindings);
+    drop(registry);
+    drop(barriers);
+    // Directory durability stays on this worker after the short admission
+    // fence.
+    delidev_desktop::browser::sync_private_parent(&target)
+}
 fn adopt_local(
     window: &WebviewWindow<CefRuntime>,
     original: &WindowAuthority,
@@ -1570,6 +1608,147 @@ async fn open_connection(
     result
 }
 
+/// A page command either was never admitted (nothing can have changed) or its
+/// outcome is uncertain and must be settled by observing the original
+/// operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum PageCommandFailure {
+    NotAdmitted { failure: NativeFailure },
+    Uncertain { failure: NativeFailure },
+}
+
+// Resource operations use a native-created original window identity, never a
+// renderer-supplied path or presentation handle.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
+#[tauri::command]
+async fn browser_pages(
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    request: browser_host::PageRequest,
+) -> Result<browser_host::PageInventory, PageCommandFailure> {
+    let not_admitted = |failure| PageCommandFailure::NotAdmitted { failure };
+    let uncertain = |failure| PageCommandFailure::Uncertain { failure };
+    let authority = capture_authority(&window).map_err(not_admitted)?;
+    canonical_id(&profile_id).map_err(not_admitted)?;
+    let scope = authority.saved.clone();
+    // Saved windows are not affected by the local connection revision.
+    let owner = format!(
+        "{}:{}:{}",
+        authority.entry.label,
+        authority.entry.instance,
+        if scope.is_some() {
+            0
+        } else {
+            authority.local_revision
+        }
+    );
+    let windows = Arc::clone(app.state::<Arc<ProductWindows>>().inner());
+    let worker_connector = Arc::clone(connector.inner());
+    let worker_host = Arc::clone(host.inner());
+    let worker_request = request.clone();
+    let worker_authority = authority.clone();
+    let worker_owner = owner.clone();
+    let id = profile_id.clone();
+    let mutating = matches!(
+        request.action,
+        browser_host::PageAction::Create | browser_host::PageAction::Close
+    );
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        let record = worker_connector.browser_profile(scope.as_ref(), &id)?;
+        recheck_record(&windows, &worker_authority)?;
+        if !mutating {
+            let inventory =
+                worker_host.read_pages(&worker_owner, scope.as_ref(), &record, &worker_request)?;
+            recheck_record(&windows, &worker_authority)?;
+            return Ok(Some(inventory));
+        }
+        if record.data.state != delidev_desktop::browser::ProfileState::Active {
+            return Err(NativeFailure::Stopped);
+        }
+        let admission = worker_host.prepare_pages(
+            &worker_owner,
+            scope.clone(),
+            &record,
+            &worker_request,
+            |staged, committed| {
+                publish_browser_pages(&windows, &worker_authority, staged, committed)
+            },
+        )?;
+        if admission == browser_host::PageAdmission::Replayed {
+            // The original operation owns its result; read it without
+            // repeating the mutation.
+            let observe = browser_host::PageRequest {
+                action: browser_host::PageAction::Observe,
+                operation_id: worker_request.operation_id.clone(),
+                url: None,
+                page_id: None,
+            };
+            let inventory =
+                worker_host.read_pages(&worker_owner, scope.as_ref(), &record, &observe)?;
+            return Ok(Some(inventory));
+        }
+        Ok(None)
+    })
+    .await
+    .map_err(|_| not_admitted(NativeFailure::SidecarFailed))?
+    .map_err(not_admitted)?;
+    let inventory = prepared;
+    let operation_id = request.operation_id.clone().unwrap_or_default();
+    // A fresh mutation and a retried native cleanup finish on the UI loop. A
+    // pure read, or a receipt whose cleanup completed, returns directly.
+    let needs_finish = inventory.as_ref().is_none_or(|inventory| {
+        inventory
+            .receipt
+            .as_ref()
+            .is_some_and(|receipt| receipt.metadata_committed && !receipt.native_cleanup_complete)
+    });
+    let result = if needs_finish {
+        let ui_host = Arc::clone(host.inner());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let copy = app.clone();
+        let original = authority.clone();
+        let finish_owner = owner.clone();
+        let finish_profile = profile_id.clone();
+        let finish_operation = operation_id.clone();
+        if app
+            .run_on_main_thread(move || {
+                let result = match recheck_registered(&copy, &original) {
+                    Ok(()) => ui_host.finish_pages(
+                        &copy,
+                        &finish_owner,
+                        &finish_profile,
+                        &finish_operation,
+                    ),
+                    Err(code) => Err(code),
+                };
+                if result.is_err() {
+                    ui_host.release_pages(&finish_owner, &finish_profile, &finish_operation);
+                }
+                let _ = send.send(result);
+            })
+            .is_err()
+        {
+            host.release_pages(&owner, &profile_id, &operation_id);
+            return Err(uncertain(NativeFailure::SidecarFailed));
+        }
+        receive
+            .await
+            .map_err(|_| uncertain(NativeFailure::SidecarFailed))?
+            .map_err(uncertain)?
+    } else {
+        inventory.ok_or_else(|| uncertain(NativeFailure::InvalidEvidence))?
+    };
+    recheck_authority(&window, &authority).map_err(uncertain)?;
+    Ok(result)
+}
+
 // Tauri injects trusted framework state separately from the closed IPC fields.
 // Keep this exception on the command; remove it if those injected states are
 // consolidated.
@@ -1586,7 +1765,7 @@ async fn open_browser(
     host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     profile_id: String,
     view_id: String,
-    url: String,
+    page_id: String,
     bounds: browser_host::Bounds,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
     let response_window = window.clone();
@@ -1631,7 +1810,13 @@ async fn open_browser(
         let label = window.label().to_string();
         let storage_view = view_id.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
+            storage_host.prepare_open(
+                &label,
+                &storage_view,
+                storage_scope,
+                storage_record,
+                &page_id,
+            )
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
@@ -1969,6 +2154,7 @@ fn run() -> Result<(), NativeFailure> {
                 open_browser,
                 control_browser,
                 browser_state,
+                browser_pages,
                 browser_tab_shortcuts,
                 open_github,
                 open_provider_guidance,
