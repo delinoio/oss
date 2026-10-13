@@ -492,6 +492,11 @@ clock/presence evidence for live time and retain unconfirmed observations withou
 animation. Timing grants no execution, retry or recovery authority. Missing older
 peer metadata remains unavailable.
 
+TailscaleService and TailscaleQuery export the generated connection surface under
+the [Tailscale protocol contract](protos-delidev-v1-contract.md#tailscale-connection-protocol).
+Closed bounded JSON projections retain public observation metadata only; private
+keys, decrypted grants and protected Worker inputs stay Go-owned.
+
 ## Pull request workspace client
 
 The generated IntegrationQuery client exposes independently negotiated workspace,
