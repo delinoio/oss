@@ -20,6 +20,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionDiff } from "./session-diff";
+import { Comparison } from "./session-diff-model";
 import {
   SessionTabKind,
   SessionTabsStore,
@@ -867,9 +868,13 @@ it("does not restore trust through path submission or comparison round trips", a
   fireEvent.change(screen.getByLabelText("Relative diff path"), {
     target: { value: "src" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
-  await screen.findByText("Relative diff path: src");
+  // The invalidated base denies path submission instead of restoring trust.
+  expect(
+    (screen.getByRole("button", { name: "Compare path" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
   expect(comparisonRegion()).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
   refreshDiff();
   await waitFor(() =>
     expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
@@ -1219,24 +1224,54 @@ it("does not publish a late options response after the comparison changes and re
   expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
 });
 
+// The Diff options form is gated while a refresh is pending, so the path scope
+// changes here through a selected tab descriptor, as the tabbed view does.
 it("does not publish a late options response after the path changes", async () => {
-  const { f, state, operations } = inventoryFixture(
-    [{ name: "main" }, { name: "late-next" }],
-    "main",
-  );
-  render(<f.View />);
+  const state = { defaultName: "main" };
+  const f = tabsFixture({
+    options: async (repository) => ({
+      documentJson: encode({
+        size: "0",
+        binary: false,
+        truncated: false,
+        diff_options: {
+          version: 1,
+          repository_id: repository,
+          choices: ["main", "late-next"].map((name) => ({
+            reference: { type: "local-branch", name },
+            available: true,
+            configured: false,
+          })),
+          default: { type: "local-branch", name: state.defaultName },
+        },
+      }),
+    }),
+  });
+  render(<f.Harness />);
   await screen.findByText("+<script>doNotRun()</script>");
   state.defaultName = "late-next";
+  const optionReads = () =>
+    f.read.mock.calls.filter(
+      ([request]) =>
+        JSON.parse(new TextDecoder().decode(request.queryJson)).operation ===
+        "git-diff-options",
+    ).length;
   const options = holdNextRead(f);
-  const before = operations().length;
+  const before = optionReads();
   refreshDiff();
-  await waitFor(() => expect(operations()).toHaveLength(before + 1));
-  fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
-  fireEvent.change(screen.getByLabelText("Relative diff path"), {
-    target: { value: "src/main.ts" },
+  await waitFor(() => expect(optionReads()).toBe(before + 1));
+  act(() => {
+    f.store.open(f.sessionId, {
+      kind: SessionTabKind.Comparison,
+      repository: f.primary,
+      comparison: Comparison.Branch,
+      path: "src/main.ts",
+      base_ref: { type: "local-branch", name: "main" },
+    });
   });
-  fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
-  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:main"));
+  await waitFor(() =>
+    expect(branchReads(f.read).at(-1)?.path).toBe("src/main.ts"),
+  );
   options.release();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
@@ -1244,7 +1279,9 @@ it("does not publish a late options response after the path changes", async () =
       false,
     ),
   );
-  expect(operations()).not.toContain("git-diff:branch:late-next");
+  expect(
+    branchReads(f.read).map((q) => (q.base_ref as { name: string }).name),
+  ).not.toContain("late-next");
   expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
     JSON.stringify(["local-branch", "main", null]),
@@ -2847,4 +2884,361 @@ it("ends a retained base-free tab's dropped base record when the reference is ex
     comparison: "branch",
     base_ref: { name: "main" },
   });
+});
+
+const submitDraftPath = (path: string) => {
+  if (!screen.queryByLabelText("Relative diff path"))
+    fireEvent.click(screen.getByRole("button", { name: "Diff options" }));
+  fireEvent.change(screen.getByLabelText("Relative diff path"), {
+    target: { value: path },
+  });
+  return screen.getByRole("button", {
+    name: "Compare path",
+  }) as HTMLButtonElement;
+};
+
+it("denies a branch path submission while the selected repository's base negotiation is pending, then admits the negotiated default", async () => {
+  let release: () => void = () => {},
+    requested = false;
+  const f = tabsFixture({
+    options: async (repository, original) => {
+      if (repository === f0.other) {
+        requested = true;
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return original();
+    },
+  });
+  const f0 = f;
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(requested).toBe(true));
+  const submit = submitDraftPath("src/main.ts");
+  expect(submit.disabled).toBe(true);
+  fireEvent.submit(submit.closest("form")!);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(f.comparisons()).toHaveLength(0);
+  expect(
+    branchReads(f.read).filter((q) => q.repository_id === f.other),
+  ).toHaveLength(0);
+  // The typed draft stays available while submission is denied.
+  expect(
+    (screen.getByLabelText("Relative diff path") as HTMLInputElement).value,
+  ).toBe("src/main.ts");
+  release();
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  expect(f.comparisons()[0]).toMatchObject({
+    repository: f.other,
+    comparison: "branch",
+    base_ref: { type: "local-branch", name: "main" },
+  });
+  // After negotiation, an admitted submission carries the exact typed base.
+  const admitted = submitDraftPath("src/main.ts");
+  await waitFor(() => expect(admitted.disabled).toBe(false));
+  fireEvent.click(admitted);
+  await waitFor(() => expect(f.comparisons()).toHaveLength(2));
+  expect(f.comparisons()[1]).toEqual({
+    kind: SessionTabKind.Comparison,
+    repository: f.other,
+    comparison: "branch",
+    path: "src/main.ts",
+    base_ref: { type: "local-branch", name: "main" },
+  });
+});
+
+it.each(["unsupported", "failed", "missing-default"])(
+  "denies a branch path submission for %s negotiation and admits it after an available base is selected",
+  async (mode) => {
+    const f = tabsFixture({
+      options: async (repository, original) => {
+        if (repository !== f0.other) return original();
+        if (mode === "unsupported")
+          throw new ConnectError("old", Code.InvalidArgument);
+        if (mode === "failed") throw new ConnectError("down", Code.Unavailable);
+        return f0.reply({
+          diff_options: {
+            version: 1,
+            repository_id: repository,
+            choices: [
+              {
+                reference: { type: "local-branch", name: "main" },
+                available: true,
+                configured: false,
+              },
+              {
+                reference: { type: "local-branch", name: "other" },
+                available: true,
+                configured: false,
+              },
+            ],
+          },
+        });
+      },
+    });
+    const f0 = f;
+    render(<f.Harness />);
+    await screen.findByText("+<script>doNotRun()</script>");
+    const reads = f.read.mock.calls.length;
+    fireEvent.change(screen.getByLabelText("Diff repository"), {
+      target: { value: f.other },
+    });
+    await waitFor(() =>
+      expect(
+        f.read.mock.calls
+          .slice(reads)
+          .some(
+            ([request]) =>
+              JSON.parse(new TextDecoder().decode(request.queryJson))
+                .operation === "git-diff-options",
+          ),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const submit = submitDraftPath("src/main.ts");
+    expect(submit.disabled).toBe(true);
+    fireEvent.submit(submit.closest("form")!);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(f.comparisons()).toHaveLength(0);
+    expect(
+      branchReads(f.read)
+        .slice(1)
+        .filter((q) => q.repository_id === f.other),
+    ).toHaveLength(0);
+    if (mode === "unsupported" || mode === "failed") return;
+    fireEvent.change(screen.getByLabelText("Base"), {
+      target: { value: JSON.stringify(["local-branch", "other", undefined]) },
+    });
+    await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+    const admitted = submitDraftPath("src/main.ts");
+    await waitFor(() => expect(admitted.disabled).toBe(false));
+    fireEvent.click(admitted);
+    await waitFor(() => expect(f.comparisons()).toHaveLength(2));
+    expect(f.comparisons()[1]).toEqual({
+      kind: SessionTabKind.Comparison,
+      repository: f.other,
+      comparison: "branch",
+      path: "src/main.ts",
+      base_ref: { type: "local-branch", name: "other" },
+    });
+  },
+);
+
+it("keeps path submission immediate and base-free for working-tree, staged and creation comparisons", async () => {
+  const f = tabsFixture();
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  for (const comparison of ["working-tree", "staged", "creation"]) {
+    fireEvent.change(screen.getByLabelText("Comparison"), {
+      target: { value: comparison },
+    });
+    await waitFor(() =>
+      expect(f.comparisons().some((tab) => tab.comparison === comparison)).toBe(
+        true,
+      ),
+    );
+    const submit = submitDraftPath(`src/${comparison}`);
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(
+        f.comparisons().some((tab) => tab.path === `src/${comparison}`),
+      ).toBe(true),
+    );
+  }
+  for (const tab of f.comparisons()) expect(tab.base_ref).toBeUndefined();
+});
+
+it("denies branch path submission while an options refresh is pending or stale", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  const pathApplied = () => screen.queryByText("Relative diff path: src");
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  // The supported base is still observed, but the inventory is being renewed.
+  let submit = submitDraftPath("src");
+  expect(submit.disabled).toBe(true);
+  fireEvent.submit(submit.closest("form")!);
+  expect(pathApplied()).toBeNull();
+  expect(operations()).toHaveLength(before + 1);
+  options.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  // A failed renewal leaves the inventory stale, so the gate stays closed.
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(
+    "Refresh failed. The previous observation is stale and shown below.",
+  );
+  const failed = operations().length;
+  submit = submitDraftPath("src");
+  expect(submit.disabled).toBe(true);
+  fireEvent.submit(submit.closest("form")!);
+  expect(pathApplied()).toBeNull();
+  expect(operations()).toHaveLength(failed);
+  // An accepted refresh admits the retained draft again.
+  refreshDiff();
+  await waitFor(() =>
+    expect((submitDraftPath("src") as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(submitDraftPath("src"));
+  await screen.findByText("Relative diff path: src");
+});
+
+it("denies branch path submission while a background options refetch is in flight", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  const pathApplied = () => screen.queryByText("Relative diff path: src");
+  // Hold only the options read so the previous inventory stays observable.
+  const inner = f.read.getMockImplementation()!;
+  let release: () => void = () => {};
+  const opened = new Promise<void>((resolve) => (release = resolve));
+  f.read.mockImplementation(async (request) => {
+    const q = JSON.parse(new TextDecoder().decode(request.queryJson));
+    if (q.operation === "git-diff-options") await opened;
+    return inner(request);
+  });
+  const before = operations().length;
+  // The connection-ready handler invalidates every active query.
+  void f.client.invalidateQueries({ refetchType: "active" });
+  await waitFor(() => expect(operations()).toContain("git-diff-options"));
+  await waitFor(() =>
+    expect(
+      f.client.isFetching({
+        predicate: (query) =>
+          (query.state.data as { documentJson?: Uint8Array } | undefined)
+            ?.documentJson !== undefined &&
+          query.state.fetchStatus === "fetching",
+      }),
+    ).toBeGreaterThan(0),
+  );
+  const submit = submitDraftPath("src");
+  expect(submit.disabled).toBe(true);
+  const during = operations().length;
+  fireEvent.submit(submit.closest("form")!);
+  expect(pathApplied()).toBeNull();
+  expect(operations()).toHaveLength(during);
+  expect(during).toBeGreaterThan(before);
+  release();
+  await waitFor(() =>
+    expect((submitDraftPath("src") as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(submitDraftPath("src"));
+  await screen.findByText("Relative diff path: src");
+});
+
+it("keeps a denied path draft after the pending repository negotiation opens its tab", async () => {
+  let release: () => void = () => {},
+    requested = false;
+  const f = tabsFixture({
+    options: async (repository, original) => {
+      if (repository === f0.other) {
+        requested = true;
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      return original();
+    },
+  });
+  const f0 = f;
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await waitFor(() => expect(requested).toBe(true));
+  const submit = submitDraftPath("src/draft.ts");
+  fireEvent.submit(submit.closest("form")!);
+  expect(f.comparisons()).toHaveLength(0);
+  release();
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  expect(f.comparisons()[0]).toMatchObject({ path: "." });
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Relative diff path") as HTMLInputElement).value,
+    ).toBe("src/draft.ts"),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(
+    (screen.getByLabelText("Relative diff path") as HTMLInputElement).value,
+  ).toBe("src/draft.ts");
+  // The retained draft is still submittable against the negotiated base.
+  const admitted = screen.getByRole("button", {
+    name: "Compare path",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(admitted.disabled).toBe(false));
+  fireEvent.click(admitted);
+  await waitFor(() => expect(f.comparisons()).toHaveLength(2));
+  expect(f.comparisons()[1]).toMatchObject({ path: "src/draft.ts" });
+});
+
+it("keeps a denied path draft after an explicit base is selected for a missing default", async () => {
+  const f = tabsFixture({
+    options: async (repository, original) => {
+      if (repository !== f0.other) return original();
+      return f0.reply({
+        diff_options: {
+          version: 1,
+          repository_id: repository,
+          choices: [
+            {
+              reference: { type: "local-branch", name: "main" },
+              available: true,
+              configured: false,
+            },
+          ],
+        },
+      });
+    },
+  });
+  const f0 = f;
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Diff repository"), {
+    target: { value: f.other },
+  });
+  await screen.findByText(/No available default base/);
+  const submit = submitDraftPath("src/draft.ts");
+  fireEvent.submit(submit.closest("form")!);
+  expect(f.comparisons()).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: JSON.stringify(["local-branch", "main", undefined]) },
+  });
+  await waitFor(() => expect(f.comparisons()).toHaveLength(1));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(
+    (screen.getByLabelText("Relative diff path") as HTMLInputElement).value,
+  ).toBe("src/draft.ts");
+});
+
+it("resets the path draft when another tab selects a different path", async () => {
+  const f = tabsFixture();
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  submitDraftPath("unsubmitted/draft");
+  act(() => {
+    f.store.open(f.sessionId, {
+      kind: SessionTabKind.Comparison,
+      repository: f.primary,
+      comparison: Comparison.Branch,
+      path: "src/other.ts",
+      base_ref: { type: "local-branch", name: "main" },
+    });
+  });
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Relative diff path") as HTMLInputElement).value,
+    ).toBe("src/other.ts"),
+  );
 });
