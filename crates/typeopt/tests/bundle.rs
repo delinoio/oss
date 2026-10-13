@@ -1633,6 +1633,46 @@ fn keeps_chunks_that_workers_import_scripts_from() {
     assert_eq!(out(temp.path(), "vendor.js"), vendor);
 }
 
+/// A root-relative `importScripts` URL resolves under the bundle root like a
+/// root-relative module import, so the classic chunk stays unchanged.
+#[test]
+fn keeps_chunks_that_workers_import_scripts_from_root_relative_urls() {
+    let vendor = r#"function vendorHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var vendorState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "assets/index.js",
+            r#"import"./vendor.js";const w=new URL("./sw.js",import.meta.url);console.log(w.pathname.length>0);"#,
+        ),
+        ("assets/vendor.js", vendor),
+        (
+            "assets/sw.js",
+            r#"typeof importScripts=="function"&&importScripts("/assets/vendor.js");console.log(typeof vendorHelper);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "assets/vendor.js"), vendor);
+}
+
+/// A root-relative `importScripts` URL with a deployment base prefix drops the
+/// prefix segments to find the bundled chunk.
+#[test]
+fn keeps_chunks_that_workers_import_scripts_from_with_a_deployment_base() {
+    let vendor = r#"function vendorHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var vendorState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "assets/index.js",
+            r#"import"./vendor.js";const w=new URL("./sw.js",import.meta.url);console.log(w.pathname.length>0);"#,
+        ),
+        ("assets/vendor.js", vendor),
+        (
+            "assets/sw.js",
+            r#"typeof importScripts=="function"&&importScripts("/app/assets/vendor.js");console.log(typeof vendorHelper);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "assets/vendor.js"), vendor);
+}
+
 /// A query in an import specifier still loads the chunk, but the compiler
 /// cannot link it: that chunk's exports stay public.
 #[test]
