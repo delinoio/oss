@@ -488,49 +488,52 @@ it.each([
   ReadStage.Restore,
   ReadStage.Refresh,
   ReadStage.Reload,
-])("queues one reached-range refresh behind an active %s read", async (stage) => {
-  const chain = await loadedChain(stage === ReadStage.Restore ? 5 : 2);
-  const last = stage === ReadStage.Restore ? 5 : 2;
-  const active = deferredReader("active", last);
-  const fresh = deferredReader("fresh", last);
-  let pending: Promise<void>;
-  if (stage === ReadStage.Initial) {
-    chain.reset();
-    chain.activate();
-    pending = chain.refresh(active.read);
-  } else if (stage === ReadStage.Additional) {
-    pending = chain.append(active.read);
-  } else if (stage === ReadStage.Restore) {
-    pending = chain.restore("", active.read);
-  } else if (stage === ReadStage.Refresh) {
-    pending = chain.refresh(active.read);
-  } else {
-    pending = chain.reload(active.read);
-  }
-  expect(chain.getSnapshot().loading).toBe(stage);
-  // Several invalidations while busy coalesce into one queued refresh.
-  await chain.refresh(fresh.read);
-  await chain.refresh(fresh.read);
-  await chain.refresh(fresh.read);
-  expect(fresh.calls).toHaveLength(0);
-  await settleAll(pending, active, fresh);
-  const snapshot = chain.getSnapshot();
-  expect(snapshot.loading).toBeUndefined();
-  expect(snapshot.error).toBeUndefined();
-  // Exactly one refresh pass ran: it read each accepted request token once and
-  // never discovered a new tail, so the reached range is unchanged.
-  const reached: Record<string, string[]> = {
-    [ReadStage.Initial]: [""],
-    [ReadStage.Additional]: ["", "1", "2"],
-    [ReadStage.Restore]: ["", "1", "2", "3", "4"],
-    [ReadStage.Refresh]: ["", "1"],
-    [ReadStage.Reload]: [""],
-  };
-  const expectedTokens = reached[stage];
-  expect(snapshot.pages.map((page) => page.token)).toEqual(expectedTokens);
-  expect(fresh.tokens).toEqual(expectedTokens);
-  expect(titles(chain)).toEqual(expectedTokens.map((_, i) => `fresh ${i}`));
-});
+])(
+  "queues one reached-range refresh behind an active %s read",
+  async (stage) => {
+    const chain = await loadedChain(stage === ReadStage.Restore ? 5 : 2);
+    const last = stage === ReadStage.Restore ? 5 : 2;
+    const active = deferredReader("active", last);
+    const fresh = deferredReader("fresh", last);
+    let pending: Promise<void>;
+    if (stage === ReadStage.Initial) {
+      chain.reset();
+      chain.activate();
+      pending = chain.refresh(active.read);
+    } else if (stage === ReadStage.Additional) {
+      pending = chain.append(active.read);
+    } else if (stage === ReadStage.Restore) {
+      pending = chain.restore("", active.read);
+    } else if (stage === ReadStage.Refresh) {
+      pending = chain.refresh(active.read);
+    } else {
+      pending = chain.reload(active.read);
+    }
+    expect(chain.getSnapshot().loading).toBe(stage);
+    // Several invalidations while busy coalesce into one queued refresh.
+    await chain.refresh(fresh.read);
+    await chain.refresh(fresh.read);
+    await chain.refresh(fresh.read);
+    expect(fresh.calls).toHaveLength(0);
+    await settleAll(pending, active, fresh);
+    const snapshot = chain.getSnapshot();
+    expect(snapshot.loading).toBeUndefined();
+    expect(snapshot.error).toBeUndefined();
+    // Exactly one refresh pass ran: it read each accepted request token once and
+    // never discovered a new tail, so the reached range is unchanged.
+    const reached: Record<string, string[]> = {
+      [ReadStage.Initial]: [""],
+      [ReadStage.Additional]: ["", "1", "2"],
+      [ReadStage.Restore]: ["", "1", "2", "3", "4"],
+      [ReadStage.Refresh]: ["", "1"],
+      [ReadStage.Reload]: [""],
+    };
+    const expectedTokens = reached[stage];
+    expect(snapshot.pages.map((page) => page.token)).toEqual(expectedTokens);
+    expect(fresh.tokens).toEqual(expectedTokens);
+    expect(titles(chain)).toEqual(expectedTokens.map((_, i) => `fresh ${i}`));
+  },
+);
 
 it("keeps the queued refresh after a failed read and honors it after explicit retry", async () => {
   const chain = await loadedChain(2);

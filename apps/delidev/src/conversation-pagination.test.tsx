@@ -256,7 +256,9 @@ it.each(["initial", "additional"])(
     // that arrived while the error was held is retained and runs exactly once
     // afterwards over the accepted pages; nothing retries on its own.
     const reached = stage === "initial" ? 1 : 2;
-    await waitFor(() => expect(read).toHaveBeenCalledTimes(before + 1 + reached));
+    await waitFor(() =>
+      expect(read).toHaveBeenCalledTimes(before + 1 + reached),
+    );
     expect(read.mock.calls[before][0]).toEqual(read.mock.calls[before - 1][0]);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(read).toHaveBeenCalledTimes(before + 1 + reached);
