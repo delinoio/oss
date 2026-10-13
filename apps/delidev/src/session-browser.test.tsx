@@ -1489,3 +1489,44 @@ it("fails closed when a later page holds a second matching profile", async () =>
   expect(pageCalls("create")).toHaveLength(0);
   expect(native).not.toHaveBeenCalled();
 });
+
+it("revokes admission when a later inventory read fails until a retry succeeds", async () => {
+  const f = fixture({ pages: 2 });
+  const original = native.getMockImplementation()!;
+  let failing = false;
+  interceptInventory(async () => {
+    if (failing) throw new Error("inventory unavailable");
+    return original("browser_pages", { request: { action: "inventory" } });
+  });
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/stale");
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  failing = true;
+  // The periodic refresh fails after an earlier successful read.
+  const retry = await within(dialog).findByRole(
+    "button",
+    { name: "Retry page inventory read" },
+    { timeout: 6000 },
+  );
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(pageCalls("create")).toHaveLength(0);
+  // A failed retry keeps the proof revoked.
+  fireEvent.click(retry);
+  await settle();
+  expect(openButton(dialog).disabled).toBe(true);
+  expect(pageCalls("create")).toHaveLength(0);
+  failing = false;
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Retry page inventory read" }),
+  );
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  expect(
+    within(dialog).queryByRole("button", { name: "Retry page inventory read" }),
+  ).toBeNull();
+  fireEvent.click(openButton(dialog));
+  await waitFor(() => expect(tabNames()).toHaveLength(4));
+  expect(pageCalls("create")).toHaveLength(1);
+}, 20000);

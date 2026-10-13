@@ -535,8 +535,10 @@ function NativeSessionBrowser({
   // A discovered profile also needs an observed inventory: an unread inventory
   // is unknown, never an empty one.
   const inventoryKnown = state !== undefined;
+  // A failed inventory read invalidates the earlier observation until a later
+  // read succeeds, so a stale inventory never admits a Create.
   const admitted = profileId
-    ? inventoryKnown
+    ? inventoryKnown && !inventoryFailure
     : discovery === ProfileDiscovery.Absent;
   // Re-reads profiles from the first page only; no mutation is repeated.
   const retryDiscovery = () => {
@@ -1516,13 +1518,13 @@ function NativeSessionBrowser({
               {copy("session-browser.retryProfileRead")}
             </button>
           ) : null}
-          {profileId && !inventoryKnown && inventoryFailure ? (
+          {profileId && inventoryFailure ? (
             <>
               <p role="alert">{inventoryFailure}</p>
               <button
                 type="button"
                 onClick={() => {
-                  setInventoryFailure(undefined);
+                  // The failure stays until a read succeeds and replaces it.
                   setInventoryRetry((n) => n + 1);
                 }}
               >

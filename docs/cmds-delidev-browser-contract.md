@@ -108,7 +108,8 @@ only after the terminal page confirms it is the sole match. A confirmed absence
 (a settled terminal page with no matching profile on any page) can also admit a
 new page; absence permits exactly one registration at explicit submission. A found
 profile additionally needs one successfully observed current-profile inventory,
-so an unread or unreadable inventory is never treated as empty. The dialog shows
+so an unread or unreadable inventory is never treated as empty. A later inventory read failure revokes that proof
+until a retry read succeeds. The dialog shows
 localized read-only guidance for pending states and, for a failed profile or
 inventory read, a retry that re-reads only that state (profiles from the first
 page, or the inventory) and never repeats any accepted or uncertain mutation.
