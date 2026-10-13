@@ -321,7 +321,15 @@ backdrop dismissal restore the available opener (the focused element that opened
 it, otherwise the trigger). Selecting a row closes the dialog synchronously
 before invoking the original callback once and preserves the destination-tab
 focus instead of restoring the opener. Session, surface and connection departure
-dispose the presentation without restoring focus into hidden content.
+dispose the presentation without restoring focus into hidden content. Connection
+departure includes losing connection readiness while the Session and connection
+identity stay unchanged: App passes `connectionReady` through `SessionView` to
+`SessionToolMenu`, an open dialog closes immediately so recovery content is no
+longer blocked, focus moves to the Session heading (the recovery control)
+instead of the native modal-close restoration to the unavailable opener, and
+the trigger and the OpenTool shortcut stay inert while the connection is
+unavailable. Restoring readiness never reopens the dialog; only an
+explicit user action does. Session drafts and pending operations are untouched.
 
 Read-only shortcut defaults yield to existing editable chords through one shared
 policy, `readOnlyShortcutSuppression` in `shortcut-preferences.ts`, keyed by

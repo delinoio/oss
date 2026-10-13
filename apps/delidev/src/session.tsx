@@ -920,6 +920,7 @@ export function SessionView({
   initialSkills,
   changeSkills,
   active = true,
+  connectionReady = true,
   embedded = false,
   activateOnMount = !embedded,
 }: {
@@ -934,6 +935,7 @@ export function SessionView({
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
+  connectionReady?: boolean;
   embedded?: boolean;
   /**
    * Whether a mount that starts active is an explicit activation. Embedded
@@ -2397,7 +2399,12 @@ export function SessionView({
               newPage={() => setBrowserDialog(true)}
               closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
             />
-            <SessionToolMenu key={id} active={active}>
+            <SessionToolMenu
+              key={id}
+              active={active}
+              ready={connectionReady}
+              recoveryFocus={() => sessionHeading.current}
+            >
               {tools.map((tool) => (
                 <button
                   role="menuitem"
