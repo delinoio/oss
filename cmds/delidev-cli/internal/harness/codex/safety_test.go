@@ -329,6 +329,72 @@ func TestSafetyReroutePreservesFirstProblemAndNativeTerminalEvidence(t *testing.
 	}
 }
 
+func TestSafetyRerouteLatchesWhenEvidenceLedgerIsFull(t *testing.T) {
+	for _, bound := range []string{"count", "bytes"} {
+		for _, prior := range []bool{false, true} {
+			c, turn := observationClient()
+			if bound == "count" {
+				c.safety.observations = make([]*ModelSafetyObservation, maxSafetyObservations)
+			} else {
+				c.safety.bytes = maxSafetyBytes
+			}
+			if prior {
+				c.problem = turnUncertain()
+				c.execution.paused = true
+			}
+			first := c.problem
+			count, size := len(c.safety.observations), c.safety.bytes
+			_, err := observeFixture(c, "model/rerouted", safetyFixture(c, turn, "model/rerouted"))
+			assertCode(t, err, domain.RecoveryRequired)
+			if err != c.problem || first != nil && c.problem != first || !c.execution.paused || !c.safety.rerouted[turn] || len(c.safety.observations) != count || c.safety.bytes != size || c.execution.settings.Model != "fixture-model" || c.modelObservation != "" {
+				t.Fatal("overflowed reroute did not latch recovery", bound, prior)
+			}
+			problem := c.problem
+			event, err := observeFixture(c, "turn/completed", map[string]any{"threadId": c.thread, "turn": fixtureTurn(turn, TurnCompleted)})
+			if err != problem || event.Kind == TurnCompletedEvent || c.execution.turns[turn].Turn.Status != TurnCompleted || c.execution.active != "" {
+				t.Fatal("overflowed reroute completion asserted selected model success", bound, err)
+			}
+		}
+	}
+}
+
+func TestSafetyOverflowWithoutModelChangeKeepsGenericRejection(t *testing.T) {
+	sameModel := func(c *Client, turn domain.ID) (string, map[string]any) {
+		params := safetyFixture(c, turn, "model/rerouted")
+		params["toModel"] = c.execution.settings.Model
+		return "model/rerouted", params
+	}
+	moderation := func(c *Client, turn domain.ID) (string, map[string]any) {
+		return "turn/moderationMetadata", safetyFixture(c, turn, "turn/moderationMetadata")
+	}
+	for _, build := range []func(*Client, domain.ID) (string, map[string]any){moderation, sameModel} {
+		for _, bound := range []string{"count", "bytes"} {
+			c, turn := observationClient()
+			if bound == "count" {
+				c.safety.observations = make([]*ModelSafetyObservation, maxSafetyObservations)
+			} else {
+				c.safety.bytes = maxSafetyBytes
+			}
+			paused := c.execution.paused
+			method, params := build(c, turn)
+			_, err := observeFixture(c, method, params)
+			assertCode(t, err, domain.Unsupported)
+			if c.problem != nil || c.execution.paused != paused || c.safety.rerouted[turn] {
+				t.Fatal("non-reroute overflow acquired recovery", method, bound)
+			}
+		}
+	}
+}
+
+func TestSafetyBelowCapRerouteRecordsEvidenceAndLatch(t *testing.T) {
+	c, turn := observationClient()
+	_, err := observeFixture(c, "model/rerouted", safetyFixture(c, turn, "model/rerouted"))
+	assertCode(t, err, domain.RecoveryRequired)
+	if len(c.safety.observations) != 1 || c.safety.bytes != safetyEvidenceBytes(c.safety.observations[0]) || !c.safety.rerouted[turn] || !c.execution.paused {
+		t.Fatal("below-cap reroute behavior changed")
+	}
+}
+
 func TestSafetyReaderNeverResendsOrLeaksPrivateDescriptors(t *testing.T) {
 	for _, prior := range []bool{false, true} {
 		c, capture, _, _ := boundTurnFixture(t, "ready")

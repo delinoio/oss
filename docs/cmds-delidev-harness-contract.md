@@ -162,7 +162,11 @@ model; original usage and effective settings remain authoritative.
 and closed `highRiskCyberActivity` reason. Retain the safety decision without
 reversing it or adopting a faster-model descriptor. An actual model change pauses
 fresh sends and prevents selected-model success publication. Keep the first
-problem when earlier uncertainty exists. Original native terminal evidence remains
+problem when earlier uncertainty exists. The model-change latch and recovery problem
+are independent of evidence retention: when the aggregate evidence caps are full, an
+actual model change still latches them, and the overflowed evidence is neither
+retained nor counted. Overflow by non-reroute evidence keeps the generic
+incompatible rejection. Original native terminal evidence remains
 available for reconciliation and independent cleanup; neither terminal completion
 nor passive observations clears the pause or replays input.
 

@@ -306,27 +306,44 @@ func (c *Client) observeSafetyLocked(native nativewire.Event) (Event, error) {
 		}
 	} else {
 		if len(c.safety.observations) >= maxSafetyObservations || c.safety.bytes+safetyEvidenceBytes(o) > maxSafetyBytes {
+			if changesModel(o) {
+				// The reroute guard is independent of evidence retention: latch it
+				// before rejecting the overflowed evidence so completion cannot
+				// publish selected-model success.
+				return Event{}, c.latchRerouteLocked(o.turn)
+			}
 			return Event{}, incompatible()
 		}
 		c.safety.observations = append(c.safety.observations, cloneSafety(o))
 		c.safety.bytes += safetyEvidenceBytes(o)
 	}
-	if o.reroute != nil && o.reroute.from != o.reroute.to {
-		if c.safety.rerouted == nil {
-			c.safety.rerouted = make(map[domain.ID]bool)
-		}
-		c.safety.rerouted[o.turn] = true
-		if c.problem == nil {
-			c.problem = domain.Fail(domain.RecoveryRequired, "Native safety changed the execution model.", "Reconcile the original execution and independent cleanup before another input; preserve the native safety decision.")
-		}
-		c.execution.paused = true
-		return Event{}, c.problem
+	if changesModel(o) {
+		return Event{}, c.latchRerouteLocked(o.turn)
 	}
 	event := Event{Kind: ModelSafetyEvent, ThreadID: o.thread, TurnID: o.turn, Correlated: true, Late: late, Safety: cloneSafety(o)}
 	if o.kind == safetyVerification && len(o.verifications) == 0 {
 		event.Kind, event.Metadata = MetadataEvent, ModelVerificationAbsent
 	}
 	return event, nil
+}
+
+// changesModel reports whether the observation records an actual model change.
+func changesModel(o *ModelSafetyObservation) bool {
+	return o.reroute != nil && o.reroute.from != o.reroute.to
+}
+
+// latchRerouteLocked records that the turn ran on a changed model, keeps the first
+// recovery problem and pauses the execution. It returns the active problem.
+func (c *Client) latchRerouteLocked(turn domain.ID) error {
+	if c.safety.rerouted == nil {
+		c.safety.rerouted = make(map[domain.ID]bool)
+	}
+	c.safety.rerouted[turn] = true
+	if c.problem == nil {
+		c.problem = domain.Fail(domain.RecoveryRequired, "Native safety changed the execution model.", "Reconcile the original execution and independent cleanup before another input; preserve the native safety decision.")
+	}
+	c.execution.paused = true
+	return c.problem
 }
 
 func (c *Client) safetyCompletionProblem(turn domain.ID, status TurnStatus) error {
