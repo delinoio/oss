@@ -25,7 +25,7 @@ import { Timestamp } from "./timestamp-display";
 // Sessions or connections.
 type RetainedUsage = {
   sessionId: string;
-  createdAt: bigint | undefined;
+  createdAt: string | undefined;
   transport: unknown;
   data: LifetimeUsage;
 };
@@ -42,6 +42,9 @@ export function SessionLifetimeUsage({
   const transport = useTransport();
   const client = useQueryClient();
   const createdAt = sessionCreatedAt(session);
+  // The millisecond bound above floors fractional seconds, so ownership and
+  // the query identity use the exact validated RFC 3339 creation timestamp.
+  const createdAtExact = createdAt === undefined ? undefined : session.createdAt;
   const responseUsageId = text(
     object(readDocument(session).execution).latest_response_usage_id,
   );
@@ -62,10 +65,10 @@ export function SessionLifetimeUsage({
   const key = useMemo(
     () => [
       ...base.queryKey,
-      { sessionLifetimeCreatedAt: createdAt?.toString() ?? "unavailable" },
+      { sessionLifetimeCreatedAt: createdAtExact ?? "unavailable" },
       { latestResponseUsageId: responseUsageId },
     ],
-    [base, createdAt, responseUsageId],
+    [base, createdAtExact, responseUsageId],
   );
   const result = useQuery({
     queryKey: key,
@@ -93,7 +96,7 @@ export function SessionLifetimeUsage({
   const ownedByCurrent = (value: RetainedUsage | undefined) =>
     value !== undefined &&
     value.sessionId === session.id &&
-    value.createdAt === createdAt &&
+    value.createdAt === createdAtExact &&
     value.transport === transport;
   // Publish only a complete result of the current generation. A replacement
   // read replaces the whole collection at once, and a delayed result from an
@@ -103,11 +106,11 @@ export function SessionLifetimeUsage({
     if (result.data)
       retained.current = {
         sessionId: session.id,
-        createdAt,
+        createdAt: createdAtExact,
         transport,
         data: result.data,
       };
-  }, [result.data, session.id, createdAt, transport]);
+  }, [result.data, session.id, createdAtExact, transport]);
   const displayed =
     result.data ??
     (ownedByCurrent(retained.current) ? retained.current?.data : undefined);

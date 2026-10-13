@@ -529,6 +529,43 @@ it("clears retained totals when the authenticated transport owner changes", asyn
   expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
 });
 
+it("clears retained totals when the creation time changes below millisecond precision", async () => {
+  const id = newRequestId();
+  let failing = false;
+  const read = vi.fn(async (request: GetUsageSummaryRequest) => {
+    if (failing) throw new Error("fixture changed creation unavailable");
+    return multiRangeReply(request);
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  const view = (createdAt: string) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage
+          session={generationSession(id, 1n, "response-1", createdAt)}
+          diagnosticsTarget={null}
+        />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const first = "2024-10-01T00:00:00.000000001Z";
+  const second = "2024-10-01T00:00:00.000000002Z";
+  expect(sessionCreatedAt(generationSession(id, 1n, "r", first))).toBe(
+    sessionCreatedAt(generationSession(id, 1n, "r", second)),
+  );
+  const mounted = render(view(first));
+  await screen.findByText(/^9,007,199,254,740,99\d$/);
+  failing = true;
+  mounted.rerender(view(second));
+  await screen.findByText(/could not be read completely/);
+  expect(screen.queryByText(/^9,007,199,254,740,99\d$/)).toBeNull();
+  expect(screen.queryByText(/Previous complete usage is stale/)).toBeNull();
+});
+
 it("shows unavailable totals and the read-failed text when the first read fails", async () => {
   const read = vi.fn(async () => {
     throw new Error("fixture first read unavailable");
