@@ -25,6 +25,9 @@ type forkGitInventory struct {
 	common, admin                 string
 	commonIdentity, adminIdentity string
 	commonFiles, adminFiles       snapshotInventory
+	// configProof is the frozen expected-config evidence for the child's retained
+	// config files; see forkConfigProof.
+	configProof forkConfigProof
 }
 
 func inspectForkGitInventory(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
@@ -77,6 +80,9 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 		if err = validateGitInventory(result.adminFiles); err != nil {
 			return result, err
 		}
+	}
+	if err = result.captureConfigProof(ctx, git, source); err != nil {
+		return result, err
 	}
 	return result, nil
 }
@@ -135,6 +141,11 @@ func (i forkGitInventory) verify(ctx context.Context, git Git, source, target st
 	if err = validateSnapshotGitConfig(ctx, git, target, expected); err != nil {
 		return err
 	}
+	// The copied config files were excluded from the inventory comparison above
+	// because normalization rewrites them. Prove them against the frozen source.
+	if err = i.verifyChildConfig(ctx, git, target); err != nil {
+		return err
+	}
 	if _, err = os.Lstat(filepath.Join(expected, "objects", "info", "alternates")); !errors.Is(err, os.ErrNotExist) {
 		return forkUnsupported()
 	}
@@ -154,6 +165,7 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	if err != nil {
 		return *entry, nil, err
 	}
+	proof.bindRemote(spec)
 	if snapshot != nil {
 		for _, copy := range snapshot.copies {
 			if copy.source == spec.Checkout && copy.gitInventory != nil && !copy.gitInventory.sourceMatches(proof) {
@@ -182,10 +194,7 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	if err = security.WriteAtomic(filepath.Join(entry.Path, ".git", "HEAD"), []byte(entry.StartingCommit+"\n")); err != nil {
 		return *entry, nil, err
 	}
-	remote := spec.PreferredRemote
-	if remote == "" {
-		remote = "origin"
-	}
+	remote := forkRemoteName(spec)
 	if _, err = git.run(ctx, entry.Path, "config", "--local", "remote."+remote+".url", spec.RemoteURL); err != nil {
 		return *entry, nil, err
 	}
@@ -200,6 +209,7 @@ func (m *Manager) prepareForkGitInventory(ctx context.Context, git Git, spec Rep
 	hash := sha256.Sum256(index)
 	copy := forkCopy{sourceMarker: &marker, source: spec.Checkout, target: entry.Path, tree: digest, git: true, head: entry.StartingCommit, index: hex.EncodeToString(hash[:]), entryLimit: maxForkEntries, gitInventory: &proof}
 	if err = copy.verify(ctx, git); err != nil {
+		m.Logger.WarnContext(ctx, "workspace_fork_git_inventory_verify_failed", "session_id", manifest.SessionID, "repository_id", spec.ID, "phase", "copied_git_config_and_inventory", "code", domain.SafeError(err).Code)
 		return *entry, nil, err
 	}
 	if err = verifyIndependentDirectory(*entry, true); err != nil {
