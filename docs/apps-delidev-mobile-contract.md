@@ -15,7 +15,7 @@ new read, write, notification, native operation or inference.
 Mobile imports `apps/delidev/src/product-identity.ts` by relative path, so
 `apps/delidev-mobile/turbo.json` declares it as an explicit input of the `build`,
 `build:frontend` and `typecheck` tasks (repeating the root task inputs because Turbo
-replaces inherited arrays). Declare any new cross-package source import the same way.
+replaces inherited arrays).
 
 ## Scope
 
