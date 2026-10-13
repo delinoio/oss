@@ -256,22 +256,39 @@ function restoreRepositorySave(
     });
     return undefined;
   }
-  const job =
-    retained.job?.kind === EntityKind.JOB &&
-    isEntityId(retained.job.id) &&
-    supportsResourceSchema(retained.job)
-      ? retained.job
-      : undefined;
+  const accepted = acceptedRepositorySave(
+    initial.id,
+    request,
+    retained.job,
+  );
   console.info("delidev.settings.repository_save_restored", {
-    phase: job ? "job" : "input",
+    phase: accepted ? "job" : "input",
   });
+  return { data, job: accepted?.job, submission: accepted?.submission };
+}
+
+// Pairs an accepted job with the request that produced it. The job and its
+// completion binding (job, Repository and expected revision) always come from
+// the same retained entry, and only for the Repository this editor shows.
+function acceptedRepositorySave(
+  repositoryId: string,
+  request: MessageShape<typeof ConfigurationQuery.saveConfiguration.input>,
+  retainedJob: Resource | undefined,
+): { job: Resource; submission?: RepositorySaveSubmission } | undefined {
+  if (
+    request.kind !== EntityKind.REPOSITORY ||
+    request.mutation?.id !== repositoryId ||
+    retainedJob?.kind !== EntityKind.JOB ||
+    !isEntityId(retainedJob.id) ||
+    !supportsResourceSchema(retainedJob)
+  )
+    return undefined;
   return {
-    data,
-    job,
+    job: retainedJob,
     submission:
-      job && request.mutation.expectedRevision > 0n
+      request.mutation.expectedRevision > 0n
         ? {
-            jobId: job.id,
+            jobId: retainedJob.id,
             repositoryId: request.mutation.id,
             expectedRevision: request.mutation.expectedRevision,
           }
@@ -790,6 +807,41 @@ export function ConfigurationEditor({
     // job state that arrived after this editor rendered.
     mutation.clearRejected();
   }, []);
+  // The original save can be accepted after this editor was constructed. The
+  // unmounted submitter skips its accepted callback, so adopt the retained job
+  // and its completion binding from the same connection-owned entry. This only
+  // reads retained state and never sends or replays a save.
+  const retainedJob = mutation.job;
+  const retainedInput = mutation.input;
+  useEffect(() => {
+    if (
+      kind !== EntityKind.REPOSITORY ||
+      !initial ||
+      job !== undefined ||
+      !retainedJob ||
+      !retainedInput ||
+      completedRepositoryJobs.current.has(retainedJob.id)
+    )
+      return;
+    const adopted = acceptedRepositorySave(
+      initial.id,
+      retainedInput as MessageShape<
+        typeof ConfigurationQuery.saveConfiguration.input
+      >,
+      retainedJob,
+    );
+    if (!adopted) {
+      console.warn("delidev.settings.repository_adoption_skipped", {
+        reason: "identity",
+      });
+      return;
+    }
+    console.info("delidev.settings.repository_save_adopted", {
+      hasSubmission: Boolean(adopted.submission),
+    });
+    setRepositorySave(adopted.submission);
+    setJob(adopted.job);
+  }, [kind, initial, job, retainedJob, retainedInput]);
   const formatMutation = useRetainedMutation(
     `account-change-format:${source?.id ?? "new"}`,
     AccountQuery.changeAccountApiFormat,
