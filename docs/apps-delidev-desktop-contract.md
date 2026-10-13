@@ -5896,11 +5896,15 @@ follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
 Every hiding path additionally requires, at the visibility boundary only: a
 complete current transcript, queue and interaction read (payload present, no
-error, not pending, not fetching and no continuation token), and current
+error, not pending, not fetching, no continuation token, and a resident payload
+page for every retained page token), and current
 successful non-blocking session budget evidence. A refresh that retains stale
 pages (`isFetching`) keeps the retained startup presentation but restores Info
 until the read settles; the fence is not applied to the progress projection, so
-routine refreshes cause no startup-list flicker. Pending, absent, failed or
+routine refreshes cause no startup-list flicker. A terminal token proves
+traversal only; when the three-page payload bound has evicted any retained page,
+that read is incomplete and Info stays visible, while the bound and the explicit
+restoration controls are unchanged. Pending, absent, failed or
 unavailable budget evidence, and evidence of another session identity, retain
 Info and its existing Retry; threshold-reached remains blocking. The budget
 controller reports a closed status (Pending, Failed, Ready, Blocked) keyed to the

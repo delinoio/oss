@@ -56,6 +56,20 @@ export type PaginationReader<Row extends PaginationRow, Payload = never> = (
   signal: AbortSignal,
 ) => Promise<PaginationBatch<Row, Payload>>;
 
+/**
+ * True when every retained page token still has its payload resident. A
+ * terminal continuation token proves traversal only: the chain keeps page
+ * metadata for every reached page but at most three payload pages.
+ */
+export function pagesResident(query: {
+  pages: readonly { token: string }[];
+  payloadPages: readonly { token: string }[];
+}): boolean {
+  return query.pages.every((page) =>
+    query.payloadPages.some((payload) => payload.token === page.token),
+  );
+}
+
 function uniqueRows<Row extends PaginationRow>(
   pages: PaginationPage<Row>[],
 ): Row[] {

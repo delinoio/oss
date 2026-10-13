@@ -1740,6 +1740,116 @@ it.each(["transcript", "queue", "interactions"] as const)(
     expectStartupPreserved(f, composer);
   },
 );
+/** Four single-row pages with a terminal last token leave three payload pages. */
+const evictedPageLabels = {
+  transcript: "Load more Conversation pages",
+  queue: "Load more Queue pages",
+  interactions: "Load more Request pages",
+} as const;
+it.each(
+  (["transcript", "queue", "interactions"] as const).flatMap((read) => [
+    { read, pageCount: 4, hidden: false },
+    { read, pageCount: 3, hidden: true },
+  ]),
+)(
+  "startup Info hidden=$hidden for $read with $pageCount terminal pages",
+  async ({ read, pageCount, hidden }) => {
+    const startup = initialResponseWaiting();
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, startup);
+    const kind =
+      read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+    const row = (index: number) =>
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId: f.session.id,
+        kind: read === "queue" ? EntityKind.QUEUE : kind,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode(
+          read === "queue"
+            ? {
+                delivery: "accepted",
+                prompt: "Original queued input",
+                mode: "execute",
+                sequence: 1,
+                content_revision: 1,
+              }
+            : read === "interactions"
+              ? { type: "native-approval", closure: "closed" }
+              : {
+                  // The original accepted input, so resident pages stay compatible
+                  // with the startup progress projection.
+                  execution_id: startup.initial_execution.id,
+                  input_id: startup.initial_execution.input_id,
+                  native_thread_id: "thread",
+                  native_turn_id: "turn",
+                  role: "user",
+                  state: "complete",
+                  text: `Page ${index}`,
+                  first_sequence: 1,
+                  last_sequence: 1,
+                },
+        ),
+      });
+    const pages = Array.from({ length: pageCount }, (_, index) => row(index));
+    const page = (token: string | undefined) => {
+      const index = Number(token || 0);
+      return {
+        rows: [pages[index]!],
+        nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+      };
+    };
+    if (read === "queue")
+      f.listQueue.mockImplementation(((request: { pageToken: string }) => {
+        const { rows, nextPageToken } = page(request.pageToken);
+        return { inputs: rows, nextPageToken };
+      }) as never);
+    else
+      f.list.mockImplementation(async (request) => {
+        if (request.filter?.kind !== kind)
+          return { resources: [], nextPageToken: "" };
+        const { rows, nextPageToken } = page(request.filter.pageToken);
+        return { resources: rows, nextPageToken };
+      });
+    const { container } = render(f.view("Retained startup draft"));
+    const info = container.querySelector<HTMLElement>(".session-information")!;
+    if (read === "interactions")
+      // The tray stays collapsed without an open request; expand it explicitly.
+      fireEvent.click(await screen.findByText(/Agent requests/));
+    // A continuation token keeps Info visible until the traversal is terminal.
+    for (let index = 1; index < pages.length; index++) {
+      fireEvent.click(
+        await screen.findByRole("button", { name: evictedPageLabels[read] }),
+      );
+      await waitFor(() =>
+        expect(
+          (read === "queue"
+            ? f.listQueue.mock.calls.map(([request]) => request.pageToken)
+            : f.list.mock.calls
+                .filter(([request]) => request.filter?.kind === kind)
+                .map(([request]) => request.filter?.pageToken)
+          ).includes(String(index)),
+        ).toBe(true),
+      );
+    }
+    if (hidden) {
+      // Every reached payload page is resident, so a current snapshot may hide.
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+      expect(screen.queryByRole("button", { name: "Restore previously loaded items" })).toBeNull();
+    } else {
+      await screen.findByRole("button", {
+        name: "Restore previously loaded items",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(info).toHaveProperty("hidden", false);
+      expect(info.hasAttribute("inert")).toBe(false);
+    }
+    // Restoration remains reachable and no mutation was started.
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+    expect(f.recover).not.toHaveBeenCalled();
+  },
+);
 it.each(["failed", "incomplete"] as const)(
   "keeps startup Info visible for %s interaction evidence",
   async (mode) => {

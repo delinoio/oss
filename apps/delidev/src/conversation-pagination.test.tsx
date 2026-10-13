@@ -13,6 +13,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { useConversationPages } from "./conversation-pagination";
+import { pagesResident } from "./scroll-pagination";
 
 it("bounds full transcript payloads and restores the exact reached forward request without caching documents", async () => {
   const sessionId = newRequestId();
@@ -367,3 +368,84 @@ it("retains one tool turn across rows 50/51 and five accepted pages under the th
   expect(group.open).toBe(true);
   expect(firstEntry.open).toBe(true);
 });
+
+it.each([EntityKind.MESSAGE, EntityKind.INTERACTION, EntityKind.QUEUE])(
+  "does not report %s payload pages resident after eviction behind a terminal token",
+  async (kind) => {
+    const sessionId = newRequestId();
+    const records = Array.from({ length: 4 }, (_, index) =>
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId,
+        kind,
+        revision: 1n,
+        documentJson: encode({ text: `Page ${index}` }),
+      }),
+    );
+    const page = (token: string | undefined) => {
+      const index = Number(token || 0);
+      return {
+        rows: [records[index]!],
+        nextPageToken: index < records.length - 1 ? String(index + 1) : "",
+      };
+    };
+    const transport = createRouterTransport((router) => {
+      router.service(ResourceService, {
+        listResources: (request: { filter?: { pageToken: string } }) => {
+          const { rows, nextPageToken } = page(request.filter?.pageToken);
+          return { resources: rows, nextPageToken };
+        },
+      });
+      router.service(SessionService, {
+        listQueue: (request: { pageToken: string }) => {
+          const { rows, nextPageToken } = page(request.pageToken);
+          return { inputs: rows, nextPageToken };
+        },
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function View() {
+      const query = useConversationPages(kind, sessionId);
+      return (
+        <>
+          <output>
+            {query.pages.length}:{query.payloadPages.length}:
+            {query.nextPageToken || "terminal"}:
+            {pagesResident(query) ? "resident" : "evicted"}
+          </output>
+          <button disabled={Boolean(query.loading)} onClick={query.append}>
+            Append
+          </button>
+          <button onClick={() => query.restore("")}>Restore initial</button>
+        </>
+      );
+    }
+    render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <View />
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    await screen.findByText("1:1:1:resident");
+    for (let index = 2; index <= 4; index++) {
+      fireEvent.click(screen.getByRole("button", { name: "Append" }));
+      await screen.findByText(
+        new RegExp(
+          `^${index}:${Math.min(index, 3)}:${index < 4 ? index : "terminal"}:${
+            index <= 3 ? "resident" : "evicted"
+          }$`,
+        ),
+      );
+    }
+    // Restoration stays reachable; the bounded window never reports complete.
+    fireEvent.click(screen.getByRole("button", { name: "Restore initial" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toMatch(
+        /^4:3:terminal:(resident|evicted)$/,
+      ),
+    );
+  },
+);
