@@ -921,12 +921,17 @@ func TestManagedMCPElicitationFromUnselectedOrUnpresentableSourcesNeverReachesTh
 	if event.Metadata != MetadataMCPElicitationRefused {
 		t.Fatalf("unsupported mode metadata: %v", event.Metadata)
 	}
-	raw := waitCapture(t, capture, `"result":{"action":"cancel","content":null}`)
+	raw := waitCapture(t, capture, `"id":51`)
 	if !strings.Contains(string(raw), `"id":51`) {
 		t.Fatalf("unsupported request was not cancelled exactly once: %s", raw)
 	}
-	if strings.Count(string(raw), `"id":50`) != 0 {
-		t.Fatal("foreign request received a response")
+	if strings.Count(string(raw), `"id":50`) != 1 {
+		t.Fatalf("the foreign request was not cancelled exactly once: %s", raw)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(line, `"id":50`) && !strings.Contains(line, `"result":{"action":"cancel","content":null}`) {
+			t.Fatalf("the foreign request received more than a bare cancel: %s", line)
+		}
 	}
 }
 
@@ -1157,5 +1162,24 @@ func TestManagedMCPResolvedElicitationEvidenceSurvivesALaterWireFailure(t *testi
 	event, err := client.NextEvent(ctx)
 	if err != nil || event.Kind != QuestionAcceptedEvent || !event.InteractionState.Accepted {
 		t.Fatalf("the observed native resolution was lost to a later wire failure: %+v %v", event, err)
+	}
+}
+
+func TestManagedMCPFailedCancelOfAPrivateElicitationPauses(t *testing.T) {
+	client, _, _ := openMCPFixture(t, "mcp-closed-input", mcpStdioServer("fx_bbbb"))
+	if _, err := client.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode)); err != nil {
+		t.Fatal(err)
+	}
+	fixtureSignal(t, client, "elicitation", map[string]any{"requestId": 53, "params": map[string]any{"turnId": "active", "serverName": "codex_apps", "mode": "form", "message": "foreign", "requestedSchema": map[string]any{"type": "object", "properties": map[string]any{}}}})
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	for {
+		event, err := client.NextEvent(ctx)
+		if err != nil {
+			return
+		}
+		if event.Kind == NativeExtensionEvent {
+			t.Fatal("an undelivered cancel of a private elicitation was reported as handled")
+		}
 	}
 }

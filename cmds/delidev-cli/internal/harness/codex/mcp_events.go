@@ -323,7 +323,12 @@ func (c *Client) observeElicitationLocked(native nativewire.Event) (Event, error
 	}
 	binding, selected := c.mcpBinding(params.ServerName)
 	if !selected {
-		// An unselected or built-in server cannot receive a product answer.
+		// An unselected or built-in server cannot receive a product answer, but the
+		// native call waits for a response before it can continue. Keep the request
+		// private and cancel it once; an undelivered cancel pauses the execution.
+		if err := c.cancelPrivateElicitationLocked(native); err != nil {
+			return Event{}, err
+		}
 		return privateNative(native), nil
 	}
 	nativeID, err := decodeNativeRequestID(native.ID)
@@ -371,6 +376,21 @@ func (c *Client) refuseElicitationLocked(native nativewire.Event, binding mcpBin
 			code = string(domain.SafeError(err).Code)
 		}
 		c.logger.WarnContext(ctx, "Codex managed MCP elicitation refused", "owner_id", c.ownerID, "definition_id", binding.server.Identity.DefinitionID, "revision", binding.server.Identity.Revision, "code", code)
+	}
+	return err
+}
+
+// cancelPrivateElicitationLocked answers a request that no product owner can see.
+func (c *Client) cancelPrivateElicitationLocked(native nativewire.Event) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := c.wire.Reply(ctx, native, nativeElicitationResponse{Action: "cancel"})
+	if c.logger != nil {
+		code := "ok"
+		if err != nil {
+			code = string(domain.SafeError(err).Code)
+		}
+		c.logger.WarnContext(ctx, "Codex private MCP elicitation cancelled", "owner_id", c.ownerID, "code", code)
 	}
 	return err
 }
