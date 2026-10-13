@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -85,6 +86,104 @@ func TestServerServiceTLSAbsoluteAndEmptyReferencesRemainUnchanged(t *testing.T)
 		if err != nil || result.TLSCertificate != options.TLSCertificate || result.TLSKey != options.TLSKey {
 			t.Fatal("absolute/no-TLS refs changed", err)
 		}
+	}
+}
+
+func TestCaptureServerOptionsAnchorsRelativeTLSToPhysicalCwdThroughSymlink(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseA, releaseB := filepath.Join(root, "releaseA"), filepath.Join(root, "releaseB")
+	for _, dir := range []string{releaseA, releaseB} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current := filepath.Join(root, "current")
+	if err := os.Symlink(releaseA, current); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	// t.Chdir also sets PWD to the symlink spelling, as a shell would.
+	t.Chdir(current)
+	result, err := CaptureServerOptions(ServerOptions{Listen: "127.0.0.1:0", TLSCertificate: "cert.pem", TLSKey: filepath.Join("sub", "key.pem")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retarget the symlink after capture; stored references must not follow it.
+	if err := os.Remove(current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(releaseB, current); err != nil {
+		t.Fatal(err)
+	}
+	if result.TLSCertificate != filepath.Join(releaseA, "cert.pem") || result.TLSKey != filepath.Join(releaseA, "sub", "key.pem") {
+		t.Fatalf("references not anchored to physical cwd: %q %q", result.TLSCertificate, result.TLSKey)
+	}
+}
+
+func TestCaptureServerOptionsPreservesWindowsRootedAndDriveRelativeSemantics(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("rooted and drive-relative references exist only on Windows")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	volume := filepath.VolumeName(root)
+	lowerVolume := strings.ToLower(volume)
+	otherVolume := "Z:"
+	if strings.EqualFold(volume, otherVolume) {
+		otherVolume = "Y:"
+	}
+	otherExpected, err := filepath.Abs(otherVolume + "cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, reference, expected string }{
+		{"rooted on the cwd drive", `\cert.pem`, volume + `\cert.pem`},
+		{"rooted subdirectory", `\sub\key.pem`, volume + `\sub\key.pem`},
+		{"drive-relative on the cwd drive", volume + "cert.pem", filepath.Join(root, "cert.pem")},
+		{"drive-relative with different volume case", lowerVolume + "cert.pem", filepath.Join(root, "cert.pem")},
+		{"drive-relative on another drive", otherVolume + "cert.pem", otherExpected},
+		{"plain relative", "cert.pem", filepath.Join(root, "cert.pem")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := CaptureServerOptions(ServerOptions{TLSCertificate: test.reference, TLSKey: test.reference})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.TLSCertificate != test.expected || result.TLSKey != test.expected || !filepath.IsAbs(result.TLSCertificate) {
+				t.Fatalf("reference %q captured as %q, expected %q", test.reference, result.TLSCertificate, test.expected)
+			}
+		})
+	}
+}
+
+func TestCaptureServerOptionsFailsWhenOriginalCwdIsUnresolvable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a process cannot remove its own working directory on Windows")
+	}
+	gone, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone = filepath.Join(gone, "gone")
+	if err := os.Mkdir(gone, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	_, err = CaptureServerOptions(ServerOptions{TLSCertificate: "cert.pem", TLSKey: "key.pem"})
+	if err == nil || domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatalf("expected InvalidArgument for unresolvable cwd, got %v", err)
+	}
+	// Absolute references and no-TLS configuration never need the cwd.
+	if _, err := CaptureServerOptions(ServerOptions{}); err != nil {
+		t.Fatal(err)
 	}
 }
 

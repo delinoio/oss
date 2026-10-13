@@ -1593,6 +1593,129 @@ fn keeps_exports_that_inline_scripts_import() {
     assert!(out(temp.path(), "lazy.js").contains("lazyOnly"));
 }
 
+/// Fixture for the handler attribute tests: `index.js` uses `used` while
+/// `handlerOnly` is reachable only from the HTML page; `other.js` is imported
+/// by `index.js`, so its unused export is removed unless every chunk is public.
+fn handler_bundle(html: &str) -> tempfile::TempDir {
+    bundle(&[
+        ("index.html", html),
+        (
+            "lib.js",
+            r#"function used(){return 1}function handlerOnly(){return 2}export{used,handlerOnly};"#,
+        ),
+        (
+            "index.js",
+            r#"import{used as u}from"./lib.js";import{unrelatedExport as r}from"./other.js";console.log(u(),r());"#,
+        ),
+        (
+            "other.js",
+            r#"function unrelatedExport(){return 3}function unusedOther(){return 4}export{unrelatedExport,unusedOther};"#,
+        ),
+    ])
+}
+
+/// An event handler with a character reference the parser cannot decode may
+/// hide an import: every chunk becomes a public entry.
+#[test]
+fn keeps_exports_when_a_handler_has_an_undecodable_reference() {
+    for html in [
+        r#"<button onclick="import&Tab;('./lib.js').then(m=>m.handlerOnly())"></button>"#,
+        r#"<a href="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="java&Tab;script:import('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="&Tab;JavaScript:void 0"></a>"#,
+        r#"<form action="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></form>"#,
+        r#"<iframe src="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></iframe>"#,
+        r#"<a href="java&#115;cript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="javascript&colon;import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(out(temp.path(), "lib.js").contains("handlerOnly"), "{html}");
+        assert!(
+            out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
+/// An internal space or control character other than TAB, LF and CR keeps a
+/// value from being a `javascript:` URL, so it does not broaden the public
+/// entries; leading spaces and controls are still trimmed by the browser.
+#[test]
+fn preserves_internal_spaces_when_detecting_javascript_urls() {
+    for html in [
+        r#"<a href="java script:&Tab;"></a>"#,
+        r#"<a href="java&Tab; script:import('./lib.js')"></a>"#,
+        r#"<a href="java&#1;script:&Tab;"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            !out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+    for html in [
+        r#"<a href="  javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="&#1; javascript&Tab;:void 0"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
+/// A fully decoded handler keeps precise import discovery.
+#[test]
+fn decodes_handlers_with_known_references_precisely() {
+    let temp = handler_bundle(
+        r#"<button onclick="import&#9;('./lib.js').then(m=>m.handlerOnly())"></button>"#,
+    );
+    optimize(temp.path(), &[]);
+    assert!(out(temp.path(), "lib.js").contains("handlerOnly"));
+    assert!(!out(temp.path(), "other.js").contains("unusedOther"));
+}
+
+/// An undecodable reference in an attribute that cannot run code does not
+/// broaden the public entries.
+#[test]
+fn ignores_undecodable_references_in_non_executable_attributes() {
+    for html in [
+        r#"<p title="&unknownref; text" data-x="&Tab;"></p>"#,
+        r#"<a href="/docs&Tab;/page">docs</a>"#,
+        r#"<div title="javascript:&Tab;" data-url="javascript:import&Tab;('./lib.js')"></div>"#,
+        r#"<img src="javascript:&Tab;"><link href="javascript:&Tab;">"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            !out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
+/// An undecodable script `type` or base `href` is still rejected.
+#[test]
+fn rejects_undecodable_script_type_and_base_href() {
+    for html in [
+        r#"<script type="mod&unknownref;ule" src="index.js"></script>"#,
+        r#"<base href="/a&unknownref;/"><script src="index.js"></script>"#,
+    ] {
+        let temp = handler_bundle(html);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(!output.status.success(), "{html}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("an HTML script or base URL uses an unsupported character reference"),
+            "{html}"
+        );
+    }
+}
+
 /// A file that calls `importScripts` can run as a classic worker even when a
 /// module imports it: it stays unchanged.
 #[test]

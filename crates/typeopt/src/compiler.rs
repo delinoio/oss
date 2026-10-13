@@ -1277,6 +1277,54 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
             .find(|c| c.starts_with(root) && c.is_file())
             .map(|c| c.to_string_lossy().into_owned())
     }
+    /// Whether an attribute whose raw value has an undecodable character
+    /// reference can hold code: an event handler, or a value that reads as a
+    /// `javascript:` URL once undecodable references and the characters the
+    /// URL parser removes (leading C0 controls and spaces, TAB, LF and CR
+    /// anywhere) are dropped, and that sits in an attribute where a browser
+    /// runs such a URL.
+    fn may_run_code(tag: &str, attribute: &str, raw: &str) -> bool {
+        if attribute.starts_with("on") {
+            return true;
+        }
+        // Navigating or loading these runs a `javascript:` URL; the same
+        // text in any other attribute (`title`, `data-*`) is inert.
+        let runs_url = match tag {
+            "a" | "area" => matches!(attribute, "href" | "xlink:href"),
+            "form" => attribute == "action",
+            "button" | "input" => attribute == "formaction",
+            "iframe" | "frame" | "embed" => attribute == "src",
+            "object" => attribute == "data",
+            _ => false,
+        };
+        if !runs_url {
+            return false;
+        }
+        // Decode the references this parser knows first: they can spell the
+        // scheme (`java&#115;cript:`) next to one it cannot decode. A
+        // reference that stays undecoded is dropped, since it may expand to
+        // a character the URL parser strips.
+        let decoded = crate::bundle::decode_references_lossy(raw);
+        let mut stripped = String::new();
+        let mut chars = decoded.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '&' {
+                while chars
+                    .next_if(|n| n.is_ascii_alphanumeric() || *n == '#')
+                    .is_some()
+                {}
+                chars.next_if_eq(&';');
+            } else if !matches!(c, '\t' | '\n' | '\r') {
+                stripped.push(c.to_ascii_lowercase());
+            }
+        }
+        // The URL parser trims leading C0 controls and spaces, and removes
+        // only TAB, LF and CR from the rest of the value, so an internal
+        // space or other control keeps the text from being a scheme.
+        stripped
+            .trim_start_matches(|c: char| c <= ' ')
+            .starts_with("javascript:")
+    }
     fn walk(root: &std::path::Path, dir: &std::path::Path, found: &mut HtmlScripts) -> Result<()> {
         for entry in std::fs::read_dir(dir).context("cannot read bundle directory")? {
             let entry = entry?;
@@ -1325,6 +1373,21 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
                 // Event handlers and `javascript:` URLs are inline code that
                 // can import chunks.
                 for (attribute, value) in &tag.attributes {
+                    // The browser decodes the value before it runs, so a
+                    // reference this parser cannot decode may hide an import
+                    // from the scan below: assume any chunk can be loaded.
+                    if tag.undecodable.contains(attribute)
+                        && may_run_code(&tag.name, attribute, value)
+                    {
+                        tracing::info!(
+                            page = %path.display(),
+                            attribute = %attribute,
+                            "an HTML executable attribute has an undecodable character reference; \
+                             every chunk is a public entry"
+                        );
+                        found.all_public = true;
+                        continue;
+                    }
                     let code = if attribute.starts_with("on") {
                         Some(value.as_str())
                     } else {

@@ -1,5 +1,6 @@
 import { sessionInputReceipt } from "./test-session-input";
 // SPDX-License-Identifier: Apache-2.0
+import { readFileSync } from "node:fs";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -38,6 +39,7 @@ import {
   SessionTabKind,
   SessionTabsProvider,
   useSessionTabsStore,
+  type SessionTabsStore,
 } from "./session-tabs";
 import { SessionView } from "./session";
 import { ShortcutProvider } from "./shortcut-provider";
@@ -293,6 +295,12 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
+  // Exposes the connection-owned tab store so tests can open presentation tabs.
+  let tabsStore: SessionTabsStore | undefined;
+  const StoreProbe = () => {
+    tabsStore = useSessionTabsStore();
+    return null;
+  };
   const view = (
     value = "Original draft",
     active = true,
@@ -304,6 +312,7 @@ function fixture(
         <MutationIntents>
           <SessionNameEditorProvider>
             <SessionTabsProvider>
+              <StoreProbe />
               <SessionView
                 id={id}
                 draft={value}
@@ -339,6 +348,7 @@ function fixture(
     terminalCreate,
     terminalWatches,
     terminals,
+    tabs: () => tabsStore!,
   };
 }
 
@@ -3142,3 +3152,73 @@ it("omits Files guidance and keeps the custom primary+E binding authoritative wh
     f.client.clear();
   }
 });
+
+it.each([SessionTabKind.Sidechat, SessionTabKind.PendingSidechat] as const)(
+  "gives a selected %s tab the whole conversation region and restores Conversation state",
+  async (kind) => {
+    const f = fixture();
+    const { container } = render(f.view("Retained parent draft"));
+    const composer = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    const upper = container.querySelector<HTMLElement>(
+      ".session-upper-content",
+    )!;
+    const region = upper.querySelector<HTMLElement>(
+      ".session-conversation-region",
+    )!;
+    const body = region.querySelector<HTMLElement>(":scope > .session-body")!;
+    // Counterexample: Conversation selected keeps its body visible and the
+    // region is the only child consuming the upper content row.
+    expect(upper.children).toHaveLength(1);
+    expect(upper.firstElementChild).toBe(region);
+    expect(body.hidden).toBe(false);
+    expect(body.hasAttribute("inert")).toBe(false);
+    const child = newRequestId();
+    act(() =>
+      f
+        .tabs()
+        .open(
+          f.session.id,
+          kind === SessionTabKind.Sidechat
+            ? { kind, id: child, name: "Side question" }
+            : { kind, requestId: child, name: "Side question" },
+        ),
+    );
+    await waitFor(() => expect(body.hidden).toBe(true));
+    // Trigger: the selected pane lives inside the sole region child, never as
+    // a width-sharing sibling of a blank conversation wrapper.
+    const pane = region.querySelector<HTMLElement>(".session-sidechat-pane")!;
+    expect(pane).toBeTruthy();
+    expect(upper.children).toHaveLength(1);
+    expect(upper.firstElementChild).toBe(region);
+    expect(pane.closest(".session-upper-content")).toBe(upper);
+    expect(upper.querySelectorAll(".session-sidechat-pane")).toHaveLength(1);
+    expect(pane.hidden).toBe(false);
+    expect(pane.hasAttribute("inert")).toBe(false);
+    expect(body.hasAttribute("inert")).toBe(true);
+    // jsdom has no layout engine, so the width contract is asserted on CSS text.
+    const css = readFileSync("src/session.css", "utf8");
+    const rule = (selector: string) =>
+      css.match(
+        new RegExp(
+          `(?:^|\n)${selector.replace(/[.\[\]]/g, "\\$&")} \\{([^}]*)\\}`,
+        ),
+      )?.[1] ?? "";
+    expect(rule(".session-tabbed .session-conversation-region")).toMatch(
+      /width:\s*100%/,
+    );
+    expect(rule(".session-sidechat-pane")).toMatch(/width:\s*100%/);
+    expect(rule(".session-sidechat-pane")).toMatch(/min-width:\s*0/);
+    // Returning to Conversation restores the same retained mounted composer.
+    act(() => f.tabs().select(f.session.id, SessionTabKind.Conversation));
+    await waitFor(() => expect(body.hidden).toBe(false));
+    expect(body.hasAttribute("inert")).toBe(false);
+    expect(pane.hidden).toBe(true);
+    expect(pane.hasAttribute("inert")).toBe(true);
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+    expect(composer.value).toBe("Retained parent draft");
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+  },
+);
