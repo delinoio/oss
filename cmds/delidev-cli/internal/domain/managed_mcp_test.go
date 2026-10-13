@@ -60,3 +60,20 @@ func TestManagedMCPRedirectQueryCannotUseAuthorizationResponseNames(t *testing.T
 		}
 	}
 }
+
+func TestManagedMCPSecretValuesMustBeLongEnoughForTheFrameGuard(t *testing.T) {
+	if err := (MCPSecretInput{Environment: map[string]string{"TOKEN": "long-enough-value"}}).Validate(MCPStdio); err != nil {
+		t.Fatalf("a suitable credential was rejected: %v", err)
+	}
+	for name, input := range map[string]struct {
+		secrets   MCPSecretInput
+		transport MCPTransport
+	}{
+		"environment": {MCPSecretInput{Environment: map[string]string{"TOKEN": "a"}}, MCPStdio},
+		"header":      {MCPSecretInput{Headers: map[string]string{"X-Api-Key": "short"}}, MCPStreamableHTTP},
+	} {
+		if err := input.secrets.Validate(input.transport); SafeError(err).Code != InvalidArgument {
+			t.Fatalf("%s: a value the guard cannot protect was accepted: %v", name, err)
+		}
+	}
+}

@@ -135,6 +135,7 @@ func TestManagedMCPLaunchRejectsUnsafeSelections(t *testing.T) {
 			second.Environment = map[string]string{"fixture_token": "different"}
 			c.ManagedMCP = append(c.ManagedMCP, second)
 		},
+		"short-env-secret": func(c *Config) { c.ManagedMCP[0].Environment = map[string]string{"FIXTURE_TOKEN": "a"} },
 		"conflicting-values": func(c *Config) {
 			second := mcpStdioServer("second_dddd")
 			second.Environment = map[string]string{"FIXTURE_TOKEN": "different"}
@@ -159,6 +160,8 @@ func TestManagedMCPLaunchRejectsUnsafeSelections(t *testing.T) {
 		"http-credential-url":      func(s *ManagedMCPServer) { s.Endpoint = "https://user:pw@example.test/mcp" },
 		"http-plain-remote":        func(s *ManagedMCPServer) { s.Endpoint = "http://example.test/mcp" },
 		"header-injection":         func(s *ManagedMCPServer) { s.Headers = map[string]string{"X-A\r\nB": "v"} },
+		"short-header-secret":      func(s *ManagedMCPServer) { s.Headers = map[string]string{"X-Api-Key": "abc"} },
+		"short-bearer-secret":      func(s *ManagedMCPServer) { s.BearerToken = "tok" },
 		"bearer-and-authorization": func(s *ManagedMCPServer) { s.BearerToken = "t"; s.Headers = map[string]string{"Authorization": "x"} },
 	} {
 		t.Run(name, func(t *testing.T) {

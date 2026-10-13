@@ -145,6 +145,11 @@ func configureManagedMCP(config *Config) ([]mcpBinding, error) {
 		}
 		seenName[server.Identity.Server], seenID[server.Identity.DefinitionID] = true, true
 		binding := mcpBinding{server: server, name: server.Identity.Server}
+		// The literal reflection guard rejects every frame that contains a protected
+		// value, so a short value would break the native connection.
+		if shortMCPSecret(server) {
+			return nil, mcpUnavailable()
+		}
 		var fields []string
 		switch server.Transport {
 		case domain.MCPStdio:
@@ -655,4 +660,22 @@ func mcpStartupState(status nativeMCPStartupState, reason *nativeMCPFailureReaso
 	default:
 		return domain.MCPStartupPending
 	}
+}
+
+func shortMCPSecret(server ManagedMCPServer) bool {
+	short := func(value string) bool { return value != "" && len(value) < domain.MinMCPSecretBytes }
+	if short(server.BearerToken) {
+		return true
+	}
+	for _, value := range server.Environment {
+		if short(value) {
+			return true
+		}
+	}
+	for _, value := range server.Headers {
+		if short(value) {
+			return true
+		}
+	}
+	return false
 }

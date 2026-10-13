@@ -60,17 +60,17 @@ func TestRuntimeResolvesOnlyTheFrozenWorkerGenerationAndPrivateCredential(t *tes
 
 func TestRuntimeKeepsOriginalGenerationAfterEditsAndRejectsForgedOrForeignDefinitions(t *testing.T) {
 	m, q, d := fixture(t)
-	original := savedGeneration(t, m, q, d, &domain.MCPSecretInput{Environment: map[string]string{"TOKEN": "first"}})
+	original := savedGeneration(t, m, q, d, &domain.MCPSecretInput{Environment: map[string]string{"TOKEN": "first-secret-value"}})
 	// A later authentication creates a newer generation; the frozen one remains valid.
 	later := q
 	later.RequestID = domain.NewID()
 	later.Action = domain.MCPAuthenticate
 	later.DefinitionID = d.ID
 	later.ExpectedRevision = original.Revision
-	later.Secrets = &domain.MCPSecretInput{Environment: map[string]string{"TOKEN": "second"}}
+	later.Secrets = &domain.MCPSecretInput{Environment: map[string]string{"TOKEN": "second-secret-value"}}
 	must(t, m, later)
 	resolved, err := m.Resolve(context.Background(), []domain.ManagedMCPDefinition{original}, domain.Codex)
-	if err != nil || resolved[0].Environment["TOKEN"] != "first" {
+	if err != nil || resolved[0].Environment["TOKEN"] != "first-secret-value" {
 		t.Fatalf("the execution did not keep its original credential generation: %v", err)
 	}
 	for name, mutate := range map[string]func(*domain.ManagedMCPDefinition){

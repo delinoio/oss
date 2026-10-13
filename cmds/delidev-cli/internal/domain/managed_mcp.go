@@ -158,17 +158,22 @@ type MCPSecretInput struct {
 // serialized credential object must fit it before any operation is recorded.
 const MaxMCPSecretPayloadBytes = 64 << 10
 
+// MinMCPSecretBytes is the shortest credential value the native frame guard can
+// protect. The guard rejects any frame containing a protected literal, so a value
+// such as "a" would terminate ordinary connections.
+const MinMCPSecretBytes = 8
+
 func (s MCPSecretInput) Validate(t MCPTransport) error {
 	if len(s.Environment)+len(s.Headers) == 0 || len(s.Environment)+len(s.Headers) > 64 || t == MCPStdio && len(s.Headers) > 0 || t == MCPStreamableHTTP && len(s.Environment) > 0 {
 		return Fail(InvalidArgument, "MCP credentials do not match the transport.", "Use environment values for stdio or headers for HTTP.")
 	}
 	for k, v := range s.Environment {
-		if len(k) > 128 || k == "" || strings.ContainsAny(k, "=\x00") || Text(v, "MCP secret", 8192, true) != nil {
+		if len(k) > 128 || k == "" || strings.ContainsAny(k, "=\x00") || Text(v, "MCP secret", 8192, true) != nil || len(v) < MinMCPSecretBytes {
 			return Fail(InvalidArgument, "Invalid MCP environment credential.", "Provide bounded names and values.")
 		}
 	}
 	for k, v := range s.Headers {
-		if k == "" || len(k) > 128 || strings.ContainsAny(k, "\r\n: \x00") || Text(v, "MCP secret", 8192, true) != nil || strings.ContainsAny(v, "\r\n") {
+		if k == "" || len(k) > 128 || strings.ContainsAny(k, "\r\n: \x00") || Text(v, "MCP secret", 8192, true) != nil || len(v) < MinMCPSecretBytes || strings.ContainsAny(v, "\r\n") {
 			return Fail(InvalidArgument, "Invalid MCP header credential.", "Provide bounded header names and values.")
 		}
 	}
