@@ -484,11 +484,12 @@ func TestCredentialJSONExpectationAlsoScansEventStreamLabeledBodies(t *testing.T
 	for _, wire := range []string{
 		`{"value":"` + escaped + `"}`,
 		"data: {" + `"value":"` + escaped + `"}` + "\n\n",
-		": " + "comment\n" + `{"value":"` + escaped + `"}`,
+		": comment\ndata: {" + `"value":"` + escaped + `"}` + "\n\n",
+		"event: message\ndata: " + `"` + escaped + `"` + "\n\n",
 	} {
 		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
 			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
-			if guard.jsonGuard.framing != credentialOrdinary || guard.sseGuard == nil {
+			if guard.jsonGuard.framing != credentialUnknown || guard.sseGuard == nil {
 				t.Fatal("JSON expectation did not pair the JSON and SSE guards")
 			}
 			output, err := io.ReadAll(guard)
@@ -555,4 +556,43 @@ func TestCredentialJSONTextSequenceResetsDecoderAtRecordSeparator(t *testing.T) 
 		t.Fatal("ordinary JSON was framed as a text sequence")
 	}
 	guard.Close()
+}
+
+// Genuine SSE metadata is not JSON text: a caller that accepts JSON and receives
+// a labeled event stream decodes only joined data fields, while a plain JSON
+// body carrying the same label is still decoded as JSON.
+func TestCredentialJSONExpectationKeepsEventStreamMetadataOutOfJSONDecoder(t *testing.T) {
+	credential := domainCredentialFixture()
+	escaped := `\u0066ixture-password`
+	for _, safe := range []string{
+		": \"" + escaped + "\"\n\ndata: {\"value\":\"safe\"}\n\n",
+		": " + escaped + "\"\n\ndata: [DONE]\n\n",
+		"event: \"" + escaped + "\"\ndata: {\"value\":\"safe\"}\n\n",
+		"id: \"" + escaped + "\"\nretry: 10\ndata: {\"value\":\"safe\"}\n\n",
+		"data: {\"value\":\"safe\"}\n\n: \"" + escaped + "\"\n\ndata: {\"value\":\"safe\"}\n\n",
+		"data: {\"value\":\"safe\"}\n\nevent: \"" + escaped + "\"\n\n",
+		": comment\n{\"value\":\"" + escaped + "\"}\n\n",
+	} {
+		for _, reader := range []io.Reader{strings.NewReader(safe), fragmentedReader{strings.NewReader(safe)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+			output, err := io.ReadAll(guard)
+			if err != nil || string(output) != safe {
+				t.Fatalf("event-stream metadata was decoded as JSON %q: %v", safe, err)
+			}
+			guard.Close()
+		}
+	}
+	// A data field is still decoded, wherever it appears after metadata.
+	for _, wire := range []string{
+		": \"" + escaped + "\"\n\ndata: {\"value\":\"" + escaped + "\"}\n\n",
+		"data: {\"value\":\"safe\"}\n\nevent: x\ndata: \"" + escaped + "\"\n\n",
+	} {
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+			if output, err := io.ReadAll(guard); err == nil || strings.Contains(string(output), "data: {\"value\":\""+escaped) || strings.Contains(string(output), "data: \""+escaped) {
+				t.Fatalf("event-stream data field escaped the JSON guard %q", wire)
+			}
+			guard.Close()
+		}
+	}
 }

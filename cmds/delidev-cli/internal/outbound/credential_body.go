@@ -43,11 +43,12 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 // the proxy or server labels it with. expectJSON keeps JSON escape decoding for
 // such a body when the response label would otherwise make it opaque. A
 // text/event-stream label may still be genuine for a request that lists both
-// JSON and SSE, so that body is scanned with the JSON guard and the SSE guard
-// together.
+// JSON and SSE, so that body starts as an unframed probe, like a typeless one:
+// a JSON-shaped start commits to the JSON guard while SSE metadata (comments and
+// other non-data fields) never enters the JSON decoder. The SSE guard scans the
+// whole body in both cases.
 func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, expectJSON bool, contentType ...string) *credentialBody {
 	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
-	labeledSSE := false
 	if len(contentType) > 0 {
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
 		if err == nil && mediaType != "" {
@@ -57,8 +58,7 @@ func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, exp
 			case g.jsonGuard.framing == credentialOpaque && expectJSON:
 				g.jsonGuard.framing = credentialOrdinary
 			case g.jsonGuard.framing == credentialSSE && expectJSON:
-				g.jsonGuard.framing = credentialOrdinary
-				labeledSSE = true
+				g.jsonGuard.framing = credentialUnknown
 			}
 		}
 	}
@@ -103,12 +103,11 @@ func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, exp
 	basic := []byte("Basic " + base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password)))
 	g.patterns = append(g.patterns, basic)
 	g.headerPatterns = append(g.headerPatterns, bytes.Clone(basic))
-	if g.jsonGuard.framing == credentialUnknown || labeledSSE {
+	if g.jsonGuard.framing == credentialUnknown {
 		// Typeless input can be either JSON or SSE. Keep a streaming SSE view
 		// alongside the bounded framing probe so a JSON-shaped unknown field name
 		// cannot commit the response to the wrong decoder before a later data field.
-		// A JSON-expected response labeled as SSE keeps the same pairing, with
-		// the JSON guard already committed.
+		// A JSON-expected response labeled as SSE uses the same pairing.
 		g.sseGuard = &credentialJSONGuard{framing: credentialSSE}
 		for _, pattern := range g.jsonGuard.patterns {
 			g.sseGuard.patterns = append(g.sseGuard.patterns, bytes.Clone(pattern))
