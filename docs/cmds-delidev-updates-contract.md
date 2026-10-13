@@ -125,7 +125,10 @@ It carries the server ID, operation ID, revision, native generation and optional
 saved-connection ID, and its only valid phase is Prepared. It follows the same
 owner-only, atomic, 4 KiB and never-overwrite rules, and a begin whose identity
 cannot be retained is rejected without being sent. A begin rejected before it
-reaches the resident runtime retires its intent. Once a response arrives with
+reaches the resident runtime retires its intent. A request counts as sent only
+once the resident pipe's writer queue has accepted its frame; a missing session,
+a broken or exiting pipe, a full pending map or a rejected frame proves it never
+left this process, so that intent is retired and fences no retry. Once a response arrives with
 phase Installing the intent stays until the verified terminal settlement
 retires it. When the response is canceled or lost, including by Quit, native
 never submits `native-begin` or an installer a second time. It reads the

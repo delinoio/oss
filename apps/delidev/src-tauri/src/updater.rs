@@ -892,8 +892,8 @@ impl Connector {
         self.desktop_update_tracked(expected, request, &AtomicBool::new(false))
     }
 
-    // `sent` turns true immediately before the request reaches the resident
-    // runtime. Until then a failure proves the journal was not touched.
+    // `sent` turns true once the resident pipe accepted the request frame.
+    // Until then a failure proves the journal was not touched.
     fn desktop_update_tracked(
         &self,
         expected: Option<&SavedConnection>,
@@ -958,8 +958,14 @@ impl Connector {
                 .into(),
             ]);
         }
-        sent.store(true, Ordering::Release);
-        let value = self.run_with_input_bound(&args, None, Duration::from_secs(660))?;
+        // `sent` turns true only once the resident pipe accepted the frame. A
+        // failure before that (no session, broken or exiting pipe, full
+        // pending map, rejected frame) proves the request never left this
+        // process, so its retained intent must not fence a retry.
+        let value =
+            self.resident_request_observed(&args, None, Duration::from_secs(660), &|| {
+                sent.store(true, Ordering::Release)
+            })?;
         let prepared: Prepared =
             serde_json::from_value(value).map_err(|_| NativeFailure::InvalidEvidence)?;
         prepared.validate(
@@ -2633,6 +2639,29 @@ else:
         drop(held);
         assert!(f.intents().is_empty());
         assert_eq!((f.begins(), f.calls().as_str()), (0, ""));
+    }
+
+    #[test]
+    fn a_begin_refused_before_the_resident_pipe_accepts_it_does_not_fence_a_retry() {
+        let f = Fixture::new("prepared", true);
+        // Quit is already in progress, so the resident request is refused
+        // before its frame is queued, even though the begin reached the
+        // resident request path.
+        f.connector.exiting.store(true, Ordering::Release);
+        assert!(matches!(
+            f.begin(),
+            BeginOutcome::Rejected(NativeFailure::Stopped)
+        ));
+        assert!(f.intents().is_empty(), "a request that never left retires");
+        assert_eq!((f.begins(), f.calls().as_str()), (0, ""));
+        assert_eq!(f.journal()["phase"], "prepared");
+        // Nothing is fenced: once the refusal clears, the same begin is
+        // submitted and accepted.
+        f.connector.exiting.store(false, Ordering::Release);
+        assert!(matches!(f.begin(), BeginOutcome::Accepted(_)));
+        assert_eq!(f.begins(), 1);
+        f.connector.exiting.store(true, Ordering::Release);
+        f.connector.shutdown_owned().unwrap();
     }
 
     #[test]
