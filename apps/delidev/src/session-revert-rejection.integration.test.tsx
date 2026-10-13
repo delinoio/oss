@@ -216,7 +216,13 @@ it.each([
         </output>
       );
     }
-    function Presenter({ session, draft }: { session: Resource; draft: string }) {
+    function Presenter({
+      session,
+      draft,
+    }: {
+      session: Resource;
+      draft: string;
+    }) {
       const composer = useRef<HTMLTextAreaElement>(null);
       const state = useSessionRevert({
         session,
@@ -239,7 +245,10 @@ it.each([
               setDraft(event.target.value);
             }}
           />
-          <TranscriptItem resource={target} revertAction={state.action(target)} />
+          <TranscriptItem
+            resource={target}
+            revertAction={state.action(target)}
+          />
           {state.content}
         </>
       );
@@ -300,9 +309,12 @@ it.each([
     if (navigation === Navigation.BeforeRejection) act(() => remount());
     if (outcome === Outcome.AcceptedEdited)
       act(() => {
-        fireEvent.change(screen.getByRole("textbox", { name: "Unsent prompt" }), {
-          target: { value: "edited during Revert B" },
-        });
+        fireEvent.change(
+          screen.getByRole("textbox", { name: "Unsent prompt" }),
+          {
+            target: { value: "edited during Revert B" },
+          },
+        );
       });
     await act(async () => {
       if (outcome === Outcome.Rejected)
@@ -389,8 +401,7 @@ it("frees the presentation slot of 1000 sequentially rejected Reverts", async ()
     throw new ConnectError("Definite rejection", Code.FailedPrecondition);
   });
   let current = sessions[0];
-  const row = (index: number) =>
-    sessionRow(sessions[index].id, 2n, {});
+  const row = (index: number) => sessionRow(sessions[index].id, 2n, {});
   let setIndex!: (index: number) => void;
   const transport = transportFor(() => row(sessions.indexOf(current)), revert);
   function Presenter({ index }: { index: number }) {
@@ -448,9 +459,7 @@ it("frees the presentation slot of 1000 sequentially rejected Reverts", async ()
       }),
     );
     await waitFor(() => expect(revert).toHaveBeenCalledTimes(index + 1));
-    await waitFor(() =>
-      expect(screen.queryByRole("status")).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   };
   for (let index = 0; index < total; index += 1) {
     if (index > 0) act(() => setIndex(index));
