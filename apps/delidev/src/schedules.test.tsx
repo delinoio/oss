@@ -720,6 +720,63 @@ it("keeps original occurrence history after configuration deletion without delet
   expect(value.control).not.toHaveBeenCalled();
 });
 
+it("labels occurrence history rows as scheduled runs with kind-scoped numbers", async () => {
+  const value = fixture();
+  const rendered = render(
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  const labels = () => {
+    const rows = [...globalThis.document.querySelectorAll("small")].map(
+      (node) => node.textContent ?? "",
+    );
+    return {
+      occurrence: rows.filter((text) => text.startsWith("Scheduled run")),
+      schedule: rows.filter((text) => text.startsWith("Schedule unavailable")),
+    };
+  };
+  // The occurrence row never borrows the schedule noun, and the real schedule
+  // identity keeps its own kind with an independent number.
+  expect(labels()).toEqual({
+    occurrence: ["Scheduled run · 1"],
+    schedule: ["Schedule unavailable · 1"],
+  });
+  rendered.rerender(
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  expect(labels()).toEqual({
+    occurrence: ["Scheduled run · 1"],
+    schedule: ["Schedule unavailable · 1"],
+  });
+  await act(() => i18n.changeLanguage("ko"));
+  try {
+    const rows = [...globalThis.document.querySelectorAll("small")].map(
+      (node) => node.textContent ?? "",
+    );
+    expect(rows).toContain("예약 실행 · 1");
+    expect(rows.filter((text) => text.startsWith("예약 실행"))).toHaveLength(1);
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
+
 it("retains the original authenticated Local machine without inventing another origin", async () => {
   const value = fixture();
   value.schedule.documentJson = encode({
