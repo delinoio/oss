@@ -162,19 +162,32 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
   ).toBe(InteractionPresentation.Retired);
 });
 it("retires an MCP elicitation only with its exact native resolution evidence", () => {
-  const elicitation = (evidence: string) => ({
+  const withEvidence = (evidence: string, marked: boolean) => ({
     ...accepted,
+    ...(marked ? { mcp_elicitation: true } : {}),
     response: {
       ...accepted.response,
       acceptance: { evidence, sequence: 11 },
     },
   });
   expect(
-    interactionProjection(row(elicitation("native-mcp-elicitation-resolved")))
-      .presentation,
+    interactionProjection(
+      row(withEvidence("native-mcp-elicitation-resolved", true)),
+    ).presentation,
   ).toBe(InteractionPresentation.Retired);
   expect(
-    interactionProjection(row(elicitation("transport-delivery"))).presentation,
+    interactionProjection(row(withEvidence("transport-delivery", true)))
+      .presentation,
+  ).toBe(InteractionPresentation.Pending);
+  // The evidence is bound to the persisted subtype in both directions.
+  expect(
+    interactionProjection(
+      row(withEvidence("native-mcp-elicitation-resolved", false)),
+    ).presentation,
+  ).toBe(InteractionPresentation.Pending);
+  expect(
+    interactionProjection(row(withEvidence("native-question-output", true)))
+      .presentation,
   ).toBe(InteractionPresentation.Pending);
 });
 it("retires only accepted or safely closed questions and keeps receipt recovery", () => {

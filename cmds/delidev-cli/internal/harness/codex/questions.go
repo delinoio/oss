@@ -73,6 +73,10 @@ type Interaction struct {
 	elicitation *elicitationRequest
 }
 
+// MCPElicitation reports whether the interaction is a managed MCP form, whose
+// native resolution is its acceptance evidence.
+func (i *Interaction) MCPElicitation() bool { return i != nil && i.elicitation != nil }
+
 func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error) {
 	if native.Method == "mcpServer/elicitation/request" {
 		return c.observeElicitationLocked(native)

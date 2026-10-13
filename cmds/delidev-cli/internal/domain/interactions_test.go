@@ -45,3 +45,25 @@ func TestQuestionPublicationRejectsNullMissingAndCrossKindFields(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPElicitationMarkerIsLimitedToGenericQuestions(t *testing.T) {
+	question := func() ExecutionInteractionUpdate {
+		return ExecutionInteractionUpdate{ID: NewID(), NativeItemID: "mcp-elicitation/n:1", NativeRequestID: InteractionRequestID{Kind: InteractionTextID, Text: "native"}, Type: UserQuestionInteraction, Questions: &QuestionRequest{Blocking: true, Questions: []Question{{ID: "action", Header: "MCP", Text: "Write?", Options: []QuestionOption{{Label: "accept"}}}}}, MCPElicitation: true}
+	}
+	if err := question().Validate(ExecutionInteractionRequested); err != nil {
+		t.Fatalf("a marked generic question was rejected: %v", err)
+	}
+	for name, edit := range map[string]func(*ExecutionInteractionUpdate){
+		"approval": func(u *ExecutionInteractionUpdate) {
+			u.Type, u.Questions, u.Approval = NativeApprovalInteraction, nil, &ApprovalRequest{}
+		},
+		"no-questions":  func(u *ExecutionInteractionUpdate) { u.Questions = nil },
+		"opencode-body": func(u *ExecutionInteractionUpdate) { u.OpenCode = &OpenCodeInteractionRequest{} },
+	} {
+		u := question()
+		edit(&u)
+		if err := u.Validate(ExecutionInteractionRequested); err == nil {
+			t.Fatalf("%s accepted an MCP marker", name)
+		}
+	}
+}

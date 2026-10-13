@@ -45,7 +45,7 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 		if u.Approval != nil && (u.Approval.Harness != input.Configuration.Harness || (input.Version != 4 && u.Approval.Version != input.Installation.Version)) {
 			return false, executionEventConflict()
 		}
-		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, OpenCode: u.OpenCode, Claude: u.Claude, Grok: u.Grok, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, OpenCode: u.OpenCode, Claude: u.Claude, Grok: u.Grok, MCPElicitation: u.MCPElicitation, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
 		if _, eligible := nativePlanApproval(value); eligible {
 			value.PlanApprovalPolicy = domain.PlanApprovalManual
 			enabled, err := effectivePlanApproval(tx, session.ProjectID)
@@ -91,7 +91,7 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 	}
 	key, keyErr := value.NativeRequestID.Key()
 	newKey, newErr := u.NativeRequestID.Key()
-	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.Closure != domain.InteractionOpen {
+	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.MCPElicitation != u.MCPElicitation || value.Closure != domain.InteractionOpen {
 		return false, executionEventConflict()
 	}
 	if value.Grok != nil {

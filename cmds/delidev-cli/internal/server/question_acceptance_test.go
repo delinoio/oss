@@ -78,7 +78,7 @@ func TestQuestionAcceptanceReconcilesExactlyOnceWithoutClearingPriorRecovery(t *
 }
 
 func TestQuestionAcceptanceRejectsUnownedOrContentBearingEvidenceAtomically(t *testing.T) {
-	for _, change := range []string{"no-delivery", "not-sent", "claim", "response", "interaction", "item", "turn", "thread", "evidence", "delivery-field", "answers"} {
+	for _, change := range []string{"no-delivery", "not-sent", "claim", "response", "interaction", "item", "turn", "thread", "evidence", "mcp-evidence", "delivery-field", "answers"} {
 		t.Run(change, func(t *testing.T) {
 			f, claim := questionClaimFixture(t)
 			if _, err := claimQuestion(f, claim); err != nil {
@@ -110,6 +110,9 @@ func TestQuestionAcceptanceRejectsUnownedOrContentBearingEvidenceAtomically(t *t
 				e.NativeThreadID = string(domain.NewID())
 			case "evidence":
 				e.QuestionAcceptance.Evidence = "native-closed"
+			case "mcp-evidence":
+				// An ordinary native question is not a persisted MCP elicitation.
+				e.QuestionAcceptance.Evidence = domain.NativeMCPElicitationResolved
 			case "delivery-field":
 				e.QuestionResponse = questionDeliveryEvent(f, claim, domain.QuestionTransmitted).QuestionResponse
 			}
@@ -178,5 +181,44 @@ func TestQuestionAcceptanceOutboxReplaysLostAcknowledgmentWithoutAnswerContent(t
 	after, value := readPublishedInteraction(t, f, id)
 	if after.Revision != before.Revision || !reflect.DeepEqual(value, accepted) || len(transport.calls) != 6 || transport.calls[4] != transport.calls[5] {
 		t.Fatal("replay changed native acceptance or its exact receipt")
+	}
+}
+
+func TestMCPElicitationAcceptanceBindsEvidenceToTheMarkedInteraction(t *testing.T) {
+	f := newPublicationFixture(t)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	id := domain.NewID()
+	e := f.interactionEvent(3, id, "native-question")
+	e.Interaction.Questions.Questions = append(e.Interaction.Questions.Questions, domain.Question{ID: "optional", Header: "Optional", Text: "Optional question", Other: true})
+	e.Interaction.MCPElicitation = true
+	f.publish(t, e)
+	responseID := domain.NewID()
+	if _, err := acceptFixtureResponse(f, responseID, id, 1, responseInput()); err != nil {
+		t.Fatal(err)
+	}
+	claim := &pb.ClaimQuestionResponseRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(id), ExpectedRevision: 2}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), JobId: string(f.job), ResponseId: string(responseID)}
+	if _, err := claimQuestion(f, claim); err != nil {
+		t.Fatal(err)
+	}
+	f.publish(t, questionDeliveryEvent(f, claim, domain.QuestionTransmitted))
+	before, original := readPublishedInteraction(t, f, id)
+	if !original.MCPElicitation {
+		t.Fatal("the elicitation subtype was not persisted")
+	}
+	// Ordinary tool-output evidence cannot retire a marked elicitation.
+	if _, err := f.call(f.requestEvent(t, acceptanceEvent(f, claim, 5))); err == nil {
+		t.Fatal("ordinary question evidence accepted an MCP elicitation")
+	}
+	after, value := readPublishedInteraction(t, f, id)
+	if after.Revision != before.Revision || !reflect.DeepEqual(value, original) {
+		t.Fatal("rejected evidence partially changed the response")
+	}
+	accepted := acceptanceEvent(f, claim, 5)
+	accepted.QuestionAcceptance.Evidence = domain.NativeMCPElicitationResolved
+	f.publish(t, accepted)
+	if _, value = readPublishedInteraction(t, f, id); value.Response.State != domain.QuestionResponseAccepted || value.Response.Acceptance.Evidence != domain.NativeMCPElicitationResolved {
+		t.Fatal("native MCP resolution did not accept the marked elicitation")
 	}
 }

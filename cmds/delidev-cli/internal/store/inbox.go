@@ -88,7 +88,7 @@ func (t *Tx) validateInteractionSource(session, project, id domain.ID) error {
 		slog.Warn("inbox_interaction_source_undecodable", "interaction_id", id, "session_id", session)
 		return inboxConflict()
 	}
-	request := domain.ExecutionInteractionUpdate{ID: r.ID, NativeItemID: interaction.NativeItemID, NativeRequestID: interaction.NativeRequestID, Type: interaction.Type, Questions: interaction.Questions, Approval: interaction.Approval, OpenCode: interaction.OpenCode, Claude: interaction.Claude, Grok: interaction.Grok}
+	request := domain.ExecutionInteractionUpdate{ID: r.ID, NativeItemID: interaction.NativeItemID, NativeRequestID: interaction.NativeRequestID, Type: interaction.Type, Questions: interaction.Questions, Approval: interaction.Approval, OpenCode: interaction.OpenCode, Claude: interaction.Claude, Grok: interaction.Grok, MCPElicitation: interaction.MCPElicitation}
 	if r.SessionID != session || r.ProjectID != project || request.Validate(domain.ExecutionInteractionRequested) != nil || interaction.ExecutionID.Validate() != nil || domain.Text(interaction.NativeThreadID, "native thread identity", 1024, true) != nil || domain.Text(interaction.NativeTurnID, "native turn identity", 1024, true) != nil || interaction.FirstSequence == 0 || interaction.LastSequence < interaction.FirstSequence || interaction.LastSequence > domain.MaxExecutionEvents {
 		slog.Warn("inbox_interaction_source_invalid", "interaction_id", id, "session_id", session)
 		return inboxConflict()

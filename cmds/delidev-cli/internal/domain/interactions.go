@@ -158,6 +158,9 @@ type ExecutionInteractionUpdate struct {
 	Questions          *QuestionRequest               `json:"questions,omitempty"`
 	Approval           *ApprovalRequest               `json:"approval,omitempty"`
 	Closure            InteractionClosure             `json:"closure,omitempty"`
+	// MCPElicitation marks a managed MCP form mapped to generic questions. Only
+	// such an interaction can later be accepted by native MCP resolution.
+	MCPElicitation bool `json:"mcp_elicitation,omitempty"`
 }
 
 func (k ExecutionEventKind) IsInteraction() bool {
@@ -172,6 +175,9 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		return err
 	}
 	if u.NativeRequestID.Kind == InteractionDecimalID && u.Grok == nil {
+		return invalidInteraction()
+	}
+	if u.MCPElicitation && (u.Type != UserQuestionInteraction || u.Grok != nil || u.Claude != nil || u.OpenCode != nil || u.Approval != nil || kind == ExecutionInteractionRequested && u.Questions == nil) {
 		return invalidInteraction()
 	}
 	switch kind {
@@ -259,6 +265,8 @@ type ExecutionInteraction struct {
 	LastSequence       uint64                         `json:"last_sequence"`
 	Response           *QuestionResponse              `json:"response,omitempty"`
 	ApprovalResponse   *ApprovalResponse              `json:"approval_response,omitempty"`
+	// MCPElicitation is the persisted subtype that gates native MCP acceptance evidence.
+	MCPElicitation bool `json:"mcp_elicitation,omitempty"`
 }
 
 // Waiting flags are observed native state, not answer/approval authority and

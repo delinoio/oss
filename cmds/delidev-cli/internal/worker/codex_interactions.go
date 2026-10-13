@@ -56,6 +56,7 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 				q.Questions = append(q.Questions, question)
 			}
 			update.Questions = q
+			update.MCPElicitation = i.MCPElicitation()
 		default:
 			return publicationUncertain()
 		}
