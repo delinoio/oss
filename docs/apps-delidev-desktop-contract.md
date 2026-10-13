@@ -4452,7 +4452,9 @@ stdout/stderr are never ended to flush them. If a descendant retains an
 inherited pipe or an accepted write is still incomplete at the bound, close only
 the reader, discard its partial line and report `diagnostics-incomplete` with
 `output-drain-timeout`. Read failures report the separate `output-read-failed`
-classification. The launcher owns an `error` listener on each Writable
+classification, but only after the omission marker and every earlier accepted
+write has settled or the same drain bound expires, so a later destination error
+is still reported as `output-write-failed`. The launcher owns an `error` listener on each Writable
 destination from before the first write. A destination error stops all further
 forwarding to that sink, keeps consuming and discarding the child's pipe, and
 reports `output-write-failed` independently for stdout and stderr. The listener

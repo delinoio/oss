@@ -96,6 +96,8 @@ function captureStream(stream, destination, filter) {
   // Accepted destination writes whose callbacks have not run yet.
   let pendingWrites = 0;
   let sinkFailed = false;
+  // The child pipe failed; the omission marker is the last accepted write.
+  let readFailed = false;
   // The destination is an observed resource: own its errors from before the
   // first write until no outstanding write can still report one.
   let sinkErrorOwned = false;
@@ -127,6 +129,7 @@ function captureStream(stream, destination, filter) {
     pendingWrites--;
     if (error) sinkError();
     else if (finished) releaseSink();
+    else if (readFailed) finishAfterReadFailure();
     else finishInput();
   };
   const send = (value) => {
@@ -145,7 +148,7 @@ function captureStream(stream, destination, filter) {
     }
   };
   const resume = () => {
-    if (finished || !waitingForDrain) return;
+    if (finished || readFailed || !waitingForDrain) return;
     waitingForDrain = false;
     const remainder = queued;
     queued = "";
@@ -196,7 +199,7 @@ function captureStream(stream, destination, filter) {
   };
   const data = (chunk) => consume(decoder.write(chunk));
   const finishInput = () => {
-    if (finished || !inputEnded || waitingForDrain) return;
+    if (finished || readFailed || !inputEnded || waitingForDrain) return;
     if (!tailWritten) {
       tailWritten = true;
       // The unterminated tail is tracked like any other accepted write.
@@ -228,9 +231,24 @@ function captureStream(stream, destination, filter) {
     complete(outcome);
   };
   const ignoreSourceError = () => {};
+  // A read failure completes only after the omission marker and every earlier
+  // accepted write has settled. A slow or failing destination therefore keeps
+  // the capture pending until its callback runs or the drain bound expires.
+  const finishAfterReadFailure = () => {
+    if (!finished && pendingWrites === 0) finish(CaptureOutcome.ReadFailed);
+  };
   const failed = () => {
+    if (finished || readFailed) return;
+    readFailed = true;
+    pending = "";
+    queued = "";
+    waitingForDrain = false;
+    stream.off("data", data);
+    stream.off("end", end);
+    stream.off("close", closed);
+    writable?.off("drain", resume);
     send(omitted + "\n");
-    finish(CaptureOutcome.ReadFailed);
+    finishAfterReadFailure();
   };
   const closed = () => {
     if (!finished && !inputEnded) failed();

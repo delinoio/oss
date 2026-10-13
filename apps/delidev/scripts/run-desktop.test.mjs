@@ -816,6 +816,80 @@ for (const target of ["stdout", "stderr"]) {
   });
 }
 
+test("a failed diagnostic read waits for the accepted omission marker write", async () => {
+  const input = new PassThrough();
+  const callbacks = [];
+  const destination = new Writable({
+    highWaterMark: 1024,
+    write(chunk, _encoding, callback) {
+      callbacks.push({ chunk: chunk.toString(), callback });
+    },
+  });
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: destination,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  let settled = false;
+  const completion = drain().then(() => {
+    settled = true;
+  });
+  input.destroy(new Error("/private/stream-error"));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(
+    callbacks.map(({ chunk }) => chunk),
+    ["[desktop diagnostic line omitted]\n"],
+  );
+  assert.equal(settled, false);
+  callbacks.shift().callback();
+  await completion;
+  assert.deepEqual(incomplete, ["output-read-failed"]);
+  assert.equal(destination.listenerCount("error"), 0);
+});
+
+test("a destination error after a failed diagnostic read is still reported", async () => {
+  const input = new PassThrough();
+  const writes = [];
+  const incomplete = [];
+  const sink = failingSink(writes, { delay: 20 });
+  const drain = captureDesktopDiagnostics([], {
+    stdout: sink,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.destroy(new Error("/private/stream-error"));
+  await drain();
+  assert.deepEqual(writes, ["[desktop diagnostic line omitted]\n"]);
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+  if (!sink.closed) await new Promise((resolve) => sink.once("close", resolve));
+  assert.equal(sink.listenerCount("error"), 0);
+});
+
+test("a failed diagnostic read stops waiting for a held marker write at the bound", async () => {
+  const input = new PassThrough();
+  const callbacks = [];
+  const destination = new Writable({
+    write(_chunk, _encoding, callback) {
+      callbacks.push(callback);
+    },
+  });
+  const incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: destination,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: input, stderr: null });
+  input.destroy(new Error("/private/stream-error"));
+  await drain();
+  assert.deepEqual(incomplete, ["output-drain-timeout"]);
+  // The held write still owns the destination error listener.
+  assert.equal(destination.listenerCount("error"), 1);
+  callbacks.shift()();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(destination.listenerCount("error"), 0);
+});
+
 test("a source read error after a sink failure is owned and keeps the classification", async () => {
   const input = new PassThrough();
   const writes = [];
