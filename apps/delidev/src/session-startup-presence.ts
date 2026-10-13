@@ -2,13 +2,15 @@
 import { createClient, type Transport } from "@connectrpc/connect";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLayoutEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   EntityKind,
   ResourceQuery,
   ResourceService,
   SystemService,
+  type Resource,
 } from "@delinoio/delidev-api-client";
+import { startupWorkerLeaseRemainingMs } from "./session-startup-operations";
 
 // Machine JSON remains compatible with original strict readers. The existing
 // Overview clock is read afterward on the exact same authenticated transport;
@@ -76,4 +78,34 @@ export function useStartupPresence(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+}
+
+/**
+ * Re-renders once when the original Worker lease of the retained pair expires,
+ * so a stalled reread cannot keep the retained startup presentation past the
+ * original 60-second boundary. Never reads, extends or refreshes the lease.
+ */
+export function useStartupLeaseExpiry(
+  session: Resource | undefined,
+  observation:
+    { resource?: Resource; observedAt: string; startedAt: number } | undefined,
+  retained: boolean,
+) {
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    if (!retained || !observation) return;
+    const remaining = startupWorkerLeaseRemainingMs(
+      session,
+      observation.resource,
+      true,
+      observation.observedAt,
+      performance.now() - observation.startedAt,
+    );
+    if (remaining === undefined || !(remaining > 0)) return;
+    const timer = setTimeout(
+      () => redraw((v) => v + 1),
+      Math.ceil(remaining) + 1,
+    );
+    return () => clearTimeout(timer);
+  }, [session, observation, retained]);
 }

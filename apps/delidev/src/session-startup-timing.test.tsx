@@ -18,6 +18,8 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { startupTimingGroups, useStartupTimes } from "./session-startup-timing";
+import { useStartupLeaseExpiry } from "./session-startup-presence";
+import { startupWorkerLeaseRemainingMs } from "./session-startup-operations";
 import { SessionProgressStatus } from "./session-progress-status";
 import { SessionProgressPhase } from "./session-progress";
 import type { ReactNode } from "react";
@@ -236,3 +238,152 @@ it("keeps detailed disclosures independent and timing outside the polite status"
   expect(rendered.container.querySelectorAll("details")).toHaveLength(1);
   expect(rendered.container.querySelectorAll("h4")).toHaveLength(2);
 });
+
+it("pauses without unconfirmed churn while a healthy reread is pending and never extends the lease", () => {
+  vi.useFakeTimers();
+  let monotonic = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+  const f = fixture();
+  type Props = { enabled: boolean; retained: boolean };
+  const hook = renderHook(
+    ({ enabled, retained }: Props) =>
+      useStartupTimes(f.session, f.observation, enabled, "original", retained),
+    {
+      initialProps: { enabled: true, retained: true } as Props,
+      wrapper: Wrapper,
+    },
+  );
+  expect(hook.result.current.agent).toMatchObject({
+    seconds: 8,
+    running: true,
+  });
+  // A pending reread suspends only the animation and keeps the elapsed value.
+  act(() => hook.rerender({ enabled: false, retained: true }));
+  act(() => {
+    monotonic = 10_000;
+    vi.advanceTimersByTime(10_000);
+  });
+  expect(hook.result.current.agent).toMatchObject({
+    seconds: 8,
+    running: false,
+    unconfirmed: false,
+    paused: true,
+  });
+  // The original lease is measured from the first read and cannot be extended.
+  act(() => {
+    monotonic = 61_000;
+    hook.rerender({ enabled: false, retained: true });
+  });
+  expect(hook.result.current.agent).toMatchObject({
+    running: false,
+    unconfirmed: true,
+  });
+  expect(hook.result.current.agent?.paused).toBeUndefined();
+  // A failed or missing read (not retained) is the existing fail-closed state.
+  monotonic = 1000;
+  act(() => hook.rerender({ enabled: false, retained: false }));
+  expect(hook.result.current.agent).toMatchObject({
+    running: false,
+    unconfirmed: true,
+  });
+  expect(hook.result.current.agent?.paused).toBeUndefined();
+});
+it("re-renders once at the original lease expiry and not for invalid pairs", () => {
+  vi.useFakeTimers();
+  let monotonic = 0,
+    renders = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+  const f = fixture();
+  const hook = renderHook(
+    ({ retained }) => {
+      renders += 1;
+      useStartupLeaseExpiry(f.session, f.observation, retained);
+    },
+    { initialProps: { retained: true } },
+  );
+  const initial = renders;
+  act(() => {
+    monotonic = 59_000;
+    vi.advanceTimersByTime(59_000);
+  });
+  expect(renders).toBe(initial);
+  act(() => {
+    monotonic = 60_100;
+    vi.advanceTimersByTime(1_100);
+  });
+  expect(renders).toBe(initial + 1);
+  hook.rerender({ retained: false });
+  const before = renders;
+  act(() => vi.advanceTimersByTime(120_000));
+  expect(renders).toBe(before);
+});
+it("derives lease remainder only from a valid pair measured from the original read", () => {
+  const f = fixture();
+  const lease = (elapsed: number, successful = true, observedAt?: string) =>
+    startupWorkerLeaseRemainingMs(
+      f.session,
+      f.observation.resource,
+      successful,
+      observedAt ?? f.observation.observedAt,
+      elapsed,
+    );
+  expect(lease(0)).toBe(60_000);
+  expect(lease(45_000)).toBe(15_000);
+  expect(lease(60_000)).toBe(0);
+  expect(lease(0, false)).toBeUndefined();
+  expect(lease(-1)).toBeUndefined();
+  expect(lease(Number.NaN)).toBeUndefined();
+  expect(lease(0, true, "2026-10-12T00:00:19Z")).toBeUndefined();
+  expect(lease(0, true, "bad")).toBeUndefined();
+});
+it.each([false, true])(
+  "pauses spinners without changing the presenter structure (compact: %s)",
+  (compact) => {
+    const operations = {
+      workspace: [{ operation: 1, state: "completed" as const }],
+      native: [{ operation: 1, state: "running" as const }],
+    };
+    const timing = {
+      workspace: { seconds: 12, running: false, unconfirmed: false },
+      agent: { seconds: 8, running: true, unconfirmed: false },
+    };
+    const paused = {
+      ...timing,
+      agent: { seconds: 8, running: false, unconfirmed: false, paused: true },
+    };
+    const view = (animating: boolean, value: typeof timing) => (
+      <SessionProgressStatus
+        phase={SessionProgressPhase.Starting}
+        compact={compact}
+        operations={operations}
+        timing={value}
+        animating={animating}
+      />
+    );
+    const rendered = render(view(true, timing));
+    const root = rendered.container.firstElementChild;
+    const shape = () =>
+      [...rendered.container.querySelectorAll("*")].map((node) =>
+        node.className.toString().replace(" is-paused", ""),
+      );
+    const before = shape();
+    const spinners = () => [
+      ...rendered.container.querySelectorAll(".session-progress-spinner"),
+    ];
+    // The running agent spinner always exists; open the compact disclosure rows.
+    rendered.container
+      .querySelectorAll("details")
+      .forEach((node) => (node.open = true));
+    expect(spinners().length).toBeGreaterThan(0);
+    expect(
+      spinners().every((node) => !node.classList.contains("is-paused")),
+    ).toBe(true);
+    rendered.rerender(view(false, paused));
+    expect(rendered.container.firstElementChild).toBe(root);
+    expect(shape()).toEqual(before);
+    expect(
+      spinners().every((node) => node.classList.contains("is-paused")),
+    ).toBe(true);
+    expect(screen.getByRole("status").textContent).not.toMatch(/unconfirmed/i);
+  },
+);

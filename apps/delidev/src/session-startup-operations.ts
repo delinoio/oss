@@ -250,14 +250,21 @@ export function observedStartupOperation(
   };
 }
 
-/** Original Worker presence from a successful server-owned read, never report age. */
-export function startupWorkerCurrent(
+export const STARTUP_WORKER_LEASE_MS = 60_000;
+
+/**
+ * Remaining milliseconds of the original Worker lease for one successful paired
+ * read, or undefined when the pair is not valid proof. The lease is measured
+ * from the original read start (server-observed age plus monotonic elapsed
+ * time), so a pending reread can never extend it.
+ */
+export function startupWorkerLeaseRemainingMs(
   session: Resource | undefined,
   machine: Resource | undefined,
   successfulRead: boolean,
   serverObservedAt?: string,
   elapsedReadMs = 0,
-): boolean {
+): number | undefined {
   if (
     !session ||
     !machine ||
@@ -266,7 +273,7 @@ export function startupWorkerCurrent(
     machine.schemaVersion !== 1 ||
     machine.revision < 1n
   )
-    return false;
+    return;
   const d = document(session),
     m = document(machine),
     p = object(d.startup_progress),
@@ -281,7 +288,7 @@ export function startupWorkerCurrent(
     typeof serverObservedAt === "string" ? Date.parse(serverObservedAt) : NaN;
   const lastSeen =
     typeof m.last_seen === "string" ? Date.parse(m.last_seen) : NaN;
-  return (
+  if (!(
     uuid(a.instance_id) &&
     a.machine_id === machine.id &&
     d.machine_id === machine.id &&
@@ -292,7 +299,26 @@ export function startupWorkerCurrent(
     lastSeen > 0 &&
     observedAt >= lastSeen &&
     Number.isFinite(elapsedReadMs) &&
-    elapsedReadMs >= 0 &&
-    observedAt - lastSeen + elapsedReadMs < 60_000
+    elapsedReadMs >= 0
+  ))
+    return;
+  return STARTUP_WORKER_LEASE_MS - (observedAt - lastSeen + elapsedReadMs);
+}
+
+/** Original Worker presence from a successful server-owned read, never report age. */
+export function startupWorkerCurrent(
+  session: Resource | undefined,
+  machine: Resource | undefined,
+  successfulRead: boolean,
+  serverObservedAt?: string,
+  elapsedReadMs = 0,
+): boolean {
+  const remaining = startupWorkerLeaseRemainingMs(
+    session,
+    machine,
+    successfulRead,
+    serverObservedAt,
+    elapsedReadMs,
   );
+  return remaining !== undefined && remaining > 0;
 }

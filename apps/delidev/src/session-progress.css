@@ -27,6 +27,10 @@
   border-radius: 50%;
   animation: session-progress-spin 1s linear infinite;
 }
+/* Pending healthy reread: keep the node and its size, freeze the rotation. */
+.session-progress-spinner.is-paused {
+  animation-play-state: paused;
+}
 @keyframes session-progress-spin {
   to {
     transform: rotate(360deg);

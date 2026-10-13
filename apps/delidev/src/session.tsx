@@ -25,7 +25,10 @@ import {
   responseSuppressesProgress,
 } from "./session-progress";
 import { useStartupTimes } from "./session-startup-timing";
-import { useStartupPresence } from "./session-startup-presence";
+import {
+  useStartupLeaseExpiry,
+  useStartupPresence,
+} from "./session-startup-presence";
 import {
   startupOperations,
   startupWorkerCurrent,
@@ -2027,25 +2030,36 @@ export function SessionView({
     startupOwner,
     observeStartupOwner,
   );
+  const startupTransport = useTransport();
+  // A settled successful pair stays the retained original presentation while a
+  // healthy reread is in flight (previous data is kept by the query). Failed,
+  // missing, pending-first or other-transport reads never qualify.
+  const startupPairRetained =
+    observeStartupOwner &&
+    Boolean(startupMachine.data) &&
+    startupMachine.data?.transport === startupTransport &&
+    !startupMachine.error &&
+    !startupMachine.isPending;
+  // Only a complete settled pair may animate or advance startup clocks; a pending
+  // reread suspends the animation without refreshing the original lease.
+  const startupPairAnimating =
+    startupPairRetained && !startupMachine.isFetching;
+  useStartupLeaseExpiry(session, startupMachine.data, startupPairRetained);
   const startupTimes = useStartupTimes(
     session,
     startupMachine.data,
-    observeStartupOwner &&
-      !startupMachine.error &&
-      !startupMachine.isPending &&
-      !startupMachine.isFetching,
+    startupPairAnimating,
     startupOwner,
+    startupPairRetained,
   );
+  // Presentation currency is measured from the original read start and is
+  // independent of isFetching so routine rereads cause no startup-list flicker.
   const startupOwnerCurrent =
     !hasStartupOperations ||
     startupWorkerCurrent(
       session,
       startupMachine.data?.resource,
-      observeStartupOwner &&
-        Boolean(startupMachine.data) &&
-        !startupMachine.error &&
-        !startupMachine.isPending &&
-        !startupMachine.isFetching,
+      startupPairRetained,
       startupMachine.data?.observedAt,
       startupMachine.data
         ? performance.now() - startupMachine.data.startedAt
@@ -2425,6 +2439,9 @@ export function SessionView({
                         phase={progress}
                         operations={startupOperations(session, progress)}
                         timing={startupTimes}
+                        animating={
+                          !hasStartupOperations || startupPairAnimating
+                        }
                         compact={Boolean(
                           rows.length ||
                           messages.rows.length ||
