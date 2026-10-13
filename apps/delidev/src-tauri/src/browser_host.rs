@@ -266,6 +266,23 @@ impl State {
         Ok(replacement)
     }
 
+    // A profile removal that began after the metadata commit but before the
+    // UI-loop reconciliation owns the teardown of every child. The receipt
+    // still waits for the close callback of each child that holds, or is
+    // creating, a native browser, so it never reports cleanup complete before
+    // removal's CloseBrowser requests have been observed.
+    fn await_removing_children(&mut self, key: &str, profile: &str) {
+        let children: Vec<(String, u64)> = self
+            .views
+            .iter()
+            .filter(|(_, v)| v.profile == profile && (v.browser.is_some() || v.creation_pending))
+            .map(|(label, v)| (label.clone(), v.generation))
+            .collect();
+        if let Some(operation) = self.page_operations.get_mut(key) {
+            operation.awaiting_close.extend(children);
+        }
+    }
+
     // An exact (window, generation) close proof satisfies every operation that
     // waits for it. Replacement children carry a newer generation and never
     // match.
@@ -1274,6 +1291,18 @@ impl BrowserHost {
     ) -> Result<()> {
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         let Some(p) = state.profiles.get(profile).filter(|p| !p.removing) else {
+            // Removal won the race after the metadata commit. Its queued
+            // close_profile requests teardown; keep the receipt pending until
+            // those original children report closure.
+            state.await_removing_children(key, profile);
+            tracing::debug!(
+                operation = "browser_page_cleanup",
+                state = "removal_race",
+                awaiting_children = state
+                    .page_operations
+                    .get(key)
+                    .map_or(0, |operation| operation.awaiting_close.len())
+            );
             return Ok(());
         };
         let selected = p.tabs.selected.clone();
@@ -5713,6 +5742,65 @@ esac
             finish_fixture_pages(&host, &record, &key).phase,
             PagePhase::Completed
         );
+    }
+
+    #[test]
+    fn close_racing_profile_removal_waits_for_the_original_children_to_close() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        // Removal discovery sets the flag after the metadata commit and before
+        // the UI-loop reconciliation, which then skips child replacement.
+        host.state
+            .lock()
+            .unwrap()
+            .profiles
+            .get_mut(&record.id)
+            .unwrap()
+            .removing = true;
+        host.state
+            .lock()
+            .unwrap()
+            .await_removing_children(&key, &record.id);
+        let pending = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap();
+        let receipt = pending.receipt.unwrap();
+        assert!(pending.state.removal_pending);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        assert!(receipt.metadata_committed);
+        assert!(!receipt.native_cleanup_complete);
+        host.child_closed(&original);
+        let settled = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap()
+            .receipt
+            .unwrap();
+        assert_eq!(settled.phase, PagePhase::Completed);
+        assert!(settled.native_cleanup_complete);
+    }
+
+    #[test]
+    fn close_racing_profile_removal_without_native_children_completes() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        let key = admit_close(&host, &record, &original.tab);
+        host.state
+            .lock()
+            .unwrap()
+            .profiles
+            .get_mut(&record.id)
+            .unwrap()
+            .removing = true;
+        host.state
+            .lock()
+            .unwrap()
+            .await_removing_children(&key, &record.id);
+        let receipt = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap()
+            .receipt
+            .unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
     }
 
     #[test]

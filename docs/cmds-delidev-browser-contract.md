@@ -157,7 +157,11 @@ generation) of every original native child it superseded and stays
 children reports `on_before_close`. Replacement children carry a newer generation
 and unrelated children are never awaited, so neither delays nor satisfies the
 original cleanup; two windows presenting one page require both original
-callbacks. Closing a page that no native child presents completes immediately.
+callbacks. If profile removal begins after the metadata commit and before this
+reconciliation, the reconciliation does not replace children; instead the receipt
+awaits every native child of that profile until removal's own close requests
+report `on_before_close`, so it never reports completed cleanup early. Closing a
+page that no native child presents completes immediately.
 Observing the receipt re-evaluates this set without a second metadata mutation or
 a duplicate close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
