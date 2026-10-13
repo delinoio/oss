@@ -985,6 +985,13 @@ to the exact historical predecessor and independently validated replacement
 history. Success, failure and Stop outcomes remain attributed to that predecessor.
 Manual Resume and one fresh input do not replay an old turn. Original Fork and
 Sidechat snapshots retain their own lifetimes and contexts.
+For a skilled target accepted by an earlier execution, the server freezes that
+execution's retained checkpoint reference (`execution_id`, `checkpoint_digest`)
+with the Revert target so the original Worker can bind the target's own
+selected-skill proof before the native claim. Every skilled target, including
+one of the source execution that carries no reference, requires the original
+Worker's `CODEX_SESSION_REVERT_TARGET_PROOF_V1` capability; text-only targets
+keep the original envelope.
 
 ## Accepted-turn elapsed observations
 

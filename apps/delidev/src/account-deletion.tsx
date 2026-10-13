@@ -6,6 +6,7 @@ import {
 } from "./product-identity-labels";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -50,6 +51,15 @@ enum Stage {
   Deleting,
   Paused,
   Deleted,
+}
+// Pre-confirmation state of the cleanup-recovery dialog. Only accounts whose
+// listed state needs protected credential cleanup read a fresh exact account
+// and server capabilities before confirmation is enabled.
+enum Readiness {
+  Loading,
+  Ready,
+  Outdated,
+  Unavailable,
 }
 enum Retry {
   Logout,
@@ -128,6 +138,56 @@ function failedInitialLogin(resource: Resource) {
     ].includes(text(operation.state))
   );
 }
+// A failed initial LOGIN whose native cleanup is confirmed but whose protected
+// credential removal is still pending (for example after an OS authorization
+// denial). The existing server-side cleanup child owns this target.
+function pendingCredentialCleanup(resource: Resource) {
+  const state = object(document(resource).subscription),
+    operation = object(state.server_operation);
+  return (
+    failedInitialLogin(resource) &&
+    operation.cleanup_phase === "native-confirmed"
+  );
+}
+// The terminal original server LOGOUT shape: connected metadata is already
+// cleared, recovery is required and only protected AccountLogin reference
+// cleanup remains. RecoveryRequired alone never qualifies; the server repeats
+// every check and owns the cleanup authority.
+function terminalServerLogout(resource: Resource) {
+  const data = document(resource),
+    state = object(data.subscription),
+    operation = object(state.server_operation),
+    pendingOperation = object(state.pending),
+    observation = object(state.observation);
+  return (
+    subscriptionService(data.subscription_service) ===
+      SubscriptionServiceId.ChatGPT &&
+    data.health === "failed" &&
+    !data.connection &&
+    !data.removal &&
+    state.recovery_required === true &&
+    !state.generation &&
+    !state.identity_commitment &&
+    !state.owner_machine_id &&
+    !state.native_profile_id &&
+    !state.native_operation &&
+    !state.lease &&
+    !state.reset_credits &&
+    !["queued", "sending", "uncertain"].includes(text(observation.phase)) &&
+    operation.action === "logout" &&
+    isEntityId(text(operation.id)) &&
+    isEntityId(text(operation.generation)) &&
+    !operation.native_started &&
+    !operation.cleanup_phase &&
+    ["recovery-required", "succeeded"].includes(text(operation.state)) &&
+    pendingOperation.id === operation.id &&
+    pendingOperation.action === "logout" &&
+    !pendingOperation.machine_id &&
+    !pendingOperation.canceled
+  );
+}
+const cleanupRecovery = (resource: Resource) =>
+  pendingCredentialCleanup(resource) || terminalServerLogout(resource);
 function cleared(resource: Resource) {
   const data = document(resource),
     state = object(data.subscription);
@@ -203,6 +263,10 @@ export function ChatGPTAccountDeletion({
   );
   const [confirmed, setConfirmed] = useState(initial);
   const [view, setView] = useState<View>({ stage: Stage.Confirmation });
+  const [readiness, setReadiness] = useState(
+    cleanupRecovery(initial) ? Readiness.Loading : Readiness.Ready,
+  );
+  const [changedSinceListed, setChangedSinceListed] = useState(false);
   const pending = useRef<Attempt | undefined>(undefined);
   const waiting = [
     Stage.Checking,
@@ -241,6 +305,46 @@ export function ChatGPTAccountDeletion({
     }
   }, [active]);
 
+  useEffect(() => {
+    // Cleanup recovery needs a fresh exact account read and the server's
+    // capability before the destructive confirmation is enabled. Accounts that
+    // do not need protected cleanup skip this read and keep their prior flow.
+    if (!active || !cleanupRecovery(initial) || readiness !== Readiness.Loading)
+      return;
+    let current = true;
+    void (async () => {
+      try {
+        const [account, status] = await Promise.all([
+          clients.resource.getResource({
+            kind: EntityKind.ACCOUNT,
+            id: initial.id,
+          }),
+          clients.system.getStatus({}),
+        ]);
+        if (!current || !mounted.current || opening?.disposed) return;
+        if (!serviceAccount(account.resource, initial.id, service)) {
+          setReadiness(Readiness.Unavailable);
+          return;
+        }
+        setConfirmed(account.resource);
+        setChangedSinceListed(account.resource.revision !== initial.revision);
+        setReadiness(
+          terminalServerLogout(account.resource) &&
+            !status.capabilities.includes(
+              SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1,
+            )
+            ? Readiness.Outdated
+            : Readiness.Ready,
+        );
+      } catch {
+        if (current && mounted.current) setReadiness(Readiness.Unavailable);
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [active, clients, initial, readiness, service, opening]);
+
   const pause = (
     p: Attempt,
     message: string,
@@ -269,7 +373,11 @@ export function ChatGPTAccountDeletion({
     if (!p.deletion) {
       if (
         !unchanged(resource, p) ||
-        !(cleared(resource) || failedInitialLogin(resource))
+        !(
+          cleared(resource) ||
+          failedInitialLogin(resource) ||
+          terminalServerLogout(resource)
+        )
       ) {
         changed(p);
         return;
@@ -288,7 +396,8 @@ export function ChatGPTAccountDeletion({
     p.retry = undefined;
     setView({
       stage:
-        !cleared(p.confirmed) && failedInitialLogin(p.confirmed)
+        !cleared(p.confirmed) &&
+        (failedInitialLogin(p.confirmed) || terminalServerLogout(p.confirmed))
           ? Stage.CleanupDeleting
           : Stage.Deleting,
     });
@@ -483,7 +592,29 @@ export function ChatGPTAccountDeletion({
         changed(p);
         return;
       }
-      if (cleared(current) || failedInitialLogin(current)) {
+      if (terminalServerLogout(current)) {
+        // The expanded LOGOUT cleanup is a separate server capability; older
+        // servers keep their current behavior and show update guidance.
+        const status = await clients.system.getStatus({});
+        if (!live(p)) return;
+        if (
+          !status.capabilities.includes(
+            SystemCapability.SUBSCRIPTION_CLEANUP_RECOVERY_V1,
+          )
+        ) {
+          pause(
+            p,
+            copy("account-deletion.cleanup.outdated"),
+            copy("account-deletion.cleanup.outdatedGuidance"),
+          );
+          return;
+        }
+      }
+      if (
+        cleared(current) ||
+        failedInitialLogin(current) ||
+        terminalServerLogout(current)
+      ) {
         p.busy = false;
         await remove(p, current);
         return;
@@ -621,18 +752,102 @@ export function ChatGPTAccountDeletion({
     close();
   };
   if (view.stage === Stage.Deleted) return null;
+  const recovery = cleanupRecovery(confirmed);
+  const pendingFailure =
+    view.failure?.code === FailureCode.ConfirmationRequired;
   return (
-    <section className="subscription-account-create account-deletion">
+    <section
+      className={`subscription-account-create account-deletion${recovery ? " account-deletion-cleanup" : ""}`}
+    >
       <h3>
         {waiting
           ? copy("account-deletion.deleting_983c74", {
               v0: productResourceName(productLabel, confirmed),
             })
-          : copy("account-deletion.delete_a19801", {
-              v0: productResourceName(productLabel, confirmed),
-            })}
+          : recovery && view.stage === Stage.Confirmation
+            ? copy("account-deletion.cleanup.title")
+            : copy("account-deletion.delete_a19801", {
+                v0: productResourceName(productLabel, confirmed),
+              })}
       </h3>
-      {view.stage === Stage.Confirmation ? (
+      {view.stage === Stage.Confirmation && recovery ? (
+        <>
+          {readiness === Readiness.Loading ? (
+            <p role="status">{copy("account-deletion.cleanup.loading")}</p>
+          ) : readiness === Readiness.Unavailable ? (
+            <div role="alert" className="problem">
+              <p>{copy("account-deletion.cleanup.unavailable")}</p>
+            </div>
+          ) : readiness === Readiness.Outdated ? (
+            <div role="alert" className="problem">
+              <strong>{copy("account-deletion.cleanup.outdated")}</strong>
+              <p>{copy("account-deletion.cleanup.outdatedGuidance")}</p>
+            </div>
+          ) : (
+            <>
+              {changedSinceListed ? (
+                <p role="status">{copy("account-deletion.cleanup.changed")}</p>
+              ) : null}
+              <div
+                className="account-deletion-cleanup-card"
+                role="group"
+                aria-labelledby="account-deletion-cleanup-card-title"
+              >
+                <strong id="account-deletion-cleanup-card-title">
+                  {copy("account-deletion.cleanup.warningTitle")}
+                </strong>
+                <p>{copy("account-deletion.cleanup.warningBody")}</p>
+              </div>
+              <p>{copy("account-deletion.cleanup.summary")}</p>
+              <Disclosure>
+                <DisclosureSummary>
+                  {copy("ui.technicalDetails")}
+                </DisclosureSummary>
+                <dl className="account-deletion-cleanup-details">
+                  <dt>{copy("account-deletion.cleanup.detailStep")}</dt>
+                  <dd>{copy("account-deletion.cleanup.detailStepValue")}</dd>
+                  <dt>{copy("account-deletion.cleanup.detailOperation")}</dt>
+                  <dd>
+                    {terminalServerLogout(confirmed)
+                      ? copy("account-deletion.cleanup.operationLogout")
+                      : copy("account-deletion.cleanup.operationLogin")}
+                  </dd>
+                  <dt>{copy("account-deletion.cleanup.detailScope")}</dt>
+                  <dd>{copy("account-deletion.cleanup.detailScopeValue")}</dd>
+                </dl>
+              </Disclosure>
+            </>
+          )}
+          <div className="actions">
+            {readiness === Readiness.Ready ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Delete}
+                className="account-deletion-confirm"
+                disabled={!active}
+                onClick={() => void confirm()}
+              >
+                {copy("account-deletion.cleanup.confirm")}
+              </SettingsActionButton>
+            ) : readiness === Readiness.Unavailable ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                disabled={!active}
+                onClick={() => setReadiness(Readiness.Loading)}
+              >
+                {copy("account-deletion.refreshAccountForConfirmation_deba05")}
+              </SettingsActionButton>
+            ) : null}
+            <SettingsTaskDismissButton disabled={!active} onClick={leave}>
+              {copy("account-deletion.keepAccount_9be7d9")}
+            </SettingsTaskDismissButton>
+          </div>
+          {readiness === Readiness.Ready ? (
+            <p className="settings-scope">
+              {copy("account-deletion.cleanup.footerNote")}
+            </p>
+          ) : null}
+        </>
+      ) : view.stage === Stage.Confirmation ? (
         <>
           <p>{copy("account-deletion.thisLogsOutTheAccountAnd_bc0446")}</p>
           <p>
@@ -692,6 +907,9 @@ export function ChatGPTAccountDeletion({
               ) : undefined
             }
           />
+          {pendingFailure && view.stage === Stage.Paused && recovery ? (
+            <p>{copy("account-deletion.cleanup.authorizeGuidance")}</p>
+          ) : null}
           {view.stage === Stage.Paused || hasReturnAction ? (
             <div className="actions">
               {view.stage === Stage.Paused ? (
@@ -732,7 +950,8 @@ export function ChatGPTAccountDeletion({
             {copy(
               pending.current?.deletion &&
                 !cleared(pending.current.confirmed) &&
-                failedInitialLogin(pending.current.confirmed)
+                (failedInitialLogin(pending.current.confirmed) ||
+                  terminalServerLogout(pending.current.confirmed))
                 ? "account-deletion.acceptedServerDeletionContinues"
                 : "account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c",
             )}

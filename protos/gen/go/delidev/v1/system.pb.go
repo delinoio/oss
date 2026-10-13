@@ -63,21 +63,25 @@ const (
 	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2 SystemCapability = 101
 	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1              SystemCapability = 38
 	SystemCapability_SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1       SystemCapability = 41
-	SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1                 SystemCapability = 43
-	SystemCapability_SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1           SystemCapability = 34
-	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1                  SystemCapability = 31
-	SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1               SystemCapability = 37
-	SystemCapability_SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1          SystemCapability = 32
-	SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1                    SystemCapability = 28
-	SystemCapability_SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1                  SystemCapability = 29
-	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1         SystemCapability = 30
-	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_WIZARD_V1               SystemCapability = 33
-	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_SOURCE_ROUTES_V1        SystemCapability = 36
-	SystemCapability_SYSTEM_CAPABILITY_KNOWN_SUBSCRIPTION_MODELS_V1         SystemCapability = 35
-	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1                   SystemCapability = 27
-	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1         SystemCapability = 15
-	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1          SystemCapability = 24
-	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1       SystemCapability = 25
+	// Explicit DeleteConfiguration cleanup of a terminal original server ChatGPT
+	// LOGOUT account whose only remaining blocker is protected credential cleanup.
+	// Capability 41 keeps its failed-initial-LOGIN meaning.
+	SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1 SystemCapability = 64
+	SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1             SystemCapability = 43
+	SystemCapability_SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1       SystemCapability = 34
+	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1              SystemCapability = 31
+	SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1           SystemCapability = 37
+	SystemCapability_SYSTEM_CAPABILITY_GITHUB_REPOSITORY_PICKER_V1      SystemCapability = 32
+	SystemCapability_SYSTEM_CAPABILITY_SIGNED_UPDATES_V1                SystemCapability = 28
+	SystemCapability_SYSTEM_CAPABILITY_SSH_WORKER_SETUP_V1              SystemCapability = 29
+	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1     SystemCapability = 30
+	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_WIZARD_V1           SystemCapability = 33
+	SystemCapability_SYSTEM_CAPABILITY_AGENT_WORKER_SOURCE_ROUTES_V1    SystemCapability = 36
+	SystemCapability_SYSTEM_CAPABILITY_KNOWN_SUBSCRIPTION_MODELS_V1     SystemCapability = 35
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SIDECHAT_V1               SystemCapability = 27
+	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1     SystemCapability = 15
+	SystemCapability_SYSTEM_CAPABILITY_CODEX_SESSION_COMPACTION_V1      SystemCapability = 24
+	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1   SystemCapability = 25
 	// Independently negotiated pinned Unix plain-text General Chat fork profile.
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1    SystemCapability = 26
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1  SystemCapability = 22
@@ -146,6 +150,7 @@ var (
 		101: "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2",
 		38:  "SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1",
 		41:  "SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1",
+		64:  "SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1",
 		43:  "SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1",
 		34:  "SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1",
 		31:  "SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1",
@@ -221,6 +226,7 @@ var (
 		"SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2": 101,
 		"SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1":              38,
 		"SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1":       41,
+		"SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1":     64,
 		"SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1":                 43,
 		"SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1":           34,
 		"SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1":                  31,
@@ -3035,7 +3041,7 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xee\x1b\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xa6\x1c\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
 	"(SYSTEM_CAPABILITY_CLAUDE_SERVER_LOGIN_V1\x10C\x121\n" +
@@ -3071,7 +3077,8 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"6SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1\x101\x12:\n" +
 	"6SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2\x10e\x12-\n" +
 	")SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1\x10&\x124\n" +
-	"0SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1\x10)\x12*\n" +
+	"0SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1\x10)\x126\n" +
+	"2SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1\x10@\x12*\n" +
 	"&SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1\x10+\x120\n" +
 	",SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1\x10\"\x12)\n" +
 	"%SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1\x10\x1f\x12,\n" +

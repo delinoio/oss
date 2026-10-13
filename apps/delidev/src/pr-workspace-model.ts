@@ -66,6 +66,16 @@ export function sameReadScope(a: Document, b: Document): boolean {
     object(a.repository).node_id === object(b.repository).node_id
   );
 }
+/** Identities that bind a retained selection and its avatar cache: the profile
+ * generation and the numeric repository. Provider node IDs and other scope
+ * fields are intentionally excluded so an encoding change cannot dispose a
+ * valid selection. */
+export function sameSelectionScope(a: Document, b: Document): boolean {
+  return (
+    a.generation_id === b.generation_id &&
+    object(a.repository).id === object(b.repository).id
+  );
+}
 export function workspaceResult(
   raw: Uint8Array,
   selected: Resource,
@@ -236,7 +246,12 @@ export function orderWorkspace(
   edges: Document[],
   seeds: string[],
   ambiguous: boolean,
+  resident?: ReadonlySet<string>,
 ): { node: Document; depth: number; stack: boolean; owner: string }[] {
+  // `seeds` is the full accepted order and fixes where each component renders.
+  // `resident` (when provided) names the seeds whose pages are still in the
+  // payload window; a component is owned by its earliest resident seed so an
+  // evicted seed can never hide a component that still has a resident match.
   const byNumber = new Map(nodes.map((n) => [text(object(n.item).number), n])),
     adjacent = new Map<string, Set<string>>(),
     children = new Map<string, string[]>(),
@@ -284,6 +299,9 @@ export function orderWorkspace(
       for (const child of [...(children.get(n) ?? [])].sort(numeric))
         walk(child, depth + 1);
     };
+    const owner =
+      seeds.find((s) => component.has(s) && (!resident || resident.has(s))) ??
+      seed;
     if (!invalid) for (const root of roots) walk(root, 0);
     if (ordered.length !== component.size) invalid = true;
     for (const row of invalid
@@ -294,7 +312,7 @@ export function orderWorkspace(
           node: byNumber.get(row.n)!,
           depth: row.depth,
           stack: component.size > 1 && !invalid,
-          owner: seed,
+          owner,
         });
       seen.add(row.n);
     }

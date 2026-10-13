@@ -115,6 +115,42 @@ test("semantic text, states, primary controls and focus retain accessible contra
   }
 });
 
+test("picker options and the Home sidebar current row draw a persistent inset selected-border cue", () => {
+  const picker = readFileSync(join(directory, "scroll-picker.css"), "utf8");
+  const styles = readFileSync(join(directory, "styles.css"), "utf8");
+  // An inset shadow paints inside the border box, so selection never moves geometry.
+  expect(picker).toMatch(
+    /\.scroll-picker-popup > button\[data-highlighted="true"\],\s*\.scroll-picker-popup > button\[aria-selected="true"\]\s*\{[^}]*box-shadow: inset 0 0 0 1px var\(--selected-border\);[^}]*\}/u,
+  );
+  expect(styles).toMatch(
+    /\.is-home \.sidebar-session-row\[aria-current="true"\]\s*\{[^}]*box-shadow: inset 0 0 0 1px var\(--selected-border\);[^}]*\}/u,
+  );
+  expect(picker).toMatch(/\.scroll-picker-popup > button \{[^}]*border: 0;/u);
+  expect(styles).not.toMatch(
+    /\.is-home \.sidebar-session-row\[aria-current="true"\]\s*\{[^}]*(?:border-width|padding|margin|width|height)/u,
+  );
+});
+
+test("selected-border cue contrasts at least 3:1 with adjacent surfaces in every nondefault bundled palette", () => {
+  // Default light (selected-border / surface is about 2.04:1) is deliberately
+  // outside this assertion: the palette is unchanged by the cue and disclosed
+  // as a known sub-3:1 case rather than silently retuned.
+  for (const [name, modes] of Object.entries(appearancePalettes)) {
+    if (name === "default") continue;
+    for (const [mode, colors] of Object.entries(modes)) {
+      for (const adjacent of [
+        "surface",
+        "surface-muted",
+        "selected-background",
+      ] as const)
+        expect(
+          contrast(colors["selected-border"], colors[adjacent]),
+          `${name} ${mode}: selected-border / ${adjacent}`,
+        ).toBeGreaterThanOrEqual(3);
+    }
+  }
+});
+
 test("Usage token breakdown focus uses the inverse-surface contrast token", () => {
   expect(usageStyles).toMatch(
     /:root\s+\.usage-page\s+\.usage-summary-breakdown\s*>\s*\.disclosure-header:focus-visible\s*\{\s*outline-color:\s*var\(--on-inverse\);\s*\}/u,
@@ -205,6 +241,22 @@ test("Revert text is readable at rest and on hover in every admitted palette", (
   }
 });
 
+test("the wide Appearance Language label resets the global block margin and the stacked label keeps it", () => {
+  const css = source.replace(/\/\*[\s\S]*?\*\//gu, "");
+  const wide = css.match(
+    /\.appearance-content \.language-settings > label\s*\{([^}]*)\}/u,
+  );
+  expect(wide?.[1]).toMatch(/min-height:\s*40px/u);
+  expect(wide?.[1]).toMatch(/align-self:\s*start/u);
+  expect(wide?.[1]).toMatch(/margin-block:\s*0\s*;/u);
+  // The stacked override is the only indented (nested) occurrence.
+  const narrow = css.match(
+    /^ {2}\.appearance-content \.language-settings > label\s*\{([^}]*)\}/mu,
+  );
+  expect(narrow?.[1]).toMatch(/min-height:\s*0\s*;/u);
+  expect(narrow?.[1]).toMatch(/margin-block:\s*12px/u);
+});
+
 test("the shared entrance primitive is a static opaque 160ms Y4 ease-out keyframe", () => {
   const css = readFileSync(
     join(directory, "entrance-motion.css"),
@@ -254,5 +306,39 @@ test("Animation Off and reduced motion suppress entrance animations", () => {
   );
   expect(source).toMatch(
     /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,[^{]+\{\s*animation: none !important;/u,
+  );
+});
+
+test("merged pull request dot uses a fixed semantic purple token independent of accent palettes", () => {
+  expect(palettes).toHaveLength(3);
+  for (const palette of palettes) {
+    const merged = palette.get("pr-merged");
+    expect(merged).toBeTruthy();
+    expect(merged).not.toBe(palette.get("accent"));
+    expect(
+      contrast(merged!, palette.get("surface")!),
+      "pr-merged / surface",
+    ).toBeGreaterThanOrEqual(3);
+    // Purple hue: blue and red channels both dominate green.
+    const [red, green, blue] = [1, 3, 5].map((offset) =>
+      parseInt(merged!.slice(offset, offset + 2), 16),
+    );
+    expect(blue).toBeGreaterThan(green);
+    expect(red).toBeGreaterThan(green);
+  }
+  // The token is not user-customizable, so saved themes and accent palettes
+  // (Nord, Dracula and others) can never override it.
+  for (const modes of Object.values(appearancePalettes))
+    for (const colors of Object.values(modes))
+      expect(Object.keys(colors)).not.toContain("pr-merged");
+  const session = readFileSync(join(directory, "session.css"), "utf8");
+  const rule = (name: string) =>
+    session.match(new RegExp(`\\.session-pr-dot-${name}\\s*\\{([^}]*)\\}`))![1];
+  expect(rule("merged")).toMatch(/background:\s*var\(--pr-merged\)/);
+  expect(rule("merged")).not.toContain("--accent");
+  expect(rule("open")).toMatch(/background:\s*var\(--success-text\)/);
+  expect(rule("closed")).toMatch(/background:\s*var\(--danger-text\)/);
+  expect(session).toMatch(
+    /\.session-pr-dot\s*\{[^}]*background:\s*var\(--text-secondary\)/,
   );
 });
