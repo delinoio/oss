@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"mime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -22,23 +23,42 @@ type credentialBody struct {
 	sseGuard      *credentialJSONGuard
 	patterns      [][]byte
 	shortPatterns [][]byte
-	previous      byte
-	hasPrevious   bool
-	pending       []byte
-	mu            sync.Mutex
-	failed        bool
-	eof           bool
+	// Header values are independent complete values rather than framed bodies,
+	// so their patterns always include JSON-escaped spellings.
+	headerPatterns      [][]byte
+	headerShortPatterns [][]byte
+	previous            byte
+	hasPrevious         bool
+	pending             []byte
+	mu                  sync.Mutex
+	failed              bool
+	eof                 bool
 }
 
 func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType ...string) *credentialBody {
+	return newExpectedCredentialBody(body, c, false, contentType...)
+}
+
+// A caller that asked for JSON will parse the body as JSON whatever media type
+// the proxy or server labels it with. expectJSON keeps JSON escape decoding for
+// such a body when the response label would otherwise make it opaque. A
+// text/event-stream label may still be genuine for a request that lists both
+// JSON and SSE, so that body starts as an unframed probe, like a typeless one:
+// a JSON-shaped start commits to the JSON guard while SSE metadata (comments and
+// other non-data fields) never enters the JSON decoder. The SSE guard scans the
+// whole body in both cases.
+func newExpectedCredentialBody(body io.ReadCloser, c domain.ProxyCredential, expectJSON bool, contentType ...string) *credentialBody {
 	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
 	if len(contentType) > 0 {
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
 		if err == nil && mediaType != "" {
-			if mediaType == "text/event-stream" {
-				g.jsonGuard.framing = credentialSSE
-			} else {
+			g.jsonGuard.framing = credentialFramingForMediaType(mediaType)
+			g.jsonGuard.sequence = credentialJSONTextSequenceMediaType(strings.ToLower(mediaType))
+			switch {
+			case g.jsonGuard.framing == credentialOpaque && expectJSON:
 				g.jsonGuard.framing = credentialOrdinary
+			case g.jsonGuard.framing == credentialSSE && expectJSON:
+				g.jsonGuard.framing = credentialUnknown
 			}
 		}
 	}
@@ -51,8 +71,25 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 				g.jsonGuard.short = append(g.jsonGuard.short, []byte(candidate))
 			}
 			encoded, _ := json.Marshal(candidate)
-			g.patterns = append(g.patterns, bytes.Clone(encoded))
-			for _, form := range [][]byte{[]byte(candidate), encoded[1 : len(encoded)-1]} {
+			escaped := encoded[1 : len(encoded)-1]
+			headerForms := [][]byte{[]byte(candidate), escaped}
+			g.headerPatterns = append(g.headerPatterns, bytes.Clone(encoded))
+			bodyForms := [][]byte{[]byte(candidate)}
+			if g.jsonGuard.framing != credentialOpaque {
+				// JSON-escaped spellings (for example a quoted or backslash
+				// escaped password) exist only in JSON-framed bodies. Opaque
+				// bodies are matched on their literal and Base64 wire forms.
+				g.patterns = append(g.patterns, bytes.Clone(encoded))
+				bodyForms = append(bodyForms, escaped)
+			}
+			for _, form := range headerForms {
+				if len(form) >= 8 {
+					g.headerPatterns = append(g.headerPatterns, bytes.Clone(form))
+				} else {
+					g.headerShortPatterns = append(g.headerShortPatterns, bytes.Clone(form))
+				}
+			}
+			for _, form := range bodyForms {
 				if len(form) >= 8 {
 					g.patterns = append(g.patterns, bytes.Clone(form))
 				} else {
@@ -63,11 +100,14 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 			}
 		}
 	}
-	g.patterns = append(g.patterns, []byte("Basic "+base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password))))
+	basic := []byte("Basic " + base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password)))
+	g.patterns = append(g.patterns, basic)
+	g.headerPatterns = append(g.headerPatterns, bytes.Clone(basic))
 	if g.jsonGuard.framing == credentialUnknown {
 		// Typeless input can be either JSON or SSE. Keep a streaming SSE view
 		// alongside the bounded framing probe so a JSON-shaped unknown field name
 		// cannot commit the response to the wrong decoder before a later data field.
+		// A JSON-expected response labeled as SSE uses the same pairing.
 		g.sseGuard = &credentialJSONGuard{framing: credentialSSE}
 		for _, pattern := range g.jsonGuard.patterns {
 			g.sseGuard.patterns = append(g.sseGuard.patterns, bytes.Clone(pattern))
@@ -80,10 +120,82 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 	return g
 }
 
+// Choose the decoding framing for a parsed response media type. Only JSON media
+// types decode JSON string escapes, and SSE decodes only joined data fields.
+// Every other typed body is opaque: its source text is not JSON, so escape-like
+// sequences are literal content and only wire-form matching applies.
+func credentialFramingForMediaType(mediaType string) credentialFraming {
+	mediaType = strings.ToLower(mediaType)
+	switch {
+	case mediaType == "text/event-stream":
+		return credentialSSE
+	case credentialJSONMediaType(mediaType):
+		return credentialOrdinary
+	default:
+		return credentialOpaque
+	}
+}
+
+// Report whether the request's Accept header asks for a JSON media type.
+// Wildcards do not count: only an explicit JSON request makes the caller's
+// parser JSON-based. A range with quality zero is explicitly not acceptable
+// (RFC 9110), so it does not make the caller expect JSON either.
+func credentialRequestExpectsJSON(accept []string) bool {
+	for _, header := range accept {
+		for _, part := range splitQuotedHeaderList(header) {
+			mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+			if err != nil || !credentialJSONMediaType(strings.ToLower(mediaType)) {
+				continue
+			}
+			if quality, err := strconv.ParseFloat(strings.TrimSpace(params["q"]), 64); err == nil && quality <= 0 {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// Split an HTTP list field value on commas that are outside quoted strings.
+// Parameter values may be quoted strings containing commas (RFC 9110 section
+// 5.6.4), so a raw comma split would break one valid member into fragments.
+// Backslash escapes inside a quoted string are honored.
+func splitQuotedHeaderList(header string) []string {
+	var parts []string
+	start, quoted := 0, false
+	for i := 0; i < len(header); i++ {
+		switch c := header[i]; {
+		case quoted && c == '\\':
+			i++
+		case c == '"':
+			quoted = !quoted
+		case c == ',' && !quoted:
+			parts = append(parts, header[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, header[start:])
+}
+
+// Report whether a lower-case media type is an RFC 7464 JSON text sequence.
+func credentialJSONTextSequenceMediaType(mediaType string) bool {
+	return mediaType == "application/json-seq" || strings.HasSuffix(mediaType, "+json-seq")
+}
+
+func credentialJSONMediaType(mediaType string) bool {
+	switch mediaType {
+	case "application/json", "text/json", "application/x-ndjson", "application/jsonl", "application/x-jsonlines", "application/json-seq":
+		return true
+	}
+	// RFC 7464 JSON text sequences use application/json-seq and +json-seq. Their
+	// RS-separated texts are ordinary JSON strings for escape decoding.
+	return strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+json-seq")
+}
+
 // Headers are complete independent values; response reads also carry the last
 // emitted byte and withhold an unresolved right boundary until another read/EOF.
 func (g *credentialBody) contains(raw []byte) bool {
-	return g.containsBounded(raw, true, 0, false)
+	return containsCredentialForms(raw, true, 0, false, g.headerPatterns, g.headerShortPatterns)
 }
 func credentialTokenByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_' || b == '-' || b >= 0x80
@@ -97,7 +209,7 @@ func (g *credentialBody) containsBounded(raw []byte, ended bool, previous byte, 
 // case, while preserving the body's case-sensitive token boundary rules.
 func (g *credentialBody) containsHeaderName(name string) bool {
 	raw := []byte(strings.ToLower(name))
-	patterns, short := make([][]byte, len(g.patterns)), make([][]byte, len(g.shortPatterns))
+	patterns, short := make([][]byte, len(g.headerPatterns)), make([][]byte, len(g.headerShortPatterns))
 	defer func() {
 		clear(raw)
 		for _, forms := range [][][]byte{patterns, short} {
@@ -106,10 +218,10 @@ func (g *credentialBody) containsHeaderName(name string) bool {
 			}
 		}
 	}()
-	for i, form := range g.patterns {
+	for i, form := range g.headerPatterns {
 		patterns[i] = bytes.ToLower(form)
 	}
-	for i, form := range g.shortPatterns {
+	for i, form := range g.headerShortPatterns {
 		short[i] = bytes.ToLower(form)
 	}
 	return containsCredentialForms(raw, true, 0, false, patterns, short)
@@ -238,6 +350,11 @@ func (g *credentialBody) Close() error {
 	}
 	for _, p := range g.shortPatterns {
 		clear(p)
+	}
+	for _, forms := range [][][]byte{g.headerPatterns, g.headerShortPatterns} {
+		for _, p := range forms {
+			clear(p)
+		}
 	}
 	g.previous, g.hasPrevious = 0, false
 	g.jsonGuard.clear()

@@ -186,7 +186,7 @@ AI Subscription exposes no account-storage inspection reader, toolbar, row slot,
 
 ### Read-only quota rail
 
-The desktop contract's the feature rail independently reads saved subscription resources and uses the same service-native connection projection. It does not mount this category's login, cleanup or quota operation controllers. Fresh blocking-window aggregation determines its conservative remaining badge; the detail popover may show saved stale values only with explicit state labels. Manage subscriptions enters this existing category without targeted account mutation or automatic quota observation.
+The desktop contract's the feature rail independently reads saved subscription resources and uses the same service-native connection projection. It does not mount this category's login, cleanup or quota operation controllers. Fresh blocking-window aggregation determines its conservative remaining badge; the detail popover may show saved stale values only with explicit state labels. Manage subscriptions enters this existing category without targeted account mutation or automatic quota observation. The only automatic quota mutation is the connection-owned foreground Refresh all cadence described in the desktop contract; it shares the `subscription:quota:all` retained request with this category's header Refresh all and does not mount here.
 
 ## Inline failure ownership
 
@@ -279,7 +279,7 @@ allocation, migration, persistent preference or native behavior.
 
 ## Server quota V2 negotiation
 
-Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.
+Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns four-minute inactive quota maintenance; the five-minute freshness limit is unchanged, and while the app is in use a connection-owned 30-second automatic Refresh all supplements it. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.
 
 ## Consolidated Manage refresh
 
@@ -314,7 +314,7 @@ sanitized failure notices preserve their original meaning. Paid credits,
 authentication, recovery notifications, credit confirmation, automatic-credit
 consent, dismissal and cleanup ownership retain their existing boundaries.
 Header Refresh all remains one server-owned complete batch, independent of
-loaded pages, and row Refresh retains its individual original-bound QUOTA call.
+loaded pages, and row Refresh retains its individual original-bound QUOTA call. Its `subscription:quota:all` request is connection-owned and shared with the automatic foreground cadence: busy or uncertain state disables a second request, the error and explicit original retry stay available after leaving and re-entering Settings, and the account inventory rereads its accepted ranges every 30 seconds while the app is in use.
 
 The compositional footer reuses existing semantic icons, both themes, 40px
 controls, 8px corners, wrapping actions, focus and parent scrolling. Quota

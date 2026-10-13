@@ -43,7 +43,7 @@ window.setInterval = ((
   delay?: number,
   ...values: unknown[]
 ) => {
-  if (delay === 60000 && typeof handler === "function")
+  if ((delay === 30000 || delay === 60000) && typeof handler === "function")
     timerRefresh = handler as () => void;
   return originalInterval(handler, delay, ...values);
 }) as typeof window.setInterval;

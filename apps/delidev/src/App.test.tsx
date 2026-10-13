@@ -31,6 +31,7 @@ import {
   ResourceSchema,
   ResourceService,
   SessionService,
+  SubscriptionService,
   SystemCapability,
   SystemService,
   newRequestId,
@@ -473,6 +474,10 @@ function fixture(
   const inboxReads = vi.fn((_request: unknown) => ({ entries: [] }));
   const readStates = vi.fn(() => ({}));
   const responses = vi.fn(() => ({}));
+  const quotaBatches = vi.fn((request: { requestId: string }) => ({
+    requestId: request.requestId,
+    accounts: [],
+  }));
   const preferences = create(NotificationPreferencesSchema, {
     revision: 1n,
     interactions: true,
@@ -577,6 +582,9 @@ function fixture(
       getNotificationPreferences: () => ({ preferences }),
       setNotificationPreferences: saveNotificationPreferences,
     });
+    router.service(SubscriptionService, {
+      refreshAllSubscriptionQuotas: quotaBatches,
+    });
     router.service(SearchService, { searchConversations: searches });
     router.service(InteractionService, {
       respondQuestion: responses,
@@ -610,8 +618,41 @@ function fixture(
     inboxReads,
     readStates,
     responses,
+    quotaBatches,
   };
 }
+
+it("owns one automatic quota batch cadence above navigation while the connection is ready", async () => {
+  const value = fixture();
+  value.status.mockImplementation(async () => ({
+    version: "0.1.0",
+    protocolVersion: 2,
+    capabilities: [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2],
+  }));
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const timers = vi.spyOn(window, "setTimeout");
+  const view = render(<App transport={value.transport} connectionReady />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  await screen.findByRole("textbox", { name: "First message" });
+  const cadence = () =>
+    timers.mock.calls.filter((call) => call[1] === 30000).at(-1);
+  await waitFor(() => expect(cadence()).toBeTruthy());
+  expect(value.quotaBatches).not.toHaveBeenCalled();
+  await act(async () => (cadence()![0] as () => void)());
+  await waitFor(() => expect(value.quotaBatches).toHaveBeenCalledOnce());
+  expect(value.quotaBatches.mock.calls[0][0].requestId).toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+  // A disconnected connection schedules no later send.
+  view.rerender(<App transport={value.transport} connectionReady={false} />);
+  const pending = timers.mock.calls.length;
+  await act(async () => {});
+  expect(
+    timers.mock.calls.slice(pending).some((call) => call[1] === 30000),
+  ).toBe(false);
+  focus.mockRestore();
+  timers.mockRestore();
+});
 
 it("refreshes Home through the latest transport when accepted creation settles after same-identity reconnect", async () => {
   const original = fixture([], [], [], true, true),

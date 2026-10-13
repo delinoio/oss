@@ -2,6 +2,7 @@
 package outbound
 
 import (
+	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
@@ -317,5 +318,305 @@ func TestCredentialTypelessUnknownFieldProbeRetainsBoundedState(t *testing.T) {
 	guard.Close()
 	if output.String() != wire {
 		t.Fatal("bounded typeless framing changed safe SSE bytes")
+	}
+}
+
+func TestCredentialOpaqueMediaTypesDoNotDecodeJSONEscapes(t *testing.T) {
+	credential := domainCredentialFixture()
+	for _, mediaType := range []string{"application/vnd.github.diff", "application/vnd.github.v3.diff; charset=utf-8", "text/plain", "text/plain; charset=utf-8", "application/octet-stream"} {
+		for _, form := range []string{`\u0066ixture-password`, escapedCredential(credential.Password, false), escapedCredential(credential.Password, true)} {
+			wire := "diff --git a/f b/f\n+const s = \"" + form + "\"\n"
+			for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+				guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+				output, err := io.ReadAll(guard)
+				if err != nil || string(output) != wire || guard.jsonGuard.framing != credentialOpaque {
+					t.Fatal("opaque body was JSON-decoded", mediaType, err)
+				}
+				guard.Close()
+			}
+		}
+	}
+}
+
+func TestCredentialOpaqueMediaTypesStillRejectLiteralAndBase64(t *testing.T) {
+	credential := domainCredentialFixture()
+	forms := []string{
+		credential.Username,
+		credential.Password,
+		base64.StdEncoding.EncodeToString([]byte(credential.Username + ":" + credential.Password)),
+		base64.RawStdEncoding.EncodeToString([]byte(credential.Password)),
+		"Basic " + base64.StdEncoding.EncodeToString([]byte(credential.Username+":"+credential.Password)),
+	}
+	for _, mediaType := range []string{"application/vnd.github.diff", "text/plain"} {
+		for _, form := range forms {
+			wire := "context " + form + " tail"
+			for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+				guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+				output, err := io.ReadAll(guard)
+				if err == nil || strings.Contains(string(output), form) {
+					t.Fatal("opaque body reflected a protected value", mediaType, form)
+				}
+				guard.Close()
+			}
+		}
+	}
+}
+
+func TestCredentialJSONMediaTypesStillRejectEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	for _, mediaType := range []string{"application/json", "application/json; charset=utf-8", "application/vnd.github+json", "application/problem+json", "Application/JSON"} {
+		wire := `{"value":"\u0066ixture-password"}`
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") {
+				t.Fatal("JSON media type accepted escaped reflection", mediaType)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialSSEDataStillRejectsEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	wire := "data: {\"value\":\"\\u0066ixture-password\"}\n\n"
+	guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(wire)}), credential, "text/event-stream")
+	if _, err := io.ReadAll(guard); err == nil {
+		t.Fatal("SSE data accepted escaped reflection")
+	}
+	guard.Close()
+}
+
+func TestCredentialOpaqueMediaTypesKeepShortTokenBounds(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "x", Password: "pass123"}
+	safe := "context passwords x-ray pass1234 tail"
+	guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, "text/plain")
+	output, err := io.ReadAll(guard)
+	if err != nil || string(output) != safe {
+		t.Fatal("opaque short token substring was rejected", err)
+	}
+	guard.Close()
+	guard = newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader("context pass123 tail")}), credential, "text/plain")
+	if _, err := io.ReadAll(guard); err == nil {
+		t.Fatal("opaque short token was accepted")
+	}
+	guard.Close()
+}
+
+func TestCredentialJSONTextSequenceMediaTypesRejectEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	for _, mediaType := range []string{"application/json-seq", "application/json-seq; charset=utf-8", "Application/JSON-Seq", "application/vnd.fixture+json-seq"} {
+		wire := "\x1e{\"value\":\"\\u0066ixture-password\"}\n\x1e{\"value\":\"safe\"}\n"
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") || guard.jsonGuard.framing != credentialOrdinary {
+				t.Fatal("JSON text sequence accepted escaped reflection", mediaType)
+			}
+			guard.Close()
+		}
+		safe := "\x1e{\"value\":\"safe\"}\n"
+		guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, mediaType)
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("JSON text sequence changed safe bytes", mediaType, err)
+		}
+		guard.Close()
+	}
+}
+
+func TestCredentialUnframedJSONTextSequenceRejectsEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	wire := "\x1e{\"value\":\"\\u0066ixture-password\"}\n\x1e{\"value\":\"safe\"}\n"
+	safe := "\x1e{\"value\":\"safe\"}\n\x1e[\"\\u0073afe\"]\n"
+	// A JSON-expecting request keeps sequence framing when the response omits its
+	// label or mislabels the sequence as an event stream.
+	for _, mediaType := range [][]string{nil, {"text/event-stream"}} {
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, mediaType...)
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") {
+				t.Fatal("unframed JSON text sequence accepted escaped reflection", mediaType)
+			}
+			guard.Close()
+		}
+		guard := newExpectedCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, true, mediaType...)
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("unframed JSON text sequence changed safe bytes", mediaType, err)
+		}
+		guard.Close()
+	}
+}
+
+func TestCredentialOpaqueMediaTypesIgnoreJSONEscapedSpellings(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: `fixture-"password\<tail>`}
+	// Source literals that spell the password with JSON escapes are not wire
+	// reflections of an opaque body.
+	safe := "diff --git a/f b/f\n+const s = \"fixture-\\\"password\\\\\\u003ctail\\u003e\"\n"
+	for _, mediaType := range []string{"application/vnd.github.diff", "text/plain"} {
+		guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, mediaType)
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("opaque body rejected a JSON-escaped spelling", mediaType, err)
+		}
+		guard.Close()
+		literal := "context " + credential.Password + " tail"
+		guard = newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(literal)}), credential, mediaType)
+		if _, err = io.ReadAll(guard); err == nil {
+			t.Fatal("opaque body accepted a literal password", mediaType)
+		}
+		guard.Close()
+	}
+	// JSON framing keeps rejecting the JSON-escaped spelling on the wire.
+	wire := `{"value":"fixture-\"password\\\u003ctail\u003e"}`
+	guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(wire)}), credential, "application/json")
+	if _, err := io.ReadAll(guard); err == nil {
+		t.Fatal("JSON body accepted a JSON-escaped spelling")
+	}
+	guard.Close()
+}
+
+func TestCredentialOpaqueMediaTypesKeepEscapedHeaderGuards(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: `fixture-"password\<tail>`}
+	// Header values are complete independent values: a JSON-escaped spelling of
+	// a protected value is rejected there even when the body is opaque.
+	escaped := `fixture-\"password\\\u003ctail\u003e`
+	for _, mediaType := range []string{"application/vnd.github.diff", "text/plain", "application/json"} {
+		for _, expectJSON := range []bool{false, true} {
+			guard := newExpectedCredentialBody(io.NopCloser(strings.NewReader("")), credential, expectJSON, mediaType)
+			for _, value := range []string{escaped, `"` + escaped + `"`, "prefix " + escaped + " suffix", credential.Password} {
+				if !guard.contains([]byte(value)) {
+					t.Fatalf("header guard accepted a protected spelling %q %q %v", mediaType, value, expectJSON)
+				}
+			}
+			if guard.contains([]byte("unrelated header value")) {
+				t.Fatal("header guard rejected an unrelated value", mediaType, expectJSON)
+			}
+			// Opaque bodies still ignore the escaped spelling on the wire.
+			if guard.jsonGuard.framing == credentialOpaque && guard.containsBounded([]byte(escaped), true, 0, false) {
+				t.Fatal("opaque body matched a JSON-escaped spelling", mediaType)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialJSONExpectationAlsoScansEventStreamLabeledBodies(t *testing.T) {
+	credential := domainCredentialFixture()
+	escaped := `\u0066ixture-password`
+	for _, wire := range []string{
+		`{"value":"` + escaped + `"}`,
+		"data: {" + `"value":"` + escaped + `"}` + "\n\n",
+		": comment\ndata: {" + `"value":"` + escaped + `"}` + "\n\n",
+		"event: message\ndata: " + `"` + escaped + `"` + "\n\n",
+	} {
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+			if guard.jsonGuard.framing != credentialUnknown || guard.sseGuard == nil {
+				t.Fatal("JSON expectation did not pair the JSON and SSE guards")
+			}
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") {
+				t.Fatal("event-stream label hid an escaped reflection from a JSON caller", wire)
+			}
+			guard.Close()
+		}
+	}
+	// Without a JSON expectation the label keeps SSE framing, and a request
+	// that lists both types still streams safe SSE bytes unchanged.
+	guard := newCredentialBody(io.NopCloser(strings.NewReader(`{"value":"`+escaped+`"}`)), credential, "text/event-stream")
+	if guard.jsonGuard.framing != credentialSSE || guard.sseGuard != nil {
+		t.Fatal("event-stream label without a JSON expectation changed framing")
+	}
+	guard.Close()
+	safe := "event: message\ndata: {" + `"value":"safe"` + "}\n\ndata: [DONE]\n\n"
+	for _, reader := range []io.Reader{strings.NewReader(safe), fragmentedReader{strings.NewReader(safe)}} {
+		guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != safe {
+			t.Fatal("event-stream body changed safe bytes", err)
+		}
+		guard.Close()
+	}
+}
+
+func TestCredentialJSONTextSequenceResetsDecoderAtRecordSeparator(t *testing.T) {
+	credential := domainCredentialFixture()
+	escaped := `\u0066ixture-password`
+	for _, mediaType := range []string{"application/json-seq", "application/vnd.fixture+json-seq; charset=utf-8"} {
+		for _, wire := range []string{
+			// An unterminated string must not carry its quote state into the next record.
+			"\x1e{\"a\":\"unterminated\n\x1e{\"value\":\"" + escaped + "\"}\n",
+			// An incomplete escape must not combine with the next record's bytes.
+			"\x1e\"\\u00\n\x1e\"" + escaped + "\"\n",
+			// A reflection split across a record boundary is two independent texts.
+			"\x1e\"fixture-pass\x1e\"" + escaped + "\"\n",
+		} {
+			for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+				guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+				output, err := io.ReadAll(guard)
+				if err == nil || strings.Contains(string(output), "password") {
+					t.Fatalf("JSON text sequence carried decoder state across records %q %q", mediaType, wire)
+				}
+				guard.Close()
+			}
+		}
+		// Separators inside valid sequences and a malformed record followed by
+		// safe records still stream their exact wire bytes.
+		safe := "\x1e{\"a\":\"unterminated\n\x1e{\"value\":\"safe\"}\n\x1e\"\\u00\n\x1e[\"\\u0073afe\"]\n"
+		for _, reader := range []io.Reader{strings.NewReader(safe), fragmentedReader{strings.NewReader(safe)}} {
+			guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+			output, err := io.ReadAll(guard)
+			if err != nil || string(output) != safe {
+				t.Fatal("JSON text sequence changed safe bytes", mediaType, err)
+			}
+			guard.Close()
+		}
+	}
+	// Other JSON framings are not record-separated by RS.
+	guard := newCredentialBody(io.NopCloser(strings.NewReader("")), credential, "application/json")
+	if guard.jsonGuard.sequence {
+		t.Fatal("ordinary JSON was framed as a text sequence")
+	}
+	guard.Close()
+}
+
+// Genuine SSE metadata is not JSON text: a caller that accepts JSON and receives
+// a labeled event stream decodes only joined data fields, while a plain JSON
+// body carrying the same label is still decoded as JSON.
+func TestCredentialJSONExpectationKeepsEventStreamMetadataOutOfJSONDecoder(t *testing.T) {
+	credential := domainCredentialFixture()
+	escaped := `\u0066ixture-password`
+	for _, safe := range []string{
+		": \"" + escaped + "\"\n\ndata: {\"value\":\"safe\"}\n\n",
+		": " + escaped + "\"\n\ndata: [DONE]\n\n",
+		"event: \"" + escaped + "\"\ndata: {\"value\":\"safe\"}\n\n",
+		"id: \"" + escaped + "\"\nretry: 10\ndata: {\"value\":\"safe\"}\n\n",
+		"data: {\"value\":\"safe\"}\n\n: \"" + escaped + "\"\n\ndata: {\"value\":\"safe\"}\n\n",
+		"data: {\"value\":\"safe\"}\n\nevent: \"" + escaped + "\"\n\n",
+		": comment\n{\"value\":\"" + escaped + "\"}\n\n",
+	} {
+		for _, reader := range []io.Reader{strings.NewReader(safe), fragmentedReader{strings.NewReader(safe)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+			output, err := io.ReadAll(guard)
+			if err != nil || string(output) != safe {
+				t.Fatalf("event-stream metadata was decoded as JSON %q: %v", safe, err)
+			}
+			guard.Close()
+		}
+	}
+	// A data field is still decoded, wherever it appears after metadata.
+	for _, wire := range []string{
+		": \"" + escaped + "\"\n\ndata: {\"value\":\"" + escaped + "\"}\n\n",
+		"data: {\"value\":\"safe\"}\n\nevent: x\ndata: \"" + escaped + "\"\n\n",
+	} {
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newExpectedCredentialBody(io.NopCloser(reader), credential, true, "text/event-stream")
+			if output, err := io.ReadAll(guard); err == nil || strings.Contains(string(output), "data: {\"value\":\""+escaped) || strings.Contains(string(output), "data: \""+escaped) {
+				t.Fatalf("event-stream data field escaped the JSON guard %q", wire)
+			}
+			guard.Close()
+		}
 	}
 }

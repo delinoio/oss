@@ -205,11 +205,15 @@ function existingRepositoryConfiguration(key: string) {
   );
 }
 export const sessionInboxReadPrefix = "inbox-session-read:";
+/** The complete-inventory quota refresh is connection-owned so the automatic
+ * foreground cadence and manual Settings Refresh all share one original request. */
+export const subscriptionQuotaAllKey = "subscription:quota:all";
 function connectionOwned(key: string) {
   if (key.startsWith("tailscale:")) return true;
   return (
     existingRepositoryConfiguration(key) ||
-    key.startsWith(sessionInboxReadPrefix)
+    key.startsWith(sessionInboxReadPrefix) ||
+    key === subscriptionQuotaAllKey
   );
 }
 function useIntentRegistry(key: string) {
