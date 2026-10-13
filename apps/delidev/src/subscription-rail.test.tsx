@@ -1353,9 +1353,11 @@ describe("credential generation identity", () => {
     await waitFor(() => expect(f.requests).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(
-        within(popup).getByRole("button", {
-          name: "Show exact paid-credit balance",
-        }).getAttribute("aria-expanded"),
+        within(popup)
+          .getByRole("button", {
+            name: "Show exact paid-credit balance",
+          })
+          .getAttribute("aria-expanded"),
       ).toBe("false"),
     );
     expect(within(popup).queryByRole("tooltip")).toBeNull();
