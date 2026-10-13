@@ -2403,6 +2403,27 @@ it("shows the localized local computer label after a completed clone collision",
     });
   }
 });
+it("relocalizes the local computer label when the language changes after a completed clone collision", async () => {
+  try {
+    await collideCompletedClone("Team OSS");
+    expect(computerRow()?.textContent).toBe("This computer");
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.Korean);
+    });
+    expect(
+      screen.getByText("컴퓨터", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("이 컴퓨터");
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+    expect(computerRow()?.textContent).toBe("This computer");
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+  }
+});
 it("blocks cloning again immediately after a completed clone collision", async () => {
   const { f, input } = await collideCompletedClone();
   const toggle = screen.getByRole("button", {

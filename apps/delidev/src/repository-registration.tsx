@@ -1239,7 +1239,13 @@ export function RepositoryRegistration({
                           <dt>
                             {copy("repository-registration.computer_76ed42")}
                           </dt>
-                          <dd>{summary.source.name}</dd>
+                          <dd>
+                            {summary.source.local
+                              ? copy(
+                                  "repository-registration.thisComputer_26f9f9",
+                                )
+                              : summary.source.name}
+                          </dd>
                         </div>
                         <div>
                           <dt>
