@@ -225,3 +225,107 @@ it("fences scheduled DOM renderer failures with the existing recovery and both c
   expect(fake.disposed).toHaveBeenCalledTimes(1);
   expect(input).not.toHaveBeenCalled();
 });
+
+function openWithLinks() {
+  const host = document.createElement("div"),
+    openLink = vi.fn();
+  document.body.append(host);
+  const screen = openTerminalScreen(
+    host,
+    vi.fn(),
+    vi.fn(),
+    vi.fn(),
+    undefined,
+    openLink,
+  );
+  screens.push(screen);
+  return { screen, host, openLink };
+}
+function printRow(host: HTMLElement, text: string) {
+  const row = document.createElement("div");
+  row.className = "term-row";
+  const span = document.createElement("span");
+  span.textContent = text;
+  row.append(span);
+  host.append(row);
+  return span;
+}
+function pointAt(span: HTMLElement, offset: number) {
+  Object.defineProperty(document, "caretPositionFromPoint", {
+    configurable: true,
+    value: () => ({ offsetNode: span.firstChild, offset }),
+  });
+}
+
+it("activates a plain printed URL under the pointer without consuming the event or enabling OSC 8 links", async () => {
+  const { host, openLink } = openWithLinks();
+  await tick();
+  await tick();
+  expect(fake.instances[0].options.linksEnabled).toBe(false);
+  const span = printRow(host, "visit https://example.com/path?q=1. now");
+  pointAt(span, 12);
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+  span.dispatchEvent(event);
+  expect(openLink).toHaveBeenCalledTimes(1);
+  expect(openLink).toHaveBeenCalledWith("https://example.com/path?q=1");
+  // Terminal focus, selection and mouse handling keep receiving the click.
+  expect(event.defaultPrevented).toBe(false);
+  pointAt(span, 2);
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  expect(openLink).toHaveBeenCalledTimes(1);
+  // Hover shows the pointer affordance only over a URL.
+  pointAt(span, 12);
+  span.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  expect(host.hasAttribute("data-link")).toBe(true);
+  pointAt(span, 1);
+  span.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  expect(host.hasAttribute("data-link")).toBe(false);
+});
+
+it("does not activate during a text selection, secondary buttons or non-http text", async () => {
+  const { host, openLink } = openWithLinks();
+  await tick();
+  await tick();
+  const span = printRow(host, "ftp://example.com javascript:alert(1) file:///etc/passwd https://ok.test/x");
+  pointAt(span, 4);
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  pointAt(span, 25);
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  pointAt(span, 70);
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 2 }));
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, shiftKey: true }));
+  expect(openLink).not.toHaveBeenCalled();
+  const selected = vi.spyOn(document, "getSelection").mockReturnValue({
+    toString: () => "https",
+  } as Selection);
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  expect(openLink).not.toHaveBeenCalled();
+  selected.mockRestore();
+  span.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  expect(openLink).toHaveBeenCalledWith("https://ok.test/x");
+});
+
+it("joins a URL wrapped across full-width rows and removes its callbacks on disposal", async () => {
+  const { host, openLink, screen } = openWithLinks();
+  await tick();
+  await tick();
+  // The mocked terminal is 80 columns wide.
+  const first = printRow(host, `${"x".repeat(5)} https://example.com/${"a".repeat(54)}`);
+  printRow(host, "bcd tail");
+  pointAt(first, 10);
+  first.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  expect(openLink).toHaveBeenCalledWith(`https://example.com/${"a".repeat(54)}bcd`);
+  screen.dispose();
+  first.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  expect(openLink).toHaveBeenCalledTimes(1);
+});
+
+it("registers no pointer listeners when the host provides no link opener", async () => {
+  const { host } = open();
+  await tick();
+  await tick();
+  const span = printRow(host, "https://example.com/");
+  pointAt(span, 3);
+  span.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  expect(host.hasAttribute("data-link")).toBe(false);
+});

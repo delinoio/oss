@@ -8,6 +8,7 @@ import {
 } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { selectedBrowserFailureMessage } from "./external-links";
 
 export enum ProviderGuidanceAction {
   Documentation = "documentation",
@@ -53,9 +54,17 @@ export function ProviderGuidance({
       await invoke("open_provider_guidance", { preset, action });
       if (owner.current === original)
         setStatus(ownedMessage("provider-guidance.extra.028de0ea70b9"));
-    } catch {
-      if (owner.current === original)
-        setStatus(ownedMessage("provider-guidance.extra.45a2c8995dcd"));
+    } catch (error) {
+      if (owner.current === original) {
+        // A missing browser or unreadable selection points at Settings >
+        // Browser; every other failure keeps the unconfirmed-opening copy.
+        const selection = selectedBrowserFailureMessage(error);
+        setStatus(
+          selection
+            ? ownedMessage(selection)
+            : ownedMessage("provider-guidance.extra.45a2c8995dcd"),
+        );
+      }
     } finally {
       if (owner.current === original) {
         pending.current = false;

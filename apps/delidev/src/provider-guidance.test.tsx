@@ -43,7 +43,7 @@ it("sends only the selected closed identity/action, never the supplied help URL,
     settle();
   });
   expect((await screen.findByRole("status")).textContent).toContain(
-    "Sent to your default browser",
+    "Sent to your browser",
   );
 });
 it("retains an unconfirmed opening without automatic retry and clears it on provider selection", async () => {
@@ -93,4 +93,25 @@ it("opens fixed Fast guidance through the original native authority instead of a
     action: "codex-fast",
   });
   expect(native.invoke).toHaveBeenCalledOnce();
+});
+
+it.each([
+  ["browser-unavailable", "The selected browser is not installed"],
+  ["browser-launch-failed", "could not be opened in the selected browser"],
+  ["storage-unavailable", "Browser settings could not be read"],
+])("points a %s failure at the browser selection without retrying", async (code, expected) => {
+  native.invoke.mockReset();
+  native.invoke.mockRejectedValue(code);
+  render(
+    <ProviderGuidance
+      preset="gemini"
+      documentation="https://docs.invalid"
+      keyCreation="https://keys.invalid"
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open provider documentation" }),
+  );
+  expect((await screen.findByRole("status")).textContent).toContain(expected);
+  expect(native.invoke).toHaveBeenCalledTimes(1);
 });

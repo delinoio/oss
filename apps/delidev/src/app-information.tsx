@@ -6,7 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { copy, useLocale } from "./localization";
+import { copy, useLocale, type MessageKey } from "./localization";
+import { selectedBrowserFailureMessage } from "./external-links";
 import type { DesktopUpdateControls } from "./updates";
 import "./app-information.css";
 
@@ -79,7 +80,7 @@ export function AppInformation({
   }>();
   const [contextError, setContextError] = useState(false);
   const [opening, setOpening] = useState<AppInformationLink>();
-  const [openError, setOpenError] = useState(false);
+  const [openError, setOpenError] = useState<MessageKey>();
   const alive = useRef(true);
   const openingGuard = useRef(false);
   useEffect(() => {
@@ -113,11 +114,16 @@ export function AppInformation({
     if (!active || !openLink || openingGuard.current) return;
     openingGuard.current = true;
     setOpening(link);
-    setOpenError(false);
+    setOpenError(undefined);
     try {
       await openLink(link);
-    } catch {
-      if (alive.current) setOpenError(true);
+    } catch (error) {
+      // A missing browser or unreadable selection points at Settings > Browser.
+      if (alive.current)
+        setOpenError(
+          selectedBrowserFailureMessage(error) ??
+            "settings.appInformation.openError",
+        );
     } finally {
       openingGuard.current = false;
       if (alive.current) setOpening(undefined);
@@ -211,7 +217,7 @@ export function AppInformation({
           <p role="status">{copy("settings.appInformation.opening")}</p>
         ) : null}
         {openError ? (
-          <p role="alert">{copy("settings.appInformation.openError")}</p>
+          <p role="alert">{copy(openError)}</p>
         ) : null}
       </section>
     </div>

@@ -186,6 +186,15 @@ it("does not automatically repeat an uncertain native open", async () => {
   expect(screen.queryByText("private diagnostic")).toBeNull();
 });
 
+it("points a missing browser at Settings > Browser without fallback or a second launch", async () => {
+  native.invoke.mockClear();
+  native.invoke.mockRejectedValueOnce("browser-unavailable");
+  render(<OpenGitHub url="https://github.com/owner/repo/pull/1" />);
+  fireEvent.click(screen.getByRole("button", { name: "Open on GitHub" }));
+  await screen.findByText(/selected browser is not installed/);
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+});
+
 function draftFixture() {
   native.invoke.mockClear();
   const changeKind = vi.fn();
@@ -372,7 +381,7 @@ it("locks both buttons through preparation and native dispatch without duplicate
   fireEvent.click(classic);
   expect(f.form).toHaveBeenCalledTimes(1);
   dispatched();
-  await screen.findByText(/Sent to your default browser/);
+  await screen.findByText(/Sent to your browser/);
   await waitFor(() =>
     expect((classic as HTMLButtonElement).disabled).toBe(false),
   );
@@ -414,7 +423,7 @@ it("translates a pending draft without repeating preparation or changing its cho
     expect(f.form).toHaveBeenCalledTimes(1);
     expect(f.changeKind).toHaveBeenCalledTimes(1);
     release();
-    await screen.findByText(/기본 브라우저로 전달했습니다/);
+    await screen.findByText(/브라우저로 전달했습니다/);
     expect(native.invoke).toHaveBeenCalledTimes(1);
     expect(f.form).toHaveBeenCalledTimes(1);
   } finally {

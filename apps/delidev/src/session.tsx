@@ -1,3 +1,4 @@
+import { LinkedPre } from "./external-link-text";
 import {
   useProductLabels,
   productResourceName,
@@ -640,7 +641,15 @@ export const TranscriptItem = memo(function TranscriptItem({
           <small>{statusLabel(text(data.state))}</small>
         </header>
       )}
-      {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+      {text(data.text) ? (
+        // Only plain user and assistant text is link-activatable; every other
+        // role or evidence-bearing record keeps inert preformatted text.
+        roleClass ? (
+          <LinkedPre text={text(data.text)} />
+        ) : (
+          <pre>{text(data.text)}</pre>
+        )
+      ) : null}
       {Number(data.context_revision ?? 0) < contextRevision ? (
         <small>{copy("session.previousContext")}</small>
       ) : null}
