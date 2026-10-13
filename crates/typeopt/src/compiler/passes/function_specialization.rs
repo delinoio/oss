@@ -35,7 +35,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
@@ -45,6 +44,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -169,13 +169,13 @@ fn nominate(ctx: &mut Ctx, function: &Function) -> Vec<usize> {
         }
         let ty = ctx.checker.get_type_of_symbol(symbol);
         let flags = ctx.checker.ty(ty).flags();
-        if !flags.intersects(TypeFlags::UNION) {
+        if !flags.intersects(TypeFlags::Union) {
             continue;
         }
         let members = ctx.checker.ty(ty).types_list();
         let literal_union = members.iter().all(|&m| {
             ctx.checker.ty(m).flags().intersects(
-                TypeFlags::STRING_LITERAL | TypeFlags::NUMBER_LITERAL | TypeFlags::BOOLEAN_LITERAL,
+                TypeFlags::StringLiteral | TypeFlags::NumberLiteral | TypeFlags::BooleanLiteral,
             )
         });
         if !literal_union {
@@ -267,7 +267,7 @@ fn specialize(
 ) -> Result<Option<Candidate>, Reason> {
     let file = function.file;
     let statement = function.statement;
-    if has_syntactic_modifier(statement, ModifierFlags::DEFAULT) {
+    if has_syntactic_modifier(statement, ModifierFlags::Default) {
         return Err(Reason::UnsupportedSyntax);
     }
     if statement.kind() == SyntaxKind::VariableStatement
@@ -387,7 +387,7 @@ fn specialize(
             }
             let existing =
                 ctx.checker
-                    .resolve_name_exported(&candidate, statement, SymbolFlags::ALL, false);
+                    .resolve_name_exported(&candidate, statement, SymbolFlags::All, false);
             if existing.is_some() {
                 continue;
             }
@@ -826,7 +826,7 @@ impl Render<'_, '_> {
                 || statement
                     .declaration_list()
                     .flags()
-                    .intersects(NodeFlags::USING)
+                    .intersects(NodeFlags::Using)
             {
                 return false;
             }
@@ -965,7 +965,7 @@ fn declares_lexically(statement: Node) -> bool {
         SyntaxKind::VariableStatement => statement
             .declaration_list()
             .flags()
-            .intersects(NodeFlags::BLOCK_SCOPED),
+            .intersects(NodeFlags::BlockScoped),
         SyntaxKind::FunctionDeclaration
         | SyntaxKind::ClassDeclaration
         | SyntaxKind::EnumDeclaration

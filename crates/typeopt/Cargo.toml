@@ -18,5 +18,13 @@ sourcemap = "9"
 tempfile.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
-ts_goport = { git = "https://github.com/kdy1/ts-rust", rev = "a1dc8be88dfb837b4fb199d4355fa0a4d9eced96", default-features = false }
+tsrs_core = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_ast = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_checker = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_compiler = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_tsoptions = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_vfs = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_api = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_scanner = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
+tsrs_diagnostics = { git = "https://github.com/maschwenk/tsrs", rev = "00f16261082fbb2465f0603c667b450d5aa6694b" }
 url = "2"

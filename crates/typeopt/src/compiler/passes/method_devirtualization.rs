@@ -34,13 +34,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
     calls_support::{self as support, Facts},
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -237,22 +237,22 @@ impl Index {
 fn may_hold(ctx: &mut Ctx, ty: TypeId, instance: TypeId) -> bool {
     let flags = ctx.checker.ty(ty).flags();
     if flags.intersects(
-        TypeFlags::ANY
-            | TypeFlags::UNKNOWN
-            | TypeFlags::TYPE_PARAMETER
-            | TypeFlags::INDEX
-            | TypeFlags::INDEXED_ACCESS
-            | TypeFlags::CONDITIONAL
-            | TypeFlags::SUBSTITUTION
-            | TypeFlags::NON_PRIMITIVE,
+        TypeFlags::Any
+            | TypeFlags::Unknown
+            | TypeFlags::TypeParameter
+            | TypeFlags::Index
+            | TypeFlags::IndexedAccess
+            | TypeFlags::Conditional
+            | TypeFlags::Substitution
+            | TypeFlags::NonPrimitive,
     ) {
         return true;
     }
-    if flags.intersects(TypeFlags::UNION | TypeFlags::INTERSECTION) {
+    if flags.intersects(TypeFlags::Union | TypeFlags::Intersection) {
         let parts = ctx.checker.ty(ty).types_list();
         return parts.iter().any(|&part| may_hold(ctx, part, instance));
     }
-    if flags.intersects(TypeFlags::OBJECT) {
+    if flags.intersects(TypeFlags::Object) {
         return ty == instance || ctx.checker.is_type_assignable_to_exported(instance, ty);
     }
     false
@@ -302,7 +302,7 @@ fn parameter_arguments(ctx: &mut Ctx, identifier: Node) -> Option<Vec<Node>> {
                 holder = holder.parent();
             }
             if holder.kind() != SyntaxKind::VariableDeclaration
-                || !holder.parent().flags().intersects(NodeFlags::CONST)
+                || !holder.parent().flags().intersects(NodeFlags::Const)
             {
                 return None;
             }
@@ -347,28 +347,28 @@ fn parameter_arguments(ctx: &mut Ctx, identifier: Node) -> Option<Vec<Node>> {
 /// Whether a key of type `ty` could equal `name` at runtime.
 fn key_may_be(ctx: &mut Ctx, ty: TypeId, name: &str) -> bool {
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::UNION) {
+    if flags.intersects(TypeFlags::Union) {
         let parts = ctx.checker.ty(ty).types_list();
         return parts.iter().any(|&part| key_may_be(ctx, part, name));
     }
-    if flags.intersects(TypeFlags::STRING_LITERAL) {
+    if flags.intersects(TypeFlags::StringLiteral) {
         return match ctx.checker.ty(ty).as_literal_type().value() {
             Some(LiteralValue::String(value)) => value == name,
             _ => true,
         };
     }
     if flags.intersects(
-        TypeFlags::NUMBER_LIKE
-            | TypeFlags::BIG_INT_LIKE
-            | TypeFlags::BOOLEAN_LIKE
-            | TypeFlags::ES_SYMBOL_LIKE
-            | TypeFlags::UNDEFINED
-            | TypeFlags::NULL
-            | TypeFlags::VOID
-            | TypeFlags::NEVER,
+        TypeFlags::NumberLike
+            | TypeFlags::BigIntLike
+            | TypeFlags::BooleanLike
+            | TypeFlags::ESSymbolLike
+            | TypeFlags::Undefined
+            | TypeFlags::Null
+            | TypeFlags::Void
+            | TypeFlags::Never,
     ) {
         // Number keys only produce numeric strings.
-        return flags.intersects(TypeFlags::NUMBER_LIKE) && matches!(name, "NaN" | "Infinity");
+        return flags.intersects(TypeFlags::NumberLike) && matches!(name, "NaN" | "Infinity");
     }
     true
 }
@@ -528,8 +528,8 @@ fn proven_receiver(
             declaration.is_some()
                 && declaration.kind() == SyntaxKind::VariableDeclaration
                 && declaration.name().kind() == SyntaxKind::Identifier
-                && declaration.parent().flags().intersects(NodeFlags::CONST)
-                && !declaration.parent().flags().intersects(NodeFlags::USING)
+                && declaration.parent().flags().intersects(NodeFlags::Const)
+                && !declaration.parent().flags().intersects(NodeFlags::Using)
                 && declaration.initializer().is_some()
                 && ctx.file_of_node(declaration).is_some()
                 && proven_receiver(ctx, index, family, declaration.initializer(), depth + 1)
@@ -696,7 +696,7 @@ fn plan_method(
     if body.is_nil()
         || is_static(method)
         || method.question_token().is_some()
-        || has_syntactic_modifier(method, ModifierFlags::ABSTRACT | ModifierFlags::OVERRIDE)
+        || has_syntactic_modifier(method, ModifierFlags::Abstract | ModifierFlags::Override)
     {
         return Err(None);
     }
@@ -736,7 +736,7 @@ fn plan_method(
     }
     // Receivers: runtime evidence of non-nullish family instances.
     for site in &sites {
-        if site.call.flags().intersects(NodeFlags::OPTIONAL_CHAIN)
+        if site.call.flags().intersects(NodeFlags::OptionalChain)
             || site.call.question_dot_token().is_some()
             || site.access.question_dot_token().is_some()
             || !site.call.type_arguments().is_empty()
@@ -856,11 +856,11 @@ fn check_body(ctx: &mut Ctx, method: Node) -> Result<(), (Reason, Node)> {
                     // Bracket access is exempt from accessibility checks.
                     continue;
                 }
-                let symbol = ctx.checker.get_symbol_at_location(name, true);
+                let symbol = ctx.checker.get_symbol_at_location(name);
                 if symbol.is_some() {
                     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
                     if declarations.iter().any(|&d| {
-                        has_syntactic_modifier(d, ModifierFlags::PRIVATE | ModifierFlags::PROTECTED)
+                        has_syntactic_modifier(d, ModifierFlags::Private | ModifierFlags::Protected)
                     }) {
                         return Err((Reason::UnsupportedSyntax, node));
                     }
@@ -878,7 +878,7 @@ fn check_body(ctx: &mut Ctx, method: Node) -> Result<(), (Reason, Node)> {
                                     m.kind() == SyntaxKind::Constructor
                                         && has_syntactic_modifier(
                                             m,
-                                            ModifierFlags::PRIVATE | ModifierFlags::PROTECTED,
+                                            ModifierFlags::Private | ModifierFlags::Protected,
                                         )
                                 })
                         });
@@ -963,7 +963,7 @@ fn function_text(
     body_text.push_str(&text[cursor..body.end() as usize]);
     let flags = method.modifier_flags();
     let prefix = if exported { "export " } else { "" };
-    let asynchronous = if flags.intersects(ModifierFlags::ASYNC) {
+    let asynchronous = if flags.intersects(ModifierFlags::Async) {
         "async "
     } else {
         ""

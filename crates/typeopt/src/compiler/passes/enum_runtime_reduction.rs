@@ -26,7 +26,6 @@
 //!   object is not otherwise observed (dynamic or reverse lookup, enumeration,
 //!   identity, `typeof`, re-export by name).
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::Ctx,
@@ -37,6 +36,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -106,8 +106,8 @@ fn plan_enum(
     declaration: Node,
     out: &mut Plan,
 ) -> Option<(usize, bool)> {
-    if declaration.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(declaration, ModifierFlags::AMBIENT | ModifierFlags::CONST)
+    if declaration.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(declaration, ModifierFlags::Ambient | ModifierFlags::Const)
     {
         // Ambient enums have no trusted runtime object; const enums are
         // already inlined by the compiler.
@@ -123,7 +123,7 @@ fn plan_enum(
     let flags = ctx.checker.sym(symbol).flags;
     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
     if declarations.len() != 1
-        || flags.intersects(SymbolFlags::VALUE_MODULE | SymbolFlags::NAMESPACE_MODULE)
+        || flags.intersects(SymbolFlags::ValueModule | SymbolFlags::NamespaceModule)
     {
         // One record per merged symbol.
         if declarations.first() == Some(&declaration) {
@@ -156,7 +156,7 @@ fn plan_enum(
         }
         let value = match ctx.checker.get_constant_value(member) {
             Some(LiteralValue::Number(number)) => number_text(number.0),
-            Some(LiteralValue::String(text)) => string_text(&text),
+            Some(LiteralValue::String(text)) => string_text(text),
             _ => None,
         };
         members.push(Member {
@@ -241,7 +241,7 @@ fn plan_enum(
         });
     let removal = blocker.is_none();
     if removal {
-        let export = if has_syntactic_modifier(declaration, ModifierFlags::EXPORT) {
+        let export = if has_syntactic_modifier(declaration, ModifierFlags::Export) {
             "export "
         } else {
             ""

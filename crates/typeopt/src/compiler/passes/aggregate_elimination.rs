@@ -39,7 +39,6 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
@@ -49,6 +48,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -160,8 +160,8 @@ impl Site {
         let list = node.parent();
         if list.kind() != SyntaxKind::VariableDeclarationList
             || list.parent().kind() != SyntaxKind::VariableStatement
-            || !list.flags().intersects(NodeFlags::CONST | NodeFlags::LET)
-            || list.flags().intersects(NodeFlags::USING)
+            || !list.flags().intersects(NodeFlags::Const | NodeFlags::Let)
+            || list.flags().intersects(NodeFlags::Using)
         {
             return None;
         }
@@ -175,13 +175,13 @@ impl Site {
             // The expression's type is the anonymous type of exactly this
             // literal.
             let symbol = ctx.checker.ty(ty).symbol;
-            ctx.checker.ty(ty).flags().intersects(TypeFlags::OBJECT)
+            ctx.checker.ty(ty).flags().intersects(TypeFlags::Object)
                 && symbol.is_some()
                 && ctx
                     .checker
                     .sym(symbol)
                     .flags
-                    .intersects(SymbolFlags::OBJECT_LITERAL)
+                    .intersects(SymbolFlags::ObjectLiteral)
                 && ctx.checker.sym(symbol).declarations.first() == Some(&literal)
         };
         if !nominated {
@@ -227,12 +227,12 @@ impl Site {
         if ctx.public.contains(&self.symbol) {
             return Err(Reason::PublicExport);
         }
-        if has_syntactic_modifier(statement, ModifierFlags::EXPORT) {
+        if has_syntactic_modifier(statement, ModifierFlags::Export) {
             // Internal exports are read through other modules' bindings.
             return Err(Reason::Escapes);
         }
-        if statement.flags().intersects(NodeFlags::AMBIENT)
-            || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+        if statement.flags().intersects(NodeFlags::Ambient)
+            || has_syntactic_modifier(statement, ModifierFlags::Ambient)
         {
             return Err(Reason::DeclarationMerging);
         }
@@ -586,7 +586,7 @@ fn scalar(
         site.declaration.end() as usize,
         declarators.join(", "),
     )];
-    if list.flags().intersects(NodeFlags::CONST) {
+    if list.flags().intersects(NodeFlags::Const) {
         // Object properties and array elements widen literal types; `let`
         // keeps the same widening for the scalar bindings.
         let start = Ctx::start(list);
@@ -645,7 +645,7 @@ fn field_typing(
             .checker
             .ty(declared)
             .flags()
-            .intersects(TypeFlags::UNION)
+            .intersects(TypeFlags::Union)
         {
             // An indexed access on a union needs the key in every member.
             return Err(Reason::TypeConstraint);
@@ -691,7 +691,7 @@ fn field_typing(
         && value.elements().is_empty())
         || value.kind() == SyntaxKind::NullKeyword
         || (value.kind() == SyntaxKind::Identifier && value.text() == "undefined");
-    let narrows = flags.intersects(TypeFlags::UNION) && initial != field_type;
+    let narrows = flags.intersects(TypeFlags::Union) && initial != field_type;
     if !auto_typed && !narrows {
         return Ok(spelled.map_or(Typing::Plain, Typing::Annotate));
     }
@@ -708,26 +708,26 @@ fn field_typing(
 /// arrays of them, whose printed form needs no scope.
 fn printable(ctx: &mut Ctx, ty: TypeId) -> bool {
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::UNION) {
+    if flags.intersects(TypeFlags::Union) {
         let members = ctx.checker.ty(ty).types_list();
         return members.iter().all(|&member| printable(ctx, member));
     }
-    if flags.intersects(TypeFlags::ENUM_LIKE) {
+    if flags.intersects(TypeFlags::EnumLike) {
         return false;
     }
     if flags.intersects(
-        TypeFlags::STRING
-            | TypeFlags::NUMBER
-            | TypeFlags::BIG_INT
-            | TypeFlags::BOOLEAN
-            | TypeFlags::STRING_LITERAL
-            | TypeFlags::NUMBER_LITERAL
-            | TypeFlags::BIG_INT_LITERAL
-            | TypeFlags::BOOLEAN_LITERAL
-            | TypeFlags::NULL
-            | TypeFlags::UNDEFINED
-            | TypeFlags::VOID
-            | TypeFlags::NEVER,
+        TypeFlags::String
+            | TypeFlags::Number
+            | TypeFlags::BigInt
+            | TypeFlags::Boolean
+            | TypeFlags::StringLiteral
+            | TypeFlags::NumberLiteral
+            | TypeFlags::BigIntLiteral
+            | TypeFlags::BooleanLiteral
+            | TypeFlags::Null
+            | TypeFlags::Undefined
+            | TypeFlags::Void
+            | TypeFlags::Never,
     ) {
         return true;
     }
@@ -788,11 +788,11 @@ fn this_insensitive(ctx: &mut Ctx, target: SymbolId) -> bool {
     if declarations.is_empty() || declarations.iter().any(|&d| ctx.file_of_node(d).is_none()) {
         return false;
     }
-    if flags.intersects(SymbolFlags::CLASS) {
+    if flags.intersects(SymbolFlags::Class) {
         // Calling a class constructor throws regardless of `this`.
         return true;
     }
-    if flags.intersects(SymbolFlags::FUNCTION) {
+    if flags.intersects(SymbolFlags::Function) {
         return declarations.iter().all(|&d| {
             d.kind() == SyntaxKind::FunctionDeclaration
                 && (d.body().is_nil() || !uses_this(d.body()))
@@ -807,8 +807,8 @@ fn this_insensitive(ctx: &mut Ctx, target: SymbolId) -> bool {
 
 /// Whether a top-level statement runs no user code when evaluated.
 fn inert(ctx: &mut Ctx, statement: Node) -> bool {
-    if statement.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+    if statement.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(statement, ModifierFlags::Ambient)
     {
         return true;
     }
@@ -911,7 +911,7 @@ fn namespace(
         let local_symbol = if property.kind() == SyntaxKind::ShorthandPropertyAssignment {
             ctx.checker.get_shorthand_assignment_value_symbol(property)
         } else {
-            ctx.checker.get_symbol_at_location(identifier, false)
+            ctx.checker.get_symbol_at_location(identifier)
         };
         if local_symbol.is_nil() {
             return Err(Reason::UnsupportedSyntax);
@@ -1073,7 +1073,7 @@ fn immutable(ctx: &mut Ctx, target: SymbolId) -> Result<(), Reason> {
     if ctx.js_referenced.contains(&target) {
         return Err(Reason::ExternalBoundary);
     }
-    if flags.intersects(SymbolFlags::FUNCTION | SymbolFlags::CLASS) {
+    if flags.intersects(SymbolFlags::Function | SymbolFlags::Class) {
         if declarations.iter().all(|&d| {
             matches!(
                 d.kind(),
@@ -1089,7 +1089,7 @@ fn immutable(ctx: &mut Ctx, target: SymbolId) -> Result<(), Reason> {
         && declarations[0]
             .parent()
             .flags()
-            .intersects(NodeFlags::CONST)
+            .intersects(NodeFlags::Const)
     {
         return Ok(());
     }
@@ -1102,7 +1102,7 @@ fn local_only(ctx: &mut Ctx, target: SymbolId, file: usize) -> bool {
     let declarations = ctx.checker.sym(target).declarations.to_vec();
     let local = declarations.iter().all(|&d| {
         get_source_file_of_node(d) == ctx.files[file].node
-            && !get_combined_modifier_flags(d).intersects(ModifierFlags::EXPORT)
+            && !get_combined_modifier_flags(d).intersects(ModifierFlags::Export)
     });
     local
         && ctx

@@ -29,7 +29,6 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer},
@@ -39,6 +38,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -573,8 +573,8 @@ impl Planner<'_> {
             || list.parent().kind() != SyntaxKind::VariableStatement
             || list
                 .flags()
-                .intersects(NodeFlags::USING | NodeFlags::AMBIENT)
-            || list.parent().flags().intersects(NodeFlags::AMBIENT)
+                .intersects(NodeFlags::Using | NodeFlags::Ambient)
+            || list.parent().flags().intersects(NodeFlags::Ambient)
         {
             return;
         }
@@ -655,7 +655,7 @@ impl Planner<'_> {
             );
             return;
         }
-        let constant = list.flags().intersects(NodeFlags::CONST);
+        let constant = list.flags().intersects(NodeFlags::Const);
         let mut parts = Vec::new();
         for (index, &binding) in bindings.iter().enumerate() {
             if binding.kind() == SyntaxKind::OmittedExpression {
@@ -685,11 +685,11 @@ impl Planner<'_> {
                 // A `const` keeps the literal type; the destructured binding
                 // had the widened primitive type. The assertion is erased.
                 let flags = ctx.checker.ty(declared).flags();
-                let keyword = if flags.intersects(TypeFlags::NUMBER) {
+                let keyword = if flags.intersects(TypeFlags::Number) {
                     "number"
-                } else if flags.intersects(TypeFlags::STRING) {
+                } else if flags.intersects(TypeFlags::String) {
                     "string"
-                } else if flags.intersects(TypeFlags::BOOLEAN) {
+                } else if flags.intersects(TypeFlags::Boolean) {
                     "boolean"
                 } else {
                     self.skip(ctx, file, "destructuring", node, Reason::TypeConstraint);
@@ -718,28 +718,28 @@ fn comparable(ctx: &mut Ctx, value: Node, lit: &Lit) -> bool {
     type_constituents(ctx, t).into_iter().any(|c| {
         let ty = ctx.checker.ty(c);
         let flags = ty.flags();
-        if flags.intersects(TypeFlags::ANY | TypeFlags::UNKNOWN) {
+        if flags.intersects(TypeFlags::Any | TypeFlags::Unknown) {
             return true;
         }
         let literal =
-            if flags.intersects(TypeFlags::LITERAL) && !flags.intersects(TypeFlags::ENUM_LITERAL) {
-                ty.as_literal_type().value().cloned()
+            if flags.intersects(TypeFlags::Literal) && !flags.intersects(TypeFlags::EnumLiteral) {
+                ty.as_literal_type().value()
             } else {
                 None
             };
         match lit {
             Lit::Str(s) => {
                 flags.intersects(
-                    TypeFlags::STRING | TypeFlags::TEMPLATE_LITERAL | TypeFlags::STRING_MAPPING,
+                    TypeFlags::String | TypeFlags::TemplateLiteral | TypeFlags::StringMapping,
                 ) || matches!(&literal, Some(LiteralValue::String(v)) if v == s)
             }
             Lit::Num(n) => {
-                flags.intersects(TypeFlags::NUMBER)
+                flags.intersects(TypeFlags::Number)
                     || matches!(&literal, Some(LiteralValue::Number(v)) if v.0 == *n)
             }
-            Lit::Bool(b) => matches!(&literal, Some(LiteralValue::Bool(v)) if v == b),
-            Lit::Null => flags.intersects(TypeFlags::NULL),
-            Lit::Undefined => flags.intersects(TypeFlags::UNDEFINED | TypeFlags::VOID),
+            Lit::Bool(b) => matches!(&literal, Some(LiteralValue::Boolean(v)) if v == b),
+            Lit::Null => flags.intersects(TypeFlags::Null),
+            Lit::Undefined => flags.intersects(TypeFlags::Undefined | TypeFlags::Void),
         }
     })
 }

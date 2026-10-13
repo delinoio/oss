@@ -29,7 +29,6 @@
 //!   disappear; an effectful one stays as an expression statement when it is
 //!   the final statement; otherwise the function is preserved.
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
@@ -39,6 +38,7 @@ use super::{
     },
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -363,7 +363,7 @@ fn result_unused(function: &Function, site: &CallSite) -> bool {
 fn result_candidate(ctx: &mut Ctx, function: &Function, calls: &[CallSite]) -> Option<Candidate> {
     let node = function.node;
     let flags = get_function_flags(node);
-    if flags.intersects(FunctionFlags::ASYNC | FunctionFlags::GENERATOR) {
+    if flags.intersects(FunctionFlags::Async | FunctionFlags::Generator) {
         return None;
     }
     let annotation = node.type_();

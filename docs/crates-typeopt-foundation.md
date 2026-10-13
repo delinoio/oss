@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust, with Node.js 24 for fixture execution and integration tooling. Pin `ts_goport` to upstream revision `a1dc8be88dfb837b4fb199d4355fa0a4d9eced96`; manually validate upstream changes. Keep optimizer code separate from upstream compiler code. Initial distribution is Cargo source builds for macOS arm64 and Linux x64.
+Rust, with Node.js 24 for fixture execution and integration tooling. Pin the tsrs compiler crates to upstream revision `00f16261082fbb2465f0603c667b450d5aa6694b`; manually validate upstream changes. Keep optimizer code separate from upstream compiler code. Initial distribution is Cargo source builds for macOS arm64 and Linux x64.
 
 ## Users and Operators
 
@@ -42,7 +42,7 @@ Edits apply to the chunk text, and the size gate compares the edited chunk text 
 
 ## Storage
 
-One-shot, in-memory analysis; no daemon, watch mode or persistent cache. Each round rebuilds the program from in-memory texts; as in `tsc --watch`, parses of files that an earlier program published are freeable file versions that own their nodes (`ts_goport::ast::set_watch_process` and `program::mark_freeable_parses`), so releasing a program frees its parses. A recheck releases the program of the previous recheck before it builds the next one, because later plans and rechecks do not read it. `GOPORT_FREE_FILE_VERSIONS=0` or `GOPORT_OWNED_NODES=0` turns this off. Never modify input files or an existing output destination. Stage output in an operation-owned temporary directory and publish without replacing an existing destination. Error and cancellation paths return failure, remove owned temporary artifacts and never publish a complete result.
+One-shot, in-memory analysis; no daemon, watch mode or persistent cache. Each round rebuilds the program from in-memory texts in an operation-owned allocation region. Release checker handles and the unshared program before freeing its region. Keep the checker single-threaded, leaf-file reclamation disabled and checker recycling disabled so analysis, rechecks and emit never read freed compiler objects. Compiler-owned identities never escape the private adapter. Never modify input files or an existing output destination. Stage output in an operation-owned temporary directory and publish without replacing an existing destination. Error and cancellation paths return failure, remove owned temporary artifacts and never publish a complete result.
 
 ## Security
 
@@ -64,7 +64,7 @@ Chromium acceptance compares drawing shapes/freehand, text/move/resize edits, un
 
 ## Dependencies and Integrations
 
-Use immutable ts-rust input and preserve all upstream licenses/notices. Repository-owned code is Apache-2.0. Vite and Excalidraw are validation integrations; the CLI never launches them. Public Rust/Node APIs, library declaration transformation, CommonJS output, JavaScript optimization outside bundle mode, prebuilt distributions and other platforms are out of scope.
+Use immutable tsrs input and preserve all upstream licenses/notices. Repository-owned code is Apache-2.0. Vite and Excalidraw are validation integrations; the CLI never launches them. Public Rust/Node APIs, library declaration transformation, CommonJS output, JavaScript optimization outside bundle mode, prebuilt distributions and other platforms are out of scope.
 
 ## Change Triggers
 

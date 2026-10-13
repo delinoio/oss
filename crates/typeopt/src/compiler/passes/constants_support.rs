@@ -21,10 +21,8 @@
 //!   surrounding code is unchanged.
 use std::collections::{BTreeSet, HashSet};
 
-use ts_goport::prelude::*;
-
 use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
-use crate::plan::Reason;
+use crate::{compiler::api::*, plan::Reason};
 
 /// Strongly connected components of the application import graph that
 /// survives TypeScript import elision. Extra edges only make components
@@ -43,7 +41,7 @@ impl ModuleGraph {
         let options = ctx.checker.compiler_options;
         let keep_all =
             options.verbatim_module_syntax.is_true() || options.emit_decorator_metadata.is_true();
-        let classic_jsx = options.jsx == JsxEmit::REACT;
+        let classic_jsx = options.jsx == JsxEmit::React;
         let mut edges = vec![Vec::new(); count];
         let mut incomplete = false;
         for file in 0..count {
@@ -108,7 +106,7 @@ impl ModuleGraph {
 }
 
 fn is_json_or_external(ctx: &mut Ctx, specifier: Node) -> bool {
-    let symbol = ctx.checker.get_symbol_at_location(specifier, true);
+    let symbol = ctx.checker.get_symbol_at_location(specifier);
     if symbol.is_nil() {
         return false;
     }
@@ -126,7 +124,7 @@ pub(super) fn resolve_module(ctx: &mut Ctx, specifier: Node) -> Option<usize> {
     if specifier.is_nil() {
         return None;
     }
-    let symbol = ctx.checker.get_symbol_at_location(specifier, true);
+    let symbol = ctx.checker.get_symbol_at_location(specifier);
     if symbol.is_nil() {
         return None;
     }
@@ -337,8 +335,8 @@ pub(super) fn inert_prefix(ctx: &mut Ctx, file: usize, statement: Node) -> bool 
 }
 
 fn inert_statement(ctx: &mut Ctx, statement: Node) -> bool {
-    if statement.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+    if statement.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(statement, ModifierFlags::Ambient)
     {
         return true;
     }
@@ -706,7 +704,7 @@ pub(super) fn classify(ctx: &mut Ctx, symbol: SymbolId, object_builtins: bool) -
                             .checker
                             .sym(symbol)
                             .flags
-                            .intersects(SymbolFlags::VALUE_MODULE)
+                            .intersects(SymbolFlags::ValueModule)
                     {
                         uses.escape.get_or_insert((r.file, node));
                         continue;
@@ -1143,7 +1141,7 @@ pub(super) fn member_type(receiver: &str, name: &str) -> String {
 /// printed on its own so no type alias name appears.
 pub(super) fn print_type(ctx: &mut Ctx, ty: TypeId) -> Option<String> {
     let flags = ctx.checker.ty(ty).flags;
-    if flags.intersects(TypeFlags::UNION) {
+    if flags.intersects(TypeFlags::Union) {
         let members = ctx.checker.ty(ty).types_list();
         if members.len() > 64 {
             return None;
@@ -1158,20 +1156,20 @@ pub(super) fn print_type(ctx: &mut Ctx, ty: TypeId) -> Option<String> {
 }
 
 fn print_single(ctx: &mut Ctx, ty: TypeId) -> Option<String> {
-    let printable = TypeFlags::STRING
-        | TypeFlags::NUMBER
-        | TypeFlags::BOOLEAN
-        | TypeFlags::BIG_INT
-        | TypeFlags::STRING_LITERAL
-        | TypeFlags::NUMBER_LITERAL
-        | TypeFlags::BOOLEAN_LITERAL
-        | TypeFlags::BIG_INT_LITERAL
-        | TypeFlags::NULL
-        | TypeFlags::UNDEFINED
-        | TypeFlags::ANY;
+    let printable = TypeFlags::String
+        | TypeFlags::Number
+        | TypeFlags::Boolean
+        | TypeFlags::BigInt
+        | TypeFlags::StringLiteral
+        | TypeFlags::NumberLiteral
+        | TypeFlags::BooleanLiteral
+        | TypeFlags::BigIntLiteral
+        | TypeFlags::Null
+        | TypeFlags::Undefined
+        | TypeFlags::Any;
     let flags = ctx.checker.ty(ty).flags;
     if !flags.intersects(printable)
-        || flags.intersects(TypeFlags::ENUM_LIKE | TypeFlags::UNION)
+        || flags.intersects(TypeFlags::EnumLike | TypeFlags::Union)
         || ctx.checker.ty(ty).alias.is_some()
     {
         return None;
@@ -1268,7 +1266,7 @@ pub(super) fn asi_hazard(text: &str, site: Node) -> bool {
 /// literal: JSX tag names, decorators, heritage clauses, `new` callees and
 /// optional chains.
 pub(super) fn replaceable(access: Node) -> bool {
-    if access.question_dot_token().is_some() || access.flags().intersects(NodeFlags::OPTIONAL_CHAIN)
+    if access.question_dot_token().is_some() || access.flags().intersects(NodeFlags::OptionalChain)
     {
         return false;
     }
@@ -1304,8 +1302,8 @@ pub(super) fn erased_computed_name(access: Node) -> bool {
     ) || matches!(
         container.kind(),
         SyntaxKind::InterfaceDeclaration | SyntaxKind::TypeLiteral
-    ) || member.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(member, ModifierFlags::AMBIENT | ModifierFlags::ABSTRACT)
+    ) || member.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(member, ModifierFlags::Ambient | ModifierFlags::Abstract)
         || (matches!(
             member.kind(),
             SyntaxKind::MethodDeclaration

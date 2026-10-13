@@ -8,8 +8,6 @@
 //! static import graph. Checker types never decide safety on their own.
 use std::collections::{HashMap, HashSet};
 
-use ts_goport::prelude::*;
-
 use super::{
     super::{
         analysis::{Ctx, RefKind},
@@ -17,6 +15,7 @@ use super::{
     },
     calls_init::InitCheck,
 };
+use crate::compiler::api::*;
 
 /// Canonical identity of a symbol for scope comparisons: the exported
 /// symbol of an exported local, alias targets and merged symbols.
@@ -51,8 +50,8 @@ pub(super) fn resolve_at(
 pub(super) fn type_only_alias_at(ctx: &mut Ctx, name: &str, location: Node) -> bool {
     let raw = ctx
         .checker
-        .resolve_name_exported(name, location, SymbolFlags::VALUE, false);
-    if raw.is_nil() || !ctx.checker.sym(raw).flags.intersects(SymbolFlags::ALIAS) {
+        .resolve_name_exported(name, location, SymbolFlags::Value, false);
+    if raw.is_nil() || !ctx.checker.sym(raw).flags.intersects(SymbolFlags::Alias) {
         return false;
     }
     ctx.checker
@@ -104,7 +103,7 @@ impl Facts {
         {
             return None;
         }
-        let symbol = ctx.checker.get_symbol_at_location(specifier, true);
+        let symbol = ctx.checker.get_symbol_at_location(specifier);
         if symbol.is_nil() {
             return None;
         }
@@ -200,13 +199,13 @@ impl Facts {
             return false;
         }
         let list = declaration.parent();
-        if !list.flags().intersects(NodeFlags::CONST) || list.flags().intersects(NodeFlags::USING) {
+        if !list.flags().intersects(NodeFlags::Const) || list.flags().intersects(NodeFlags::Using) {
             return false;
         }
         let statement = list.parent();
         if statement.kind() != SyntaxKind::VariableStatement
             || statement.parent().kind() != SyntaxKind::SourceFile
-            || statement.flags().intersects(NodeFlags::AMBIENT)
+            || statement.flags().intersects(NodeFlags::Ambient)
         {
             return false;
         }
@@ -265,7 +264,7 @@ impl Facts {
             return false;
         }
         let declaration = ctx.checker.sym(symbol).value_declaration;
-        if declaration.is_nil() || declaration.flags().intersects(NodeFlags::AMBIENT) {
+        if declaration.is_nil() || declaration.flags().intersects(NodeFlags::Ambient) {
             return false;
         }
         match declaration.kind() {
@@ -275,7 +274,7 @@ impl Facts {
                     && declaration.name().text() != "this"
             }
             SyntaxKind::VariableDeclaration => {
-                declaration.parent().flags().intersects(NodeFlags::CONST)
+                declaration.parent().flags().intersects(NodeFlags::Const)
                     && (ctx.is_pure(node) || self.initialized_early(ctx, symbol))
             }
             _ => false,
@@ -550,7 +549,7 @@ pub(super) fn this_is_initialized(node: Node) -> bool {
 /// parentheses. Optional chains are excluded because a continuation would
 /// join the chain.
 pub(super) fn primary(node: Node) -> bool {
-    if node.flags().intersects(NodeFlags::OPTIONAL_CHAIN) {
+    if node.flags().intersects(NodeFlags::OptionalChain) {
         return false;
     }
     matches!(
@@ -809,7 +808,7 @@ fn module_indicator(statement: Node) -> bool {
             | SyntaxKind::ImportEqualsDeclaration
             | SyntaxKind::ExportDeclaration
             | SyntaxKind::ExportAssignment
-    ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT)
+    ) || has_syntactic_modifier(statement, ModifierFlags::Export)
 }
 
 /// Appends `export {};` to modules whose every import and export statement
@@ -913,7 +912,7 @@ pub(super) fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) ->
             || ctx
                 .checker
                 .get_symbol_flags(symbol)
-                .intersects(SymbolFlags::VALUE)
+                .intersects(SymbolFlags::Value)
     })
 }
 

@@ -46,10 +46,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::super::analysis::{Ctx, skip_outer};
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -205,7 +205,7 @@ fn union_members(ctx: &mut Ctx, alias: Node) -> Option<(Vec<Node>, Vec<SymbolId>
                     return None;
                 };
                 let file = ctx.file_of_node(*declaration)?;
-                if ctx.files[file].js || declaration.flags().intersects(NodeFlags::AMBIENT) {
+                if ctx.files[file].js || declaration.flags().intersects(NodeFlags::Ambient) {
                     return None;
                 }
                 match declaration.kind() {
@@ -272,7 +272,7 @@ fn nominate(ctx: &mut Ctx) -> Vec<Domain> {
         let nodes = ctx.files[file].nodes.clone();
         for node in nodes {
             if node.kind() != SyntaxKind::TypeAliasDeclaration
-                || node.flags().intersects(NodeFlags::AMBIENT)
+                || node.flags().intersects(NodeFlags::Ambient)
             {
                 continue;
             }
@@ -461,7 +461,7 @@ impl TypeIndex {
                         if node.expression().kind() == SyntaxKind::ImportKeyword =>
                     {
                         if let Some(argument) = node.arguments().first() {
-                            let symbol = ctx.checker.get_symbol_at_location(argument, true);
+                            let symbol = ctx.checker.get_symbol_at_location(argument);
                             let target = if symbol.is_nil() {
                                 None
                             } else {
@@ -655,10 +655,10 @@ impl<'d> Proof<'d> {
         // Global declarations are reachable from modules outside the scope.
         for &symbol in &index.globals {
             let flags = ctx.checker.sym(symbol).flags;
-            let ty = if flags.intersects(SymbolFlags::VALUE) {
+            let ty = if flags.intersects(SymbolFlags::Value) {
                 ctx.checker.get_type_of_symbol(symbol)
             } else if flags
-                .intersects(SymbolFlags::CLASS | SymbolFlags::INTERFACE | SymbolFlags::TYPE_ALIAS)
+                .intersects(SymbolFlags::Class | SymbolFlags::Interface | SymbolFlags::TypeAlias)
             {
                 ctx.checker.get_declared_type_of_symbol(symbol)
             } else {
@@ -687,8 +687,8 @@ impl<'d> Proof<'d> {
         if ty.is_nil() {
             return Ok(false);
         }
-        let parts: Vec<TypeId> = if ctx.checker.ty(ty).flags().intersects(TypeFlags::UNION) {
-            ctx.checker.ty(ty).types_list().iter().copied().collect()
+        let parts: Vec<TypeId> = if ctx.checker.ty(ty).flags().intersects(TypeFlags::Union) {
+            ctx.checker.ty(ty).types_list().to_vec()
         } else {
             vec![ty]
         };
@@ -698,7 +698,7 @@ impl<'d> Proof<'d> {
                 .checker
                 .ty(part)
                 .flags()
-                .intersects(TypeFlags::OBJECT | TypeFlags::INTERSECTION)
+                .intersects(TypeFlags::Object | TypeFlags::Intersection)
             {
                 continue;
             }
@@ -790,7 +790,7 @@ impl<'d> Proof<'d> {
             let entries = ctx.checker.symbols.values(exports);
             for export in entries {
                 let target = ctx.skip_alias(export);
-                if target.is_nil() || !ctx.checker.sym(target).flags.intersects(SymbolFlags::VALUE)
+                if target.is_nil() || !ctx.checker.sym(target).flags.intersects(SymbolFlags::Value)
                 {
                     continue;
                 }
@@ -850,15 +850,15 @@ impl<'d> Proof<'d> {
 
     fn compute_carries(&mut self, ctx: &mut Ctx, t: TypeId) -> bool {
         let flags = ctx.checker.ty(t).flags();
-        if flags.intersects(TypeFlags::UNION | TypeFlags::INTERSECTION) {
+        if flags.intersects(TypeFlags::Union | TypeFlags::Intersection) {
             let parts = ctx.checker.ty(t).types_list();
             return parts.iter().any(|&p| self.carries(ctx, p));
         }
-        if flags.intersects(TypeFlags::INSTANTIABLE) {
+        if flags.intersects(TypeFlags::Instantiable) {
             let constraint = ctx.checker.get_base_constraint_of_type(t);
             return constraint != t && self.carries(ctx, constraint);
         }
-        if !flags.intersects(TypeFlags::OBJECT) {
+        if !flags.intersects(TypeFlags::Object) {
             return false;
         }
         let symbol = ctx.checker.ty(t).symbol;
@@ -871,7 +871,7 @@ impl<'d> Proof<'d> {
             return true;
         }
         let object_flags = ctx.checker.ty(t).object_flags();
-        if object_flags.intersects(ObjectFlags::REFERENCE) {
+        if object_flags.intersects(ObjectFlags::Reference) {
             let arguments = ctx.checker.get_type_arguments(t);
             if arguments.iter().any(|&a| self.carries(ctx, a)) {
                 return true;
@@ -881,7 +881,7 @@ impl<'d> Proof<'d> {
             !declarations.is_empty() && declarations.iter().all(|&d| ctx.file_of_node(d).is_none());
         if (declarations.is_empty() || external)
             && !object_flags.intersects(
-                ObjectFlags::INSTANTIATED | ObjectFlags::MAPPED | ObjectFlags::REVERSE_MAPPED,
+                ObjectFlags::Instantiated | ObjectFlags::Mapped | ObjectFlags::ReverseMapped,
             )
         {
             // A non-generic library type cannot mention application types.
@@ -903,7 +903,7 @@ impl<'d> Proof<'d> {
                 return true;
             }
         }
-        for kind in [SignatureKind::CALL, SignatureKind::CONSTRUCT] {
+        for kind in [SignatureKind::Call, SignatureKind::Construct] {
             let signatures = ctx.checker.get_signatures_of_type(t, kind);
             for &signature in signatures.iter() {
                 if self.signature_carries(ctx, signature) {
@@ -953,7 +953,7 @@ impl<'d> Proof<'d> {
             let Some(tag) = tag else {
                 continue;
             };
-            let contextual = ctx.checker.get_contextual_type(node, ContextFlags::NONE);
+            let contextual = ctx.checker.get_contextual_type(node, ContextFlags::None);
             if contextual.is_nil() {
                 continue;
             }
@@ -1009,7 +1009,7 @@ impl<'d> Proof<'d> {
         if name.text() != self.domain.key {
             return Ok(false);
         }
-        let symbol = ctx.checker.get_symbol_at_location(name, false);
+        let symbol = ctx.checker.get_symbol_at_location(name);
         self.tag_symbol(ctx, symbol)
     }
 
@@ -1214,7 +1214,7 @@ impl<'d> Proof<'d> {
     }
 
     fn arguments_object(&mut self, ctx: &mut Ctx, node: Node) -> Proven<()> {
-        let symbol = ctx.checker.get_symbol_at_location(node, false);
+        let symbol = ctx.checker.get_symbol_at_location(node);
         let declaration = if symbol.is_nil() {
             Node::NIL
         } else {
@@ -1245,7 +1245,7 @@ impl<'d> Proof<'d> {
                 let dest = if node.type_().is_some() {
                     ctx.checker.get_type_from_type_node(node.type_())
                 } else if node.name().kind() == SyntaxKind::Identifier {
-                    let symbol = ctx.checker.get_symbol_at_location(node.name(), false);
+                    let symbol = ctx.checker.get_symbol_at_location(node.name());
                     if symbol.is_nil() {
                         return Ok(());
                     }
@@ -1277,14 +1277,14 @@ impl<'d> Proof<'d> {
                 let target = skip_outer(node.left());
                 let dest = match target.kind() {
                     SyntaxKind::Identifier => {
-                        let symbol = ctx.checker.get_symbol_at_location(target, false);
+                        let symbol = ctx.checker.get_symbol_at_location(target);
                         if symbol.is_nil() {
                             return Err(Reason::UnresolvedCall);
                         }
                         ctx.checker.get_type_of_symbol(symbol)
                     }
                     SyntaxKind::PropertyAccessExpression => {
-                        let symbol = ctx.checker.get_symbol_at_location(target.name(), false);
+                        let symbol = ctx.checker.get_symbol_at_location(target.name());
                         if symbol.is_nil() {
                             ctx.checker.get_type_at_location(target)
                         } else {
@@ -1315,13 +1315,13 @@ impl<'d> Proof<'d> {
             SyntaxKind::PropertyAssignment => {
                 let dest = ctx
                     .checker
-                    .get_contextual_type(node.initializer(), ContextFlags::NONE);
+                    .get_contextual_type(node.initializer(), ContextFlags::None);
                 self.edge(ctx, node.initializer(), dest)
             }
             SyntaxKind::ShorthandPropertyAssignment => {
                 let dest = ctx
                     .checker
-                    .get_contextual_type(node.name(), ContextFlags::NONE);
+                    .get_contextual_type(node.name(), ContextFlags::None);
                 self.edge(ctx, node.name(), dest)
             }
             SyntaxKind::ArrayLiteralExpression => {
@@ -1332,7 +1332,7 @@ impl<'d> Proof<'d> {
                     {
                         continue;
                     }
-                    let dest = ctx.checker.get_contextual_type(element, ContextFlags::NONE);
+                    let dest = ctx.checker.get_contextual_type(element, ContextFlags::None);
                     self.edge(ctx, element, dest)?;
                 }
                 Ok(())
@@ -1382,7 +1382,7 @@ impl<'d> Proof<'d> {
             }
             return Ok(());
         }
-        if get_combined_modifier_flags(function).intersects(ModifierFlags::ASYNC) {
+        if get_combined_modifier_flags(function).intersects(ModifierFlags::Async) {
             // An async function settles its promise with the value.
             dest = awaited(ctx, dest);
         }
@@ -1663,10 +1663,10 @@ impl<'d> Proof<'d> {
         if depth > 2 || src == dest {
             return Ok(());
         }
-        let src_signatures = ctx.checker.get_signatures_of_type(src, SignatureKind::CALL);
+        let src_signatures = ctx.checker.get_signatures_of_type(src, SignatureKind::Call);
         let dest_signatures = ctx
             .checker
-            .get_signatures_of_type(dest, SignatureKind::CALL);
+            .get_signatures_of_type(dest, SignatureKind::Call);
         if !dest_signatures.is_empty() {
             for &target in dest_signatures.iter() {
                 let target_parameters = ctx.checker.sig(target).parameters.clone();
@@ -1704,20 +1704,21 @@ impl<'d> Proof<'d> {
                 .iter()
                 .any(|&d| ctx.file_of_node(d).is_some());
         if application
-            && src_flags.intersects(TypeFlags::OBJECT)
-            && dest_flags.intersects(TypeFlags::OBJECT)
+            && src_flags.intersects(TypeFlags::Object)
+            && dest_flags.intersects(TypeFlags::Object)
         {
             let properties = ctx.checker.get_properties_of_type(dest);
             for &property in properties.iter() {
                 let dest_ty = ctx.checker.get_type_of_symbol(property);
                 if ctx
                     .checker
-                    .get_signatures_of_type(dest_ty, SignatureKind::CALL)
+                    .get_signatures_of_type(dest_ty, SignatureKind::Call)
                     .is_empty()
                 {
                     continue;
                 }
-                let name = ctx.checker.sym(property).name.as_str();
+                let property_info = ctx.checker.sym(property);
+                let name = property_info.name.as_str();
                 let own = ctx.checker.get_property_of_type(src, name);
                 if own.is_nil() {
                     continue;
@@ -1903,7 +1904,7 @@ fn awaited(ctx: &mut Ctx, ty: TypeId) -> TypeId {
             .checker
             .ty(ty)
             .object_flags()
-            .intersects(ObjectFlags::REFERENCE)
+            .intersects(ObjectFlags::Reference)
         && let Some(&inner) = ctx.checker.get_type_arguments(ty).first()
     {
         return inner;
@@ -1914,7 +1915,7 @@ fn awaited(ctx: &mut Ctx, ty: TypeId) -> TypeId {
 /// Whether a type is a built-in collection declared by the library.
 fn library_collection(ctx: &mut Ctx, ty: TypeId) -> bool {
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::UNION | TypeFlags::INTERSECTION) {
+    if flags.intersects(TypeFlags::Union | TypeFlags::Intersection) {
         let parts = ctx.checker.ty(ty).types_list();
         return !parts.is_empty() && parts.iter().all(|&p| library_collection(ctx, p));
     }
@@ -1925,7 +1926,8 @@ fn library_collection(ctx: &mut Ctx, ty: TypeId) -> bool {
     if symbol.is_nil() {
         return false;
     }
-    let name = ctx.checker.sym(symbol).name.as_str();
+    let symbol_info = ctx.checker.sym(symbol);
+    let name = symbol_info.name.as_str();
     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
     COLLECTIONS.contains(&name)
         && !declarations.is_empty()
@@ -1941,7 +1943,7 @@ fn library_iterable(ctx: &mut Ctx, ty: TypeId) -> bool {
 /// Whether an identifier resolves to a library global, not an application
 /// binding that shadows it.
 fn global_library_symbol(ctx: &mut Ctx, identifier: Node) -> bool {
-    let symbol = ctx.checker.get_symbol_at_location(identifier, false);
+    let symbol = ctx.checker.get_symbol_at_location(identifier);
     if symbol.is_nil() {
         return false;
     }
@@ -1952,17 +1954,17 @@ fn global_library_symbol(ctx: &mut Ctx, identifier: Node) -> bool {
 /// Primitive and literal values carry no object identity or properties.
 fn plain_data(ctx: &mut Ctx, ty: TypeId) -> bool {
     let flags = ctx.checker.ty(ty).flags();
-    if flags.intersects(TypeFlags::UNION) {
+    if flags.intersects(TypeFlags::Union) {
         let parts = ctx.checker.ty(ty).types_list();
         return parts.iter().all(|&p| plain_data(ctx, p));
     }
     !flags.intersects(
-        TypeFlags::OBJECT
-            | TypeFlags::ANY
-            | TypeFlags::UNKNOWN
-            | TypeFlags::NON_PRIMITIVE
-            | TypeFlags::INSTANTIABLE
-            | TypeFlags::INTERSECTION,
+        TypeFlags::Object
+            | TypeFlags::Any
+            | TypeFlags::Unknown
+            | TypeFlags::NonPrimitive
+            | TypeFlags::Instantiable
+            | TypeFlags::Intersection,
     )
 }
 

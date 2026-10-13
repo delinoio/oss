@@ -32,7 +32,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
-use ts_goport::prelude::*;
 
 use super::{
     super::{
@@ -42,6 +41,7 @@ use super::{
     deadcode_support::{Exposure, Keys, list_removals, module_index, removal_start, within},
 };
 use crate::{
+    compiler::api::*,
     passes::{PassId, PassSet},
     plan::{Candidate, FileEdit, Plan, Reason},
 };
@@ -227,24 +227,24 @@ fn eligibility(ctx: &mut Ctx, exposure: &Exposure, unit: &Unit) -> Option<Reason
     if !expected {
         return Some(Reason::DeclarationMerging);
     }
-    if statement.flags().intersects(NodeFlags::AMBIENT)
-        || has_syntactic_modifier(statement, ModifierFlags::AMBIENT)
+    if statement.flags().intersects(NodeFlags::Ambient)
+        || has_syntactic_modifier(statement, ModifierFlags::Ambient)
     {
         return Some(Reason::DeclarationMerging);
     }
-    if has_syntactic_modifier(statement, ModifierFlags::DEFAULT) {
+    if has_syntactic_modifier(statement, ModifierFlags::Default) {
         return Some(Reason::UnsupportedSyntax);
     }
-    if has_syntactic_modifier(statement, ModifierFlags::EXPORT) && exposure.observed(unit.file) {
+    if has_syntactic_modifier(statement, ModifierFlags::Export) && exposure.observed(unit.file) {
         return Some(Reason::Reflection);
     }
     let pure = match unit.kind {
         UnitKind::Function => true,
         UnitKind::Variable => {
             // `using` and `await using` dispose their value at scope exit.
-            let scoped = unit.node.parent().flags() & NodeFlags::BLOCK_SCOPED;
-            scoped != NodeFlags::USING
-                && scoped != NodeFlags::AWAIT_USING
+            let scoped = unit.node.parent().flags() & NodeFlags::BlockScoped;
+            scoped != NodeFlags::Using
+                && scoped != NodeFlags::AwaitUsing
                 && (unit.node.initializer().is_nil() || ctx.is_pure(unit.node.initializer()))
         }
         UnitKind::Enum => unit.node.members().iter().all(|member| {
@@ -657,7 +657,7 @@ fn keep_modules(ctx: &Ctx, candidate: &mut Candidate) {
                 SyntaxKind::ImportDeclaration
                     | SyntaxKind::ExportDeclaration
                     | SyntaxKind::ExportAssignment
-            ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT);
+            ) || has_syntactic_modifier(statement, ModifierFlags::Export);
             indicator && !deleted(statement)
         });
         if !module {

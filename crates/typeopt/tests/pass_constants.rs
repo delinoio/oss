@@ -681,3 +681,14 @@ fn disabled_constant_pass_never_runs() {
     assert!(main.contains("THEME."), "{main}");
     assert!(main.contains("Limits.MAX"), "{main}");
 }
+
+#[test]
+fn object_truthiness_in_if_conditions_preserves_the_binding() {
+    let temp = project(&[(
+        "main.ts",
+        r#"const options = { descriptiveValue: 42 };
+if (options) console.log(options.descriptiveValue);
+"#,
+    )]);
+    optimize_same(temp.path(), &args(&only(&[CONST])));
+}

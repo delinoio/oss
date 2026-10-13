@@ -16,9 +16,8 @@
 //! planners share (precedence, statement boundaries and type neutrality).
 use std::collections::{HashMap, HashSet};
 
-use ts_goport::prelude::*;
-
 use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
+use crate::compiler::api::*;
 
 /// Possible runtime kinds of a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -588,7 +587,7 @@ impl Facts {
             && !declaration
                 .parent()
                 .flags()
-                .intersects(NodeFlags::BLOCK_SCOPED)
+                .intersects(NodeFlags::BlockScoped)
             && !initialized_before(declaration, node)
         {
             // A `var` read before its initializer runs sees `undefined`.
@@ -607,7 +606,7 @@ impl Facts {
             && declaration
                 .parent()
                 .flags()
-                .intersects(NodeFlags::BLOCK_SCOPED);
+                .intersects(NodeFlags::BlockScoped);
         (block_scoped || declaration.kind() == SyntaxKind::Parameter)
             && declaration.name().kind() == SyntaxKind::Identifier
             && !ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Write)
@@ -634,7 +633,7 @@ impl Facts {
             return Fact::top();
         }
         let declaration = declarations[0];
-        if declaration.flags().intersects(NodeFlags::AMBIENT)
+        if declaration.flags().intersects(NodeFlags::Ambient)
             || !ctx
                 .file_of_node(declaration)
                 .is_some_and(|f| !ctx.files[f].js)
@@ -655,7 +654,7 @@ impl Facts {
                 }
                 let init = declaration.initializer();
                 if init.is_nil() {
-                    return if list.flags().intersects(NodeFlags::CONST | NodeFlags::USING) {
+                    return if list.flags().intersects(NodeFlags::Const | NodeFlags::Using) {
                         Fact::top()
                     } else {
                         Fact::lit(Lit::Undefined)
@@ -1158,7 +1157,7 @@ pub(super) fn closed_function_symbol(ctx: &mut Ctx, function: Node) -> Option<Sy
             if declaration.kind() != SyntaxKind::VariableDeclaration
                 || declaration.initializer() != function
                 || declaration.name().kind() != SyntaxKind::Identifier
-                || !declaration.parent().flags().intersects(NodeFlags::CONST)
+                || !declaration.parent().flags().intersects(NodeFlags::Const)
             {
                 return None;
             }
@@ -1303,7 +1302,7 @@ pub(super) fn read_safe(ctx: &mut Ctx, read: Node) -> bool {
         SyntaxKind::FunctionDeclaration => true,
         SyntaxKind::VariableDeclaration => {
             let list = declaration.parent();
-            !list.flags().intersects(NodeFlags::BLOCK_SCOPED)
+            !list.flags().intersects(NodeFlags::BlockScoped)
                 || runs_after(ctx, declaration, read, &mut HashSet::new())
         }
         _ => false,
@@ -1722,8 +1721,8 @@ fn escapes_as_value(node: Node) -> bool {
 
 /// Checker-type kind classification for type neutrality decisions.
 pub(super) fn type_constituents(ctx: &mut Ctx, t: TypeId) -> Vec<TypeId> {
-    if ctx.checker.ty(t).flags().intersects(TypeFlags::UNION) {
-        ctx.checker.ty(t).types_list().iter().copied().collect()
+    if ctx.checker.ty(t).flags().intersects(TypeFlags::Union) {
+        ctx.checker.ty(t).types_list().to_vec()
     } else {
         vec![t]
     }
@@ -1738,12 +1737,12 @@ pub(super) fn type_non_nullable(ctx: &mut Ctx, node: Node) -> bool {
     }
     type_constituents(ctx, t).into_iter().all(|c| {
         !ctx.checker.ty(c).flags().intersects(
-            TypeFlags::NULL
-                | TypeFlags::UNDEFINED
-                | TypeFlags::VOID
-                | TypeFlags::UNKNOWN
-                | TypeFlags::NEVER
-                | TypeFlags::INSTANTIABLE,
+            TypeFlags::Null
+                | TypeFlags::Undefined
+                | TypeFlags::Void
+                | TypeFlags::Unknown
+                | TypeFlags::Never
+                | TypeFlags::Instantiable,
         )
     })
 }
@@ -1760,11 +1759,11 @@ pub(super) fn type_assertable(ctx: &mut Ctx, node: Node) -> bool {
     let mut present = false;
     for c in constituents {
         let flags = ctx.checker.ty(c).flags();
-        if flags.intersects(TypeFlags::UNKNOWN | TypeFlags::INSTANTIABLE) {
+        if flags.intersects(TypeFlags::Unknown | TypeFlags::Instantiable) {
             return false;
         }
         if !flags
-            .intersects(TypeFlags::NULL | TypeFlags::UNDEFINED | TypeFlags::VOID | TypeFlags::NEVER)
+            .intersects(TypeFlags::Null | TypeFlags::Undefined | TypeFlags::Void | TypeFlags::Never)
         {
             present = true;
         }
@@ -1798,12 +1797,12 @@ pub(super) fn same_type(ctx: &mut Ctx, a: Node, b: Node) -> bool {
     // A fresh array literal type is the array type once widened.
     skip_outer(b).kind() == SyntaxKind::ArrayLiteralExpression
         && tb.is_some()
-        && ctx.checker.ty(tb).flags().intersects(TypeFlags::OBJECT)
+        && ctx.checker.ty(tb).flags().intersects(TypeFlags::Object)
         && ctx
             .checker
             .ty(tb)
             .object_flags()
-            .intersects(ObjectFlags::ARRAY_LITERAL)
+            .intersects(ObjectFlags::ArrayLiteral)
         && ctx.checker.get_widened_type(tb) == ta
 }
 
@@ -2163,7 +2162,7 @@ pub(super) fn removes_narrowing_writes(ctx: &mut Ctx, file: usize, region: Node)
             return true;
         }
         let t = ctx.checker.get_type_of_symbol(symbol);
-        if t.is_nil() || ctx.checker.ty(t).flags().intersects(TypeFlags::UNION) {
+        if t.is_nil() || ctx.checker.ty(t).flags().intersects(TypeFlags::Union) {
             return true;
         }
         let _ = file;
@@ -2179,7 +2178,7 @@ pub(super) fn declares_hoisted(region: Node) -> bool {
     while let Some(node) = stack.pop() {
         match node.kind() {
             SyntaxKind::VariableDeclarationList
-                if !node.flags().intersects(NodeFlags::BLOCK_SCOPED) =>
+                if !node.flags().intersects(NodeFlags::BlockScoped) =>
             {
                 found = true;
             }
@@ -2281,7 +2280,7 @@ pub(super) fn narrowing_neutral(
     let region_file = get_source_file_of_node(region);
     for symbol in symbols {
         let flags = ctx.checker.sym(symbol).flags;
-        if !flags.intersects(SymbolFlags::VARIABLE | SymbolFlags::PROPERTY) {
+        if !flags.intersects(SymbolFlags::Variable | SymbolFlags::Property) {
             continue;
         }
         let declared = ctx.checker.get_type_of_symbol(symbol);
