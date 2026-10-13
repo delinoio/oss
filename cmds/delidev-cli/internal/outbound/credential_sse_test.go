@@ -2,6 +2,7 @@
 package outbound
 
 import (
+	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
@@ -318,4 +319,86 @@ func TestCredentialTypelessUnknownFieldProbeRetainsBoundedState(t *testing.T) {
 	if output.String() != wire {
 		t.Fatal("bounded typeless framing changed safe SSE bytes")
 	}
+}
+
+func TestCredentialOpaqueMediaTypesDoNotDecodeJSONEscapes(t *testing.T) {
+	credential := domainCredentialFixture()
+	for _, mediaType := range []string{"application/vnd.github.diff", "application/vnd.github.v3.diff; charset=utf-8", "text/plain", "text/plain; charset=utf-8", "application/octet-stream"} {
+		for _, form := range []string{`\u0066ixture-password`, escapedCredential(credential.Password, false), escapedCredential(credential.Password, true)} {
+			wire := "diff --git a/f b/f\n+const s = \"" + form + "\"\n"
+			for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+				guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+				output, err := io.ReadAll(guard)
+				if err != nil || string(output) != wire || guard.jsonGuard.framing != credentialOpaque {
+					t.Fatal("opaque body was JSON-decoded", mediaType, err)
+				}
+				guard.Close()
+			}
+		}
+	}
+}
+
+func TestCredentialOpaqueMediaTypesStillRejectLiteralAndBase64(t *testing.T) {
+	credential := domainCredentialFixture()
+	forms := []string{
+		credential.Username,
+		credential.Password,
+		base64.StdEncoding.EncodeToString([]byte(credential.Username + ":" + credential.Password)),
+		base64.RawStdEncoding.EncodeToString([]byte(credential.Password)),
+		"Basic " + base64.StdEncoding.EncodeToString([]byte(credential.Username+":"+credential.Password)),
+	}
+	for _, mediaType := range []string{"application/vnd.github.diff", "text/plain"} {
+		for _, form := range forms {
+			wire := "context " + form + " tail"
+			for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+				guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+				output, err := io.ReadAll(guard)
+				if err == nil || strings.Contains(string(output), form) {
+					t.Fatal("opaque body reflected a protected value", mediaType, form)
+				}
+				guard.Close()
+			}
+		}
+	}
+}
+
+func TestCredentialJSONMediaTypesStillRejectEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	for _, mediaType := range []string{"application/json", "application/json; charset=utf-8", "application/vnd.github+json", "application/problem+json", "Application/JSON"} {
+		wire := `{"value":"\u0066ixture-password"}`
+		for _, reader := range []io.Reader{strings.NewReader(wire), fragmentedReader{strings.NewReader(wire)}} {
+			guard := newCredentialBody(io.NopCloser(reader), credential, mediaType)
+			output, err := io.ReadAll(guard)
+			if err == nil || strings.Contains(string(output), "fixture") {
+				t.Fatal("JSON media type accepted escaped reflection", mediaType)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialSSEDataStillRejectsEscapedReflections(t *testing.T) {
+	credential := domainCredentialFixture()
+	wire := "data: {\"value\":\"\\u0066ixture-password\"}\n\n"
+	guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(wire)}), credential, "text/event-stream")
+	if _, err := io.ReadAll(guard); err == nil {
+		t.Fatal("SSE data accepted escaped reflection")
+	}
+	guard.Close()
+}
+
+func TestCredentialOpaqueMediaTypesKeepShortTokenBounds(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "x", Password: "pass123"}
+	safe := "context passwords x-ray pass1234 tail"
+	guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(safe)}), credential, "text/plain")
+	output, err := io.ReadAll(guard)
+	if err != nil || string(output) != safe {
+		t.Fatal("opaque short token substring was rejected", err)
+	}
+	guard.Close()
+	guard = newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader("context pass123 tail")}), credential, "text/plain")
+	if _, err := io.ReadAll(guard); err == nil {
+		t.Fatal("opaque short token was accepted")
+	}
+	guard.Close()
 }

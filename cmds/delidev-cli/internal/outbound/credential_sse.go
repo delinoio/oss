@@ -14,12 +14,18 @@ const (
 	credentialUnknown credentialFraming = iota
 	credentialOrdinary
 	credentialSSE
+	// Opaque bodies (diffs, plain text, binary) are never JSON-decoded. The
+	// independent literal/Base64 body guard still covers their wire bytes.
+	credentialOpaque
 )
 
 // Select framing from the response media type when available. Otherwise retain
 // only a bounded initial line while checking typeless SSE syntax. Metadata never
 // enters the JSON decoder; the body literal guard still sees it.
 func (g *credentialJSONGuard) frame(b byte, offset int64) {
+	if g.framing == credentialOpaque {
+		return
+	}
 	if g.framing == credentialOrdinary {
 		g.feed(b, offset)
 		return

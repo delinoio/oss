@@ -35,11 +35,7 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 	if len(contentType) > 0 {
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
 		if err == nil && mediaType != "" {
-			if mediaType == "text/event-stream" {
-				g.jsonGuard.framing = credentialSSE
-			} else {
-				g.jsonGuard.framing = credentialOrdinary
-			}
+			g.jsonGuard.framing = credentialFramingForMediaType(mediaType)
 		}
 	}
 	for _, value := range []string{c.Username, c.Password, c.Username + ":" + c.Password} {
@@ -78,6 +74,30 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 	}
 
 	return g
+}
+
+// Choose the decoding framing for a parsed response media type. Only JSON media
+// types decode JSON string escapes, and SSE decodes only joined data fields.
+// Every other typed body is opaque: its source text is not JSON, so escape-like
+// sequences are literal content and only wire-form matching applies.
+func credentialFramingForMediaType(mediaType string) credentialFraming {
+	mediaType = strings.ToLower(mediaType)
+	switch {
+	case mediaType == "text/event-stream":
+		return credentialSSE
+	case credentialJSONMediaType(mediaType):
+		return credentialOrdinary
+	default:
+		return credentialOpaque
+	}
+}
+
+func credentialJSONMediaType(mediaType string) bool {
+	switch mediaType {
+	case "application/json", "text/json", "application/x-ndjson", "application/jsonl", "application/x-jsonlines":
+		return true
+	}
+	return strings.HasSuffix(mediaType, "+json")
 }
 
 // Headers are complete independent values; response reads also carry the last
