@@ -125,6 +125,14 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 	if f.GeneralChat {
 		where += " AND project_id=''"
 	}
+	if f.SubscriptionService != "" {
+		// Service identity lives only in the immutable source body (no column,
+		// no migration). Select it before the read bound so valid excluded rows
+		// cannot consume limits meant for the selected inventory. This mirrors
+		// Attribution(): an OpenCode record wins, otherwise the Claude observation.
+		where += " AND CASE WHEN json_type(body,'$.opencode')='object' THEN json_extract(body,'$.opencode.subscription_service') ELSE json_extract(body,'$.observation.subscription_service') END=?"
+		args = append(args, f.SubscriptionService)
+	}
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT id,source_id,session_id,project_id,execution_id,input_id,account_id,provider_id,model_key,body,estimate,COALESCE(pricing_id,''),created_at FROM native_accounting WHERE kind=? AND `+where+` ORDER BY created_at,id LIMIT ?`, append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return v, storageError(err)
@@ -197,11 +205,11 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		if string(left) != string(right) {
 			return domain.NativeAccountingSummary{}, corrupt()
 		}
-		// Service identity stays in the immutable source body. Validate the row
-		// and historical estimate before filtering; no migration or Provider
-		// substitute is needed to read service-bound accounting.
+		// The SQL predicate already selected this service from the immutable source
+		// body. Rows are validated before aggregation, so a selected row whose
+		// validated identity disagrees with the predicate fails closed.
 		if f.SubscriptionService != "" && a.SubscriptionService != f.SubscriptionService {
-			continue
+			return domain.NativeAccountingSummary{}, corrupt()
 		}
 		v.Totals.Add(u, e)
 		key := string(u.SessionID) + ":" + string(a.AccountID) + ":" + string(a.ProviderID) + ":" + string(a.SubscriptionService) + ":" + string(a.ModelID)
