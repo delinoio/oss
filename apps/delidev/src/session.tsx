@@ -1777,8 +1777,7 @@ export function SessionView({
   } else if (
     requestsFailed.current &&
     interactions.settledReads !== requestsFailedAt.current &&
-    !interactions.isPending &&
-    !interactions.loading
+    !interactions.isPending
   )
     requestsFailed.current = false;
   // Retry and Reload clear the error as soon as they start, which would unmount
