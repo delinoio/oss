@@ -1211,6 +1211,34 @@ it("keeps the stale marker when a retry is retired before it is accepted", async
   expect(addReviewComment().disabled).toBe(true);
 });
 
+it("logs only a sanitized operation and closed classification for a failed options refresh", async () => {
+  const { f } = inventoryFixture([{ name: "main" }], "main");
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    render(<f.View />);
+    await screen.findByText("+<script>doNotRun()</script>");
+    f.read.mockRejectedValueOnce(
+      new ConnectError("native secret /home/user/repo", Code.Unavailable),
+    );
+    refreshDiff();
+    await screen.findByText(
+      "Refresh failed. The previous observation is stale and shown below.",
+    );
+    const logged = warn.mock.calls.filter(
+      ([event]) => event === "delidev.diff.options_refresh_failed",
+    );
+    expect(logged).toHaveLength(1);
+    expect(JSON.stringify(logged[0])).not.toContain("native secret");
+    expect(logged[0][1]).not.toHaveProperty("error");
+    expect(logged[0][1]).toMatchObject({
+      operation: "git-diff-options",
+      classification: expect.any(String),
+    });
+  } finally {
+    warn.mockRestore();
+  }
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);

@@ -10,7 +10,11 @@ import {
   useTransport,
 } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
+import {
+  SessionQuery,
+  clientFailure,
+  newRequestId,
+} from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import {
   Comparison,
@@ -429,7 +433,8 @@ export function RepositoryDiff({
         console.warn("delidev.diff.options_refresh_failed", {
           sessionId,
           repository,
-          error,
+          operation: "git-diff-options",
+          classification: clientFailure(error).code,
         });
         setRefreshFailedOwner(optionsOwner);
       }
