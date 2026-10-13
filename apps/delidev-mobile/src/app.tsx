@@ -850,7 +850,9 @@ function Connected({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [inspected, setInspected] = useObservationState(""),
-    [confirm, setConfirm] = useState<() => Promise<void>>(),
+    [confirm, setConfirm] = useObservationState<
+      (() => Promise<void>) | undefined
+    >(undefined),
     [revokeConfirm, setRevokeConfirm] = useState(false);
   const transport = useMemo(() => state.transport(id), [state, id]);
   const epoch = connection.observationEpoch;
@@ -1553,7 +1555,9 @@ function Conversation({
     [history, setHistory] = useObservationState<Resource[]>([]),
     [prompt, setPrompt] = useState(draft.prompt),
     [mode, setMode] = useState(draft.mode),
-    [confirmation, setConfirmation] = useState<SessionAction>();
+    [confirmation, setConfirmation] = useObservationState<
+      SessionAction | undefined
+    >(undefined);
   const session = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.SESSION, id },

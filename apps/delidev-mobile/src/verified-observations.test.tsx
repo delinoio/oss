@@ -390,9 +390,12 @@ it("purges history and detail observations while preserving composer and origina
   });
   fireEvent.click(screen.getByRole("button", { name: en.more }));
   await screen.findByText("old message old-history");
+  fireEvent.click(screen.getByRole("button", { name: en.stop }));
+  await screen.findByRole("dialog", { name: en.stopConfirm });
   f.mismatch();
   refreshConnection();
   await screen.findByText(en.version);
+  expect(screen.queryByRole("dialog", { name: en.stopConfirm })).toBeNull();
   expect(document.body.textContent).not.toMatch(
     /old conversation|old message|Original question/,
   );
