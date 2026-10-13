@@ -10,8 +10,8 @@ import { ManagedMcpSettings } from "./managed-mcp-settings";
 import { MutationIntents } from "./mutation";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsTasks } from "./settings-task";
-vi.mock("./configuration-fields", () => ({ ResourceChoice: ({ label, value, change, disabled }: { label: string; value: string; change: (id: string) => void; disabled: boolean }) => <label>{label}<select value={value} disabled={disabled} onChange={event => change(event.target.value)}><option value="">Choose</option><option value={machine}>Fixture Runner</option></select></label> }));
-const machine = newRequestId(), worker = newRequestId();
+vi.mock("./configuration-fields", () => ({ ResourceChoice: ({ label, value, change, disabled }: { label: string; value: string; change: (id: string) => void; disabled: boolean }) => <label>{label}<select value={value} disabled={disabled} onChange={event => change(event.target.value)}><option value="">Choose</option><option value={machine}>Fixture Runner</option><option value={otherMachine}>Other Runner</option></select></label> }));
+const machine = newRequestId(), otherMachine = newRequestId(), worker = newRequestId();
 function fixture(lost = false, oauth = false, recovery?: State) {
   const retainedRequestId = newRequestId();
   const row = create(ManagedMcpDefinitionSchema, { id: newRequestId(), revision: 2n, machineId: machine, workerDeviceId: worker, name: "Private MCP", transport: Transport.STDIO, command: "/fixture/mcp", cwd: "/fixture", enabled: true, authentication: oauth ? Auth.OAUTH : Auth.MANUAL });
@@ -100,4 +100,30 @@ it("restores only the original awaiting OAuth attempt after category disposal",a
  expect(await screen.findByRole("link",{name:"Open authorization page"})).toBeTruthy();expect(f.authenticated).not.toHaveBeenCalled();
  fireEvent.change(screen.getByLabelText("Exact authorization callback URL"),{target:{value:"http://localhost/callback?code=original"}});fireEvent.click(screen.getByRole("button",{name:"Complete authorization"}));await waitFor(()=>expect(f.authenticated).toHaveBeenCalledTimes(1));
  expect(f.original()).toMatchObject({action:Action.OAUTH_COMPLETE,attemptId:f.retainedRequestId});
+});
+
+it("isolates Runner rows and drops late responses from a previously selected Worker", async () => {
+  let releaseFirst: () => void = () => undefined;
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const definition = (machineId: string, name: string) => create(ManagedMcpDefinitionSchema, { id: newRequestId(), revision: 1n, machineId, workerDeviceId: worker, name, transport: Transport.STDIO, command: "/fixture/mcp", cwd: "/fixture", enabled: true, authentication: Auth.NONE });
+  const listed = vi.fn(async (request: { machineId: string }) => {
+    if (request.machineId === machine) { await firstGate; return { definitions: [definition(machine, "First Worker MCP")], operations: [] }; }
+    return { definitions: [definition(otherMachine, "Second Worker MCP")], operations: [] };
+  });
+  const saved = vi.fn(), authenticated = vi.fn(), removed = vi.fn();
+  const transport = createRouterTransport(router => router.service(ManagedMCPService, { listManagedMcp: listed, saveManagedMcp: saved, authenticateManagedMcp: authenticated, deleteManagedMcp: removed }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsTasks><ManagedMcpSettings active /></SettingsTasks></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>);
+  const runner = screen.getByRole("combobox", { name: "Runner Device" });
+  fireEvent.change(runner, { target: { value: machine } });
+  await waitFor(() => expect(listed).toHaveBeenCalledTimes(1));
+  fireEvent.change(runner, { target: { value: otherMachine } });
+  await screen.findByText("Second Worker MCP");
+  releaseFirst();
+  await firstGate;
+  await waitFor(() => expect(listed).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText("First Worker MCP")).toBeNull();
+  expect(screen.getByText("Second Worker MCP")).toBeTruthy();
+  expect(listed.mock.calls.map(call => call[0].machineId)).toEqual([machine, otherMachine]);
+  expect(saved).not.toHaveBeenCalled(); expect(authenticated).not.toHaveBeenCalled(); expect(removed).not.toHaveBeenCalled();
 });
