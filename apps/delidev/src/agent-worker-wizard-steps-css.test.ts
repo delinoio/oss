@@ -56,7 +56,9 @@ function mountSteps(current: number): HTMLElement[] {
     <div class="desktop-wizard worker-wizard">
       <ol class="worker-steps wizard-progress">
         ${STEP_VALUES.map(
-          (value) => `<li${value === current ? ' aria-current="step"' : ""} data-completed="${value < current}">
+          (
+            value,
+          ) => `<li${value === current ? ' aria-current="step"' : ""} data-completed="${value < current}">
             <span class="wizard-step-number" aria-hidden="true">${value}</span>
             <span>Step label ${value}</span>
           </li>`,
@@ -64,7 +66,9 @@ function mountSteps(current: number): HTMLElement[] {
       </ol>
     </div>`;
   return Array.from(
-    document.querySelectorAll<HTMLElement>(".worker-steps li > span:last-child"),
+    document.querySelectorAll<HTMLElement>(
+      ".worker-steps li > span:last-child",
+    ),
   );
 }
 
