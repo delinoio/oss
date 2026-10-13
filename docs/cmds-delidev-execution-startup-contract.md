@@ -104,6 +104,20 @@ authorization activate only that assignment. Subscription execution preserves
 its original protected generation and account lease, with no login or exchange.
 Startup observation never substitutes for selected-account authority.
 
+Failed and Uncertain observations are authenticated against the server generation
+that issued the original native authority, not only the claimed job and instance.
+Once `RegisterExecution` created the job's execution grant, the grant's server
+epoch, execution, machine, instance and device must equal the live server epoch
+and the reporting claim; otherwise the report is denied without changing the
+session, so stale proof from a prior generation never enables the explicit
+startup retry. Failures that precede grant registration (for example executable
+resolution) have no grant. They bind to the epoch, assignment revision and
+ownership recorded by native startup progress when present, and are otherwise
+accepted because no native authority was ever issued for that attempt. Full
+account scope is not re-validated for failures, since the account may have
+changed while positive no-send/cleanup proof must remain publishable. Ready
+validation and protected-account authority checks are unchanged.
+
 Continuation and native source operations additionally retain original
 checkpoint, executable identity, account, Worker, workspace and history checks.
 No installation refresh can silently replace historical native ownership. Title
