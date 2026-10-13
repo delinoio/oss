@@ -275,3 +275,80 @@ it("keeps the generic provider fallback for empty provider rows without a servic
   render(<NativeAccounting data={data} open={vi.fn()} />);
   expect(screen.queryByText("OpenCode Go")).toBeNull();
 });
+
+const claudeTitle = "Claude main-loop inputs";
+const sessionCaption = /by original session, account and model/;
+
+function renderNativeSource(source: Record<string, unknown>) {
+  const data = create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    nativeAccounting: [
+      {
+        totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT, units: 3 },
+        ...source,
+      },
+      { totals: { kind: AccountingUnitKind.OPENCODE_STEP } },
+    ],
+  });
+  render(<NativeAccounting data={data} open={vi.fn()} />);
+  return screen.getByRole("region", { name: claudeTitle });
+}
+
+it("omits the original-session table when only model aggregates exist", () => {
+  const source = renderNativeSource({
+    models: [{ providerId: "anthropic", model: { nativeId: "model" } }],
+  });
+  const tables = within(source).getAllByRole("table");
+  expect(tables).toHaveLength(1);
+  expect(
+    within(source).getByRole("table", { name: `${claudeTitle} by model` }),
+  ).toBeTruthy();
+  expect(within(source).queryByText(sessionCaption)).toBeNull();
+  const region = within(source).getByRole("region", {
+    name: `${claudeTitle} tables`,
+  });
+  expect(region.getAttribute("tabindex")).toBe("0");
+});
+
+it("omits the original-session table when only day aggregates exist", () => {
+  const source = renderNativeSource({
+    days: [{ fromUnixMs: 0n, untilUnixMs: 86400000n }],
+  });
+  const tables = within(source).getAllByRole("table");
+  expect(tables).toHaveLength(1);
+  expect(tables[0].querySelector("caption")?.textContent).toMatch(/^Daily /);
+  expect(within(source).queryByText(sessionCaption)).toBeNull();
+});
+
+it("renders the session table with rows while day and model tables follow their own arrays", () => {
+  const source = renderNativeSource({
+    groups: [
+      { sessionId: "session", providerId: "anthropic", model: { nativeId: "m" } },
+    ],
+    models: [{ providerId: "anthropic", model: { nativeId: "m" } }],
+  });
+  const tables = within(source).getAllByRole("table");
+  expect(tables).toHaveLength(2);
+  const session = within(source).getByRole("table", {
+    name: new RegExp(sessionCaption.source),
+  });
+  expect(within(session).getAllByRole("row")).toHaveLength(2);
+  expect(
+    within(source).getByRole("table", { name: `${claudeTitle} by model` }),
+  ).toBeTruthy();
+  expect(within(source).queryByText(/^Daily /)).toBeNull();
+  for (const table of tables) {
+    expect(table.querySelector("caption")?.textContent).toBeTruthy();
+  }
+});
+
+it("renders no table region when groups, days and models are all empty", () => {
+  const source = renderNativeSource({});
+  expect(within(source).queryByRole("table")).toBeNull();
+  expect(
+    within(source).queryByRole("region", { name: `${claudeTitle} tables` }),
+  ).toBeNull();
+  expect(
+    within(source).getByText(/No original units are recorded for these filters/),
+  ).toBeTruthy();
+});

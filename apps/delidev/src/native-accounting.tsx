@@ -190,6 +190,7 @@ function NativeSummary({
             aria-label={copy("native-accounting.tables_ab268f", { v0: title })}
             tabIndex={0}
           >
+            {data.groups.length ? (
             <table>
               <caption>
                 <LocalizedText
@@ -285,6 +286,7 @@ function NativeSummary({
                 ))}
               </tbody>
             </table>
+            ) : null}
             {data.days.length ? (
               <table>
                 <caption>
