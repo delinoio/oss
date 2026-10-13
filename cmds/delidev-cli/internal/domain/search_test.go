@@ -22,3 +22,32 @@ func TestSearchTextRetainsVisibleNativeContentWithoutMetadata(t *testing.T) {
 		t.Fatal("joined unrelated fields")
 	}
 }
+
+func TestSearchTextIncludesImageViewLocationOnly(t *testing.T) {
+	observation := func(location string) *ImageViewObservation {
+		return &ImageViewObservation{ReferenceID: NewID(), MachineID: NewID(), RepositoryID: NewID(), ManifestDigest: strings.Repeat("b", 64), Location: location}
+	}
+	started, completed := observation("Images/Started.png"), observation("Images/Completed.png")
+	m := ExecutionMessage{Tool: &ExecutionTool{
+		Started:   ToolSnapshot{Kind: ImageViewTool, Status: ToolRunning, ImageView: started},
+		Completed: &ToolSnapshot{Kind: ImageViewTool, Status: ToolCompleted, ImageView: completed},
+	}}
+	text := m.SearchText()
+	for _, part := range []string{"images/started.png", "images/completed.png"} {
+		if !strings.Contains(text, part) {
+			t.Fatalf("lost image-view location %q", part)
+		}
+	}
+	if !strings.Contains(text, "images/started.png\x1fimages/completed.png") {
+		t.Fatal("image-view locations were not separated")
+	}
+	for _, private := range []string{string(started.ReferenceID), string(started.MachineID), string(started.RepositoryID), started.ManifestDigest, string(completed.ReferenceID), string(completed.MachineID), string(completed.RepositoryID), completed.ManifestDigest} {
+		if strings.Contains(text, strings.ToLower(private)) {
+			t.Fatalf("indexed private image-view identity %q", private)
+		}
+	}
+	completedOnly := ExecutionMessage{Tool: &ExecutionTool{Started: ToolSnapshot{Kind: CommandTool, Command: &CommandObservation{Command: "ls"}}, Completed: &ToolSnapshot{Kind: ImageViewTool, Status: ToolCompleted, ImageView: completed}}}
+	if !strings.Contains(completedOnly.SearchText(), "images/completed.png") {
+		t.Fatal("lost completed-only image-view location")
+	}
+}
