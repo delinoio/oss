@@ -3516,6 +3516,18 @@ transfer. Complete snapshots share original revision, atomic persistence and
 uncertain-save recovery. Product/browser/native validation retains the repository
 policy; report actual performed evidence separately from skipped acceptance.
 
+The appearance context exposes `ready` (`useAppearanceReady()`), which is false
+only until the initial native read settles. A failed initial read also settles,
+with compatibility defaults (Original disclosures, images shown). Before
+readiness, tool groups and entries render collapsed without recording a choice,
+so a delayed saved Expanded default applies exactly once to untouched groups and
+entries; an explicit toggle made earlier is kept, and later preference changes
+never replace mounted choices. Before readiness, retained images make no
+authenticated attachment byte request and show no image (a loading status), and
+draft images show no preview, unless the user explicitly reveals. After
+readiness, saved Off keeps the labeled reveal action and saved On or default
+preserves the original bounded readback and cleanup behavior.
+
 #### Shared restrained entrance motion and Appearance
 
 Desktop only. `entrance-motion.ts` and `entrance-motion.css` (relative to `apps/delidev/src`) own one shared, statically scoped 160ms entrance primitive: `translateY(4px)` to `none` with `ease-out`, keyframe `entrance-y4`, selected by the activation-scoped attribute `data-entrance="y4"` (`EntranceMotion.Y4`). It never changes opacity, scale, height or geometry, has no bounce, stagger, fill mode, exit animation, dependency, inline style, CSP exception, telemetry or per-frame/content logging, and its resting transform is `none` with fully opaque surfaces. The 120ms `translateY(2px)` (`entrance-y2`, `EntranceMotion.Y2`) and 120ms `translateX(4px)` (`entrance-x4`, `EntranceMotion.X4`) siblings live in the same stylesheet with the same rules; any further primitive is added by the screen that first needs it. The primitive excludes native, fixed and portal positioning hosts and their ancestors. A native dialog that mounts beneath an animated surface (`Modal` calls `settleEnclosingEntrances` before `showModal`) settles that surface's in-flight entrance in the same commit, so no dialog host ever has an animated ancestor; the dialog's own inner block still plays its single entrance and focus never waits.
