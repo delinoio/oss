@@ -336,7 +336,37 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	return err
 }
 
+// automaticPRObservations reads each enabled non-conflict source once, then
+// reads PR detail last. Detail doubles as the conflict observation and the
+// common Git target, so its ObservedAt stays fresh for the 30-second
+// observation-to-claim limit even after two slow bounded source reads. Every
+// collected source is then bound to that final target; any identity, ref or
+// commit drift rejects the pass instead of mixing evidence.
 func (s *Service) automaticPRObservations(ctx context.Context, link domain.SessionPullRequest, kinds []domain.PRProblemKind) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
+	collected := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
+	attempted := map[domain.PRProblemKind]bool{}
+	wantConflict := false
+	for _, kind := range kinds {
+		if attempted[kind] {
+			continue
+		}
+		attempted[kind] = true
+		if kind == domain.PRMergeConflictProblem {
+			wantConflict = true
+			continue
+		}
+		bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
+		observed, err := s.readProblemObservation(bounded, link.RepositoryID, link.Number, automaticPROperation(kind), "")
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return domain.PRGitTarget{}, nil, ctx.Err()
+			}
+			s.logger.InfoContext(ctx, "automatic_pr_prerequisite_blocked", "repository_id", link.RepositoryID, "kind", kind, "code", domain.SafeError(err).Code)
+			continue
+		}
+		collected[kind] = observed
+	}
 	detailCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	detail, err := s.readProblemObservation(detailCtx, link.RepositoryID, link.Number, domain.RepositoryDetail, "")
 	cancel()
@@ -351,25 +381,7 @@ func (s *Service) automaticPRObservations(ctx context.Context, link domain.Sessi
 		return target, nil, prObservationConflict()
 	}
 	observations := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
-	attempted := map[domain.PRProblemKind]bool{}
-	for _, kind := range kinds {
-		if attempted[kind] {
-			continue
-		}
-		attempted[kind] = true
-		observed := detail
-		if kind != domain.PRMergeConflictProblem {
-			bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
-			observed, err = s.readProblemObservation(bounded, link.RepositoryID, link.Number, automaticPROperation(kind), "")
-			cancel()
-			if err != nil {
-				if ctx.Err() != nil {
-					return target, nil, ctx.Err()
-				}
-				s.logger.InfoContext(ctx, "automatic_pr_prerequisite_blocked", "repository_id", link.RepositoryID, "kind", kind, "code", domain.SafeError(err).Code)
-				continue
-			}
-		}
+	for kind, observed := range collected {
 		binding := observed
 		binding.Query.Operation, binding.CI, binding.Reviewers = domain.RepositoryDetail, nil, nil
 		fresh, err := domain.NewPRGitTarget(binding)
@@ -378,6 +390,9 @@ func (s *Service) automaticPRObservations(ctx context.Context, link domain.Sessi
 			return target, nil, prObservationConflict()
 		}
 		observations[kind] = observed
+	}
+	if wantConflict {
+		observations[domain.PRMergeConflictProblem] = detail
 	}
 	return target, observations, nil
 }
