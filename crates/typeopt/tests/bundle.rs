@@ -348,6 +348,8 @@ fn optimizes_chunks_that_only_mention_eval_or_import_scripts() {
         r#"class K{eval(){return 1}importScripts=2}console.log(new K().eval(),new K().importScripts)"#,
         r#"const w={importScripts:()=>1};console.log(typeof w.importScripts,w["eval"])"#,
         r#"const{eval:ev}={eval:5};console.log(ev)"#,
+        r#"const{importScripts:load}={importScripts:5};console.log(load)"#,
+        r#"let ev;({eval:ev}={eval:5});console.log(ev)"#,
     ] {
         let (temp, sub, report) = syntax_boundary_case(snippet);
         assert_ne!(out(temp.path(), "sub.js"), sub, "{snippet}: {report:#}");
@@ -371,6 +373,10 @@ fn keeps_chunks_that_use_eval_or_import_scripts_as_values() {
         r#"const f=typeof importScripts=="function"?importScripts:null;console.log(f)"#,
         r#"const f=globalThis.importScripts;console.log(f)"#,
         r#"typeof importScripts=="function"&&importScripts("vendor.js")"#,
+        r#"function f(){const{importScripts:load}=self;return load("a.js")}globalThis.__never&&f()"#,
+        r#"const{importScripts:load}=(globalThis);console.log(load)"#,
+        r#"const{eval:ev}=globalThis;console.log(ev("1+1"))"#,
+        r#"let load;({importScripts:load}=globalThis);globalThis.__never&&load("a.js")"#,
     ] {
         let (temp, sub, report) = syntax_boundary_case(snippet);
         assert_eq!(out(temp.path(), "sub.js"), sub, "{snippet}: {report:#}");

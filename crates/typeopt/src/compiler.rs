@@ -1420,14 +1420,59 @@ impl SyntaxBoundaryRule {
 /// Whether a node is an `Identifier` or string key that names a global-object
 /// receiver such as `globalThis` or `self`.
 fn is_global_object_receiver(node: Node) -> bool {
+    if node.is_nil() {
+        return false;
+    }
+    let node = skip_parentheses(node);
     node.kind() == SyntaxKind::Identifier
         && matches!(node.text(), "globalThis" | "self" | "window" | "global")
+}
+
+/// The expression inside any number of enclosing parentheses.
+fn skip_parentheses(mut node: Node) -> Node {
+    while node.kind() == SyntaxKind::ParenthesizedExpression {
+        node = node.expression();
+    }
+    node
+}
+
+/// The source object that `key` reads from when it is the property key of a
+/// destructuring pattern: `const { key: alias } = source` or the assignment
+/// `({ key: alias } = source)`. `NIL` for any other node.
+fn destructuring_source(key: Node) -> Node {
+    let holder = key.parent();
+    match holder.kind() {
+        SyntaxKind::BindingElement if holder.property_name() == key => {
+            let pattern = holder.parent();
+            let owner = pattern.parent();
+            if pattern.kind() == SyntaxKind::ObjectBindingPattern
+                && owner.kind() == SyntaxKind::VariableDeclaration
+            {
+                return owner.initializer();
+            }
+        }
+        SyntaxKind::PropertyAssignment if holder.name() == key => {
+            let literal = holder.parent();
+            let assignment = literal.parent();
+            if literal.kind() == SyntaxKind::ObjectLiteralExpression
+                && assignment.kind() == SyntaxKind::BinaryExpression
+                && assignment.operator_token().kind() == SyntaxKind::EqualsToken
+                && assignment.left() == literal
+            {
+                return assignment.right();
+            }
+        }
+        _ => {}
+    }
+    Node::NIL
 }
 
 /// Classifies one node as a use of the global `eval` or `importScripts`.
 /// Property names, property keys, `typeof` operands and type names mention
 /// the name without running code, so they are not uses. A member of a global
-/// object (`globalThis.eval`, `self["importScripts"]`) is the global itself.
+/// object (`globalThis.eval`, `self["importScripts"]`) is the global itself,
+/// also when a destructuring pattern reads it (`const { importScripts: load } =
+/// self`), because the renamed binding hides the name.
 fn global_use_rule(node: Node) -> Option<SyntaxBoundaryRule> {
     let (name, is_name_node) = match node.kind() {
         SyntaxKind::Identifier => (node.text(), true),
@@ -1446,6 +1491,12 @@ fn global_use_rule(node: Node) -> Option<SyntaxBoundaryRule> {
         match parent.kind() {
             SyntaxKind::PropertyAccessExpression if parent.name() == node => {
                 (parent, Some(parent.expression()))
+            }
+            // A destructuring key of a global object reads the global.
+            SyntaxKind::BindingElement | SyntaxKind::PropertyAssignment
+                if is_global_object_receiver(destructuring_source(node)) =>
+            {
+                (node, Some(destructuring_source(node)))
             }
             // Keys, member names and type names never run code.
             SyntaxKind::PropertyAssignment
