@@ -8,6 +8,7 @@ import type {
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
 import { retainedTurnTiming } from "./turn-timing";
+import { acceptedInputsBind } from "./session-progress";
 import { startupWorkerCurrent } from "./session-startup-operations";
 
 export interface StartupTime {
@@ -50,7 +51,8 @@ const uuid = (value: unknown) =>
 
 /**
  * Agent settlement: the active execution document for the same job and
- * execution lists the selected original input as its first accepted input.
+ * execution lists the selected original input as its first accepted input and
+ * the whole ordered `accepted_inputs` list is valid.
  * Legacy documents without `accepted_inputs` stay unsettled (fail closed).
  */
 function originalInputAccepted(
@@ -63,12 +65,10 @@ function originalInputAccepted(
     !uuid(selected.input_id) ||
     active.execution_id !== selected.id ||
     active.input_id !== selected.input_id ||
-    active.job_id !== job ||
-    !Array.isArray(active.accepted_inputs) ||
-    !active.accepted_inputs.length
+    active.job_id !== job
   )
     return false;
-  return object(active.accepted_inputs[0]).input_id === selected.input_id;
+  return acceptedInputsBind(active.accepted_inputs, selected.input_id);
 }
 
 /** Exact original attempt only; entity, turn and job timestamps are never backfill. */

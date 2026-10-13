@@ -6209,7 +6209,9 @@ a spinner and is confirmed only when its matching settlement is established. `fi
 freezes an interval: Stop, failure and cancellation also write it, so it never
 confirms success. Workspace time is confirmed only by `preparation.state` ready
 for the same job; agent time only by the same job/execution's active execution
-document listing the selected original input first in `accepted_inputs`. Legacy
+document listing the selected original input first in a complete, valid
+`accepted_inputs` list (the same bounded, unique, digest-bound validation used for
+session progress). Legacy
 documents without that evidence, failed, stopped, lost-owner or still-pending
 claimed intervals keep the frozen seconds, no spinner and the Unconfirmed label,
 including in the retained row while cancellation is pending. Attention,

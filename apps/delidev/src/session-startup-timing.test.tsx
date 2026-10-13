@@ -219,6 +219,33 @@ it("confirms a finished interval only from matching successful settlement", () =
     { accepted_inputs: "bad" },
     { accepted_inputs: [{ input_id: newRequestId() }, { input_id: inputId }] },
     { accepted_inputs: [{}] },
+    // The complete ordered list must be valid, not only its first entry.
+    { accepted_inputs: [{ input_id: inputId }] },
+    { accepted_inputs: [{ input_id: inputId, prompt_digest: "bad" }] },
+    {
+      accepted_inputs: [
+        { input_id: inputId, prompt_digest: "a".repeat(64) },
+        { input_id: inputId, prompt_digest: "b".repeat(64) },
+      ],
+    },
+    {
+      accepted_inputs: [
+        { input_id: inputId, prompt_digest: "a".repeat(64) },
+        { input_id: "not-a-uuid", prompt_digest: "b".repeat(64) },
+      ],
+    },
+    {
+      accepted_inputs: [
+        { input_id: inputId, prompt_digest: "a".repeat(64) },
+        { input_id: newRequestId() },
+      ],
+    },
+    {
+      accepted_inputs: Array.from({ length: 4096 }, (_, index) => ({
+        input_id: index ? newRequestId() : inputId,
+        prompt_digest: "a".repeat(64),
+      })),
+    },
   ]) {
     const bad = withDocument(finished, {
       execution: acceptedExecution(execution_patch),
