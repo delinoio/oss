@@ -58,9 +58,29 @@ func newForwardFixture(t *testing.T, endpoint string, savedConnection bool) *for
 	if err := security.PrivateDir(f.root); err != nil {
 		t.Fatal(err)
 	}
-	f.credential = Credential{Endpoint: endpoint, ServerID: domain.NewID(), DeviceID: domain.NewID(), MachineID: domain.NewID(), PairingID: domain.NewID()}
-	f.pairing, _ = json.Marshal(map[string]any{"request_id": domain.NewID(), "server_id": f.credential.ServerID, "endpoint": endpoint})
+	token, err := RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.credential = Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: endpoint, ServerID: domain.NewID(), DeviceID: domain.NewID(), MachineID: domain.NewID(), PairingID: domain.NewID(), Token: token}
+	if err := writeJSON(credentialPath(f.root), f.credential); err != nil {
+		t.Fatal(err)
+	}
+	requestID := domain.NewID()
+	f.pairing, _ = json.Marshal(map[string]any{"request_id": requestID, "server_id": f.credential.ServerID, "endpoint": endpoint})
 	if err := security.WriteAtomic(filepath.Join(f.root, "local-pairing.json"), f.pairing); err != nil {
+		t.Fatal(err)
+	}
+	// The retained original grant proves the pairing before a Worker may follow.
+	grantCode, err := RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(f.owner, "pairing-codes")); err != nil {
+		t.Fatal(err)
+	}
+	grant, _ := json.Marshal(PairingCode{Version: 1, PairingID: f.credential.PairingID, ServerID: f.credential.ServerID, Endpoint: endpoint, Code: grantCode})
+	if err := security.WriteAtomic(filepath.Join(f.owner, "pairing-codes", string(requestID)+".json"), grant); err != nil {
 		t.Fatal(err)
 	}
 	f.relay = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

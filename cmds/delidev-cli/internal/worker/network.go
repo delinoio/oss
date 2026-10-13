@@ -292,7 +292,7 @@ func desktopHTTPClient(ctx context.Context, root string, credential Credential, 
 		return err
 	}
 	if local {
-		client.Transport = &desktopruntime.LocalTransport{Base: client.Transport, Root: root, Owner: owner, ServerID: credential.ServerID}
+		client.Transport = &desktopruntime.LocalTransport{Base: client.Transport, Root: root, Owner: owner, ServerID: credential.ServerID, Endpoint: credential.Endpoint, PairingID: credential.PairingID}
 	}
 	return nil
 }

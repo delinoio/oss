@@ -82,6 +82,12 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 		if !local || owner != o.dataDir {
 			return recoveryRequired()
 		}
+		// Prove the retained original grant from files alone. Edited or stale
+		// credential and journal endpoints never reach a listener or a marker.
+		if err := verifyOriginalDesktopPairing(owner, root, saved); err != nil {
+			slog.Warn("desktop_worker_registration", "phase", "original-pairing", "code", domain.SafeError(err).Code)
+			return err
+		}
 	}
 	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
 	if err != nil {
@@ -96,7 +102,7 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 		return recoveryRequired()
 	}
 	if o.desktop != nil {
-		return desktopruntime.Follow(root, saved.ServerID)
+		return desktopruntime.FollowVerified(o.dataDir, root, saved.ServerID, saved.Endpoint, saved.PairingID)
 	}
 	return nil
 }
