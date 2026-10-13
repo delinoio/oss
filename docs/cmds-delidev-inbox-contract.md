@@ -161,7 +161,13 @@ The authenticated owner or paired client is part of durable operation
 or changing its revision. One SQLite transaction defines the acknowledgment instant
 and processes all current unread entries belonging to that session in internal pages
 of at most 200. Query rows close before source validation and ordinary entry updates.
-Each changed entry retains its own revision and event. Other sessions and unscoped
+Each changed entry retains its own revision and event. Before marking an
+interaction-source entry read, the server decodes and validates the retained
+interaction document with the same checks as Inbox entry creation (native binding,
+payload type, execution/thread/turn identities, sequence bounds and a closure of
+open, native-closed or turn-ended). A malformed or contradictory document rejects
+the whole acknowledgment with a safe `recovery_required` error that carries no
+native content; source documents are never rewritten. Other sessions and unscoped
 operational/subscription-recovery alerts remain unchanged.
 
 The read changes and compact original session/count/UTC-time receipt commit together.
