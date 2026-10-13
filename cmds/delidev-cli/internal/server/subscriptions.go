@@ -875,7 +875,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
@@ -920,6 +920,14 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					state.Pending = nil
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
+					// The original lease's first successful Finish is the only
+					// generation that can continue an already-frozen server-owned
+					// automatic claim. It is recorded only while the exact consent
+					// snapshot is still current, so a revoked or replaced consent
+					// and any later rotation cannot adopt the claim.
+					if episode := state.AutomaticCreditEpisode; lease.Action == domain.SubscriptionExecute && episode != nil && episode.ServerProof != nil && episode.ServerFinishGeneration == "" && episode.ServerProof.LeaseID == lease.ID && state.AutomaticCreditConsent != nil && *state.AutomaticCreditConsent == episode.ServerProof.Consent && state.Generation == episode.ServerProof.Consent.Generation {
+						episode.ServerFinishGeneration = domain.ID(m.RequestId)
+					}
 					state.AutomaticCreditConsent = nil
 					state.Generation = domain.ID(m.RequestId)
 					state.PaidCredits = nil
@@ -1008,7 +1016,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, protectedGenerations(original.Subscription)...); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
@@ -1190,13 +1198,18 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 	return &fork, nil
 }
 
-// A quota reader owns its captured reference independently of the writer's
-// current generation. Rotation may retire it only after joined observer cleanup.
-func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
+// Access-only quota and credit readers own their captured references
+// independently of the writer's current generation. Rotation may retire them
+// only after joined observer cleanup and checked obsolete-reference retirement.
+func protectedGenerations(st *domain.SubscriptionState) []domain.ID {
+	var protected []domain.ID
 	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
-		return st.ServerQuota.Generation
+		protected = append(protected, st.ServerQuota.Generation)
 	}
-	return ""
+	if st != nil && st.ServerCredit != nil && st.ServerCredit.AccessOnly && st.ServerCredit.Active() {
+		protected = append(protected, st.ServerCredit.Generation)
+	}
+	return protected
 }
 
 // compactionLeaseCapabilities reports whether a Worker advertises the exact

@@ -108,27 +108,47 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 	return nil
 }
 func reconcileServerQuotaRuntime(ctx context.Context, root string, o domain.ServerQuotaOperation) error {
+	if o.Validate() != nil || !o.AccessOnly || o.Phase != domain.SubscriptionObservationUncertain {
+		return subscriptionDenied()
+	}
+	return reconcileAccessOnlyRuntime(ctx, root, "quota", o.ID)
+}
+
+// reconcileAccessOnlyRuntime joins one retained prior-epoch access-only native
+// owner and removes its private runtime. kind selects the quota or credit root.
+func reconcileAccessOnlyRuntime(ctx context.Context, root, kind string, owner domain.ID) error {
 	runtimeRoot := filepath.Join(root, "subscription-runtime")
 	processRoot := filepath.Join(runtimeRoot, "processes")
-	if o.Validate() != nil || !o.AccessOnly || o.Phase != domain.SubscriptionObservationUncertain || security.CheckPrivateDir(runtimeRoot) != nil || security.CheckPrivateDir(processRoot) != nil {
+	if owner.Validate() != nil || security.CheckPrivateDir(runtimeRoot) != nil || security.CheckPrivateDir(processRoot) != nil {
 		return subscriptionDenied()
 	}
 	// A missing index cannot prove no send. Require the original retained index
 	// and independently exclude a still-live controller before process recovery.
-	if err := lockFailedServerLoginControllers(ctx, processRoot, o.ID); err != nil {
+	if err := lockFailedServerLoginControllers(ctx, processRoot, owner); err != nil {
 		return err
 	}
-	if err := process.ReconcileOwnerContext(ctx, processRoot, o.ID); err != nil {
+	if err := process.ReconcileOwnerContext(ctx, processRoot, owner); err != nil {
 		return err
 	}
-	if err := cleanupFailedServerLoginProbes(ctx, runtimeRoot, o.ID, true); err != nil {
+	if err := cleanupFailedServerLoginProbes(ctx, runtimeRoot, owner, true); err != nil {
 		return err
 	}
-	home := filepath.Join(runtimeRoot, "quota", string(o.ID))
+	home := accessOnlyRuntimeDirectory(root, kind, owner)
 	if _, err := os.Lstat(filepath.Join(home, "codex", "auth.json")); !os.IsNotExist(err) {
 		return subscriptionDenied()
 	}
 	return cleanupFailedServerLoginDirectory(home)
+}
+
+// generationHeld reports whether another live owner still depends on the
+// credential generation. ignoreQuota and ignoreCredit exclude the access-only
+// owner whose obsolete captured reference is being retired.
+func generationHeld(st *domain.SubscriptionState, generation domain.ID, ignoreQuota, ignoreCredit bool) bool {
+	return st.Lease != nil && st.Lease.Generation == generation ||
+		!ignoreCredit && st.ServerCredit != nil && st.ServerCredit.Active() && st.ServerCredit.Generation == generation ||
+		!ignoreQuota && st.ServerQuota != nil && st.ServerQuota.Active() && st.ServerQuota.Generation == generation ||
+		st.Observation != nil && st.Observation.Active() && st.Observation.Generation == generation ||
+		st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) && st.ServerOperation.Generation == generation
 }
 
 // Caller holds account serialization. Native cleanup and the exact retained
@@ -142,11 +162,11 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 		}
 		st := a.Subscription
 		o := st.ServerQuota
-		if original.Validate() != nil || o == nil || o.Validate() != nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Actor != original.Actor || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.FinishID != original.FinishID || !o.RequestedAt.Equal(original.RequestedAt) || o.AccessOnly != original.AccessOnly || !o.CleanupConfirmed || (o.Phase != domain.SubscriptionObservationSending && o.Phase != domain.SubscriptionObservationUncertain) {
+		if original.Validate() != nil || o == nil || o.Validate() != nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Actor != original.Actor || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.FinishID != original.FinishID || !o.RequestedAt.Equal(original.RequestedAt) || o.AccessOnly != original.AccessOnly || o.AutomaticEpisodeID != original.AutomaticEpisodeID || !o.CleanupConfirmed || (o.Phase != domain.SubscriptionObservationSending && o.Phase != domain.SubscriptionObservationUncertain) {
 			return subscriptionDenied()
 		}
 		current = st.Generation
-		if current != original.Generation && (current.Validate() != nil || st.Lease != nil && st.Lease.Generation == original.Generation || st.ServerCredit != nil && st.ServerCredit.Active() && st.ServerCredit.Generation == original.Generation || st.Observation != nil && st.Observation.Active() && st.Observation.Generation == original.Generation || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) && st.ServerOperation.Generation == original.Generation) {
+		if current != original.Generation && (current.Validate() != nil || generationHeld(st, original.Generation, true, false)) {
 			return subscriptionDenied()
 		}
 		return nil
@@ -154,6 +174,13 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 	if err != nil || !original.AccessOnly || current == original.Generation {
 		return err
 	}
+	return s.deleteCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retired", original.ID)
+}
+
+// deleteCapturedReference removes only the obsolete captured AccountLogin
+// reference after confirming the current generation's reference exists, then
+// independently enumerates the completed removal.
+func (s *Service) deleteCapturedReference(ctx context.Context, id, generation, current domain.ID, event string, operation domain.ID) error {
 	vault, err := s.secrets()
 	if err != nil {
 		return err
@@ -165,7 +192,7 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 	if len(refs) > 256 {
 		return subscriptionDenied()
 	}
-	captured := credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin}
+	captured := credentials.Ref{Owner: id, ID: generation, Purpose: credentials.AccountLogin}
 	found, currentFound := false, false
 	for _, ref := range refs {
 		if ref.Owner != id || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
@@ -195,6 +222,32 @@ func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, 
 			return subscriptionDenied()
 		}
 	}
-	s.logger.InfoContext(ctx, "server_quota_reference_retired", "operation_id", original.ID)
+	s.logger.InfoContext(ctx, event, "operation_id", operation)
 	return nil
+}
+
+// retireSettledServerQuotaReference retires the captured reference of a settled
+// frozen automatic refresh. Caller holds account serialization.
+func (s *Service) retireSettledServerQuotaReference(ctx context.Context, id domain.ID, original domain.ServerQuotaOperation) error {
+	var current domain.ID
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		st := a.Subscription
+		o := st.ServerQuota
+		if o == nil || o.ID != original.ID || o.Active() || !o.CleanupConfirmed || !o.AccessOnly {
+			return subscriptionDenied()
+		}
+		current = st.Generation
+		if current != original.Generation && (current.Validate() != nil || generationHeld(st, original.Generation, false, false)) {
+			return subscriptionDenied()
+		}
+		return nil
+	})
+	if err != nil || current == original.Generation {
+		return err
+	}
+	return s.deleteCapturedReference(ctx, id, original.Generation, current, "server_quota_reference_retired", original.ID)
 }
