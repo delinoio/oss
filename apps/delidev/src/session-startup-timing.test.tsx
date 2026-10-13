@@ -117,7 +117,10 @@ function withDocument(
     ),
   });
 }
-function finishAgent(session: ReturnType<typeof fixture>["session"], at: string) {
+function finishAgent(
+  session: ReturnType<typeof fixture>["session"],
+  at: string,
+) {
   return create(ResourceSchema, {
     ...session,
     startupTiming: create(SessionStartupTimingSchema, {
@@ -183,7 +186,10 @@ it("confirms a finished interval only from matching successful settlement", () =
   const pending = withDocument(finished, {
     outcome: "not-started",
     dispatch: "paused",
-    execution: acceptedExecution({ outcome: "not-started", accepted_inputs: undefined }),
+    execution: acceptedExecution({
+      outcome: "not-started",
+      accepted_inputs: undefined,
+    }),
   });
   expect(startupTimingGroups(pending).agent).toMatchObject({ settled: false });
   expect(display(pending).agent).toMatchObject({
@@ -192,7 +198,10 @@ it("confirms a finished interval only from matching successful settlement", () =
     unconfirmed: true,
   });
   // No execution document at all (cancelled before any native evidence).
-  expect(display(finished).agent).toMatchObject({ seconds: 8, unconfirmed: true });
+  expect(display(finished).agent).toMatchObject({
+    seconds: 8,
+    unconfirmed: true,
+  });
   // Matching accepted original input confirms the fixed interval.
   const accepted = withDocument(finished, { execution: acceptedExecution() });
   expect(startupTimingGroups(accepted).agent?.settled).toBe(true);
@@ -518,5 +527,7 @@ it("shows a frozen unsettled interval as Unconfirmed without a spinner in the re
   expect(rows).toHaveLength(2);
   expect(rows[0].querySelector(".session-startup-unconfirmed")).toBeNull();
   expect(rows[1].querySelector(".session-startup-unconfirmed")).not.toBeNull();
-  expect(rendered.container.querySelector(".session-progress-spinner")).toBeNull();
+  expect(
+    rendered.container.querySelector(".session-progress-spinner"),
+  ).toBeNull();
 });
