@@ -2250,3 +2250,49 @@ fn warns_when_a_classic_html_script_freezes_chunks() {
             .ends_with("app-AAAAAAAA.js")
     );
 }
+
+/// A chunk in another directory with the same content-hashed file name as a
+/// frozen chunk is frozen too: references name only the file name, so an
+/// edited copy could not be renamed and would be published under the old hash.
+#[test]
+fn freezes_same_named_chunks_in_other_directories() {
+    let shared = SHARED_STATE[3].1;
+    let temp = bundle(&[
+        (
+            "index.html",
+            r#"<script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+        ),
+        (
+            "assets/index-AAAAAAAA.js",
+            r#"import{bump as b,count as c}from"./other/shared-BBBBBBBB.js";const o=b();console.log(o.verticalSpacing+o.horizontalSpacing,c());import("./vendor-DDDDDDDD.js").then(v=>console.log(v.read()));"#,
+        ),
+        SHARED_STATE[2],
+        ("assets/shared-BBBBBBBB.js", shared),
+        ("assets/other/shared-BBBBBBBB.js", shared),
+    ]);
+    let output = run_typeopt(temp.path(), &["--bundle-exclude", "vendor-"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let (dist, out_dir) = (temp.path().join("dist"), temp.path().join("out"));
+    // Neither copy is edited or renamed, so no cache can hold the old hash
+    // for new content.
+    for chunk in ["shared-BBBBBBBB.js", "other/shared-BBBBBBBB.js"] {
+        assert_eq!(
+            fs::read(out_dir.join("assets").join(chunk)).unwrap(),
+            fs::read(dist.join("assets").join(chunk)).unwrap(),
+            "{chunk}"
+        );
+    }
+    assert_eq!(
+        report["frozen_chunks"].as_array().unwrap().len(),
+        2,
+        "{report:#}"
+    );
+    let before = node(&dist.join("assets/index-AAAAAAAA.js"));
+    let after = run_asset(&out_dir, "index-");
+    assert_eq!(before.stdout, after.stdout);
+}

@@ -359,7 +359,7 @@ impl Project {
             })
             .cloned()
             .collect();
-        let frozen = boundary_closure(&boundaries, &edges);
+        let frozen = boundary_closure(&chunks, &boundaries, &edges);
         log_frozen_chunks(&frozen, &scripts, &html_classic, &from_html);
         crate::app::set_bundle_frozen(frozen);
         tracing::info!(
@@ -1154,11 +1154,22 @@ struct BundleImports {
 /// Chunks that a boundary chunk can import, statically or through a literal
 /// dynamic `import()`, directly or through other chunks, each with the first
 /// boundary chunk in path order that reaches it. Boundary chunks themselves
-/// are not part of the result.
+/// are not part of the result. A reference names only the file name, so a
+/// chunk that shares its file name with a frozen chunk (in another directory)
+/// is frozen with it: rehashing keeps a frozen name for every file that
+/// carries it, and an edited copy under the old content hash would let
+/// immutable caches serve stale code.
 pub(crate) fn boundary_closure(
+    chunks: &[String],
     boundaries: &Paths,
     edges: &BTreeMap<String, Paths>,
 ) -> BTreeMap<String, String> {
+    let mut by_name = BTreeMap::<&std::ffi::OsStr, Vec<&String>>::new();
+    for chunk in chunks {
+        if let Some(name) = std::path::Path::new(chunk).file_name() {
+            by_name.entry(name).or_default().push(chunk);
+        }
+    }
     let mut frozen = BTreeMap::<String, String>::new();
     for boundary in boundaries {
         // Traversal passes through other boundary chunks: what a nested
@@ -1167,16 +1178,25 @@ pub(crate) fn boundary_closure(
         let mut visited = Paths::from([boundary.clone()]);
         let mut pending = vec![boundary.clone()];
         while let Some(chunk) = pending.pop() {
-            for target in edges.get(&chunk).into_iter().flatten() {
+            let mut reached: Vec<String> =
+                edges.get(&chunk).into_iter().flatten().cloned().collect();
+            while let Some(target) = reached.pop() {
                 if !visited.insert(target.clone()) {
                     continue;
                 }
-                if !boundaries.contains(target) {
+                if !boundaries.contains(&target) {
                     frozen
                         .entry(target.clone())
                         .or_insert_with(|| boundary.clone());
+                    let name = std::path::Path::new(&target).file_name();
+                    reached.extend(
+                        name.and_then(|name| by_name.get(name))
+                            .into_iter()
+                            .flatten()
+                            .map(|sibling| (*sibling).clone()),
+                    );
                 }
-                pending.push(target.clone());
+                pending.push(target);
             }
         }
     }
@@ -1797,6 +1817,16 @@ mod tests {
             .collect()
     }
 
+    /// Every chunk that the graph mentions.
+    fn chunks(edges: &BTreeMap<String, Paths>) -> Vec<String> {
+        let all: Paths = edges
+            .iter()
+            .flat_map(|(from, to)| std::iter::once(from).chain(to))
+            .cloned()
+            .collect();
+        all.into_iter().collect()
+    }
+
     #[test]
     fn closure_follows_edges_transitively_and_names_the_first_boundary() {
         let edges = graph(&[
@@ -1808,7 +1838,7 @@ mod tests {
             ("free", &["w2"]),
         ]);
         let boundaries: Paths = ["a", "b", "b2"].map(String::from).into_iter().collect();
-        let frozen = boundary_closure(&boundaries, &edges);
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
         let frozen: Vec<_> = frozen
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -1824,11 +1854,38 @@ mod tests {
         // in path order, `a`, reaches `x`, and `b` is not a frozen chunk.
         let edges = graph(&[("a", &["b"]), ("b", &["x", "a"]), ("x", &["y"])]);
         let boundaries: Paths = ["a", "b"].map(String::from).into_iter().collect();
-        let frozen = boundary_closure(&boundaries, &edges);
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
         let frozen: Vec<_> = frozen
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         assert_eq!(frozen, [("x", "a"), ("y", "a")]);
+    }
+
+    #[test]
+    fn closure_freezes_chunks_that_share_a_file_name_with_a_frozen_chunk() {
+        // `a` imports `dir1/x-H.js`; `dir2/x-H.js` shares its file name and is
+        // imported only by an editable chunk, and `dir2/y.js` is what that
+        // sibling imports. The sibling and its imports are frozen with it,
+        // while chunks with other names stay editable.
+        let edges = graph(&[
+            ("a", &["dir1/x-H.js"]),
+            ("free", &["dir2/x-H.js", "dir2/other.js"]),
+            ("dir2/x-H.js", &["dir2/y.js"]),
+        ]);
+        let boundaries: Paths = ["a"].map(String::from).into_iter().collect();
+        let frozen = boundary_closure(&chunks(&edges), &boundaries, &edges);
+        let frozen: Vec<_> = frozen
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(
+            frozen,
+            [
+                ("dir1/x-H.js", "a"),
+                ("dir2/x-H.js", "a"),
+                ("dir2/y.js", "a")
+            ]
+        );
     }
 }
