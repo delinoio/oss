@@ -192,6 +192,208 @@ test("old responses and contradictory same-generation events cannot overwrite ve
   expect(screen.getByText("collapsed")).toBeTruthy();
   await screen.findByRole("button", { name: "Reload sidebar preference" });
 });
+test.each([
+  SidebarProblem.Changed,
+  SidebarProblem.WriteFailed,
+  SidebarProblem.OutcomeUnknown,
+])(
+  "an older %s reply to the original save fences without regressing a newer healthy event",
+  async (problem) => {
+    const value = fixture();
+    let resolve!: (reply: unknown) => void;
+    vi.mocked(value.bridge.update).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(
+      <SidebarProvider bridge={value.bridge}>
+        <Controls />
+      </SidebarProvider>,
+    );
+    const toggle = screen.getByRole("button", { name: "Toggle" });
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+    fireEvent.click(toggle);
+    expect(value.bridge.update).toHaveBeenCalledExactlyOnceWith(
+      SidebarPreference.Collapsed,
+      1,
+    );
+    act(() =>
+      value.publish({
+        revision: 3,
+        sidebar_preference: SidebarPreference.Collapsed,
+        problem: null,
+      }),
+    );
+    await act(async () =>
+      resolve({
+        revision: 2,
+        sidebar_preference: SidebarPreference.Expanded,
+        problem,
+      }),
+    );
+    const reload = await screen.findByRole("button", {
+      name: "Reload sidebar preference",
+    });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    // The committed presentation keeps the newer revision.
+    expect(screen.getByText("collapsed")).toBeTruthy();
+    expect(toggle.getAttribute("aria-disabled")).toBe("true");
+    const reads = vi.mocked(value.bridge.read).mock.calls.length;
+    fireEvent.click(toggle);
+    fireEvent.focus(window);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(value.bridge.update).toHaveBeenCalledTimes(1);
+    expect(value.bridge.read).toHaveBeenCalledTimes(reads);
+    // A healthy event does not settle the failed original save.
+    act(() =>
+      value.publish({
+        revision: 4,
+        sidebar_preference: SidebarPreference.Collapsed,
+        problem: null,
+      }),
+    );
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(reload);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(value.bridge.read).toHaveBeenCalledTimes(reads + 1);
+    // Reload never replays the original save.
+    expect(value.bridge.update).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("collapsed")).toBeTruthy();
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+    fireEvent.click(toggle);
+    await waitFor(() => expect(value.bridge.update).toHaveBeenCalledTimes(2));
+    expect(value.bridge.update).toHaveBeenLastCalledWith(
+      SidebarPreference.Expanded,
+      4,
+    );
+  },
+);
+test.each([
+  SidebarProblem.Unavailable,
+  SidebarProblem.ReadFailed,
+  SidebarProblem.InvalidDocument,
+  SidebarProblem.UnsupportedVersion,
+])(
+  "an older %s inspection reply to the original save stays an ignored stale snapshot",
+  async (problem) => {
+    const value = fixture();
+    let resolve!: (reply: unknown) => void;
+    vi.mocked(value.bridge.update).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    render(
+      <SidebarProvider bridge={value.bridge}>
+        <Controls />
+      </SidebarProvider>,
+    );
+    const toggle = screen.getByRole("button", { name: "Toggle" });
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+    fireEvent.click(toggle);
+    act(() =>
+      value.publish({
+        revision: 3,
+        sidebar_preference: SidebarPreference.Collapsed,
+        problem: null,
+      }),
+    );
+    await act(async () =>
+      resolve({
+        revision: 2,
+        sidebar_preference: SidebarPreference.Expanded,
+        problem,
+      }),
+    );
+    expect(screen.getByText("collapsed")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+    );
+  },
+);
+test("an older healthy reply to the original save stays ignored and a disposed generation ignores late failures", async () => {
+  const value = fixture();
+  let resolve!: (reply: unknown) => void;
+  vi.mocked(value.bridge.update).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const view = render(
+    <SidebarProvider bridge={value.bridge}>
+      <Controls />
+    </SidebarProvider>,
+  );
+  const toggle = screen.getByRole("button", { name: "Toggle" });
+  await waitFor(() =>
+    expect(toggle.getAttribute("aria-disabled")).toBe("false"),
+  );
+  fireEvent.click(toggle);
+  act(() =>
+    value.publish({
+      revision: 3,
+      sidebar_preference: SidebarPreference.Collapsed,
+      problem: null,
+    }),
+  );
+  await act(async () =>
+    resolve({
+      revision: 2,
+      sidebar_preference: SidebarPreference.Expanded,
+      problem: null,
+    }),
+  );
+  expect(screen.getByText("collapsed")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  view.unmount();
+  const late = fixture();
+  let resolveLate!: (reply: unknown) => void;
+  vi.mocked(late.bridge.update).mockReturnValueOnce(
+    new Promise((done) => {
+      resolveLate = done;
+    }),
+  );
+  const second = render(
+    <SidebarProvider bridge={late.bridge}>
+      <Controls />
+    </SidebarProvider>,
+  );
+  const lateToggle = within(second.container).getByRole("button", {
+    name: "Toggle",
+  });
+  await waitFor(() =>
+    expect(lateToggle.getAttribute("aria-disabled")).toBe("false"),
+  );
+  fireEvent.click(lateToggle);
+  act(() =>
+    late.publish({
+      revision: 3,
+      sidebar_preference: SidebarPreference.Collapsed,
+      problem: null,
+    }),
+  );
+  second.rerender(
+    <SidebarProvider bridge={fixture().bridge}>
+      <Controls />
+    </SidebarProvider>,
+  );
+  await act(async () =>
+    resolveLate({
+      revision: 2,
+      sidebar_preference: SidebarPreference.Expanded,
+      problem: SidebarProblem.WriteFailed,
+    }),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 test("closed snapshots reject malformed documents, revisions, enums and fields", () => {
   const valid = { revision: 1, sidebar_preference: "expanded", problem: null };
   for (const value of [
