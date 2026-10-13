@@ -161,8 +161,27 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
 
 /// Reads `analysis.json` only when it is a regular file no larger than the
 /// bundle limit. Shared by `load` and run listing.
+/// Opens a file without following a symlink at the final component, closing
+/// the race between the metadata check and the open on Unix.
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
 pub fn read_bundle_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
-    let metadata = std::fs::metadata(path)?;
+    // Inspect the entry itself: a symlink could point at a bundle outside the
+    // run directory.
+    let metadata = std::fs::symlink_metadata(path)?;
     if !metadata.is_file() || metadata.len() > MAX_BUNDLE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -171,7 +190,7 @@ pub fn read_bundle_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
     }
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(
-        &mut std::io::Read::take(std::fs::File::open(path)?, MAX_BUNDLE_BYTES + 1),
+        &mut std::io::Read::take(open_no_follow(path)?, MAX_BUNDLE_BYTES + 1),
         &mut bytes,
     )?;
     if bytes.len() as u64 > MAX_BUNDLE_BYTES {
@@ -197,38 +216,20 @@ pub fn normalized_status(status: RunStatus, run_dir: &Path) -> RunStatus {
 
 pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
     let path = run_dir.join(BUNDLE_FILE);
-    let metadata = std::fs::metadata(&path).map_err(|error| {
-        BwError::new(
+    if !path.exists() && std::fs::symlink_metadata(&path).is_err() {
+        return Err(BwError::new(
             ErrorCode::ResultInvalid,
-            format!("No result bundle at {}: {error}", path.display()),
+            format!("No result bundle at {}", path.display()),
             "Pass a run directory created by `bundlewhy analyze` (it contains analysis.json).",
-        )
+        ));
+    }
+    // The run directory is untrusted: only a bounded regular file (never a
+    // symlink or special file such as /dev/zero) is read.
+    let bytes = read_bundle_bytes(&path).map_err(|error| {
+        invalid(format!(
+            "analysis.json must be a regular file of at most {MAX_BUNDLE_BYTES} bytes: {error}"
+        ))
     })?;
-    // The run directory is untrusted: refuse special files (a symlink to
-    // /dev/zero reports a small length but never reaches EOF) and bound the
-    // read.
-    if !metadata.is_file() {
-        return Err(invalid("analysis.json is not a regular file"));
-    }
-    if metadata.len() > MAX_BUNDLE_BYTES {
-        return Err(invalid(format!(
-            "analysis.json is larger than {MAX_BUNDLE_BYTES} bytes"
-        )));
-    }
-    let mut bytes = Vec::new();
-    std::fs::File::open(&path)
-        .and_then(|file| {
-            std::io::Read::read_to_end(
-                &mut std::io::Read::take(file, MAX_BUNDLE_BYTES + 1),
-                &mut bytes,
-            )
-        })
-        .map_err(|error| invalid(format!("Could not read {}: {error}", path.display())))?;
-    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
-        return Err(invalid(format!(
-            "analysis.json is larger than {MAX_BUNDLE_BYTES} bytes"
-        )));
-    }
     let mut bundle = parse(&bytes)?;
     let status = normalized_status(bundle.analysis.status, run_dir);
     if bundle.analysis.status == RunStatus::Running {
@@ -413,6 +414,20 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_refuses_symlinked_bundles() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        save(outside.path(), &bundle()).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join(BUNDLE_FILE),
+            dir.path().join(BUNDLE_FILE),
+        )
+        .unwrap();
+        assert_eq!(load(dir.path()).unwrap_err().code, ErrorCode::ResultInvalid);
     }
 
     #[cfg(unix)]

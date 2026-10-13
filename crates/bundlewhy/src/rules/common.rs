@@ -520,10 +520,94 @@ fn declared_names(source: &str) -> Vec<String> {
             collect_binding_names(target, &mut names);
         }
     }
-    names.retain(|name| name.len() >= 4);
+    collect_parameter_names(&code, &mut names);
+    // `this` parameters are TypeScript-only and never runtime bindings.
+    names.retain(|name| name.len() >= 4 && name != "this");
     names.sort();
     names.dedup();
     names
+}
+
+/// Parameter bindings of function declarations/expressions and arrow
+/// functions, including destructured, defaulted, rest and TypeScript-annotated
+/// parameters. Direct eval can read parameters by name too.
+fn collect_parameter_names(code: &str, names: &mut Vec<String>) {
+    let bytes = code.as_bytes();
+    let mut lists: Vec<&str> = Vec::new();
+    // function name(params) / function (params) / function* gen(params)
+    let function = Regex::new(
+        r"\bfunction\b\s*\*?\s*[A-Za-z_$][\w$]*\s*(?:<[^>()]*>)?\s*\(|\bfunction\b\s*\*?\s*\(",
+    )
+    .expect("static regex");
+    for found in function.find_iter(code) {
+        let open = found.end() - 1;
+        if let Some(close) = matching(bytes, open, b'(', b')') {
+            lists.push(&code[open + 1..close]);
+        }
+    }
+    // (params) => and single-identifier name =>
+    let mut search = 0usize;
+    while let Some(offset) = code[search..].find("=>") {
+        let arrow = search + offset;
+        search = arrow + 2;
+        let before = code[..arrow].trim_end();
+        // Skip an optional return type annotation `(a): T =>` conservatively
+        // by requiring the parameter list to end right before the arrow.
+        if before.ends_with(')') {
+            let close = before.len() - 1;
+            if let Some(open) = matching_backward(bytes, close, b'(', b')') {
+                lists.push(&code[open + 1..close]);
+            }
+        } else {
+            let start = before
+                .rfind(|character: char| {
+                    !(character.is_alphanumeric() || character == '_' || character == '$')
+                })
+                .map_or(0, |index| index + 1);
+            if start < before.len() {
+                names.push(before[start..].to_owned());
+            }
+        }
+    }
+    for list in lists {
+        for parameter in split_top_level(list, b',') {
+            let target = split_top_level(binding_target(parameter), b':')[0]
+                .trim()
+                .trim_end_matches('?')
+                .trim_start_matches("...");
+            collect_binding_names(target, names);
+        }
+    }
+}
+
+fn matching(bytes: &[u8], open: usize, open_byte: u8, close_byte: u8) -> Option<usize> {
+    let mut depth = 0i32;
+    for (index, byte) in bytes.iter().enumerate().skip(open) {
+        if *byte == open_byte {
+            depth += 1;
+        } else if *byte == close_byte {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+    }
+    None
+}
+
+fn matching_backward(bytes: &[u8], close: usize, open_byte: u8, close_byte: u8) -> Option<usize> {
+    let mut depth = 0i32;
+    for index in (0..=close).rev() {
+        if bytes[index] == close_byte {
+            depth += 1;
+        } else if bytes[index] == open_byte {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+    }
+    None
 }
 
 /// Text of one declaration: up to a top-level `;`, or a top-level line break

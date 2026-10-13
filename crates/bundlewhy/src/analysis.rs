@@ -25,6 +25,9 @@ pub struct AnalysisInput<'a> {
     pub build_dir: PathBuf,
     pub include_sources: bool,
     pub started_at: String,
+    /// Called once before chunk size measurement starts, so callers can
+    /// publish the `MEASURING` stage and time it separately.
+    pub on_measuring: Option<&'a (dyn Fn() + Sync)>,
 }
 
 pub struct AnalysisOutput {
@@ -117,10 +120,16 @@ fn coverage(
                     CoverageState::Unavailable,
                     "No module data was collected.".to_owned(),
                 ),
-                OptimizationCategory::NameMangling if !collection.minify_enabled => (
-                    CoverageState::NotApplicable,
-                    "Minification is disabled, so names are not mangled.".to_owned(),
-                ),
+                OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
+                    if !collection.minify_enabled =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Minification is disabled, so the minifier's dead-code elimination and \
+                         name mangling do not run."
+                            .to_owned(),
+                    )
+                }
                 OptimizationCategory::DeadCodeElimination | OptimizationCategory::NameMangling
                     if !collection.default_minifier =>
                 {
@@ -275,6 +284,9 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     }
     let root = input.project_root.clone();
     let display = |path: &Path| classify(&root, path).display;
+    if let Some(on_measuring) = input.on_measuring {
+        on_measuring();
+    }
     let chunk_sizes = context
         .chunks
         .iter()
@@ -415,6 +427,7 @@ mod tests {
             build_dir: build,
             include_sources,
             started_at: String::new(),
+            on_measuring: None,
         });
         Fixture { _dir: dir, output }
     }
@@ -912,12 +925,17 @@ mod tests {
             "minifier/direct-eval-blocks-mangling",
             "",
         );
-        let mangling = analysis
-            .coverage
-            .iter()
-            .find(|entry| entry.category == OptimizationCategory::NameMangling)
-            .unwrap();
-        assert_eq!(mangling.state, CoverageState::NotApplicable);
+        for category in [
+            OptimizationCategory::NameMangling,
+            OptimizationCategory::DeadCodeElimination,
+        ] {
+            let entry = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == category)
+                .unwrap();
+            assert_eq!(entry.state, CoverageState::NotApplicable, "{category:?}");
+        }
     }
 
     #[test]

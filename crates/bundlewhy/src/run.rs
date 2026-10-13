@@ -47,11 +47,34 @@ const LOCKFILES: [&str; 5] = [
 ];
 
 /// Hashes the files bundlewhy must never modify.
+/// Lockfiles of the nearest ancestor directory that has one, stopping at a
+/// repository root (`.git`). In a monorepo the workspace lockfile controls the
+/// dependencies a package build uses.
+fn ancestor_lockfiles(project_root: &Path) -> Vec<PathBuf> {
+    let mut directory = project_root.parent();
+    while let Some(current) = directory {
+        let found: Vec<PathBuf> = LOCKFILES
+            .iter()
+            .map(|name| current.join(name))
+            .filter(|path| path.is_file())
+            .collect();
+        if !found.is_empty() {
+            return found;
+        }
+        if current.join(".git").exists() {
+            break;
+        }
+        directory = current.parent();
+    }
+    Vec::new()
+}
+
 fn protected_files(selection: &Selection) -> BTreeMap<PathBuf, Option<String>> {
     let mut files: Vec<PathBuf> = LOCKFILES
         .iter()
         .map(|name| selection.project_root.join(name))
         .collect();
+    files.extend(ancestor_lockfiles(&selection.project_root));
     files.push(selection.project_root.join("package.json"));
     if let Some(config) = &selection.config_file {
         files.push(config.clone());
@@ -272,6 +295,17 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
             );
             set_stage(RunStage::Analyzing, "Explaining optimization decisions");
             let analyzing = Instant::now();
+            let measuring_started = std::sync::Mutex::new(None::<Instant>);
+            let on_measuring = || {
+                log.event(
+                    "stage",
+                    json!({ "stage": "analyzing", "durationMs": analyzing.elapsed().as_millis() as u64 }),
+                );
+                set_stage(RunStage::Measuring, "Measuring chunk sizes");
+                if let Ok(mut started) = measuring_started.lock() {
+                    *started = Some(Instant::now());
+                }
+            };
             let output = analysis::analyze(&AnalysisInput {
                 run_id: run_id.clone(),
                 project_root: selection.project_root.clone(),
@@ -281,10 +315,16 @@ pub async fn analyze(options: AnalyzeOptions) -> BwResult<AnalyzeOutcome> {
                 build_dir: run_dir.join("build"),
                 include_sources: !options.exclude_sources,
                 started_at: started_at.clone(),
+                on_measuring: Some(&on_measuring),
             });
+            let measuring_ms = measuring_started
+                .lock()
+                .ok()
+                .and_then(|started| *started)
+                .map_or(0, |started| started.elapsed().as_millis() as u64);
             log.event(
                 "stage",
-                json!({ "stage": "analyzing", "durationMs": analyzing.elapsed().as_millis() as u64, "diagnostics": output.analysis.diagnostics.len() }),
+                json!({ "stage": "measuring", "durationMs": measuring_ms, "diagnostics": output.analysis.diagnostics.len() }),
             );
             let analysis = output.analysis;
             let project_relative = output
@@ -593,4 +633,27 @@ pub fn export_report(
     }
     tracing::info!(output = %output.display(), sources = include_sources && included > 0, "report exported");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_lockfiles_above_the_project_are_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: 9").unwrap();
+        let package = dir.path().join("packages/app");
+        std::fs::create_dir_all(&package).unwrap();
+        assert_eq!(
+            ancestor_lockfiles(&package),
+            vec![dir.path().join("pnpm-lock.yaml")]
+        );
+        // A repository root without a lockfile ends the search.
+        let other = tempfile::tempdir().unwrap();
+        std::fs::create_dir(other.path().join(".git")).unwrap();
+        std::fs::create_dir_all(other.path().join("app")).unwrap();
+        assert!(ancestor_lockfiles(&other.path().join("app")).is_empty());
+    }
 }
