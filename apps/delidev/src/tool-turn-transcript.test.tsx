@@ -327,6 +327,27 @@ it.each([
   );
 });
 
+it("names a managed MCP call by its original native tool without exposing arguments", () => {
+  const record = row({
+    ...tool("mcp"),
+    tool: {
+      started: {
+        kind: "mcp",
+        status: "running",
+        mcp: { server: "fx_abcdef0123", tool: "write" },
+      },
+      completed: {
+        kind: "mcp",
+        status: "failed",
+        mcp: { server: "fx_abcdef0123", tool: "write", error: "denied" },
+      },
+    },
+  });
+  const projected = conversationProjection(record, sessionId);
+  expect(projected.tool?.name).toBe("write");
+  expect(projected.tool?.state).toBe("failed");
+});
+
 it("retains expanded tool state while denying exact-page restoration in an inactive pane", () => {
   const q = query([[row(tool("command"))]]),
     p = props({ ...q, payloadPages: [] });

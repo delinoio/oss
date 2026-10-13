@@ -64,7 +64,8 @@ function validQuestion(data: Document): boolean {
       data.closure === "native-closed" &&
       response.claim != null &&
       ["transmitted", "uncertain"].includes(text(delivery.state)) &&
-      acceptance.evidence === "native-question-output" &&
+      (acceptance.evidence === "native-question-output" ||
+        acceptance.evidence === "native-mcp-elicitation-resolved") &&
       Number.isSafeInteger(acceptance.sequence) &&
       Number(acceptance.sequence) > Number(delivery.sequence)
     );
