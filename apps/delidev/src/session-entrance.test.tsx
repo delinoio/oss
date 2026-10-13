@@ -10,6 +10,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   BudgetState,
@@ -125,8 +127,11 @@ function reducedMotion(initial: boolean) {
       listeners.forEach((changed) => changed());
     });
 }
+// The entrance lives on an inner wrapper: the compact header is a scroll root.
 const header = () =>
-  document.querySelector<HTMLElement>("header.session-header")!;
+  document.querySelector<HTMLElement>(
+    "header.session-header > .session-header-entrance",
+  )!;
 const info = () =>
   document.querySelector<HTMLElement>(".session-information > header")!;
 
@@ -246,4 +251,26 @@ it("does not start motion while Animation is Off", async () => {
   expect(header().getAttribute("data-entrance")).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: "Show details" }));
   expect(info().getAttribute("data-entrance")).toBeNull();
+});
+
+it("never transforms the header scroll root, only its inner wrapper", async () => {
+  render(fixture().view());
+  await screen.findByRole("textbox", { name: "Message" });
+  const root = document.querySelector<HTMLElement>("header.session-header")!;
+  expect(root.hasAttribute("data-entrance")).toBe(false);
+  expect(header().getAttribute("data-entrance")).toBe("y2");
+  expect(header().parentElement).toBe(root);
+  // The wrapper keeps the header's flex layout instead of replacing it.
+  expect(header().querySelector(".session-heading")).not.toBeNull();
+  expect(header().querySelector(".session-controls")).not.toBeNull();
+  const css = readFileSync(join(__dirname, "session.css"), "utf8");
+  const rule = css.match(/\.session-header-entrance\s*\{([^}]*)\}/u)?.[1] ?? "";
+  for (const property of [
+    "flex-direction",
+    "flex-wrap",
+    "align-items",
+    "justify-content",
+    "gap",
+  ])
+    expect(rule).toMatch(new RegExp(`${property}:\\s*inherit`, "u"));
 });

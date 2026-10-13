@@ -2235,90 +2235,92 @@ export function SessionView({
           }
         }}
       >
-        <header className="session-header" {...headerEntrance}>
-          <div className="session-heading">
-            <SessionHarness resource={session}>
-              <div className="session-heading-line">
-                <h2
-                  ref={sessionHeading}
-                  tabIndex={-1}
-                  onDoubleClick={(event) => {
-                    if (session) editName?.(session.id, event.currentTarget);
-                  }}
-                >
-                  {productResourceName(productLabel, session)}
-                </h2>
-                <p
-                  className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
-                  role="status"
-                >
-                  {connectionLabel}
-                </p>
-              </div>
-            </SessionHarness>
-          </div>
-          <div
-            className="session-controls"
-            hidden={
-              !embedded &&
-              [
-                SessionTabKind.Sidechat,
-                SessionTabKind.PendingSidechat,
-              ].includes(tabs.tab.kind)
-            }
-            inert={
-              !embedded &&
-              [
-                SessionTabKind.Sidechat,
-                SessionTabKind.PendingSidechat,
-              ].includes(tabs.tab.kind)
-            }
-          >
-            <button
-              type="button"
-              disabled={!session || control.busy || control.uncertain}
-              onClick={() => action(SessionAction.STOP)}
-            >
-              {copy("session.stop_cae7d5")}
-            </button>
-            <button
-              type="button"
-              disabled={
-                !session ||
-                control.busy ||
-                control.uncertain ||
-                runnerRemediationPending ||
-                !sessionControlEligibility(session, budgetBlocked).resume
+        <header className="session-header">
+          <div className="session-header-entrance" {...headerEntrance}>
+            <div className="session-heading">
+              <SessionHarness resource={session}>
+                <div className="session-heading-line">
+                  <h2
+                    ref={sessionHeading}
+                    tabIndex={-1}
+                    onDoubleClick={(event) => {
+                      if (session) editName?.(session.id, event.currentTarget);
+                    }}
+                  >
+                    {productResourceName(productLabel, session)}
+                  </h2>
+                  <p
+                    className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
+                    role="status"
+                  >
+                    {connectionLabel}
+                  </p>
+                </div>
+              </SessionHarness>
+            </div>
+            <div
+              className="session-controls"
+              hidden={
+                !embedded &&
+                [
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
               }
-              onClick={() => action(SessionAction.RESUME)}
+              inert={
+                !embedded &&
+                [
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
+              }
             >
-              {startupRetry
-                ? copy("session.startupRetry")
-                : copy("session.resume_d640c7")}
-            </button>
-            <SessionActions>
-              {session ? (
-                <SessionForkAction
-                  source={session}
-                  disabled={control.busy || control.uncertain}
-                />
-              ) : null}
               <button
                 type="button"
                 disabled={!session || control.busy || control.uncertain}
-                onClick={() =>
-                  action(
-                    text(data.archive) === "archived"
-                      ? SessionAction.RESTORE
-                      : SessionAction.ARCHIVE,
-                  )
-                }
+                onClick={() => action(SessionAction.STOP)}
               >
-                {text(data.archive) === "archived"
-                  ? copy("session.restore_a76e13")
-                  : copy("session.archive_66f480")}
+                {copy("session.stop_cae7d5")}
               </button>
-            </SessionActions>
+              <button
+                type="button"
+                disabled={
+                  !session ||
+                  control.busy ||
+                  control.uncertain ||
+                  runnerRemediationPending ||
+                  !sessionControlEligibility(session, budgetBlocked).resume
+                }
+                onClick={() => action(SessionAction.RESUME)}
+              >
+                {startupRetry
+                  ? copy("session.startupRetry")
+                  : copy("session.resume_d640c7")}
+              </button>
+              <SessionActions>
+                {session ? (
+                  <SessionForkAction
+                    source={session}
+                    disabled={control.busy || control.uncertain}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!session || control.busy || control.uncertain}
+                  onClick={() =>
+                    action(
+                      text(data.archive) === "archived"
+                        ? SessionAction.RESTORE
+                        : SessionAction.ARCHIVE,
+                    )
+                  }
+                >
+                  {text(data.archive) === "archived"
+                    ? copy("session.restore_a76e13")
+                    : copy("session.archive_66f480")}
+                </button>
+              </SessionActions>
+            </div>
           </div>
         </header>
         {!embedded ? (
