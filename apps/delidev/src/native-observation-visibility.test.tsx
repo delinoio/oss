@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-import { newRequestId } from "@delinoio/delidev-api-client";
-import { cleanup, render } from "@testing-library/react";
+import { create } from "@bufbuild/protobuf";
+import { createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import {
+  EntityKind,
+  ResourceSchema,
+  SessionService,
+  SystemCapability,
+  SystemService,
+  newRequestId,
+} from "@delinoio/delidev-api-client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { Document } from "./documents";
+import { encode, type Document } from "./documents";
 import { NativeClaudeCompactionBoundary } from "./native-claude-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeContextCompaction } from "./native-context-compaction";
@@ -12,6 +23,8 @@ import {
   NativeGrokTool,
   NativeGrokToolsTerminal,
 } from "./native-grok-interactions";
+import { MutationIntents } from "./mutation";
+import { SessionContext } from "./session-context";
 
 // jsdom cannot parse the whole stylesheet, so load only the real visibility
 // rules. They are the same attribute selectors the desktop app applies.
@@ -335,4 +348,119 @@ describe("transcript token and time observation toggles", () => {
       }
     },
   );
+
+  // Session Context renders in the Session Info aside under
+  // `.session-information-section`, outside `.transcript` and
+  // `.execution-configuration`.
+  it.each([
+    ["codex", "Latest native-reported context tokens"],
+    ["opencode", "Current context tokens"],
+    ["claude-code", "Current context tokens"],
+  ])("Session Context token rows for %s", async (harness, label) => {
+    const sessionId = newRequestId();
+    const executionId = newRequestId();
+    const threadId = newRequestId();
+    const session = create(ResourceSchema, {
+      kind: EntityKind.SESSION,
+      id: sessionId,
+      revision: 8n,
+      schemaVersion: 1,
+      documentJson: encode({
+        initial_execution: { configuration: { harness } },
+        execution: { execution_id: executionId, native_thread_id: threadId },
+      }),
+    });
+    const context: Document = {
+      session_id: sessionId,
+      session_revision: "8",
+      current_tokens: harness === "codex" ? null : "12345",
+    };
+    if (harness === "codex") {
+      context.execution_id = executionId;
+      context.native_context = {
+        harness: "codex",
+        source: "last-request-total",
+        tokens: "6789",
+        observation_id: newRequestId(),
+        execution_id: executionId,
+        native_thread_id: threadId,
+        native_turn_id: newRequestId(),
+        sequence: "1",
+        observed_at: "2026-01-01T00:00:00Z",
+        status: "latest",
+      };
+    }
+    if (harness !== "claude-code")
+      context.automatic_boundary = {
+        document: {
+          progress: {
+            kind: "native-compaction",
+            compaction: {
+              harness,
+              trigger: "automatic",
+              stage: "completed",
+              native_item_id:
+                harness === "opencode"
+                  ? "prt_0123456789abABCDEFGHIJKLMN"
+                  : "original-item",
+            },
+          },
+        },
+      };
+    const transport = createRouterTransport((router) => {
+      router.service(SystemService, {
+        getStatus: () => ({
+          capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1],
+        }),
+      });
+      router.service(SessionService, {
+        getSessionContext: () => ({
+          documentJson: encode(context),
+          capabilities: [],
+        }),
+      });
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <section className="session-information-section">
+              <SessionContext session={session} />
+            </section>
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    const rowOf = (text: RegExp) =>
+      [...view.container.querySelectorAll("p, dt, dd")].find((item) =>
+        text.test(item.textContent ?? ""),
+      ) as HTMLElement | undefined;
+    const labelPattern = new RegExp(label, "i");
+    for (const tokens of [true, false]) {
+      setToggles(tokens, true);
+      await waitFor(() => expect(rowOf(labelPattern)).toBeTruthy());
+      expect(
+        getComputedStyle(rowOf(labelPattern)!).display === "none",
+        `${label} row`,
+      ).toBe(!tokens);
+      if (harness === "claude-code") continue;
+      await waitFor(() => expect(rowOf(/context tokens/i)).toBeTruthy());
+      const compaction = [...view.container.querySelectorAll("dt")].find(
+        (item) => /context tokens/i.test(item.textContent ?? ""),
+      )!;
+      expect(getComputedStyle(compaction).display === "none").toBe(!tokens);
+      expect(
+        getComputedStyle(compaction.nextElementSibling as HTMLElement)
+          .display === "none",
+      ).toBe(!tokens);
+      // The original context reference is not a token observation.
+      const reference = [...view.container.querySelectorAll("dt")].find(
+        (item) => /reference/i.test(item.textContent ?? ""),
+      )!;
+      expect(getComputedStyle(reference).display).not.toBe("none");
+    }
+  });
 });

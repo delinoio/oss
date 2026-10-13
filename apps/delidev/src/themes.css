@@ -426,7 +426,8 @@
 :root[data-show-tokens="false"] .transcript [data-token-observation],
 :root[data-show-tokens="false"]
   .execution-configuration
-  [data-token-observation] {
+  [data-token-observation],
+:root[data-show-tokens="false"] .session-context [data-token-observation] {
   display: none;
 }
 :root[data-animation="false"] *,

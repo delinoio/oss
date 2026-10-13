@@ -298,7 +298,7 @@ export function SessionContext({ session }: { session: Resource }) {
       ) : null}
       {harness === "codex" ? (
         <>
-          <p>
+          <p data-token-observation>
             <LocalizedText
               id="session-context.latestNativeTokens"
               components={{
@@ -331,7 +331,7 @@ export function SessionContext({ session }: { session: Resource }) {
               }}
             />
           </div>
-          <p>
+          <p data-token-observation={percent === undefined ? undefined : true}>
             {percent === undefined
               ? copy("session-name.capacityUnavailable")
               : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}
@@ -373,7 +373,7 @@ export function SessionContext({ session }: { session: Resource }) {
           ) : null}
         </>
       ) : (
-        <p>
+        <p data-token-observation>
           <LocalizedText
             id="session-context.currentContextTokens_2fb474"
             components={{
