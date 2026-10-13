@@ -538,7 +538,12 @@ test("the custom theme preview ignores color maps that are not an exact complete
     value: [],
   });
   try {
-    const valid = { version: 1 as const, name: "Fixture", ...palettes.default };
+    const valid = {
+      version: 1 as const,
+      id: "019abcde-1234-7123-8123-123456789abc",
+      name: "Fixture",
+      ...palettes.default,
+    };
     const { background, border, ...withoutPair } = palettes.default.light;
     const collided = {
       ...withoutPair,
@@ -549,6 +554,9 @@ test("the custom theme preview ignores color maps that are not an exact complete
     accepted.unmount();
     expect(document.adoptedStyleSheets).toHaveLength(0);
     render(<ColorPreview draft={{ ...valid, light: collided }} />);
+    expect(document.adoptedStyleSheets).toHaveLength(0);
+    const { id: _, ...withoutId } = valid;
+    render(<ColorPreview draft={withoutId as unknown as typeof valid} />);
     expect(document.adoptedStyleSheets).toHaveLength(0);
   } finally {
     if (descriptor)
@@ -1040,6 +1048,282 @@ test("custom theme save waits for the positively committed native map identity",
   );
   expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull();
   expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
+});
+
+// jsdom has no constructed sheets. This shim checks ownership and lifecycle
+// only; scripts/test-appearance-palette.mjs checks the actual browser cascade.
+function stubConstructedSheets() {
+  const OriginalSheet = CSSStyleSheet;
+  vi.stubGlobal(
+    "CSSStyleSheet",
+    class extends OriginalSheet {
+      replaceSync(source: string) {
+        this.insertRule(source);
+      }
+    },
+  );
+  const descriptor = Object.getOwnPropertyDescriptor(
+    document,
+    "adoptedStyleSheets",
+  );
+  Object.defineProperty(document, "adoptedStyleSheets", {
+    configurable: true,
+    writable: true,
+    value: [],
+  });
+  return () => {
+    if (descriptor)
+      Object.defineProperty(document, "adoptedStyleSheets", descriptor);
+    else Reflect.deleteProperty(document, "adoptedStyleSheets");
+  };
+}
+const previewSheets = () =>
+  document.adoptedStyleSheets.filter((sheet) =>
+    (sheet.cssRules[0] as CSSStyleRule | undefined)?.selectorText?.startsWith(
+      ".appearance-preview-",
+    ),
+  );
+const previewRule = (mode: "light" | "dark") =>
+  previewSheets().find(
+    (sheet) =>
+      (sheet.cssRules[0] as CSSStyleRule).selectorText ===
+      `.appearance-preview-${mode}`,
+  )!.cssRules[0] as CSSStyleRule;
+
+async function openThemeEditor(value: ReturnType<typeof fixture>) {
+  const { defaultPreferences } = await import("./appearance-preferences");
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    revision: 1,
+    theme: Theme.System,
+    problem: null,
+    preferences: defaultPreferences(),
+  });
+  const view = render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  const duplicate = await screen.findByRole("button", {
+    name: "Duplicate light palette",
+  });
+  await waitFor(() =>
+    expect((duplicate as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(duplicate);
+  return view;
+}
+const editorInputs = () =>
+  screen.getAllByRole("textbox") as HTMLInputElement[];
+
+test("a pending custom theme save freezes the draft and closes on the submitted snapshot", async () => {
+  scheme(false);
+  const value = fixture(),
+    pending = deferred<unknown>();
+  await openThemeEditor(value);
+  vi.mocked(value.bridge.update).mockReturnValueOnce(pending.promise);
+  fireEvent.change(screen.getByRole("textbox", { name: "Theme name" }), {
+    target: { value: "Frozen draft" },
+  });
+  expect(editorInputs().every((input) => !input.disabled)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Save theme" }));
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", { name: "Theme name" }).matches(":disabled"),
+    ).toBe(true),
+  );
+  // The name and every color input are frozen while the save is pending.
+  const inputs = editorInputs();
+  expect(inputs.length).toBeGreaterThan(1);
+  expect(inputs.every((input) => input.disabled)).toBe(true);
+  const [theme, revision, preferences] = vi.mocked(value.bridge.update).mock
+    .calls[0];
+  expect(preferences!.custom_themes).toHaveLength(1);
+  expect(preferences!.custom_themes[0].name).toBe("Frozen draft");
+  await act(async () =>
+    pending.resolve({
+      theme,
+      revision: revision + 1,
+      problem: null,
+      preferences,
+    }),
+  );
+  expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull();
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+  expect(screen.getAllByText("Frozen draft").length).toBeGreaterThan(0);
+});
+
+test("a failed or uncertain custom theme save keeps the exact draft and recovery controls", async () => {
+  scheme(false);
+  const value = fixture(),
+    pending = deferred<unknown>();
+  await openThemeEditor(value);
+  vi.mocked(value.bridge.update).mockReturnValueOnce(pending.promise);
+  fireEvent.change(screen.getByRole("textbox", { name: "Theme name" }), {
+    target: { value: "Uncertain draft" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save theme" }));
+  await act(async () => pending.reject(new Error("native write failed")));
+  const name = screen.getByRole("textbox", {
+    name: "Theme name",
+  }) as HTMLInputElement;
+  expect(name.value).toBe("Uncertain draft");
+  expect(editorInputs().every((input) => !input.disabled)).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "Save theme" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+  const reload = screen.getByRole("button", { name: "Reload appearance" });
+  // Reload reveals that the uncertain save did commit the submitted theme, so
+  // the editor reconciles against the submitted snapshot and closes.
+  const [theme, revision, preferences] = vi.mocked(value.bridge.update).mock
+    .calls[0];
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    theme,
+    revision: revision + 1,
+    problem: null,
+    preferences,
+  });
+  fireEvent.click(reload);
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull(),
+  );
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+});
+
+test("a revision published before submit blocks Save and never discards the draft", async () => {
+  const { defaultPreferences } = await import("./appearance-preferences");
+  scheme(false);
+  const value = fixture();
+  await openThemeEditor(value);
+  const name = screen.getByRole("textbox", {
+    name: "Theme name",
+  }) as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Conflicted draft" } });
+  act(() =>
+    value.publish({
+      revision: 2,
+      theme: Theme.Dark,
+      problem: null,
+      preferences: defaultPreferences(),
+    }),
+  );
+  expect(
+    screen.getByText(
+      "Appearance changed. This draft is retained. Cancel and reload before saving.",
+    ),
+  ).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Save theme" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.submit(name.closest("form")!);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+  expect(name.value).toBe("Conflicted draft");
+  expect(name.disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull();
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});
+
+test("the editor preview installs scoped sheets for an identity-bearing draft and follows edits", async () => {
+  const { palettes } = await import("./appearance-preferences");
+  scheme(false);
+  const restore = stubConstructedSheets();
+  try {
+    const value = fixture();
+    const view = await openThemeEditor(value);
+    expect(previewSheets()).toHaveLength(2);
+    for (const mode of ["light", "dark"] as const)
+      for (const [token, color] of Object.entries(palettes.default[mode]))
+        expect(previewRule(mode).style.getPropertyValue(`--${token}`)).toBe(
+          color,
+        );
+    const before = previewSheets();
+    const field = screen.getByRole("textbox", {
+      name: "Light background",
+    }) as HTMLInputElement;
+    expect(field.value).toBe(palettes.default.light.background);
+    fireEvent.change(field, { target: { value: "#FEFEFE" } });
+    expect(previewSheets()).toHaveLength(2);
+    expect(previewSheets().some((sheet) => before.includes(sheet))).toBe(false);
+    expect(previewRule("light").style.getPropertyValue("--background")).toBe(
+      "#FEFEFE",
+    );
+    expect(previewRule("dark").style.getPropertyValue("--background")).toBe(
+      palettes.default.dark.background,
+    );
+    view.unmount();
+    expect(previewSheets()).toHaveLength(0);
+  } finally {
+    restore();
+  }
+});
+
+test("the editor preview installs nothing for an invalid token or contrast", async () => {
+  const { palettes } = await import("./appearance-preferences");
+  scheme(false);
+  const restore = stubConstructedSheets();
+  let view: ReturnType<typeof render> | undefined;
+  try {
+    const value = fixture();
+    view = await openThemeEditor(value);
+    expect(previewSheets()).toHaveLength(2);
+    const field = screen.getByRole("textbox", {
+      name: "Light text",
+    }) as HTMLInputElement;
+    // Not a six-digit opaque color.
+    fireEvent.change(field, { target: { value: "red" } });
+    expect(previewSheets()).toHaveLength(0);
+    // A valid color that fails the text-on-surface contrast row.
+    fireEvent.change(field, {
+      target: { value: palettes.default.light.surface },
+    });
+    expect(previewSheets()).toHaveLength(0);
+    fireEvent.change(field, {
+      target: { value: palettes.default.light.text },
+    });
+    expect(previewSheets()).toHaveLength(2);
+  } finally {
+    // Unmount while the shim is installed so cleanup finds the sheet list.
+    view?.unmount();
+    restore();
+  }
+});
+
+test("the editor preview rejects an invalid identity and strict no-ID files still validate separately", async () => {
+  const { palettes, parseThemeFile, validTheme } =
+    await import("./appearance-preferences");
+  const { ColorPreview } = await import("./appearance-controls");
+  const restore = stubConstructedSheets();
+  const mounted: ReturnType<typeof render>[] = [];
+  try {
+    const file = { version: 1 as const, name: "Fixture", ...palettes.default };
+    const valid = { ...file, id: "019abcde-1234-7123-8123-123456789abc" };
+    expect(validTheme(valid, true)).toBe(true);
+    expect(validTheme(valid)).toBe(false);
+    expect(validTheme(file)).toBe(true);
+    expect(parseThemeFile(JSON.stringify(file)).name).toBe("Fixture");
+    expect(() => parseThemeFile(JSON.stringify(valid))).toThrow();
+    mounted.push(
+      render(<ColorPreview draft={{ ...valid, id: "not-a-uuid" }} />),
+    );
+    expect(previewSheets()).toHaveLength(0);
+    // A version 4 UUID is not the required UUIDv7 identity.
+    mounted.push(
+      render(
+        <ColorPreview
+          draft={{ ...valid, id: "123e4567-e89b-42d3-a456-426614174000" }}
+        />,
+      ),
+    );
+    expect(previewSheets()).toHaveLength(0);
+    expect(document.adoptedStyleSheets).toHaveLength(0);
+  } finally {
+    mounted.forEach((view) => view.unmount());
+    restore();
+  }
 });
 
 test("keeps described settings, separate disclosure choices and unavailable renderers", async () => {
