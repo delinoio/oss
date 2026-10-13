@@ -21,7 +21,16 @@ const question = {
   type: "user-question",
   closure: "open",
   questions: {
-    questions: [{ id: "original", text: "Choose", options: [] }],
+    questions: [
+      {
+        id: "original",
+        header: "Original",
+        text: "Choose",
+        other: false,
+        secret: false,
+        options: [{ label: "A", description: "" }],
+      },
+    ],
   },
 };
 const acceptedResponse = {
