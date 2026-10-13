@@ -86,6 +86,27 @@ fn coverage(
                             .to_owned(),
                     )
                 }
+                OptimizationCategory::TreeShaking
+                    if collection.bundler == "rspack"
+                        && rules::rspack::used_exports_disabled(collection) =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Used-exports analysis is disabled by optimization.usedExports: false."
+                            .to_owned(),
+                    )
+                }
+                OptimizationCategory::ModuleConcatenation
+                    if collection.bundler == "rspack"
+                        && rules::rspack::concatenation_disabled(collection) =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Module concatenation is disabled by optimization.concatenateModules: \
+                         false."
+                            .to_owned(),
+                    )
+                }
                 OptimizationCategory::Inlining | OptimizationCategory::ConstantFolding => (
                     CoverageState::Unavailable,
                     "The engine does not expose these decisions and bundlewhy has no verified \
@@ -801,6 +822,48 @@ mod tests {
             .find(|entry| entry.category == OptimizationCategory::TreeShaking)
             .unwrap();
         assert_eq!(entry.state, CoverageState::NotApplicable);
+    }
+
+    #[test]
+    fn rspack_disabled_optimizations_are_not_reported_as_covered() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |value| {
+            value["configSummary"]["optimization.usedExports"] = serde_json::json!("false");
+            value["configSummary"]["optimization.concatenateModules"] = serde_json::json!("false");
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(
+            find(
+                &analysis.diagnostics,
+                "rspack/used-exports-disabled",
+                "rspack.config.mjs"
+            )
+            .is_some()
+        );
+        assert!(
+            find(
+                &analysis.diagnostics,
+                "rspack/concatenation-disabled",
+                "rspack.config.mjs"
+            )
+            .is_some()
+        );
+        assert_absent(&analysis.diagnostics, "rspack/side-effect-retained", "");
+        assert_absent(
+            &analysis.diagnostics,
+            "rspack/module-concatenation-bailout",
+            "",
+        );
+        for category in [
+            OptimizationCategory::TreeShaking,
+            OptimizationCategory::ModuleConcatenation,
+        ] {
+            let entry = analysis
+                .coverage
+                .iter()
+                .find(|entry| entry.category == category)
+                .unwrap();
+            assert_eq!(entry.state, CoverageState::NotApplicable, "{category:?}");
+        }
     }
 
     #[test]

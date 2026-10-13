@@ -18,9 +18,61 @@ fn is_javascript(module: &crate::collect::CollectedModule) -> bool {
         .is_none_or(|kind| kind.starts_with("javascript/"))
 }
 
+fn option_disabled(collection: &crate::collect::Collection, option: &str) -> bool {
+    collection
+        .config_summary
+        .get(option)
+        .is_some_and(|value| value == "false")
+}
+
+/// `optimization.usedExports: false` leaves no used-exports data to analyze.
+pub fn used_exports_disabled(collection: &crate::collect::Collection) -> bool {
+    option_disabled(collection, "optimization.usedExports")
+}
+
+/// `optimization.concatenateModules: false` turns scope hoisting off.
+pub fn concatenation_disabled(collection: &crate::collect::Collection) -> bool {
+    option_disabled(collection, "optimization.concatenateModules")
+}
+
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
-    side_effect_retained(context, drafts);
-    concatenation_bailouts(context, drafts);
+    if used_exports_disabled(context.collection) {
+        super::common::configuration_disabled(
+            context,
+            drafts,
+            &super::common::DisabledOptimization {
+                rule: RuleId::RspackUsedExportsDisabled,
+                title: "Used-exports analysis is disabled",
+                option: "optimization.usedExports",
+                summary: "optimization.usedExports is false, so Rspack does not determine which \
+                          exports are used and cannot drop unused ones. Tree-shaking findings do \
+                          not apply to this build.",
+                direction: "Remove `usedExports: false` (the production default is true).",
+                safety: "Code that relies on unused exports being kept (for example through \
+                         dynamic property access on a namespace) must import them explicitly.",
+            },
+        );
+    } else {
+        side_effect_retained(context, drafts);
+    }
+    if concatenation_disabled(context.collection) {
+        super::common::configuration_disabled(
+            context,
+            drafts,
+            &super::common::DisabledOptimization {
+                rule: RuleId::RspackConcatenationDisabled,
+                title: "Module concatenation is disabled",
+                option: "optimization.concatenateModules",
+                summary: "optimization.concatenateModules is false, so Rspack does not \
+                          scope-hoist modules. Concatenation bailouts do not apply to this build.",
+                direction: "Remove `concatenateModules: false` (the production default is true).",
+                safety: "Concatenation changes module evaluation wrappers only; verify code that \
+                         inspects module objects at runtime.",
+            },
+        );
+    } else {
+        concatenation_bailouts(context, drafts);
+    }
     multiple_chunks(context, drafts);
 }
 

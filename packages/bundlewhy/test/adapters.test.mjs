@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-function runAdapter(bundler, project, config, extra = {}) {
+function runAdapter(bundler, project, config, extra = {}, env = {}) {
   const work = fs.mkdtempSync(
     path.join(os.tmpdir(), "bundlewhy-adapter-test-"),
   );
@@ -34,6 +34,7 @@ function runAdapter(bundler, project, config, extra = {}) {
     {
       cwd: projectRoot,
       encoding: "utf8",
+      env: { ...process.env, ...env },
     },
   );
   const prefix = "BUNDLEWHY-FRAME test-token ";
@@ -213,4 +214,55 @@ test("rspack adapter detects per-entry library builds", () => {
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(status, 0);
   assert.equal(collection.libraryBuild, true);
+});
+
+function rspackConfig(body) {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    `export default { mode: "production", context: ${JSON.stringify(projectRoot)}, ${body} };\n`,
+  );
+  return { dir, relative: path.relative(projectRoot, file) };
+}
+
+test("rspack adapter uses the resolved Browserslist platform for Node targets", () => {
+  const { dir, relative } = rspackConfig('entry: "./src/esm/value.js", target: "browserslist"');
+  const { status, collection } = runAdapter("rspack", "rspack-app", relative, {}, { BROWSERSLIST: "node 20" });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.ssrBuild, true);
+});
+
+test("rspack adapter resolves entry functions before checking library mode", () => {
+  const { dir, relative } = rspackConfig(
+    'entry: async () => ({ main: { import: "./src/esm/value.js", library: { type: "commonjs2" } } })',
+  );
+  const { status, collection } = runAdapter("rspack", "rspack-app", relative);
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.libraryBuild, true);
+  assert.ok(collection.overrides.some((entry) => entry.includes("entry function")));
+});
+
+test("rspack adapter treats SWC with mangling disabled as non-default", () => {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    `import { createRequire } from "node:module";\nconst { SwcJsMinimizerRspackPlugin } = createRequire(${JSON.stringify(path.join(projectRoot, "package.json"))})("@rspack/core");\nexport default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", optimization: { minimizer: [new SwcJsMinimizerRspackPlugin({ minimizerOptions: { mangle: false } })] } };\n`,
+  );
+  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.defaultMinifier, false);
+});
+
+test("rspack configuration functions that throw are configuration load failures", () => {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig("rspack.config.mjs", 'export default () => { throw new Error("factory broke"); };\n');
+  const { status, events } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 1);
+  const error = events.find((event) => event.event === "error");
+  assert.equal(error.code, "BW_CONFIG_LOAD_FAILED");
+  assert.match(error.message, /factory broke/);
 });

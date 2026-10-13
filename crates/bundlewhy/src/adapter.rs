@@ -380,14 +380,20 @@ pub async fn run(
         }
         #[cfg(not(unix))]
         let _ = child.start_kill();
-        if tokio::time::timeout(Duration::from_secs(3), child.wait())
+        let leader_exited = tokio::time::timeout(Duration::from_secs(3), child.wait())
             .await
-            .is_err()
-        {
-            #[cfg(unix)]
-            if let Some(pid) = pid {
-                terminate_group(pid, libc::SIGKILL);
+            .is_ok();
+        // The adapter may exit promptly while a plugin-spawned descendant in
+        // the same group ignores SIGTERM: always finish with SIGKILL for the
+        // whole group after the grace period.
+        #[cfg(unix)]
+        if let Some(pid) = pid {
+            if leader_exited {
+                tokio::time::sleep(Duration::from_millis(200)).await;
             }
+            terminate_group(pid, libc::SIGKILL);
+        }
+        if !leader_exited {
             let _ = child.kill().await;
         }
         let _ = child.wait().await;
@@ -520,7 +526,7 @@ mod tests {
             format!(
                 r#"#!/bin/sh
 if [ "$1" = "--version" ]; then echo v24.0.0; exit 0; fi
-sleep 30 &
+(trap '' TERM; exec sleep 30) &
 echo $! > '{}'
 token=$(sed -n 's/.*"protocolToken":"\([0-9a-f]*\)".*/\1/p' "$2")
 # Unframed project output must be ignored even when it looks like an event.

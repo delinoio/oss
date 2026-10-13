@@ -64,13 +64,23 @@ async function loadConfig(request, rspack) {
       "Confirm the configuration loads with `node` directly. TypeScript configurations must use erasable syntax.",
     );
   }
-  if (typeof loaded === "function") {
-    loaded = await loaded(
-      { production: true, RSPACK_BUILD: true },
-      { mode: "production" },
+  // A configuration factory that throws or rejects is a configuration
+  // problem, not a build failure: no compiler has started yet.
+  try {
+    if (typeof loaded === "function") {
+      loaded = await loaded(
+        { production: true, RSPACK_BUILD: true },
+        { mode: "production" },
+      );
+    }
+    loaded = await loaded;
+  } catch (error) {
+    throw new AdapterError(
+      AdapterErrorCode.ConfigLoadFailed,
+      `The configuration function in ${path.basename(request.configFile)} failed: ${error?.message ?? error}`,
+      "Fix the error thrown by the configuration function, then start a new run.",
     );
   }
-  loaded = await loaded;
   if (Array.isArray(loaded)) {
     const names = loaded.map((entry, index) => entry?.name ?? `#${index}`);
     if (request.configName) {
@@ -124,9 +134,15 @@ function describeMinimizer(rspack, config) {
   // Every effective JavaScript minimizer must be the default SWC one: "..."
   // expands to the defaults, and a CSS-only LightningCSS minimizer does not
   // transform JavaScript. Any other entry also rewrites the generated code.
+  // An explicit SWC instance only counts as default when it keeps
+  // compression and mangling enabled; detectors assume both run.
+  const swcDefault = (entry) => {
+    const options = entry?._args?.[0]?.minimizerOptions ?? {};
+    return options.compress !== false && options.mangle !== false;
+  };
   const isDefault = (entry) =>
     entry === "..." ||
-    entry instanceof rspack.SwcJsMinimizerRspackPlugin ||
+    (entry instanceof rspack.SwcJsMinimizerRspackPlugin && swcDefault(entry)) ||
     entry instanceof rspack.LightningCssMinimizerRspackPlugin;
   const defaultMinifier =
     minimizers.every(isDefault) &&
@@ -291,10 +307,13 @@ function runCompiler(rspack, config) {
       reject(error);
       return;
     }
+    // The resolved platform reflects defaults and Browserslist queries that
+    // the literal `target` value cannot show.
+    const platform = { ...(compiler.platform ?? {}) };
     compiler.run((error, stats) => {
       compiler.close(() => {
         if (error) reject(error);
-        else resolve(stats);
+        else resolve({ stats, platform });
       });
     });
   });
@@ -333,6 +352,20 @@ await runAdapter(async (request) => {
     "devtool=source-map",
     "watch=false",
   ];
+  // Resolve an entry function once and build with its result, so the
+  // library check sees exactly what the compiler builds.
+  if (typeof config.entry === "function") {
+    try {
+      config.entry = await config.entry();
+    } catch (error) {
+      throw new AdapterError(
+        AdapterErrorCode.ConfigLoadFailed,
+        `The entry function failed: ${error?.message ?? error}`,
+        "Fix the error thrown by the entry function, then start a new run.",
+      );
+    }
+    overrides.push("entry function resolved once by bundlewhy");
+  }
   const diagnosticConfig = {
     ...config,
     mode: "production",
@@ -344,8 +377,9 @@ await runAdapter(async (request) => {
 
   progress("building", `Running the Rspack ${version} production build`);
   let stats;
+  let platform = {};
   try {
-    stats = await runCompiler(rspack, diagnosticConfig);
+    ({ stats, platform } = await runCompiler(rspack, diagnosticConfig));
   } catch (error) {
     throw new AdapterError(
       AdapterErrorCode.BuildFailed,
@@ -402,7 +436,7 @@ await runAdapter(async (request) => {
       "original devtool": summarizeValue(config.devtool),
     },
     libraryBuild: libraryBuild(config),
-    ssrBuild: nodeTarget,
+    ssrBuild: nodeTarget || platform.node === true || platform.nwjs === true,
     buildDir: request.buildDir,
     logs: [],
     ...normalized,

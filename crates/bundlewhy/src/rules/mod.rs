@@ -37,6 +37,8 @@ pub enum RuleId {
     UnresolvedEnvCondition,
     MinificationDisabled,
     ViteTreeShakingDisabled,
+    RspackUsedExportsDisabled,
+    RspackConcatenationDisabled,
     DirectEvalBlocksMangling,
 }
 
@@ -53,6 +55,8 @@ impl RuleId {
             Self::UnresolvedEnvCondition => "minifier/unresolved-env-condition",
             Self::MinificationDisabled => "minifier/minification-disabled",
             Self::ViteTreeShakingDisabled => "vite/tree-shaking-disabled",
+            Self::RspackUsedExportsDisabled => "rspack/used-exports-disabled",
+            Self::RspackConcatenationDisabled => "rspack/concatenation-disabled",
             Self::DirectEvalBlocksMangling => "minifier/direct-eval-blocks-mangling",
         }
     }
@@ -61,10 +65,11 @@ impl RuleId {
         match self {
             Self::RspackSideEffectRetained
             | Self::ViteSideEffectRetained
-            | Self::ViteTreeShakingDisabled => OptimizationCategory::TreeShaking,
-            Self::RspackModuleConcatenationBailout | Self::ViteCommonjsWrapped => {
-                OptimizationCategory::ModuleConcatenation
-            }
+            | Self::ViteTreeShakingDisabled
+            | Self::RspackUsedExportsDisabled => OptimizationCategory::TreeShaking,
+            Self::RspackModuleConcatenationBailout
+            | Self::RspackConcatenationDisabled
+            | Self::ViteCommonjsWrapped => OptimizationCategory::ModuleConcatenation,
             Self::RspackModuleInMultipleChunks | Self::ViteIneffectiveDynamicImport => {
                 OptimizationCategory::ChunkSplitting
             }
@@ -404,7 +409,9 @@ pub fn rules_by_category(bundler: &str) -> BTreeMap<OptimizationCategory, Vec<Ru
     let engine_rules: &[RuleId] = match bundler {
         "rspack" => &[
             RuleId::RspackSideEffectRetained,
+            RuleId::RspackUsedExportsDisabled,
             RuleId::RspackModuleConcatenationBailout,
+            RuleId::RspackConcatenationDisabled,
             RuleId::RspackModuleInMultipleChunks,
         ],
         "vite" => &[

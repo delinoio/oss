@@ -380,6 +380,60 @@ fn path_is_dependency(path: &str) -> bool {
     path.starts_with("node_modules/") || path.starts_with("../")
 }
 
+/// Text of a configuration-disabled finding.
+pub struct DisabledOptimization {
+    pub rule: RuleId,
+    pub title: &'static str,
+    pub option: &'static str,
+    pub summary: &'static str,
+    pub direction: &'static str,
+    pub safety: &'static str,
+}
+
+/// Confirmed finding located at the configuration file for an optimization
+/// that the resolved configuration turned off.
+pub fn configuration_disabled(
+    context: &mut Context<'_>,
+    drafts: &mut Vec<DiagnosticDraft>,
+    finding: &DisabledOptimization,
+) {
+    let config_file = context.collection.config_file.clone();
+    let located = match &config_file {
+        Some(file) => context.original_location(Path::new(file), 0, 0),
+        None => super::Located {
+            location: None,
+            generated: None,
+            snippet: None,
+        },
+    };
+    let module = config_file
+        .as_deref()
+        .map(|file| context.display_path(Path::new(file)))
+        .unwrap_or_default();
+    drafts.push(DiagnosticDraft {
+        rule: finding.rule,
+        status: EvidenceStatus::Confirmed,
+        title: finding.title.to_owned(),
+        summary: finding.summary.to_owned(),
+        conditions: vec![Condition::new(
+            &format!("{} is enabled", finding.option),
+            ConditionOutcome::Unmet,
+            format!("{}: false", finding.option),
+        )],
+        located,
+        module,
+        dependency_paths: Vec::new(),
+        evidence: vec![Evidence::new(
+            "resolved bundler configuration",
+            EvidenceStatus::Confirmed,
+            format!("{}: false", finding.option),
+        )],
+        direction: finding.direction.to_owned(),
+        safety: finding.safety.to_owned(),
+        dependency: false,
+    });
+}
+
 fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
     if context.collection.minify_enabled {
         return;
@@ -530,6 +584,19 @@ fn binding_target(declarator: &str) -> &str {
             b'=' if depth == 0
                 && bytes.get(index + 1) != Some(&b'=')
                 && bytes.get(index + 1) != Some(&b'>') =>
+            {
+                return &declarator[..index];
+            }
+            // `for (const name of items)` and `for (const key in object)`.
+            b'o' | b'i'
+                if depth == 0
+                    && index > 0
+                    && bytes[index - 1].is_ascii_whitespace()
+                    && (declarator[index..].starts_with("of")
+                        || declarator[index..].starts_with("in"))
+                    && bytes.get(index + 2).is_none_or(|next| {
+                        next.is_ascii_whitespace() || b"[{(\"'`".contains(next)
+                    }) =>
             {
                 return &declarator[..index];
             }

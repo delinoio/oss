@@ -23,6 +23,17 @@ pub struct Chunk {
     line_starts: Vec<usize>,
 }
 
+/// Joins `sourceRoot` and a source with one separator. Absolute and URL
+/// sources ignore the root; a trailing `/` on the root and a leading `./` on
+/// the source never produce `//` or an absolute-looking remainder.
+pub fn join_source_root(root: &str, source: &str) -> String {
+    if root.is_empty() || source.contains("://") || source.starts_with('/') {
+        return source.to_owned();
+    }
+    let source = source.strip_prefix("./").unwrap_or(source);
+    format!("{}/{source}", root.trim_end_matches('/'))
+}
+
 /// Resolves a source-map `sources` entry to an absolute path.
 pub fn resolve_map_source(entry: &str, map_dir: &Path, context: &Path) -> Option<PathBuf> {
     if let Some(rest) = entry.strip_prefix("webpack://") {
@@ -82,11 +93,7 @@ impl Chunk {
             map.sources()
                 .map(|source| {
                     let root = map.get_source_root().unwrap_or("");
-                    let joined = if root.is_empty() {
-                        source.to_owned()
-                    } else {
-                        format!("{root}/{source}")
-                    };
+                    let joined = join_source_root(root, source);
                     resolve_map_source(&joined, &map_dir, context)
                 })
                 .collect()
@@ -348,6 +355,28 @@ mod tests {
         assert_eq!(
             resolve_map_source("../src/b.js", Path::new("/app/dist/assets"), context),
             Some(PathBuf::from("/app/dist/src/b.js"))
+        );
+    }
+
+    #[test]
+    fn source_roots_join_without_creating_absolute_paths() {
+        assert_eq!(
+            join_source_root("webpack://app/", "./src/a.js"),
+            "webpack://app/src/a.js"
+        );
+        assert_eq!(
+            join_source_root("webpack://app", "src/a.js"),
+            "webpack://app/src/a.js"
+        );
+        assert_eq!(join_source_root("", "./src/a.js"), "./src/a.js");
+        assert_eq!(join_source_root("/root/", "/abs/a.js"), "/abs/a.js");
+        assert_eq!(
+            resolve_map_source(
+                &join_source_root("webpack://app/", "./src/a.js"),
+                Path::new("/out"),
+                Path::new("/app")
+            ),
+            Some(PathBuf::from("/app/src/a.js"))
         );
     }
 
