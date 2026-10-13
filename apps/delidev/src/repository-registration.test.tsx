@@ -2276,14 +2276,18 @@ it("returns a verified deferred save name collision to its retained draft", asyn
   ).toBe(false);
 });
 
-it("corrects a completed clone registration collision using its existing Local checkout", async () => {
+async function collideCompletedClone(
+  directory?: string,
+  language = SupportedLanguage.English,
+) {
   const f = fixture(metadata, true);
+  const checkout = `/parent/${directory ?? "oss"}`;
   f.clone.mockImplementationOnce(async (request) => {
     const job = row(EntityKind.JOB, {
       type: "clone-repository",
       machine_id: request.machineId,
       state: "failed",
-      output: { inspection: { ...metadata, root: "/parent/oss" } },
+      output: { inspection: { ...metadata, root: checkout } },
       problem: {
         code: "conflict",
         cause: "configuration_name_conflict",
@@ -2296,23 +2300,39 @@ it("corrects a completed clone registration collision using its existing Local c
   f.mount();
   await f.add();
   cloneInputs();
-  const button = screen.getByRole("button", { name: "Clone & add repository" });
+  if (directory !== undefined)
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Repository folder name" }),
+      { target: { value: directory } },
+    );
+  if (language !== SupportedLanguage.English)
+    await act(async () => {
+      await i18n.changeLanguage(language);
+    });
+  const button = screen.getByRole("button", {
+    name: copy("repository-registration.inline.91a5165017"),
+  });
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button);
-  await screen.findByText(
-    "A repository with this name already exists. Choose another name.",
-  );
+  await screen.findByText(copy("configuration-fields.repositoryNameConflict"));
   const input = screen.getByRole("textbox", {
-    name: "Repository name",
+    name: copy("repository-registration.inline.a2b1b3f24a"),
   }) as HTMLInputElement;
   await waitFor(() => expect(document.activeElement).toBe(input));
+  return { f, input, checkout };
+}
+function addRepositoryButton() {
+  return within(
+    screen.getByRole("dialog", { name: "Add repository" }),
+  ).getByRole("button", { name: "Add repository" });
+}
+function computerRow() {
+  return screen.getByText("Computer", { selector: "dt" }).nextElementSibling;
+}
+it("corrects a completed clone registration collision using its existing Local checkout", async () => {
+  const { f, input } = await collideCompletedClone();
   fireEvent.change(input, { target: { value: "Different name" } });
-  fireEvent.click(
-    within(screen.getByRole("dialog", { name: "Add repository" })).getByRole(
-      "button",
-      { name: "Add repository" },
-    ),
-  );
+  fireEvent.click(addRepositoryButton());
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(
     new TextDecoder().decode(f.save.mock.calls[0][0].documentJson),
@@ -2321,6 +2341,113 @@ it("corrects a completed clone registration collision using its existing Local c
     { machine_id: f.machine.id, path: "/parent/oss" },
   ]);
   expect(saved.name).toBe("Different name");
+  expect(f.clone).toHaveBeenCalledTimes(1);
+  expect(f.inspected).not.toHaveBeenCalled();
+});
+it.each(["Team OSS", "OSS"])(
+  "restores the submitted clone directory %s as the editable name after a completed clone collision",
+  async (directory) => {
+    const { f, input, checkout } = await collideCompletedClone(directory);
+    expect(input.value).toBe(directory);
+    expect(computerRow()?.textContent).toBe("This computer");
+    fireEvent.click(addRepositoryButton());
+    await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+    const saved = JSON.parse(
+      new TextDecoder().decode(f.save.mock.calls[0][0].documentJson),
+    );
+    expect(saved.name).toBe(directory);
+    expect(saved.checkouts).toEqual([
+      { machine_id: f.machine.id, path: checkout },
+    ]);
+    expect(f.clone).toHaveBeenCalledTimes(1);
+    expect(f.clone.mock.calls[0][0].directoryName).toBe(directory);
+    expect(f.inspected).not.toHaveBeenCalled();
+  },
+);
+it("shows the localized local computer label after a completed clone collision", async () => {
+  try {
+    const { f, input } = await collideCompletedClone(
+      "Team OSS",
+      SupportedLanguage.Korean,
+    );
+    expect(
+      screen.getByText("컴퓨터", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("이 컴퓨터");
+    expect(input.value).toBe("Team OSS");
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    expect(
+      screen.getByText("컴퓨터", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("이 컴퓨터");
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", {
+          name: copy("repository-registration.addRepository_2eda4d"),
+        }),
+      ).getByRole("button", {
+        name: copy("repository-registration.addRepository_2eda4d"),
+      }),
+    );
+    await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+    const saved = JSON.parse(
+      new TextDecoder().decode(f.save.mock.calls[0][0].documentJson),
+    );
+    expect(saved.name).toBe("Renamed");
+    expect(saved.checkouts).toEqual([
+      { machine_id: f.machine.id, path: "/parent/Team OSS" },
+    ]);
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+  }
+});
+it("relocalizes the local computer label when the language changes after a completed clone collision", async () => {
+  try {
+    await collideCompletedClone("Team OSS");
+    expect(computerRow()?.textContent).toBe("This computer");
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.Korean);
+    });
+    expect(
+      screen.getByText("컴퓨터", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("이 컴퓨터");
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+    expect(computerRow()?.textContent).toBe("This computer");
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+  }
+});
+it("blocks cloning again immediately after a completed clone collision", async () => {
+  const { f, input } = await collideCompletedClone();
+  const toggle = screen.getByRole("button", {
+    name: "Clone to this computer (optional)",
+  });
+  expect(toggle.hasAttribute("disabled")).toBe(true);
+  expect(
+    screen.getByText(
+      "Clone mode is available before editing the repository name or optional settings. Add this draft first to preserve those settings.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Clone & add repository" }),
+  ).toBeNull();
+  expect(f.clone).toHaveBeenCalledTimes(1);
+  fireEvent.change(input, { target: { value: "Corrected" } });
+  fireEvent.click(addRepositoryButton());
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(
+    new TextDecoder().decode(f.save.mock.calls[0][0].documentJson),
+  );
+  expect(saved.checkouts).toEqual([
+    { machine_id: f.machine.id, path: "/parent/oss" },
+  ]);
   expect(f.clone).toHaveBeenCalledTimes(1);
   expect(f.inspected).not.toHaveBeenCalled();
 });
