@@ -41,7 +41,7 @@ import {
 import { document, object, text } from "./documents";
 import { useRetainedMutationIntents, useRetainedMutation } from "./mutation";
 import { useSessionTabsStore } from "./session-tabs";
-import { terminalFallback } from "./terminal-presentation";
+import { hasPending, terminalFallback } from "./terminal-presentation";
 import type { TerminalScreen } from "./terminal-emulator";
 import { TerminalInputQueue } from "./terminal-input-queue";
 import { terminalDockHeight } from "./terminal-dock-size";
@@ -494,7 +494,7 @@ export function SessionTerminals({
             return (
               !["exited", "closed"].includes(text(data.state)) ||
               data.cleanup_verified !== true ||
-              Object.keys(object(data.pending)).length > 0 ||
+              hasPending(data.pending) ||
               unsettled.has(row.id)
             );
           })
@@ -1022,7 +1022,7 @@ function TerminalView({
   useEffect(() => {
     if (!control.busy && !control.uncertain) observeLatest.current(terminal);
   }, [terminal, control.busy, control.uncertain]);
-  const pending = Object.keys(object(data.pending)).length > 0;
+  const pending = hasPending(data.pending);
   const blocked =
     rendererUnavailable ||
     deliveryError ||

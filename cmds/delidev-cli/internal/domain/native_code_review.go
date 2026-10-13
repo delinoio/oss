@@ -266,3 +266,22 @@ func (p NativeCodeReviewRejectedProof) Validate() error {
 	}
 	return nil
 }
+
+// NativeCodeReviewStaleProof reports that the one original native send finished
+// and its selected target then drifted. It carries no findings, so they cannot
+// be mistaken for a current review result. Joined native, workspace and
+// authentication cleanup is the only fact it proves; it never authorizes a
+// second native send.
+type NativeCodeReviewStaleProof struct {
+	Version         uint32 `json:"version"`
+	ActionID        ID     `json:"action_id"`
+	Stale           bool   `json:"stale"`
+	CleanupVerified bool   `json:"cleanup_verified"`
+}
+
+func (p NativeCodeReviewStaleProof) Validate() error {
+	if p.Version != 1 || p.ActionID.Validate() != nil || !p.Stale || !p.CleanupVerified {
+		return NativeCodeReviewUnavailable()
+	}
+	return nil
+}

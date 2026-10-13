@@ -64,6 +64,7 @@ it.each([
   "Notifications",
   "Import / Export",
   "Backups",
+  "Agent Workers",
 ])("plays the %s category entrance once per explicit opening", (name) => {
   render(providers(<Settings />));
   expect(column().getAttribute("data-entrance")).toBeNull();

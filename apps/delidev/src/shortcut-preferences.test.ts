@@ -555,3 +555,33 @@ it("registers TerminalCreate as a read-only terminal-target Session action that 
     );
   }
 });
+
+it("holds every policy-listed read-only default with a pending reason until the initial read is ready", () => {
+  for (const id of [ShortcutId.OpenFiles, ShortcutId.OpenTool]) {
+    expect(readOnlyShortcutSuppression(id, {}, false)).toBe(
+      "shortcuts.preferencesPending",
+    );
+    expect(customizationBindings(id, {}, false)).toEqual([]);
+  }
+  expect(
+    effectiveShortcutDefinitions([filesDefinition], {}, false)[0],
+  ).toMatchObject({
+    bindings: [],
+    enabled: false,
+    unavailableReason: "shortcuts.preferencesPending",
+  });
+  // Ready (the default) keeps the established policy and untouched defaults.
+  expect(readOnlyShortcutSuppression(ShortcutId.OpenFiles, {}, true)).toBe(
+    undefined,
+  );
+  expect(effectiveShortcutDefinitions([filesDefinition], {}, true)[0]).toEqual(
+    filesDefinition,
+  );
+  // Editable defaults and other read-only IDs are never gated.
+  expect(
+    readOnlyShortcutSuppression(ShortcutId.OpenTerminals, {}, false),
+  ).toBeUndefined();
+  expect(customizationBindings(ShortcutId.NewSession, {}, false)).toEqual(
+    customizationBindings(ShortcutId.NewSession, {}, true),
+  );
+});
