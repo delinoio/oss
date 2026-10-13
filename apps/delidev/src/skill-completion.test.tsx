@@ -691,6 +691,57 @@ it("colors exact complete tokens after a successful read without binding text an
     { start: 30, end: 36, prefix: "valid" },
   ]);
 });
+it("keeps a dismissed valid caret prefix ordinary and still flags confirmed-absent tokens elsewhere", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  input.focus();
+  fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } });
+  await screen.findAllByRole("option");
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  await waitFor(() => expect(f.client.isFetching()).toBe(0));
+  expect(input.value).toBe("$add");
+  expect(input.selectionStart).toBe(4);
+  expect(document.activeElement).toBe(input);
+  expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+  expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+  expect(input.hasAttribute("aria-describedby")).toBe(false);
+  expect(countStatus(view).textContent).toBe("");
+  // A complete absent token elsewhere is still flagged while the prefix stays ordinary.
+  const draft = "$removed $add";
+  fireEvent.change(input, {
+    target: { value: draft, selectionStart: draft.length },
+  });
+  await screen.findAllByRole("option");
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  await waitFor(() =>
+    expect(
+      [...view.container.querySelectorAll(".skill-token-unavailable")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["$removed"]),
+  );
+  expect(
+    screen.getByRole("textbox", {
+      description: "1 skill token is unavailable in this scope.",
+    }),
+  ).toBe(input);
+  // Moving the caret away makes the dismissed prefix a complete absent token.
+  fireEvent.select(input, { target: { selectionStart: 0 } });
+  await waitFor(() =>
+    expect(
+      [...view.container.querySelectorAll(".skill-token-unavailable")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["$removed", "$add"]),
+  );
+  expect(input.value).toBe(draft);
+});
 it("retains only displayed missing rows, skips disabled rows, and discards them on dismissal", async () => {
   let current = entries;
   const send = vi.fn();

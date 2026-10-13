@@ -187,8 +187,10 @@ export function useSkillCompletion({
   editable.current = active && !disabled;
   const canEdit = () =>
     editable.current && skillCompletionAnchorUsable(textarea.current);
-  const token =
-    !dismissed && !composing.current ? skillToken(value, caret) : undefined;
+  // The caret token describes where the user is typing and is independent of
+  // panel dismissal; only the panel, query and keyboard ownership honor dismissal.
+  const caretToken = !composing.current ? skillToken(value, caret) : undefined;
+  const token = !dismissed ? caretToken : undefined;
   const contextChanged =
     previousScope.current.scope !== scope ||
     (!retainTransportContext && previousScope.current.transport !== transport);
@@ -287,12 +289,12 @@ export function useSkillCompletion({
           (range) =>
             !inventory.some((entry) => entry.name === range.prefix) &&
             !(
-              token &&
-              range.start === token.start &&
+              caretToken &&
+              range.start === caretToken.start &&
               inventory.some((entry) =>
                 entry.name
                   .toLocaleLowerCase()
-                  .startsWith(token.prefix.toLocaleLowerCase()),
+                  .startsWith(caretToken.prefix.toLocaleLowerCase()),
               )
             ),
         )

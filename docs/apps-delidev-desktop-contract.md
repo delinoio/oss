@@ -5133,6 +5133,8 @@ unsupported capability and unresolved scope remain unknown; late old-scope resul
 cannot publish. Observe complete whitespace-delimited tokens even with the panel
 dismissed through the existing query owner, without polling or locked reads.
 Names match exactly; a valid caret completion prefix and a bare `$` remain ordinary.
+The caret exemption follows the caret position, not panel visibility: dismissing the
+panel with Escape leaves the valid prefix ordinary until the caret moves away.
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
