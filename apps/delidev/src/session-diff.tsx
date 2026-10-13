@@ -286,8 +286,11 @@ export function RepositoryDiff({
   // presentation or changing repositories never restores trust either.
   const optionsOwner = [sessionId, repository].join("\u0000");
   const trust = useDiffBaseTrust();
-  const explicitBaseInvalidated = Boolean(
-    baseRef && trust.isInvalidated(optionsOwner, baseRef),
+  // The chosen reference is checked even when it came from the inventory
+  // default, so an invalidated reference that later becomes the default is
+  // never trusted again without an explicit Base control selection.
+  const chosenBaseInvalidated = Boolean(
+    chosenBase && trust.isInvalidated(optionsOwner, chosenBase),
   );
   const explicitBaseKey = baseRef ? referenceKey(baseRef) : undefined;
   useEffect(() => {
@@ -312,7 +315,7 @@ export function RepositoryDiff({
   const supportedBase = Boolean(
     options.data &&
     chosenBase &&
-    !explicitBaseInvalidated &&
+    !chosenBaseInvalidated &&
     options.data.choices.some(
       (choice) =>
         choice.available && sameReference(choice.reference, chosenBase),
@@ -622,7 +625,7 @@ export function RepositoryDiff({
               aria-label={copy("session-diff.base_7b4736")}
               disabled={!options.data}
               value={
-                chosenBase && !explicitBaseInvalidated
+                chosenBase && !chosenBaseInvalidated
                   ? referenceKey(chosenBase)
                   : ""
               }
