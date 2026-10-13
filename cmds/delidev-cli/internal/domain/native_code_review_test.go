@@ -188,6 +188,62 @@ func TestNativeCodeReviewResultLimitIncludesUsageRecords(t *testing.T) {
 	}
 }
 
+func TestNativeCodeReviewObjectIDsFollowRepositoryObjectFormat(t *testing.T) {
+	selection := func(kind NativeCodeReviewTargetKind, reference, head, base string) NativeCodeReviewSelection {
+		return NativeCodeReviewSelection{
+			Target:        NativeCodeReviewTarget{Kind: kind, RepositoryID: NewID(), DiffRevision: strings.Repeat("a", 64), Reference: reference},
+			HeadCommit:    head,
+			BaseCommit:    base,
+			ContentDigest: strings.Repeat("c", 64),
+		}
+	}
+	sha1ID, sha256ID := strings.Repeat("b", 40), strings.Repeat("d", 64)
+	custom := selection(ReviewCustom, "", sha256ID, "")
+	custom.Target.Instructions = "Review the selected changes."
+	for name, valid := range map[string]NativeCodeReviewSelection{
+		"sha1-uncommitted":   selection(ReviewUncommitted, "", sha1ID, ""),
+		"sha256-uncommitted": selection(ReviewUncommitted, "", sha256ID, ""),
+		"sha1-commit":        selection(ReviewCommit, sha1ID, sha1ID, ""),
+		"sha256-commit":      selection(ReviewCommit, sha256ID, sha256ID, ""),
+		"sha1-base-branch":   selection(ReviewBaseBranch, "main", sha1ID, sha1ID),
+		"sha256-base-branch": selection(ReviewBaseBranch, "main", sha256ID, sha256ID),
+		"sha256-custom-head": custom,
+	} {
+		if err := valid.Validate(); err != nil {
+			t.Fatal(name, "rejected", err)
+		}
+	}
+	for _, id := range []string{
+		strings.Repeat("b", 39), strings.Repeat("b", 41), strings.Repeat("d", 63), strings.Repeat("d", 65),
+		strings.Repeat("B", 40), strings.Repeat("D", 64), strings.Repeat("g", 64), strings.Repeat("g", 40), strings.Repeat("b", 48), "",
+	} {
+		if selection(ReviewUncommitted, "", id, "").Validate() == nil {
+			t.Fatal("invalid head object id accepted", len(id))
+		}
+		if selection(ReviewCommit, id, sha1ID, "").Validate() == nil {
+			t.Fatal("invalid commit reference accepted", len(id))
+		}
+		if selection(ReviewBaseBranch, "main", sha256ID, id).Validate() == nil {
+			t.Fatal("invalid base object id accepted", len(id))
+		}
+	}
+	if selection(ReviewBaseBranch, "main", sha256ID, sha1ID).Validate() == nil {
+		t.Fatal("mixed object formats accepted")
+	}
+	if selection(ReviewCommit, sha1ID, sha256ID, "").Validate() == nil {
+		t.Fatal("SHA-1 commit reference with a SHA-256 head accepted")
+	}
+	if selection(ReviewCommit, sha256ID, sha1ID, "").Validate() == nil {
+		t.Fatal("SHA-256 commit reference with a SHA-1 head accepted")
+	}
+	// The content digest remains an exact 64-character SHA-256 value.
+	weak := selection(ReviewUncommitted, "", sha1ID, "")
+	weak.ContentDigest = strings.Repeat("c", 40)
+	if weak.Validate() == nil {
+		t.Fatal("review digest was weakened")
+	}
+}
+
 func TestNativeCodeReviewStaleProofIsClosedAndDistinctFromRejectedProof(t *testing.T) {
 	action := NewID()
 	valid := NativeCodeReviewStaleProof{Version: 1, ActionID: action, Stale: true, CleanupVerified: true}
