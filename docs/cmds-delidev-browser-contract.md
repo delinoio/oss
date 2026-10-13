@@ -178,7 +178,11 @@ registers the view's exact generation on the receipt as well. Publishing an
 example overlapping opens sharing a view ID) removes the old view through the
 same registration. The `on_before_close` callback that empties a reconciled receipt's set settles it
 immediately, so an owner that unmounts before its next Observe cannot leave a
-`cleanup-pending` receipt that exhausts the page operation limit. Observing the
+`cleanup-pending` receipt that exhausts the page operation limit. A receipt whose
+reconciliation failed stays `cleanup-pending` with a partial set after the
+profile's mutation slot is released, so every later registration above also
+applies to a committed receipt whose reconciliation has not succeeded, and a
+child removed before the retried Observe is still awaited. Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate
 close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is

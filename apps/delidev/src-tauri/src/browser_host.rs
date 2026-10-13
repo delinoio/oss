@@ -110,6 +110,8 @@ pub enum PageAdmission {
 #[derive(Clone)]
 struct PageOperation {
     request: PageRequest,
+    // Profile whose shared children this operation's receipt observes.
+    profile: String,
     receipt: PageReceipt,
     // Inventory after the operation, for a profile that was never loaded.
     tabs: Tabs,
@@ -340,16 +342,34 @@ impl State {
     // turns out to be a failure, and keeps them when it is recorded as
     // committed.
     fn track_outstanding_superseded(&mut self, profile: &str, superseded: &[(String, u64)]) {
-        let Some(key) = self.page_busy.get(profile).cloned() else {
-            return;
-        };
-        if let Some(operation) = self.page_operations.get_mut(&key) {
-            operation.awaiting_close.extend(superseded.iter().cloned());
-            tracing::debug!(
-                operation = "browser_page_cleanup",
-                state = "superseded_by_selection",
-                awaiting_children = operation.awaiting_close.len()
-            );
+        // The in-flight operation owns the profile's mutation slot. After a
+        // failed reconciliation the slot is released while the committed
+        // receipt stays CleanupPending with a partial awaited set, so a retry
+        // recomputes it from the views that still exist. Such a receipt must
+        // keep observing children that are removed before the retry.
+        let mut keys: Vec<String> = self.page_busy.get(profile).cloned().into_iter().collect();
+        keys.extend(
+            self.page_operations
+                .iter()
+                .filter(|(_, operation)| {
+                    operation.profile == profile
+                        && operation.receipt.metadata_committed
+                        && !operation.cleanup_reconciled
+                        && !operation.receipt.native_cleanup_complete
+                })
+                .map(|(key, _)| key.clone()),
+        );
+        keys.sort();
+        keys.dedup();
+        for key in keys {
+            if let Some(operation) = self.page_operations.get_mut(&key) {
+                operation.awaiting_close.extend(superseded.iter().cloned());
+                tracing::debug!(
+                    operation = "browser_page_cleanup",
+                    state = "superseded_by_selection",
+                    awaiting_children = operation.awaiting_close.len()
+                );
+            }
         }
     }
 
@@ -1175,6 +1195,7 @@ impl BrowserHost {
                 key.clone(),
                 PageOperation {
                     request: request.clone(),
+                    profile: record.id.clone(),
                     receipt: PageReceipt {
                         operation_id: operation_id.into(),
                         page_id: page_id.clone(),
@@ -5893,6 +5914,20 @@ esac
         let (_temp, host, record, _view_id, _original) = active_storage_fixture();
         mark_native_child(&host, "fixture");
         let page = create_page(&host, &record, "https://fixture.test/next");
+        // Settle the Create receipt first: only an operation whose
+        // reconciliation is still unresolved may observe later removals.
+        let keys: Vec<String> = host
+            .state
+            .lock()
+            .unwrap()
+            .page_operations
+            .keys()
+            .cloned()
+            .collect();
+        for key in keys {
+            host.complete_page_cleanup(&key, &record.id, true, Ok(()))
+                .unwrap();
+        }
         let mut state = host.state.lock().unwrap();
         let replacement = state
             .select_tab_tracking_outstanding(&record.id, &page, unmap_view)
@@ -6215,6 +6250,60 @@ esac
         let receipt = host.page_receipt(&key).unwrap();
         assert_eq!(receipt.phase, PagePhase::Completed);
         assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn close_after_a_failed_reconciliation_still_awaits_the_original_child() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        // The first reconciliation fails before it tracks any child: the
+        // mutation slot is released and the committed receipt stays pending.
+        let failed = host
+            .complete_page_cleanup(&key, &record.id, true, Err(NativeFailure::SidecarFailed))
+            .unwrap()
+            .receipt
+            .unwrap();
+        assert_eq!(failed.phase, PagePhase::CleanupPending);
+        assert!(host.state.lock().unwrap().page_busy.is_empty());
+        // The original child is removed before the next Observe.
+        host.close_window_with("fixture", |_| Ok(())).unwrap();
+        assert_eq!(
+            host.state.lock().unwrap().page_operations[&key].awaiting_close,
+            BTreeSet::from([("fixture".to_string(), original.generation)])
+        );
+        // The retry finds no view to replace, yet must keep waiting.
+        let retried = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(retried.phase, PagePhase::CleanupPending);
+        assert!(!retried.native_cleanup_complete);
+        host.child_closed(&original);
+        let receipt = host.page_receipt(&key).unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+    }
+
+    #[test]
+    fn removal_does_not_track_children_for_settled_or_reconciled_receipts() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        // A successful reconciliation finalized the awaited set (empty here).
+        let receipt = finish_fixture_pages(&host, &record, &key);
+        assert_eq!(receipt.phase, PagePhase::CleanupPending);
+        host.state
+            .lock()
+            .unwrap()
+            .page_operations
+            .get_mut(&key)
+            .unwrap()
+            .awaiting_close
+            .clear();
+        host.close_window_with("fixture", |_| Ok(())).unwrap();
+        assert!(
+            host.state.lock().unwrap().page_operations[&key]
+                .awaiting_close
+                .is_empty()
+        );
     }
 
     #[test]
