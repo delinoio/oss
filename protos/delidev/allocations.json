@@ -14742,6 +14742,13 @@
       "kind": "message",
       "member": "observed_at_unix_ms",
       "number": 12
+    },
+    {
+      "issue": 3069,
+      "kind": "message",
+      "declaration": "GetStatusResponse",
+      "member": "production_root_ready",
+      "number": 9
     }
   ],
   "rpcReservations": [
