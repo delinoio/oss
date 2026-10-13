@@ -4451,9 +4451,7 @@ it.each([
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/could not be opened/);
     expect(sidechatTabs()).toHaveLength(0);
-    expect(
-      screen.queryByRole("heading", { name: "Side question" }),
-    ).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Side question" })).toBeNull();
     expect(
       screen.getByRole("textbox", { name: "Search conversations" }),
     ).toBeTruthy();

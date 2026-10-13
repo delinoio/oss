@@ -370,32 +370,29 @@ function Shell({
     searchAbort.current = controller;
     const owner = transport;
     setSearchOpening({ id, status: SearchOpenStatus.Pending });
-    void resolveSearchSession(
-      queryClient,
-      owner,
-      id,
-      controller.signal,
-    ).then((resolution) => {
-      if (searchAbort.current === controller) searchAbort.current = undefined;
-      if (
-        !searchMounted.current ||
-        searchIntent.current !== token ||
-        latestTransport.current !== owner
-      ) {
-        console.info("delidev.search.session_route_discarded", {
-          sessionId: id,
-        });
-        return;
-      }
-      if (resolution.route === SearchSessionRoute.Unavailable) {
-        setSearchOpening({ id, status: SearchOpenStatus.Unavailable });
-        return;
-      }
-      setSearchOpening(undefined);
-      if (resolution.route === SearchSessionRoute.Sidechat)
-        openSessionRef.current(id, resolution.parent, resolution.name);
-      else openSessionRef.current(id);
-    });
+    void resolveSearchSession(queryClient, owner, id, controller.signal).then(
+      (resolution) => {
+        if (searchAbort.current === controller) searchAbort.current = undefined;
+        if (
+          !searchMounted.current ||
+          searchIntent.current !== token ||
+          latestTransport.current !== owner
+        ) {
+          console.info("delidev.search.session_route_discarded", {
+            sessionId: id,
+          });
+          return;
+        }
+        if (resolution.route === SearchSessionRoute.Unavailable) {
+          setSearchOpening({ id, status: SearchOpenStatus.Unavailable });
+          return;
+        }
+        setSearchOpening(undefined);
+        if (resolution.route === SearchSessionRoute.Sidechat)
+          openSessionRef.current(id, resolution.parent, resolution.name);
+        else openSessionRef.current(id);
+      },
+    );
   };
   const navigateTray = (destination: TrayDestination, inboxId?: string) => {
     if (destination === TrayDestination.Settings) {
