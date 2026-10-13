@@ -4,8 +4,8 @@ import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
 import {
   settleEnclosingEntrances,
-  useActivationCount,
   useEntranceActivation,
+  usePresentationCount,
   type EntranceProps,
 } from "./entrance-motion";
 import {
@@ -145,6 +145,7 @@ export function Modal({
   trapFocus = false,
   entrance,
   headingEntrance = false,
+  presentationRequest,
 }: {
   title: string;
   close: () => void;
@@ -158,13 +159,20 @@ export function Modal({
   entrance?: EntranceProps;
   /**
    * Plays the 160ms entrance on this dialog's static heading only, once per
-   * explicit presentation. For tasks whose body may contain persistent portal
+   * explicit presentation request. For tasks whose body may contain persistent portal
    * hosts, which no ancestor transform may touch.
    */
   headingEntrance?: boolean;
+  /**
+   * The owner's explicit presentation request (for example a user action that
+   * opens or resumes the task). A heading entrance plays when the Modal mounts
+   * visible and whenever a changed request becomes visible. Visibility changes
+   * without a new request, such as a host slot appearing, stay immediate.
+   */
+  presentationRequest?: string | number;
 }) {
   useLocale();
-  const presentations = useActivationCount(visible);
+  const presentations = usePresentationCount(visible, presentationRequest);
   const heading = useEntranceActivation(
     String(presentations),
     headingEntrance && visible,

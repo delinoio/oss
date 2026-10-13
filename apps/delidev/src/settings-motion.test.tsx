@@ -247,17 +247,27 @@ it("settles a task entrance when Animation turns Off mid-flight without replay",
   expect(screen.getByRole("textbox", { name: "Draft" })).toBe(input);
 });
 
-it("plays a Modal heading entrance per explicit presentation without touching the dialog", () => {
+it("plays a Modal heading entrance only for explicit presentation requests", () => {
   function Harness() {
     const [open, setOpen] = useState(false);
+    const [request, setRequest] = useState(0);
     return (
       <>
-        <button onClick={() => setOpen((value) => !value)}>Toggle</button>
+        <button onClick={() => setOpen((value) => !value)}>Slot</button>
+        <button
+          onClick={() => {
+            setRequest((value) => value + 1);
+            setOpen(true);
+          }}
+        >
+          Request
+        </button>
         <Modal
           title="Saved server task"
           visible={open}
           close={() => setOpen(false)}
           headingEntrance
+          presentationRequest={request}
         >
           <p>Body</p>
         </Modal>
@@ -269,14 +279,36 @@ it("plays a Modal heading entrance per explicit presentation without touching th
   const header = () => modal().querySelector("header")!;
   // A hidden Modal never carries the attribute.
   expect(header().getAttribute("data-entrance")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+  // Visibility changes without a request (a host slot appearing) stay immediate.
+  fireEvent.click(screen.getByRole("button", { name: "Slot" }));
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Slot" }));
+  fireEvent.click(screen.getByRole("button", { name: "Slot" }));
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Slot" }));
+  // An explicit request plays once on the heading, never on the dialog.
+  fireEvent.click(screen.getByRole("button", { name: "Request" }));
   expect(header().getAttribute("data-entrance")).toBe("y4");
   expect(modal().getAttribute("data-entrance")).toBeNull();
   dispatch(header());
   expect(header().getAttribute("data-entrance")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
-  fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+  // Hiding and showing again without a new request does not replay.
+  fireEvent.click(screen.getByRole("button", { name: "Slot" }));
+  fireEvent.click(screen.getByRole("button", { name: "Slot" }));
+  expect(header().getAttribute("data-entrance")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Request" }));
   expect(header().getAttribute("data-entrance")).toBe("y4");
+});
+
+it("plays a Modal heading entrance for a mount that starts visible", () => {
+  render(
+    <Modal title="Mounted task" close={() => {}} headingEntrance>
+      <p>Body</p>
+    </Modal>,
+  );
+  expect(
+    document.querySelector("dialog header")!.getAttribute("data-entrance"),
+  ).toBe("y4");
 });
 
 // Issue 3221: only user-requested stages animate.

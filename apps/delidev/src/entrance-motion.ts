@@ -94,6 +94,37 @@ export function useActivationCount(active: boolean): number {
 }
 
 /**
+ * Counts explicit presentations of a retained surface. A mount that starts
+ * visible is one presentation; afterwards only a changed `request` value that
+ * becomes visible adds one. Visibility changes alone (a host slot appearing, a
+ * page becoming active) never count, so they stay immediate. A request made
+ * while hidden stays pending until the surface is visible.
+ */
+export function usePresentationCount(
+  visible: boolean,
+  request: string | number = 0,
+): number {
+  const [state, setState] = useState({
+    count: visible ? 1 : 0,
+    request,
+    pending: false,
+  });
+  let { count, pending } = state;
+  if (request !== state.request) pending = true;
+  if (visible && pending) {
+    count += 1;
+    pending = false;
+  }
+  if (
+    count !== state.count ||
+    pending !== state.pending ||
+    request !== state.request
+  )
+    setState({ count, request, pending });
+  return count;
+}
+
+/**
  * Owns one explicit activation's entrance. A new `activation` key starts the
  * motion once; every later render, refetch, edit or preference re-enable keeps
  * it settled. A new key while the previous entrance is still running restarts

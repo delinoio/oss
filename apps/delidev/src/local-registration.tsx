@@ -89,6 +89,8 @@ export function LocalRegistrationRecovery({
   useLocale();
   const [status, setStatus] = useState<DesktopRegistration>();
   const [confirm, setConfirm] = useState(false);
+  // Each explicit re-register click is one presentation request.
+  const [confirmRequests, setConfirmRequests] = useState(0);
   const [pending, setPending] = useState<RecoveryRequest>();
   const [error, setError] = useState<unknown>();
   const operating = useRef(false),
@@ -231,7 +233,13 @@ export function LocalRegistrationRecovery({
         </p>
       ) : null}
       {status && (status.state !== RegistrationState.Authorized || pending) ? (
-        <button disabled={busy} onClick={() => setConfirm(true)}>
+        <button
+          disabled={busy}
+          onClick={() => {
+            setConfirmRequests((count) => count + 1);
+            setConfirm(true);
+          }}
+        >
           {pending
             ? copy("local-registration.continueDesktopRecovery_250cf5")
             : copy("local-registration.reRegisterThisDesktop_405621")}
@@ -245,6 +253,7 @@ export function LocalRegistrationRecovery({
         visible={confirm && active}
         close={() => setConfirm(false)}
         headingEntrance
+        presentationRequest={confirmRequests}
       >
         <p>
           {copy("local-registration.thisCreatesANewDesktopRegistration_0adc71")}

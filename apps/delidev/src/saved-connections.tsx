@@ -138,6 +138,9 @@ function SavedConnectionTask({
 }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const [presented, setPresented] = useState(true);
+  // Counts explicit Continue requests. Together with the task generation it is
+  // the only presentation request; slot movement never changes it.
+  const [resumes, setResumes] = useState(0);
   const resume = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (!inline || !visible || presented) return;
@@ -164,7 +167,10 @@ function SavedConnectionTask({
           icon={SettingsActionIcon.Next}
           type="button"
           ref={resume}
-          onClick={() => setPresented(true)}
+          onClick={() => {
+            setResumes((count) => count + 1);
+            setPresented(true);
+          }}
         >
           {copy("settings.connections.continue", { title })}
         </SettingsActionButton>
@@ -176,6 +182,7 @@ function SavedConnectionTask({
         focusClose
         trapFocus
         headingEntrance
+        presentationRequest={`${presentationGeneration}.${resumes}`}
       >
         <div ref={setTarget} />
       </Modal>
