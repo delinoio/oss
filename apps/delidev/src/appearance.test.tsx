@@ -443,8 +443,7 @@ test("v2 validates custom theme imports and preserves immutable defaults", async
 test("exact key checks reject delimiter-collision, unknown, missing and duplicate-style key sets", async () => {
   const { defaultPreferences, parsePreferences, parseThemeFile, palettes } =
     await import("./appearance-preferences");
-  const { validColors, validTheme } =
-    await import("./appearance-preferences");
+  const { validColors, validTheme } = await import("./appearance-preferences");
   const base = palettes.default.light;
   // One key that embeds the old delimiter replaces two real keys. The key count
   // differs, so joining sorted keys with commas used to make these look equal.
@@ -465,7 +464,11 @@ test("exact key checks reject delimiter-collision, unknown, missing and duplicat
     true,
   );
 
-  const theme = { version: 1, name: "Fixture", ...structuredClone(palettes.default) };
+  const theme = {
+    version: 1,
+    name: "Fixture",
+    ...structuredClone(palettes.default),
+  };
   const identity = { ...theme, id: "01900000-0000-7000-8000-000000000001" };
   for (const mode of ["light", "dark"] as const) {
     const bad = { ...theme, [mode]: collided };

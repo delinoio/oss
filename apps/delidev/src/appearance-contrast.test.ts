@@ -50,7 +50,10 @@ for (const mode of modes) {
 
   test(`Default ${mode} rejects a 1:1 foreground for each added row`, () => {
     for (const [fg, bg] of addedRows) {
-      const colors = { ...palettes.default[mode], [fg]: palettes.default[mode][bg] };
+      const colors = {
+        ...palettes.default[mode],
+        [fg]: palettes.default[mode][bg],
+      };
       expect(contrast(colors[fg], colors[bg]), `${fg} / ${bg}`).toBe(1);
       expect(validColors(colors), `${fg} / ${bg}`).toBe(false);
       const theme = {
@@ -110,7 +113,7 @@ test("existing closed-key, opaque-hex and contrast checks still reject", () => {
   expect(validColors({ ...colors, "control-border": colors.surface })).toBe(
     false,
   );
-  expect(validColors({ ...colors, "on-inverse": colors["inverse-surface"] })).toBe(
-    false,
-  );
+  expect(
+    validColors({ ...colors, "on-inverse": colors["inverse-surface"] }),
+  ).toBe(false);
 });
