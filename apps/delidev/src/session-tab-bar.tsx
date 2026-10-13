@@ -10,6 +10,8 @@ import {
   type SessionTab,
 } from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
+import "./tab-strip.css";
+import { revealTabItem } from "./tab-strip";
 export function tabName(tab: SessionTab): string {
   switch (tab.kind) {
     case SessionTabKind.Conversation:
@@ -57,14 +59,14 @@ export function SessionTabBar({
   const terminals = useSessionTabsStore().terminalPresentation(id);
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    root.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    revealTabItem(
+      root.current?.querySelector<HTMLElement>('[aria-selected="true"]'),
+    );
   }, [selected, tabs.length]);
   return (
     <>
       <div
-        className="session-tabs"
+        className="tab-strip session-tabs"
         ref={root}
         role="tablist"
         aria-label={copy("session-tabs.tabs")}
@@ -79,12 +81,13 @@ export function SessionTabBar({
                 : tabName(tab);
           return (
             <div
-              className={`session-tab${selected === key ? " is-selected" : ""}`}
+              className={`tab-item tab-item-dynamic session-tab${selected === key ? " is-selected" : ""}`}
               key={key}
               role="presentation"
             >
               <button
                 type="button"
+                className="tab-label"
                 id={`session-tab-${id}-${index}`}
                 role="tab"
                 aria-label={
@@ -110,6 +113,7 @@ export function SessionTabBar({
                 }
                 tabIndex={selected === key ? 0 : -1}
                 onClick={() => select(key)}
+                onFocus={(event) => revealTabItem(event.currentTarget)}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing) return;
                   const next =
@@ -135,7 +139,7 @@ export function SessionTabBar({
               </button>
               {index > 0 ? (
                 <button
-                  className="session-tab-close"
+                  className="tab-close session-tab-close"
                   type="button"
                   aria-label={copy("session-tabs.close", { name })}
                   aria-keyshortcuts={

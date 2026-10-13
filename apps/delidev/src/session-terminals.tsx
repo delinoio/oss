@@ -7,7 +7,9 @@ import {
 } from "./shortcuts";
 import { Surface } from "./surface";
 import { createPortal } from "react-dom";
+import "./tab-strip.css";
 import "./terminal-dock.css";
+import { revealTabItem } from "./tab-strip";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
@@ -188,6 +190,14 @@ export function SessionTerminals({
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
+  // Presentation only: reveal the selected terminal in the scrolling strip.
+  useLayoutEffect(() => {
+    revealTabItem(
+      listRoot.current?.querySelector<HTMLElement>(
+        '[aria-selected="true"], .tab-item.is-selected',
+      ),
+    );
+  }, [selected]);
   const resolving = sessionActive && Boolean(openIntent);
   const status = useQuery(
     SystemQuery.getStatus,
@@ -669,11 +679,12 @@ export function SessionTerminals({
         ref={listRoot}
         role={tabbed ? "group" : "tablist"}
         aria-label={copy("session-terminals.terminals_7482c4")}
-        className="terminal-tabs"
+        className="tab-strip terminal-tabs"
       >
         {tabs.map((row, index) => (
           <button
             key={row.id}
+            className={`tab-item tab-label tab-item-dynamic${selected === row.id ? " is-selected" : ""}`}
             id={`terminal-tab-${row.id}`}
             role={tabbed ? undefined : "tab"}
             aria-selected={tabbed ? undefined : selected === row.id}
@@ -685,6 +696,7 @@ export function SessionTerminals({
                 ? 0
                 : -1
             }
+            onFocus={(event) => revealTabItem(event.currentTarget)}
             onKeyDown={(event) => {
               if (
                 tabbed ||

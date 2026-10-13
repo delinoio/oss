@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 Changes to shared renderer shortcuts must update dispatch, Help, the Settings catalog and control accessibility annotations together through the same typed declarations. Keep fixed actions outside the editable preference catalog, following the [shortcut contract](../../../docs/apps-delidev-desktop-contract.md#screen-shortcuts-and-help).
 
+Tab strips for Project editing, Usage, Backups history, session tabs and the terminal selector share `tab-strip.css` (classes `tab-strip`, `tab-item`, `tab-label`, `is-selected`, `tab-close`). Do not add per-surface tab geometry, and exclude new broad button rules from `tab-item`, `tab-label` and `tab-close` with the existing `:where(:not(...))` guard. The change is presentation only: preserve roles, activation mode, retained state and resource lifetimes, following the [shared tab strip presentation](../../../docs/apps-delidev-desktop-contract.md#shared-tab-strip-presentation).
+
 The shared pure `product-identity.ts` module is owned here and consumed by the mobile renderer. Changes must read both renderer contracts; desktop React/query-cache observation stays in `product-identity-labels.tsx`.
 
 ## Owning contracts
