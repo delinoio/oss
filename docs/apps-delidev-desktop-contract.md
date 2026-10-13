@@ -5139,6 +5139,15 @@ Confirmed absent token ranges use semantic muted text in a noninteractive aligne
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+Absence analysis builds one Set of exact current inventory names, then makes one
+lazy pass with one Set lookup per complete token plus one precomputed caret-prefix
+decision; it never scans the inventory per token. The unavailable count is exact
+for any draft size, while at most 256 absent ranges are materialized. If the exact
+count exceeds 256, paint no token overlay (no partial prefix), leave the native
+textarea text visible, and report the exact count through the localized status and
+the textarea description; editing back to 256 or fewer restores the full aligned
+overlay. Painted absent and selected ranges together stay within 256 ranges so the
+mirror holds at most 512 spans.
 Keep one mounted polite atomic count region in the shared composer wrapper,
 independent of panel visibility, and retain the textarea's count description and
 hidden painted mirror. Announce only changed counts proven by a complete current

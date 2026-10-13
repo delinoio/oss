@@ -19,6 +19,8 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import {
+  analyzeSkillTokens,
+  MAX_PAINTED_SKILL_RANGES,
   skillToken,
   skillRanges,
   editedBindings,
@@ -742,6 +744,108 @@ it("keeps a dismissed valid caret prefix ordinary and still flags confirmed-abse
   );
   expect(input.value).toBe(draft);
 });
+class CountingSet extends Set<string> {
+  lookups = 0;
+  override has(value: string) {
+    this.lookups++;
+    return super.has(value);
+  }
+}
+it("analyzes absence with one exact-name Set lookup per complete token and a bounded caret check", () => {
+  const names = new CountingSet(["add-issue", "add-note"]);
+  const draft = "$add-issue $gone $add-no $gone\n$add-note $add-";
+  const analysis = analyzeSkillTokens(draft, {
+    names,
+    caret: { start: draft.length - 5, prefixAvailable: true },
+  });
+  // The trailing partial token is the caret prefix and the third is absent.
+  expect(names.lookups).toBe(skillRanges(draft).length);
+  expect(analysis.unavailableCount).toBe(3);
+  expect(analysis.unavailable.map((range) => range.prefix)).toEqual([
+    "gone",
+    "add-no",
+    "gone",
+  ]);
+  expect(analysis.selected).toEqual([]);
+  // Without a caret exemption or confirmed inventory the result is explicit.
+  expect(analyzeSkillTokens(draft, { names }).unavailableCount).toBe(4);
+  expect(analyzeSkillTokens(draft, {}).unavailableCount).toBe(0);
+});
+it("keeps the exact count for 87,000 missing tokens while materializing no ranges beyond the budget", () => {
+  const draft = "$a ".repeat(87_000);
+  expect(new TextEncoder().encode(draft).length).toBe(261_000);
+  const names = new CountingSet(entries.map((entry) => entry.name));
+  const analysis = analyzeSkillTokens(draft, { names });
+  expect(analysis.unavailableCount).toBe(87_000);
+  expect(names.lookups).toBe(87_000);
+  expect(analysis.unavailable).toEqual([]);
+  expect(analysis.selected).toEqual([]);
+  const budget = "$a ".repeat(MAX_PAINTED_SKILL_RANGES);
+  const atBudget = analyzeSkillTokens(budget, { names });
+  expect(atBudget.unavailableCount).toBe(MAX_PAINTED_SKILL_RANGES);
+  expect(atBudget.unavailable).toHaveLength(MAX_PAINTED_SKILL_RANGES);
+  expect(atBudget.unavailable).toEqual(skillRanges(budget));
+  const over = analyzeSkillTokens(budget + "$a ", { names });
+  expect(over.unavailableCount).toBe(MAX_PAINTED_SKILL_RANGES + 1);
+  expect(over.unavailable).toEqual([]);
+});
+it(
+  "reports the exact count without painting past 256 tokens and restores the aligned overlay at 256",
+  { timeout: 60_000 },
+  async () => {
+    const f = fixture();
+    const view = render(f.view());
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const type = (draft: string) =>
+      fireEvent.change(input, {
+        target: { value: draft, selectionStart: draft.length },
+      });
+    type("$seed");
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".skill-token-unavailable"),
+      ).toHaveLength(1),
+    );
+    const large = "$a ".repeat(87_000);
+    type(large);
+    await waitFor(() =>
+      expect(countStatus(view).textContent).toMatch(
+        /^87,?000 skill tokens are unavailable in this scope\.$/,
+      ),
+    );
+    expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+    expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+    expect(input.value).toBe(large);
+    expect(countStatus(view).textContent).not.toContain("$a");
+    const describedBy = input.getAttribute("aria-describedby")!;
+    expect(document.getElementById(describedBy)!.textContent).toMatch(
+      /^87,?000 skill tokens are unavailable in this scope\.$/,
+    );
+    type("$a ".repeat(257));
+    await waitFor(() =>
+      expect(countStatus(view).textContent).toBe(
+        "257 skill tokens are unavailable in this scope.",
+      ),
+    );
+    expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+    const exact = "$a ".repeat(256);
+    type(exact);
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".skill-token-unavailable"),
+      ).toHaveLength(256),
+    );
+    expect(countStatus(view).textContent).toBe(
+      "256 skill tokens are unavailable in this scope.",
+    );
+    expect(view.container.querySelector(".skill-text-overlay")!.textContent).toBe(
+      exact + "\u200b",
+    );
+    expect(
+      view.container.querySelectorAll(".skill-text-overlay span").length,
+    ).toBeLessThanOrEqual(512);
+  },
+);
 it("retains only displayed missing rows, skips disabled rows, and discards them on dismissal", async () => {
   let current = entries;
   const send = vi.fn();
