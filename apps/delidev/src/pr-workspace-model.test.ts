@@ -111,9 +111,7 @@ it("keeps a component visible once under its earliest resident seed when an earl
     false,
     new Set(["103"]),
   );
-  expect(hidden.find((row) => number(row) === "104")?.owner).toBe(
-    "101",
-  );
+  expect(hidden.find((row) => number(row) === "104")?.owner).toBe("101");
 });
 it("keeps cycles and competing parents selectable without a fabricated tree", () => {
   const nodes = [1, 2, 3].map((number) => ({
