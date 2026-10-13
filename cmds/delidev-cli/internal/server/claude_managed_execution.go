@@ -120,6 +120,12 @@ func (s *Service) takeManagedClaude(ctx context.Context, req *connect.Request[pb
 	// A receipt never redistributes a secret. An uncertain first delivery retains
 	// the lease and requires original-Worker recovery instead of a second grant.
 	if result.Replayed {
+		// The first response may have been lost after the lease committed. Fence
+		// that exact unfinished lease for original-Worker cleanup; the envelope is
+		// never redistributed and a finished or foreign lease is left untouched.
+		if err := s.fenceReplayedManagedTake(ctx, input.Account, input.Lease, input.Machine, input.Instance, actor); err != nil {
+			s.logger.WarnContext(ctx, "claude_managed_replay_fence_unconfirmed", "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(err).Code)
+		}
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
 	owned = true
@@ -171,6 +177,33 @@ func (s *Service) takeManagedClaude(ctx context.Context, req *connect.Request[pb
 	}
 	s.logger.InfoContext(ctx, "claude_managed_lease_granted", "account_id", input.Account, "lease_id", input.Lease, "operation_id", input.Job)
 	return connect.NewResponse(&pb.TakeSubscriptionResponse{LeaseId: string(input.Lease), GenerationId: string(generation), LeaseRevision: leaseRevision, Bundle: envelope}), nil
+}
+
+// fenceReplayedManagedTake marks the still-held original lease recovery-required
+// so WatchSubscription offers it to the Worker that took it. The caller holds the
+// account gate. Any other lease state, device or instance changes nothing.
+func (s *Service) fenceReplayedManagedTake(ctx context.Context, id, lease, machine, instance domain.ID, actor domain.Principal) error {
+	fenced := false
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "claude.managed.take-replay-fence", struct{ Account, Lease domain.ID }{id, lease}, func(tx *store.Tx) (any, error) {
+		r, a, err := managedClaudeAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		st := a.Subscription
+		l := st.Lease
+		if l == nil || st.RecoveryRequired || l.ID != lease || l.Action != domain.SubscriptionExecute || l.MachineID != machine || l.InstanceID != instance || l.DeviceID != actor.DeviceID {
+			return struct{}{}, nil
+		}
+		st.RecoveryRequired = true
+		a.Health = domain.AccountFailed
+		fenced = true
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return struct{}{}, err
+	})
+	if err == nil && fenced {
+		s.logger.WarnContext(ctx, "claude_managed_replayed_take_fenced", "account_id", id, "lease_id", lease)
+	}
+	return err
 }
 
 // finishManagedClaudeExecution releases the original lease only on joined

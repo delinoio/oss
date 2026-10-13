@@ -542,9 +542,6 @@ func TestManagedClaudeSameGenerationExecutesOnTwoWorkersSequentially(t *testing.
 		t.Fatal("the lease changed generation or fabricated a native profile")
 	}
 	f.requireToken(first)
-	if _, err := f.take(a, request); err == nil {
-		t.Fatal("a replayed receipt redistributed the token")
-	}
 	if lease, err := f.take(b, domain.NewID()); err == nil || lease != nil {
 		t.Fatal("a simultaneous request received a second original lease")
 	}
@@ -568,6 +565,69 @@ func TestManagedClaudeSameGenerationExecutesOnTwoWorkersSequentially(t *testing.
 	f.requireToken(second)
 	if err := f.finishLease(b, second, true, true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestManagedClaudeReplayedTakeFencesTheUnfinishedLeaseForOriginalWorkerCleanup(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	b := f.addWorker(domain.ManagedClaudeExecutionV1)
+	request := domain.NewID()
+	first, err := f.take(a, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.requireToken(first)
+	// Another Worker replaying the request ID cannot fence the lease it does not own.
+	if _, err := f.take(b, request); err == nil {
+		t.Fatal("a foreign replay received a token")
+	}
+	_, account := f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Lease == nil {
+		t.Fatal("a foreign replay changed the original lease")
+	}
+	// The first response was lost: the original Worker retries the same request.
+	if replay, err := f.take(a, request); err == nil || replay != nil {
+		t.Fatal("a replayed receipt redistributed the token")
+	}
+	_, account = f.record()
+	if !account.Subscription.RecoveryRequired || account.Subscription.Lease == nil || account.Health != domain.AccountFailed {
+		t.Fatal("the replay did not fence the unfinished lease for recovery")
+	}
+	if _, err := f.take(b, domain.NewID()); err == nil {
+		t.Fatal("another Worker bypassed the replay fence")
+	}
+	if err := f.finishLease(a, first, true, true); err == nil {
+		t.Fatal("recovery accepted execution success")
+	}
+	if err := f.finishLease(a, first, true, false); err != nil {
+		t.Fatal(err)
+	}
+	_, account = f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Lease != nil || account.Health != domain.AccountReady {
+		t.Fatal("original-Worker cleanup did not release the replay fence")
+	}
+}
+
+func TestManagedClaudeLateReplayAfterJoinedCleanupDoesNotFence(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.connect()
+	a := f.prepareExecution(domain.ManagedClaudeExecutionV1)
+	request := domain.NewID()
+	first, err := f.take(a, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.finishLease(a, first, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := f.take(a, request); err == nil || replay != nil {
+		t.Fatal("a late replay redistributed the token")
+	}
+	_, account := f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Lease != nil || account.Health != domain.AccountReady {
+		t.Fatal("a late replay fenced an already released account")
 	}
 }
 
