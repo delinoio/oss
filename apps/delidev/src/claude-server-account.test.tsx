@@ -179,3 +179,80 @@ it("keeps Sign in for a server-token account whose first login did not connect",
     screen.queryByRole("button", { name: "Connect new account" }),
   ).toBeNull();
 });
+
+it("reconnects a logged-out device-owned account through its Runner wizard instead of the server flow", async () => {
+  // A device-owned logout clears the profile and owner but keeps the native
+  // operation, so the server refuses to convert it into a server-token account.
+  const loggedOut = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.ACCOUNT,
+    revision: 4n,
+    schemaVersion: 2,
+    documentJson: encode({
+      alias: "Device Claude",
+      type: "subscription",
+      subscription_service: "claude",
+      enabled: true,
+      health: "disconnected",
+      subscription: {
+        native_operation: {
+          id: newRequestId(),
+          action: "logout",
+          state: "succeeded",
+        },
+      },
+    }),
+  });
+  const value = mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ],
+    loggedOut,
+  );
+  const signIn = await screen.findByRole("button", { name: /^Sign in to/ });
+  await waitFor(() =>
+    expect((signIn as HTMLButtonElement).disabled).toBe(false),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Connect new account" }),
+  ).toBeNull();
+  fireEvent.click(signIn);
+  // The Runner wizard asks for a Runner Device and starts no server operation.
+  await screen.findByText("Select a Runner Device");
+  expect(value.logout).not.toHaveBeenCalled();
+});
+
+it("starts the server flow for a never-used Claude account", async () => {
+  const fresh = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.ACCOUNT,
+    revision: 1n,
+    schemaVersion: 2,
+    documentJson: encode({
+      alias: "Fresh Claude",
+      type: "subscription",
+      subscription_service: "claude",
+      enabled: true,
+      health: "disconnected",
+    }),
+  });
+  const value = mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SUBSCRIPTIONS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ],
+    fresh,
+  );
+  const signIn = await screen.findByRole("button", { name: /^Sign in to/ });
+  await waitFor(() =>
+    expect((signIn as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(signIn);
+  await waitFor(() => expect(value.logout).toHaveBeenCalled());
+  const request = value.logout.mock.calls[0][0];
+  expect(request.action).toBe(SubscriptionAction.LOGIN);
+  expect(request.machineId).toBe("");
+});

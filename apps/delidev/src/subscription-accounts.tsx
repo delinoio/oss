@@ -194,6 +194,20 @@ function NativeManagedSubscriptionAccount({
   // or otherwise settled account never signs in again, so reconnecting means
   // connecting a new account. This mirrors the server's first-login admission.
   const serverOperation = object(state.server_operation);
+  // A device-owned account keeps its retained native operation after logout, so
+  // it is never first-login eligible on the server. This mirrors the server's
+  // fresh-account check for accounts that are not yet server-token accounts.
+  const neverUsedClaude =
+    service === SubscriptionServiceId.Claude &&
+    !managedClaude &&
+    !connected &&
+    !text(state.native_profile_id) &&
+    !text(state.owner_machine_id) &&
+    !text(state.generation) &&
+    !text(object(state.native_operation).id) &&
+    !text(serverOperation.id) &&
+    !text(object(state.pending).id) &&
+    !text(object(state.lease).id);
   const connectsNewAccount =
     managedClaude &&
     !connected &&
@@ -422,11 +436,14 @@ function NativeManagedSubscriptionAccount({
             disabled={!ready || !flow.available}
             onClick={() => {
               if (!ready || !flow.available || refreshLock.current) return;
+              // Only a server-token account or a never-used Claude account takes
+              // the server flow; a logged-out device-owned account keeps its
+              // Runner reconnection because the server never converts it.
               flow.begin(
                 service,
                 current,
                 false,
-                claudeServerLogin && !text(state.native_profile_id),
+                claudeServerLogin && (managedClaude || neverUsedClaude),
               );
             }}
           >
