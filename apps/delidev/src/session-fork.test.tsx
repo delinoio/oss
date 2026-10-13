@@ -736,7 +736,11 @@ it("offers a completed root but refuses a completed forked child", async () => {
 });
 
 it.each([
-  { name: "a completed native subagent", subagents: { child: { state: "completed" } }, forkable: false },
+  {
+    name: "a completed native subagent",
+    subagents: { child: { state: "completed" } },
+    forkable: false,
+  },
   { name: "an empty subagent inventory", subagents: {}, forkable: true },
   { name: "no subagent inventory", subagents: undefined, forkable: true },
 ])(
@@ -791,9 +795,7 @@ it.each([
       await screen.findByRole("button", { name: "Fork session" });
     } else {
       await waitFor(() => expect(client.isFetching()).toBe(0));
-      expect(
-        screen.queryByRole("button", { name: "Fork session" }),
-      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Fork session" })).toBeNull();
     }
     expect(fork).not.toHaveBeenCalled();
   },
