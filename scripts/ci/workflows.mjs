@@ -107,6 +107,18 @@ export function prepareLintSource(name, source) {
   return { masked: true, source: lines.join("\n") };
 }
 
+function describeLintFailure(step, error) {
+  const detail = [
+    error?.code !== undefined ? `code=${error.code}` : null,
+    error?.status != null ? `status=${error.status}` : null,
+    error?.signal ? `signal=${error.signal}` : null,
+    `message=${JSON.stringify(error?.message ?? String(error))}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `workflow lint failed: step=${JSON.stringify(step)} ${detail}\n`;
+}
+
 /**
  * Lints every workflow in `directory` with actionlint. Workflows without a
  * queue declaration are linted together as files; a workflow with a validated
@@ -143,12 +155,17 @@ export function lintWorkflows(
     const result = runStdin(file, prepared.source);
     stdout.write(result.stdout ?? "");
     stderr.write(result.stderr ?? "");
+    if (result.error)
+      stderr.write(describeLintFailure(`actionlint for ${file}`, result.error));
     if (result.status !== 0) exitCode = 1;
   }
   if (paths.length) {
     try {
       runFiles(paths);
-    } catch {
+    } catch (error) {
+      // actionlint prints its own diagnostics on a lint failure; a spawn error
+      // (for example a missing Go toolchain) has none, so always name the cause.
+      stderr.write(describeLintFailure("actionlint batch", error));
       exitCode = 1;
     }
   }

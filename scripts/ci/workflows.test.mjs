@@ -214,6 +214,33 @@ test("lintWorkflows masks only the validated queue line and still reports action
       }),
       1,
     );
+    // A spawn failure has no actionlint output, so the error must be logged.
+    const logged = [];
+    const spawnError = Object.assign(new Error("spawn go ENOENT"), {
+      code: "ENOENT",
+    });
+    assert.equal(
+      lintWorkflows(directory, {
+        runFiles: () => {
+          throw spawnError;
+        },
+        runStdin: () => ({ status: null, error: spawnError }),
+        stdout: sink,
+        stderr: { write: (text) => text && logged.push(text) },
+      }),
+      1,
+    );
+    assert.equal(logged.length, 2);
+    for (const line of logged)
+      assert.match(
+        line,
+        /^workflow lint failed: step=.* code=ENOENT message="spawn go ENOENT"\n$/u,
+      );
+    assert.match(
+      logged[0],
+      /step="actionlint for .*delidev-mobile-beta\.yml"/u,
+    );
+    assert.match(logged[1], /step="actionlint batch"/u);
     // An unsupported declaration aborts before any lint input is produced.
     writeFileSync(
       path.join(directory, "bad.yml"),
