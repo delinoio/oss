@@ -261,3 +261,13 @@ it("settles the Home entrance before the options dialog opens", async () => {
   expect(screen.getByRole("dialog")).toBeTruthy();
   expect(homeEntering()).toBeNull();
 });
+
+it("settles the Home entrance before positioning the New project tooltip", async () => {
+  mountSidebar();
+  await screen.findByRole("button", { name: "Entrance project" });
+  expect(homeEntering()).toBe("y4");
+  const button = screen.getByRole("button", { name: "New project" });
+  fireEvent.pointerEnter(button);
+  expect(document.querySelector(".sidebar-action-tooltip")).not.toBeNull();
+  expect(homeEntering()).toBeNull();
+});

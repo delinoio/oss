@@ -1447,6 +1447,10 @@ export function Sidebar({
     home,
   ]);
   const showNewProjectTooltip = () => {
+    // The tooltip is fixed and keeps this measurement, so settle the Home
+    // entrance first; the attribute clears synchronously and the anchor is
+    // measured without the in-flight transform.
+    settleEnclosingEntrances(newProjectButton.current);
     const rect = newProjectButton.current?.getBoundingClientRect();
     if (!rect) return;
     const width = Math.min(120, window.innerWidth - 16);
