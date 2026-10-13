@@ -937,10 +937,10 @@
 /* The terminal status strip is portaled here so opening, failure and
    uncertain-recovery notices stay visible below the tab row for any pane. */
 .session-terminal-status {
-  display: contents;
+  grid-area: 3 / 1;
+  min-width: 0;
 }
 .session-tabbed .terminal-status-strip {
-  grid-area: 3 / 1;
   min-width: 0;
   max-height: 160px;
   overflow: auto;
@@ -968,7 +968,9 @@
 }
 .session-tabs {
   display: flex;
-  flex: 1;
+  /* The New browser page button follows the last tab, and the tab strip alone
+     scrolls when tabs exceed the available width. */
+  flex: 0 1 auto;
   overflow-x: auto;
   gap: 0;
   min-width: 0;
@@ -1026,9 +1028,24 @@
   outline: 2px solid var(--focus);
   outline-offset: -3px;
 }
+.session-workspace .session-new-page {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+}
 .session-tool-popup {
   position: relative;
   flex: none;
+  margin-inline-start: auto;
 }
 .session-workspace .session-tool-popup > button {
   display: flex;

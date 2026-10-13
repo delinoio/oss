@@ -144,7 +144,6 @@ describe("shared Page descriptors follow native browser pages", () => {
   });
   const setup = () => {
     const store = new SessionTabsStore();
-    store.open("s", { kind: SessionTabKind.Browser });
     store.open("s", page("p1", "a"));
     store.open("s", page("p1", "b"));
     store.open("s", page("p2", "a"));
@@ -165,12 +164,12 @@ describe("shared Page descriptors follow native browser pages", () => {
     expect(after.tabs.map(sessionTabKey)).toEqual(
       before.tabs.map(sessionTabKey),
     );
-    expect(after.tabs[3]).toMatchObject({
+    expect(after.tabs[2]).toMatchObject({
       title: "moved.test/next",
       label: "https://moved.test/next",
     });
-    expect(after.tabs[2]).toEqual(before.tabs[2]);
-    expect(after.tabs[4]).toEqual(before.tabs[4]);
+    expect(after.tabs[1]).toEqual(before.tabs[1]);
+    expect(after.tabs[3]).toEqual(before.tabs[3]);
   });
   it("ignores unknown pages and publishes nothing for unchanged labels", () => {
     const store = setup();
@@ -186,13 +185,107 @@ describe("shared Page descriptors follow native browser pages", () => {
     const keys = store.snapshot("s").tabs.map(sessionTabKey);
     expect(keys).toEqual([
       SessionTabKind.Conversation,
-      SessionTabKind.Browser,
       sessionTabKey(page("p1", "b")),
       sessionTabKey(page("p2", "a")),
     ]);
     expect(keys).toContain(store.snapshot("s").selected);
     store.closePage("s", "p9", "a");
-    expect(store.snapshot("s").tabs).toHaveLength(4);
+    expect(store.snapshot("s").tabs).toHaveLength(3);
+  });
+  it("closes an inactive page without changing the active selection", () => {
+    const store = setup();
+    const selected = store.snapshot("s").selected;
+    store.closePage("s", "p1", "b");
+    expect(store.snapshot("s").selected).toBe(selected);
+    expect(store.snapshot("s").tabs.map(sessionTabKey)).not.toContain(
+      sessionTabKey(page("p1", "b")),
+    );
+  });
+  it("selects the left neighbor after closing the active page and Conversation after the last", () => {
+    const store = new SessionTabsStore();
+    store.open("s", { kind: SessionTabKind.Diagnostics });
+    store.open("s", page("p1", "a"));
+    store.open("s", page("p1", "b"));
+    store.closePage("s", "p1", "b");
+    expect(store.snapshot("s").selected).toBe(sessionTabKey(page("p1", "a")));
+    store.closePage("s", "p1", "a");
+    expect(store.snapshot("s").selected).toBe(SessionTabKind.Conversation);
+    // The unrelated tool tab and the pinned Conversation remain.
+    expect(store.snapshot("s").tabs.map(sessionTabKey)).toEqual([
+      SessionTabKind.Conversation,
+      SessionTabKind.Diagnostics,
+    ]);
+  });
+  it("keeps the selection when the last page closes while another tab is active", () => {
+    const store = new SessionTabsStore();
+    store.open("s", page("p1", "a"));
+    store.open("s", { kind: SessionTabKind.Diagnostics });
+    store.closePage("s", "p1", "a");
+    expect(store.snapshot("s").selected).toBe(SessionTabKind.Diagnostics);
+  });
+  describe("restoring a native inventory", () => {
+    const listed = (id: string, label = `https://${id}.test/`) => ({
+      id,
+      title: `${id}.test`,
+      label,
+    });
+    it("appends discovered pages in inventory order without selecting them or duplicating", () => {
+      const store = new SessionTabsStore();
+      store.open("s", { kind: SessionTabKind.Diagnostics });
+      const selected = store.snapshot("s").selected;
+      store.reconcilePages("s", "p1", [listed("a"), listed("b")]);
+      store.reconcilePages("s", "p1", [listed("a"), listed("b")]);
+      expect(store.snapshot("s").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        SessionTabKind.Diagnostics,
+        sessionTabKey(page("p1", "a")),
+        sessionTabKey(page("p1", "b")),
+      ]);
+      expect(store.snapshot("s").selected).toBe(selected);
+    });
+    it("preserves existing descriptor order and selection while refreshing labels", () => {
+      const store = new SessionTabsStore();
+      store.open("s", page("p1", "b"));
+      store.open("s", page("p1", "a"));
+      store.select("s", sessionTabKey(page("p1", "b")));
+      store.reconcilePages("s", "p1", [
+        listed("a", "https://moved.test/"),
+        listed("b"),
+        listed("c"),
+      ]);
+      const snapshot = store.snapshot("s");
+      expect(snapshot.tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p1", "b")),
+        sessionTabKey(page("p1", "a")),
+        sessionTabKey(page("p1", "c")),
+      ]);
+      expect(snapshot.selected).toBe(sessionTabKey(page("p1", "b")));
+      expect(snapshot.tabs[2]).toMatchObject({ label: "https://moved.test/" });
+    });
+    it("removes descriptors the inventory no longer lists, except pages an operation still owns", () => {
+      const store = new SessionTabsStore();
+      store.open("s", page("p1", "a"));
+      store.open("s", page("p1", "b"));
+      store.open("s", page("p2", "z"));
+      store.reconcilePages("s", "p1", [listed("a")], new Set(["b"]));
+      expect(store.snapshot("s").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p1", "a")),
+        sessionTabKey(page("p1", "b")),
+      ]);
+      store.reconcilePages("s", "p1", [listed("a")]);
+      expect(store.snapshot("s").tabs.map(sessionTabKey)).toEqual([
+        SessionTabKind.Conversation,
+        sessionTabKey(page("p1", "a")),
+      ]);
+    });
+    it("never creates descriptors for an empty inventory", () => {
+      const store = new SessionTabsStore();
+      const before = store.snapshot("s");
+      store.reconcilePages("s", "p1", []);
+      expect(store.snapshot("s")).toBe(before);
+    });
   });
 });
 
