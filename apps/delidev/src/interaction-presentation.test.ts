@@ -170,9 +170,8 @@ it("retires an MCP elicitation only with its exact native resolution evidence", 
     },
   });
   expect(
-    interactionProjection(
-      row(elicitation("native-mcp-elicitation-resolved")),
-    ).presentation,
+    interactionProjection(row(elicitation("native-mcp-elicitation-resolved")))
+      .presentation,
   ).toBe(InteractionPresentation.Retired);
   expect(
     interactionProjection(row(elicitation("transport-delivery"))).presentation,
