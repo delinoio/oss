@@ -155,7 +155,12 @@ func runManagedSidechatProcess(home string) bool {
 				if err == nil {
 					executable, err = filepath.EvalSymlinks(executable)
 				}
-				if err != nil || os.Remove(alias) != nil || os.Symlink(executable, alias) != nil {
+				// Create the replacement before removing the captured alias so the
+				// two links hold distinct inodes at the same time. Removing first
+				// lets Linux filesystems reuse the freed inode number, which makes
+				// the replacement indistinguishable by device and inode identity.
+				replacement := alias + ".replacement"
+				if err != nil || os.Symlink(executable, replacement) != nil || os.Remove(alias) != nil || os.Rename(replacement, alias) != nil {
 					os.Exit(97)
 				}
 			}

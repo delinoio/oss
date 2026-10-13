@@ -11,6 +11,12 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { Interaction, advancesInteraction } from "./interactions";
+import {
+  InteractionPresentationStore,
+  interactionProjection,
+  type InteractionProjection,
+} from "./interaction-presentation";
+import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
@@ -46,7 +52,7 @@ function fixture(data: Record<string, unknown>, activeTray = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const view = (row = resource) => (
+  const view = (row = resource, projection?: InteractionProjection) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
@@ -54,6 +60,7 @@ function fixture(data: Record<string, unknown>, activeTray = false) {
             resource={row}
             refresh={() => {}}
             activeTray={activeTray}
+            projection={projection}
           />
         </MutationIntents>
       </QueryClientProvider>
@@ -333,11 +340,15 @@ it("collapses the active tray to compact recovery as soon as an answer is uncert
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+  // The dispatched answer may have been accepted: never claim non-submission.
+  expect(screen.getByText("Response: uncertain")).toBeTruthy();
+  expect(screen.queryByText(/Not submitted/)).toBeNull();
   expect(value.questions).toHaveBeenCalledTimes(1);
   fireEvent.click(
     screen.getByRole("button", { name: "Retry the same answers" }),
   );
   await screen.findByText("Response: queued");
+  expect(screen.queryByText("Response: uncertain")).toBeNull();
   expect(value.questions).toHaveBeenCalledTimes(2);
   expect(value.questions.mock.calls[1][0]).toEqual(
     value.questions.mock.calls[0][0],
@@ -391,4 +402,118 @@ it("accepts only a same-interaction result that advances the retained revision",
   expect(
     advancesInteraction(result({ kind: EntityKind.MESSAGE }), expected),
   ).toBe(false);
+});
+
+it("keeps the unanswered label for a compact question without retained uncertainty", () => {
+  const closed = { ...question, closure: "turn-ended" };
+  const value = fixture(closed, true);
+  render(value.view());
+  expect(screen.getByRole("heading", { name: "Agent question" })).toBeTruthy();
+  expect(screen.getByText("Response: Not submitted")).toBeTruthy();
+  expect(screen.queryByText("Response: uncertain")).toBeNull();
+});
+
+it("renders the uncertain response status in Korean for a lost acknowledgement", async () => {
+  const value = fixture(question, true);
+  value.questions.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgement", Code.Unavailable),
+  );
+  render(value.view());
+  for (const checkbox of screen.getAllByRole("checkbox", {
+    name: "Leave this question unanswered",
+  }))
+    fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByRole("button", { name: "Retry the same answers" });
+  await i18n.changeLanguage("ko");
+  try {
+    await screen.findByText("응답: 불확실");
+    expect(screen.queryByText(/제출되지 않음/)).toBeNull();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});
+
+const families: [string, Record<string, unknown>][] = [
+  ["codex", question],
+  ["claude", { ...question, claude: { question: true } }],
+  ["opencode", { ...question, opencode: { question: true } }],
+  ["grok", { ...question, grok: { question: true } }],
+];
+
+it("keeps the Agent question heading for retained questions whose newer revision changes or removes the type", () => {
+  for (const [family, data] of families) {
+    for (const contradiction of [
+      { ...data, type: "native-approval", closure: "native-closed" },
+      { ...data, type: undefined, response: { state: "uncertain" } },
+    ]) {
+      const value = fixture(data, true);
+      const store = new InteractionPresentationStore();
+      store.observe(value.resource);
+      const newer = create(ResourceSchema, {
+        ...value.resource,
+        revision: 10n,
+        documentJson: encode(contradiction),
+      });
+      const projection = store.observe(newer);
+      expect(projection.question, family).toBe(true);
+      const mounted = render(value.view(newer, projection));
+      expect(
+        screen.getByRole("heading", { name: "Agent question" }),
+        family,
+      ).toBeTruthy();
+      expect(screen.queryByText("Native approval"), family).toBeNull();
+      expect(
+        screen.getByText(/The operation is unavailable/),
+        family,
+      ).toBeTruthy();
+      expect(screen.queryByRole("checkbox"), family).toBeNull();
+      expect(screen.queryByRole("textbox"), family).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Accept|Decline/ }),
+      ).toBeNull();
+      mounted.unmount();
+    }
+  }
+});
+
+it("keeps the original exact retry beside the Agent question heading after a contradictory newer type", async () => {
+  const value = fixture(question, true);
+  value.questions.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgement", Code.Unavailable),
+  );
+  const store = new InteractionPresentationStore();
+  const original = store.observe(value.resource);
+  const mounted = render(value.view(value.resource, original));
+  for (const checkbox of screen.getAllByRole("checkbox", {
+    name: "Leave this question unanswered",
+  }))
+    fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByRole("button", { name: "Retry the same answers" });
+  const newer = create(ResourceSchema, {
+    ...value.resource,
+    revision: 10n,
+    documentJson: encode({ type: "native-approval", closure: "native-closed" }),
+  });
+  mounted.rerender(value.view(newer, store.observe(newer)));
+  expect(screen.getByRole("heading", { name: "Agent question" })).toBeTruthy();
+  expect(screen.queryByText("Native approval")).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry the same answers" }),
+  );
+  await waitFor(() => expect(value.questions).toHaveBeenCalledTimes(2));
+  expect(value.questions.mock.calls[1][0]).toEqual(
+    value.questions.mock.calls[0][0],
+  );
+});
+
+it("keeps the Native approval heading for genuine approvals", () => {
+  const approval = { type: "native-approval", closure: "open" };
+  const value = fixture(approval, true);
+  expect(interactionProjection(value.resource).question).toBe(false);
+  render(value.view());
+  expect(screen.getByRole("heading", { name: "Native approval" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Agent question" })).toBeNull();
 });
