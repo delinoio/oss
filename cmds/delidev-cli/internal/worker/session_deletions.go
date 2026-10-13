@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -161,6 +160,27 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			jobLocks[i].Close()
 		}
 	}()
+	// Bind every managed path to the object (or proven absence) before any
+	// ownership validation reads it, holding each object open. Removal compares
+	// the path with this capture, so an object swapped in during or after
+	// validation is never adopted. A started attempt reuses the identities
+	// persisted before its first removal instead of capturing a fresh baseline.
+	validated, e := prepareSessionCopyIdentities(ctx, root, w)
+	if e != nil {
+		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
+		return proof, domain.SessionDeletionPending()
+	}
+	defer closeSessionCopyIdentities(validated)
+	if sessionDeletionAfterCaptureHook != nil {
+		sessionDeletionAfterCaptureHook()
+	}
+	startRemoval := func() error {
+		if proof.RemovalStarted {
+			return nil
+		}
+		proof.RemovalStarted = true
+		return writeJSON(path, proof)
+	}
 	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
@@ -239,12 +259,18 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 	}
-	// Ownership validation is complete. Bind every managed path to the object (or
-	// proven absence) observed now, so removal never adopts a later replacement.
-	validated, e := captureSessionCopyIdentities(ctx, root, w)
-	if e != nil {
-		config.Logger.WarnContext(ctx, "session_deletion_identity_capture_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
-		return proof, domain.SessionDeletionPending()
+	// Job owner maintenance locks were created by the reconciliation above. Only
+	// those exact names may be adopted, and only now: nothing later may grant a
+	// path that was absent at capture any deletion authority.
+	if !proof.RemovalStarted {
+		jobIDs := make([]domain.ID, 0, len(w.Copies))
+		for _, copy := range w.Copies {
+			jobIDs = append(jobIDs, copy.JobID)
+		}
+		if e := adoptMaintenanceLocks(root, validated, jobIDs); e != nil {
+			config.Logger.WarnContext(ctx, "session_deletion_identity_adoption_failed", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
+			return proof, domain.SessionDeletionPending()
+		}
 	}
 	manager := workspace.Manager{NamedDirectories: config.namedWorkspaceDirectories, Root: root, Logger: config.Logger}
 	for _, copy := range w.Copies {
@@ -286,11 +312,13 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 			}
 			locks = nil
-			if !proof.RemovalStarted {
-				proof.RemovalStarted = true
-				if e := writeJSON(path, proof); e != nil {
-					return e
-				}
+			// Workspace retirement just reconciled the session owner, which may
+			// have created its maintenance lock. It is the only name adopted here.
+			if e := adoptMaintenanceLocks(root, validated, []domain.ID{w.SessionID}); e != nil {
+				return e
+			}
+			if e := startRemoval(); e != nil {
+				return e
 			}
 			for _, binding := range w.SkillSnapshots {
 				if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
@@ -312,11 +340,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 					continue
 				}
 				// A path missing from the validated inventory was proven absent.
-				identity, e := sessionCopyIdentity(root, path, validated)
-				if e == nil {
-					e = removeSessionCopy(ctx, root, path, identity)
-				}
-				if e != nil {
+				if e := removeSessionCopy(ctx, root, path, validated[path]); e != nil {
 					config.Logger.WarnContext(ctx, "session_deletion_copy_removal_pending", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
 					return e
 				}
@@ -344,11 +368,8 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	// All original native and workspace owners have joined before image
 	// removal. Opaque references never grant access to original Local files.
-	if !proof.RemovalStarted {
-		proof.RemovalStarted = true
-		if err := writeJSON(path, proof); err != nil {
-			return proof, err
-		}
+	if err := startRemoval(); err != nil {
+		return proof, err
 	}
 	for _, binding := range w.SkillSnapshots {
 		if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
@@ -461,50 +482,83 @@ func sessionDeletionUpgradable(proof sessionDeletionProof, w domain.SessionDelet
 	return proof.Digest == legacy.Digest()
 }
 
-// sessionDeletionBeforeRemovalHook runs after ownership validation and identity
-// capture, immediately before managed copies are removed. Tests use it to
-// install replacements deterministically; it is nil in production.
-var sessionDeletionBeforeRemovalHook func()
+// sessionDeletionAfterCaptureHook runs right after identity capture and before
+// ownership validation; sessionDeletionBeforeRemovalHook runs after validation,
+// immediately before managed copies are removed. Tests use them to install
+// replacements deterministically; both are nil in production.
+var (
+	sessionDeletionAfterCaptureHook  func()
+	sessionDeletionBeforeRemovalHook func()
+)
 
-// captureSessionCopyIdentities records the identity of every inventoried
-// managed path (or proven absence) once ownership validation has finished.
-func captureSessionCopyIdentities(ctx context.Context, root string, w domain.SessionDeletionWork) (map[string]security.PathIdentity, error) {
+// maxHeldIdentityHandles bounds the descriptors one attempt keeps open. Beyond it
+// an identity keeps only its record: removal still opens the path and compares
+// it, but inode reuse is then excluded only by the record (birth time, size and
+// modification time where reported), not by a held handle.
+const maxHeldIdentityHandles = 1024
+
+// prepareSessionCopyIdentities captures the identity of every inventoried managed
+// path, holding each object open, so removal can only act on the objects that
+// existed before ownership validation began.
+func prepareSessionCopyIdentities(ctx context.Context, root string, w domain.SessionDeletionWork) (map[string]security.PathIdentity, error) {
+	identities := map[string]security.PathIdentity{}
 	paths, e := sessionDeletionCopyPaths(ctx, root, w)
 	if e != nil {
 		return nil, e
 	}
-	identities := make(map[string]security.PathIdentity, len(paths))
+	held := 0
 	for _, path := range paths {
 		if e := ctx.Err(); e != nil {
+			closeSessionCopyIdentities(identities)
 			return nil, domain.SafeError(e)
 		}
 		identity, e := security.CapturePathIdentity(path)
 		if e != nil {
+			closeSessionCopyIdentities(identities)
 			return nil, e
+		}
+		if identity.Held() {
+			if held++; held > maxHeldIdentityHandles {
+				identity.Release()
+			}
 		}
 		identities[path] = identity
 	}
 	return identities, nil
 }
 
-// sessionCopyIdentity returns the identity that bounds removal of path. Process
-// owner maintenance locks are the one exception to proven absence: the Worker's
-// own owner reconciliation creates them while the workspace is retired, after
-// validation. They are adopted only when they are empty private regular files,
-// so a foreign object or directory at that name still stays pending.
-func sessionCopyIdentity(root, path string, validated map[string]security.PathIdentity) (security.PathIdentity, error) {
-	identity := validated[path]
-	if identity.Present() || filepath.Dir(path) != filepath.Join(root, "processes") || !strings.HasSuffix(path, ".recovery.lock") {
-		return identity, nil
+func closeSessionCopyIdentities(identities map[string]security.PathIdentity) {
+	for _, identity := range identities {
+		identity.Close()
 	}
-	info, e := os.Lstat(path)
-	if errors.Is(e, os.ErrNotExist) {
-		return identity, nil
+}
+
+// adoptMaintenanceLocks captures the Worker's own process-owner maintenance
+// locks (processes/<id>.recovery.lock) for exactly the listed owner IDs. Owner
+// reconciliation creates them after validation began, so they are the one
+// exception to proven absence. Each is adopted only when it is an empty private
+// regular file; any other object at the name, and every name outside the listed
+// owners, keeps the absence it was captured with.
+func adoptMaintenanceLocks(root string, identities map[string]security.PathIdentity, owners []domain.ID) error {
+	for _, owner := range owners {
+		path := filepath.Join(root, "processes", string(owner)+".recovery.lock")
+		if identities[path].Present() {
+			continue
+		}
+		info, e := os.Lstat(path)
+		if errors.Is(e, os.ErrNotExist) {
+			continue
+		}
+		if e != nil || !info.Mode().IsRegular() || info.Size() != 0 || security.RegularPrivate(path) != nil {
+			return domain.SessionDeletionPending()
+		}
+		identity, e := security.CapturePathIdentity(path)
+		if e != nil {
+			return e
+		}
+		identities[path] = identity
 	}
-	if e != nil || !info.Mode().IsRegular() || info.Size() != 0 || security.RegularPrivate(path) != nil {
-		return identity, domain.SessionDeletionPending()
-	}
-	return security.CapturePathIdentity(path)
+	return nil
 }
 
 // Workspace cleanup already validated original storage namespace ownership.

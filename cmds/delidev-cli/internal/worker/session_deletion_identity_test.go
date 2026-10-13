@@ -16,6 +16,12 @@ func installDeletionHook(t *testing.T, hook func()) {
 	t.Cleanup(func() { sessionDeletionBeforeRemovalHook = nil })
 }
 
+func installCaptureHook(t *testing.T, hook func()) {
+	t.Helper()
+	sessionDeletionAfterCaptureHook = hook
+	t.Cleanup(func() { sessionDeletionAfterCaptureHook = nil })
+}
+
 func mustWrite(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -122,5 +128,69 @@ func TestSessionDeletionRemovesUnchangedOriginalsAndKeepsAbsence(t *testing.T) {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Fatal("path survived unchanged-original deletion", path, err)
 		}
+	}
+}
+
+// The capture precedes ownership validation, so an object swapped in between
+// capture and the validating read can never become the expected identity.
+func TestSessionDeletionPreservesJournalReplacedBetweenCaptureAndValidation(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	path := filepath.Join(c.Root, "jobs", string(w.Copies[0].JobID)+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installCaptureHook(t, func() {
+		if err := os.Rename(path, path+".moved"); err != nil {
+			t.Fatal(err)
+		}
+		// Valid, same-content journal: validation accepts it, yet it is not the
+		// object that was captured.
+		mustWrite(t, path, string(raw))
+	})
+	expectPendingDeletion(t, c, w)
+	if b, err := os.ReadFile(path); err != nil || string(b) != string(raw) {
+		t.Fatal("journal swapped in before validation was removed", err)
+	}
+}
+
+func TestSessionDeletionPreservesProcessDirectoryReplacedBetweenCaptureAndValidation(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	original := filepath.Join(c.Root, "processes", string(w.Copies[0].JobID))
+	if err := os.MkdirAll(original, 0700); err != nil {
+		t.Fatal(err)
+	}
+	installCaptureHook(t, func() {
+		if err := os.Rename(original, filepath.Join(c.Root, "moved-original")); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, filepath.Join(original, "sentinel"), "foreign sentinel")
+	})
+	expectPendingDeletion(t, c, w)
+	if b, err := os.ReadFile(filepath.Join(original, "sentinel")); err != nil || string(b) != "foreign sentinel" {
+		t.Fatal("process directory swapped in before validation was removed", err)
+	}
+}
+
+// Only the Worker's own owner reconciliation may create a maintenance lock that
+// removal adopts. A foreign empty private file at an owner lock name that
+// appears after adoption stays intact and keeps cleanup pending.
+func TestSessionDeletionDoesNotAdoptForeignMaintenanceLocks(t *testing.T) {
+	for name, owner := range map[string]func(domain.SessionDeletionWork) domain.ID{
+		"job":     func(w domain.SessionDeletionWork) domain.ID { return w.Copies[0].JobID },
+		"session": func(w domain.SessionDeletionWork) domain.ID { return w.SessionID },
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			lock := filepath.Join(c.Root, "processes", string(owner(w))+".recovery.lock")
+			if _, err := os.Lstat(lock); err == nil {
+				t.Skip("owner reconciliation created the lock in this fixture")
+			}
+			installDeletionHook(t, func() { mustWrite(t, lock, "") })
+			expectPendingDeletion(t, c, w)
+			if _, err := os.Lstat(lock); err != nil {
+				t.Fatal("foreign maintenance lock was removed", err)
+			}
+		})
 	}
 }
