@@ -1389,7 +1389,9 @@ it.each(["terminal-logout", "pending-credentials"] as const)(
     expect(
       screen.getByRole("heading", { name: "Clean up before deleting" }),
     ).toBeTruthy();
-    expect(screen.getByText("Credential access needs confirmation")).toBeTruthy();
+    expect(
+      screen.getByText("Credential access needs confirmation"),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         "DeliDev will clean up this account's credentials, then delete the account.",
@@ -1401,9 +1403,7 @@ it.each(["terminal-logout", "pending-credentials"] as const)(
     const details = screen.getByText("Technical details").closest("details")!;
     expect(details.open).toBe(false);
     expect(screen.getByRole("button", { name: "Keep account" })).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: confirmLabel }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: confirmLabel })).toBeNull();
     expect(value.remove).not.toHaveBeenCalled();
     const confirmButton = screen.getByRole("button", { name: cleanupLabel });
     fireEvent.click(confirmButton);
@@ -1475,7 +1475,9 @@ it("keeps the account after denied credential authorization and needs a new conf
     screen.getByText(/On macOS, approve the system keychain prompt/),
   ).toBeTruthy();
   // A definite terminal failure never offers the same wire request again.
-  expect(screen.queryByRole("button", { name: "Retry the same deletion" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry the same deletion" }),
+  ).toBeNull();
   expect(value.deleted).not.toHaveBeenCalled();
   fireEvent.click(
     screen.getByRole("button", { name: "Refresh account for confirmation" }),

@@ -145,7 +145,8 @@ function pendingCredentialCleanup(resource: Resource) {
   const state = object(document(resource).subscription),
     operation = object(state.server_operation);
   return (
-    failedInitialLogin(resource) && operation.cleanup_phase === "native-confirmed"
+    failedInitialLogin(resource) &&
+    operation.cleanup_phase === "native-confirmed"
   );
 }
 // The terminal original server LOGOUT shape: connected metadata is already
@@ -746,7 +747,8 @@ export function ChatGPTAccountDeletion({
   };
   if (view.stage === Stage.Deleted) return null;
   const recovery = cleanupRecovery(confirmed);
-  const pendingFailure = view.failure?.code === FailureCode.ConfirmationRequired;
+  const pendingFailure =
+    view.failure?.code === FailureCode.ConfirmationRequired;
   return (
     <section
       className={`subscription-account-create account-deletion${recovery ? " account-deletion-cleanup" : ""}`}
@@ -792,7 +794,9 @@ export function ChatGPTAccountDeletion({
               </div>
               <p>{copy("account-deletion.cleanup.summary")}</p>
               <Disclosure>
-                <DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>
+                <DisclosureSummary>
+                  {copy("ui.technicalDetails")}
+                </DisclosureSummary>
                 <dl className="account-deletion-cleanup-details">
                   <dt>{copy("account-deletion.cleanup.detailStep")}</dt>
                   <dd>{copy("account-deletion.cleanup.detailStepValue")}</dd>
