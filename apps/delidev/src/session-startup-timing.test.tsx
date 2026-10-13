@@ -253,7 +253,10 @@ it("pauses without unconfirmed churn while a healthy reread is pending and never
       wrapper: Wrapper,
     },
   );
-  expect(hook.result.current.agent).toMatchObject({ seconds: 8, running: true });
+  expect(hook.result.current.agent).toMatchObject({
+    seconds: 8,
+    running: true,
+  });
   // A pending reread suspends only the animation and keeps the elapsed value.
   act(() => hook.rerender({ enabled: false, retained: true }));
   act(() => {
@@ -372,15 +375,15 @@ it.each([false, true])(
       .querySelectorAll("details")
       .forEach((node) => (node.open = true));
     expect(spinners().length).toBeGreaterThan(0);
-    expect(spinners().every((node) => !node.classList.contains("is-paused"))).toBe(
-      true,
-    );
+    expect(
+      spinners().every((node) => !node.classList.contains("is-paused")),
+    ).toBe(true);
     rendered.rerender(view(false, paused));
     expect(rendered.container.firstElementChild).toBe(root);
     expect(shape()).toEqual(before);
-    expect(spinners().every((node) => node.classList.contains("is-paused"))).toBe(
-      true,
-    );
+    expect(
+      spinners().every((node) => node.classList.contains("is-paused")),
+    ).toBe(true);
     expect(screen.getByRole("status").textContent).not.toMatch(/unconfirmed/i);
   },
 );

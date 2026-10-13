@@ -88,8 +88,7 @@ export function useStartupPresence(
 export function useStartupLeaseExpiry(
   session: Resource | undefined,
   observation:
-    | { resource?: Resource; observedAt: string; startedAt: number }
-    | undefined,
+    { resource?: Resource; observedAt: string; startedAt: number } | undefined,
   retained: boolean,
 ) {
   const [, redraw] = useState(0);

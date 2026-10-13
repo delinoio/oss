@@ -288,21 +288,19 @@ export function startupWorkerLeaseRemainingMs(
     typeof serverObservedAt === "string" ? Date.parse(serverObservedAt) : NaN;
   const lastSeen =
     typeof m.last_seen === "string" ? Date.parse(m.last_seen) : NaN;
-  if (
-    !(
-      uuid(a.instance_id) &&
-      a.machine_id === machine.id &&
-      d.machine_id === machine.id &&
-      object(m.network).instance_id === a.instance_id &&
-      m.disabled === false &&
-      Number.isFinite(observedAt) &&
-      Number.isFinite(lastSeen) &&
-      lastSeen > 0 &&
-      observedAt >= lastSeen &&
-      Number.isFinite(elapsedReadMs) &&
-      elapsedReadMs >= 0
-    )
-  )
+  if (!(
+    uuid(a.instance_id) &&
+    a.machine_id === machine.id &&
+    d.machine_id === machine.id &&
+    object(m.network).instance_id === a.instance_id &&
+    m.disabled === false &&
+    Number.isFinite(observedAt) &&
+    Number.isFinite(lastSeen) &&
+    lastSeen > 0 &&
+    observedAt >= lastSeen &&
+    Number.isFinite(elapsedReadMs) &&
+    elapsedReadMs >= 0
+  ))
     return;
   return STARTUP_WORKER_LEASE_MS - (observedAt - lastSeen + elapsedReadMs);
 }

@@ -1993,7 +1993,8 @@ export function SessionView({
     !startupMachine.isPending;
   // Only a complete settled pair may animate or advance startup clocks; a pending
   // reread suspends the animation without refreshing the original lease.
-  const startupPairAnimating = startupPairRetained && !startupMachine.isFetching;
+  const startupPairAnimating =
+    startupPairRetained && !startupMachine.isFetching;
   useStartupLeaseExpiry(session, startupMachine.data, startupPairRetained);
   const startupTimes = useStartupTimes(
     session,
@@ -2389,7 +2390,9 @@ export function SessionView({
                         phase={progress}
                         operations={startupOperations(session, progress)}
                         timing={startupTimes}
-                        animating={!hasStartupOperations || startupPairAnimating}
+                        animating={
+                          !hasStartupOperations || startupPairAnimating
+                        }
                         compact={Boolean(
                           rows.length ||
                           messages.rows.length ||

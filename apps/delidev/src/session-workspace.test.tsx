@@ -2368,7 +2368,9 @@ function presenceStartup(lastSeenAgoMs = 0) {
     revision: 1n,
     documentJson: encode({
       disabled: false,
-      last_seen: new Date(Date.parse(presenceClock) - lastSeenAgoMs).toISOString(),
+      last_seen: new Date(
+        Date.parse(presenceClock) - lastSeenAgoMs,
+      ).toISOString(),
       network: { instance_id: instance },
     }),
   });
@@ -2386,11 +2388,11 @@ function installPresence(
     id: string;
     kind: EntityKind;
   }) => {
-    if (request.kind !== EntityKind.MACHINE)
-      return original(request);
+    if (request.kind !== EntityKind.MACHINE) return original(request);
     return (async () => {
       await gates.machine.gate;
-      if (gates.fail) throw new ConnectError("Machine unavailable", Code.Unavailable);
+      if (gates.fail)
+        throw new ConnectError("Machine unavailable", Code.Unavailable);
       return { resource };
     })();
   }) as never);
@@ -2403,7 +2405,8 @@ function installPresence(
 const rereadPresence = (f: ReturnType<typeof fixture>) =>
   act(() => {
     void f.client.invalidateQueries({
-      predicate: (query) => JSON.stringify(query.queryKey).includes("startupPresence"),
+      predicate: (query) =>
+        JSON.stringify(query.queryKey).includes("startupPresence"),
     });
   });
 
@@ -2417,7 +2420,9 @@ async function presenceSession(lastSeenAgoMs = 0) {
     expect(node).toBeTruthy();
     return node!;
   });
-  const info = view.container.querySelector<HTMLElement>(".session-information")!;
+  const info = view.container.querySelector<HTMLElement>(
+    ".session-information",
+  )!;
   await waitFor(() => expect(info).toHaveProperty("hidden", true));
   const composer = screen.getByRole("textbox", { name: "Message" });
   composer.focus();
@@ -2430,7 +2435,8 @@ const spinnerStates = (root: HTMLElement) =>
 it.each(["machine", "clock"] as const)(
   "keeps startup presentation, Info and drafts stable while a healthy %s reread is pending",
   async (read) => {
-    const { f, gates, view, progress, info, composer } = await presenceSession();
+    const { f, gates, view, progress, info, composer } =
+      await presenceSession();
     try {
       expect(spinnerStates(progress).length).toBeGreaterThan(0);
       expect(spinnerStates(progress).every((paused) => !paused)).toBe(true);
