@@ -160,7 +160,10 @@ Failure guidance describes delivery and cleanup independently. Acknowledged inpu
 and confirmed original cleanup must not be described as uncertain. Preserve safe
 cause-specific correction alongside original-execution recovery guidance for every
 accepted delivery/cleanup combination; the correction is independent of those facts
-and never grants resend authority. The server guidance and the desktop recovery
+and never grants resend authority. Every accepted startup problem code maps to a
+server correction that agrees with the desktop selection: `InvalidArgument` uses the
+settings correction like `Unsupported`, and the remaining accepted codes use the
+device-check correction. The server guidance and the desktop recovery
 guidance both lead with the selected correction, and the session recovery card
 renders that correction exactly once (a separate correction is shown only when the
 guidance does not already contain it); the technical details disclosure repeats only

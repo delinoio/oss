@@ -189,8 +189,14 @@ func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
 		message, guidance = "The agent could not access its executable or runtime.", "Check the selected Runner Device's permissions."
 	case domain.Unsupported:
 		message, guidance = "The agent's protocol or applied settings are incompatible.", "Check the selected harness and settings; details identify the failing stage."
+	case domain.InvalidArgument:
+		// Mirrors the desktop correction, which treats an invalid argument like unsupported settings.
+		message, guidance = "The agent rejected its applied settings or arguments.", "Check the selected harness and settings; details identify the failing stage."
 	case domain.Unavailable:
 		message, guidance = "The agent failed to start or timed out.", "Check the selected Runner Device and its original log reference."
+	case domain.Canceled, domain.Conflict, domain.RecoveryRequired, domain.ResourceExhausted, domain.ProviderDisabled:
+		// Remaining accepted startup causes share the desktop's device-check correction.
+		guidance = "Check the selected Runner Device and its original log reference."
 	}
 	if o.State == domain.StartupUncertain || o.InputDelivery != domain.StartupNotSent || o.Cleanup != domain.StartupCleanupConfirmed {
 		// Acknowledgement and original cleanup are independent observations,

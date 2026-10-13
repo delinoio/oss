@@ -19,7 +19,13 @@ func TestDirectStartupGuidanceIndependentDeliveryAndCleanup(t *testing.T) {
 		{domain.NotFound, "Install the harness on the selected Runner Device or correct its executable path."},
 		{domain.PermissionDenied, "Check the selected Runner Device's permissions."},
 		{domain.Unsupported, "Check the selected harness and settings; details identify the failing stage."},
+		{domain.InvalidArgument, "Check the selected harness and settings; details identify the failing stage."},
 		{domain.Unavailable, "Check the selected Runner Device and its original log reference."},
+		{domain.Canceled, "Check the selected Runner Device and its original log reference."},
+		{domain.Conflict, "Check the selected Runner Device and its original log reference."},
+		{domain.RecoveryRequired, "Check the selected Runner Device and its original log reference."},
+		{domain.ResourceExhausted, "Check the selected Runner Device and its original log reference."},
+		{domain.ProviderDisabled, "Check the selected Runner Device and its original log reference."},
 	}
 	for _, cause := range causes {
 		for _, delivery := range []domain.ExecutionStartupInputDelivery{domain.StartupNotSent, domain.StartupClaimed, domain.StartupAcknowledged, domain.StartupDeliveryUncertain} {
