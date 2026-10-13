@@ -118,6 +118,26 @@ account scope is not re-validated for failures, since the account may have
 changed while positive no-send/cleanup proof must remain publishable. Ready
 validation and protected-account authority checks are unchanged.
 
+The Worker persists each exact `ReportExecutionStartupRequest` as a private (0600)
+`jobs/<job>/startup-ready.json` or `startup-failure.json` journal before one
+transmission, and records acceptance separately in `startup-<name>.ack.json`
+(the SHA-256 of the exact request bytes). A transport failure therefore leaves the
+original request on disk. Before publishing the terminal job result for a v4
+execution, the Worker reconciles a retained, unacknowledged `startup-failure.json`
+by validating it against the live claim (job, assignment revision, machine and
+instance, closed observation) and resending the unchanged bytes with fresh
+authentication, so the same request ID reaches the server and a lost response
+replays idempotently. Reconciliation is bounded (30 seconds, three attempts,
+cancelled with Worker shutdown), only reads private journals, and never launches a
+process, re-runs initialization, sends input or replays the ready report; an
+uncertain ready acknowledgement cannot implicitly resume the old process.
+Transport loss or shutdown leaves the exact journal and withholds the terminal
+result for the next attempt. A corrupt or contradictory journal, a changed
+instance, a stale revision, an acknowledgement for different bytes, or a server
+rejection (changed server epoch or already-terminal ownership) stays uncertain:
+no proof is fabricated and the terminal result is published without retry
+authority. Logs carry only job ID, outcome, state and code.
+
 Continuation and native source operations additionally retain original
 checkpoint, executable identity, account, Worker, workspace and history checks.
 No installation refresh can silently replace historical native ownership. Title
