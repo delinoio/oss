@@ -123,6 +123,7 @@ import {
 } from "./local-worker-controls";
 import { SSHSetup } from "./ssh-setup";
 import { MachineSettings } from "./machine-settings";
+import { ManagedMcpSettings } from "./managed-mcp-settings";
 import { NetworkSettings } from "./network-settings";
 import {
   DeviceAction,
@@ -1773,6 +1774,15 @@ export const settingsCategories: Record<
     kind: EntityKind.AGENT,
     area: SettingsArea.Configuration,
   },
+  [SettingsCategory.Mcp]: {
+    get label() {
+      return copy("managed-mcp-settings.title");
+    },
+    get description() {
+      return copy("managed-mcp-settings.description");
+    },
+    area: SettingsArea.Configuration,
+  },
   [SettingsCategory.Instructions]: {
     get label() {
       return copy("settings.instructions_934652");
@@ -1902,6 +1912,7 @@ export const settingsGroups: {
       SettingsCategory.Providers,
       SettingsCategory.AgentWorkers,
       SettingsCategory.Instructions,
+      SettingsCategory.Mcp,
     ],
   },
   {
@@ -1952,6 +1963,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
     "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.AgentWorkers]:
     "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
+  [SettingsCategory.Mcp]: "M8 3v5m8-5v5M5 8h14v5a7 7 0 0 1-14 0zM12 20v2",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
   [SettingsCategory.Repositories]:
@@ -2417,7 +2429,8 @@ function SettingsWorkspace({
   const isPairedDevices = selectedCategory === SettingsCategory.PairedDevices;
   const isRunnerDevices =
     selectedCategory === SettingsCategory.ExecutionWorkers;
-  const hasSpecializedPanel = isAccountCategory || isApiProviders;
+  const isMcp = selectedCategory === SettingsCategory.Mcp;
+  const hasSpecializedPanel = isAccountCategory || isApiProviders || isMcp;
   const hasOverlay = Boolean(
     editing || account || deleting || routing || machine || device,
   );
@@ -2953,6 +2966,9 @@ function SettingsWorkspace({
                 ) : null}
                 {area === SettingsArea.Configuration ? (
                   <div>
+                    {isMcp ? (
+                      <ManagedMcpSettings active={visible && !hasOverlay} />
+                    ) : null}
                     {controlLocalWorker && isRunnerDevices ? (
                       <div data-settings-search-target="local-worker">
                         <LocalWorkerControls

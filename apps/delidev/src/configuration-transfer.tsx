@@ -130,7 +130,7 @@ function readBundle(raw: string): Bundle {
     throw new ProductError("validation.0c01933238f8");
   const value = object(JSON.parse(raw));
   if (
-    value.version !== 4 ||
+    ![4, 8].includes(value.version as number) ||
     !Array.isArray(value.entries) ||
     !Array.isArray(value.machines) ||
     value.entries.length > 256 ||
@@ -151,6 +151,8 @@ function readBundle(raw: string): Bundle {
     )
       throw new ProductError("validation.c2538b95da40");
     const data = object(entry.document);
+    if (Object.hasOwn(data, "managed_mcp") && (value.version as number) < 8)
+      throw new ProductError("validation.c2538b95da40");
     ids.add(id);
   }
   for (const item of value.machines) {
@@ -192,7 +194,7 @@ function readPreview(bytes: Uint8Array): Preview {
     plan = object(value.plan);
   if (
     !text(value.token) ||
-    plan.version !== 4 ||
+    ![4, 8].includes(plan.version as number) ||
     !Array.isArray(plan.changes) ||
     !plan.changes.length ||
     plan.changes.length > 256 ||
