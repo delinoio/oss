@@ -1,6 +1,6 @@
 // Copyright 2026 Delino. SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
@@ -16,6 +16,23 @@ async function digestOf(file, { stripBom }) {
     throw error;
   }
   return sha256(stripBom ? content.replace(/^﻿/, "") : content);
+}
+
+const INPUT_KINDS = new Set(["configuration", "dependency", "absent"]);
+
+/**
+ * Whether nothing exists at the path. The compiler recorded the path as a
+ * resolution candidate that was missing, so anything appearing there (a file,
+ * directory or symlink) can change resolution.
+ */
+async function isAbsent(file) {
+  try {
+    await lstat(file);
+    return false;
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return true;
+    throw error;
+  }
 }
 
 /** Substitute code without redirecting module identity or asset resolution. */
@@ -51,9 +68,18 @@ export function typeopt(outputDirectory) {
       // before consuming any output, so a changed dependency invalidates
       // every result that could depend on it.
       const inputs = manifest.inputs ?? [];
+      // Positive inputs carry a content digest. An `absent` input names a
+      // resolution candidate that did not exist and has no digest.
       if (
         !Array.isArray(inputs) ||
-        inputs.some((i) => !DIGEST.test(i.sha256 ?? ""))
+        inputs.some(
+          (i) =>
+            !INPUT_KINDS.has(i?.kind) ||
+            typeof i.path !== "string" ||
+            (i.kind === "absent"
+              ? i.sha256 !== undefined
+              : !DIGEST.test(i.sha256 ?? "")),
+        )
       )
         throw new Error(
           "typeopt module mapping has an invalid input snapshot; regenerate with the matching CLI",
@@ -69,6 +95,10 @@ export function typeopt(outputDirectory) {
             if (digest !== entry.source_sha256) stale.push(entry.source);
           }),
         ...inputs.map(async (input) => {
+          if (input.kind === "absent") {
+            if (!(await isAbsent(input.path))) stale.push(input.path);
+            return;
+          }
           const digest = await digestOf(input.path, {
             stripBom: input.kind !== "configuration",
           });

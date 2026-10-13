@@ -1,7 +1,7 @@
 //! All access to the pinned compiler lives in this adapter. The pipeline only
 //! receives plain candidates and byte spans, never compiler-owned identities.
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     hash::{Hash, Hasher},
     rc::Rc,
     sync::{Arc, Mutex},
@@ -47,12 +47,19 @@ pub enum InputKind {
     /// Declarations, JSON and other program files outside the application
     /// sources, including dependency declarations.
     Dependency,
+    /// A path the compiler probed for existence and found missing. A file or
+    /// directory that later appears at this path can change module
+    /// resolution, so consumers must reject output once the path exists. The
+    /// entry has no `sha256`.
+    Absent,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Input {
     pub path: String,
-    pub sha256: String,
+    /// SHA-256 of the file content; `None` exactly for `InputKind::Absent`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
     pub kind: InputKind,
 }
 
@@ -68,6 +75,9 @@ pub struct Project {
     config: P<ParsedCommandLine>,
     /// SHA-256 of every file the compiler read, by path.
     reads: Arc<Mutex<BTreeMap<String, String>>>,
+    /// Non-`bundled:` paths whose existence the compiler probed and found
+    /// missing (`file_exists`, `directory_exists` or `stat`).
+    misses: Arc<Mutex<BTreeSet<String>>>,
     fs: Arc<dyn Fs>,
     cwd: String,
     version: Rc<CompilerProgram>,
@@ -104,9 +114,11 @@ impl Project {
         // snapshot that consumers validate.
         let base: Arc<dyn Fs> = Arc::new(bundled::wrap_fs(tsrs_vfs::osvfs::fs()));
         let reads = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
+        let misses = Arc::new(Mutex::new(BTreeSet::<String>::new()));
         let (reader, recorded) = (base.clone(), reads.clone());
         let fs = wrapvfs_wrap(
             base,
+            Some(misses.clone()),
             Replacements {
                 read_file: Some(Box::new(move |path| {
                     let text = reader.read_file(path);
@@ -219,6 +231,7 @@ impl Project {
             region,
             config,
             reads,
+            misses,
             fs,
             cwd,
             version,
@@ -558,7 +571,7 @@ impl Project {
             let text = std::fs::read(path).context("cannot read project configuration")?;
             inputs.push(Input {
                 path: path.clone(),
-                sha256: sha256_hex(&text),
+                sha256: Some(sha256_hex(&text)),
                 kind: InputKind::Configuration,
             });
         }
@@ -574,7 +587,7 @@ impl Project {
             if !is_application(file) {
                 if !name.starts_with("bundled:") {
                     inputs.push(Input {
-                        sha256: sha256_hex(source_file_text(file).as_bytes()),
+                        sha256: Some(sha256_hex(source_file_text(file).as_bytes())),
                         path: name,
                         kind: InputKind::Dependency,
                     });
@@ -625,13 +638,35 @@ impl Project {
             if !known.contains(path) {
                 inputs.push(Input {
                     path: path.clone(),
-                    sha256: sha256.clone(),
+                    sha256: Some(sha256.clone()),
                     kind: InputKind::Dependency,
                 });
             }
         }
         inputs.sort();
         inputs.dedup();
+        // Negative resolution dependencies come after the positive inputs, in
+        // path order. A path is kept only when the filesystem still reports
+        // nothing there, so a probe that failed only because the path is a
+        // directory (or the reverse) never becomes a false absence.
+        let mut absent: Vec<String> = self
+            .misses
+            .lock()
+            .expect("compiler probe log")
+            .iter()
+            .filter(|path| !known.contains(*path) && is_absent_on_disk(path))
+            .cloned()
+            .collect();
+        absent.sort();
+        tracing::debug!(
+            probes = absent.len(),
+            "recording absent resolution candidates"
+        );
+        inputs.extend(absent.into_iter().map(|path| Input {
+            path,
+            sha256: None,
+            kind: InputKind::Absent,
+        }));
         Ok(Snapshot { sources, inputs })
     }
 
@@ -648,6 +683,7 @@ impl Project {
         let texts = texts.clone();
         let fs = wrapvfs_wrap(
             self.fs.clone(),
+            None,
             Replacements {
                 read_file: Some(Box::new(move |path| {
                     texts.get(path).cloned().or_else(|| base.read_file(path))
@@ -939,6 +975,22 @@ fn build(config: P<ParsedCommandLine>, fs: Arc<dyn Fs>, cwd: &str) -> Rc<Compile
 struct OverlayFs {
     base: Arc<dyn Fs>,
     replacements: Replacements,
+    /// Receives every missing non-`bundled:` path the compiler probes. Rebuilds
+    /// over this overlay pass `None` because the wrapped base already records.
+    misses: Option<Arc<Mutex<BTreeSet<String>>>>,
+}
+
+impl OverlayFs {
+    fn record_miss(&self, path: &str) {
+        if let Some(misses) = &self.misses
+            && !path.starts_with("bundled:")
+        {
+            misses
+                .lock()
+                .expect("compiler probe log")
+                .insert(path.to_owned());
+        }
+    }
 }
 impl Fs for OverlayFs {
     fn use_case_sensitive_file_names(&self) -> bool {
@@ -946,7 +998,11 @@ impl Fs for OverlayFs {
     }
 
     fn file_exists(&self, path: &str) -> bool {
-        self.base.file_exists(path)
+        let exists = self.base.file_exists(path);
+        if !exists {
+            self.record_miss(path);
+        }
+        exists
     }
 
     fn read_file(&self, path: &str) -> Option<String> {
@@ -957,7 +1013,11 @@ impl Fs for OverlayFs {
     }
 
     fn directory_exists(&self, path: &str) -> bool {
-        self.base.directory_exists(path)
+        let exists = self.base.directory_exists(path);
+        if !exists {
+            self.record_miss(path);
+        }
+        exists
     }
 
     fn get_accessible_entries(&self, path: &str) -> tsrs_vfs::Entries {
@@ -965,7 +1025,11 @@ impl Fs for OverlayFs {
     }
 
     fn stat(&self, path: &str) -> Option<tsrs_vfs::FileInfo> {
-        self.base.stat(path)
+        let info = self.base.stat(path);
+        if info.is_none() {
+            self.record_miss(path);
+        }
+        info
     }
 
     fn realpath(&self, path: &str) -> String {
@@ -993,8 +1057,28 @@ impl Fs for OverlayFs {
         Err(deny_write())
     }
 }
-fn wrapvfs_wrap(base: Arc<dyn Fs>, replacements: Replacements) -> Arc<dyn Fs> {
-    Arc::new(OverlayFs { base, replacements })
+fn wrapvfs_wrap(
+    base: Arc<dyn Fs>,
+    misses: Option<Arc<Mutex<BTreeSet<String>>>>,
+    replacements: Replacements,
+) -> Arc<dyn Fs> {
+    Arc::new(OverlayFs {
+        base,
+        replacements,
+        misses,
+    })
+}
+
+/// Whether nothing exists at `path`. Other failures, such as a permission
+/// error, are not proof of absence.
+fn is_absent_on_disk(path: &str) -> bool {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => false,
+        Err(error) => matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+        ),
+    }
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {

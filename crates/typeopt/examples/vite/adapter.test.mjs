@@ -306,6 +306,112 @@ test("rejects stale transitive modules, configuration, declarations and unknown 
   }
 });
 
+test("rejects output once an absent higher-priority resolution candidate appears", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-absent-"));
+  try {
+    const files = {
+      "main.ts": "import { f } from './dep';",
+      "dep.tsx": "export const f = 1;",
+      "tsconfig.json": "{}",
+    };
+    for (const [name, text] of Object.entries(files))
+      await writeFile(path.join(root, name), text);
+    const absent = path.join(root, "dep.ts");
+    const manifest = {
+      schema_version: 0,
+      modules: ["main.ts", "dep.tsx"].map((name, index) => ({
+        source: path.join(root, name),
+        source_sha256: sha256(files[name]),
+        output: `${index}.js`,
+        source_map: `${index}.js.map`,
+        kind: index === 0 ? "optimized" : "preserved",
+      })),
+      inputs: [
+        {
+          path: path.join(root, "tsconfig.json"),
+          sha256: sha256(files["tsconfig.json"]),
+          kind: "configuration",
+        },
+        { path: absent, kind: "absent" },
+        { path: path.join(root, "dep.d.ts"), kind: "absent" },
+      ],
+    };
+    const out = path.join(root, "out");
+    await mkdir(out);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    // A still-absent candidate with unchanged listed files validates.
+    await typeopt(out).buildStart();
+    // Creating the candidate leaves every positive digest unchanged.
+    await writeFile(absent, "export const f = 2;");
+    await assert.rejects(typeopt(out).buildStart(), (error) => {
+      assert.match(error.message, /typeopt output is stale/);
+      assert.ok(error.message.includes(absent));
+      return true;
+    });
+    // A directory at the candidate path also invalidates the output.
+    await rm(absent);
+    await mkdir(absent);
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+    await rm(absent, { recursive: true });
+    await typeopt(out).buildStart();
+    // A candidate below a regular file stays absent (ENOTDIR).
+    manifest.inputs.push({
+      path: path.join(root, "main.ts", "nested.ts"),
+      kind: "absent",
+    });
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    await typeopt(out).buildStart();
+    // Positive inputs still invalidate on edit or removal.
+    await writeFile(path.join(root, "dep.tsx"), "export const f = 3;");
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+    await writeFile(path.join(root, "dep.tsx"), files["dep.tsx"]);
+    await rm(path.join(root, "tsconfig.json"));
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects unknown input forms and absent inputs that carry a digest", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-forms-"));
+  try {
+    const source = path.join(root, "main.ts");
+    await writeFile(source, "export {};");
+    const out = path.join(root, "out");
+    await mkdir(out);
+    const base = {
+      schema_version: 0,
+      modules: [
+        {
+          source,
+          source_sha256: sha256("export {};"),
+          output: "0.js",
+          source_map: "0.js.map",
+          kind: "preserved",
+        },
+      ],
+    };
+    for (const input of [
+      { path: path.join(root, "dep.ts"), kind: "future_kind" },
+      { path: path.join(root, "dep.ts"), kind: "absent", sha256: sha256("") },
+      { kind: "absent" },
+      { path: path.join(root, "dep.ts"), kind: "dependency" },
+    ]) {
+      await writeFile(
+        path.join(out, "modules.json"),
+        JSON.stringify({ ...base, inputs: [input] }),
+      );
+      await assert.rejects(
+        typeopt(out).buildStart(),
+        /invalid input snapshot; regenerate with the matching CLI/,
+        JSON.stringify(input),
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("loads a structurally transformed module without property renaming", async () => {
   const { execFileSync } = await import("node:child_process");
   const { fileURLToPath } = await import("node:url");
@@ -409,6 +515,70 @@ test("loads a structurally transformed module without property renaming", async 
       }),
       /stale/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("real optimizer output is rejected once a shadowing dep.ts appears", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const { readFile } = await import("node:fs/promises");
+  const root = await realpath(
+    await mkdtemp(path.join(tmpdir(), "typeopt-vite-shadow-")),
+  );
+  try {
+    const output = path.join(root, "optimized");
+    await writeFile(
+      path.join(root, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "ESNext",
+          target: "ES2022",
+          moduleResolution: "bundler",
+          jsx: "react-jsx",
+          strict: true,
+        },
+      }),
+    );
+    await writeFile(
+      path.join(root, "main.ts"),
+      'import { answer } from "./dep"; console.log(answer());',
+    );
+    await writeFile(
+      path.join(root, "dep.tsx"),
+      "export function answer() { return 1; }",
+    );
+    const binary =
+      process.env.TYPEOPT_BIN ||
+      fileURLToPath(
+        new URL("../../../../target/debug/typeopt", import.meta.url),
+      );
+    execFileSync(
+      binary,
+      [
+        "--project",
+        path.join(root, "tsconfig.json"),
+        "--entry",
+        path.join(root, "main.ts"),
+        "--out-dir",
+        output,
+      ],
+      { stdio: "pipe" },
+    );
+    const manifest = JSON.parse(
+      await readFile(path.join(output, "modules.json"), "utf8"),
+    );
+    const absent = path.join(root, "dep.ts");
+    assert.ok(
+      manifest.inputs.some((i) => i.kind === "absent" && i.path === absent),
+      JSON.stringify(manifest.inputs),
+    );
+    // Unchanged files and a still-absent dep.ts validate.
+    await typeopt(output).buildStart();
+    // Creating dep.ts changes no recorded digest, yet must invalidate.
+    await writeFile(absent, "export function answer() { return 2; }");
+    await assert.rejects(typeopt(output).buildStart(), /stale/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
