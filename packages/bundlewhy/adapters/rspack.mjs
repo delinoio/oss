@@ -137,6 +137,22 @@ function describeMinimizer(rspack, config) {
   return { minifyEnabled, defaultMinifier, summary: names.join(", ") };
 }
 
+/**
+ * Library builds configured globally (`output.library`) or per entry
+ * (`entry: { main: { import, library } }`) are outside bundlewhy's scope.
+ */
+function libraryBuild(config) {
+  if (config.output?.library) return true;
+  const entry = config.entry;
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+    return Object.values(entry).some(
+      (description) =>
+        description && typeof description === "object" && !Array.isArray(description) && Boolean(description.library),
+    );
+  }
+  return false;
+}
+
 function normalizeStats(stats) {
   const chunkFiles = new Map();
   const chunks = [];
@@ -181,10 +197,9 @@ function normalizeStats(stats) {
             (reason) =>
               reason.from && reason.from !== raw.identifier && reason.active,
           )
-          .filter(
-            (reason) =>
-              reason.type !== "import()" && reason.type !== "import() eager",
-          )
+          // Every import() reason (eager, weak, context element, ...) is a
+          // dynamic edge and never part of a static importer chain.
+          .filter((reason) => !reason.type?.startsWith("import()"))
           .map((reason) => reason.from),
       ),
     ];
@@ -383,7 +398,7 @@ await runAdapter(async (request) => {
       "original mode": summarizeValue(config.mode),
       "original devtool": summarizeValue(config.devtool),
     },
-    libraryBuild: Boolean(config.output?.library),
+    libraryBuild: libraryBuild(config),
     ssrBuild: nodeTarget,
     buildDir: request.buildDir,
     logs: [],

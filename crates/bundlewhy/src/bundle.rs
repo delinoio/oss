@@ -70,6 +70,11 @@ fn invalid(message: impl Into<String>) -> BwError {
     )
 }
 
+fn is_diagnostic_id(id: &str) -> bool {
+    id.strip_prefix("d-")
+        .is_some_and(|hex| hex.len() == 12 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
 fn is_source_id(id: &str) -> bool {
     id.strip_prefix("src-")
         .is_some_and(|hex| hex.len() == 16 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
@@ -121,6 +126,16 @@ fn validate(bundle: &ResultBundle) -> BwResult<()> {
         }
         if source.path.contains('\0') {
             return Err(invalid("source path contains a NUL byte"));
+        }
+    }
+    // The UI selects diagnostics by ID; duplicates would show the wrong one.
+    let mut diagnostic_ids = HashSet::new();
+    for diagnostic in &analysis.diagnostics {
+        if !is_diagnostic_id(&diagnostic.id) || !diagnostic_ids.insert(diagnostic.id.as_str()) {
+            return Err(invalid(format!(
+                "invalid or duplicate diagnostic id {:?}",
+                diagnostic.id
+            )));
         }
     }
     for diagnostic in &analysis.diagnostics {
@@ -352,9 +367,23 @@ mod tests {
             ErrorCode::ResultInvalid
         );
 
+        let mut duplicate = bundle();
+        for _ in 0..2 {
+            duplicate.analysis.diagnostics.push(Diagnostic {
+                id: "d-0123456789ab".to_owned(),
+                ..Diagnostic::default()
+            });
+        }
+        assert_eq!(
+            parse(&serde_json::to_vec(&duplicate).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::ResultInvalid
+        );
+
         let mut broken = bundle();
         broken.analysis.diagnostics.push(Diagnostic {
-            id: "d-1".to_owned(),
+            id: "d-0123456789ab".to_owned(),
             location: Some(SourceLocation {
                 source_id: "src-ffffffffffffffff".to_owned(),
                 ..SourceLocation::default()

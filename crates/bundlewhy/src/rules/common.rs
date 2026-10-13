@@ -457,7 +457,12 @@ fn declared_names(source: &str) -> Vec<String> {
     for found in keyword.find_iter(&code) {
         let declaration = declaration_text(&code[found.end()..]);
         for declarator in split_top_level(declaration, b',') {
-            let target = binding_target(declarator);
+            // Drop a TypeScript annotation (`name: Type`, `{ a }: Type`) and a
+            // definite-assignment `!`; pattern-internal `key: value` pairs
+            // are nested deeper and stay intact.
+            let target = split_top_level(binding_target(declarator), b':')[0]
+                .trim()
+                .trim_end_matches('!');
             collect_binding_names(target, &mut names);
         }
     }

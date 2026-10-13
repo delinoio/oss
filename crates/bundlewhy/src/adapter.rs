@@ -180,6 +180,70 @@ fn terminate_group(pid: u32, signal: libc::c_int) {
     }
 }
 
+/// Oldest supported Node.js: 22.18 is the first 22.x release that strips
+/// TypeScript types by default, which TypeScript Rspack configurations need.
+pub const MIN_NODE: (u64, u64) = (22, 18);
+
+/// Parses `v24.1.0` into (major, minor).
+pub fn parse_node_version(text: &str) -> Option<(u64, u64)> {
+    let mut parts = text.trim().strip_prefix('v')?.split('.');
+    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+/// Probes `node --version` and rejects runtimes below the documented minimum
+/// before any project code runs.
+async fn check_node_version(node: &Path) -> BwResult<()> {
+    let probe = tokio::time::timeout(
+        Duration::from_secs(15),
+        tokio::process::Command::new(node)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .output(),
+    )
+    .await;
+    let output = match probe {
+        Ok(Ok(output)) => output,
+        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(BwError::new(
+                ErrorCode::NodeNotFound,
+                format!("Node.js executable {} was not found", node.display()),
+                "Install Node.js 22.18 or newer and make `node` available on PATH, or set \
+                 BUNDLEWHY_NODE.",
+            ));
+        }
+        Ok(Err(error)) => {
+            return Err(BwError::new(
+                ErrorCode::NodeNotFound,
+                format!("Could not run {}: {error}", node.display()),
+                "Check the Node.js installation or BUNDLEWHY_NODE.",
+            ));
+        }
+        Err(_) => {
+            return Err(BwError::new(
+                ErrorCode::NodeNotFound,
+                format!("{} --version did not finish", node.display()),
+                "Check the Node.js installation or BUNDLEWHY_NODE.",
+            ));
+        }
+    };
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    match parse_node_version(&text) {
+        Some(version) if version >= MIN_NODE => {
+            tracing::debug!(node = %text.trim(), "node version accepted");
+            Ok(())
+        }
+        _ => Err(BwError::new(
+            ErrorCode::NodeVersionUnsupported,
+            format!(
+                "Node.js {} is not supported; bundlewhy requires 22.18 or newer",
+                text.trim()
+            ),
+            "Install Node.js 22.18 or newer, or point BUNDLEWHY_NODE at a supported Node.js \
+             executable.",
+        )),
+    }
+}
+
 /// Runs the adapter and returns its collection. `on_progress` receives stage
 /// updates.
 pub async fn run(
@@ -216,6 +280,7 @@ pub async fn run(
         )
     })?;
 
+    check_node_version(&options.node).await?;
     let mut command = tokio::process::Command::new(&options.node);
     command
         .arg(adapter_dir.join(spec.adapter_file))
@@ -400,6 +465,28 @@ mod tests {
         assert_eq!(lines.next_line().await.unwrap(), None);
     }
 
+    #[test]
+    fn node_versions_below_the_minimum_are_rejected() {
+        assert_eq!(parse_node_version("v22.18.0\n"), Some((22, 18)));
+        assert!(parse_node_version("v22.17.1").unwrap() < MIN_NODE);
+        assert!(parse_node_version("v24.0.0").unwrap() >= MIN_NODE);
+        assert_eq!(parse_node_version("garbage"), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn old_node_runtimes_fail_before_the_adapter_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("old-node.sh");
+        std::fs::write(&fake, "#!/bin/sh\necho v20.11.0\n").unwrap();
+        let mut permissions = std::fs::metadata(&fake).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&fake, permissions).unwrap();
+        let error = check_node_version(&fake).await.unwrap_err();
+        assert_eq!(error.code, ErrorCode::NodeVersionUnsupported);
+        assert!(error.message.contains("v20.11.0"));
+    }
+
     #[tokio::test]
     async fn cancel_signal_wakes_waiters_once_cancelled() {
         let signal = Arc::new(CancelSignal::default());
@@ -432,6 +519,7 @@ mod tests {
             &fake_node,
             format!(
                 r#"#!/bin/sh
+if [ "$1" = "--version" ]; then echo v24.0.0; exit 0; fi
 sleep 30 &
 echo $! > '{}'
 token=$(sed -n 's/.*"protocolToken":"\([0-9a-f]*\)".*/\1/p' "$2")

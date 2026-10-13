@@ -198,3 +198,15 @@ test("rspack adapter marks a mixed minimizer pipeline as non-default", () => {
   assert.equal(collection.defaultMinifier, false);
   assert.equal(collection.minifyEnabled, true);
 });
+
+test("rspack adapter detects per-entry library builds", () => {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    `export default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: { main: { import: "./src/esm/value.js", library: { type: "commonjs2" } } } };\n`,
+  );
+  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.libraryBuild, true);
+});
