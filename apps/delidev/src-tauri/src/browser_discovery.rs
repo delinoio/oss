@@ -845,14 +845,26 @@ mod tests {
         assert_eq!(scan_macos(&[empty.path().to_owned()]).unwrap(), []);
     }
 
-    const FIREFOX: &str = "[Desktop Entry]\nType=Application\nName=Firefox Web \
-                           Browser\nExec=/usr/lib/firefox/firefox --new-window \
-                           %u\nMimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;\\
-                           n[Desktop Action new-window]\nName=Other\nExec=ignored\n";
+    // Fixtures are assembled from short lines so rustfmt cannot reflow an
+    // escape sequence inside a long literal.
+    fn firefox() -> String {
+        [
+            "[Desktop Entry]",
+            "Type=Application",
+            "Name=Firefox Web Browser",
+            "Exec=/usr/lib/firefox/firefox --new-window %u",
+            "MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;",
+            "[Desktop Action new-window]",
+            "Name=Other",
+            "Exec=ignored",
+            "",
+        ]
+        .join("\n")
+    }
 
     #[test]
     fn linux_desktop_entries_require_both_scheme_handlers_and_visible_applications() {
-        let browser = parse_desktop_entry("firefox.desktop", FIREFOX).unwrap();
+        let browser = parse_desktop_entry("firefox.desktop", &firefox()).unwrap();
         assert_eq!(browser.entry.identity, "firefox.desktop");
         assert_eq!(browser.entry.name, "Firefox Web Browser");
         assert_eq!(browser.launch.program, "/usr/lib/firefox/firefox");
@@ -860,27 +872,30 @@ mod tests {
             browser.launch.argv("https://example.com/"),
             ["--new-window", "https://example.com/"]
         );
-        let without_https = FIREFOX.replace(";x-scheme-handler/https", "");
+        let without_https = firefox().replace(";x-scheme-handler/https", "");
         assert!(parse_desktop_entry("a.desktop", &without_https).is_none());
         assert!(
             parse_desktop_entry(
                 "a.desktop",
-                &FIREFOX.replace("Type=Application", "Type=Link")
+                &firefox().replace("Type=Application", "Type=Link")
             )
             .is_none()
         );
         assert!(
             parse_desktop_entry(
                 "a.desktop",
-                &FIREFOX.replace("Name=", "NoDisplay=true\nName=")
+                &firefox().replace("Name=", "NoDisplay=true\nName=")
             )
             .is_none()
         );
         assert!(
-            parse_desktop_entry("a.desktop", &FIREFOX.replace("Name=", "Hidden=true\nName="))
-                .is_none()
+            parse_desktop_entry(
+                "a.desktop",
+                &firefox().replace("Name=", "Hidden=true\nName=")
+            )
+            .is_none()
         );
-        assert!(parse_desktop_entry("../a.desktop", FIREFOX).is_none());
+        assert!(parse_desktop_entry("../a.desktop", &firefox()).is_none());
     }
 
     #[test]
@@ -926,13 +941,13 @@ mod tests {
         let second = tempfile::tempdir().unwrap();
         fs::write(
             first.path().join("firefox.desktop"),
-            FIREFOX.replace("Type=Application", "NoDisplay=true\nType=Application"),
+            firefox().replace("Type=Application", "NoDisplay=true\nType=Application"),
         )
         .unwrap();
-        fs::write(second.path().join("firefox.desktop"), FIREFOX).unwrap();
+        fs::write(second.path().join("firefox.desktop"), firefox()).unwrap();
         fs::write(
             second.path().join("other.desktop"),
-            FIREFOX.replace("Firefox Web Browser", "Other"),
+            firefox().replace("Firefox Web Browser", "Other"),
         )
         .unwrap();
         fs::write(second.path().join("readme.txt"), "x").unwrap();
@@ -948,33 +963,55 @@ mod tests {
         );
     }
 
-    const LISTING: &str = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\r\\
-                           nHKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\Google \
-                           Chrome\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\\
-                           Plain\r\n";
-    const CHROME: &str =
-        "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\Google Chrome\r\n    \
-         (Default)    REG_SZ    Google \
-         Chrome\r\n\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\Google \
-         Chrome\\Capabilities\\URLAssociations\r\n    http    REG_SZ    ChromeHTML\r\n    https    \
-         REG_SZ    ChromeHTML\r\n\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\\
-         Google Chrome\\shell\\open\\command\r\n    (Default)    REG_SZ    \"C:\\Program \
-         Files\\Google\\Chrome\\Application\\chrome.exe\" --flag\r\n";
+    const HIVE: &str = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet";
+    fn listing() -> String {
+        [
+            "",
+            HIVE,
+            &format!("{HIVE}\\Google Chrome"),
+            &format!("{HIVE}\\Plain"),
+            "",
+        ]
+        .join("\r\n")
+    }
+    fn chrome() -> String {
+        let root = format!("{HIVE}\\Google Chrome");
+        [
+            "",
+            &root,
+            "    (Default)    REG_SZ    Google Chrome",
+            "",
+            &format!("{root}\\Capabilities\\URLAssociations"),
+            "    http    REG_SZ    ChromeHTML",
+            "    https    REG_SZ    ChromeHTML",
+            "",
+            &format!("{root}\\shell\\open\\command"),
+            "    (Default)    REG_SZ    \"C:\\Program \
+             Files\\Google\\Chrome\\Application\\chrome.exe\" --flag",
+            "",
+        ]
+        .join("\r\n")
+    }
+    fn plain() -> String {
+        [
+            "",
+            &format!("{HIVE}\\Plain"),
+            "    (Default)    REG_SZ    Plain",
+            "",
+        ]
+        .join("\r\n")
+    }
 
     struct Fixture;
     impl RegistryReader for Fixture {
         fn query(&self, arguments: &[&str]) -> Option<String> {
             match arguments {
-                [r"HKLM\SOFTWARE\Clients\StartMenuInternet"] => Some(LISTING.into()),
+                [r"HKLM\SOFTWARE\Clients\StartMenuInternet"] => Some(listing()),
                 [
                     r"HKLM\SOFTWARE\Clients\StartMenuInternet\Google Chrome",
                     "/s",
-                ] => Some(CHROME.into()),
-                [r"HKLM\SOFTWARE\Clients\StartMenuInternet\Plain", "/s"] => Some(
-                    "HKEY_LOCAL_MACHINE\\SOFTWARE\\Clients\\StartMenuInternet\\Plain\r\n    \
-                     (Default)    REG_SZ    Plain\r\n"
-                        .into(),
-                ),
+                ] => Some(chrome()),
+                [r"HKLM\SOFTWARE\Clients\StartMenuInternet\Plain", "/s"] => Some(plain()),
                 _ => None,
             }
         }

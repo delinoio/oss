@@ -137,10 +137,12 @@ impl BrowserStore {
     /// Dispatch never trusts retained renderer or window state, and unreadable
     /// storage fails closed instead of silently selecting the system default.
     pub fn resolve(&self, class: UrlClass) -> Result<BrowserChoice, crate::NativeFailure> {
-        let path = self
-            .path
-            .as_deref()
-            .ok_or(crate::NativeFailure::StorageUnavailable)?;
+        // Without an app config directory no preference can exist, so the
+        // documented default applies. Unreadable existing storage still fails
+        // closed below instead of guessing the user's choice.
+        let Some(path) = self.path.as_deref() else {
+            return Ok(BrowserChoice::SystemDefault);
+        };
         match inspect(path) {
             Ok(document) => Ok(document.choices.for_class(class).clone()),
             Err(problem) => {
@@ -558,12 +560,17 @@ mod tests {
     }
 
     #[test]
-    fn missing_storage_is_unavailable_and_fails_closed() {
+    fn missing_config_directory_reports_unavailable_but_keeps_the_default_destination() {
         let store = BrowserStore::new(None);
-        assert_eq!(store.read().problem, Some(BrowserProblem::Unavailable));
+        let observed = store.read();
+        assert_eq!(observed.problem, Some(BrowserProblem::Unavailable));
         assert_eq!(
-            store.resolve(UrlClass::General),
-            Err(crate::NativeFailure::StorageUnavailable)
+            store.update(choices(), observed.revision).choices,
+            BrowserChoices::default()
+        );
+        assert_eq!(
+            store.resolve(UrlClass::General).unwrap(),
+            BrowserChoice::SystemDefault
         );
     }
 }
