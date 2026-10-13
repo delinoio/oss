@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   newRequestId,
@@ -10,7 +10,30 @@ type Outcome = "pending" | "saved" | "canceled" | "failed" | "uncertain";
 // Keep lost acknowledgments across presentation remounts. Only observation of the
 // retained native operation can settle an admitted fence. A positively proved
 // original non-admission response permits another explicit Save.
-const operations = new Map<string, { id: string; outcome: Outcome }>();
+// Every mounted exporter of one session/reference/digest key observes this store,
+// so a response that settles after a remount still reaches the current instance.
+type Operation = { id: string; outcome: Outcome };
+const operations = new Map<string, Operation>();
+const listeners = new Map<string, Set<() => void>>();
+function subscribeOperation(key: string, listener: () => void) {
+  const set = listeners.get(key) ?? new Set<() => void>();
+  set.add(listener);
+  listeners.set(key, set);
+  return () => {
+    set.delete(listener);
+    if (set.size === 0 && listeners.get(key) === set) listeners.delete(key);
+  };
+}
+function notifyOperation(key: string) {
+  for (const listener of [...(listeners.get(key) ?? [])]) listener();
+}
+// Only the operation still retained for the key may publish an outcome, so an
+// older response never settles a newer operation.
+function settleOperation(key: string, retained: Operation, next: Outcome) {
+  if (operations.get(key) !== retained) return;
+  retained.outcome = next;
+  notifyOperation(key);
+}
 const outcome = (value: unknown): Outcome =>
   ["pending", "saved", "canceled", "failed", "uncertain"].includes(
     String(value),
@@ -49,7 +72,9 @@ export function GeneratedImageExport({
 }) {
   useLocale();
   const key = `${sessionId}:${reference.id}:${reference.sha256}`;
-  const [state, setState] = useState<Outcome | undefined>(
+  const state = useSyncExternalStore(
+    useCallback((listener: () => void) => subscribeOperation(key, listener), [key]),
+    () => operations.get(key)?.outcome,
     () => operations.get(key)?.outcome,
   );
   const [observing, setObserving] = useState(false);
@@ -61,7 +86,7 @@ export function GeneratedImageExport({
       return;
     const retained = { id: newRequestId(), outcome: "pending" as Outcome };
     operations.set(key, retained);
-    setState("pending");
+    notifyOperation(key);
     try {
       const result = await invoke("export_generated_image", {
         request: {
@@ -73,29 +98,34 @@ export function GeneratedImageExport({
           png: base64(bytes),
         },
       });
-      if (notAdmitted(result, retained.id)) {
-        if (operations.get(key) === retained) operations.delete(key);
-        retained.outcome = "failed";
-      } else retained.outcome = outcome(result);
+      // A proved non-admission settles as failed, which permits a later
+      // explicit Save; the failed record keeps the retained identity guard.
+      settleOperation(
+        key,
+        retained,
+        notAdmitted(result, retained.id) ? "failed" : outcome(result),
+      );
     } catch {
-      retained.outcome = "uncertain";
+      settleOperation(key, retained, "uncertain");
     }
-    setState(retained.outcome);
   };
   const check = async () => {
     const retained = operations.get(key);
     if (!retained) return;
     setObserving(true);
     try {
-      retained.outcome = outcome(
-        await invoke("read_generated_image_export", {
-          operationId: retained.id,
-        }),
+      settleOperation(
+        key,
+        retained,
+        outcome(
+          await invoke("read_generated_image_export", {
+            operationId: retained.id,
+          }),
+        ),
       );
     } catch {
-      retained.outcome = "uncertain";
+      settleOperation(key, retained, "uncertain");
     }
-    setState(retained.outcome);
     setObserving(false);
   };
   return (
