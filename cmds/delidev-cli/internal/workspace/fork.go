@@ -322,6 +322,23 @@ func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool
 	return scanForkTreePolicy(ctx, forkSymlinkReject, source, target, gitTree, entryLimit, original, budgets...)
 }
 
+// forkSymlinkMetadata returns the digest input that binds a recorded symlink's
+// entry path, entry kind and exact link text. JSON encoding replaces invalid
+// UTF-8 bytes with U+FFFD, so distinct non-UTF-8 paths or link texts would hash
+// identically; both are rejected instead of being encoded lossily. Link
+// permission bits are platform-defined and are not bound.
+func forkSymlinkMetadata(name, link string) ([]byte, bool) {
+	if !utf8.ValidString(name) || !utf8.ValidString(link) || len(link) > maxForkLinkTextBytes {
+		return nil, false
+	}
+	metadata, err := json.Marshal(struct {
+		Name string
+		Kind string
+		Link string
+	}{name, "symlink", link})
+	return metadata, err == nil
+}
+
 // scanForkTreePolicy walks the opened root. Under forkSymlinkRecord a symlink
 // is inspected with Lstat and Readlink only, never opened or followed, so a
 // dangling or outside-pointing link reads nothing beyond its own link text.
@@ -388,16 +405,13 @@ func scanForkTreePolicy(ctx context.Context, symlinks forkSymlinkPolicy, source,
 		}
 		if symlinks == forkSymlinkRecord && before.Mode()&os.ModeSymlink != 0 {
 			link, err := root.Readlink(name)
-			if err != nil || !utf8.ValidString(link) || len(link) > maxForkLinkTextBytes {
+			if err != nil {
 				return forkUnsupported()
 			}
-			// Link permission bits are platform-defined, so only the entry kind
-			// and exact link text are bound.
-			metadata, _ := json.Marshal(struct {
-				Name string
-				Kind string
-				Link string
-			}{name, "symlink", link})
+			metadata, ok := forkSymlinkMetadata(name, link)
+			if !ok {
+				return forkUnsupported()
+			}
 			hash.Write(metadata)
 			after, err := root.Lstat(name)
 			if err != nil || after.Mode()&os.ModeSymlink == 0 {

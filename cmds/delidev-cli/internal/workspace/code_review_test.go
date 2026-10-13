@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -287,5 +288,50 @@ func TestForkScanSymlinkPolicyBindsLinkTextAndRejectsByDefault(t *testing.T) {
 	}
 	if regular, err := scan(forkSymlinkRecord, ""); err != nil || regular == first {
 		t.Fatal("entry kind is not bound", err)
+	}
+}
+
+func TestForkSymlinkMetadataRejectsNonUTF8PathsAndLinkText(t *testing.T) {
+	valid, ok := forkSymlinkMetadata("dir/link", "target")
+	if !ok || len(valid) == 0 {
+		t.Fatal("valid symlink metadata was rejected")
+	}
+	// Distinct valid paths and link texts must bind distinct metadata.
+	if other, ok := forkSymlinkMetadata("dir/link2", "target"); !ok || string(other) == string(valid) {
+		t.Fatal("path is not bound by the symlink metadata")
+	}
+	if other, ok := forkSymlinkMetadata("dir/link", "target2"); !ok || string(other) == string(valid) {
+		t.Fatal("link text is not bound by the symlink metadata")
+	}
+	// JSON encoding would map both invalid bytes to U+FFFD and hash them alike.
+	for _, name := range []string{"bad\xff", "bad\xfe", "\xc3", "dir/\xff/link"} {
+		if _, ok := forkSymlinkMetadata(name, "target"); ok {
+			t.Fatalf("non-UTF-8 symlink path %q was accepted", name)
+		}
+	}
+	for _, link := range []string{"bad\xff", "bad\xfe"} {
+		if _, ok := forkSymlinkMetadata("link", link); ok {
+			t.Fatalf("non-UTF-8 link text %q was accepted", link)
+		}
+	}
+	if _, ok := forkSymlinkMetadata("link", strings.Repeat("a", maxForkLinkTextBytes+1)); ok {
+		t.Fatal("oversized link text was accepted")
+	}
+}
+
+func TestForkScanRecordRejectsNonUTF8SymlinkPath(t *testing.T) {
+	source, err := filepath.EvalSymlinks(repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("target", filepath.Join(source, "bad\xff")); err != nil {
+		t.Skip("this filesystem cannot hold a non-UTF-8 symlink name:", err)
+	}
+	marker, err := captureForkRootMarker(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scanForkTreePolicy(context.Background(), forkSymlinkRecord, source, "", true, maxForkEntries, &marker); err == nil {
+		t.Fatal("recording scan accepted a non-UTF-8 symlink path")
 	}
 }
