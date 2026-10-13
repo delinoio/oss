@@ -41,7 +41,8 @@ const screenshots = await screenshotDirectory(
   process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR,
   resolve(app, "../.."),
 );
-if (screenshots) await validateScreenshotFiles(screenshots, expectedScreenshots);
+if (screenshots)
+  await validateScreenshotFiles(screenshots, expectedScreenshots);
 const writtenScreenshots = [];
 const playwright = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
 const { chromium } = await import(
