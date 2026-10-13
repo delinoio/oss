@@ -20,7 +20,12 @@ import {
 } from "@delinoio/delidev-api-client";
 import { items, object, text } from "./documents";
 import { Failure, Problem } from "./ui";
-import { validateSubagentPage, type SubagentRow } from "./subagent-record";
+import {
+  SubagentHarness,
+  subagentSafeRow,
+  validateSubagentPage,
+  type SubagentRow,
+} from "./subagent-record";
 
 const unavailable = () => (
   <p>{copy("subagents.theRetainedChildPageIsUnavailable_e2dd4a")}</p>
@@ -449,12 +454,18 @@ export function Subagents({
     },
     [sessionId],
   );
+  const safeRow = useCallback(
+    (resource: Resource) => subagentSafeRow(resource, sessionId),
+    [sessionId],
+  );
   const query = useConversationPages(
     EntityKind.SUBAGENT,
     sessionId,
     supported,
     50,
     validate,
+    undefined,
+    safeRow,
   );
   // Native events invalidate only this read. No observation can issue a child
   // input, resume, interruption, retry, or mutation.
@@ -492,8 +503,13 @@ export function Subagents({
     query.rows.length,
     emptyChanged,
   ]);
+  // Derive from every accepted reached row so the warning survives eviction of
+  // the payload page holding the only OpenCode child.
   const needsOpenCodeUpdate =
-    rows?.some((row) => row.record.harness === "opencode") === true &&
+    query.loaded &&
+    query.rows.some(
+      (row) => "harness" in row && row.harness === SubagentHarness.OpenCode,
+    ) &&
     !openCodeSupported;
   return (
     <div ref={root} className="conversation-page-scroll">
