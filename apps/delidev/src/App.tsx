@@ -784,6 +784,7 @@ function Shell({
                               active={
                                 surface === Surface.Sessions && id === selected
                               }
+                              connectionReady={connectionReady}
                               id={id}
                               draft={drafts.get(id)?.prompt ?? ""}
                               initialSkills={drafts.get(id)?.bindings}

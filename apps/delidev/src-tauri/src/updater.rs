@@ -141,6 +141,21 @@ impl AcceptedInstallation {
         self.settlement_only
     }
 
+    /// Locks the recorded original outcome, recovering from poison. The value
+    /// is a plain `Option<Phase>` written atomically under the guard, so it is
+    /// consistent after any unwind; treating poison as Busy would strand the
+    /// only token able to settle the original journal.
+    fn outcome_guard(&self) -> std::sync::MutexGuard<'_, Option<Phase>> {
+        self.outcome.lock().unwrap_or_else(|poisoned| {
+            tracing::error!(
+                operation = "desktop_update_settlement",
+                state = "outcome-poison-recovered",
+                recorded = poisoned.get_ref().is_some()
+            );
+            poisoned.into_inner()
+        })
+    }
+
     pub fn install(&self, connector: &Connector) -> Phase {
         self.install_with(connector.exiting.load(Ordering::Acquire), || {
             connector.install_desktop(&self.prepared)
@@ -148,11 +163,15 @@ impl AcceptedInstallation {
     }
 
     fn install_with(&self, stopping: bool, installer: impl FnOnce() -> Phase) -> Phase {
-        let Ok(mut outcome) = self.outcome.lock() else {
-            return Phase::Uncertain;
-        };
+        let mut outcome = self.outcome_guard();
         if let Some(phase) = *outcome {
             return phase;
+        }
+        if self.outcome.is_poisoned() {
+            // An unrecorded outcome behind a poisoned guard proves nothing
+            // about whether an effect began, so never start the installer.
+            *outcome = Some(Phase::Uncertain);
+            return Phase::Uncertain;
         }
         let phase = if self.settlement_only {
             // The original process may already have run the installer, so a
@@ -179,7 +198,7 @@ impl AcceptedInstallation {
 
     pub fn settle(&self, connector: &Connector, phase: Phase) -> Result<Prepared> {
         terminal_name(phase)?;
-        let mut original = self.outcome.lock().map_err(|_| NativeFailure::Busy)?;
+        let mut original = self.outcome_guard();
         if original.is_some_and(|previous| previous != phase) {
             return Err(NativeFailure::InvalidEvidence);
         }
@@ -988,23 +1007,66 @@ impl Connector {
             phase = "installer-start",
             target = prepared.target
         );
-        let result = match stage_verified(prepared) {
-            Ok(staged) => install(&staged, &self.exiting),
-            Err(_) => Phase::Failed,
-        };
+        let result = install_staged(
+            prepared,
+            &self.exiting,
+            |file| file,
+            |staged| install(staged, &self.exiting),
+        );
         tracing::info!(operation="desktop_update",phase=?result,target=prepared.target);
         result
     }
 }
 
+/// Stages the verified artifact and then runs `installer`. Staging observes
+/// Quit between bounded chunks; a cancelled or failed staging is a pre-effect
+/// Failed and never reaches `installer`. `open` wraps the opened source so
+/// tests can control the read stream.
+fn install_staged<R: Read>(
+    prepared: &Prepared,
+    exiting: &AtomicBool,
+    open: impl FnOnce(File) -> R,
+    installer: impl FnOnce(&Prepared) -> Phase,
+) -> Phase {
+    match stage_verified_with(prepared, exiting, open) {
+        Ok(staged) => installer(&staged),
+        Err(code) => {
+            tracing::warn!(
+                operation = "desktop_update",
+                phase = "staging-failed",
+                state = "pre-effect",
+                ?code,
+                cancelled = code == NativeFailure::Stopped
+            );
+            Phase::Failed
+        }
+    }
+}
+
+#[cfg(test)]
+fn stage_verified(p: &Prepared) -> Result<Prepared> {
+    stage_verified_with(p, &AtomicBool::new(false), |file| file)
+}
+
 // Stream once from the opened original signed artifact into native-owned,
 // exclusive private staging. Hash the exact bytes the OS installer consumes.
-fn stage_verified(p: &Prepared) -> Result<Prepared> {
+// Quit (`exiting`) is observed before staging begins, before every bounded
+// chunk and once more after the copy completes. Any failure after the
+// exclusive staging file was created, including cancellation, removes only
+// that owned file; the installer is never reached.
+fn stage_verified_with<R: Read>(
+    p: &Prepared,
+    exiting: &AtomicBool,
+    open: impl FnOnce(File) -> R,
+) -> Result<Prepared> {
+    if exiting.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
     if !no_symlink_ancestors(&p.artifact_path) {
         return Err(NativeFailure::InvalidEvidence);
     }
-    let mut source = File::open(&p.artifact_path).map_err(|_| NativeFailure::StorageUnavailable)?;
-    if source
+    let file = File::open(&p.artifact_path).map_err(|_| NativeFailure::StorageUnavailable)?;
+    if file
         .metadata()
         .map_err(|_| NativeFailure::StorageUnavailable)?
         .len()
@@ -1012,6 +1074,7 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
     {
         return Err(NativeFailure::InvalidEvidence);
     }
+    let mut source = open(file);
     let root = p
         .artifact_path
         .parent()
@@ -1059,10 +1122,42 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
     let mut dest = options
         .open(&path)
         .map_err(|_| NativeFailure::StorageUnavailable)?;
+    // From here the file at `path` is owned by this call (create_new proved
+    // exclusivity), so every failure removes exactly that file.
+    let copied = copy_verified(p, &mut source, &mut dest, exiting);
+    drop(dest);
+    if let Err(code) = copied {
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!(
+                operation = "desktop_update",
+                phase = "staging-cleanup-failed",
+                kind = ?e.kind()
+            ),
+        }
+        return Err(code);
+    }
+    let mut staged = p.clone();
+    staged.artifact_path = path;
+    Ok(staged)
+}
+
+// Streams the source into the owned staging file in bounded chunks, hashing
+// the exact bytes written and checking Quit before every chunk.
+fn copy_verified(
+    p: &Prepared,
+    source: &mut impl Read,
+    dest: &mut File,
+    exiting: &AtomicBool,
+) -> Result<()> {
     let mut hash = Sha256::new();
     let mut count = 0u64;
     let mut buffer = [0u8; 65536];
     loop {
+        if exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
         let n = source
             .read(&mut buffer)
             .map_err(|_| NativeFailure::StorageUnavailable)?;
@@ -1091,9 +1186,10 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
     }
     dest.sync_all()
         .map_err(|_| NativeFailure::StorageUnavailable)?;
-    let mut staged = p.clone();
-    staged.artifact_path = path;
-    Ok(staged)
+    if exiting.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
+    Ok(())
 }
 
 // Commands and destinations are native-selected; no argument, environment or
@@ -1465,6 +1561,12 @@ fn appimage_mount_matches(mounts: &str, dir: &Path, image: &Path, exe: &Path) ->
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::Arc,
+        thread,
+        time::{Duration, Instant},
+    };
+
     use sha2::{Digest, Sha256};
 
     use super::*;
@@ -1806,6 +1908,223 @@ mod tests {
         bad.artifact_sha256 = "b".repeat(64);
         assert!(stage_verified(&bad).is_err());
     }
+    /// Source wrapper that counts reads and flips `exiting` after a chosen
+    /// read, optionally sleeping per read to model a slow artifact source.
+    struct GatedReader {
+        inner: File,
+        reads: Arc<std::sync::atomic::AtomicUsize>,
+        exiting: Arc<AtomicBool>,
+        quit_after_reads: usize,
+        quit_at_eof: bool,
+        delay: Duration,
+    }
+
+    impl Read for GatedReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if !self.delay.is_zero() {
+                thread::sleep(self.delay);
+            }
+            let n = self.inner.read(buffer)?;
+            let reads = self.reads.fetch_add(1, Ordering::AcqRel) + 1;
+            if reads >= self.quit_after_reads || (self.quit_at_eof && n == 0) {
+                self.exiting.store(true, Ordering::Release);
+            }
+            Ok(n)
+        }
+    }
+
+    struct StagingFixture {
+        _root: tempfile::TempDir,
+        prepared: Prepared,
+        native: PathBuf,
+        chunks: usize,
+        reads: Arc<std::sync::atomic::AtomicUsize>,
+        exiting: Arc<AtomicBool>,
+    }
+
+    impl StagingFixture {
+        fn new() -> Self {
+            let root = tempfile::tempdir().unwrap();
+            let root_path = root.path().canonicalize().unwrap();
+            let downloads = root_path.join("downloads");
+            fs::create_dir(&downloads).unwrap();
+            let chunks = 40usize;
+            let data = vec![7u8; 65536 * chunks];
+            let source = downloads.join("source.dmg");
+            fs::write(&source, &data).unwrap();
+            let prepared = Prepared {
+                version: 1,
+                operation_id: uuid::Uuid::now_v7().to_string(),
+                server_id: uuid::Uuid::now_v7().to_string(),
+                generation: uuid::Uuid::now_v7().to_string(),
+                release_version: "0.2.0".into(),
+                target: "darwin-arm64".into(),
+                phase: Phase::Installing,
+                artifact_path: source,
+                artifact_size: data.len() as u64,
+                artifact_sha256: Sha256::digest(&data)
+                    .iter()
+                    .map(|v| format!("{v:02x}"))
+                    .collect::<String>(),
+                manifest_sha256: "a".repeat(64),
+            };
+            Self {
+                native: root_path.join("native"),
+                _root: root,
+                prepared,
+                chunks,
+                reads: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                exiting: Arc::new(AtomicBool::new(false)),
+            }
+        }
+
+        fn run(
+            &self,
+            quit_after_reads: usize,
+            quit_at_eof: bool,
+            delay: Duration,
+        ) -> (Phase, usize) {
+            let installs = std::sync::atomic::AtomicUsize::new(0);
+            let phase = install_staged(
+                &self.prepared,
+                &self.exiting,
+                |inner| GatedReader {
+                    inner,
+                    reads: Arc::clone(&self.reads),
+                    exiting: Arc::clone(&self.exiting),
+                    quit_after_reads,
+                    quit_at_eof,
+                    delay,
+                },
+                |staged| {
+                    installs.fetch_add(1, Ordering::AcqRel);
+                    assert_eq!(
+                        fs::metadata(&staged.artifact_path).unwrap().len(),
+                        self.prepared.artifact_size
+                    );
+                    Phase::Installed
+                },
+            );
+            (phase, installs.load(Ordering::Acquire))
+        }
+
+        fn native_entries(&self) -> Vec<String> {
+            match fs::read_dir(&self.native) {
+                Ok(entries) => entries
+                    .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                    .collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn quit_before_staging_fails_pre_effect_without_touching_storage_or_installer() {
+        let f = StagingFixture::new();
+        f.exiting.store(true, Ordering::Release);
+        let (phase, installs) = f.run(usize::MAX, false, Duration::ZERO);
+        assert_eq!(phase, Phase::Failed);
+        assert_eq!(installs, 0);
+        assert_eq!(f.reads.load(Ordering::Acquire), 0);
+        assert!(f.native_entries().is_empty());
+    }
+
+    #[test]
+    fn quit_between_chunks_stops_reading_and_removes_only_owned_partial_staging() {
+        let f = StagingFixture::new();
+        fs::create_dir(&f.native).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&f.native, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        // A foreign file, including one that looks like another generation,
+        // must survive the cleanup of this call's own staging file.
+        let foreign = f.native.join("foreign.dmg");
+        let other_generation = f.native.join(format!("{}.dmg", uuid::Uuid::now_v7()));
+        fs::write(&foreign, b"foreign").unwrap();
+        fs::write(&other_generation, b"other").unwrap();
+        let (phase, installs) = f.run(3, false, Duration::ZERO);
+        assert_eq!(phase, Phase::Failed);
+        assert_eq!(installs, 0, "the installer never runs after cancellation");
+        assert_eq!(
+            f.reads.load(Ordering::Acquire),
+            3,
+            "the remaining artifact is not read after Quit"
+        );
+        assert_eq!(fs::read(&foreign).unwrap(), b"foreign");
+        assert_eq!(fs::read(&other_generation).unwrap(), b"other");
+        let mut entries = f.native_entries();
+        entries.sort();
+        let mut expected = vec![
+            "foreign.dmg".to_owned(),
+            other_generation
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        ];
+        expected.sort();
+        assert_eq!(entries, expected, "only the owned staging file is removed");
+    }
+
+    #[test]
+    fn quit_after_complete_staging_skips_the_installer_and_removes_the_staging_file() {
+        let f = StagingFixture::new();
+        let (phase, installs) = f.run(usize::MAX, true, Duration::ZERO);
+        assert_eq!(phase, Phase::Failed);
+        assert_eq!(installs, 0);
+        assert_eq!(f.reads.load(Ordering::Acquire), f.chunks + 1);
+        assert!(f.native_entries().is_empty());
+    }
+
+    #[test]
+    fn uncancelled_staging_still_verifies_bytes_and_reaches_the_installer_once() {
+        let f = StagingFixture::new();
+        let (phase, installs) = f.run(usize::MAX, false, Duration::ZERO);
+        assert_eq!(phase, Phase::Installed);
+        assert_eq!(installs, 1);
+        let staged = format!("{}.dmg", f.prepared.generation);
+        assert_eq!(f.native_entries(), vec![staged.clone()]);
+        // A second attempt for the same generation never replaces the file,
+        // and its failure must not remove the first attempt's file.
+        let (phase, installs) = f.run(usize::MAX, false, Duration::ZERO);
+        assert_eq!((phase, installs), (Phase::Failed, 0));
+        assert_eq!(f.native_entries(), vec![staged]);
+    }
+
+    #[test]
+    fn digest_mismatch_removes_its_partial_staging_and_never_installs() {
+        let mut f = StagingFixture::new();
+        f.prepared.artifact_sha256 = "b".repeat(64);
+        let (phase, installs) = f.run(usize::MAX, false, Duration::ZERO);
+        assert_eq!((phase, installs), (Phase::Failed, 0));
+        assert!(f.native_entries().is_empty());
+    }
+
+    #[test]
+    fn quit_joins_a_slow_reader_within_a_bounded_number_of_reads() {
+        let f = StagingFixture::new();
+        let exiting = Arc::clone(&f.exiting);
+        let started = Instant::now();
+        let quitter = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(60));
+            exiting.store(true, Ordering::Release);
+        });
+        let (phase, installs) = f.run(usize::MAX, false, Duration::from_millis(20));
+        quitter.join().unwrap();
+        assert_eq!((phase, installs), (Phase::Failed, 0));
+        assert!(
+            f.reads.load(Ordering::Acquire) < f.chunks,
+            "Quit must stop the copy before the whole artifact is read"
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(20 * 40),
+            "joining must not wait for the full slow copy"
+        );
+        assert!(f.native_entries().is_empty());
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn exchange_preserves_both_native_generations() {

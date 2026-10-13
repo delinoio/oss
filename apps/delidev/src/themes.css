@@ -52,6 +52,7 @@
   --danger-text: #b42332;
   --danger-border: #d9a5ab;
   --success-text: #246547;
+  --pr-merged: #6f42c1;
   --execution-running: #087b78;
   --conversation-background: #f7f6f2;
   --conversation-text: #483519;
@@ -113,6 +114,7 @@
   --danger-text: #ffb6bf;
   --danger-border: #a7777e;
   --success-text: #9ed9b7;
+  --pr-merged: #b794f6;
   --execution-running: #72d9ce;
   --conversation-background: #24251f;
   --conversation-text: #ded2ba;
@@ -175,6 +177,7 @@
     --danger-text: #ffb6bf;
     --danger-border: #a7777e;
     --success-text: #9ed9b7;
+    --pr-merged: #b794f6;
     --execution-running: #72d9ce;
     --conversation-background: #24251f;
     --conversation-text: #ded2ba;
@@ -423,7 +426,11 @@
 :root[data-show-time="false"] .transcript time {
   display: none;
 }
-:root[data-show-tokens="false"] .transcript [data-token-observation] {
+:root[data-show-tokens="false"] .transcript [data-token-observation],
+:root[data-show-tokens="false"]
+  .execution-configuration
+  [data-token-observation],
+:root[data-show-tokens="false"] .session-context [data-token-observation] {
   display: none;
 }
 :root[data-animation="false"] *,
@@ -505,7 +512,8 @@
 .appearance-palettes h3 {
   font-size: 14px;
 }
-:root[data-show-time="false"] .transcript [data-time-observation] {
+:root[data-show-time="false"] .transcript [data-time-observation],
+:root[data-show-time="false"] .execution-configuration [data-time-observation] {
   display: none;
 }
 
@@ -601,6 +609,9 @@
   align-self: start;
   min-height: 40px;
   min-width: 0;
+  /* Reset the global label block margin so the label's 40px box starts at the
+     same row start as the 40px combobox and the centers align. */
+  margin-block: 0;
 }
 .appearance-content .language-settings > p,
 .appearance-content .language-settings > button {
@@ -642,6 +653,8 @@
   }
   .appearance-content .language-settings > label {
     min-height: 0;
+    /* Stacked layout keeps the global label spacing above the picker. */
+    margin-block: 12px;
   }
   .appearance-content .date-format-settings legend {
     position: static;

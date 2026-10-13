@@ -139,6 +139,24 @@ func TestRepositoryCloneAcceptReplayAndServerRegistration(t *testing.T) {
 }
 func bytesContain(raw []byte, value string) bool { return strings.Contains(string(raw), value) }
 
+func TestRepositoryCloneRejectsWindowsReservedDirectoryAtAdmission(t *testing.T) {
+	f := newIntegrationFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	worker, paired := pairedWorker(t, ctx, Endpoint{URL: f.url}, f.service.Identity)
+	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.url)
+	_, err := client.AttachWorker(ctx, ownerRequest(worker, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"COM0", "CONIN$", "conout$.txt", "LPT¹", "com³.log"} {
+		request := &pb.CloneRepositoryRequest{RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, ParentPath: "/alias/parent", Url: "https://example.com/repo.git", DirectoryName: name, LocalWorkerToken: worker.Token}
+		if _, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatal("reserved directory accepted", name, err)
+		}
+	}
+}
+
 func TestRepositoryCloneRegistrationFailurePreservesPublishedMetadata(t *testing.T) {
 	f := newIntegrationFixture(t)
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})

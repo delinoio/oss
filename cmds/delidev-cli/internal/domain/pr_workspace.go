@@ -78,7 +78,7 @@ func (w PRWorkspace) Validate() bool {
 	}
 	for _, n := range w.Nodes {
 		q := RepositoryQuery{Kind: RepositoryPullRequest, Operation: RepositoryDetail, Number: n.Item.Number}
-		if n.Item.Validate(w.Repository, q) != nil || (n.Counts != nil && !n.Counts.Validate()) || (n.AvatarReference != "" && ID(n.AvatarReference).Validate() != nil) || n.Seed != seeds[n.Item.Number] {
+		if n.Item.ValidateWorkspaceNode(w.Repository, q) != nil || (n.Counts != nil && !n.Counts.Validate()) || (n.AvatarReference != "" && ID(n.AvatarReference).Validate() != nil) || n.Seed != seeds[n.Item.Number] {
 			return false
 		}
 		if _, ok := seen[n.Item.Number]; ok {

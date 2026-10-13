@@ -361,8 +361,10 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		// No opener or native write ran. Verify the narrower pre-native absence
 		// proof before allowing a checkpoint, even if the vault must be retried
 		// after server restart. Retained evidence remains recovery-owned.
+		// A canceled or expired operation context (including a live parent) cannot
+		// prove absence, so use a fresh bounded owner context for the proof.
 		verifyCtx := ctx
-		if parent.Err() != nil {
+		if ctx.Err() != nil || parent.Err() != nil {
 			var verifyCancel context.CancelFunc
 			verifyCtx, verifyCancel = context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 			defer verifyCancel()
@@ -437,7 +439,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		}
 	} else if !time.Now().Before(original.ExpiresAt) {
 		state = domain.SubscriptionExpired
-	} else if errors.Is(ctx.Err(), context.Canceled) && (errors.Is(nativeErr, context.Canceled) || !nativeStarted && parent.Err() != nil) {
+	} else if errors.Is(ctx.Err(), context.Canceled) && (errors.Is(nativeErr, context.Canceled) || !nativeStarted && (parent.Err() != nil || domain.SafeError(nativeErr).Code == domain.Canceled)) {
 		state = domain.SubscriptionCanceled
 	} else if domain.SafeError(nativeErr).Code == domain.Unsupported {
 		state = domain.SubscriptionUnsupported

@@ -98,6 +98,23 @@ than 16 pages. Capability loading, unsupported and removal-pending guidance, the
 original exact registration retry, and safe failure text never create a fallback
 page.
 
+Admission follows the read-only enumeration state. Open page stays disabled, and
+submission returns without sending anything, while the `ListBrowserProfiles`
+walk is loading, paginating (a next page token is outstanding), failed or
+invalid (a read error, more than one matching profile across the walk, a repeated token or a
+next page token returned by page 64). A matching profile is only a candidate while a
+next page token is outstanding: the walk continues, and the profile is admitted
+only after the terminal page confirms it is the sole match. A confirmed absence
+(a settled terminal page with no matching profile on any page) can also admit a
+new page; absence permits exactly one registration at explicit submission. A found
+profile additionally needs one successfully observed current-profile inventory,
+so an unread or unreadable inventory is never treated as empty. A later inventory read failure revokes that proof
+until a retry read succeeds. The dialog shows
+localized read-only guidance for pending states and, for a failed profile or
+inventory read, a retry that re-reads only that state (profiles from the first
+page with cached pages bypassed, or the inventory) and never repeats any accepted or uncertain mutation.
+A session that becomes active again while the walk has no profile restarts it the same way, from the first page with cached pages bypassed, so a partial refetch of the current page never combines with pages read before the session was inactive.
+
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an
 existing profile (found by the read-only `ListBrowserProfiles` page walk) is
@@ -179,6 +196,18 @@ close is a fresh explicit operation. Closing an inactive page never presents it 
 another native page. This resource Close is the one browser-specific exception to
 the presentation-only dismissal other tools use, and it remains separate from the
 16-page gate and from profile/account removal.
+
+An acknowledged close is profile-scoped, so its cleanup is not limited to the
+initiating Session: when the original Close is observed complete, or an
+observation without an original receipt proves the page is gone, the exact
+profile/page descriptor is removed from every Session snapshot in the shared tab
+store, including inactive and retained Sessions that are not polling. Each
+affected Session applies the same selection rule only when its own selected
+descriptor was removed (left neighbor, then Conversation after the last page);
+unrelated selections, ordering, the same page id under another profile and other
+pages are untouched. Repeated acknowledgment is idempotent, and pending, failed
+or uncertain closes retain the descriptor in every Session. The cleanup is
+store-level only and issues no extra native close.
 
 Other windows and sessions of the same account observe the inventory read-only
 and align their descriptors (append newly listed pages in inventory order,

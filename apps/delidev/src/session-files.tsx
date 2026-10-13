@@ -13,6 +13,11 @@ import {
 } from "react";
 import { SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import {
+  EntranceMotion,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import { copy, LocalizedText, useLocale } from "./localization";
 import {
   FilesController,
@@ -137,13 +142,29 @@ export function SessionFiles({
   close,
   openFile,
   active = true,
+  previewing = false,
 }: {
   sessionId: string;
   close: () => void;
   active?: boolean;
+  // True while a shared File preview owns the visible panel, so leaving the
+  // active explorer is a File departure whose position must be restored.
+  previewing?: boolean;
   openFile?: (repository: string, path: string) => void;
 }) {
   useLocale();
+  // Each time Files becomes the active panel (including the first open) the
+  // header plays one Y2 entrance. The retained panel, its controller, tree and
+  // scroll are never touched, and reads or refreshes never restart it.
+  const filesActivations = useActivationCount(active);
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:files:${filesActivations}`,
+    active,
+    EntranceMotion.Y2,
+    // The panel stays mounted while hidden, so leaving settles an in-flight
+    // entrance instead of leaving the attribute on an inactive tool.
+    true,
+  );
   const read = useWorkspaceReader(sessionId),
     owner = useMemo(() => new FilesController(read), [read]);
   const state = useSyncExternalStore(owner.subscribe, owner.getSnapshot);
@@ -176,7 +197,7 @@ export function SessionFiles({
       aria-label={copy("session-files.sessionFiles_206907")}
       onKeyDown={shortcuts.onKeyDown}
     >
-      <header>
+      <header {...headerEntrance}>
         <h2 ref={heading} tabIndex={-1}>
           {copy("session-files.files_abc7e9")}
         </h2>
@@ -245,6 +266,7 @@ export function SessionFiles({
           state={state}
           openFile={openFile}
           active={active}
+          previewing={previewing}
         />
       ) : null}
     </aside>
@@ -255,11 +277,13 @@ function Explorer({
   state,
   openFile,
   active,
+  previewing,
 }: {
   owner: FilesController;
   state: FilesSnapshot;
   openFile?: (repository: string, path: string) => void;
   active: boolean;
+  previewing: boolean;
 }) {
   const scroll = useRef<HTMLDivElement>(null),
     tree = useRef<HTMLDivElement>(null),
@@ -343,7 +367,10 @@ function Explorer({
     )
       focusRow(focusPath);
   }, [state.directories, state.expanded, state.preview, focused, active]);
-  const open = (path: string) => {
+  // Records the current inner and enclosing scroll positions that a later
+  // return to this exact explorer restores. It must run while the explorer is
+  // still displayed, because hiding it resets scroll offsets.
+  const captureScroll = () => {
     scrollPosition.current = {
       top: scroll.current?.scrollTop ?? 0,
       left: scroll.current?.scrollLeft ?? 0,
@@ -366,6 +393,34 @@ function Explorer({
       if (element.classList.contains("session-workspace")) break;
     }
     ancestors.current = { owner, repository: state.repository, positions };
+  };
+  const previewingRef = useRef(previewing);
+  previewingRef.current = previewing;
+  const captureRef = useRef(captureScroll);
+  captureRef.current = captureScroll;
+  // Every departure of the active explorer to a shared File preview re-arms the
+  // one-shot return, so reselecting an existing File tab restores like the
+  // first open did. The cleanup runs before the parent applies hidden/inert,
+  // while scroll offsets are still readable. Other departures never arm it.
+  useLayoutEffect(() => {
+    if (!active) return;
+    return () => {
+      if (!previewingRef.current || !tree.current?.isConnected) return;
+      captureRef.current();
+      returning.current = true;
+    };
+  }, [active]);
+  // Leaving the File preview for any tab other than Files abandons the pending
+  // return: a later direct Files selection must neither restore stale scroll
+  // positions nor move focus. A return to Files makes the explorer active in the
+  // same commit, so this only runs for abandoned departures.
+  useLayoutEffect(() => {
+    if (active || previewing) return;
+    returning.current = false;
+    ancestors.current = undefined;
+  }, [active, previewing]);
+  const open = (path: string) => {
+    captureScroll();
     if (openFile && state.repository !== undefined) {
       // Shared preview hides this retained explorer. Restore its original row
       // and scroll only when the same owner becomes active again.
@@ -637,6 +692,13 @@ export function SessionFilePreview({
   path: string;
   close: () => void;
 }) {
+  // Mounting the preview panel (opening or re-selecting its tab) or opening a
+  // different file is one explicit activation; reads and retries never replay.
+  const headerEntrance = useEntranceActivation(
+    `${sessionId}:${repository}:${path}`,
+    true,
+    EntranceMotion.Y2,
+  );
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
     const node = heading.current;
@@ -671,7 +733,7 @@ export function SessionFilePreview({
       className="session-files file-preview"
       aria-label={copy("session-files.filePreview_71d50a")}
     >
-      <header>
+      <header {...headerEntrance}>
         <h2 ref={heading} tabIndex={-1}>
           {path}
         </h2>

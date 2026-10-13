@@ -92,6 +92,14 @@ export function repositoryCloneURL(
     githubName: github ? directory : "",
   };
 }
+// Mirrors domain.IsWindowsReservedDeviceName: Windows ignores the extension
+// after the first dot and trailing spaces in the stem, case-insensitively.
+const windowsReservedDeviceStem =
+  /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9\u00b9\u00b2\u00b3]|LPT[0-9\u00b9\u00b2\u00b3])$/;
+export function isWindowsReservedDeviceName(value: string): boolean {
+  const stem = value.split(".")[0].replace(/ +$/, "").toUpperCase();
+  return windowsReservedDeviceStem.test(stem);
+}
 export function repositoryCloneDirectory(value: string): boolean {
   return Boolean(
     value &&
@@ -101,7 +109,7 @@ export function repositoryCloneDirectory(value: string): boolean {
     value !== ".." &&
     value.trim() === value &&
     !value.endsWith(".") &&
-    !/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(value),
+    !isWindowsReservedDeviceName(value),
   );
 }
 export function repositoryCloneParent(value: string): boolean {
