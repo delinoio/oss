@@ -131,7 +131,8 @@ function describeMinimizer(rspack, config) {
   const defaultMinifier =
     minimizers.every(isDefault) &&
     minimizers.some(
-      (entry) => entry === "..." || entry instanceof rspack.SwcJsMinimizerRspackPlugin,
+      (entry) =>
+        entry === "..." || entry instanceof rspack.SwcJsMinimizerRspackPlugin,
     );
   return { minifyEnabled, defaultMinifier, summary: names.join(", ") };
 }
