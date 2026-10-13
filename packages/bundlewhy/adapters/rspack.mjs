@@ -121,10 +121,17 @@ function describeMinimizer(rspack, config) {
       ? "..."
       : (entry?.constructor?.name ?? summarizeValue(entry)),
   );
+  // Every effective JavaScript minimizer must be the default SWC one: "..."
+  // expands to the defaults, and a CSS-only LightningCSS minimizer does not
+  // transform JavaScript. Any other entry also rewrites the generated code.
+  const isDefault = (entry) =>
+    entry === "..." ||
+    entry instanceof rspack.SwcJsMinimizerRspackPlugin ||
+    entry instanceof rspack.LightningCssMinimizerRspackPlugin;
   const defaultMinifier =
-    names.includes("...") ||
+    minimizers.every(isDefault) &&
     minimizers.some(
-      (entry) => entry instanceof rspack.SwcJsMinimizerRspackPlugin,
+      (entry) => entry === "..." || entry instanceof rspack.SwcJsMinimizerRspackPlugin,
     );
   return { minifyEnabled, defaultMinifier, summary: names.join(", ") };
 }

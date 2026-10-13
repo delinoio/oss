@@ -36,6 +36,7 @@ pub enum RuleId {
     DuplicatePackage,
     UnresolvedEnvCondition,
     MinificationDisabled,
+    ViteTreeShakingDisabled,
     DirectEvalBlocksMangling,
 }
 
@@ -51,15 +52,16 @@ impl RuleId {
             Self::DuplicatePackage => "bundle/duplicate-package",
             Self::UnresolvedEnvCondition => "minifier/unresolved-env-condition",
             Self::MinificationDisabled => "minifier/minification-disabled",
+            Self::ViteTreeShakingDisabled => "vite/tree-shaking-disabled",
             Self::DirectEvalBlocksMangling => "minifier/direct-eval-blocks-mangling",
         }
     }
 
     pub const fn category(self) -> OptimizationCategory {
         match self {
-            Self::RspackSideEffectRetained | Self::ViteSideEffectRetained => {
-                OptimizationCategory::TreeShaking
-            }
+            Self::RspackSideEffectRetained
+            | Self::ViteSideEffectRetained
+            | Self::ViteTreeShakingDisabled => OptimizationCategory::TreeShaking,
             Self::RspackModuleConcatenationBailout | Self::ViteCommonjsWrapped => {
                 OptimizationCategory::ModuleConcatenation
             }
@@ -331,15 +333,19 @@ pub struct DiagnosticDraft {
 
 impl DiagnosticDraft {
     pub fn build(self, engine: &str) -> Diagnostic {
+        // The title carries the finding-specific subject (for example the
+        // environment variable name) and the column separates findings that
+        // share a line, so distinct findings never collapse into one ID.
         let key = format!(
-            "{}|{}|{}",
+            "{}|{}|{}|{}",
             self.rule.as_str(),
             self.module,
             self.located
                 .location
                 .as_ref()
-                .map(|location| format!("{}:{}", location.path, location.line))
-                .unwrap_or_default()
+                .map(|location| format!("{}:{}:{}", location.path, location.line, location.column))
+                .unwrap_or_default(),
+            self.title
         );
         Diagnostic {
             id: format!("d-{}", &sha256_hex(key.as_bytes())[..12]),
@@ -403,6 +409,7 @@ pub fn rules_by_category(bundler: &str) -> BTreeMap<OptimizationCategory, Vec<Ru
         ],
         "vite" => &[
             RuleId::ViteSideEffectRetained,
+            RuleId::ViteTreeShakingDisabled,
             RuleId::ViteCommonjsWrapped,
             RuleId::ViteIneffectiveDynamicImport,
         ],
@@ -433,6 +440,38 @@ mod tests {
             included: true,
             ..CollectedModule::default()
         }
+    }
+
+    #[test]
+    fn findings_on_one_line_get_distinct_ids() {
+        let draft = |name: &str, column: u32| DiagnosticDraft {
+            rule: RuleId::UnresolvedEnvCondition,
+            status: EvidenceStatus::Inferred,
+            title: format!("process.env.{name} is not a compile-time constant"),
+            summary: String::new(),
+            conditions: Vec::new(),
+            located: Located {
+                location: Some(SourceLocation {
+                    path: "src/a.js".to_owned(),
+                    line: 3,
+                    column,
+                    ..SourceLocation::default()
+                }),
+                generated: None,
+                snippet: None,
+            },
+            module: "src/a.js".to_owned(),
+            dependency_paths: Vec::new(),
+            evidence: Vec::new(),
+            direction: String::new(),
+            safety: String::new(),
+            dependency: false,
+        };
+        let first = draft("A", 5).build("engine");
+        let second = draft("B", 5).build("engine");
+        let third = draft("A", 30).build("engine");
+        assert_ne!(first.id, second.id);
+        assert_ne!(first.id, third.id);
     }
 
     #[test]

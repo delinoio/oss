@@ -168,6 +168,18 @@ pub fn read_bundle_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Status a saved run is presented with: a run left `RUNNING` by a process
+/// that is gone is failed, and an unfinished run is never presented as
+/// complete.
+pub fn normalized_status(status: RunStatus, run_dir: &Path) -> RunStatus {
+    match status {
+        RunStatus::Running => RunStatus::Failed,
+        RunStatus::Cancelled | RunStatus::Failed => status,
+        _ if run_dir.join(INCOMPLETE_MARKER).exists() => RunStatus::Partial,
+        _ => status,
+    }
+}
+
 pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
     let path = run_dir.join(BUNDLE_FILE);
     let metadata = std::fs::metadata(&path).map_err(|error| {
@@ -203,23 +215,16 @@ pub fn load(run_dir: &Path) -> BwResult<ResultBundle> {
         )));
     }
     let mut bundle = parse(&bytes)?;
+    let status = normalized_status(bundle.analysis.status, run_dir);
     if bundle.analysis.status == RunStatus::Running {
-        // The process that owned the run is gone; never present it as running.
-        bundle.analysis.status = RunStatus::Failed;
         bundle.analysis.problems.push(problem(
             ErrorCode::RunInterrupted,
             ProblemSeverity::Error,
             "The run was interrupted before it finished; results are incomplete",
             "Start a new run with `bundlewhy analyze`.",
         ));
-    } else if run_dir.join(INCOMPLETE_MARKER).exists()
-        && !matches!(
-            bundle.analysis.status,
-            RunStatus::Cancelled | RunStatus::Failed
-        )
-    {
-        bundle.analysis.status = RunStatus::Partial;
     }
+    bundle.analysis.status = status;
     mark_stale(&mut bundle);
     Ok(bundle)
 }

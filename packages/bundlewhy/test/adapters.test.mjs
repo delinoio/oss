@@ -181,3 +181,16 @@ test("rspack adapter treats an empty minimizer list as disabled minification", (
   assert.equal(status, 0);
   assert.equal(collection.minifyEnabled, false);
 });
+
+test("rspack adapter marks a mixed minimizer pipeline as non-default", () => {
+  const projectRoot = path.join(root, "fixtures/rspack-app");
+  const { dir, file } = writeConfig(
+    "rspack.config.mjs",
+    `class CustomMinimizer { apply() {} }\nexport default { mode: "production", context: ${JSON.stringify(projectRoot)}, entry: "./src/esm/value.js", optimization: { minimizer: ["...", new CustomMinimizer()] } };\n`,
+  );
+  const { status, collection } = runAdapter("rspack", "rspack-app", path.relative(projectRoot, file));
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(status, 0);
+  assert.equal(collection.defaultMinifier, false);
+  assert.equal(collection.minifyEnabled, true);
+});

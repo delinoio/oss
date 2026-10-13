@@ -78,6 +78,68 @@ enum AdapterEvent {
     Done {},
 }
 
+/// Longest stdout line kept; longer project output is discarded while the
+/// pipe keeps draining. Protocol frames are far shorter.
+const MAX_STDOUT_LINE: usize = 1024 * 1024;
+
+/// Cancel-safe line reader with a length bound. All state lives in the struct,
+/// and bytes are consumed only after `fill_buf` returns, so dropping a pending
+/// `next_line` future in `select!` loses nothing.
+struct BoundedLines<R> {
+    reader: BufReader<R>,
+    line: Vec<u8>,
+    discarding: bool,
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> BoundedLines<R> {
+    fn new(reader: R) -> Self {
+        Self {
+            reader: BufReader::new(reader),
+            line: Vec::new(),
+            discarding: false,
+        }
+    }
+
+    /// Returns the next line that fits the bound; overlong lines are skipped.
+    async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+        loop {
+            let available = self.reader.fill_buf().await?;
+            if available.is_empty() {
+                if self.line.is_empty() || self.discarding {
+                    return Ok(None);
+                }
+                let line = String::from_utf8_lossy(&std::mem::take(&mut self.line)).into_owned();
+                return Ok(Some(line));
+            }
+            let (used, complete) = match available.iter().position(|byte| *byte == b'\n') {
+                Some(index) => (index + 1, Some(index)),
+                None => (available.len(), None),
+            };
+            if !self.discarding {
+                let take = complete.unwrap_or(used);
+                if self.line.len() + take > MAX_STDOUT_LINE {
+                    self.discarding = true;
+                    self.line.clear();
+                } else {
+                    self.line.extend_from_slice(&available[..take]);
+                }
+            }
+            self.reader.consume(used);
+            if complete.is_some() {
+                if std::mem::take(&mut self.discarding) {
+                    tracing::debug!("discarded an overlong adapter stdout line");
+                    continue;
+                }
+                let mut line = std::mem::take(&mut self.line);
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+                return Ok(Some(String::from_utf8_lossy(&line).into_owned()));
+            }
+        }
+    }
+}
+
 /// Prefix of adapter protocol frames, followed by the per-run token.
 pub const FRAME_PREFIX: &str = "BUNDLEWHY-FRAME";
 
@@ -208,7 +270,7 @@ pub async fn run(
         String::from_utf8_lossy(&Vec::from(tail)).into_owned()
     });
 
-    let mut lines = BufReader::new(stdout).lines();
+    let mut lines = BoundedLines::new(stdout);
     let mut reported_error: Option<BwError> = None;
     let mut cancelled = false;
     loop {
@@ -327,6 +389,16 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn bounded_lines_skip_overlong_output_and_keep_frames() {
+        let mut input = vec![b'x'; MAX_STDOUT_LINE + 10];
+        input.extend_from_slice(b"\nframe\r\nlast");
+        let mut lines = BoundedLines::new(&input[..]);
+        assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("frame"));
+        assert_eq!(lines.next_line().await.unwrap().as_deref(), Some("last"));
+        assert_eq!(lines.next_line().await.unwrap(), None);
+    }
 
     #[tokio::test]
     async fn cancel_signal_wakes_waiters_once_cancelled() {

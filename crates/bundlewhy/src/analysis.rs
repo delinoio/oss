@@ -76,6 +76,16 @@ fn coverage(
                 .map(|ids| ids.iter().map(|id| id.as_str().to_owned()).collect())
                 .unwrap_or_default();
             let (state, note) = match category {
+                OptimizationCategory::TreeShaking
+                    if collection.bundler == "vite"
+                        && rules::vite::tree_shaking_disabled(collection) =>
+                {
+                    (
+                        CoverageState::NotApplicable,
+                        "Tree shaking is disabled by build.rolldownOptions.treeshake: false."
+                            .to_owned(),
+                    )
+                }
                 OptimizationCategory::Inlining | OptimizationCategory::ConstantFolding => (
                     CoverageState::Unavailable,
                     "The engine does not expose these decisions and bundlewhy has no verified \
@@ -768,6 +778,29 @@ mod tests {
             "vite/commonjs-wrapped",
             "src/legacy/cjs.cjs",
         );
+    }
+
+    #[test]
+    fn vite_disabled_tree_shaking_is_not_reported_as_covered() {
+        let fixture = run_fixture(BundlerChoice::Vite, |value| {
+            value["configSummary"]["build.rolldownOptions.treeshake"] = serde_json::json!("false");
+        });
+        let analysis = &fixture.output.analysis;
+        assert!(
+            find(
+                &analysis.diagnostics,
+                "vite/tree-shaking-disabled",
+                "vite.config.js"
+            )
+            .is_some()
+        );
+        assert_absent(&analysis.diagnostics, "vite/side-effect-retained", "");
+        let entry = analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::TreeShaking)
+            .unwrap();
+        assert_eq!(entry.state, CoverageState::NotApplicable);
     }
 
     #[test]

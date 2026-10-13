@@ -437,25 +437,143 @@ fn minification_disabled(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticD
     });
 }
 
+/// Every binding name of at least four characters introduced by `const`,
+/// `let` or `var` declarations, including comma-separated declarators and
+/// destructuring patterns. Function declaration names are excluded: bundlers
+/// may keep top-level function names for reasons unrelated to eval. Text in
+/// strings, templates, comments and regular expressions is masked first.
 fn declared_names(source: &str) -> Vec<String> {
-    // Function declaration names are excluded: bundlers may keep top-level
-    // function names for reasons unrelated to eval.
-    let pattern = Regex::new(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]{3,})").expect("static regex");
-    // Declarations spelled inside strings, templates, comments or regular
-    // expressions are not bindings.
-    let ignored = non_code_ranges(source);
-    let mut names: Vec<String> = pattern
-        .captures_iter(source)
-        .filter(|captures| {
-            !captures
-                .get(0)
-                .is_some_and(|whole| in_ranges(&ignored, whole.start()))
-        })
-        .map(|captures| captures[1].to_owned())
-        .collect();
+    let mut masked = source.as_bytes().to_vec();
+    for (start, end) in non_code_ranges(source) {
+        for byte in &mut masked[start..end.min(source.len())] {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    }
+    let code = String::from_utf8_lossy(&masked).into_owned();
+    let keyword = Regex::new(r"\b(?:const|let|var)\s+").expect("static regex");
+    let mut names = Vec::new();
+    for found in keyword.find_iter(&code) {
+        let declaration = declaration_text(&code[found.end()..]);
+        for declarator in split_top_level(declaration, b',') {
+            let target = binding_target(declarator);
+            collect_binding_names(target, &mut names);
+        }
+    }
+    names.retain(|name| name.len() >= 4);
     names.sort();
     names.dedup();
     names
+}
+
+/// Text of one declaration: up to a top-level `;`, or a top-level line break
+/// that does not continue the declaration.
+fn declaration_text(rest: &str) -> &str {
+    let bytes = rest.as_bytes();
+    let mut depth = 0i32;
+    let mut last_significant = 0u8;
+    for (index, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => {
+                depth -= 1;
+                if depth < 0 {
+                    return &rest[..index];
+                }
+            }
+            b';' if depth == 0 => return &rest[..index],
+            b'\n' if depth == 0 && !matches!(last_significant, b',' | b'=' | 0) => {
+                return &rest[..index];
+            }
+            _ => {}
+        }
+        if !byte.is_ascii_whitespace() {
+            last_significant = *byte;
+        }
+    }
+    rest
+}
+
+fn split_top_level(text: &str, separator: u8) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    for (index, byte) in text.bytes().enumerate() {
+        match byte {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            _ if byte == separator && depth == 0 => {
+                parts.push(&text[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+/// The binding part of a declarator (before its top-level `=` initializer).
+fn binding_target(declarator: &str) -> &str {
+    let mut depth = 0i32;
+    let bytes = declarator.as_bytes();
+    for (index, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'=' if depth == 0
+                && bytes.get(index + 1) != Some(&b'=')
+                && bytes.get(index + 1) != Some(&b'>') =>
+            {
+                return &declarator[..index];
+            }
+            _ => {}
+        }
+    }
+    declarator
+}
+
+/// Collects identifiers bound by a pattern: plain names, array elements,
+/// object shorthand and `key: binding` values, rest elements and nested
+/// patterns. Defaults after `=` and object keys are not bindings.
+fn collect_binding_names(pattern: &str, names: &mut Vec<String>) {
+    let pattern = pattern.trim();
+    let inner = if (pattern.starts_with('{') && pattern.ends_with('}'))
+        || (pattern.starts_with('[') && pattern.ends_with(']'))
+    {
+        Some(&pattern[1..pattern.len() - 1])
+    } else {
+        None
+    };
+    let Some(inner) = inner else {
+        let name = pattern.trim_start_matches("...").trim();
+        if !name.is_empty()
+            && name
+                .chars()
+                .next()
+                .is_some_and(|first| first.is_alphabetic() || first == '_' || first == '$')
+            && name.chars().all(|character| {
+                character.is_alphanumeric() || character == '_' || character == '$'
+            })
+        {
+            names.push(name.to_owned());
+        }
+        return;
+    };
+    let object = pattern.starts_with('{');
+    for element in split_top_level(inner, b',') {
+        let element = binding_target(element);
+        let value = if object {
+            split_top_level(element, b':')
+                .last()
+                .copied()
+                .unwrap_or(element)
+        } else {
+            element
+        };
+        collect_binding_names(value, names);
+    }
 }
 
 fn direct_eval_line(source: &str) -> Option<(u32, u32)> {
@@ -646,5 +764,22 @@ y=/process.env.F/.test(z),process.env.G"#;
             "const real = 1; const text = \"const retainedLiteralName\"; // let commented",
         );
         assert_eq!(names, vec!["real".to_owned(), "text".to_owned()]);
+        let names = declared_names(
+            "const x = f(1, 2), descriptiveName = 1;\nlet { alpha, beta: renamedBeta = 3, \
+             ...restOfIt } = o, [first, , second] = a;",
+        );
+        assert_eq!(
+            names,
+            [
+                "alpha",
+                "descriptiveName",
+                "first",
+                "renamedBeta",
+                "restOfIt",
+                "second"
+            ]
+            .map(str::to_owned)
+            .to_vec()
+        );
     }
 }

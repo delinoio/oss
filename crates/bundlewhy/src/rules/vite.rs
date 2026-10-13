@@ -8,7 +8,22 @@ use crate::model::{Condition, ConditionOutcome, Evidence, EvidenceStatus};
 const MODULE_INFO: &str = "rolldown module info (getModuleInfo)";
 const RENDERED: &str = "rolldown rendered chunk modules";
 
+/// True when the resolved configuration disables Rolldown tree shaking.
+pub fn tree_shaking_disabled(collection: &crate::collect::Collection) -> bool {
+    collection
+        .config_summary
+        .get("build.rolldownOptions.treeshake")
+        .is_some_and(|value| value == "false")
+}
+
 pub fn run(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
+    if tree_shaking_disabled(context.collection) {
+        tree_shaking_disabled_finding(context, drafts);
+        // Rendered exports reflect configuration, not tree-shaking decisions.
+        commonjs_wrapped(context, drafts);
+        ineffective_dynamic_import(context, drafts);
+        return;
+    }
     side_effect_retained(context, drafts);
     commonjs_wrapped(context, drafts);
     ineffective_dynamic_import(context, drafts);
@@ -256,4 +271,48 @@ fn ineffective_dynamic_import(context: &mut Context<'_>, drafts: &mut Vec<Diagno
             dependency: context.is_dependency(module),
         });
     }
+}
+
+fn tree_shaking_disabled_finding(context: &mut Context<'_>, drafts: &mut Vec<DiagnosticDraft>) {
+    let config_file = context.collection.config_file.clone();
+    let located = match &config_file {
+        Some(file) => context.original_location(std::path::Path::new(file), 0, 0),
+        None => super::Located {
+            location: None,
+            generated: None,
+            snippet: None,
+        },
+    };
+    let module = config_file
+        .as_deref()
+        .map(|file| context.display_path(std::path::Path::new(file)))
+        .unwrap_or_default();
+    drafts.push(DiagnosticDraft {
+        rule: RuleId::ViteTreeShakingDisabled,
+        status: EvidenceStatus::Confirmed,
+        title: "Tree shaking is disabled".to_owned(),
+        summary: "build.rolldownOptions.treeshake is false, so Rolldown keeps unused exports and \
+                  modules. Tree-shaking findings do not apply to this build."
+            .to_owned(),
+        conditions: vec![Condition::new(
+            "Tree shaking is enabled",
+            ConditionOutcome::Unmet,
+            "build.rolldownOptions.treeshake: false",
+        )],
+        located,
+        module,
+        dependency_paths: Vec::new(),
+        evidence: vec![Evidence::new(
+            "resolved Vite configuration",
+            EvidenceStatus::Confirmed,
+            "build.rolldownOptions.treeshake: false",
+        )],
+        direction: "Remove `treeshake: false` from build.rolldownOptions (or the legacy \
+                    rollupOptions) for production builds."
+            .to_owned(),
+        safety: "Code that relies on unused modules running for their side effects must keep \
+                 those imports or declare the side effects."
+            .to_owned(),
+        dependency: false,
+    });
 }

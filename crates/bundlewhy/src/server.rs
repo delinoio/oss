@@ -235,6 +235,37 @@ fn progress_snapshot(served: &Served) -> RunProgress {
     progress
 }
 
+/// Creates a new report file without following or replacing existing entries.
+/// A saved run directory is untrusted and may contain symlinks with predictable
+/// report names; exclusive creation refuses them and a unique suffix is tried.
+fn write_new_report(run_dir: &Path, file_name: &str, bytes: &[u8]) -> std::io::Result<String> {
+    use std::io::Write;
+    let stem = file_name.trim_end_matches(".html");
+    for attempt in 0..100u32 {
+        let candidate = if attempt == 0 {
+            file_name.to_owned()
+        } else {
+            format!("{stem}-{attempt}.html")
+        };
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(run_dir.join(&candidate))
+        {
+            Ok(mut file) => {
+                file.write_all(bytes)?;
+                return Ok(candidate);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "no unused report file name",
+    ))
+}
+
 fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
     let Ok(entries) = std::fs::read_dir(out_dir) else {
         return Vec::new();
@@ -257,7 +288,12 @@ fn list_runs(out_dir: &Path, active: &str) -> Vec<RunSummary> {
             };
             Some(RunSummary {
                 run_id: name.clone(),
-                status: serde_json::from_value(analysis.get("status")?.clone()).unwrap_or_default(),
+                // Apply the same interrupted/incomplete normalization as
+                // opening the run, so the list and the opened report agree.
+                status: bundle::normalized_status(
+                    serde_json::from_value(analysis.get("status")?.clone()).unwrap_or_default(),
+                    &entry.path(),
+                ),
                 project_name: field("projectName"),
                 bundler: analysis
                     .get("engine")
@@ -451,13 +487,14 @@ async fn handle_rpc(
                     "-no-sources"
                 }
             );
-            std::fs::write(run_dir.join(&file_name), &html).map_err(|error| {
-                RpcError::new(
-                    ConnectCode::Internal,
-                    ErrorCode::ExportFailed,
-                    format!("Could not write the report: {error}"),
-                )
-            })?;
+            let file_name =
+                write_new_report(&run_dir, &file_name, html.as_bytes()).map_err(|error| {
+                    RpcError::new(
+                        ConnectCode::Internal,
+                        ErrorCode::ExportFailed,
+                        format!("Could not write the report: {error}"),
+                    )
+                })?;
             tracing::info!(file = %file_name, sources = sources_included, bytes = html.len(), "exported report");
             Ok(json_response(&rpc::ExportReportResponse {
                 file_name,
@@ -688,6 +725,21 @@ mod tests {
             .is_err()
         );
         assert!(authorize(Some("127.0.0.1:4000"), Some(origin), None, origin, &token).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn report_export_never_follows_existing_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside.txt");
+        std::fs::write(&outside, "keep").unwrap();
+        let run = dir.path().join("run");
+        std::fs::create_dir(&run).unwrap();
+        std::os::unix::fs::symlink(&outside, run.join("report-x.html")).unwrap();
+        let name = write_new_report(&run, "report-x.html", b"<html>").unwrap();
+        assert_eq!(name, "report-x-1.html");
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
+        assert_eq!(std::fs::read(run.join(&name)).unwrap(), b"<html>");
     }
 
     #[test]
