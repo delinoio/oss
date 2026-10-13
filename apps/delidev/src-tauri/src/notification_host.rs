@@ -264,6 +264,14 @@ impl State {
         }
     }
 
+    /// Ends the observer entry and every scope bound to its connection key.
+    /// Only called for a definitive reason (see `DisposalReason`), never for a
+    /// transient observation failure.
+    fn finish_observer(&mut self, connection: &str) {
+        self.dispose_connection(connection);
+        self.observers.remove(connection);
+    }
+
     fn cancel_unused_observers(&mut self) {
         for (key, observer) in &mut self.observers {
             if !self
@@ -306,6 +314,43 @@ impl State {
         Ok(())
     }
 }
+/// Why an observer loop ended and disposed its connection scope.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DisposalReason {
+    Canceled,
+    Stopping,
+    AuthorityLost,
+    LocalStateError,
+}
+
+impl DisposalReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Canceled => "canceled",
+            Self::Stopping => "stopping",
+            Self::AuthorityLost => "authority_lost",
+            Self::LocalStateError => "local_state_error",
+        }
+    }
+}
+
+/// Decision for one native observation attempt made under valid authority.
+#[derive(Debug, PartialEq, Eq)]
+enum ObservationStep<T> {
+    Observed(T),
+    /// Transient or unconfirmed read: keep scopes and retry on the next tick.
+    Retry,
+}
+
+/// Maps the spawn_blocking result to a step. Both a connector error and a
+/// join failure are transient while authority is valid.
+fn classify_observation<T, E, J>(observed: Result<Result<T, E>, J>) -> ObservationStep<T> {
+    match observed {
+        Ok(Ok(value)) => ObservationStep::Observed(value),
+        Ok(Err(_)) | Err(_) => ObservationStep::Retry,
+    }
+}
+
 impl NotificationHost {
     fn observe_connection(
         self: &Arc<Self>,
@@ -335,10 +380,11 @@ impl NotificationHost {
             let mut transitions = delidev_desktop::notification_connection::Transition::default();
             let mut cadence = tokio::time::interval(Duration::from_secs(30));
             cadence.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                tokio::select! {biased;_=&mut canceled=>break,_=cadence.tick()=>{}}
+            let mut consecutive_unconfirmed: u32 = 0;
+            let disposal_reason = loop {
+                tokio::select! {biased;_=&mut canceled=>break DisposalReason::Canceled,_=cadence.tick()=>{}}
                 if host.stopping.load(Ordering::Acquire) {
-                    break;
+                    break DisposalReason::Stopping;
                 }
                 let current = host
                     .state
@@ -365,7 +411,7 @@ impl NotificationHost {
                         .map(|window| (target, window, authority))
                 });
                 let Some((validated_target, window, authority)) = current else {
-                    break;
+                    break DisposalReason::AuthorityLost;
                 };
                 let native = Arc::clone(&connector);
                 let original = connection.clone();
@@ -377,17 +423,35 @@ impl NotificationHost {
                 })
                 .await;
                 if host.stopping.load(Ordering::Acquire) {
-                    break;
+                    break DisposalReason::Stopping;
                 }
                 if super::recheck_authority(&window, &authority).is_err() {
+                    // The next iteration re-resolves current authority and
+                    // disposes only if no original window still holds it.
+                    tracing::info!(
+                        operation = "notification_connection_observation_authority_recheck",
+                        code = "retry_after_authority_change"
+                    );
                     continue;
                 }
-                let Ok(Ok(observed)) = observed else {
-                    tracing::warn!(
-                        operation = "notification_connection_observation",
-                        code = "unconfirmed"
-                    );
-                    break;
+                let observed = match classify_observation(observed) {
+                    ObservationStep::Observed(observed) => {
+                        consecutive_unconfirmed = 0;
+                        observed
+                    }
+                    ObservationStep::Retry => {
+                        // Authority is still valid, so a transient or
+                        // unconfirmed read must not dispose the connection
+                        // scope. Retry on the next cadence tick.
+                        consecutive_unconfirmed = consecutive_unconfirmed.saturating_add(1);
+                        tracing::warn!(
+                            operation = "notification_connection_observation",
+                            code = "unconfirmed",
+                            consecutive_unconfirmed,
+                            action = "retry_next_cadence"
+                        );
+                        continue;
+                    }
                 };
                 let mut suppress_restoration = false;
                 if matches!(
@@ -397,12 +461,12 @@ impl NotificationHost {
                     match ledger.acknowledged(&observed) {
                         Ok(true) => suppress_restoration = true,
                         Ok(false) => {}
-                        Err(_) => break,
+                        Err(_) => break DisposalReason::LocalStateError,
                     }
                 }
                 let edge = match transitions.observe(&observed, &connection.server_id) {
                     Ok(v) => v,
-                    Err(_) => break,
+                    Err(_) => break DisposalReason::LocalStateError,
                 };
                 let edge = edge.filter(|kind| {
                     !(suppress_restoration && *kind == NotificationKind::ServerRestored)
@@ -422,13 +486,15 @@ impl NotificationHost {
                         ),
                     }
                 }
-            }
-            tracing::info!(operation = "notification_connection_observation_joined");
+            };
+            tracing::info!(
+                operation = "notification_connection_observation_joined",
+                reason = disposal_reason.as_str()
+            );
             if let Ok(mut state) = host.state.lock() {
                 // Invalid/revoked/stopping authority ends this entire original
                 // connection scope, including delayed native presentation.
-                state.dispose_connection(&ledger.key);
-                state.observers.remove(&ledger.key);
+                state.finish_observer(&ledger.key);
             }
         });
         state.observers.insert(
@@ -780,6 +846,68 @@ mod tests {
         host.stop();
         assert!(completed.iter().all(|done| done.load(Ordering::Acquire)));
         assert!(host.state.lock().unwrap().active.is_empty());
+    }
+
+    #[test]
+    fn unconfirmed_observation_is_retried_and_confirmed_observation_proceeds() {
+        let connector_error: Result<Result<u8, &str>, &str> = Ok(Err("unavailable"));
+        let join_error: Result<Result<u8, &str>, &str> = Err("join failed");
+        let confirmed: Result<Result<u8, &str>, &str> = Ok(Ok(7));
+        assert_eq!(
+            classify_observation(connector_error),
+            ObservationStep::Retry
+        );
+        assert_eq!(classify_observation(join_error), ObservationStep::Retry);
+        assert_eq!(
+            classify_observation(confirmed),
+            ObservationStep::Observed(7)
+        );
+    }
+
+    #[test]
+    fn disposal_reasons_have_stable_log_identifiers() {
+        assert_eq!(DisposalReason::Canceled.as_str(), "canceled");
+        assert_eq!(DisposalReason::Stopping.as_str(), "stopping");
+        assert_eq!(DisposalReason::AuthorityLost.as_str(), "authority_lost");
+        assert_eq!(
+            DisposalReason::LocalStateError.as_str(),
+            "local_state_error"
+        );
+    }
+
+    #[test]
+    fn transient_observation_failure_keeps_scope_for_fresh_claims_until_finish() {
+        let mut state = State::default();
+        let mut window = target("main", None);
+        window.connection = Some("original-connection".into());
+        state.begin(window.clone()).unwrap();
+        state.reserve(&window, "claimed-before-failure").unwrap();
+        let (cancel, _canceled) = oneshot::channel();
+        let task = tauri::async_runtime::spawn(async {});
+        state.observers.insert(
+            "original-connection".into(),
+            Observer {
+                cancel: Some(cancel),
+                task,
+            },
+        );
+        // A transient failure is classified as Retry and performs no state
+        // change, so a fresh distinct candidate is still claimable while the
+        // earlier claim stays durable and cannot be replayed.
+        assert_eq!(
+            classify_observation::<u8, &str, &str>(Ok(Err("unavailable"))),
+            ObservationStep::Retry
+        );
+        assert!(state.reserve(&window, "fresh-after-failure").is_ok());
+        assert!(state.reserve(&window, "claimed-before-failure").is_err());
+        assert!(state.observers.contains_key("original-connection"));
+        // Definitive authority loss disposes the scope and the observer entry.
+        state.finish_observer("original-connection");
+        assert!(state.scopes.is_empty());
+        assert!(state.observers.is_empty());
+        assert!(state.reserve(&window, "after-disposal").is_err());
+        assert!(state.seen.contains("claimed-before-failure"));
+        assert!(state.seen.contains("fresh-after-failure"));
     }
 
     #[test]

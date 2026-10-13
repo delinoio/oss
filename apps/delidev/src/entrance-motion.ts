@@ -20,6 +20,16 @@ export enum EntranceMotion {
   // 120ms translateY(4px).
   Y4Short = "y4-short",
 }
+/**
+ * Which element of an opted-in surface receives the entrance. `Surface` moves
+ * the whole category content column or task dialog. `Heading` moves only the
+ * static heading, for surfaces whose body contains persistent portal hosts or
+ * native controllers that no ancestor transform may touch.
+ */
+export enum EntranceTarget {
+  Surface = "surface",
+  Heading = "heading",
+}
 const entranceAnimationNames: Record<EntranceMotion, string> = {
   [EntranceMotion.Y4]: "entrance-y4",
   [EntranceMotion.Y2]: "entrance-y2",
@@ -84,6 +94,37 @@ export function useActivationCount(active: boolean): number {
     return active ? state.count + 1 : state.count;
   }
   return state.count;
+}
+
+/**
+ * Counts explicit presentations of a retained surface. A mount that starts
+ * visible is one presentation; afterwards only a changed `request` value that
+ * becomes visible adds one. Visibility changes alone (a host slot appearing, a
+ * page becoming active) never count, so they stay immediate. A request made
+ * while hidden stays pending until the surface is visible.
+ */
+export function usePresentationCount(
+  visible: boolean,
+  request: string | number = 0,
+): number {
+  const [state, setState] = useState({
+    count: visible ? 1 : 0,
+    request,
+    pending: false,
+  });
+  let { count, pending } = state;
+  if (request !== state.request) pending = true;
+  if (visible && pending) {
+    count += 1;
+    pending = false;
+  }
+  if (
+    count !== state.count ||
+    pending !== state.pending ||
+    request !== state.request
+  )
+    setState({ count, request, pending });
+  return count;
 }
 
 /**

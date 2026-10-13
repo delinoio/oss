@@ -16,6 +16,12 @@ type subscriptionCLIClient struct {
 	request     *pb.RequestSubscriptionRequest
 	cancel      *pb.CancelSubscriptionRequest
 	progress    *pb.GetSubscriptionProgressRequest
+	reconciled  *pb.ReconcileSubscriptionCreditRequest
+}
+
+func (f *subscriptionCLIClient) ReconcileSubscriptionCredit(_ context.Context, req *connect.Request[pb.ReconcileSubscriptionCreditRequest]) (*connect.Response[pb.ReconcileSubscriptionCreditResponse], error) {
+	f.reconciled = req.Msg
+	return connect.NewResponse(&pb.ReconcileSubscriptionCreditResponse{}), nil
 }
 
 func (f *subscriptionCLIClient) RequestSubscription(_ context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
@@ -66,10 +72,12 @@ func TestCLISubscriptionExplicitWorkerAndOriginalOperation(t *testing.T) {
 
 type subscriptionCLISystem struct {
 	delidevv1connect.SystemServiceClient
-	quota         bool
-	serverQuota   bool
-	serverCredits bool
-	supported     bool
+	quota           bool
+	serverQuota     bool
+	serverCredits   bool
+	serverCreditsV2 bool
+	workerCredits   bool
+	supported       bool
 }
 
 func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
@@ -82,6 +90,12 @@ func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.G
 	}
 	if f.serverCredits {
 		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
+	}
+	if f.serverCreditsV2 {
+		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V2)
+	}
+	if f.workerCredits {
+		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1)
 	}
 	if f.serverQuota {
 		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2)
@@ -131,7 +145,7 @@ func TestCLIServerCreditRequiresCapabilityAndExplicitConfirmation(t *testing.T) 
 	for _, supported := range []bool{false, true} {
 		for _, confirmed := range []bool{false, true} {
 			f := &subscriptionCLIClient{}
-			c := client{subscriptions: f, system: &subscriptionCLISystem{serverCredits: supported}}
+			c := client{subscriptions: f, system: &subscriptionCLISystem{serverCreditsV2: supported}}
 			requestID := domain.NewID()
 			args := []string{"consume-reset-credit", "--id", string(domain.NewID()), "--revision", "7", "--connection-id", string(domain.NewID()), "--generation-id", string(domain.NewID()), "--credits-observation-id", string(domain.NewID()), "--next-credit"}
 			if confirmed {
@@ -146,5 +160,37 @@ func TestCLIServerCreditRequiresCapabilityAndExplicitConfirmation(t *testing.T) 
 				t.Fatal("unconfirmed/unnegotiated consumption sent")
 			}
 		}
+	}
+}
+
+func TestCLIServerCreditNeverFallsBackToRunnerOrHistoricalLane(t *testing.T) {
+	consume := func(system *subscriptionCLISystem, extra ...string) (*subscriptionCLIClient, error) {
+		f := &subscriptionCLIClient{}
+		c := client{subscriptions: f, system: system}
+		args := append([]string{"consume-reset-credit", "--id", string(domain.NewID()), "--revision", "7", "--connection-id", string(domain.NewID()), "--generation-id", string(domain.NewID()), "--credits-observation-id", string(domain.NewID()), "--next-credit", "--confirm"}, extra...)
+		_, err := subscriptionObservationCommand(context.Background(), c, options{requestID: domain.NewID()}, args)
+		return f, err
+	}
+	// A Worker credit capability or the historical System 49 lane never serves a
+	// new omitted-machine request; the update guidance is the existing Unsupported error.
+	for name, system := range map[string]*subscriptionCLISystem{"worker-only": {workerCredits: true}, "historical-server-only": {serverCredits: true}} {
+		f, err := consume(system)
+		if domain.SafeError(err).Code != domain.Unsupported || f.observation != nil {
+			t.Fatalf("%s: omitted machine fell back or used the historical lane: %v", name, err)
+		}
+	}
+	// Explicit legacy machine selection keeps the Worker lane and its capability.
+	machine := string(domain.NewID())
+	f, err := consume(&subscriptionCLISystem{workerCredits: true}, "--machine-id", machine)
+	if err != nil || f.observation == nil || f.observation.MachineId != machine {
+		t.Fatal("explicit machine lost the historical Worker lane", err)
+	}
+	// Reconciling an already accepted server operation keeps working on a server
+	// that advertises only the historical capability.
+	reconcile := &subscriptionCLIClient{}
+	c := client{subscriptions: reconcile, system: &subscriptionCLISystem{serverCredits: true}}
+	_, err = subscriptionObservationCommand(context.Background(), c, options{requestID: domain.NewID()}, []string{"reconcile-reset-credit", "--id", string(domain.NewID()), "--revision", "7", "--connection-id", string(domain.NewID()), "--generation-id", string(domain.NewID()), "--operation-id", string(domain.NewID()), "--confirm"})
+	if err != nil || reconcile.reconciled == nil {
+		t.Fatal("historical reconciliation lost its capability", err)
 	}
 }

@@ -79,10 +79,25 @@ never clear on a later rejection. Protected write failure retains the request
 and reports recovery. Exact profile credentials/identity and operation/request/
 target checks fence replacements; correction drafts and other profiles stay
 unchanged. No RPC, capability or storage-version migration is added.
+Conversation composer drafts are owned per profile and session outside the
+conversation screen. A draft is cleared only after the original Send is confirmed
+successful (including success through the explicit original-request retry),
+even when the conversation is unmounted at that time, and only when its prompt
+still equals the submitted text; later edits and the selected Plan or Execute
+mode survive. Unconfirmed outcomes keep the draft and the exact pending request.
+Prompt text is never logged.
 Foreground return and connection refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
 Steer operates on an already queued input and its original revision, execution
-and native turn. Stop and Resume require current observations and confirmation.
+and native turn. Inspecting a pending Steer reads the original queue input
+(EntityKind.QUEUE at the retained request's mutation ID), never the session, and
+enables retry only when the observed resource has the same ID, queue kind,
+supported schema, original session ID and original expected revision. A missing,
+foreign-session or revised input keeps retry disabled, shows localized guidance
+and leaves the retained request unchanged; no replacement request is generated.
+Existing pending records need no migration because the ID is derived from the
+retained request, not its stored target. Stop and Resume require current
+observations and confirmation.
 Question and approval responses retain the original interaction revision.
 Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before
@@ -178,6 +193,21 @@ active platform state. A fresh existing server claim grants at most one OS
 submission. Replayed claims grant none. An uncertain report is protected before
 OS submission, and original reports remain receipt-safe. OS submission does not
 prove that a person saw an alert or accepted a native request.
+
+Foreground delivery drains candidates in batches. It lists
+`ListNotificationCandidates` with the server maximum limit of 50 and processes
+candidates serially: claim, protected report, at most one OS submission for a
+fresh claim, then the report. Before each claim, OS submission and report send
+it rechecks the selected profile, the active live connection generation, the
+notification setting and the absence of an unrelated pending record. When a
+response has `more`, the next batch starts in a new zero-delay macrotask after
+the batch settles; there is no arbitrary total cap. At most one drain owns each
+connection generation. Ordinary sync events join it and request one more pass
+after it drains. A drain stops, without polling or implicit retry, on an
+unresolved pending record, a transport failure, a background or profile change,
+or a batch with no fresh claim. A lifecycle change before the report send
+leaves the exact stored report pending for explicit recovery. Drain results log
+only the opaque profile identifier, a closed stop reason and counts.
 
 ## Logging
 

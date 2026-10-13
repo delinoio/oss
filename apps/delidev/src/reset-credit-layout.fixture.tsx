@@ -68,6 +68,7 @@ const transport = createRouterTransport((router) => {
         SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
         SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2,
         SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1,
+        SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2,
         SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
       ],
     }),
@@ -95,7 +96,6 @@ createRoot(document.getElementById("root")!).render(
         <MutationIntents>
           <SubscriptionQuotaControls
             current={account}
-            machine={machine}
             active
             accepted={() => {
               throw new Error("No fixture mutation acceptance");

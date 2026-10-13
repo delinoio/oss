@@ -526,3 +526,55 @@ it("requires explicit first history read, appends with exact cursor and fences h
   expect(value.retainedWorker).not.toHaveBeenCalled();
   expect(value.open).not.toHaveBeenCalled();
 });
+
+// A host slot appearing is not an explicit presentation request.
+const openDialog = () =>
+  [...document.querySelectorAll("dialog")].find((node) =>
+    node.hasAttribute("open"),
+  );
+it("keeps a retained task heading immediate when its Connections slot appears", async () => {
+  const value = fixture();
+  const view = render(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  await screen.findByRole("button", { name: "Open Saved server" });
+  fireEvent.click(screen.getByRole("button", { name: /^Rename Saved server/ }));
+  const target = document.createElement("div");
+  document.body.append(target);
+  view.rerender(
+    <SavedConnections
+      visible
+      close={() => {}}
+      actions={value.actions}
+      target={target}
+    />,
+  );
+  await waitFor(() => expect(openDialog()).toBeTruthy());
+  expect(
+    openDialog()!.querySelector("header")!.getAttribute("data-entrance"),
+  ).toBeNull();
+  target.remove();
+});
+
+it("plays a Saved server task heading once for an explicit request inside the slot", async () => {
+  const value = fixture();
+  const target = document.createElement("div");
+  document.body.append(target);
+  render(
+    <SavedConnections
+      visible
+      close={() => {}}
+      actions={value.actions}
+      target={target}
+    />,
+  );
+  await screen.findByRole("button", { name: "Open Saved server" });
+  fireEvent.click(screen.getByRole("button", { name: /^Rename Saved server/ }));
+  await waitFor(() => expect(openDialog()).toBeTruthy());
+  const open = openDialog()!;
+  expect(open.querySelector("header")!.getAttribute("data-entrance")).toBe(
+    "y4",
+  );
+  expect(open.hasAttribute("data-entrance")).toBe(false);
+  target.remove();
+});

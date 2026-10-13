@@ -62,6 +62,9 @@ func (t *Tx) ClearActivePricing(model domain.ModelIdentity) error {
 	if t.readOnly {
 		return domain.Fail(domain.PermissionDenied, "Read transactions cannot change pricing.", "Use a pricing mutation.")
 	}
+	if e := t.recordPricingCleared(model.Key()); e != nil {
+		return e
+	}
 	_, e := t.tx.ExecContext(t.ctx, "DELETE FROM active_pricing WHERE model_key=?", model.Key())
 	return storageError(e)
 }

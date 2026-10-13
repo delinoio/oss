@@ -313,8 +313,10 @@ func (s *Service) MarkSessionInboxRead(ctx context.Context, req *connect.Request
 	s.logger.InfoContext(ctx, "inbox_session_read_admitted", "correlation_id", correlation, "request_id", request, "session_id", session)
 	result, err := s.Store.Mutate(ctx, request, "inbox.session-read", identity, func(tx *store.Tx) (any, error) {
 		return tx.MarkSessionInboxRead(session, func(tx *store.Tx, record store.Record) error {
-			_, err := currentInboxView(tx, record)
-			return err
+			if _, err := currentInboxView(tx, record); err != nil {
+				return err
+			}
+			return tx.ValidateInboxInteractionSource(record)
 		})
 	})
 	if err != nil {

@@ -145,9 +145,34 @@ func init() {
 					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/login/completed", "params": completion})
 					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/updated", "params": map[string]any{"authMode": "chatgptAuthTokens", "planType": "plus"}})
 					continue
+				case "account/rateLimitResetCredit/consume":
+					var params struct {
+						Key    string  `json:"idempotencyKey"`
+						Credit *string `json:"creditId"`
+					}
+					if !strings.HasPrefix(mode, "quota-credit") || domain.Decode(request.Params, &params) != nil || params.Key == "" {
+						os.Exit(59)
+					}
+					if f, err := os.OpenFile(filepath.Join(os.Getenv("CODEX_HOME"), "credit-consume"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err != nil {
+						os.Exit(60)
+					} else {
+						_, _ = f.WriteString(params.Key + "\n")
+						_ = f.Close()
+					}
+					if mode == "quota-credit-refresh" {
+						externalQuotaRequest = request.ID
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": 914, "method": "account/chatgptAuthTokens/refresh", "params": map[string]any{"reason": "unauthorized", "previousAccountId": "synthetic-account"}})
+						continue
+					}
+					write(request.ID, map[string]any{"outcome": "reset"})
+					continue
 				case "account/rateLimits/read":
 					if len(request.Params) != 0 {
 						os.Exit(56)
+					}
+					if mode == "quota-credit-readfail" {
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": json.RawMessage(request.ID), "error": map[string]any{"code": -32000, "message": "fixture quota failure"}})
+						continue
 					}
 					if os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "quota-read"), []byte("once"), 0600) != nil {
 						os.Exit(57)
@@ -160,6 +185,13 @@ func init() {
 					write(request.ID, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": map[string]any{"usedPercent": 20, "windowDurationMins": 300, "resetsAt": 1900000000}}})
 					continue
 				case "":
+					if mode == "quota-credit-refresh" && string(request.ID) == "914" && len(request.Error) > 0 && len(request.Result) == 0 {
+						if os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "credit-refused"), []byte("refused"), 0600) != nil {
+							os.Exit(61)
+						}
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": json.RawMessage(externalQuotaRequest), "error": map[string]any{"code": -32000, "message": "fixture rejected access"}})
+						continue
+					}
 					if mode == "quota-refresh" && string(request.ID) == "913" && len(request.Error) > 0 && len(request.Result) == 0 {
 						if os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "quota-refused"), []byte("refused"), 0600) != nil {
 							os.Exit(58)
