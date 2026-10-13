@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   EntranceMotion,
+  settleEnclosingEntrances,
   useActivationCount,
   useEntranceActivation,
 } from "./entrance-motion";
@@ -311,3 +312,17 @@ function MotionRestartHarness() {
     </div>
   );
 }
+
+it("clears the attribute synchronously when an enclosed host requests a settle", () => {
+  render(
+    <div>
+      <Harness />
+    </div>,
+  );
+  expect(entering()).toBe("y4");
+  // No act() flush: a top-layer host measures its anchor right after the call.
+  settleEnclosingEntrances(screen.getByTestId("spinner"));
+  expect(entering()).toBeNull();
+  act(() => {});
+  expect(entering()).toBeNull();
+});

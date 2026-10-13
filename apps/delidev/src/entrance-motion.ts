@@ -217,7 +217,12 @@ export function useEntranceActivation(
           return;
         settle();
       };
-      const settleNow = () => settle();
+      // A top-layer host measures its anchor right after requesting the settle,
+      // so clear the attribute synchronously; the state update follows.
+      const settleNow = () => {
+        node.removeAttribute("data-entrance");
+        settle();
+      };
       node.addEventListener("animationend", finished);
       node.addEventListener("animationcancel", finished);
       node.addEventListener(ENTRANCE_SETTLE_EVENT, settleNow);
