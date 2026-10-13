@@ -1136,6 +1136,42 @@ it("accepts a fresh options response for the unchanged scope and drops a failed 
   expect(cachedOptionDefaults(f.client)).toEqual(["trunk"]);
 });
 
+it("does not publish a late options response after returning to the original scope", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:staged:"));
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:branch:main"));
+  // The scope equals the originating scope again, but the retired request
+  // must stay retired.
+  options.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(operations()).not.toContain("git-diff:branch:late-next");
+  expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe(
+    JSON.stringify(["local-branch", "main", null]),
+  );
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);

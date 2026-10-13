@@ -316,9 +316,16 @@ export function RepositoryDiff({
     path,
     chosenBase ? referenceKey(chosenBase) : "",
   ].join("\u0000");
-  const scopeRef = useRef(scope),
+  // Every distinct scope receives a monotonically increasing generation, so a
+  // request issued under one scope can never be revived by returning to an
+  // equal scope later (ABA).
+  const scopeGeneration = useRef(0),
+    observedScope = useRef(scope),
     mounted = useRef(true);
-  scopeRef.current = scope;
+  if (observedScope.current !== scope) {
+    observedScope.current = scope;
+    scopeGeneration.current += 1;
+  }
   const transport = useTransport(),
     queryClient = useQueryClient();
   useEffect(() => {
@@ -359,7 +366,7 @@ export function RepositoryDiff({
       void result.refetch();
       return;
     }
-    const token = scope,
+    const token = scopeGeneration.current,
       wasEnabled = enabled,
       previousBase = chosenBase;
     setRefreshing(true);
@@ -390,7 +397,7 @@ export function RepositoryDiff({
       } finally {
         queryClient.removeQueries({ queryKey: disposableKey, exact: true });
       }
-      if (!mounted.current || scopeRef.current !== token) {
+      if (!mounted.current || scopeGeneration.current !== token) {
         console.debug("delidev.diff.options_refresh_retired", {
           sessionId,
           repository,
@@ -417,7 +424,7 @@ export function RepositoryDiff({
       )
         await result.refetch();
     } catch (error) {
-      if (mounted.current && scopeRef.current === token) {
+      if (mounted.current && scopeGeneration.current === token) {
         console.warn("delidev.diff.options_refresh_failed", {
           sessionId,
           repository,
