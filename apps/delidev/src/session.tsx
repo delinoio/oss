@@ -3192,7 +3192,7 @@ export function SessionView({
                   </div>
                 </div>
               ) : null}
-              {session ? (
+              {session && !embedded ? (
                 <SessionBrowser
                   key={`${id}:${browserAccountId}`}
                   session={session}

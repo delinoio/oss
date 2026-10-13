@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+Native browser page Inventory/Create/Close/Observe (`browser_pages`) belongs to the original trusted product-window instance and admitted profile, independent of presentation. Keep it trusted-local only, serialize per-profile mutations, retain original receipts, publish under the worker and window-authority fences and never let observation replay a mutation, following the [direct pages contract](../../../docs/cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

@@ -71,45 +71,137 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 for clients which actually completed native cleanup, not an automatic CLI action.
 `browser-storage prepare` only prepares the native client's private cache root.
 
-The session Browser button opens its singleton entry in the shared session-tab
-workspace. Each retained page opens/selects a tab keyed by original profile/page
-ID; observation state never changes identity. The selected page occupies the
-complete active content region beside persistent Info. Conversation/drafts remain
-mounted and inert while inactive. The Browser entry itself is a retained-page
-picker with explicit New page, not an unselected native page. The former Browser
-split, compact overlay and Expand/Restore presentation are superseded.
+## Direct workspace pages and original native operations
 
-The original account/profile manager remains mounted after presentation Close.
-Inactivity uses exact original Hide cleanup and retains failed/uncertain cleanup
-before any replacement. Reopen restores existing native pages without another
-registration or creation. Explicit picker actions restore the original presentation
-after cleanup and send the selected resource action once; failures do not create
-automatic retries. Profile explanation uses the original accessible Modal and
-native visibility boundary. Initial explicit registration retains the local-summary/
-address card and no empty viewport. Page labels derive only from retained URLs;
-no title/favicon discovery, URL logging, page scripts or generalized key bridge.
-Shared Page descriptors follow native observation without changing identity: each
-observed URL refreshes only the label of the existing exact profile/page descriptor
-(never its order, selection or any foreign profile page), and unchanged URLs publish
-nothing. When a busy action settles, the native page is reconciled once to the
+Every retained browser page of the session account's admitted profile is a peer
+Page tab in the shared session-tab workspace beside Conversation, keyed by its
+original profile/page IDs. There is no Browser singleton tab, no nested page
+picker row and no browser pane-header close. The Page tab content has the
+persistent Info rail, a header with only the profile information control, the
+Back/Forward/Reload, labelled Address and Go toolbar, native-view Retry in its
+accessible overflow, and the viewport. The selected page occupies the complete
+active content region; Conversation/drafts remain mounted and inert while
+inactive. The former Browser split, compact overlay, Expand/Restore presentation
+and Browser picker are superseded.
+
+The workspace tab strip ends with an ordinary New browser page `+` button. It is
+not a tab or numeric-shortcut position and stays reachable beside the scrolling
+tabs. The `+` button and the Open tool Browser row open the same compact
+`Modal` (480px maximum, viewport-bounded, 40px controls, 8px corners, English and
+Korean "New browser page / 새 브라우저 페이지"). It shows the existing
+account-sharing explanation, one labelled Address field (focused on opening, with
+focus trapped and the opener restored on dismissal), Cancel and Open page. Opening
+the dialog, and Cancel, X or Escape, create no profile and no page. Open page is
+enabled only for a bounded HTTP(S) address without credentials (at most 8,192
+characters), a supported capability read, no removal-pending profile and fewer
+than 16 pages. Capability loading, unsupported and removal-pending guidance, the
+original exact registration retry, and safe failure text never create a fallback
+page.
+
+Only explicit submission may change the inventory. It reuses the original
+capability/account/session/revision checks and exact registration recovery: an
+existing profile (found by the read-only `ListBrowserProfiles` page walk) is
+reused; a missing profile is registered once at submission. It then issues exactly
+one Create under a fresh UUID-v7 operation ID and selects the confirmed Page
+descriptor. An accepted operation stays owned by the mounted browser manager after
+the dialog is dismissed; reopening resumes its original result or recovery and
+never sends a fresh creation while the original outcome is unsettled. Restoration,
+inventory reads, presentation and observation never create a page: an empty
+inventory stays empty, and a presentation request for an unknown page identity is
+rejected.
+
+## Native-local page commands
+
+`browser_pages` is one closed trusted-local Tauri command (declared in the build
+manifest and granted only through `browser-presentation` to the `main` and saved
+product webviews). It is denied to raw external browser children, remote origins,
+the tray and auxiliary views, and it recaptures and rechecks the original
+product-window instance, Local/Saved connection and Go-authorized profile
+(server/device/account/profile and Active state) before and after every
+operation. It accepts no renderer path or presentation handle. Its typed request
+has one of four actions:
+
+- `inventory` reads the profile's local pages without initializing storage or a
+  runtime profile; a loaded profile returns its in-memory pages, including
+  observed addresses.
+- `create` (operation ID plus bounded HTTP(S) URL) and `close` (operation ID plus
+  page ID) are the only mutations. Admission records the original operation
+  (window owner, profile and ID, bounded to 64 retained operations) before any
+  storage work and allows one mutation per profile at a time. An identical replay
+  returns the original receipt without a second mutation; a different request for
+  the same identity is rejected. Create adds one page and selects it; Close removes
+  exactly the requested page (an already absent page is an idempotent completed
+  closure), selecting its left neighbor when it was selected, and closing the final
+  page leaves the profile with zero pages. The 16-page gate is retained. Storage
+  work stages off the UI thread and only the replacement is published under the
+  existing worker fence and a window-authority fence that rechecks registry,
+  barrier and binding state.
+- `observe` (operation ID) returns the original receipt and the current inventory.
+  It never repeats metadata mutation; it retries only the directory fsync that
+  followed a successful replacement and the idempotent native child
+  reconciliation.
+
+Every reply carries `{state, receipt}`. A receipt separates committed metadata
+from incomplete native cleanup (`phase` accepted, cleanup-pending, completed or
+failed; `metadata_committed`; `native_cleanup_complete`; a closed failure code).
+After a mutation commits, live shared children are reconciled with the shared
+selection on the UI loop: a child already on the selected page is preserved, a
+superseded child is unmapped before any handle or generation changes, and a page
+nobody presents is never displayed. Failures before admission are returned as a
+typed `not-admitted` error and prove nothing changed; any later failure is
+retained on the receipt or surfaces as an uncertain reply that only observation of
+the original operation settles. `open_browser` takes a page ID instead of an
+address and moves the shared profile selection to that retained page;
+`control_browser` can no longer create or close a page.
+
+## Page close and recovery
+
+Page × requests closure of that original native page; other tab kinds keep their
+existing dismissal. The Page descriptor is removed (selection falls to the left
+neighbor, and to Conversation after the last page) only after the original
+operation is observed with committed metadata removal and complete native cleanup.
+While pending, failed or uncertain, the descriptor remains with accessible inline
+recovery below the tab strip: truthful progress, a Check status action that
+observes the original operation (never a blind second Close), and a distinction
+between committed removal with incomplete native cleanup and a failed operation.
+A rejection before admission or a failed receipt clears the operation so a later
+close is a fresh explicit operation. Closing an inactive page never presents it or
+another native page. This resource Close is the one browser-specific exception to
+the presentation-only dismissal other tools use, and it remains separate from the
+16-page gate and from profile/account removal.
+
+Other windows and sessions of the same account observe the inventory read-only
+and align their descriptors (append newly listed pages in inventory order,
+refresh labels from observed URLs, and drop descriptors the inventory no longer
+lists) without selecting a page or taking ownership of another window's
+operation. Existing local `tabs.json` storage remains compatible; no business RPC,
+protocol allocation, SQLite migration, dependency or browser-engine change is
+added.
+
+The original account/profile manager remains mounted independent of the active
+page pane. Inactivity uses exact original Hide cleanup and retains failed or
+uncertain cleanup before any replacement. A page label derives only from its
+retained URL; there is no title/favicon discovery, page script, URL logging or
+generalized key bridge. A Page descriptor follows native observation without
+changing identity: each observed URL refreshes only the label of the existing
+exact profile/page descriptor, never its order, selection or any foreign profile
+page. When a busy action settles, the native page is reconciled once to the
 current shared selection; a failed reconciliation is not retried until the
-selection or native state changes, and inactive or replaced presentations send
-nothing. Only an acknowledged native close whose state no longer lists the exact
-page removes that one descriptor (selection falls back through the shared tab
-close rule); rejected or unacknowledged closes keep it.
-The original 16-page gate and explicit resource Close remain separate from shared
-presentation Close. Numeric selection has only typed, original-owner fenced
+selection or native state changes. Profile explanation uses the original
+accessible Modal and native visibility boundary.
+Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
 approved deferring only Windows/Linux numeric forwarding while external browser
 content has focus; use the tab bar there. macOS forwarding requires original
 native composition-clear proof. All ordinary app/input/terminal shortcuts and
 other tab acceptance remain required, and localized Help states this exception.
+
 Back/Forward/Reload, labelled address and Go share
 a compact toolbar; explicit native-view Retry is in its accessible overflow.
 Keep original registration uncertainty/retry beside its owning problem. The
 viewport fills the remaining bounded height without a fixed 400px minimum;
 localized chrome wraps/scrolls with semantic themes, 8px controls and 40px targets.
-These changes introduce no protocol allocation, migration or native interface.
+These changes introduce no protocol allocation, migration or dependency; the native-local `browser_pages` command above is the only added native interface.
 
 Switching away releases only the original native presentation while retaining
 its profile and the composer; other panels retain independent operation lifetimes.
@@ -185,8 +277,9 @@ only the worker waits for that callback, and native state is released during I/O
 Reservation waits are bounded to five seconds and cancel an unexecuted late UI
 callback, releasing the worker fence if native exit stops callback delivery.
 Superseded staged writes are discarded without changing durable or live tabs.
-First-tab initialization uses that same staged publication boundary, so a
-superseded initial open cannot seed the replacement's profile with its address.
+Presentation selection writes use that same staged publication boundary, so a
+superseded open cannot move the replacement's shared selection. Presentation
+never seeds a first page.
 Observed-address writes use the same fence and recheck exact profile, child
 generation and reservation after staging, so replacement opens retain the last
 accepted address rather than consuming a superseded callback.

@@ -12,6 +12,8 @@ Changes to shared renderer shortcuts must update dispatch, Help, the Settings ca
 
 The shared pure `product-identity.ts` module is owned here and consumed by the mobile renderer. Changes must read both renderer contracts; desktop React/query-cache observation stays in `product-identity-labels.tsx`.
 
+Browser pages are direct workspace tabs. Keep the New browser page `+` and Open tool dialog creation-free until explicit submission, restore pages from the read-only native inventory, and remove a Page descriptor only after the original `browser_pages` operation is observed complete, following the [direct pages contract](../../../docs/cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
