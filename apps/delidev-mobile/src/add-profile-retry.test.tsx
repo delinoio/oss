@@ -51,13 +51,15 @@ function grant(extra: Record<string, unknown> = {}): string {
 }
 function harness(respond: (body: Uint8Array) => Response | Promise<Response>) {
   const bodies: Uint8Array[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    // After pairing succeeds the app connects normally; only count pairing.
-    if (!String(input).includes("/PairDevice")) return lost();
-    const body = init?.body as Uint8Array;
-    bodies.push(new Uint8Array(body));
-    return respond(body);
-  });
+  const fetcher = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      // After pairing succeeds the app connects normally; only count pairing.
+      if (!String(input).includes("/PairDevice")) return lost();
+      const body = init?.body as Uint8Array;
+      bodies.push(new Uint8Array(body));
+      return respond(body);
+    },
+  );
   const state = new ProtectedState(
     { read: async () => null, write: async () => {} },
     fetcher as unknown as typeof fetch,
@@ -69,9 +71,7 @@ const lost = () => {
 };
 // The form is busy (its fieldset disabled) until the in-flight run settles.
 const settled = (dialog: HTMLElement) =>
-  waitFor(() =>
-    expect(dialog.querySelector("fieldset")?.disabled).toBe(false),
-  );
+  waitFor(() => expect(dialog.querySelector("fieldset")?.disabled).toBe(false));
 async function openAdd(state: ProtectedState) {
   render(<App state={state} />);
   await screen.findByText(en.selectProfile);
@@ -124,9 +124,12 @@ it("retries the retained original request when Pair is pressed again after an un
   const requests = bodies.map((body) =>
     fromBinary(PairDeviceRequestSchema, body),
   );
-  expect(new Set(bodies.map((body) => Buffer.from(body).toString("hex"))).size)
-    .toBe(1);
-  expect(requests[0].requestId).toBe(state.state.profiles[0].pairing?.requestId);
+  expect(
+    new Set(bodies.map((body) => Buffer.from(body).toString("hex"))).size,
+  ).toBe(1);
+  expect(requests[0].requestId).toBe(
+    state.state.profiles[0].pairing?.requestId,
+  );
   expect(requests[0].pairingId).toBe(pairingId);
   expect(requests[0].deviceId).toBe(state.state.profiles[0].deviceId);
   expect(state.state.profiles[0].pairing?.token).toBe(
@@ -175,7 +178,9 @@ it("retains nothing when preparePair itself fails", async () => {
   expect(
     (within(dialog).getByLabelText(en.pairing) as HTMLTextAreaElement).readOnly,
   ).toBe(false);
-  expect(within(dialog).queryByRole("button", { name: en.retryPair })).toBeNull();
+  expect(
+    within(dialog).queryByRole("button", { name: en.retryPair }),
+  ).toBeNull();
   fireEvent.change(within(dialog).getByLabelText(en.pairing), {
     target: { value: grant() },
   });
