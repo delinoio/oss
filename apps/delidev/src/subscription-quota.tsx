@@ -645,11 +645,10 @@ export function SubscriptionQuotaControls({
       reconcile.error,
       preferences.error,
     ].filter(Boolean);
-    // Hide the saved observation only when the server is known to lack quota
-    // support; unread capability data must not invent a support claim.
+    // Current capability only gates new requests; saved historical evidence
+    // stays visible even when the connected server lacks quota support.
     const savedObservation =
-      (!status.data || quotaSupported) &&
-      (text(state.quota_observed_at) !== "" || state.quota_state === "failed");
+      text(state.quota_observed_at) !== "" || state.quota_state === "failed";
     return (
       <>
         {savedObservation ? <LastQuotaObservation state={state} /> : null}

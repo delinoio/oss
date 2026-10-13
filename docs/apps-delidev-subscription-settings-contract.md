@@ -307,7 +307,8 @@ retry submits quota or acquires eligibility for its original activation.
 
 A disconnected ChatGPT account renders only read-only retained evidence above the
 status footer: the last-success timestamp and failed-refresh wording when saved
-`quota_observed_at` or `quota_state = failed` exists, plus any retained original
+`quota_observed_at` or `quota_state = failed` exists (current server or Worker
+quota capability gates only new requests, never saved evidence), plus any retained original
 quota, credit, preference, consent or status failure Problem, including after
 the operation settles. Every present retained failure from these independent
 operations stays visible; none hides another. An automatic-use confirmation

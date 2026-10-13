@@ -44,6 +44,8 @@ function fixture(
   automaticConsent = false,
   automaticPhase = "uncertain",
   creditsV2 = true,
+  savedQuota: Record<string, unknown> = {},
+  quotaCapability = true,
 ) {
   const machine = newRequestId(),
     connection = newRequestId(),
@@ -65,6 +67,7 @@ function fixture(
         ? { id: newRequestId(), action: "reset-credit", phase: automaticPhase }
         : undefined,
       generation,
+      ...savedQuota,
       owner_machine_id: server ? "" : machine,
       server_quota_generation: server ? generation : undefined,
       server_credit: creditPhase
@@ -122,23 +125,29 @@ function fixture(
     });
     return { account };
   });
+  const status = vi.fn();
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
-      getStatus: () => ({
-        capabilities: [
-          SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
-          SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
-          ...(serverCredits
-            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1]
-            : []),
-          ...(creditsV2
-            ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2]
-            : []),
-          ...(supported
-            ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]
-            : [SystemCapability.SUBSCRIPTION_QUOTA_V1]),
-        ],
-      }),
+      getStatus: () => {
+        status();
+        return {
+          capabilities: [
+            SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1,
+            SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1,
+            ...(serverCredits
+              ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1]
+              : []),
+            ...(creditsV2
+              ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V2]
+              : []),
+            ...(!quotaCapability
+              ? []
+              : supported
+                ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]
+                : [SystemCapability.SUBSCRIPTION_QUOTA_V1]),
+          ],
+        };
+      },
     });
     router.service(SubscriptionService, {
       requestSubscriptionObservation: request,
@@ -281,6 +290,7 @@ function fixture(
     request,
     reconcile,
     consent,
+    status,
     account,
     machine,
     connection,
@@ -1276,8 +1286,44 @@ it("closes the consent confirmation when the account disconnects while the owner
   expect(value.consent).not.toHaveBeenCalled();
   // `visible` stayed true, so the original controls remain mounted and the
   // confirmation is not restored on its own.
-  expect(await screen.findByRole("checkbox", { name: "Automatic use" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Enable automatic use" })).toBeNull();
+  expect(
+    await screen.findByRole("checkbox", { name: "Automatic use" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Enable automatic use" }),
+  ).toBeNull();
+});
+
+it("keeps the saved quota observation visible for a disconnected account on a server without quota support", async () => {
+  const value = fixture(
+    undefined,
+    undefined,
+    "",
+    false,
+    true,
+    "",
+    false,
+    "",
+    false,
+    false,
+    {},
+    "",
+    false,
+    "uncertain",
+    true,
+    { quota_observed_at: new Date().toISOString(), quota_state: "failed" },
+    // Neither the server nor the Worker quota capability is advertised.
+    false,
+  );
+  render(<value.Harness />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  // Wait for the status read so an unread capability set cannot hide the gate.
+  await waitFor(() => expect(value.status).toHaveBeenCalled());
+  expect(await screen.findByText(/Last successful observation/)).toBeTruthy();
+  expect(screen.getByText(/The latest refresh failed/)).toBeTruthy();
 });
 
 it("keeps every independent retained failure visible after the account disconnects", async () => {
