@@ -84,7 +84,7 @@ function collectorPlugin(state) {
           packageName: pkg?.name ?? null,
           packageVersion: pkg?.version ?? null,
           packageDir: pkg?.dir ?? null,
-          packageSideEffects: pkg ? summarizeValue(pkg.sideEffects) : null,
+          packageSideEffects: pkg && pkg.sideEffects !== null ? summarizeValue(pkg.sideEffects) : null,
         };
         modules.set(id, record);
         return record;

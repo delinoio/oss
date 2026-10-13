@@ -198,7 +198,7 @@ function normalizeStats(stats) {
       packageName: pkg?.name ?? null,
       packageVersion: pkg?.version ?? null,
       packageDir: pkg?.dir ?? null,
-      packageSideEffects: pkg ? summarizeValue(pkg.sideEffects) : null,
+      packageSideEffects: pkg && pkg.sideEffects !== null ? summarizeValue(pkg.sideEffects) : null,
     });
     for (const fileName of files) chunkByFile.get(fileName)?.modules.push(raw.identifier);
   };

@@ -115,25 +115,6 @@ impl Chunk {
         )
     }
 
-    fn offset(&self, line: u32, column: u32) -> usize {
-        let Some(start) = self.line_starts.get(line as usize).copied() else {
-            return self.code.len();
-        };
-        let end = self
-            .line_starts
-            .get(line as usize + 1)
-            .copied()
-            .unwrap_or(self.code.len());
-        let mut units = 0usize;
-        for (index, character) in self.code[start..end].char_indices() {
-            if units >= column as usize {
-                return start + index;
-            }
-            units += character.len_utf16();
-        }
-        end
-    }
-
     /// Maps a generated position to (source path, zero-based line, column).
     pub fn original(&self, line: u32, column: u32) -> Option<(PathBuf, u32, u32)> {
         let map = self.map.as_ref()?;
@@ -147,29 +128,63 @@ impl Chunk {
     /// most one segment, so per-source totals never overlap or exceed the size.
     pub fn attribution(&self) -> Option<(BTreeMap<PathBuf, u32>, u32)> {
         let map = self.map.as_ref()?;
-        let mut tokens: Vec<(usize, Option<u32>)> = map
+        let mut positions: Vec<(u32, u32, Option<u32>)> = map
             .tokens()
             .map(|token| {
                 let source = token.has_source().then(|| token.get_src_id());
-                (
-                    self.offset(token.get_dst_line(), token.get_dst_col()),
-                    source,
-                )
+                (token.get_dst_line(), token.get_dst_col(), source)
             })
             .collect();
-        tokens.sort_by_key(|(offset, _)| *offset);
-        let mut per_source: BTreeMap<PathBuf, u32> = BTreeMap::new();
+        positions.sort_by_key(|(line, column, _)| (*line, *column));
+        // Convert positions to byte offsets in one forward pass; minified
+        // chunks are often a single very long line, so per-token scans from the
+        // line start would be quadratic.
+        let mut tokens: Vec<(usize, Option<u32>)> = Vec::with_capacity(positions.len());
+        let mut cursor_line = u32::MAX;
+        let mut cursor_byte = 0usize;
+        let mut cursor_units = 0usize;
+        for (line, column, source) in positions {
+            if line != cursor_line {
+                cursor_line = line;
+                cursor_byte = self
+                    .line_starts
+                    .get(line as usize)
+                    .copied()
+                    .unwrap_or(self.code.len());
+                cursor_units = 0;
+            }
+            let line_end = self
+                .line_starts
+                .get(line as usize + 1)
+                .copied()
+                .unwrap_or(self.code.len());
+            while cursor_units < column as usize && cursor_byte < line_end {
+                let Some(character) = self.code[cursor_byte..].chars().next() else {
+                    break;
+                };
+                cursor_units += character.len_utf16();
+                cursor_byte += character.len_utf8();
+            }
+            tokens.push((cursor_byte, source));
+        }
         let total = self.code.len();
+        let mut per_id: BTreeMap<u32, usize> = BTreeMap::new();
         let mut unmapped = tokens.first().map_or(total, |(offset, _)| *offset);
         for (index, (start, source)) in tokens.iter().enumerate() {
             let end = tokens
                 .get(index + 1)
                 .map_or(total, |(offset, _)| *offset)
                 .max(*start);
-            let length = u32::try_from(end - start).unwrap_or(u32::MAX);
-            match source.and_then(|id| self.map_sources.get(id as usize).cloned().flatten()) {
-                Some(path) => *per_source.entry(path).or_default() += length,
+            match source.filter(|id| matches!(self.map_sources.get(*id as usize), Some(Some(_)))) {
+                Some(id) => *per_id.entry(id).or_default() += end - start,
                 None => unmapped += end - start,
+            }
+        }
+        let mut per_source: BTreeMap<PathBuf, u32> = BTreeMap::new();
+        for (id, bytes) in per_id {
+            if let Some(Some(path)) = self.map_sources.get(id as usize) {
+                *per_source.entry(path.clone()).or_default() +=
+                    u32::try_from(bytes).unwrap_or(u32::MAX);
             }
         }
         Some((per_source, u32::try_from(unmapped).unwrap_or(u32::MAX)))

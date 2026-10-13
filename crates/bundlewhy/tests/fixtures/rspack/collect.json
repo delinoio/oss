@@ -66,7 +66,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/effects/register.js",
@@ -109,7 +109,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/vendor/dup-v1/index.js",
@@ -159,7 +159,7 @@
    "packageName": "bundlewhy-dup-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/dup-v1",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/vendor/dup-v2/index.js",
@@ -209,7 +209,7 @@
    "packageName": "bundlewhy-dup-lib",
    "packageVersion": "2.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/dup-v2",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/vendor/single/index.js",
@@ -259,7 +259,7 @@
    "packageName": "bundlewhy-single-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/single",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/vendor/single/again.js",
@@ -309,7 +309,7 @@
    "packageName": "bundlewhy-single-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/single",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/dynamic/plain.js",
@@ -359,7 +359,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/dynamic|/__bundlewhy_project__/src/legacy/cjs.cjs",
@@ -412,7 +412,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/dynamic/evaluate.js",
@@ -464,7 +464,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/shared/static-and-dynamic.js",
@@ -523,7 +523,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/lazy/a.js",
@@ -568,7 +568,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/lazy/b.js",
@@ -613,7 +613,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/esm/value.js",
@@ -661,7 +661,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "javascript/esm|/__bundlewhy_project__/src/lazy/common.js",
@@ -727,7 +727,7 @@
    "packageName": "bundlewhy-fixture-rspack-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   }
  ],
  "chunks": [

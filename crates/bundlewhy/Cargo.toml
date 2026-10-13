@@ -8,7 +8,6 @@ description = "Explain why a bundler could not apply an optimization"
 build = "build.rs"
 
 [dependencies]
-anyhow.workspace = true
 brotli = "8"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

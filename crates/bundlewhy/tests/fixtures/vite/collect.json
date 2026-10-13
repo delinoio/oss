@@ -90,7 +90,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/lazy/b.js",
@@ -123,12 +123,12 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
-   "id": "\u0000vite/preload-helper.js",
-   "path": null,
-   "virtual": true,
+   "id": "/__bundlewhy_project__/vendor/dup-v1/index.js",
+   "path": "/__bundlewhy_project__/vendor/dup-v1/index.js",
+   "virtual": false,
    "isEntry": false,
    "importers": [
     "/__bundlewhy_project__/src/main.js"
@@ -137,23 +137,23 @@
    "importedIds": [],
    "dynamicImportedIds": [],
    "exports": [
-    "__vitePreload"
+    "formatV1"
    ],
    "usedExports": [
-    "__vitePreload"
+    "formatV1"
    ],
    "moduleSideEffects": "null",
    "inputFormat": "es",
-   "renderedLength": 2990,
+   "renderedLength": 107,
    "included": true,
    "chunks": [
     "assets/index-BHjrzQLH.js"
    ],
    "bailouts": [],
    "reasons": [],
-   "packageName": null,
-   "packageVersion": null,
-   "packageDir": null,
+   "packageName": "bundlewhy-dup-lib",
+   "packageVersion": "1.0.0",
+   "packageDir": "/__bundlewhy_project__/vendor/dup-v1",
    "packageSideEffects": null
   },
   {
@@ -185,12 +185,12 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
-   "id": "/__bundlewhy_project__/vendor/dup-v1/index.js",
-   "path": "/__bundlewhy_project__/vendor/dup-v1/index.js",
-   "virtual": false,
+   "id": "\u0000vite/preload-helper.js",
+   "path": null,
+   "virtual": true,
    "isEntry": false,
    "importers": [
     "/__bundlewhy_project__/src/main.js"
@@ -199,24 +199,24 @@
    "importedIds": [],
    "dynamicImportedIds": [],
    "exports": [
-    "formatV1"
+    "__vitePreload"
    ],
    "usedExports": [
-    "formatV1"
+    "__vitePreload"
    ],
    "moduleSideEffects": "null",
    "inputFormat": "es",
-   "renderedLength": 107,
+   "renderedLength": 2990,
    "included": true,
    "chunks": [
     "assets/index-BHjrzQLH.js"
    ],
    "bailouts": [],
    "reasons": [],
-   "packageName": "bundlewhy-dup-lib",
-   "packageVersion": "1.0.0",
-   "packageDir": "/__bundlewhy_project__/vendor/dup-v1",
-   "packageSideEffects": "null"
+   "packageName": null,
+   "packageVersion": null,
+   "packageDir": null,
+   "packageSideEffects": null
   },
   {
    "id": "\u0000vite/modulepreload-polyfill.js",
@@ -276,7 +276,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/vendor/single/again.js",
@@ -307,7 +307,7 @@
    "packageName": "bundlewhy-single-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/single",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/main.js",
@@ -351,7 +351,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/index.html",
@@ -379,7 +379,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/pure/index.js",
@@ -406,7 +406,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/effects/register.js",
@@ -435,7 +435,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/legacy/cjs.cjs",
@@ -465,7 +465,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/vendor/dup-v2/index.js",
@@ -496,7 +496,7 @@
    "packageName": "bundlewhy-dup-lib",
    "packageVersion": "2.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/dup-v2",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/lazy/common.js",
@@ -528,7 +528,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/esm/value.js",
@@ -555,7 +555,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/src/dynamic/evaluate.js",
@@ -586,7 +586,7 @@
    "packageName": "bundlewhy-fixture-vite-app",
    "packageVersion": "",
    "packageDir": "/__bundlewhy_project__",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "/__bundlewhy_project__/vendor/single/index.js",
@@ -617,7 +617,7 @@
    "packageName": "bundlewhy-single-lib",
    "packageVersion": "1.0.0",
    "packageDir": "/__bundlewhy_project__/vendor/single",
-   "packageSideEffects": "null"
+   "packageSideEffects": null
   },
   {
    "id": "\u0000rolldown/runtime.js",
