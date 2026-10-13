@@ -28,8 +28,22 @@ type sessionDeletionProof struct {
 	Complete       bool      `json:"complete"`
 }
 
+// sessionDeletionPath is the session-level admission tombstone. Its existence
+// closes native admission for the session; it is content-independent for every
+// gate reader. Retained proofs live at per-obligation paths.
 func sessionDeletionPath(root string, id domain.ID) string {
 	return filepath.Join(root, "session-deletions", string(id)+".json")
+}
+
+// sessionDeletionTombstoneVersion marks a tombstone that owns no proof. Version 1
+// is the legacy session-keyed proof, which only its exact original obligation
+// may adopt.
+const sessionDeletionTombstoneVersion = 2
+
+// Each original device obligation owns its proof and lock, so two obligations
+// for one session and machine never share or replay retained state.
+func sessionDeletionObligationPath(root string, w domain.SessionDeletionWork, suffix string) string {
+	return filepath.Join(root, "session-deletions", workspace.SessionDeletionObligationName(w)+suffix)
 }
 
 func watchSessionDeletions(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) {
@@ -97,39 +111,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if e := security.PrivateDir(filepath.Join(root, "session-deletions")); e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
-	lock, e := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	lock, e := security.TryLock(sessionDeletionObligationPath(root, w, ".lock"))
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
 	defer lock.Close()
-	path := sessionDeletionPath(root, w.SessionID)
-	raw, e := security.ReadPrivate(path, 4096)
-	if e == nil {
-		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
-			return proof, domain.SessionDeletionPending()
-		}
-		if proof.Digest != w.Digest() {
-			// An untouched legacy proof can admit only the same immutable work
-			// plus server-proved child owners. Removed evidence cannot be rebuilt.
-			legacy := w
-			legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
-			for i := range legacy.Copies {
-				legacy.Copies[i].UnpublishedChildProcessID = ""
-			}
-			if proof.RemovalStarted || proof.Complete || proof.Digest != legacy.Digest() {
-				return proof, domain.SessionDeletionPending()
-			}
-			proof.Digest = w.Digest()
-			if err := writeJSON(path, proof); err != nil {
-				return proof, err
-			}
-		}
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return proof, domain.SessionDeletionPending()
-	} else {
-		if e := writeJSON(path, proof); e != nil {
-			return proof, e
-		}
+	path := sessionDeletionObligationPath(root, w, ".json")
+	if err := loadSessionDeletionProof(root, path, w, &proof); err != nil {
+		return proof, err
 	}
 	if proof.Complete {
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {
@@ -363,6 +352,96 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	proof.Complete = true
 	return proof, writeJSON(path, proof)
+}
+
+// loadSessionDeletionProof recovers or creates the proof owned by exactly this
+// obligation. The session tombstone is written first so admission closes before
+// any cleanup. A legacy session-keyed proof migrates only for the exact original
+// obligation (keeping its report ID); any other legacy scope stays pending.
+func loadSessionDeletionProof(root, path string, w domain.SessionDeletionWork, proof *sessionDeletionProof) error {
+	tombstone := sessionDeletionPath(root, w.SessionID)
+	legacy := sessionDeletionProof{}
+	legacyProof := false
+	raw, e := security.ReadPrivate(tombstone, 4096)
+	switch {
+	case errors.Is(e, os.ErrNotExist):
+		if err := writeJSON(tombstone, sessionDeletionProof{Version: sessionDeletionTombstoneVersion}); err != nil {
+			return err
+		}
+	case e != nil:
+		return domain.SessionDeletionPending()
+	case domain.Decode(raw, &legacy) != nil:
+		return domain.SessionDeletionPending()
+	case legacy.Version == sessionDeletionTombstoneVersion && legacy.Digest == "" && legacy.ReportID == "" && !legacy.RemovalStarted && !legacy.Complete:
+	case legacy.Version == 1 && legacy.ReportID.Validate() == nil:
+		legacyProof = true
+	default:
+		return domain.SessionDeletionPending()
+	}
+	raw, e = security.ReadPrivate(path, 4096)
+	if e == nil {
+		if domain.Decode(raw, proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
+			return domain.SessionDeletionPending()
+		}
+		if proof.Digest != w.Digest() {
+			// An untouched proof can admit only the same immutable work plus
+			// server-proved child owners. Removed evidence cannot be rebuilt.
+			if !sessionDeletionUpgradable(*proof, w) {
+				return domain.SessionDeletionPending()
+			}
+			proof.Digest = w.Digest()
+			if err := writeJSON(path, *proof); err != nil {
+				return err
+			}
+		}
+		if legacyProof && (legacy.Digest == w.Digest() || sessionDeletionUpgradable(legacy, w)) {
+			// A crash left the already migrated legacy proof in place. Its
+			// workspace proof moves before the tombstone drops the legacy scope.
+			if legacy.Digest == w.Digest() {
+				if err := workspace.MigrateLegacyWorkspaceProof(root, w); err != nil {
+					return err
+				}
+			}
+			return writeJSON(tombstone, sessionDeletionProof{Version: sessionDeletionTombstoneVersion})
+		}
+		return nil
+	}
+	if !errors.Is(e, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
+	if legacyProof {
+		if legacy.Digest != w.Digest() && !sessionDeletionUpgradable(legacy, w) {
+			return domain.SessionDeletionPending()
+		}
+		// A completed legacy proof takes the Complete fast path and never reaches
+		// workspace cleanup, so the exact obligation's session-keyed workspace
+		// proof migrates here, before the tombstone drops the legacy scope.
+		exact := legacy.Digest == w.Digest()
+		legacy.Digest = w.Digest()
+		*proof = legacy
+		if err := writeJSON(path, *proof); err != nil {
+			return err
+		}
+		if exact {
+			if err := workspace.MigrateLegacyWorkspaceProof(root, w); err != nil {
+				return err
+			}
+		}
+		return writeJSON(tombstone, sessionDeletionProof{Version: sessionDeletionTombstoneVersion})
+	}
+	return writeJSON(path, *proof)
+}
+
+func sessionDeletionUpgradable(proof sessionDeletionProof, w domain.SessionDeletionWork) bool {
+	if proof.RemovalStarted || proof.Complete {
+		return false
+	}
+	legacy := w
+	legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
+	for i := range legacy.Copies {
+		legacy.Copies[i].UnpublishedChildProcessID = ""
+	}
+	return proof.Digest == legacy.Digest()
 }
 
 // Workspace cleanup already validated original storage namespace ownership.

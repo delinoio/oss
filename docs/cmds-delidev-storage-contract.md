@@ -297,6 +297,33 @@ foreign, busy or uncertain evidence remains pending. A missing workspace without
 original removal proof is not completion, except for positively failed preparations
 that never produced a workspace. Worker attempts are bounded to two minutes.
 
+Worker retained deletion state is bound to each original device obligation, not
+only to the session. The Worker keeps `session-deletions/<session>.json` solely
+as a content-independent admission tombstone (`{"version":2}`) that closes
+preparation, execution, sidechat and read admission; it is written before any
+cleanup. Each obligation owns its proof, workspace proof and lock at
+`session-deletions/<session>-<deletion>-<device>{.json,-workspace.json,.lock}`, so
+two device obligations for one session and machine recover and acknowledge
+independently, and a proof copied to another obligation fails its digest check.
+A pre-existing session-keyed (version 1) proof or workspace proof migrates only to
+the one obligation whose digest matches exactly (or an untouched proof upgraded by
+server-proved child owners), preserving its report UUID; any other legacy scope
+stays pending and is never copied to another device. The session-keyed workspace
+proof migrates together with its session proof, before the version-2 tombstone
+replaces the legacy scope, so an already completed legacy proof (which never
+reaches workspace cleanup) cannot strand another device obligation behind its
+digest. A migrated proof that recorded the removal also publishes the shared
+removal evidence below.
+
+The managed `workspaces/<session>` directory is shared by every device obligation
+of one session and machine. When an obligation removes it, it first publishes
+content-free evidence at `session-deletions/<session>-workspace-removed.json`
+(`version`, server, session, machine, `removed`; no manifest, path or device).
+A later obligation whose own workspace is absent and has no stored snapshot
+manifest, and whose jobs forbid an absent workspace, adopts that removal only when
+the evidence matches its exact server, session and machine; missing, unreadable or
+foreign evidence keeps it pending. The evidence never grants deletion authority.
+
 Original manifests bind session, machine and preparation digest. Worktree cleanup
 compares actual native common/admin directories and removes only the managed linked
 worktree; dirty/untracked owned worktree files are included. Original Local

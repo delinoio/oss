@@ -466,3 +466,173 @@ func TestRetiringAssignmentPreservesMaximumUnpublishedSidechatInventory(t *testi
 		t.Fatal("large envelope lost exact claimed revision")
 	}
 }
+
+func deletionObligationFor(w domain.SessionDeletionWork) domain.SessionDeletionWork {
+	other := w
+	other.DeletionID, other.DeviceID = domain.NewID(), domain.NewID()
+	return other
+}
+
+func readDeletionProof(t *testing.T, path string) sessionDeletionProof {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var proof sessionDeletionProof
+	if err := domain.Decode(raw, &proof); err != nil {
+		t.Fatal(err)
+	}
+	return proof
+}
+
+func TestSessionDeletionProofsAreBoundToEachDeviceObligation(t *testing.T) {
+	root := t.TempDir()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	a := domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: domain.NewID(), SessionID: domain.NewID(), MachineID: domain.NewID(), DeviceID: domain.NewID()}
+	b := deletionObligationFor(a)
+	pathA, pathB := sessionDeletionObligationPath(root, a, ".json"), sessionDeletionObligationPath(root, b, ".json")
+	if pathA == pathB {
+		t.Fatal("distinct obligations share a proof path")
+	}
+	proofA := sessionDeletionProof{Version: 1, Digest: a.Digest(), ReportID: domain.NewID()}
+	proofB := sessionDeletionProof{Version: 1, Digest: b.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(root, pathA, a, &proofA); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadSessionDeletionProof(root, pathB, b, &proofB); err != nil {
+		t.Fatal(err)
+	}
+	if got := readDeletionProof(t, pathA); got.ReportID != proofA.ReportID || got.Digest != a.Digest() {
+		t.Fatal("first obligation proof changed", got)
+	}
+	if got := readDeletionProof(t, pathB); got.ReportID != proofB.ReportID || got.Digest != b.Digest() {
+		t.Fatal("second obligation proof changed", got)
+	}
+	// Recovery reads each obligation's own retained receipt.
+	again := sessionDeletionProof{Version: 1, Digest: b.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(root, pathB, b, &again); err != nil || again.ReportID != proofB.ReportID {
+		t.Fatal("second obligation lost its receipt", again, err)
+	}
+	if tombstone := readDeletionProof(t, sessionDeletionPath(root, a.SessionID)); tombstone.Version != sessionDeletionTombstoneVersion || tombstone.Digest != "" {
+		t.Fatal("session tombstone owns a proof", tombstone)
+	}
+	// Replaying one obligation's proof for the other is rejected.
+	raw, err := os.ReadFile(pathA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pathB, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	replayed := sessionDeletionProof{Version: 1, Digest: b.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(root, pathB, b, &replayed); err == nil {
+		t.Fatal("replayed proof from another obligation was accepted")
+	}
+}
+
+func TestSessionDeletionLegacyProofMigratesOnlyForExactObligation(t *testing.T) {
+	root := t.TempDir()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	a := domain.SessionDeletionWork{Version: 1, DeletionID: domain.NewID(), ServerID: domain.NewID(), SessionID: domain.NewID(), MachineID: domain.NewID(), DeviceID: domain.NewID()}
+	b := deletionObligationFor(a)
+	legacy := sessionDeletionProof{Version: 1, Digest: a.Digest(), ReportID: domain.NewID()}
+	if err := writeJSON(sessionDeletionPath(root, a.SessionID), legacy); err != nil {
+		t.Fatal(err)
+	}
+	// The other device cannot adopt or bypass the legacy scope.
+	other := sessionDeletionProof{Version: 1, Digest: b.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(root, sessionDeletionObligationPath(root, b, ".json"), b, &other); err == nil {
+		t.Fatal("mismatched legacy scope was admitted")
+	}
+	if _, err := os.Lstat(sessionDeletionObligationPath(root, b, ".json")); !os.IsNotExist(err) {
+		t.Fatal("mismatched obligation wrote a proof", err)
+	}
+	// The exact original obligation keeps its receipt.
+	got := sessionDeletionProof{Version: 1, Digest: a.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(root, sessionDeletionObligationPath(root, a, ".json"), a, &got); err != nil || got.ReportID != legacy.ReportID {
+		t.Fatal("legacy receipt not preserved", got, err)
+	}
+	if saved := readDeletionProof(t, sessionDeletionObligationPath(root, a, ".json")); saved.ReportID != legacy.ReportID {
+		t.Fatal("migrated proof lost receipt", saved)
+	}
+	// Once migrated, the other obligation is no longer blocked by the legacy file.
+	if err := loadSessionDeletionProof(root, sessionDeletionObligationPath(root, b, ".json"), b, &other); err != nil {
+		t.Fatal(err)
+	}
+	// A legacy proof that began removal never upgrades to changed scope.
+	c := deletionObligationFor(a)
+	c.SessionID = domain.NewID()
+	started := sessionDeletionProof{Version: 1, Digest: "not-this-work", ReportID: domain.NewID(), RemovalStarted: true}
+	if err := writeJSON(sessionDeletionPath(root, c.SessionID), started); err != nil {
+		t.Fatal(err)
+	}
+	probe := sessionDeletionProof{Version: 1, Digest: c.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(root, sessionDeletionObligationPath(root, c, ".json"), c, &probe); err == nil {
+		t.Fatal("restored scope after removal started was admitted")
+	}
+}
+
+func TestSessionDeletionWorkerUsesObligationProofAndKeepsAdmissionTombstone(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal(proof, err)
+	}
+	if got := readDeletionProof(t, sessionDeletionObligationPath(c.Root, w, ".json")); !got.Complete || got.ReportID != proof.ReportID {
+		t.Fatal("obligation proof missing", got)
+	}
+	if tombstone := readDeletionProof(t, sessionDeletionPath(c.Root, w.SessionID)); tombstone.Version != sessionDeletionTombstoneVersion {
+		t.Fatal("admission tombstone missing", tombstone)
+	}
+	manager := workspace.Manager{Root: c.Root, Logger: c.Logger}
+	if _, err := manager.Prepare(context.Background(), workspace.PrepareRequest{SessionID: w.SessionID, MachineID: w.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}); err == nil {
+		t.Fatal("tombstone did not close admission")
+	}
+}
+
+// A completed version-1 proof never reaches workspace cleanup, so its session
+// keyed workspace proof must migrate with it. Otherwise a second device on the
+// same machine stays pending forever behind the first obligation's digest.
+func TestSessionDeletionCompletedLegacyProofMigratesWorkspaceProof(t *testing.T) {
+	c, a, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	b := deletionObligationFor(a)
+	if err := os.RemoveAll(filepath.Join(c.Root, "workspaces", string(a.SessionID))); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(c.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	legacy := sessionDeletionProof{Version: 1, Digest: a.Digest(), ReportID: domain.NewID(), RemovalStarted: true, Complete: true}
+	if err := writeJSON(sessionDeletionPath(c.Root, a.SessionID), legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacyWorkspace := filepath.Join(c.Root, "session-deletions", string(a.SessionID)+"-workspace.json")
+	if err := security.WriteAtomic(legacyWorkspace, []byte(`{"version":1,"digest":"`+a.Digest()+`","removed":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	// The other device's obligation cannot adopt the first device's proof.
+	if err := workspace.MigrateLegacyWorkspaceProof(c.Root, b); err == nil {
+		t.Fatal("legacy workspace proof for another obligation was admitted")
+	}
+	got := sessionDeletionProof{Version: 1, Digest: a.Digest(), ReportID: domain.NewID()}
+	if err := loadSessionDeletionProof(c.Root, sessionDeletionObligationPath(c.Root, a, ".json"), a, &got); err != nil || !got.Complete || got.ReportID != legacy.ReportID {
+		t.Fatal("completed legacy receipt not preserved", got, err)
+	}
+	if _, err := os.Lstat(legacyWorkspace); !os.IsNotExist(err) {
+		t.Fatal("completed migration left the session-keyed workspace proof", err)
+	}
+	if _, err := os.Lstat(filepath.Join(c.Root, "session-deletions", workspace.SessionDeletionObligationName(a)+"-workspace.json")); err != nil {
+		t.Fatal("workspace proof did not move to its obligation", err)
+	}
+	// The second device obligation verifies the first device's removal.
+	manager := workspace.Manager{Root: c.Root, Logger: c.Logger}
+	called := false
+	if err := manager.DeleteOwnedWorkspace(context.Background(), b, false, func() error { called = true; return nil }); err != nil || !called {
+		t.Fatal("second obligation stayed pending behind a migrated legacy proof", err)
+	}
+}
