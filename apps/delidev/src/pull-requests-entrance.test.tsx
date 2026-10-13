@@ -233,10 +233,17 @@ it("suppresses the entrance under Animation Off and reduced motion and never rep
 
 it("transitions only the selected state segment background in 120ms", () => {
   const css = readFileSync(join(__dirname, "styles.css"), "utf8");
-  const rule = css.match(
+  const base = css.match(
     /\.sidebar-pull-requests \.pr-state-choice > span \{([^}]*)\}/u,
   );
-  expect(rule?.[1]).toMatch(/transition:\s*background-color 120ms ease-out;/u);
-  const transitions = rule?.[1].match(/transition[a-z-]*:/gu) ?? [];
+  // Unchecked segments, including hover, never animate.
+  expect(base?.[1]).not.toMatch(/transition/u);
+  const checked = css.match(
+    /\.sidebar-pull-requests \.pr-state-choice > input:checked \+ span \{([^}]*)\}/u,
+  );
+  expect(checked?.[1]).toMatch(
+    /transition:\s*background-color 120ms ease-out;/u,
+  );
+  const transitions = checked?.[1].match(/transition[a-z-]*:/gu) ?? [];
   expect(transitions).toEqual(["transition:"]);
 });
