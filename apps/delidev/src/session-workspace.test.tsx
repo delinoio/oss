@@ -1629,7 +1629,10 @@ it.each(["pending", "failed"] as const)(
       f.budget.mockImplementation((async () => {
         await held.gate;
         return {
-          view: create(SessionBudgetViewSchema, { session: f.session }),
+          view: create(SessionBudgetViewSchema, {
+            session: f.session,
+            state: BudgetState.ALLOW_INCOMPLETE,
+          }),
         };
       }) as never);
     else
@@ -1682,7 +1685,10 @@ it("does not reuse budget evidence from another session identity", async () => {
   second.budget.mockImplementation((async () => {
     await held.gate;
     return {
-      view: create(SessionBudgetViewSchema, { session: second.session }),
+      view: create(SessionBudgetViewSchema, {
+        session: second.session,
+        state: BudgetState.ALLOW_INCOMPLETE,
+      }),
     };
   }) as never);
   const next = render(second.view("Retained startup draft"));
@@ -1690,6 +1696,95 @@ it("does not reuse budget evidence from another session identity", async () => {
   expect(nextInfo).toHaveProperty("hidden", false);
   held.release();
   await waitFor(() => expect(nextInfo).toHaveProperty("hidden", true));
+});
+it("keeps startup Info visible while only the budget is being reread", async () => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  const held = deferred();
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  composer.focus();
+  const view = f.budget().view;
+  f.budget.mockImplementation((async () => {
+    await held.gate;
+    return { view };
+  }) as never);
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+  await waitFor(() => expect(info).toHaveProperty("hidden", false));
+  // Retained startup progress and mounted controllers are unaffected.
+  expect(screen.getByText("Waiting for response")).toBeTruthy();
+  held.release();
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  expectStartupPreserved(f, composer);
+});
+it("keeps startup Info visible when a budget reread fails", async () => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  f.budget.mockImplementation((() => {
+    throw new ConnectError("Budget unavailable", Code.Unavailable);
+  }) as never);
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+  await waitFor(() => expect(info).toHaveProperty("hidden", false));
+  await screen.findAllByRole("button", { name: "Retry read" });
+  expect(f.enqueue).not.toHaveBeenCalled();
+});
+it.each([
+  { name: "unspecified state", state: BudgetState.UNSPECIFIED, foreign: false },
+  { name: "unknown state", state: 99 as BudgetState, foreign: false },
+  {
+    name: "another session",
+    state: BudgetState.ALLOW_INCOMPLETE,
+    foreign: true,
+  },
+  {
+    name: "a missing session",
+    state: BudgetState.ALLOW_INCOMPLETE,
+    missing: true,
+  },
+] as {
+  name: string;
+  state: BudgetState;
+  foreign?: boolean;
+  missing?: boolean;
+}[])("keeps startup Info visible for budget evidence with $name", async (c) => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  f.budget.mockImplementation((() => ({
+    view: create(SessionBudgetViewSchema, {
+      ...(c.missing
+        ? {}
+        : {
+            session: c.foreign
+              ? create(ResourceSchema, { ...f.session, id: newRequestId() })
+              : f.session,
+          }),
+      state: c.state,
+    }),
+  })) as never);
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(f.budget).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(info).toHaveProperty("hidden", false);
+  expect(f.enqueue).not.toHaveBeenCalled();
 });
 it.each(["transcript", "queue", "interactions"] as const)(
   "keeps startup Info visible while a %s refresh retains stale complete pages",

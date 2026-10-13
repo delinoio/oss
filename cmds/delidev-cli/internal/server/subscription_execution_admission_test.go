@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +184,79 @@ func TestPaidCreditRegisteredGrantSurvivesExpiryAndExactReplay(t *testing.T) {
 	}
 	_, account := f.record()
 	if account.Subscription.Lease != nil || !account.ConfirmedExhausted {
+		t.Fatal("cleanup failed or cleared included exhaustion")
+	}
+}
+
+// Model a same-instance Worker reattachment that reports a smaller capability set.
+func withdrawManagedCodexCapability(t *testing.T, f *subscriptionFixture) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.paid-admission-capability", nil, func(tx *store.Tx) (any, error) {
+		r, machine, err := activeMachine(tx, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = slices.DeleteFunc(slices.Clone(machine.WorkerCapabilities), func(c domain.WorkerCapability) bool { return c == domain.ManagedCodexSubscriptionsV1 })
+		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func hasStoredExecutionGrant(t *testing.T, f *subscriptionFixture) bool {
+	t.Helper()
+	err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error { _, err := tx.ExecutionGrantForJob(f.job); return err })
+	return err == nil
+}
+
+func TestPaidCreditNewRegistrationRequiresLiveManagedCodexCapability(t *testing.T) {
+	t.Run("withdrawn", func(t *testing.T) {
+		f, _ := newPaidAdmissionFixture(t)
+		withdrawManagedCodexCapability(t, f)
+		if _, err := f.authorityFixture.client.RegisterExecution(context.Background(), subscriptionRequest(f.workerToken, f.register)); connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Fatal("paid registration ignored withdrawn managed Codex capability", err)
+		}
+		if hasStoredExecutionGrant(t, f) {
+			t.Fatal("denied paid registration stored a grant")
+		}
+		if _, account := f.record(); !account.ConfirmedExhausted || *account.Quota[0].Remaining != 0 {
+			t.Fatal("denied registration changed included exhaustion")
+		}
+	})
+	t.Run("retained", func(t *testing.T) {
+		f, _ := newPaidAdmissionFixture(t)
+		if response := f.registerGrant(t); response.Replayed {
+			t.Fatal("first registration was reported as a replay")
+		}
+		if !hasStoredExecutionGrant(t, f) {
+			t.Fatal("successful paid registration stored no grant")
+		}
+	})
+}
+
+func TestPaidCreditRegisteredGrantSurvivesCapabilityWithdrawal(t *testing.T) {
+	f, lease := newPaidAdmissionFixture(t)
+	f.registerGrant(t)
+	withdrawManagedCodexCapability(t, f)
+	expirePaidAdmission(t, f)
+	if replay, err := f.authorityFixture.client.RegisterExecution(context.Background(), subscriptionRequest(f.workerToken, f.register)); err != nil || !replay.Msg.Replayed {
+		t.Fatal("capability withdrawal rejected original registration receipt", err)
+	}
+	duplicate := &pb.RegisterExecutionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: f.register.Mutation.Id, ExpectedRevision: f.register.Mutation.ExpectedRevision}, MachineId: f.register.MachineId, InstanceId: f.register.InstanceId, CredentialDigest: f.register.CredentialDigest}
+	if _, err := f.authorityFixture.client.RegisterExecution(context.Background(), subscriptionRequest(f.workerToken, duplicate)); err != nil {
+		t.Fatal("identical registered binding was treated as new admission after capability withdrawal", err)
+	}
+	digest := sha256.Sum256([]byte("distinct synthetic execution token"))
+	duplicate.CredentialDigest = digest[:]
+	duplicate.Mutation.RequestId = string(domain.NewID())
+	if _, err := f.authorityFixture.client.RegisterExecution(context.Background(), subscriptionRequest(f.workerToken, duplicate)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("capability withdrawal allowed credential substitution", err)
+	}
+	if _, err := f.finish(lease, lease.Bundle, true, false, true); err != nil {
+		t.Fatal("capability withdrawal prevented original confirmed cleanup", err)
+	}
+	if _, account := f.record(); account.Subscription.Lease != nil || !account.ConfirmedExhausted {
 		t.Fatal("cleanup failed or cleared included exhaustion")
 	}
 }
