@@ -655,9 +655,13 @@ consistent chain.
 New session and New Chat additionally withhold the entry, showing the ordinary
 Agent Worker loading status, while the creation preference read is unsettled or a
 retained Agent's exact-ID read, project eligibility read or pending restoration
-has not settled. Once the preference is absent, the retained Agent is ineligible,
-or any of those reads failed, the same validated empty inventory offers the
-entry. A manual Agent choice or edit releases the wait and keeps its authority.
+has not settled. A paused first read (for example while offline) is unsettled
+even though it reports no active fetch; a disabled read is never pending. Once
+the preference is absent, the retained Agent is ineligible, or any of those
+reads failed, the same validated empty inventory offers the entry. A manual
+Agent choice or edit releases the whole wait, including an unsettled creation
+preference read, and keeps its authority: a late preference result never
+restores an Agent over it.
 
 Keep the Agent Worker label above an outlined 40px native non-submit button with
 an inert plus icon, 8px corners, existing selector width, semantic theme colors,
