@@ -258,3 +258,45 @@ it("counts rising activation edges only", () => {
   rerender(<EdgeHarness active />);
   expect(count()).toBe("2");
 });
+
+function stubAnimations(node: Element, running: string[]) {
+  Object.defineProperty(node, "getAnimations", {
+    configurable: true,
+    value: () =>
+      running.map((animationName) => ({ animationName, playState: "running" })),
+  });
+}
+
+it("ignores the stale cancellation queued by an intentional restart", () => {
+  render(<MotionRestartHarness />);
+  expect(entering()).toBe("x4");
+  fireEvent.click(screen.getByRole("button", { name: "Re-enter" }));
+  expect(entering()).toBe("x4");
+  // The reset cancelled the old animation after the new one already started.
+  stubAnimations(surface(), ["entrance-x4"]);
+  dispatch(surface(), "animationcancel", "entrance-x4");
+  expect(entering()).toBe("x4");
+  // The restarted animation still settles on its own end.
+  dispatch(surface(), "animationend", "entrance-x4");
+  expect(entering()).toBeNull();
+});
+
+it("still settles on a genuine cancellation with no live animation", () => {
+  render(<MotionRestartHarness />);
+  stubAnimations(surface(), ["entrance-y2"]);
+  dispatch(surface(), "animationcancel", "entrance-x4");
+  expect(entering()).toBeNull();
+});
+
+function MotionRestartHarness() {
+  const [activation, setActivation] = useState("first");
+  const entrance = useEntranceActivation(activation, true, EntranceMotion.X4);
+  return (
+    <div>
+      <div data-testid="surface" {...entrance} />
+      <button type="button" onClick={() => setActivation("second")}>
+        Re-enter
+      </button>
+    </div>
+  );
+}

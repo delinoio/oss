@@ -57,6 +57,18 @@ export function settleEnclosingEntrances(host: Element | null): void {
       node.dispatchEvent(new Event(ENTRANCE_SETTLE_EVENT));
 }
 
+/** True while `node` has a running CSS animation with this name. */
+function entranceAnimationRunning(node: HTMLElement, name: string): boolean {
+  if (typeof node.getAnimations !== "function") return false;
+  return node
+    .getAnimations()
+    .some(
+      (animation) =>
+        (animation as CSSAnimation).animationName === name &&
+        animation.playState === "running",
+    );
+}
+
 /**
  * Counts the rising edges of `active` (including a mount that starts active).
  * Use the count in an activation key so a retained surface animates once per
@@ -146,11 +158,20 @@ export function useEntranceActivation(
       const finished = (event: Event) => {
         // Descendant spinners and unrelated animations bubble here.
         if (
-          event.target === node &&
-          (event as globalThis.AnimationEvent).animationName ===
+          event.target !== node ||
+          (event as globalThis.AnimationEvent).animationName !==
             entranceAnimationNames[motion]
         )
-          settle();
+          return;
+        // Restarting removes the running animation, which queues an
+        // animationcancel after the new activation has already begun. A live
+        // animation of this name means the event is that stale cancellation.
+        if (
+          event.type === "animationcancel" &&
+          entranceAnimationRunning(node, entranceAnimationNames[motion])
+        )
+          return;
+        settle();
       };
       const settleNow = () => settle();
       node.addEventListener("animationend", finished);
