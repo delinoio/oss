@@ -1,13 +1,22 @@
 import { create } from "@bufbuild/protobuf";
-import { render, screen, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   AccountingUnitKind,
   GetUsageSummaryResponseSchema,
   NativeAccountingMeasureSchema,
+  SubscriptionServiceIdentity,
   UsageAccountingProfile,
 } from "@delinoio/delidev-api-client";
+import { i18n } from "./localization";
 import { NativeAccounting, nativeMeasure } from "./native-accounting";
+
+afterEach(async () => {
+  cleanup();
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+});
 
 it("keeps exact native counts, zero, unavailable and partial estimates distinct", () => {
   const zero = create(NativeAccountingMeasureSchema, {
@@ -144,3 +153,125 @@ it.each([
     expect(screen.queryByRole("region", { name: "OpenCode steps" })).toBeNull();
   },
 );
+
+const apiProviderId = "0d5f1a52-6e2b-4b57-9a47-1f4f7b6d9c11";
+
+function mixedSourceSummary() {
+  const sharedModel = { nativeId: "shared-model" };
+  return create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    nativeAccounting: [
+      { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
+      {
+        totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 3 },
+        groups: [
+          {
+            sessionId: "session-go",
+            accountId: "account-go",
+            providerId: "",
+            subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+            model: sharedModel,
+            totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+          },
+          {
+            sessionId: "session-api",
+            accountId: "account-api",
+            providerId: apiProviderId,
+            subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED,
+            model: sharedModel,
+            totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 2 },
+          },
+        ],
+        models: [
+          {
+            providerId: "",
+            subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+            model: sharedModel,
+            totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+          },
+          {
+            providerId: apiProviderId,
+            subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED,
+            model: sharedModel,
+            totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 2 },
+          },
+        ],
+      },
+    ],
+  });
+}
+
+it.each(["en", "ko"])(
+  "labels OpenCode Go rows in both native tables and keeps API rows distinct (%s)",
+  async (language) => {
+    await act(async () => {
+      await i18n.changeLanguage(language);
+    });
+    const select = vi.fn();
+    render(
+      <NativeAccounting
+        data={mixedSourceSummary()}
+        open={vi.fn()}
+        selectPrice={select}
+      />,
+    );
+    const tables = screen
+      .getAllByRole("table")
+      .filter((table) => within(table).queryAllByText("OpenCode Go").length);
+    // Session/account/model table and by-model table each show the Go source once.
+    expect(tables).toHaveLength(2);
+    for (const table of tables) {
+      expect(within(table).getAllByText("OpenCode Go")).toHaveLength(1);
+      const rows = within(table).getAllByRole("row").slice(1);
+      expect(rows).toHaveLength(2);
+      const goRow = rows.find((row) => within(row).queryByText("OpenCode Go"))!;
+      const apiRow = rows.find((row) => row !== goRow)!;
+      expect(within(apiRow).queryByText("OpenCode Go")).toBeNull();
+      // The API row keeps the Provider label that the Go row never receives.
+      const goSource = within(goRow).getByText("OpenCode Go");
+      const goCell = goSource.closest("td")!;
+      const cellIndex = Array.from(goRow.children).indexOf(goCell);
+      const apiCell = apiRow.children[cellIndex] as HTMLElement;
+      const apiSource = apiCell.querySelector("p");
+      expect(apiSource?.textContent).toBeTruthy();
+      expect(apiSource?.textContent).not.toBe(goSource.textContent);
+      // Selection passes the original identity unchanged.
+      const goButton = goCell.querySelector("button")!;
+      const apiButton = apiCell.querySelector("button")!;
+      select.mockClear();
+      act(() => goButton.click());
+      expect(select).toHaveBeenLastCalledWith({
+        nativeId: "shared-model",
+        providerId: "",
+        subscriptionService: SubscriptionServiceIdentity.OPENCODE_GO,
+      });
+      act(() => apiButton.click());
+      expect(select).toHaveBeenLastCalledWith({
+        nativeId: "shared-model",
+        providerId: apiProviderId,
+        subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED,
+      });
+    }
+  },
+);
+
+it("keeps the generic provider fallback for empty provider rows without a service", () => {
+  const data = create(GetUsageSummaryResponseSchema, {
+    accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1,
+    nativeAccounting: [
+      { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
+      {
+        totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1 },
+        groups: [
+          {
+            sessionId: "session",
+            providerId: "",
+            model: { nativeId: "model" },
+          },
+        ],
+      },
+    ],
+  });
+  render(<NativeAccounting data={data} open={vi.fn()} />);
+  expect(screen.queryByText("OpenCode Go")).toBeNull();
+});
