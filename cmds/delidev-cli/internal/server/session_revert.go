@@ -76,10 +76,13 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 		}
 		input.Version = 4
 		input.Revert = &domain.SessionRevertTarget{MessageID: message, InputID: target.InputID, NativeTurnID: turn, Prompt: queuedSessionInput(queued), ContextRevision: session.ContextRevision}
-		if done.Version == 2 {
-			// Carry the target execution's retained checkpoint identity so the Worker can
-			// resolve its own original selected-skill proof.
-			input.Revert.ExecutionID, input.Revert.CheckpointDigest = target.ExecutionID, done.NativeCheckpointDigest
+		_, machine, err := activeMachine(tx, session.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		if err := freezeRevertTargetProof(input.Revert, target.ExecutionID, session.Execution.ExecutionID, done, machine.WorkerCapabilities); err != nil {
+			s.logger.WarnContext(ctx, "session_revert_target_proof_unavailable", "session_id", sr.ID, "machine_id", session.MachineID, "target_execution_id", target.ExecutionID, "source_execution_id", session.Execution.ExecutionID, "completion_version", done.Version)
+			return nil, err
 		}
 		if input.Validate() != nil {
 			return nil, domain.CompactionUncertain()
@@ -122,4 +125,21 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 	response := connect.NewResponse(&pb.RevertSessionResponse{Job: rpc.Resource(job), RequestId: m.RequestId, Replayed: receipt.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// freezeRevertTargetProof freezes the retained checkpoint reference of the
+// target execution only for a skilled target that an earlier execution accepted,
+// the one case the source checkpoint cannot prove. Every other target keeps the
+// original envelope, which any Worker advertising CodexSessionRevertV1 decodes.
+// A Worker without CodexSessionRevertTargetProofV1 strictly rejects the extra
+// fields, so that case is refused here instead of pausing the session first.
+func freezeRevertTargetProof(revert *domain.SessionRevertTarget, targetExecution, sourceExecution domain.ID, completion domain.ExecutionCompletion, capabilities []domain.WorkerCapability) error {
+	if len(revert.Prompt.Skills) == 0 || targetExecution == sourceExecution {
+		return nil
+	}
+	if completion.Version != 2 || !machineCapabilityContains(capabilities, domain.CodexSessionRevertTargetProofV1) {
+		return domain.Fail(domain.Unsupported, "The original Worker cannot revert to an earlier turn that selected skills.", "Update the original Worker.")
+	}
+	revert.ExecutionID, revert.CheckpointDigest = targetExecution, completion.NativeCheckpointDigest
+	return nil
 }

@@ -438,9 +438,15 @@ queued inputs, pending Fork ownership or missing cleanup. Freeze one actor-bound
 mutation receipt. A replay cannot change its target, prompt or generation.
 
 The frozen target also carries the retained native checkpoint reference of the
-execution that accepted it (`execution_id` and `checkpoint_digest`, both absent
-only for text-only compatibility and for jobs accepted before the reference was
-carried). Selected skills are authenticated by a separate native skill digest
+execution that accepted it (`execution_id` and `checkpoint_digest`) when, and
+only when, the target selected skills and an earlier execution than the source
+accepted it. Both are absent otherwise, including text-only targets, targets of
+the source execution and jobs accepted before the reference was carried, so the
+original envelope stays decodable by an older Worker. The server refuses the
+skilled earlier target with the safe unsupported failure before pausing the
+session unless the original Worker advertises Worker capability
+`CODEX_SESSION_REVERT_TARGET_PROOF_V1`, and lease and dispatch authority require
+it again for a job that carries the reference. Selected skills are authenticated by a separate native skill digest
 that prompt digests do not cover. Before the native claim the Worker resolves
 that digest only from the immutable retained input proof for the exact target
 input id and prompt digest: the source checkpoint when the target belongs to the

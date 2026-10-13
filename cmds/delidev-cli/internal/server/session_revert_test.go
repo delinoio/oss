@@ -60,8 +60,8 @@ func TestRevertPublicReceiptExactTargetHistoryAndContextRevision(t *testing.T) {
 			if domain.Decode(accepted.Msg.Job.DocumentJson, &job) != nil || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Version != 4 || !reflect.DeepEqual(input.Assignment, f.input) || input.Revert.Prompt.Prompt != f.input.Input.Prompt {
 				t.Fatal("Revert replaced original execution or prompt")
 			}
-			if input.Revert.ExecutionID != f.input.ExecutionID || input.Revert.CheckpointDigest == "" {
-				t.Fatal("Revert target did not carry its own retained checkpoint reference")
+			if input.Revert.CarriesProof() || input.Revert.CheckpointDigest != "" {
+				t.Fatal("Revert envelope for a target the source checkpoint proves was extended")
 			}
 			result := domain.SessionCompactionResult{Version: 4, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{Revert: true, ContextRevision: 1, JobID: domain.ID(accepted.Msg.Job.Id), ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, CheckpointDigest: strings.Repeat("a", 64), NativeDigest: strings.Repeat("b", 64)}, Revert: &domain.SessionRevertResult{Target: *input.Revert, NativeThreadID: input.Completion.NativeThreadID, RetainedTurnIDs: []domain.NativeIdentity{}, HistoryDigest: strings.Repeat("c", 64), ContextRevision: 1}}
 			raw, _ := json.Marshal(result)
@@ -412,5 +412,56 @@ func TestRevertPreSendFailureReleasesOnlyExactOriginalContextJob(t *testing.T) {
 				t.Fatal("immutable prior message changed", e)
 			}
 		})
+	}
+}
+
+func TestFreezeRevertTargetProofOnlyForSkilledEarlierExecution(t *testing.T) {
+	earlier, source := domain.NewID(), domain.NewID()
+	digest := strings.Repeat("d", 64)
+	skilled := domain.SessionInput{Prompt: "p", Mode: domain.ExecuteMode, Skills: []domain.SkillBinding{{}}}
+	textOnly := domain.SessionInput{Prompt: "p", Mode: domain.ExecuteMode}
+	proof := []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}
+	legacy := []domain.WorkerCapability{domain.CodexSessionRevertV1}
+	completion := domain.ExecutionCompletion{Version: 2, NativeCheckpointDigest: digest}
+	for _, tc := range []struct {
+		name         string
+		prompt       domain.SessionInput
+		target       domain.ID
+		completion   domain.ExecutionCompletion
+		capabilities []domain.WorkerCapability
+		frozen, deny bool
+	}{
+		{"text-only-earlier-legacy-worker", textOnly, earlier, completion, legacy, false, false},
+		{"skilled-source-execution-legacy-worker", skilled, source, completion, legacy, false, false},
+		{"skilled-earlier-proof-worker", skilled, earlier, completion, proof, true, false},
+		{"skilled-earlier-legacy-worker", skilled, earlier, completion, legacy, false, true},
+		{"skilled-earlier-legacy-completion", skilled, earlier, domain.ExecutionCompletion{Version: 1}, proof, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			revert := &domain.SessionRevertTarget{Prompt: tc.prompt}
+			err := freezeRevertTargetProof(revert, tc.target, source, tc.completion, tc.capabilities)
+			if (err != nil) != tc.deny || revert.CarriesProof() != tc.frozen || tc.frozen && (revert.ExecutionID != earlier || revert.CheckpointDigest != digest) || !tc.frozen && revert.CheckpointDigest != "" {
+				t.Fatal("unexpected frozen target proof", err, revert.ExecutionID, revert.CheckpointDigest)
+			}
+			if tc.deny && domain.SafeError(err).Code != domain.Unsupported {
+				t.Fatal("missing capability was not reported as unsupported", err)
+			}
+		})
+	}
+}
+
+func TestCompactionLeaseRequiresProofCapabilityOnlyForProofCarryingRevert(t *testing.T) {
+	plain := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{}}
+	proof := domain.SessionCompactionInput{Version: 4, Revert: &domain.SessionRevertTarget{ExecutionID: domain.NewID(), CheckpointDigest: strings.Repeat("e", 64)}}
+	legacy := []domain.WorkerCapability{domain.CodexSessionRevertV1}
+	extended := []domain.WorkerCapability{domain.CodexSessionRevertV1, domain.CodexSessionRevertTargetProofV1}
+	if !compactionLeaseCapabilities(legacy, plain) || !compactionLeaseCapabilities(extended, plain) {
+		t.Fatal("original Revert envelope needs only the Revert capability")
+	}
+	if compactionLeaseCapabilities(legacy, proof) || !compactionLeaseCapabilities(extended, proof) {
+		t.Fatal("extended Revert envelope must require the proof capability")
+	}
+	if compactionLeaseCapabilities([]domain.WorkerCapability{domain.CodexSessionRevertTargetProofV1}, proof) {
+		t.Fatal("proof capability alone authorized Revert")
 	}
 }
