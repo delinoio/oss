@@ -487,18 +487,26 @@ function NativeSessionBrowser({
       );
       // Pages are keyed by their request token, so re-processing the same
       // settled page is idempotent. The first page has the empty token.
-      const next = profiles.data.nextPageToken;
-      profileWalk.current.set(profilePage, { matches: matching, next });
-      if (matching.length > 1)
+      profileWalk.current.set(profilePage, {
+        matches: matching,
+        next: profiles.data.nextPageToken,
+      });
+      const walked = [...profileWalk.current.values()];
+      const found = walked.flatMap((page) => page.matches);
+      if (found.length > 1)
         throw new Error("Browser profile proof is unavailable.");
-      if (matching.length) setProfileId(browserProfile(matching[0], accountId));
-      else if (next) {
-        // The walk is bounded to 64 pages, so a token returned by page 64 or
-        // a repeated token is invalid proof.
+      const next = profiles.data.nextPageToken;
+      if (next) {
+        // A found profile stays a candidate: a later page could still hold a
+        // second matching profile, so only the terminal page admits it. The
+        // walk is bounded to 64 pages, so a token returned by page 64 or a
+        // repeated token is invalid proof.
         if (profileWalk.current.has(next) || profileWalk.current.size >= 64)
           throw new Error("Browser profile proof is unavailable.");
         setProof(undefined);
         setProfilePage(next);
+      } else if (found.length) {
+        setProfileId(browserProfile(found[0], accountId));
       } else {
         // This account has no retained profile, so no page descriptor of an
         // earlier account's profile can remain in the workspace.

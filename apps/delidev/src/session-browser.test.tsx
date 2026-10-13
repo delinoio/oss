@@ -1434,3 +1434,58 @@ it("accepts a terminal 64th profile page as confirmed absence", async () => {
   });
   expect(f.list).toHaveBeenCalledTimes(64);
 }, 15000);
+
+const siblingProfile = (f: Fixture) =>
+  create(BrowserProfileSchema, {
+    id: newRequestId(),
+    revision: 1n,
+    serverId: newRequestId(),
+    deviceId: newRequestId(),
+    accountId: f.accountId,
+    state: BrowserProfileState.ACTIVE,
+  });
+
+it("keeps a found profile a candidate until the terminal page confirms it is unique", async () => {
+  const f = fixture({ pages: 1 });
+  const second = deferred<{ profiles: unknown[]; nextPageToken: string }>();
+  setList(f, async ({ pageToken }) =>
+    pageToken
+      ? second.promise
+      : { profiles: [f.profile], nextPageToken: "more" },
+  );
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/candidate");
+  await waitFor(() => expect(f.list).toHaveBeenCalledTimes(2));
+  await settle();
+  // The candidate alone never admits Create or starts inventory reads.
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(pageCalls("create")).toHaveLength(0);
+  expect(native).not.toHaveBeenCalled();
+  second.resolve({ profiles: [], nextPageToken: "" });
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  fireEvent.click(openButton(dialog));
+  await waitFor(() => expect(tabNames()).toHaveLength(3));
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(1);
+});
+
+it("fails closed when a later page holds a second matching profile", async () => {
+  const f = fixture({ pages: 1 });
+  setList(f, async ({ pageToken }) =>
+    pageToken
+      ? { profiles: [siblingProfile(f)], nextPageToken: "" }
+      : { profiles: [f.profile], nextPageToken: "more" },
+  );
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/duplicate");
+  await within(dialog).findByRole("button", { name: "Retry profile read" });
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(pageCalls("create")).toHaveLength(0);
+  expect(native).not.toHaveBeenCalled();
+});
