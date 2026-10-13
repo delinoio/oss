@@ -212,7 +212,7 @@ export function useSessionRevert({
     false,
     (request) => {
       const value = retained.read();
-      if (value?.pending?.action !== request.mutation?.requestId) return;
+      if (!value || value.pending?.action !== request.mutation?.requestId) return;
       // Release only the matching guard. Keep a prior restored identity or
       // replacement, and free the registry slot when nothing meaningful stays.
       const { pending: _released, ...rest } = value;
