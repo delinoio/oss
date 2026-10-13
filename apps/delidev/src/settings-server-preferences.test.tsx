@@ -1363,8 +1363,10 @@ afterEach(async () => {
 it.each([
   {
     variant: "unsupported schema",
-    english: "Unsupported project defaults schema. Policy values are unavailable.",
-    korean: "지원하지 않는 프로젝트 기본값 스키마입니다. 정책 값을 확인할 수 없습니다.",
+    english:
+      "Unsupported project defaults schema. Policy values are unavailable.",
+    korean:
+      "지원하지 않는 프로젝트 기본값 스키마입니다. 정책 값을 확인할 수 없습니다.",
   },
   {
     variant: "unreadable values",
