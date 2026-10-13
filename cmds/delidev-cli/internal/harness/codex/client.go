@@ -341,17 +341,35 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 // original tree may retire the proof captured by this startup, and a failed join
 // never infers retirement success. A pre-capture failure holds no proof and
 // keeps release-only cleanup. Both cleanup failures stay recovery-required and
-// are joined with the original startup error.
+// are joined with the original startup error; a retirement failure after a
+// successful join is additionally marked so callers can still run independent
+// authentication cleanup.
 func finishFailedStartup(version string, phase domain.CodexPhase, original, joinErr error, helpers *executionHelpers, home string, owner domain.ID, native process.Process) error {
 	if joinErr != nil {
 		return domain.CodexRecoveryFailure(version, phase, original, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
 	}
 	if helpers != nil && helpers.hasCapturedProof() {
 		if err := helpers.retire(home, owner, native); err != nil {
-			return domain.CodexRecoveryFailure(version, phase, original, err)
+			return &joinedHelperRetirementFailure{domain.CodexRecoveryFailure(version, phase, original, err)}
 		}
 	}
 	return original
+}
+
+// joinedHelperRetirementFailure marks a recovery-required failed Open whose
+// original native tree was already joined and whose only unconfirmed cleanup is
+// helper retirement. It keeps the wrapped recovery-required diagnostic intact.
+type joinedHelperRetirementFailure struct{ error }
+
+func (e *joinedHelperRetirementFailure) Unwrap() error { return e.error }
+
+// NativeJoinedHelperRetirementFailed reports whether a failed Open joined the
+// original native tree but could not retire the captured execution helpers.
+// The error stays recovery-required so the caller retains its credential lease,
+// while the joined tree still authorizes independent authentication cleanup.
+func NativeJoinedHelperRetirementFailed(err error) bool {
+	var joined *joinedHelperRetirementFailure
+	return errors.As(err, &joined)
 }
 func handshakeError(wire *nativewire.Connection, err error) error {
 	if observed := wire.Err(); observed != nil && observed.Code == domain.Unsupported {

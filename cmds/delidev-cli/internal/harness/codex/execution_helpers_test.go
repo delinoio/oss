@@ -373,6 +373,9 @@ func TestFinishFailedStartupGatesRetirementOnJoinedCapturedProof(t *testing.T) {
 		if !aliasesRemain(directory) || h.closed || strings.Contains(logs.String(), `"stage":"retirement"`) {
 			t.Fatal("failed join attempted retirement")
 		}
+		if NativeJoinedHelperRetirementFailed(err) {
+			t.Fatal("failed join was marked as a joined native tree", err)
+		}
 		h.releaseUnlessRetired()
 		if !h.closed || h.result == nil {
 			t.Fatal("release-only cleanup did not record an unconfirmed result")
@@ -390,6 +393,9 @@ func TestFinishFailedStartupGatesRetirementOnJoinedCapturedProof(t *testing.T) {
 		}
 		if !errors.Is(err, error(original)) {
 			t.Fatal("original startup error is no longer retained", err)
+		}
+		if !NativeJoinedHelperRetirementFailed(err) {
+			t.Fatal("joined helper retirement failure lost its joined marker", err)
 		}
 		if !aliasesRemain(directory) {
 			t.Fatal("failed unlink removed aliases")

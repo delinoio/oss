@@ -305,7 +305,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	var managed *managedSubscriptionLease
 	var latest []byte
 	var closeRPC func()
-	cleanup, captured, unused, preNative, finished := false, false, false, false, false
+	cleanup, captured, unused, preNative, finished, helperRetained := false, false, false, false, false, false
 	defer func() {
 		if closeRPC != nil {
 			defer closeRPC()
@@ -318,7 +318,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return
 		}
 		if preNative {
-			cleanup = cleanupUnusedExecutionAuthentication(nativeConfig.Home, managed.response.Bundle) == nil
+			// A joined tree with failed helper retirement still authorizes the
+			// independent authentication cleanup but keeps the lease retained.
+			cleanup, _ = cleanupPreNativeAuthentication(nativeConfig.Home, managed.response.Bundle, helperRetained)
 			if cleanup {
 				latest = bytes.Clone(managed.response.Bundle)
 				unused = true
@@ -363,7 +365,8 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	preNative = false
 	client, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
-		preNative = domain.SafeError(err).Code != domain.RecoveryRequired
+		helperRetained = codex.NativeJoinedHelperRetirementFailed(err)
+		preNative = helperRetained || domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, executionCheckpointUncertain()
 	}
 	bound, forkErr := client.ForkThread(ctx, input.NativeRequestID, source, settings)
