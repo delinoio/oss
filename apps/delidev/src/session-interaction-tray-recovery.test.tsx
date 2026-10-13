@@ -223,6 +223,12 @@ it("keeps the requests disclosure and loading status mounted while an explicit R
     await flush();
     expect(region.querySelector(".requests")).toBe(disclosure);
     expect(within(disclosure).getByText(/^Loading .*…$/)).not.toBeNull();
+    // The recovery control stays mounted (the same element) but disabled while
+    // the retry is pending, so it keeps its place and focus target.
+    expect(within(disclosure).getByRole("button", { name: "Retry" })).toBe(
+      retry,
+    );
+    expect(retry).toHaveProperty("disabled", true);
   }
   await act(async () => control.release());
   // Empty success after recovery hides the disclosure again.
@@ -278,6 +284,10 @@ it("keeps the surface through a boundary Reload from a failed empty list until i
     await flush();
     expect(region.querySelector(".requests")).toBe(disclosure);
     expect(within(disclosure).getByText(/^Loading .*…$/)).not.toBeNull();
+    expect(
+      within(disclosure).getByRole("button", { name: "Reload list" }),
+    ).toBe(reload);
+    expect(reload).toHaveProperty("disabled", true);
   }
   await act(async () => control.release());
   await waitFor(() => expect(region.querySelector(".requests")).toBeNull());
@@ -346,9 +356,7 @@ it("keeps the requests disclosure reachable when a pending Retry is suspended by
     expect(returned.querySelector(".requests")).not.toBeNull();
   }
   await act(async () => control.release());
-  await waitFor(() =>
-    expect(returned.querySelector(".requests")).toBeNull(),
-  );
+  await waitFor(() => expect(returned.querySelector(".requests")).toBeNull());
   expect(region).toBeDefined();
 }, 30_000);
 

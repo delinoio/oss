@@ -1752,9 +1752,11 @@ export function SessionView({
   // background Refresh never sets this flag.
   const requestsFailed = useRef(false);
   const requestsFailedAt = useRef<number | undefined>(undefined);
+  const requestsFailure = useRef(interactions.error);
   if (interactions.error) {
     requestsFailed.current = true;
     requestsFailedAt.current = interactions.settledReads;
+    requestsFailure.current = interactions.error;
   } else if (
     requestsFailed.current &&
     interactions.settledReads !== requestsFailedAt.current &&
@@ -1762,6 +1764,17 @@ export function SessionView({
     !interactions.loading
   )
     requestsFailed.current = false;
+  // Retry and Reload clear the error as soon as they start, which would unmount
+  // the recovery control and its keyboard focus. While the latched read is in
+  // flight, keep presenting the prior failure so the control stays mounted
+  // (disabled by the pending read) until the read settles.
+  const requestsRecovery: typeof interactions =
+    requestsFailed.current &&
+    !interactions.error &&
+    interactions.loading &&
+    requestsFailure.current
+      ? { ...interactions, error: requestsFailure.current }
+      : interactions;
   const confirmedEmptyRequests = completeEmptyInteractionTray({
     loaded: Boolean(interactions.data),
     loading: Boolean(
@@ -2799,7 +2812,7 @@ export function SessionView({
                               questionReceipt(requestId, projection),
                           )}
                           <ScrollContinuation
-                            query={interactions}
+                            query={requestsRecovery}
                             root={requestsRoot}
                             active={conversationActive && requestsExpanded}
                             label={copy("session.requestPages_d06a30")}
