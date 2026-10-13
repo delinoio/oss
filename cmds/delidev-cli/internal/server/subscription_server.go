@@ -212,6 +212,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 		type candidate struct {
 			account, operation domain.ID
 			cleanup            bool
+			claude             bool
 		}
 		var candidates []candidate
 		err := s.Store.Read(child, func(tx *store.Tx) error {
@@ -224,7 +225,13 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 				if err != nil {
 					return err
 				}
-				if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
+				if managedClaudeCandidate(a) && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() {
+					candidates = append(candidates, candidate{account: r.ID, claude: true})
+				} else if managedClaudeNeedsRecovery(a) && !cleanupAttempted[a.Subscription.ServerOperation.ID] {
+					candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true, claude: true})
+				} else if a.ManagedClaudeAccount() {
+					continue
+				} else if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
 					candidates = append(candidates, candidate{account: r.ID})
 				} else if failedServerLoginNeedsCleanup(a) && !cleanupAttempted[a.Subscription.ServerOperation.ID] {
 					candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true})
@@ -248,7 +255,15 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 			workers.Add(1)
 			go func() {
 				defer workers.Done()
-				if next.cleanup {
+				if next.claude {
+					if next.cleanup {
+						if err := s.recoverManagedClaude(child, next.account, next.operation); err != nil && child.Err() == nil {
+							s.logger.WarnContext(child, "claude_managed_cleanup_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
+						}
+					} else {
+						s.runManagedClaude(child, next.account)
+					}
+				} else if next.cleanup {
 					if err := s.recoverFailedServerLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
 						s.logger.WarnContext(child, "server_subscription_cleanup_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
 					}

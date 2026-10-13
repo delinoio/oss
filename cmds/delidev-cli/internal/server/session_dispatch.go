@@ -247,7 +247,11 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		capability := domain.ManagedCodexSubscriptionsV1
 		if c.Harness == domain.ClaudeCode {
 			capability = domain.NativeClaudeSubscriptionsV1
-			if account.Subscription.OwnerMachineID != input.MachineID || account.Subscription.NativeProfileID == "" {
+			if account.Subscription.ManagedClaude() {
+				// A server-owned token account is not bound to one Runner. Only the
+				// independently negotiated adapter capability makes a Worker eligible.
+				capability = domain.ManagedClaudeExecutionV1
+			} else if account.Subscription.OwnerMachineID != input.MachineID || account.Subscription.NativeProfileID == "" {
 				return empty, domain.Fail(domain.PermissionDenied, "This Claude account belongs to another Runner Device.", "Select the Runner Device that owns its native login before sending input.")
 			}
 		}
