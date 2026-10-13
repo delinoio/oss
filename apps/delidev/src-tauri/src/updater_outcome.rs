@@ -116,12 +116,23 @@ impl OutcomeStore {
     fn check_dir(&self, create: bool) -> Result<bool> {
         let parent = self.dir.parent().ok_or(NativeFailure::InvalidEvidence)?;
         // The Go-owned scope must already exist; the store never creates it.
-        if !parent.is_dir() {
-            return if create {
-                Err(NativeFailure::StorageUnavailable)
-            } else {
-                Ok(false)
-            };
+        // Validate it and every ancestor without following links before any
+        // creation, so a linked scope cannot redirect the store elsewhere.
+        match fs::symlink_metadata(parent) {
+            Ok(m) if m.file_type().is_symlink() => return Err(NativeFailure::InvalidEvidence),
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => return Err(NativeFailure::InvalidEvidence),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return if create {
+                    Err(NativeFailure::StorageUnavailable)
+                } else {
+                    Ok(false)
+                };
+            }
+            Err(_) => return Err(NativeFailure::StorageUnavailable),
+        }
+        if !no_symlink_ancestors(parent) {
+            return Err(NativeFailure::InvalidEvidence);
         }
         let mut created = false;
         match fs::symlink_metadata(&self.dir) {
@@ -397,6 +408,45 @@ mod tests {
             Err(NativeFailure::StorageUnavailable)
         ));
         assert!(!root.join("desktop-updates").exists());
+    }
+
+    #[test]
+    fn linked_scope_is_refused_before_creating_anything_outside_the_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let external = root.join("external");
+        fs::create_dir(&external).unwrap();
+        let connector = root.join("connector");
+        fs::create_dir(&connector).unwrap();
+        std::os::unix::fs::symlink(&external, connector.join("desktop-updates")).unwrap();
+        let store = OutcomeStore::new(&connector);
+        assert!(matches!(
+            store.persist(&record(Phase::Failed)),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+        assert!(matches!(store.scan(), Err(NativeFailure::InvalidEvidence)));
+        assert_eq!(fs::read_dir(&external).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn linked_ancestor_of_the_scope_is_refused_before_creation() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let external = root.join("external");
+        fs::create_dir_all(external.join("desktop-updates")).unwrap();
+        let linked = root.join("linked-root");
+        std::os::unix::fs::symlink(&external, &linked).unwrap();
+        let store = OutcomeStore::new(&linked);
+        assert!(matches!(
+            store.persist(&record(Phase::Failed)),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+        assert_eq!(
+            fs::read_dir(external.join("desktop-updates"))
+                .unwrap()
+                .count(),
+            0
+        );
     }
 
     #[test]

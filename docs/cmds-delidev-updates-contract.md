@@ -46,7 +46,8 @@ journal in the original connector root scope. The record is a closed `outcome`
 kind with the phase (`installed`, `failed` or `uncertain` only), server ID,
 operation ID, revision, native generation and optional saved-connection ID. The
 directory is owner-only and never repaired or created outside an existing
-`desktop-updates` scope; files are written owner-only through a fsynced
+`desktop-updates` scope, which is validated (a real directory without symlink
+ancestors) before the store directory is created; files are written owner-only through a fsynced
 temporary file and atomic rename, bounded to 4 KiB, and an existing record for
 the same operation is never replaced with different content. The record is
 retired only after the offline `native-outcome` response echoes the recorded
