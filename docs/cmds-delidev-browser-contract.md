@@ -249,6 +249,25 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+Raw child closure is child-only. The raw child's life-span handler owns
+`do_close` for non-popup children: on macOS and Windows it returns 1 and completes
+destruction of exactly that child's own native host on the UI loop (removing its
+`NSView` from its superview, or `DestroyWindow` on its `HWND`), so CEF never
+sends its default parent-window close (`performClose:` / `WM_CLOSE`) to the
+containing product window and `on_before_close` still fires once per child. On
+Linux `do_close` keeps CEF's default (0), and popups keep the default. The
+handler binds the exact Browser identifier at creation; destruction is claimed
+at most once and only for that identifier, so duplicate or late close callbacks
+cannot destroy a replacement child or product views, and `child_closed` keeps
+its generation filter. New Tab, selected-tab replacement, tab close and panel
+disposal therefore never hide, close or minimize the product window; explicit
+product-window close still hides to the tray through `CloseRequested`, and Quit
+still joins. Close diagnostics are structured `browser_view` tracing events
+(`close_requested`, `destroyed`, `destroy_failed`) carrying only the platform,
+popup flag, numeric browser identifier and outcome, never URLs, credentials or
+page content. Fixture and build results prove only the disposition, identity and
+idempotency rules; macOS, Windows and Linux native acceptance is recorded
+separately.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -511,3 +530,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## Resident desktop runtime protection
 
 All protected Local and Saved browser profiles reject the desktop main process's current private loopback port and its loopback aliases, including WebSocket aliases. Adding this port preserves each profile's separate selected product origin and loopback-port exclusion. Legacy ordinary CLI and frontend development ports remain protected. Browser cleanup reads share the resident version-2 CLI; their bounded final discovery precedes host shutdown, and post-shutdown acknowledgments retain durable intents without spawning another CLI. See the [desktop lifetime boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).
+
+## External link browser destinations
+
+The protected account/session browser is unrelated to the user's installed browsers. Opening an ordinary external HTTP(S) link in an installed browser (message and terminal links, Provider guidance, App information and GitHub forms) is a separate device-local native preference with independent General and Local destinations. It never uses, reads or modifies protected-profile paths, CEF request contexts or per-account cleanup obligations, and the Browser settings category does not select the embedded protected browser. External webview navigation and popups remain denied; the renderer only asks the native host to open a validated URL. OAuth and subscription authorization links keep the system default browser. The owning contract is [Browser destinations for external links](apps-delidev-desktop-contract.md#browser-destinations-for-external-links); installed-browser discovery and launch acceptance on macOS, Windows and Linux is recorded separately from fixtures.

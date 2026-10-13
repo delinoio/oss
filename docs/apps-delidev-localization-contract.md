@@ -314,3 +314,7 @@ these cards. Only secondary codes, versions and opaque references are disclosed.
 The closed quota pair selects localized copy; translated or raw message text
 cannot establish the cause. Locale changes retain the original Session,
 composer, Info and operation identities without replay or focus movement.
+
+## Browser destination copy
+
+The `browser-settings` and `external-link` catalogs localize the Settings > Browser category and link-opening failures in English and Korean. The selector labels are `General URL destination` / `일반 URL 열기 대상` and `Local URL destination` / `로컬 URL 열기 대상`; the default option is `System default browser` / `시스템 기본 브라우저`. Native browser identities and display names come from the operating system and are shown unchanged; the unavailable-saved-browser suffix is localized. Selector option values are structural identities, never copy, and catalog text is never used to match or select a browser. Failure copy for a missing browser, a failed launch, unreadable browser settings, an unsupported address and unclassified failures points at Settings > Browser and is shared by message links, terminal links, Provider guidance, App information and GitHub opening. Success copy for those openers says the link was sent to the user's browser rather than the default browser. Locale changes re-render without replaying a pending launch.

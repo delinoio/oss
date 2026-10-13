@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -357,5 +359,121 @@ func TestWorkspaceRejectsRepositoryIdentityDrift(t *testing.T) {
 	}
 	if result.State == domain.PRWorkspaceComplete {
 		t.Fatal("replaced numeric repository acquired complete context")
+	}
+}
+
+func chainRefs(count int) map[int][2]string {
+	refs := map[int][2]string{}
+	for n := 1; n <= count; n++ {
+		refs[n] = [2]string{"s" + strconv.Itoa(n-1), "s" + strconv.Itoa(n)}
+	}
+	return refs
+}
+
+// The provider read budget is cumulative: reads issued by an interrupted attempt
+// stay charged, and an exhausted budget admits no further attempt.
+func TestWorkspaceBudgetIsCumulativeAcrossInterruptedAttempts(t *testing.T) {
+	c := workspaceFixture(t, chainRefs(30), nil)
+	base := c.http.Transport
+	var mu sync.Mutex
+	calls := 0
+	interrupt := func() {}
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		mu.Lock()
+		calls++
+		n := calls
+		cancel := interrupt
+		mu.Unlock()
+		if n == 20 {
+			cancel()
+		}
+		return base.RoundTrip(r)
+	})
+	budget := NewWorkspaceBudget()
+	first, cancel := context.WithCancel(context.Background())
+	mu.Lock()
+	interrupt = cancel
+	mu.Unlock()
+	_, e := c.WorkspaceWithBudget(first, []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget)
+	if e == nil {
+		t.Fatal("interrupted attempt returned an observation")
+	}
+	afterFirst := budget.Reads()
+	if afterFirst < 19 || afterFirst > 22 {
+		t.Fatal("interrupted attempt reads were not retained", afterFirst)
+	}
+	value, e := c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget)
+	mu.Lock()
+	total := calls
+	mu.Unlock()
+	if e != nil || value.State == domain.PRWorkspaceComplete || total > 40 || budget.Reads() > 40 {
+		t.Fatal("resumed attempt exceeded the cumulative page budget", total, budget.Reads(), e, value.State)
+	}
+	if !contains(value.Reasons, "read_limit") {
+		t.Fatal("exhaustion was not reported", value.Reasons)
+	}
+	before := total
+	_, e = c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget)
+	mu.Lock()
+	after := calls
+	mu.Unlock()
+	if domain.SafeError(e).Code != domain.ResourceExhausted || after != before {
+		t.Fatal("exhausted budget admitted another attempt", e, before, after)
+	}
+	if budget.Attempts() != 2 {
+		t.Fatal("exhausted attempt was counted", budget.Attempts())
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+// The adapter deadline is frozen when the first attempt begins; later attempts
+// share it instead of receiving a new 30-second window.
+func TestWorkspaceDeadlineIsFrozenAtFirstAttempt(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, nil)
+	base := c.http.Transport
+	var mu sync.Mutex
+	var deadlines []time.Time
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if deadline, ok := r.Context().Deadline(); ok {
+			mu.Lock()
+			deadlines = append(deadlines, deadline)
+			mu.Unlock()
+		}
+		return base.RoundTrip(r)
+	})
+	started := time.Now()
+	budget := NewWorkspaceBudget()
+	for range 2 {
+		if _, e := c.WorkspaceWithBudget(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"}, budget); e != nil {
+			t.Fatal(e)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(deadlines) < 2 {
+		t.Fatal("no deadline observed")
+	}
+	frozen := budget.deadline
+	if frozen.Before(started.Add(workspaceDeadline)) || frozen.After(started.Add(workspaceDeadline+5*time.Second)) {
+		t.Fatal("deadline is not 30 seconds from the first attempt", frozen.Sub(started))
+	}
+	// Later attempts start after the first one and must still end by the frozen
+	// deadline; a fresh window would end later.
+	for _, deadline := range deadlines {
+		if deadline.After(frozen) {
+			t.Fatal("an attempt outlived the frozen deadline", deadline.Sub(frozen))
+		}
+	}
+	if budget.Attempts() != 2 {
+		t.Fatal("attempts were not counted", budget.Attempts())
 	}
 }

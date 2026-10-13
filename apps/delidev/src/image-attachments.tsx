@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useAppearancePreferences } from "./appearance";
+import { useAppearancePreferences, useAppearanceReady } from "./appearance";
 import {
   useEffect,
   useLayoutEffect,
@@ -223,7 +223,12 @@ function DraftImagePresentation({
   number: number;
 }) {
   const preferences = useAppearancePreferences();
+  const ready = useAppearanceReady();
   const [revealed, setRevealed] = useState(false);
+  // Until the saved preference is known, show neither the image nor a reveal
+  // control; an explicit reveal always wins.
+  if (!ready && !revealed)
+    return <span className="image-draft-viewport" aria-busy="true" />;
   return preferences.inline_images || revealed ? (
     <span className="image-draft-viewport">
       <img src={url} alt={copy("image-input.image", { number })} />
@@ -419,8 +424,12 @@ function RetainedImage({
   exportable?: boolean;
 }) {
   const preferences = useAppearancePreferences();
+  const ready = useAppearanceReady();
   const [revealed, setRevealed] = useState(false);
-  const visible = preferences.inline_images || revealed;
+  // No authenticated byte request starts until the saved preference is known,
+  // unless the user explicitly reveals the image first.
+  const pending = !ready && !revealed;
+  const visible = revealed || (ready && preferences.inline_images);
   const transport = useTransport();
   const element = useRef<HTMLLIElement>(null);
   const [nearViewport, setNearViewport] = useState(
@@ -542,7 +551,9 @@ function RetainedImage({
           </a>
         )
       ) : null}
-      {!visible ? (
+      {pending ? (
+        <p role="status">{copy("image-input.loading")}</p>
+      ) : !visible ? (
         <button
           type="button"
           disabled={!active}

@@ -182,6 +182,27 @@ impl Preferences {
             })
     }
 }
+/// Required (foreground, background, minimum ratio) rows for every stored
+/// color map. Keep this list aligned with `colorContrastRequirements` in
+/// `src/appearance-preferences.ts`.
+const CONTRAST_REQUIREMENTS: &[(&str, &str, f64)] = &[
+    ("text", "surface", 4.5),
+    ("text-secondary", "surface", 4.5),
+    ("muted", "surface", 4.5),
+    ("text-subtle", "surface", 4.5),
+    ("on-accent", "accent", 4.5),
+    ("on-accent", "accent-hover", 4.5),
+    ("selected-text", "selected-background", 4.5),
+    ("warning-text", "warning-background", 4.5),
+    ("danger-text", "danger-background", 4.5),
+    ("on-inverse", "inverse-surface", 4.5),
+    ("link", "surface", 4.5),
+    ("success-text", "surface-subtle", 4.5),
+    ("conversation-text", "warning-background", 4.5),
+    ("control-border", "surface", 3.0),
+    ("focus", "surface", 3.0),
+    ("focus", "surface-selected", 3.0),
+];
 fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
     const TOKENS: &[&str] = &[
         "background",
@@ -239,21 +260,9 @@ fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
         let y = luminance(&value[b]);
         (x.max(y) + 0.05) / (x.min(y) + 0.05)
     };
-    [
-        ("text", "surface"),
-        ("text-secondary", "surface"),
-        ("muted", "surface"),
-        ("text-subtle", "surface"),
-        ("on-accent", "accent"),
-        ("on-accent", "accent-hover"),
-        ("selected-text", "selected-background"),
-        ("warning-text", "warning-background"),
-        ("danger-text", "danger-background"),
-        ("on-inverse", "inverse-surface"),
-    ]
-    .into_iter()
-    .all(|(a, b)| contrast(a, b) >= 4.5)
-        && contrast("control-border", "surface") >= 3.0
+    CONTRAST_REQUIREMENTS
+        .iter()
+        .all(|(foreground, background, minimum)| contrast(foreground, background) >= *minimum)
 }
 fn luminance(color: &str) -> f64 {
     let channel = |start: usize| {
@@ -325,6 +334,29 @@ impl AppearanceStore {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone()
+    }
+
+    /// Retained presentation for auxiliary views, available only after the
+    /// native startup lifecycle or a product read inspected the document.
+    /// A store that was never inspected still holds placeholder defaults, so
+    /// it must not be projected as a successful saved presentation.
+    pub fn inspected(&self) -> Option<AppearanceSnapshot> {
+        let snapshot = self.current();
+        (snapshot.revision != 0).then_some(snapshot)
+    }
+
+    /// Inspect the persisted document once in the native startup lifecycle,
+    /// before any window or tray surface can read the retained snapshot. The
+    /// outcome keeps the ordinary `read` semantics, so the first product read
+    /// of an unchanged document keeps this revision.
+    pub fn initialize(&self) -> AppearanceSnapshot {
+        let snapshot = self.read();
+        tracing::info!(
+            operation = "appearance_initialize",
+            revision = snapshot.revision,
+            problem = ?snapshot.problem,
+        );
+        snapshot
     }
 
     pub fn read(&self) -> AppearanceSnapshot {
@@ -642,6 +674,14 @@ mod tests {
             assert_eq!(colors.dark.len(), 38);
             assert!(valid_colors(&colors.light), "{id} light");
             assert!(valid_colors(&colors.dark), "{id} dark");
+            for (mode, map) in [("light", &colors.light), ("dark", &colors.dark)] {
+                for (foreground, background, minimum) in CONTRAST_REQUIREMENTS {
+                    assert!(
+                        contrast_ratio(map, foreground, background) >= *minimum,
+                        "{id} {mode} {foreground} / {background}"
+                    );
+                }
+            }
             let preferences = Preferences {
                 light_palette: id.clone(),
                 dark_palette: id.clone(),
@@ -668,6 +708,157 @@ mod tests {
         assert_eq!(projected.light, custom.light);
         assert_eq!(projected.dark, custom.dark);
         assert_eq!(preferences.custom_themes[0], custom);
+    }
+
+    fn contrast_ratio(
+        colors: &std::collections::BTreeMap<String, String>,
+        a: &str,
+        b: &str,
+    ) -> f64 {
+        let x = luminance(&colors[a]);
+        let y = luminance(&colors[b]);
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    fn default_maps() -> [(&'static str, std::collections::BTreeMap<String, String>); 2] {
+        let bundled: std::collections::BTreeMap<String, PaletteColors> =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let default = &bundled["default"];
+        [
+            ("light", default.light.clone()),
+            ("dark", default.dark.clone()),
+        ]
+    }
+
+    const ADDED_CONTRAST_ROWS: [(&str, &str, f64); 5] = [
+        ("link", "surface", 4.5),
+        ("success-text", "surface-subtle", 4.5),
+        ("conversation-text", "warning-background", 4.5),
+        ("focus", "surface", 3.0),
+        ("focus", "surface-selected", 3.0),
+    ];
+
+    #[test]
+    fn contrast_matrix_contains_every_added_row() {
+        for (foreground, background, minimum) in ADDED_CONTRAST_ROWS {
+            assert_eq!(
+                CONTRAST_REQUIREMENTS
+                    .iter()
+                    .filter(|row| **row == (foreground, background, minimum))
+                    .count(),
+                1,
+                "{foreground} / {background}"
+            );
+        }
+        assert_eq!(CONTRAST_REQUIREMENTS.len(), 16);
+    }
+
+    #[test]
+    fn default_maps_pass_added_rows_with_documented_ratios() {
+        let expected = [
+            ("light", [5.448, 6.695, 10.604, 4.978, 3.939]),
+            ("dark", [8.941, 10.418, 9.644, 9.701, 6.207]),
+        ];
+        for (mode, colors) in default_maps() {
+            assert!(valid_colors(&colors), "{mode}");
+            let ratios = expected.iter().find(|(name, _)| *name == mode).unwrap().1;
+            for ((foreground, background, minimum), documented) in
+                ADDED_CONTRAST_ROWS.into_iter().zip(ratios)
+            {
+                let ratio = contrast_ratio(&colors, foreground, background);
+                assert!(ratio >= minimum, "{mode} {foreground} / {background}");
+                assert!(
+                    (ratio - documented).abs() < 0.001,
+                    "{mode} {foreground} / {background}: {ratio}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn identical_foreground_and_background_is_rejected_for_each_added_row() {
+        for (mode, colors) in default_maps() {
+            for (foreground, background, _) in ADDED_CONTRAST_ROWS {
+                let mut candidate = colors.clone();
+                candidate.insert(foreground.into(), colors[background].clone());
+                assert!((contrast_ratio(&candidate, foreground, background) - 1.0).abs() < 1e-9);
+                assert!(
+                    !valid_colors(&candidate),
+                    "{mode} {foreground} / {background}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_threshold_fixtures_match_the_frontend_validator() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            mode: String,
+            token: String,
+            value: String,
+            accepted: bool,
+        }
+        let fixtures: Vec<Fixture> =
+            serde_json::from_str(include_str!("../../src/appearance-contrast-fixtures.json"))
+                .unwrap();
+        assert_eq!(fixtures.len(), 16);
+        let maps = default_maps();
+        for fixture in fixtures {
+            let mut colors = maps
+                .iter()
+                .find(|(mode, _)| *mode == fixture.mode)
+                .unwrap()
+                .1
+                .clone();
+            colors.insert(fixture.token.clone(), fixture.value.clone());
+            let margin = ADDED_CONTRAST_ROWS
+                .iter()
+                .filter(|(foreground, _, _)| *foreground == fixture.token)
+                .map(|(foreground, background, minimum)| {
+                    contrast_ratio(&colors, foreground, background) - minimum
+                })
+                .fold(f64::INFINITY, f64::min);
+            assert_eq!(
+                margin >= 0.0,
+                fixture.accepted,
+                "{} {} {}",
+                fixture.mode,
+                fixture.token,
+                fixture.value
+            );
+            assert!(margin.abs() < 0.07, "{} {}", fixture.mode, fixture.token);
+            assert_eq!(
+                valid_colors(&colors),
+                fixture.accepted,
+                "{} {} {}",
+                fixture.mode,
+                fixture.token,
+                fixture.value
+            );
+        }
+    }
+
+    #[test]
+    fn closed_key_and_opaque_hex_checks_are_unchanged() {
+        for (mode, colors) in default_maps() {
+            let mut extra = colors.clone();
+            extra.insert("extra".into(), "#000000".into());
+            assert!(!valid_colors(&extra), "{mode}");
+            let mut missing = colors.clone();
+            missing.remove("link");
+            assert!(!valid_colors(&missing), "{mode}");
+            let mut replaced = colors.clone();
+            replaced.remove("link");
+            replaced.insert("link,focus".into(), colors["link"].clone());
+            assert!(!valid_colors(&replaced), "{mode}");
+            let mut translucent = colors.clone();
+            translucent.insert("link".into(), "#0000FF80".into());
+            assert!(!valid_colors(&translucent), "{mode}");
+            let mut low = colors.clone();
+            low.insert("text".into(), colors["surface"].clone());
+            assert!(!valid_colors(&low), "{mode}");
+        }
     }
 
     #[test]
@@ -703,6 +894,35 @@ mod tests {
     }
 
     #[test]
+    fn stored_custom_theme_failing_an_added_contrast_row_makes_the_document_invalid() {
+        let directory = tempfile::tempdir().unwrap();
+        let [(_, light), (_, dark)] = default_maps();
+        let mut theme = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Low contrast link".into(),
+            light: light.clone(),
+            dark,
+        };
+        let surface = light["surface"].clone();
+        theme.light.insert("link".into(), surface);
+        let preferences = Preferences {
+            light_palette: theme.id.clone(),
+            custom_themes: vec![theme],
+            ..Preferences::default()
+        };
+        assert!(!preferences.valid());
+
+        let path = directory.path().join("appearance.json");
+        persist(&path, Theme::Dark, &preferences).unwrap();
+        let observed = AppearanceStore::new(Some(directory.path().into())).read();
+        assert_eq!(observed.theme, Theme::System);
+        assert_eq!(observed.preferences, Preferences::default());
+        assert_eq!(observed.problem, Some(AppearanceProblem::InvalidDocument));
+        assert!(path.exists());
+    }
+
+    #[test]
     fn failed_or_uncertain_publication_requires_a_fresh_read() {
         let directory = tempfile::tempdir().unwrap();
         let store = AppearanceStore::new(Some(directory.path().into()));
@@ -735,6 +955,111 @@ mod tests {
             store.update(Theme::System, inspected.revision).problem,
             None
         );
+    }
+
+    /// Persist a non-default palette selection: a bundled light palette and a
+    /// custom dark theme, then return the saved preferences.
+    fn persisted_palette_preferences(directory: &Path) -> Preferences {
+        let bundled: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let custom = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Startup palette".into(),
+            light: serde_json::from_value(bundled["dracula"]["light"].clone()).unwrap(),
+            dark: serde_json::from_value(bundled["dracula"]["dark"].clone()).unwrap(),
+        };
+        let preferences = Preferences {
+            light_palette: "nord".into(),
+            dark_palette: custom.id.clone(),
+            custom_themes: vec![custom],
+            ..Preferences::default()
+        };
+        let store = AppearanceStore::new(Some(directory.into()));
+        let initial = store.read();
+        assert_eq!(
+            store
+                .update_preferences(Theme::Dark, preferences.clone(), initial.revision)
+                .problem,
+            None
+        );
+        preferences
+    }
+
+    #[test]
+    fn startup_initialization_projects_saved_presentation_before_any_product_read() {
+        let directory = tempfile::tempdir().unwrap();
+        let saved = persisted_palette_preferences(directory.path());
+        let expected = saved.palette_colors().unwrap();
+        let default_colors = Preferences::default().palette_colors().unwrap();
+        assert_ne!(expected.light, default_colors.light);
+        assert_ne!(expected.dark, default_colors.dark);
+
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        assert_eq!(store.current().revision, 0);
+        assert_eq!(store.inspected(), None);
+        let initialized = store.initialize();
+        assert_eq!(initialized.problem, None);
+        assert_eq!(initialized.theme, Theme::Dark);
+        assert_eq!(initialized.preferences, saved);
+        assert_eq!(store.inspected(), Some(initialized.clone()));
+        let projected = store
+            .inspected()
+            .unwrap()
+            .preferences
+            .palette_colors()
+            .unwrap();
+        assert_eq!(projected.light, expected.light);
+        assert_eq!(projected.dark, expected.dark);
+        // The first product read finds the same document and keeps the
+        // revision.
+        assert_eq!(store.read(), initialized);
+        // A later normal publication still commits from the startup revision.
+        let updated = store.update(Theme::Light, initialized.revision);
+        assert_eq!(updated.problem, None);
+        assert_eq!(updated.theme, Theme::Light);
+        assert!(updated.revision > initialized.revision);
+    }
+
+    #[test]
+    fn startup_initialization_of_missing_file_yields_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        let initialized = store.initialize();
+        assert_eq!(initialized.theme, Theme::System);
+        assert_eq!(initialized.preferences, Preferences::default());
+        assert_eq!(initialized.problem, None);
+        assert_ne!(initialized.revision, 0);
+        assert_eq!(store.read(), initialized);
+    }
+
+    #[test]
+    fn startup_initialization_keeps_problem_semantics_for_unusable_documents() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("appearance.json");
+        for bytes in [b"broken".as_slice(), br#"{"version":3,"theme":"dark"}"#] {
+            fs::write(&path, bytes).unwrap();
+            let store = AppearanceStore::new(Some(directory.path().into()));
+            let initialized = store.initialize();
+            assert_eq!(initialized.theme, Theme::System);
+            assert_eq!(initialized.preferences, Preferences::default());
+            assert!(initialized.problem.is_some());
+            assert_ne!(initialized.revision, 0);
+            // No write authority: the update is refused and the file is intact.
+            let refused = store.update(Theme::Light, initialized.revision);
+            assert_eq!(refused.theme, Theme::System);
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            assert_eq!(store.read(), initialized);
+        }
+    }
+
+    #[test]
+    fn startup_initialization_without_storage_stays_unavailable() {
+        let store = AppearanceStore::new(None);
+        let initialized = store.initialize();
+        assert_eq!(initialized.problem, Some(AppearanceProblem::Unavailable));
+        assert_eq!(initialized.preferences, Preferences::default());
+        assert_eq!(store.read(), initialized);
     }
 
     #[test]

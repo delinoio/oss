@@ -204,3 +204,55 @@ test("Revert text is readable at rest and on hover in every admitted palette", (
     }
   }
 });
+
+test("the shared entrance primitive is a static opaque 160ms Y4 ease-out keyframe", () => {
+  const css = readFileSync(
+    join(directory, "entrance-motion.css"),
+    "utf8",
+  ).replace(/\/\*[\s\S]*?\*\//gu, "");
+  expect(css).toMatch(
+    /@keyframes entrance-y4\s*\{\s*from\s*\{\s*transform:\s*translateY\(4px\);\s*\}\s*to\s*\{\s*transform:\s*none;\s*\}\s*\}/u,
+  );
+  expect(css).toMatch(
+    /\[data-entrance="y4"\]\s*\{\s*animation:\s*entrance-y4 160ms ease-out;\s*\}/u,
+  );
+  // No fill mode keeps the resting transform none after the motion.
+  expect(css).not.toMatch(
+    /forwards|both|opacity|scale|bounce|cubic-bezier|steps\(|height|animation-delay/u,
+  );
+  expect(css).not.toMatch(/style=|@import|url\(/u);
+});
+
+test("the shared 120ms Y2, X4 and short Y4 primitives are static opaque ease-out keyframes", () => {
+  const css = readFileSync(
+    join(directory, "entrance-motion.css"),
+    "utf8",
+  ).replace(/\/\*[\s\S]*?\*\//gu, "");
+  for (const [name, axis, distance] of [
+    ["y2", "Y", "2px"],
+    ["x4", "X", "4px"],
+    ["y4-short", "Y", "4px"],
+  ]) {
+    expect(css).toMatch(
+      new RegExp(
+        `@keyframes entrance-${name}\\s*\\{\\s*from\\s*\\{\\s*transform:\\s*translate${axis}\\(${distance}\\);\\s*\\}\\s*to\\s*\\{\\s*transform:\\s*none;\\s*\\}\\s*\\}`,
+        "u",
+      ),
+    );
+    expect(css).toMatch(
+      new RegExp(
+        `\\[data-entrance="${name}"\\]\\s*\\{\\s*animation:\\s*entrance-${name} 120ms ease-out;\\s*\\}`,
+        "u",
+      ),
+    );
+  }
+});
+
+test("Animation Off and reduced motion suppress entrance animations", () => {
+  expect(source).toMatch(
+    /:root\[data-animation="false"\] \*,[^{]+\{\s*animation: none !important;/u,
+  );
+  expect(source).toMatch(
+    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,[^{]+\{\s*animation: none !important;/u,
+  );
+});

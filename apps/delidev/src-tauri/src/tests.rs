@@ -101,14 +101,15 @@ fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
         let invocations = PathBuf::from(format!("{}.invocations", executable.display()));
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Connector::new(executable, temporary.path().join("state")).unwrap();
-        let observed = connector.open_github("https://github.com/owner/repo/pull/1");
+        let browsers = browser_preferences::BrowserStore::new(Some(temporary.path().join("prefs")));
+        let observed = connector.open_github(&browsers, "https://github.com/owner/repo/pull/1");
         assert_eq!(
             observed, expected,
             "presentation fixture response case {index}"
         );
         assert_eq!(fs::read(&invocations).unwrap(), b"x");
         assert_eq!(
-            connector.open_github("file:///tmp/unsafe"),
+            connector.open_github(&browsers, "file:///tmp/unsafe"),
             Err(NativeFailure::InvalidInput)
         );
         assert_eq!(
@@ -1319,4 +1320,75 @@ fn saved_server_compatibility_uses_the_compiled_package_version() {
         fs::set_permissions(&operation, fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(connector.connect_saved(&expected).is_ok(), accepted);
     }
+}
+
+#[test]
+#[cfg(unix)]
+fn github_with_a_selected_browser_validates_in_go_then_launches_natively_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = tempfile::tempdir().unwrap();
+    // The sidecar fixture accepts only the validate-only form and never
+    // launches.
+    let sidecar = temporary.path().join("sidecar");
+    fs::write(
+        &sidecar,
+        "#!/bin/sh\nprintf x >> \"$0.invocations\"\n[ \"$4\" = validate-github ] && [ \"$5\" = \
+         --url-stdin ] || exit 2\n/bin/cat >/dev/null\nprintf '%s' \
+         '{\"version\":1,\"result\":{\"validated\":true}}'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Connector::new(sidecar.clone(), temporary.path().join("state")).unwrap();
+    // An uninstalled saved identity must fail visibly after validation without
+    // falling back to the system default or the Go launcher.
+    let preferences = temporary.path().join("prefs");
+    fs::create_dir_all(&preferences).unwrap();
+    fs::write(
+        preferences.join("browser_preferences.json"),
+        r#"{"version":1,"revision":1,"choices":{"general":{"state":"installed","identity":"missing.example.Browser"},"local":{"state":"system-default"}}}"#,
+    )
+    .unwrap();
+    let browsers = browser_preferences::BrowserStore::new(Some(preferences));
+    assert_eq!(
+        connector.open_github(&browsers, "https://github.com/owner/repo/pull/1"),
+        Err(NativeFailure::BrowserUnavailable)
+    );
+    assert_eq!(
+        fs::read(PathBuf::from(format!("{}.invocations", sidecar.display()))).unwrap(),
+        b"x"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn corrupt_browser_preferences_fail_closed_for_every_general_action() {
+    let temporary = tempfile::tempdir().unwrap();
+    fs::write(temporary.path().join("browser_preferences.json"), b"broken").unwrap();
+    let browsers = browser_preferences::BrowserStore::new(Some(temporary.path().into()));
+    let connector = Connector::new(
+        temporary.path().join("sidecar"),
+        temporary.path().join("state"),
+    )
+    .unwrap();
+    assert_eq!(
+        connector
+            .open_app_information_link(&browsers, app_information::AppInformationLink::License),
+        Err(NativeFailure::StorageUnavailable)
+    );
+    assert_eq!(
+        connector.open_provider_guidance(
+            &browsers,
+            "gemini",
+            provider_guidance::GuidanceAction::ApiKeys
+        ),
+        Err(NativeFailure::StorageUnavailable)
+    );
+    assert_eq!(
+        connector.open_external_url(&browsers, "https://example.com/"),
+        Err(NativeFailure::StorageUnavailable)
+    );
+    assert_eq!(
+        connector.open_external_url(&browsers, "javascript:alert(1)"),
+        Err(NativeFailure::InvalidInput)
+    );
 }

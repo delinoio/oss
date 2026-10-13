@@ -49,7 +49,7 @@ var commandPaths = map[string][]string{
 		"select", "export-metadata",
 	},
 	"notification": {"observe-connection", "preferences", "configure", "list", "inspect", "claim", "report"},
-	"presentation": {"open-github", "dispatch-github"},
+	"presentation": {"open-github", "dispatch-github", "validate-github"},
 	"project":      {"prompt-history list", "prompt-history clear"},
 	"provider":     {"presets", "inventory", "discover"},
 	"queue":        {"list", "edit", "remove", "delete"},

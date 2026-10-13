@@ -6,12 +6,23 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { encode } from "./documents";
 import { TranscriptItem } from "./session";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
+import { AppearanceProvider, Theme, type AppearanceBridge } from "./appearance";
+import {
+  DisclosureDefault,
+  defaultPreferences,
+} from "./appearance-preferences";
 import { conversationProjection } from "./tool-turn-projection";
 afterEach(cleanup);
 const sessionId = newRequestId(),
@@ -344,4 +355,90 @@ it("retains expanded tool state while denying exact-page restoration in an inact
   expect(entry.open).toBe(true);
   fireEvent.click(restore);
   expect(q.restore).toHaveBeenCalledExactlyOnceWith("");
+});
+
+function delayedBridge() {
+  let resolve!: (value: unknown) => void;
+  const promise = new Promise<unknown>((yes) => {
+    resolve = yes;
+  });
+  const bridge: AppearanceBridge = {
+    read: vi.fn(() => promise),
+    update: vi.fn(),
+    subscribe: vi.fn(async () => () => {}),
+  };
+  return {
+    bridge,
+    settle: (tool_disclosure: DisclosureDefault) =>
+      act(async () =>
+        resolve({
+          revision: 1,
+          theme: Theme.System,
+          problem: null,
+          preferences: { ...defaultPreferences(), tool_disclosure },
+        }),
+      ),
+  };
+}
+it("applies a delayed saved Expanded default once to untouched groups and entries", async () => {
+  const delayed = delayedBridge();
+  const q = query([[row(tool("command")), row(tool("patch"))]]);
+  const { container } = render(
+    <AppearanceProvider bridge={delayed.bridge}>
+      <ToolTurnTranscript {...props(q)} />
+    </AppearanceProvider>,
+  );
+  const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
+  const entries = () => [
+    ...group.querySelectorAll<HTMLDetailsElement>("li > details"),
+  ];
+  expect(group.open).toBe(false);
+  expect(entries().map((entry) => entry.open)).toEqual([false, false]);
+  await delayed.settle(DisclosureDefault.Expanded);
+  expect(group.open).toBe(true);
+  expect(entries().map((entry) => entry.open)).toEqual([true, true]);
+});
+it("keeps explicit choices made before readiness when a Collapsed snapshot arrives", async () => {
+  const delayed = delayedBridge();
+  const q = query([[row(tool("command")), row(tool("patch"))]]);
+  const { container } = render(
+    <AppearanceProvider bridge={delayed.bridge}>
+      <ToolTurnTranscript {...props(q)} />
+    </AppearanceProvider>,
+  );
+  const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
+  const entries = () => [
+    ...group.querySelectorAll<HTMLDetailsElement>("li > details"),
+  ];
+  // Open the group explicitly, and expand then collapse the first entry so its
+  // choice is an explicit false that a later default must not replace.
+  expand(group);
+  expand(entries()[0]);
+  entries()[0].open = false;
+  fireEvent(entries()[0], new Event("toggle"));
+  await delayed.settle(DisclosureDefault.Collapsed);
+  expect(group.open).toBe(true);
+  expect(entries().map((entry) => entry.open)).toEqual([false, false]);
+});
+it("retains an explicit collapse made before a delayed Expanded snapshot is accepted", async () => {
+  const delayed = delayedBridge();
+  const q = query([[row(tool("command")), row(tool("patch"))]]);
+  const { container } = render(
+    <AppearanceProvider bridge={delayed.bridge}>
+      <ToolTurnTranscript {...props(q)} />
+    </AppearanceProvider>,
+  );
+  const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
+  const entries = () => [
+    ...group.querySelectorAll<HTMLDetailsElement>("li > details"),
+  ];
+  expand(group);
+  group.open = false;
+  fireEvent(group, new Event("toggle"));
+  expand(entries()[0]);
+  entries()[0].open = false;
+  fireEvent(entries()[0], new Event("toggle"));
+  await delayed.settle(DisclosureDefault.Expanded);
+  expect(group.open).toBe(false);
+  expect(entries().map((entry) => entry.open)).toEqual([false, true]);
 });

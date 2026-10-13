@@ -353,7 +353,7 @@ native authority.
 
 The fixed Session Open terminals / 터미널 열기 action uses primary+logical grave (`). Register it only for the active selected nonembedded Session, with ordinary editable input allowed and the original Sidechat parent-snapshot guard. Invoke the existing Terminals open action once, retaining the composer draft, original inventory, revision-bound reuse/create intent, pending/uncertain recovery and Worker ownership. Repeated opening selects the destination without closing it or replacing its controller. Help, the read-only Session Settings catalog and the original tool entry ARIA share the same platform binding. Accepted invocation from Help closes Help before the original callback and preserves destination focus. Grave matching has no physical Backquote fallback. Terminal input, focused native Browser pages, shortcut capture, unrelated modals and the existing handled/IME/repeat/extra-modifier/hidden/inert fences remain excluded. The seven editable actions and native preference format stay unchanged.
 
-The read-only Session New terminal / 새 터미널 action (`ShortcutId.TerminalCreate`, `ShortcutTargetContext.Terminal`, priority 2, target input permission) uses primary+T and applies only while the visible terminal input host has focus. It runs the same additional-creation callback as + (Worker default shell, original session revision, fresh request identity, 24×80), selects and focuses the returned terminal tab, and is consumed before PTY delivery so an accepted chord sends no bytes. A matching chord blocked by inactive, opening, unsupported, busy, uncertain or archived creation gates is consumed without creation or terminal input. It has no editable preference, never reserves T globally and does not participate in the Open tool custom-override suppression; saved custom unshifted T overrides stay valid and unchanged. Help lists it with its terminal-focus restriction and cannot invoke it. The terminal input host and the renderer's input field carry `aria-keyshortcuts` derived from the effective platform binding. The handled/IME/repeat/AltGraph/extra-modifier/modal/hidden/inert fences remain.
+The read-only Session New terminal / 새 터미널 action (`ShortcutId.TerminalCreate`, `ShortcutTargetContext.Terminal`, priority 2, target input permission) uses primary+T and applies only while the visible terminal input host has focus. It runs the same additional-creation callback as + (Worker default shell, original session revision, fresh request identity, 24×80), selects and focuses the returned terminal tab only when no newer Session navigation (any selected-tab change recorded by the tab store's per-Session navigation generation, including leaving and returning to the origin terminal) happened after the request was sent; otherwise the user's later selection survives and the acknowledged terminal is only retained and listed for later explicit opening, and a request without its captured origin (for example after a remount) never selects. It is consumed before PTY delivery so an accepted chord sends no bytes. A matching chord blocked by inactive, opening, unsupported, busy, uncertain or archived creation gates is consumed without creation or terminal input. It has no editable preference, never reserves T globally and does not participate in the Open tool custom-override suppression; saved custom unshifted T overrides stay valid and unchanged. Help lists it with its terminal-focus restriction and cannot invoke it. The terminal input host and the renderer's input field carry `aria-keyshortcuts` derived from the effective platform binding. The handled/IME/repeat/AltGraph/extra-modifier/modal/hidden/inert fences remain.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
@@ -585,7 +585,7 @@ This naming boundary preserves Agent Worker, generic technical Worker references
 
 ### Chat-first session creation
 
-The the feature flow is the mounted `Surface.NewSession` page, not a dialog. It retains the selected session and connection-memory creation draft while navigating to sessions, Settings and other surfaces. Back returns to the existing selected conversation or welcome view. Entry focuses First message; changing surfaces during an accepted create cannot steal navigation or focus when the response arrives.
+The the feature flow is the mounted `Surface.NewSession` page, not a dialog. It retains the selected session and connection-memory creation draft while navigating to sessions, Settings and other surfaces. Back returns to the existing selected conversation or welcome view. Explicit activation of this page plays the single 160ms Y4 entrance owned by `apps-delidev-desktop-contract.md#new-session-and-new-general-chat-entrance-motion`; no edit, read or request state replays it. Entry focuses First message; changing surfaces during an accepted create cannot steal navigation or focus when the response arrives.
 
 The page centers an 820px maximum content column around **What would you like to work on?** Project selection precedes the composer. An empty project means **General Chat**, an isolated projectless directory on the explicit Worker. The composer has a 210px minimum height in Regular layout, natural content height in Compact layout, 18px radius, accessible First message textarea, the specified task placeholder, Agent Worker and Runs on selectors, Execute/Plan control, inline Options, and a 40px Create session button. Keep 24px minimum side padding and ensure 960×640 remains scrollable without horizontal clipping. The sidebar retains its rail/pane geometry and the shared Home accumulation/scroll scope described below; loaded global and expanded project ranges refresh every 15 seconds while active and visible.
 
@@ -649,7 +649,7 @@ and submission gates remain required.
 
 ### Dedicated General Chat creation
 
-Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow.
+Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow. Explicit activation of this page plays the single 160ms Y4 entrance owned by `apps-delidev-desktop-contract.md#new-session-and-new-general-chat-entrance-motion`; no edit, read or request state replays it.
 
 `NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, the same Regular/Compact composer height rules, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Restore the independent last accepted General Chat Agent Worker/Runs on choices when permitted; without history, keep both unselected. Preserve Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
 
@@ -1108,7 +1108,7 @@ Native code retains one original child/control session before readiness. A persi
 
 Normal Quit immediately fences new requests, server starts and CLI replacement and cancels pending interactive operations. The existing tracked worker preserves the CEF event loop while joining final bounded browser removal discovery through the same session. It then requests `runtime.shutdown`, suppresses only the original startup generation and joins the server and remaining host operations. The browser observer has independent local admission but cannot spawn after fencing. Shutdown/cancellation are processed outside mutation admission. Pipe EOF and desktop crash/forced exit now terminate the app-owned CLI/server; they never grant authority over external server PIDs or endpoints.
 
-The native shutdown deadline remains 35 seconds, independent of startup and product/native cleanup deadlines. On expiry, force only the retained original child and observe its actual exit. An uncertain force/exit result retains ownership and reports uncertainty. Repeated Quit shares one operation off the UI loop; native exit remains gated by host completion and raw-browser close proofs. Close-to-tray keeps the main process, CLI and server alive. Normal setup failures also join the owned host. Crash and forced desktop termination no longer preserve app-owned sidecars; independent Workers, CLI/service servers and Saved/remote servers remain independent.
+The native shutdown deadline remains 35 seconds, independent of startup and product/native cleanup deadlines. Normal Quit computes one absolute monotonic deadline at entry and shares it across the resident host session and app-owned Worker phases: graceful requests (`runtime.shutdown` to the resident host, the stop frame to hosted Workers) start together for every retained original child at the beginning of that window, each phase measures its remaining grace against the same deadline, and no phase receives a fresh 35-second allowance after another consumed the budget, so a hung host plus a hung Worker are both forced within one aggregate 35-second grace plus bounded scheduling and exit overhead. On expiry, force only the retained original child and observe its actual exit. An uncertain force/exit result retains ownership and reports uncertainty. Repeated Quit shares one operation off the UI loop; native exit remains gated by host completion and raw-browser close proofs. Close-to-tray keeps the main process, CLI and server alive. Normal setup failures also join the owned host. Crash and forced desktop termination no longer preserve app-owned sidecars; independent Workers, CLI/service servers and Saved/remote servers remain independent.
 
 Structured logs distinguish request, restart suppression, joined server cleanup, force request and confirmed/unconfirmed process exit. Forced process exit does not prove native/session cleanup; original data, protected ownership and recovery state remain authoritative. Failure to force or observe exit retains original handles and reports uncertainty without a PID fallback. Actual macOS/Windows/Linux Quit and packaged CEF shutdown remain separate acceptance from controlled process fixtures and compilation. Record validation in PRs/issues and CI logs/artifacts, never repository evidence documents.
 
@@ -1357,12 +1357,18 @@ There is no standalone Terminals management tab. The Terminals tool entry is an
 explicit reuse-or-create intent that keeps the current pane selected until the
 atomic admission returns a verified original terminal, then opens or selects that
 terminal's direct tab. Each explicit creation or retained-resource selection
-opens/selects the tab keyed by the original terminal ID.
+opens/selects the tab keyed by the original terminal ID. + and primary+T
+additional creation applies the same rule only while no newer navigation
+happened after sending, so a pending acknowledgment never overwrites a later
+Conversation, Files or terminal choice. The toolbar reuse-or-create admission
+always selects its admitted terminal.
 
 Each direct terminal tab is labelled `Terminal N` / `터미널 N`. `N` is a monotonic
 presentation number owned by the connection-memory terminal presentation record of
 its Session. It is allocated once per original terminal ID in first
-opened-or-authenticated-inventory encounter order, is shared by the tab, its
+opened-or-authenticated-inventory encounter order (the explicit reuse-or-create
+inventory numbers every validated row, page by page, before any admission
+result opens, and invalid or aborted reads number nothing), is shared by the tab, its
 tooltip, accessible names, the Close tab name and the inventory rows, and is never
 reused. It survives close/reopen, paging, reorder, payload eviction, navigation and
 same-identity reconnect; Sessions number independently, and a replaced connection
@@ -1373,7 +1379,11 @@ proofs keep the original ID.
 Opening status, capability/read failures and uncertain-creation recovery render in
 a non-modal strip directly below the tab row while the current pane stays mounted;
 no placeholder tab is created. Read Retry is read-only and never creates a
-terminal. Repeated opening gestures coalesce into one admission using the captured
+terminal; from a non-terminal pane it enables exactly one bounded inventory
+attempt that ends when it settles (success or failure), when a terminal pane is
+selected, or on Session departure, so no interval-driven reads continue behind
+Conversation or Files, and a failed attempt keeps the Problem with a Retry
+button for the next bounded attempt. Repeated opening gestures coalesce into one admission using the captured
 session, revision and request ID. Session departure or a later explicit pane
 selection cancels an unsent intent; accepted or uncertain ownership survives.
 Retained manager lifetime, explicit-open resolution (Session visible) and
@@ -1399,9 +1409,27 @@ terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no
 other terminal content tab exists, selection uses the remaining inventory
 neighbor without creating a shell. The retained standalone dock uses inventory
-order. The final automatic dismissal uses
+order. One observation (inventory refresh, stream observation or both in the same
+commit) tombstones every verified exit first, then derives the surviving
+selection once from the batch-effective selection, so a refresh reporting exits
+of selected A and B with live C selects and attaches C (never a dismissed
+terminal or Conversation) and a user selection made before the deferred standalone
+focus wins. Tombstoned terminal tabs are never fallback targets. The final
+automatic dismissal fires only when no visible inventory row and no
+non-tombstoned Terminal content tab in the Session tab store remains, so an
+opened terminal absent from a replacement inventory chain, or an uncertain or
+unsettled retained terminal, is never closed by it. It is also fenced while the
+Session's own terminal creation is busy or uncertain (a lost CreateTerminal
+response): tombstoning stays immediate, the Retry the same terminal creation
+control stays reachable and sends only the original request on explicit
+activation, and the deferred hide runs once after the original receipt settles; a
+late receipt for a dismissed terminal never reopens it and creation in another
+Session never fences it. The final automatic dismissal uses
 the Session-owned presentation close and focus path, retaining mounted
-conversation/composer/Info. An explicitly opened empty inventory remains available
+conversation/composer/Info; it focuses the surviving selected tab button by key
+after the tab bar commits (deferred frame, current index re-read, suppressed when
+the selection changed or the target is gone), like the individual dismissal
+callback. An explicitly opened empty inventory remains available
 for creation. EOF, errors, missing resources and malformed/unsupported observations
 never prove exit. Dismissal sends no process Close, deletion or replacement creation.
 
@@ -1726,7 +1754,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Multiple product windows follow `apps-delidev-desktop-contract.md#multiple-product-windows`: retain one process-owned launch/supervisor, exact native Local/Saved role and instance admission, independent renderer memory and original callback epochs. New Window uses `CmdOrCtrl+N` through one native app menu handler (Command+N on macOS, Control+N on Windows/Linux); Command/Control+T no longer opens a window. Close Window has no native accelerator; `CmdOrCtrl+W` is the fixed renderer SessionCloseTab shortcut closing only the selected closeable session workspace tab (Conversation stays pinned and the chord never closes or hides a window; W stays reserved against customization; external page-focused forwarding is unchanged; Keyboard Help dismisses before closure; terminal focus is eligible); only the last product window hides to tray. Saved profile removal blocks and closes all its views. Names update monotonically; Widget publication has one oldest-ready writer per profile. Window destruction listeners retain registry state only, never AppHandle cycles that outlive native shutdown. Never transfer drafts, replay startup/pairing, persist window inventory or grant authority from a label pattern alone. Local bootstrap, registration inspection/recovery and original Local Worker commands admit registered Local `main`/`local-*` documents; Saved `server-*` documents retain their independent profile/server bindings and cannot acquire Local authority. Capability label patterns never replace exact native role/instance admission, trusted-document checks or original authority rechecks after asynchronous work. Local connection/recovery results update process-wide supervision only after the original Local role/instance/revision authority passes its post-Go recheck; stale results leave the supervised connection unchanged. All Local windows share the original process launch observation; additional windows never replay automatic startup, pairing or supervision. Preserve closed structured failure diagnostics without credentials, user state or raw native content.
 
-- Provider help accepts only a closed canonical preset/action on an original trusted main or saved-window instance. Declare `open_provider_guidance` in the build app manifest and grant its dedicated `provider-guidance` permission only to the `main` and `server-*` webviews. Test the generated manifests/capabilities with Tauri's authority resolver; parent windows and remote pages cannot grant this command to external children. Use Go-generated `provider-guidance.generated.json`, never RPC/renderer-selected URLs, and preserve regional key guidance. `browser_opener.rs` is an internal bounded OS dispatcher for separately validated OAuth/help callers, with minimal environment, silent streams and joined cancellation; it is not a generic native capability. Follow the provider and desktop contracts.
+- Provider help accepts only a closed canonical preset/action on an original trusted main or saved-window instance. Declare `open_provider_guidance` in the build app manifest and grant its dedicated `provider-guidance` permission only to the `main` and `server-*` webviews. Test the generated manifests/capabilities with Tauri's authority resolver; parent windows and remote pages cannot grant this command to external children. Use Go-generated `provider-guidance.generated.json`, never RPC/renderer-selected URLs, and preserve regional key guidance. `browser_opener.rs` is an internal bounded OS dispatcher for separately validated callers, with minimal environment, silent streams and joined cancellation; it is not a generic native capability. Provider help opens through the selected general browser destination (see [Browser destinations for external links](#browser-destinations-for-external-links)); OAuth authorization keeps the system default. Follow the provider and desktop contracts.
 
 - `src/oauth.rs` and `src/oauth_host.rs` implement the closed managed API browser/callback infrastructure under `cmds-delidev-account-oauth-contract.md`. Capture/recheck trusted-window native epochs, selected server and saved-window instance; bind both loopback families to one ephemeral port and retain one generation per opening. Bound parsing and single-use code transfer, return constant no-store/no-referrer callback pages, clear transient bytes and join listeners/openers on disposal. Scoped tombstones block a queued Begin after unknown-response disposal; late predecessor cleanup cannot revoke replacements. Every disposal, expiry, window-close and epoch insertion preserves the 4096-entry bounds. Known identities remain idempotent at capacity; overflow retains all revocations, stores no overflowing identity, closes admission and joins every original callback listener. Rust never exchanges a code or stores a provider credential, broadcasts callbacks or exposes a generic opener. Settings departure removes local authority without implicit business cancellation.
 
@@ -1860,7 +1888,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Appearance v2 follows the feature and the desktop/localization contracts. The original native controller owns the complete computer-local mode/preferences/custom-theme snapshot with a 256 KiB document bound and explicit v1 upgrade on change. Ordinary choices autosave; custom edits/import/deletion require explicit confirmation. Preserve exact revisions, invalid/newer/linked files, atomic writes, uncertain recovery and authorized-window publication. Constructed CSSOM may set only validated opaque semantic application tokens; terminal/backdrop/shadow/native surfaces remain excluded. Synthetic custom previews contain no conversation content. Presentation changes preserve mounted drafts/focus/request identities, original observations and authenticated Worker image bytes/cleanup; renderer toggles stay unavailable until independently implemented support exists.
 
-- The feature native connection notifications retain original trusted connection/window authority, 30-second cadence and ten-second Go status deadline. Count only actual client-generated raw transport failures after a matching success baseline; cache only acknowledged scoped preferences, reserve a private immutable local edge before OS submission, share observation across original windows and join reads/presentation on Quit. Missing cache, denied/failed/uncertain OS results and ledger bounds suppress rather than retry. Never fabricate server Inbox IDs, prompt automatically or acquire execution authority.
+- The feature native connection notifications retain original trusted connection/window authority, 30-second cadence and ten-second Go status deadline. Count only actual client-generated raw transport failures after a matching success baseline; cache only acknowledged scoped preferences, reserve a private immutable local edge before OS submission, share observation across original windows and join reads/presentation on Quit. Missing cache, denied/failed/uncertain OS results and ledger bounds suppress rather than retry. A transient or unconfirmed native observation under still-valid original authority is retried on the next 30-second tick without disposing the connection's native scopes; scopes are disposed only on verified authority loss, stopping/Quit, cancellation or a local state error, each logged with a closed disposal reason. Never fabricate server Inbox IDs, prompt automatically or acquire execution authority.
 
 - The feature sidebar persistence uses the separate bounded version-1 sidebar_preference.json document, Expanded/Collapsed enum and process revision. Keep device-sidebar IPC/event authority limited to trusted existing product windows with original rechecks, off-UI-thread locked atomic replacement and independent Appearance semantics. Preserve invalid/linked/newer/oversized files and committed presentation; failed/uncertain writes require explicit read before another save. Never log content, key events or file paths. B remains a fixed product shortcut reservation, not an editable override.
 
@@ -1890,6 +1918,8 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - `session-tabs.tsx`, `session-tab-bar.tsx`, `session-activity.tsx` and `session.tsx` own connection-scoped typed session presentation tabs. Keep Conversation pinned first, exactly one active content pane and persistent original Info. Files/comparisons use original repository/path/kind identities and discard inactive bytes; terminals/pages/Sidechats use original resource IDs. Retain authoring and accepted/uncertain controllers, suspend inactive observations, and never create, delete or retry from presentation close/reopen. Sidechat actions/Info bind the child and retained navigation routes its original parent. Terminal attachments retain unsent-discard guidance and independent process ownership. Browser departure retains original Hide cleanup before replacement.
 
 - Files Back retains original inner and enclosing Session scroll owner snapshots under the same controller/repository identity; restore selected focus with preventScroll and restore only connected original ancestors containing the returned tree. Replacement repositories/connections cannot receive old scroll state.
+
+- `entrance-motion.ts`/`.css` own the shared 160ms Y4 entrance primitive and replay-safe `useEntranceActivation` hook under `apps-delidev-desktop-contract.md#shared-restrained-entrance-motion-and-appearance`. Keep keyframes static, add no inline style or dependency, and let each Settings category opt in through the `entranceCategories` map (category to `EntranceTarget`) with its own contract text; see the Settings category entrance section.
 
 - Image composers follow `cmds-delidev-image-input-contract.md` and `apps-delidev-desktop-contract.md#image-inputs`. `image-input.ts` owns bounded original-byte validation and complete reference/receipt verification; `image-drafts.tsx` owns connection-identity drafts, exact staging/recovery and original Runner cleanup. Preserve independent first-message/General Chat/Session drafts across navigation, Settings and reconnect; dispose bytes/object URLs on identity change. Keep typed references separate from document JSON, require READY and matching ordered admission receipts, restage changed Runner/operation selections, and retain uncertain requests without edits. `image-attachments.tsx` owns ordered accessible previews and authenticated digest-verified history readback with explicit retry; queued edits retain immutable refs and image-bound Steer remains disabled. System 45/Worker 25 and the original execution harness are advisory frontend gates; native modality proof remains backend-owned. The isolated image browser fixture grants no native/account acceptance and must stay outside product bundles.
 
@@ -3346,6 +3376,17 @@ Brief saved-window binding contention receives bounded event-admission retries.
 A healthy retained window reinspects when focused or made visible to reconcile a
 missed event; an error or uncertain save still requires explicit Reload appearance.
 
+The original native controller inspects `appearance.json` once during startup
+setup, before any product window or the tray is created or admitted, using the
+same read semantics as `read_appearance` (missing file: System and default
+palette; invalid, newer, linked or unreadable file: default presentation, the
+problem recorded and no write authority). The auxiliary tray view never
+inspects the file. `read_tray_status` projects only that retained snapshot and
+fails with `StorageUnavailable` when the store has never been inspected (process
+revision 0), so placeholder defaults are never reported as a saved palette. The
+first product read of an unchanged document keeps the startup revision, and a
+later `update_appearance` publication still refreshes the tray.
+
 Read/write failures are visible with stable typed messages, without raw OS errors
 or paths. Failed writes retain the prior committed selection. An uncertain IPC or
 post-publication synchronization outcome disables another write until a deliberate
@@ -3424,7 +3465,19 @@ Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
 with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
-adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
+adoption. Exact token-set checks compare the key count and each required key
+instead of a delimiter-joined key list, so a key containing a comma cannot
+stand in for several tokens. The frontend and native validators require the same
+contrast rows for each light/dark map: `text`, `text-secondary`, `muted`,
+`text-subtle` and `link` against `surface`; `success-text` against
+`surface-subtle`; `conversation-text` against `warning-background`;
+`on-accent` against `accent` and `accent-hover`; `selected-text` against
+`selected-background`; `warning-text` and `danger-text` against their
+backgrounds; `on-inverse` against `inverse-surface`, each at least 4.5:1; and
+`control-border` and `focus` against `surface`, plus `focus` against
+`surface-selected`, each at least 3:1. A saved custom theme that fails these
+rows makes the appearance document invalid (the file is preserved), the same as
+any other failing contrast row. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
 CSS injection or a CSP exception. The selected root palette must outrank built-in
 theme rules in main and retained tray windows for explicit Light/Dark and resolved
@@ -3439,8 +3492,9 @@ When session accent is disabled, focused content inside a user message keeps an
 outline with at least 3:1 contrast against `surface-selected`. Use the semantic
 `focus` token when it meets this threshold. Otherwise, compute the higher-contrast
 opaque black or white value and expose it through the render-only
-`--focus-on-selected` variable. This fallback does not change stored theme tokens
-or reject an existing custom theme.
+`--focus-on-selected` variable. This fallback does not change stored theme tokens.
+Stored maps must already meet the `focus` to `surface-selected` 3:1 row above, so
+the fallback is only a render-time safeguard.
 
 Composer and Display retain Regular/Compact layouts and explicit 12/14/16/18px
 text choices. Project and General Chat creation retain the 210px Regular minimum.
@@ -3472,6 +3526,65 @@ native-owned across trusted windows and restart, outside server backups/portable
 transfer. Complete snapshots share original revision, atomic persistence and
 uncertain-save recovery. Product/browser/native validation retains the repository
 policy; report actual performed evidence separately from skipped acceptance.
+
+The appearance context exposes `ready` (`useAppearanceReady()`), which is false
+only until the initial native read settles. A failed initial read also settles,
+with compatibility defaults (Original disclosures, images shown). Before
+readiness, tool groups and entries render collapsed without recording a choice,
+so a delayed saved Expanded default applies exactly once to untouched groups and
+entries; an explicit toggle made earlier is kept, and later preference changes
+never replace mounted choices. Before readiness, retained images make no
+authenticated attachment byte request and show no image (a loading status), and
+draft images show no preview, unless the user explicitly reveals. After
+readiness, saved Off keeps the labeled reveal action and saved On or default
+preserves the original bounded readback and cleanup behavior.
+
+#### Shared restrained entrance motion and Appearance
+
+Desktop only. `entrance-motion.ts` and `entrance-motion.css` (relative to `apps/delidev/src`) own one shared, statically scoped 160ms entrance primitive: `translateY(4px)` to `none` with `ease-out`, keyframe `entrance-y4`, selected by the activation-scoped attribute `data-entrance="y4"` (`EntranceMotion.Y4`). It never changes opacity, scale, height or geometry, has no bounce, stagger, fill mode, exit animation, dependency, inline style, CSP exception, telemetry or per-frame/content logging, and its resting transform is `none` with fully opaque surfaces. The 120ms `translateY(2px)` (`entrance-y2`, `EntranceMotion.Y2`), 120ms `translateX(4px)` (`entrance-x4`, `EntranceMotion.X4`) and 120ms `translateY(4px)` (`entrance-y4-short`, `EntranceMotion.Y4Short`, owned by Search) siblings live in the same stylesheet with the same rules; any further primitive is added by the screen that first needs it. The primitive excludes native, fixed and portal positioning hosts and their ancestors. A native dialog that mounts beneath an animated surface (`Modal` calls `settleEnclosingEntrances` before `showModal`) settles that surface's in-flight entrance in the same commit, so no dialog host ever has an animated ancestor; the dialog's own inner block still plays its single entrance and focus never waits.
+
+`useEntranceActivation(activation, enabled)` owns one explicit activation. A new activation key plays the motion once (a key that arrives while the previous entrance is still running resets and re-declares the attribute, forcing a style flush, so the animation restarts instead of continuing the old timeline), only when the surface opted in, Animation is not Off (`data-animation` is not `false`) and OS reduced motion is not requested. The attribute clears on the element's own `animationend`/`animationcancel` (descendant animations are ignored; an `animationcancel` queued by the intentional restart reset is ignored while an animation of the same name is still running, checked through `getAnimations()`) or, as a generation-fenced fallback, after 240ms. Switching Animation Off or enabling OS reduced motion mid-flight clears it immediately through the existing global `animation: none !important` suppression in `themes.css`; re-enabling never replays the current activation. Rendering, reads, refetch, polling, pagination, typing/streaming, async progress, errors, permission changes, same-category reselection and Strict Mode replay never restart it. Rapid departure and re-entry replace the keyed surface, so a stale completion cannot affect the new activation or retain an inactive surface. Focus, navigation, dismissal, disposal, RPC, draft/selection/scroll ownership and mounted controller identity never wait for animation completion.
+
+Settings opts categories in through `entranceCategories` in `settings.tsx`; the activation key is the category opening (`selection.key`) held by `SettingsVisit`, and the attribute lands on the category content column (heading and body) inside `SettingsWorkspace`. Appearance is the first opted-in category: its explicit category opening and its custom-theme editor (`Modal` with the `entrance` prop, one activation per explicit open) use the primitive. `Modal` applies the attribute to an inner block that wraps the dialog header and body, never to the native `<dialog>` host, so the top-layer modal host and its geometry stay stable. Theme, language and date selectors, autosave, import, deletion and every save keep their immediate behavior, and an open editor keeps its dialog, draft, focus and controller identity. Each additional category or task opts in only with its own approved contract text.
+
+#### Settings category and task entrance
+
+Desktop only. `entranceCategories` in `settings.tsx` maps each opted-in `SettingsCategory` to an `EntranceTarget` (`entrance-motion.ts`). Every opted-in surface uses the shared 160ms `translateY(4px)` Y4 primitive and the replay-safe rules above. The activation is the category opening (`selection.key`) and, for tasks, one mounted task window. Opted-in categories: Appearance, Keyboard shortcuts, Server preferences, Paired devices, Notifications, Import / Export, Backups (target `Surface`) and Connections, App information (target `Heading`).
+
+- `Surface` moves the category content column, which holds the heading and body. `SettingsTaskWindow` also plays one entrance for every Settings task opened inside any opted-in category, through `SettingsTaskEntranceContext` provided by `SettingsWorkspace`. The task entrance moves only the task `header`, never the native task `<dialog>` host or its body: a transform would make the dialog the containing block of fixed descendants (for example portaled tooltips) and the contract above excludes native positioning hosts. Tasks outside an opted-in category never animate. Opening, editing, saving, cancelling, refresh, polling, pagination, async progress, errors, permission changes and job or history updates never restart it, dismissal is immediate with no exit animation, and focus return, dismissal, disposal and request ownership never wait for it.
+- `Heading` moves only the static `.settings-category-heading`; tasks always move only their own task heading. Connections and App information contain persistent portal hosts, native controllers and update or connection callbacks; no ancestor of those hosts receives a transform, and their controllers, original version evidence, pending update checks, connect, re-pair and retry requests keep their identity. `Modal` takes `headingEntrance` for desktop-owned Connections tasks (Saved server add, rename and removal presentation, Tailscale enable and device selection, and local re-registration). It plays one entrance on the dialog `header` and never on the dialog. The owner supplies `presentationRequest` for retained tasks: a Modal that mounts visible is one presentation, and afterwards only a changed request that becomes visible (a user action that opens the task, Continue after a dismissal, or a new Add generation) adds one. Visibility changes without a new request, such as a Connections host slot appearing or the page becoming active again, stay immediate. Incoming Tailscale approval prompts and slot-driven Saved servers presentation never animate.
+- Import / Export (`configuration-transfer.tsx`) additionally animates the Map fieldset and the Review preview section once when the user explicitly requests that stage (Load configuration document, Preview configuration changes). `requestedStage` records only that request and is cleared by edits, invalidation and stage arrival. The Map activation is an explicit Load request counter, not the `loaded` visibility: loading again while a document is already mapped replaces it in one event batch and still plays one entrance (the shared hook restarts a running animation for the new key). Stage changes that are derived from asynchronous results (apply progress, uncertain-request recovery, import result) stay immediate. Exact transfer bytes, mappings, original request IDs and protected state are untouched.
+- Keyboard shortcuts animates the category only. Key capture, shortcut dispatch, typing and validation never restart it. The category has no separate task dialog at present, and any future owned task must opt in with its own contract text.
+- Paired devices animates the category, the pairing task and the revocation confirmation. Disclosures such as Details stay instantaneous. Pairing codes, device credentials and confirmed-revocation state are not read or logged by the motion.
+- Animation Off (`data-animation=false`) and OS reduced motion prevent the motion and clear an in-flight entrance immediately, and re-enabling never replays the current visit. `settings-motion.test.tsx` and `settings-entrance.test.tsx` cover this with synthetic fixtures; they grant no native or account acceptance.
+
+#### Conversation entrance motion
+
+Desktop only. `SessionView` (`session.tsx`) opts the shared Session/General Chat surface into two entrances from `entrance-motion.ts`. Neither transforms the transcript, composer, progress, approvals, live message content or any scroll root, and neither waits on focus, navigation, disposal, RPC or draft/selection/scroll ownership.
+
+- Session heading and toolbar: the `div.session-header-entrance` wrapper inside `header.session-header` plays the 120ms `translateY(2px)` Y2 entrance once per explicit session activation. The header itself becomes a scroll root in compact widths and heights, so it never carries the transform; the wrapper mirrors the header's flex layout through inherited properties. `useActivationCount(active)` counts rising edges of the existing `active` prop (selection, or returning to a retained session), and the activation key is that count with the session ID. Renders, reads, refetch, polling, pagination, typing/streaming, async progress, errors, permission changes and startup projection never restart it. Embedded Sidechat panes and inactive sessions never animate. Opening the Session actions popup (`SessionActions`) settles any in-flight enclosing entrance in the same commit through `settleEnclosingEntrances`, so the transformed wrapper never caps the popup's z-index beneath the later navigation siblings; focus moves to the first action without waiting for the motion.
+- Session Info heading: the persistent Info card never animates when it merely appears, including when startup presentation reveals it. Only an explicit opening (`showInfo`: Show details and the recovery or budget entries) increments an opening counter and plays the 120ms `translateX(4px)` X4 entrance on the `header` inside `aside.session-information`. A later explicit opening plays again; there is no exit animation, and Info keeps its controllers, disclosures and focus.
+
+Animation Off (`data-animation=false`) and OS reduced motion prevent the motion and clear an in-flight entrance immediately; re-enabling never replays the current activation. Rapid leave and re-entry replace the activation key, so a stale completion cannot affect a new activation. Shared 160ms Y4 rules in the section above (no inline style, dependency, CSP exception, telemetry or per-frame logging) apply unchanged. `session-entrance.test.tsx` covers activation-only play, no replay, preference changes and controller identity with synthetic fixtures; it grants no native or account acceptance.
+
+#### Inbox and Search entrance motion
+
+Desktop only. `inbox.tsx` and `views.tsx` (Search) opt in to the shared primitives from `entrance-motion.ts`. Neither transforms a list, sidebar filter, input, scroll root or native/fixed/portal positioning host, and neither waits on focus, navigation, dismissal, disposal, RPC or draft/selection/scroll ownership.
+
+- Inbox detail: the `div.inbox-detail-entrance` wrapper inside the `section.inbox-detail-pane` scroll root (never the pane itself) plays the 120ms `translateX(4px)` X4 entrance once per explicit original-entry detail selection. The wrapper contains the detail heading row and every detail state and body, and the list never moves. An internal counter increments for a row click, a keyboard or compact-layout selection of a different entry, and every new native notification activation (`notificationActivation`); the activation key is `inbox:<selected id>:<count>`. Choosing the row that is already open, the 5-second detail and list polling, read retries, explicit refresh, draft edits, filter changes, pagination and errors never change the key. Closing the detail removes the wrapper immediately with no exit animation, and opening an entry again is a new activation. Selection and notification activation never mark an entry read, and response drafts, exact interaction revisions and direct read-state actions are unchanged.
+- Search destination: the `section.page` results section plays the 120ms `translateY(4px)` short Y4 entrance (`EntranceMotion.Y4Short`, keyframe `entrance-y4-short`; neither the 160ms Y4 nor the 120ms Y2 shape) once per destination activation, keyed by `search:<count>` from `useActivationCount(active)` rising edges of the existing `active` prop. Typing, IME composition, debounce, submission, result replacement, pagination, refresh, opening a result and the compact drawer opening never restart it. The sidebar filter form and query input are not inside the animated section and keep their ordinary borders. The once-only explicit query-focus admission and the drawer-settlement ownership in the existing focus effects are unchanged and never wait for the motion.
+
+The shared Animation Off (`data-animation=false`), OS reduced motion, in-flight settle, no-replay-on-re-enable, rapid leave and re-entry and Strict Mode rules in the sections above apply unchanged, and neither entrance adds an exit animation, inline style, dependency, CSP exception, telemetry or per-frame logging. `inbox.test.tsx` (Inbox detail entrance) and `search-entrance.test.tsx` cover activation-only play, no replay, preference changes and controller identity with synthetic fixtures; they grant no native or account acceptance.
+
+#### New session and New general chat entrance motion
+
+Desktop only. `NewSession` (`new-session.tsx`) opts both `NewSessionKind.Session` (New session) and `NewSessionKind.GeneralChat` (New general chat) into one shared 160ms `translateY(4px)` Y4 entrance (`EntranceMotion.Y4`, `ease-out`, final transform `none`, surfaces fully opaque, no opacity, scale, bounce, stagger or height change). The `data-entrance` attribute lands on the single `section.new-session-page` root of the mounted destination; the root's ref composes `placement.page` (the placement measurement hooks) with the entrance ref, so measurement and motion share one element and never replace it.
+
+- Activation key: `useActivationCount(active)` counts rising edges of the existing `active` prop, and the key is `<idPrefix>:<edges>:<activation>` so the entrance plays once for each explicit New session or New general chat action (the existing `activation` counter, including a fresh action while the page is already active) and once for each return to the retained page (for example back from Settings). The lazily mounted General Chat page starts active and plays on its first activation.
+- Never replayed or started by typing, mode, Options, attachments, Project, Agent Worker or Runner Device changes, reads, polling, refetch, pagination, streaming, errors, permission changes, preference restoration or creation requests. Options keeps only its existing chevron rotation and its content appears instantly. An inactive (hidden) page never animates and never retains motion after leaving; rapid leave and re-entry replace the activation key so a stale completion cannot affect the new one.
+- Drafts, selection, attachments, the retained creation request, mounted controllers, focus (First message focus on entry), navigation, dismissal, disposal, RPC and draft/selection/scroll ownership never wait for the motion. No project field is added to General Chat, and independent General Chat drafts and preferences remain.
+- The fixed top-layer popups inside the page (the Starting branch popup in `starting-branches.tsx` and the `$` skill completion popup in `skill-completion-overlay.ts`) settle any in-flight enclosing entrance through `settleEnclosingEntrances` before `showPopover`, and measure their anchor again once the untransformed layout commits (the skill popup through its `data-entrance` attribute observer, the branch popup through a microtask re-measure), so no fixed positioning host has a transformed ancestor. The tooltip portal on `document.body` is outside the page. The page root is not a native dialog, popover or scroll-owner host.
+- Animation Off (`data-animation=false`) and OS reduced motion prevent the motion and clear an in-flight entrance immediately; re-enabling never replays the current activation. The shared Y4 rules above (no inline style, dependency, CSP exception, exit animation, telemetry or per-frame logging) apply unchanged. `new-session-entrance.test.tsx` covers both kinds with synthetic fixtures (activation-only play, no replay on typing/Options/mode, Settings round trip, rapid leave and re-entry, Animation Off and reduced motion mid-flight, hidden page); `starting-branches.test.tsx` and `skill-completion-overlay.test.tsx` cover the popup settle. It grants no native or account acceptance.
 
 #### Runner Devices flat list presentation
 
@@ -4436,7 +4549,7 @@ The Diff control selects the same session application area without replacing the
 
 ## Local agent review
 
-The Diff panel exposes original file/visible-line comment authoring, read-only selected context, exact revision-checked edit/delete and grouped Request changes. Keep the main conversation/composer mounted. Select old/new lines only within one visible hunk; binary/non-line files offer whole-file comments only. If the comparison changed before authoring, display explicit refresh/reselection guidance and disable saving. Repository, original query, diff revision and context remain inspectable without interpreting text as markup or links.
+The Diff panel exposes original file/visible-line comment authoring, read-only selected context, exact revision-checked edit/delete and grouped Request changes. Keep the main conversation/composer mounted. Select old/new lines only within one visible hunk; binary/non-line files offer whole-file comments only. If the comparison changed before authoring, display explicit refresh/reselection guidance and disable saving. Add review comment is disabled for the whole Branch Refresh (its options read and any following diff request) and re-enables only when the current comparison is ready; already-open drafts and uncertain original requests are never reanchored or replayed. Repository, original query, diff revision and context remain inspectable without interpreting text as markup or links.
 
 Paginated review records include current comments and immutable submission history. Selection retains exact original record revisions and bodies across pages/refresh; concurrent edits require explicit reselection or explicit reuse of a retained edit against the latest revision. Submission selects Execute/Plan and optional stale consent; unavailable reads remain errors. Preserve uncertain create/edit/delete/submit requests with the existing connection-scoped registry, including retry after panel navigation. Disable conflicting controls during unresolved submission. Show accepted queue input identity, original submitted body/context/freshness and later edited-since-submission state separately. No automatic resolution, Steer, GitHub publication or claim of unsupported native response completion. See [local reviews](cmds-delidev-files-contract.md).
 
@@ -4530,6 +4643,10 @@ loop. Tray and notification navigation must move authorization to a blocking
 worker and recheck shutdown and notification generations before publication.
 Otherwise the UI loop can wait for its own queued URL request and deadlock.
 Keep these safeguards until the runtime provides nonblocking getters.
+The retained updater installer worker follows the same rule: after its durable
+begin it uses only retained registry, binding and OAuth epoch state and never a
+URL getter, so post-runtime joining cannot depend on the UI loop. See
+`cmds-delidev-updates-contract.md`.
 
 Each trusted CEF document explicitly enables the native accessibility tree after
 page load through the UI-loop webview callback. The pinned runtime otherwise
@@ -5133,10 +5250,32 @@ unsupported capability and unresolved scope remain unknown; late old-scope resul
 cannot publish. Observe complete whitespace-delimited tokens even with the panel
 dismissed through the existing query owner, without polling or locked reads.
 Names match exactly; a valid caret completion prefix and a bare `$` remain ordinary.
+The caret exemption follows the caret position, not panel visibility: dismissing the
+panel with Escape leaves the valid prefix ordinary until the caret moves away.
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+Absence analysis builds one Set of exact current inventory names, then makes one
+lazy pass with one Set lookup per complete token plus one precomputed caret-prefix
+decision; it never scans the inventory per token. The unavailable count is exact
+for any draft size, while at most 256 absent ranges are materialized. If the exact
+count exceeds 256, paint no token overlay (no partial prefix), leave the native
+textarea text visible, and report the exact count through the localized status and
+the textarea description; editing back to 256 or fewer restores the full aligned
+overlay. Painted absent and selected ranges together stay within 256 ranges so the
+mirror holds at most 512 spans.
+An explicit retained binding is confirmed unavailable, with no selected decoration,
+when its exact four-field selection (Worker device, inventory, skill and content
+revision) is absent from a complete successful current-scope inventory, even if an
+entry with the same display name exists. Such a token joins the same budgeted
+unavailable count and status once, whether its name, its selection or both are
+absent. A binding whose four fields match keeps selected styling. Loading, failed,
+disabled or unsupported inventory keeps the selected decoration and fabricates no
+absence, and composition suppresses both. Presentation never mutates bindings or
+send guards; explicit reselection binds the new current selection through the
+existing completion acceptance without moving text, caret or focus. Selected
+decorations remain bounded to 16 and unbound manual tokens stay plain.
 Keep one mounted polite atomic count region in the shared composer wrapper,
 independent of panel visibility, and retain the textarea's count description and
 hidden painted mirror. Announce only changed counts proven by a complete current
@@ -5148,8 +5287,21 @@ count and its status, so late results cannot announce for another owner. Preserv
 native focus, drafts, selections and the existing pending/uncertain locks.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
+Each complete refresh mints new inventory and skill IDs, so reconcile retained rows
+by a presentation-only fingerprint of exact name, provenance and content revision,
+excluding both IDs. Keep every fresh live row first, consume one current fingerprint
+count per equivalent previous row and drop that old row, and retain only unmatched
+previous rows as unavailable. Equal fingerprints match by count, so an unchanged
+skill never gains an unavailable duplicate, a changed-content skill keeps its
+old-content row unavailable beside the available new row until dismissal, and a
+two-to-one disappearance retains exactly one unavailable row. Acceptance always uses
+the current opaque selection, never the fingerprint.
 Unavailable rows retain original names, descriptions and provenance, show localized
-status and are disabled for mouse, Enter and Tab; arrows skip them. Restored live
+status and are disabled for mouse, Enter and Tab; arrows skip them. Plain Tab is
+intercepted only while an enabled row can be accepted; with only unavailable rows
+it is neither default-prevented nor propagation-stopped and keeps native focus
+navigation, leaving the draft, panel and bindings unchanged. Enter, arrows,
+Shift+Tab, modifier chords and IME handling are unchanged. Restored live
 entries use fresh inventory selections. Neither presentation nor Prompt history
 creates, restores or repairs opaque binding authority. All four placements share
 these rules and existing stale-binding, pending and uncertain request guards.
@@ -6214,9 +6366,11 @@ The page uses three ordered sections: DeliDev information, App updates and Relat
 
 Desktop Check for updates is direct and explicit. Unchecked differs from a confirmed successful check with no matching candidate. Checking, available, preparing, installing, installed, failed and unconfirmed states remain distinct. Update recovery starts collapsed and automatically reveals attention, failure or uncertainty. Original update ID/revision and read-only local installation inspection stay mounted when collapsed; closing the disclosure restores focus to its summary. Exact uncertain checks may retry their retained request; a possibly accepted installation remains inspect-only. Native signed-manifest verification, trusted-window confirmation, original receipt authority and installation lifecycle are unchanged.
 
-The page caps content at 1040px, uses 24px section spacing, 8px card corners and 40px controls. Semantic headings and definition lists, shared semantic theme colors and wrapping layouts support English/Korean, keyboard navigation and narrow/200% reflow. Related links render as one grouped list inside the section card: a single 1px bordered group with 8px corners and visible overflow so focus outlines are never clipped. It holds three full-width button rows in the fixed order Official releases, License and Open-source notices, separated by flat 1px dividers with no per-row outlines or default button corners. Related links rows are the only App information controls with a 56px minimum height (16px horizontal padding, vertical space for wrapping); other controls keep 40px. Each row shows a 20px decorative monochrome icon (tag, document, file stack), a 12px gap, a 14px medium-weight label that wraps, and the 18px external-link icon at the trailing edge. Icons are `aria-hidden`, not focusable and never announced. Enabled rows use the subtle surface on hover and show the shared 2px accent focus outline with 3px offset; disabled rows have no hover styling and keep readable muted text. Section-scoped styling resolves the shared Settings button border-color so the group border and dividers keep the semantic border token. The 12px muted source-notice disclaimer sits 16px below the group with unchanged wording. Rows stay in one column at narrow widths and 200% zoom. Button semantics, static search targets, availability and opening/error behavior are unchanged. Native actions use only the closed releases/license/notices selector. `open_app_information_link` captures and rechecks original product-window authority and epoch, dispatches the compiled destination through the bounded system browser opener and denies dispatch after Quit stopping. The custom permission grants only trusted local/saved product documents, never remote origins, external browser children, tray/widget or auxiliary surfaces. Logs contain operation, selector, phase and failure code, never destinations or local paths.
+When `GetStatus.production_root_ready` is explicitly false, the desktop (non-Worker) card shows the neutral `role="status"` text "Signed updates are unavailable in this build." with help text, and Check for updates stays visible but disabled (disabled attribute and an `onClick` guard), described by the status and help through `aria-describedby`. Activation sends no `CheckUpdate` or native prepare/install call, moves no focus, and shows no failed alert, warning icon or technical reference; Update recovery is not opened. The neutral text replaces only the unchecked fallback, so retained checking, uncertain, failed, available and current presentation stays unchanged. Readiness true, an absent field (legacy server), missing `SIGNED_UPDATES_V1`, pending and disconnected states keep their existing behavior. Readiness gates only a fresh desktop `CheckUpdate`: original-ID `GetUpdate` reads, native read-only inspection, retained candidates, uncertain requests and retry, and installation outcome recovery stay usable, and a later false observation never erases original state. Worker update controls are unchanged. English and Korean strings live in `src/locales/{en,ko}/updates.json`, and layout reuses the existing card tokens.
 
-Compiled destinations are the repository's DeliDev-filtered Releases page, source LICENSE and source `apps/delidev/public` notices directory. Notices copy identifies source notices and does not claim an installed-package license inventory. No arbitrary renderer URL/path, broader opener permission, new business RPC, persisted preference or update channel is introduced. Component/browser fixtures, build outputs and native ACL tests must be reported separately from installed CEF, native OS browser dispatch and production signed-install acceptance.
+The page caps content at 1040px, uses 24px section spacing, 8px card corners and 40px controls. Semantic headings and definition lists, shared semantic theme colors and wrapping layouts support English/Korean, keyboard navigation and narrow/200% reflow. Related links render as one grouped list inside the section card: a single 1px bordered group with 8px corners and visible overflow so focus outlines are never clipped. It holds three full-width button rows in the fixed order Official releases, License and Open-source notices, separated by flat 1px dividers with no per-row outlines or default button corners. Related links rows are the only App information controls with a 56px minimum height (16px horizontal padding, vertical space for wrapping); other controls keep 40px. Each row shows a 20px decorative monochrome icon (tag, document, file stack), a 12px gap, a 14px medium-weight label that wraps, and the 18px external-link icon at the trailing edge. Icons are `aria-hidden`, not focusable and never announced. Enabled rows use the subtle surface on hover and show the shared 2px accent focus outline with 3px offset; disabled rows have no hover styling and keep readable muted text. Section-scoped styling resolves the shared Settings button border-color so the group border and dividers keep the semantic border token. The 12px muted source-notice disclaimer sits 16px below the group with unchanged wording. Rows stay in one column at narrow widths and 200% zoom. Button semantics, static search targets, availability and opening/error behavior are unchanged. Native actions use only the closed releases/license/notices selector. `open_app_information_link` captures and rechecks original product-window authority and epoch, dispatches the compiled destination through the bounded opener using the selected general browser destination (system default unless the user chose an installed browser) and denies dispatch after Quit stopping. The custom permission grants only trusted local/saved product documents, never remote origins, external browser children, tray/widget or auxiliary surfaces. Logs contain operation, selector, phase and failure code, never destinations or local paths.
+
+Compiled destinations are the repository's DeliDev-filtered Releases page, source LICENSE and source `apps/delidev/public` notices directory. Notices copy identifies source notices and does not claim an installed-package license inventory. No arbitrary renderer URL/path, broader opener permission, new business RPC or update channel is introduced; the only preference it consults is the device-local browser destination. Component/browser fixtures, build outputs and native ACL tests must be reported separately from installed CEF, native OS browser dispatch and production signed-install acceptance.
 
 ## Schedule creation calendar preview
 
@@ -6238,6 +6392,21 @@ run; a scheduled time does not guarantee execution. The saved authoritative
 
 Connect Query scopes reads to the original transport and exact cron/timezone.
 Valid changed inputs debounce by 300 ms, immediately hiding obsolete dates.
+Every preview read (initial, minute, focus and boundary refresh) records a
+monotonic `performance.now()` anchor when the request is issued, before it
+leaves the client; the browser wall clock is never used. The estimated server
+time is `calculated_at` plus the time since that anchor, so response latency
+counts toward relative wording and the boundary refresh (a response delayed
+1000 ms for a boundary 10000 ms after `calculated_at` refreshes about 9000 ms
+after it arrives). A response whose estimate already reached `next_run_at` on
+arrival is never shown as Ready: the state stays Calculating while an immediate
+refetch runs. A completed successful response is validated before any date or
+constraints are exposed: `calculated_at`, `next_run_at` and constraints must be
+present, both timestamps finite, and `next_run_at` strictly after
+`calculated_at`. Any failure is Unavailable with no provisional date or
+recurrence constraints, the cron/timezone/draft/save validation stay intact and
+minute/focus refresh continues. Calculating is reserved for in-flight reads and
+the normal occurrence-boundary refresh.
 Repeat/Review refresh each minute, at the estimated occurrence boundary, on
 returning to the surface and on window focus. Disposed tasks, replaced connections
 and changed inputs cannot receive an old date. Polite status updates do not move
@@ -6332,6 +6501,14 @@ problem history or separate stack-dependencies section. Pending PR actions remai
 above the workspace. Existing server/CLI inspection and recovery surfaces survive.
 Unknown counts and failed decorative images remain accessible fallbacks.
 
+The stack-context workspace query keeps `retry: false` and stays pending while the
+server resumes a read that selection or tab work displaced; the selected detail
+remains usable meanwhile. A pending read shows no incomplete notice, cancellation
+warning or Retry stack context. The query publishes the final server observation
+without issuing another workspace RPC. Only a terminal failure or invalid
+observation shows the incomplete notice, Problem and explicit Retry stack context.
+Unmounting or scope replacement discards a late result.
+
 ### Contextual session recovery cards
 
 Session and General Chat Conversation retain one recovery region immediately
@@ -6371,3 +6548,21 @@ completion, root outcome or cleanup. Preserve nullable native success and
 ordered inert text/image/audio reference rows. Do not display internal request
 identities, argument contents, media locators or dispatch/retry/approval controls.
 Unknown or malformed unions retain explicit unavailable presentation.
+
+## Browser destinations for external links
+
+Settings > System has a Browser category directly after Appearance (`SettingsCategory.Browser = "browser"`, English `Browser`, Korean `브라우저`). It is part of Settings search (`browser-general`, `browser-local` targets) and command-menu navigation. One bordered card (8px corners, 40px controls, content capped at 1040px, labels stacked above selectors at narrow widths and 200% reflow) holds two native `select` controls: General URL destination (`일반 URL 열기 대상`) and Local URL destination (`로컬 URL 열기 대상`). Each offers `System default browser` plus every HTTP(S) handler discovered natively; a muted note states that sign-in and account authorization links always use the system default. Selectors are keyboard operable and close on Esc through the native control. Web and mobile render the category with every control disabled and a native-capability-unavailable message, call no native command and keep their existing behavior.
+
+**Storage and synchronization.** `BrowserStore` (`src-tauri/src/browser_preferences.rs`) persists `browser_preferences.json` in the app config directory (version 1, `revision`, `general`, `local`) with the same bounded, symlink-refusing, atomic-replace and revisioned compare-before-write pattern as shortcut preferences. Each choice is `system-default` or `installed` with a native identity (macOS bundle identifier, Linux desktop-file ID, Windows `StartMenuInternet` key); identities are syntax-bounded to 128 characters of letters, digits and `._-+ ()`, never display names, paths or commands. Both choices default to `system-default`. `read_browser_preferences`, `update_browser_preferences` and `reset_browser_preferences` are admitted for registered Local product windows and bound Saved windows only and publish `browser-preferences-changed` to every admitted window; stale expected revisions return `changed` and the visible choice changes only from an accepted native snapshot, so success is never shown before persistence. A newly selected identity must be registered at update time; an unchanged saved identity may be uninstalled and stays visible as `<identity> (not available)`. Corrupt or newer-version storage keeps its bytes, disables selection, shows an explicit message and offers `Reset browser settings`; reset is accepted only in that state. Other storage problems offer a reload.
+
+**Discovery.** `read_browser_inventory` refreshes the list whenever the page opens and on explicit refresh. macOS scans application bundles for an `Info.plist` that declares both `http` and `https` URL schemes, Linux scans XDG, Flatpak and Snap `.desktop` files that handle both `x-scheme-handler/http` and `/https`, and Windows reads `StartMenuInternet` registrations that publish both URL associations through `reg.exe`. Discovery failure (`browser-discovery-failed`) is distinct from an empty list; both leave `System default browser` available.
+
+**Classification.** `external_url.rs` accepts only explicit credential-free `http`/`https` URLs of at most 2,048 bytes without whitespace or control characters. A parsed host of `localhost`, any IPv4 `127.0.0.0/8` address or IPv6 `::1` is Local regardless of port, path or query; every other host (LAN addresses, `localhost.example`, a query containing `localhost`) is General. No DNS lookup happens.
+
+**Dispatch.** `open_external_url` (and the provider guidance, App information and GitHub openers) validate and classify the URL natively, read the saved choice directly from storage, resolve an installed identity through a fresh inventory immediately before launch and launch exactly one process with an argv-only recipe: macOS `/usr/bin/open -b <bundle> <url>`, the desktop-entry `Exec` command with field codes substituted on Linux, and the registered executable on Windows (registered arguments are ignored). The URL is one argv value, the environment is a credential-free allowlist, and a stopped (quitting) host launches nothing. A browser still running after a two-second grace period counts as dispatched and is reaped on its own thread, never killed. Unreadable or corrupt existing storage fails closed (`storage-unavailable`); a host with no app config directory has no saved choice, so the system default applies while Settings shows the preference as unavailable; a missing browser reports `browser-unavailable`; a failed launch reports `browser-launch-failed`. There is no fallback to the system default or another browser, no retry and no second launch, and the saved choice is kept. OAuth/subscription authorization calls the system-default dispatcher directly and never reads the preference. `device-browser-links` grants the five commands to `main` and `server-*` webviews only; permission tests resolve the generated ACL.
+
+**Renderer presentation.** `LinkedPre` renders user and assistant message text (generic session messages, Claude text blocks, Grok user input and Grok assistant text) as the original characters with explicit HTTP(S) tokens wrapped in anchors that never navigate the webview; reasoning, tool, artifact, progress, diff, file and details content stays inert. Trailing sentence punctuation and unbalanced closing brackets stay outside the URL, partial streamed tokens are not links until complete, and a second activation while one is pending is ignored. The terminal adapter (`terminal-emulator.ts`) reads rendered `.term-row` text on a plain primary click or hover, joins rows that fill the full grid width, ignores clicks while text is selected, and leaves WTerm `linksEnabled: false`, OSC 8/OSC 52 handling, input admission and parser replies unchanged; its listeners are removed on disposal. Failures render a localized dismissible alert (`external-link.*`) naming Settings > Browser; Provider guidance, App information and GitHub openers map the same codes to that guidance.
+
+**Logging.** Operations `external_url_open`, `provider_guidance`, `app_information_link`, `github_open`, `browser_inventory` and `device_browser_preferences_*` log operation, URL class, browser identity, phase and failure code. URLs, query values, credentials and local executable paths are never logged.
+
+**Acceptance boundary.** Component, fixture, ACL and argv tests do not establish installed-browser discovery or launch on macOS, Windows and Linux; record that acceptance separately. No server RPC, capability number, protobuf or database migration is added. The protected account/session browser and the standalone CLI keep their existing behavior.

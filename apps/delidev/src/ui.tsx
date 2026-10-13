@@ -3,6 +3,12 @@ import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale, type MessageKey } from "./localization";
 import {
+  settleEnclosingEntrances,
+  useEntranceActivation,
+  usePresentationCount,
+  type EntranceProps,
+} from "./entrance-motion";
+import {
   useLayoutEffect,
   useId,
   useRef,
@@ -137,6 +143,9 @@ export function Modal({
   initialFocus,
   focusClose = false,
   trapFocus = false,
+  entrance,
+  headingEntrance = false,
+  presentationRequest,
 }: {
   title: string;
   close: () => void;
@@ -146,8 +155,28 @@ export function Modal({
   initialFocus?: RefObject<HTMLElement | null>;
   focusClose?: boolean;
   trapFocus?: boolean;
+  /** Optional activation-scoped entrance from useEntranceActivation. */
+  entrance?: EntranceProps;
+  /**
+   * Plays the 160ms entrance on this dialog's static heading only, once per
+   * explicit presentation request. For tasks whose body may contain persistent portal
+   * hosts, which no ancestor transform may touch.
+   */
+  headingEntrance?: boolean;
+  /**
+   * The owner's explicit presentation request (for example a user action that
+   * opens or resumes the task). A heading entrance plays when the Modal mounts
+   * visible and whenever a changed request becomes visible. Visibility changes
+   * without a new request, such as a host slot appearing, stay immediate.
+   */
+  presentationRequest?: string | number;
 }) {
   useLocale();
+  const presentations = usePresentationCount(visible, presentationRequest);
+  const heading = useEntranceActivation(
+    String(presentations),
+    headingEntrance && visible,
+  );
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -155,6 +184,9 @@ export function Modal({
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
+    // A native dialog never sits beneath an animated ancestor: an in-flight
+    // category entrance settles before the first paint of the dialog.
+    settleEnclosingEntrances(dialog);
     dialog.showModal();
     (focusClose ? closeButton.current : initialFocus?.current)?.focus();
     return () => {
@@ -162,6 +194,23 @@ export function Modal({
       if (opener?.isConnected) opener.focus();
     };
   }, [visible, initialFocus, focusClose]);
+  const content = (
+    <>
+      <header ref={heading.ref} data-entrance={heading["data-entrance"]}>
+        <h2 id={id}>{title}</h2>
+        <SettingsActionButton
+          icon={SettingsActionIcon.Cancel}
+          ref={closeButton}
+          type="button"
+          onClick={close}
+          aria-label={copy("ui.close_0fbe2a", { v0: title })}
+        >
+          {copy("ui.close_7d9eb7")}
+        </SettingsActionButton>
+      </header>
+      {children}
+    </>
+  );
   return (
     <DialogSurface
       ref={ref}
@@ -199,19 +248,14 @@ export function Modal({
         }
       }}
     >
-      <header>
-        <h2 id={id}>{title}</h2>
-        <SettingsActionButton
-          icon={SettingsActionIcon.Cancel}
-          ref={closeButton}
-          type="button"
-          onClick={close}
-          aria-label={copy("ui.close_0fbe2a", { v0: title })}
-        >
-          {copy("ui.close_7d9eb7")}
-        </SettingsActionButton>
-      </header>
-      {children}
+      {entrance ? (
+        // The native modal host stays untouched; only this inner block moves.
+        <div ref={entrance.ref} data-entrance={entrance["data-entrance"]}>
+          {content}
+        </div>
+      ) : (
+        content
+      )}
     </DialogSurface>
   );
 }

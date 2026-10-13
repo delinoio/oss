@@ -34,7 +34,20 @@ pub struct Report {
     pub pass_summary: BTreeMap<PassId, PassSummary>,
     pub transformations: Vec<Transformation>,
     pub skipped: Vec<Skipped>,
+    /// Bundle mode: chunks that a boundary chunk can import. They are not
+    /// optimized or renamed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub frozen_chunks: Vec<FrozenChunk>,
     pub measurements: Measurements,
+}
+
+/// A bundle chunk left unchanged because a boundary chunk can import it.
+#[derive(Serialize)]
+pub struct FrozenChunk {
+    pub file: String,
+    /// The boundary chunk that reaches the chunk.
+    pub boundary: String,
+    pub reason: Reason,
 }
 
 #[derive(Serialize)]
@@ -63,9 +76,11 @@ pub struct Size {
     pub after: usize,
     pub saved: isize,
     /// Stage 2: code bytes of original chunks published next to their renamed
-    /// optimized copies because encoded or boundary references still name
-    /// them. They are not part of `after`, which describes the optimized
-    /// chunk graph. Always 0 in stage 1.
+    /// optimized copies because encoded references or non-import mentions in
+    /// boundary chunks still name them. Chunks that a boundary chunk imports
+    /// are never renamed, so they add nothing here. They are not part of
+    /// `after`, which describes the optimized chunk graph. Always 0 in
+    /// stage 1.
     pub retained: usize,
 }
 
@@ -248,6 +263,13 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
         pass_summary: summary,
         transformations,
         skipped,
+        frozen_chunks: crate::app::bundle_frozen()
+            .map(|(file, boundary)| FrozenChunk {
+                file: file.clone(),
+                boundary: boundary.clone(),
+                reason: Reason::BoundaryReachable,
+            })
+            .collect(),
         measurements: Measurements::default(),
     }
 }

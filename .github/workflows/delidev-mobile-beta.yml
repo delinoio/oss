@@ -47,6 +47,7 @@ permissions: { contents: read, actions: read }
 concurrency:
   group: delidev-mobile-beta
   cancel-in-progress: false
+  queue: max
 
 env:
   DELIDEV_MOBILE_TARGET: ${{ inputs.target }}

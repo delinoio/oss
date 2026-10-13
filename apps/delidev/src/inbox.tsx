@@ -52,6 +52,7 @@ import {
 } from "./inbox-drafts";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface } from "./sidebar-context";
+import { EntranceMotion, useEntranceActivation } from "./entrance-motion";
 
 const inboxIdentity = (view: InboxView) => view.entry!.id;
 const inboxRevision = (view: InboxView) => view.entry!.revision;
@@ -220,6 +221,15 @@ export function Inbox({
   const pendingReadGeneration = useRef<number | undefined>(undefined);
   const lastNotificationActivation = useRef(0);
   const [selectedId, setSelectedId] = useState("");
+  // Counts explicit selections (row, keyboard, notification). Only a count
+  // change starts the 120ms X4 detail entrance; reads, polling, retries, draft
+  // edits and list refreshes never touch it.
+  const [detailEntrances, setDetailEntrances] = useState(0);
+  const detailEntrance = useEntranceActivation(
+    `inbox:${selectedId}:${detailEntrances}`,
+    Boolean(selectedId) && active,
+    EntranceMotion.X4,
+  );
   const [readTrigger, setReadTrigger] = useState(0);
   const [detailRead, setDetailRead] = useState<DetailRead>();
   const [draftCollection, setDraftCollection] = useState<DraftCollection>({
@@ -267,6 +277,8 @@ export function Inbox({
       keyboard ||
       (typeof window.matchMedia === "function" &&
         window.matchMedia("(max-width: 1119px)").matches);
+    // Choosing the row that is already open is not a new visit.
+    if (id !== selectedId) setDetailEntrances((value) => value + 1);
     setSelectedId(id);
     setReadTrigger((value) => value + 1);
   };
@@ -283,6 +295,8 @@ export function Inbox({
     keyboardSelection.current =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 1119px)").matches;
+    // Every new notification activation is an explicit entry.
+    setDetailEntrances((value) => value + 1);
     setSelectedId(notificationId);
     setReadTrigger((value) => value + 1);
   }, [notificationId, notificationActivation]);
@@ -776,7 +790,7 @@ export function Inbox({
                 <h3>{copy("inbox.selectAnItemToViewIts_e2e998")}</h3>
               </div>
             ) : (
-              <>
+              <div className="inbox-detail-entrance" {...detailEntrance}>
                 <div className="inbox-detail-top">
                   <button className="inbox-back" onClick={closeDetail}>
                     {copy("inbox.backToInbox_97555c")}
@@ -872,7 +886,7 @@ export function Inbox({
                     <span />
                   </div>
                 ) : null}
-              </>
+              </div>
             )}
           </section>
         </div>

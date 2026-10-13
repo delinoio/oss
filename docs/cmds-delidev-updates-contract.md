@@ -41,37 +41,60 @@ logs uncertainty without claiming terminal publication.
 
 Before the first settlement attempt, the native host durably retains the exact
 observed outcome in a private per-operation record at
-`<root>/desktop-updates/native-outcomes/<operation-id>.json`, beside the Go-owned
-journal in the original connector root scope. The record is a closed `outcome`
-kind with the phase (`installed`, `failed` or `uncertain` only), server ID,
-operation ID, revision, native generation and optional saved-connection ID. The
-directory is owner-only and never repaired or created outside an existing
-`desktop-updates` scope, which is validated (a real directory without symlink
-ancestors) before the store directory is created; files are written owner-only through a fsynced
-temporary file (the `desktop-updates` parent is fsynced before every
-persistence so a newly created store directory is durable) and published with a no-replace hard link (a destination created
-after the preceding read is reread and accepted only when identical), bounded to 4 KiB, and an existing record for
-the same operation is never replaced with different content. The record is
-retired only after the offline `native-outcome` response echoes the recorded
-phase for the same identities, and only when the stored bytes still equal, byte for
-byte, the bytes written for the verified record: the name is atomically claimed,
-the claimed bytes are verified, and only then is the claim unlinked. A
-differently encoded or replaced file is restored and retained. On the next launch a bounded background pass, and each
-original-scope `native-inspect` for the exact server, operation, revision and
-saved scope, replays the retained phase through the same offline writer with a
-settlement-only token. That token has no installer entry point, so replay never
-invokes installation and never changes the journal phase or generation. Launch
-keeps fresh installation admission busy until the pass ends, and Quit stops the
-pass between records. A pass visits at most 32 readable records in stable name
-order; unreadable entries are reported but never consume that bound, so they
-cannot starve a later valid record. An original-scope inspection reads only the
-record keyed by its own operation ID and never enumerates the directory. Corrupt, oversized, symlinked, misnamed, unknown-field,
-foreign-identity or rejected records stay on disk, are logged with typed
-outcomes and never authorize installation. A missing journal or record is never
-inferred as Installed. Fixture sidecars cover Installed, Failed and Uncertain
-replay, lost replies, foreign scope and corrupt evidence; they do not establish
-installed-platform acceptance. The record kind enum is the extension point for
-later retained native evidence.
+`<root>/desktop-updates/native-outcomes/<operation-id>.json`, beside the
+Go-owned journal in the original connector root scope. The record is a closed
+`outcome` kind with the phase (`installed`, `failed` or `uncertain` only),
+server ID, operation ID, revision, native generation and optional
+saved-connection ID. The directory is owner-only and never repaired or created
+outside an existing `desktop-updates` scope, which is validated (a real
+directory without symlink ancestors) before the store directory is created;
+files are written owner-only through a fsynced temporary file (the
+`desktop-updates` parent is fsynced before every persistence so a newly created
+store directory is durable) and published with a no-replace hard link (a
+destination created after the preceding read is reread and accepted only when
+identical), bounded to 4 KiB, and an existing record for the same operation is
+never replaced with different content. The record is retired only after the
+offline `native-outcome` response echoes the recorded phase for the same
+identities, and only when the stored bytes still equal, byte for byte, the bytes
+written for the verified record: the name is atomically claimed, the claimed
+bytes are verified, and only then is the claim unlinked. A differently encoded
+or replaced file is restored and retained. On the next launch a bounded
+background pass, and each original-scope `native-inspect` for the exact server,
+operation, revision and saved scope, replays the retained phase through the same
+offline writer with a settlement-only token. That token has no installer entry
+point, so replay never invokes installation and never changes the journal phase
+or generation. Launch keeps fresh installation admission busy until the pass
+ends, and Quit stops the pass between records. A pass visits at most 32 readable
+records in stable name order; unreadable entries are reported but never consume
+that bound, so they cannot starve a later valid record. An original-scope
+inspection reads only the record keyed by its own operation ID and never
+enumerates the directory. Corrupt, oversized, symlinked, misnamed,
+unknown-field, foreign-identity or rejected records stay on disk, are logged
+with typed outcomes and never authorize installation. A missing journal or
+record is never inferred as Installed. Fixture sidecars cover Installed, Failed
+and Uncertain replay, lost replies, foreign scope and corrupt evidence; they do
+not establish installed-platform acceptance. The record kind enum is the
+extension point for later retained native evidence.
+
+The retained worker holds no window handle. After the durable begin it rechecks
+the exact original authority from retained native state only: the OAuth window
+epoch, then the product-window registry instance, role, Local revision, saved
+binding/profile authority and removal barriers. It never calls a CEF URL getter,
+`trusted_local` or `saved_binding`, so it cannot wait on a stopped UI loop during
+the post-runtime join. Initial trusted-document admission before begin and the
+authoritative window recheck at the command boundary remain required.
+
+The post-begin check has three outcomes. A definitive mismatch (changed
+instance, role, Local revision, epoch or saved profile authority, a removal
+barrier, or a departed window/binding) records pre-effect Failed with zero
+installer calls. An unverifiable result such as lock contention or poison is not
+evidence of departure: the worker retries it every 25 ms for up to 5 seconds
+with the accepted token retained, and installs only after an exact authorized
+result. Quit stops retrying after the check in progress. When the budget is
+exhausted or Quit cancels, the original Uncertain phase stays with the retained
+token and is settled through the same inspection/Quit path without any
+installation. Logs record the failure code and attempt count only, never saved
+binding details.
 
 The native application manifest declares `desktop_update_context` and
 `desktop_update_native` under the dedicated closed `desktop-update` permission.
@@ -102,6 +125,8 @@ Private bounded candidates retain the original signed manifest and downloaded di
 ## Security
 
 The compiled DeliDev Ed25519 public declaration is the only manifest authority. An unset or non-production declaration blocks real downloads/installation and release signing; test-only roots cannot activate production. Networking has no ambient proxy, account token, cookie or credentials. Exact GitHub release URLs and bounded HTTPS release-asset redirects are checked independently; cross-project tags, unknown targets, duplicate fields, malformed signatures, stale versions and digest/length mismatch fail before execution. Signing private keys never enter repository, RPC or logs.
+
+`SystemService.GetStatus` reports `production_root_ready` (`optional bool`, field 9) from the single `updates.ProductionReady()` verifier check, so readiness has explicit presence: an absent field is a legacy server, never readiness. It is independent of the `SIGNED_UPDATES_V1` protocol capability, which stays advertised, and grants no signing, download or installation authority. While the compiled root is unset or non-production the value is present and false. Clients use it only to avoid starting a fresh desktop `CheckUpdate` that would deterministically fail; original-ID `GetUpdate` reads (which carry their own `production_root_ready`), retained candidates and uncertain requests are unaffected.
 
 ## Logging
 
