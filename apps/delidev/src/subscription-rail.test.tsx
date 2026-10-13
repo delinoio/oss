@@ -359,8 +359,9 @@ it("refreshes reached pages atomically without discovering an unseen tail", asyn
     "tail",
   ]);
 });
-it("refreshes saved reads at sixty seconds only while visible", async () => {
+it("refreshes saved reads at sixty seconds only while visible but not in app use", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
   const f = mount(() => ({ resources: [resource("Personal")] }));
   await screen.findByRole("button", { name: /Personal/ });
   expect(f.requests).toHaveBeenCalledOnce();
@@ -381,6 +382,40 @@ it("refreshes saved reads at sixty seconds only while visible", async () => {
   });
   expect(f.requests).toHaveBeenCalledTimes(2);
   visibility.mockRestore();
+  focus.mockRestore();
+});
+it("rereads accepted saved ranges every thirty seconds only while the app is in use", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const f = mount(() => ({ resources: [resource("Personal")] }));
+  await screen.findByRole("button", { name: /Personal/ });
+  expect(f.requests).toHaveBeenCalledOnce();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(29999);
+  });
+  expect(f.requests).toHaveBeenCalledOnce();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  expect(f.requests).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30000);
+  });
+  expect(f.requests).toHaveBeenCalledTimes(3);
+  // Rereads reuse the accepted range: no unseen tail page is requested.
+  expect(f.requests.mock.calls.every((call) => call[0] === "")).toBe(true);
+  // Blur returns to the slower visible-only cadence.
+  focus.mockReturnValue(false);
+  fireEvent(windowThis(), new Event("blur"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(59999);
+  });
+  expect(f.requests).toHaveBeenCalledTimes(3);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  expect(f.requests).toHaveBeenCalledTimes(4);
+  focus.mockRestore();
 });
 it("keeps retained badges unconfirmed during a deferred retry", async () => {
   const first = resource("Personal");

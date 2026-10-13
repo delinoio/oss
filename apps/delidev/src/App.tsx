@@ -1,6 +1,7 @@
 import { ProductIdentityProvider } from "./product-identity-labels";
 import { DraftEditGenerations } from "./draft-edit-generations";
 import { SessionInboxReadBoundary } from "./session-inbox-read";
+import { SubscriptionQuotaAutoRefresh } from "./subscription-quota-refresh";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import {
@@ -877,6 +878,7 @@ export function App({
           <ProductIdentityProvider>
             <NotificationProvider>
               <MutationIntents>
+                <SubscriptionQuotaAutoRefresh ready={connectionReady} />
                 <SessionTabsProvider>
                   <SessionSubmissionsProvider>
                     <ImageDraftProvider>
