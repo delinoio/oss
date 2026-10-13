@@ -1395,7 +1395,12 @@ Connection-memory revision fences and original-ID tombstones prevent stale
 history restoration or reopening from reviving dismissed tabs. Pending or
 uncertain original controls retain their recovery presentation; only a missing
 or null `pending` field means no operation, so an empty object, scalar or array
-`pending` value stays unsettled and never dismisses. An inactive exit
+`pending` value stays unsettled and never dismisses. Each original ID
+retains one compact fingerprint (no document bytes) of its latest accepted
+revision; an equal-revision observation whose state, cleanup proof or pending
+evidence differs is contradictory and rejected without tombstoning, while an
+identical replay (including a deferred exit observed again after its control
+settles) is accepted once without requiring a newer revision. An inactive exit
 preserves selection/focus; a selected exit chooses its nearest remaining left
 terminal, then the first remaining terminal. Shared content tabs use their
 original opened-terminal order, skipping intervening nonterminal tools. If no

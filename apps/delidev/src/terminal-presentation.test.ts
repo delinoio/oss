@@ -91,6 +91,112 @@ it("rejects stale revisions after a pending empty object is retained", () => {
   ).toBe(false);
   expect(view.hidden("original")).toBe(false);
 });
+it("never tombstones a contradictory equal-revision exit after running", () => {
+  const view = new TerminalPresentation();
+  expect(view.observe("parent", resource(5n, { state: "running" }))).toBe(
+    false,
+  );
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, { state: "exited", cleanup_verified: true }),
+    ),
+  ).toBe(false);
+  expect(view.hidden("original")).toBe(false);
+  expect(view.observe("parent", resource(5n, { state: "running" }))).toBe(
+    false,
+  );
+  expect(
+    view.observe(
+      "parent",
+      resource(6n, { state: "exited", cleanup_verified: true }),
+    ),
+  ).toBe(true);
+});
+it.each([
+  { state: "running" },
+  { state: "exited" },
+  { state: "exited", cleanup_verified: false },
+  { state: "exited", cleanup_verified: true },
+  {
+    state: "exited",
+    cleanup_verified: true,
+    pending: { action: "close", request_id: "original" },
+  },
+])("rejects equal-revision evidence that changes from exited %j", (change) => {
+  const view = new TerminalPresentation();
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, { state: "exited", cleanup_verified: true, pending: {} }),
+    ),
+  ).toBe(false);
+  expect(view.observe("parent", resource(5n, change))).toBe(false);
+  expect(view.hidden("original")).toBe(false);
+});
+it("accepts identical equal-revision replays and dismisses exactly once", () => {
+  const view = new TerminalPresentation(),
+    data = { state: "exited", cleanup_verified: true };
+  expect(view.observe("parent", resource(5n, data))).toBe(true);
+  expect(view.observe("parent", resource(5n, data))).toBe(false);
+  expect(view.hidden("original")).toBe(true);
+});
+it("compares pending evidence independent of key order", () => {
+  const view = new TerminalPresentation(),
+    pending = { action: "close", request_id: "original" };
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, { state: "exited", cleanup_verified: true, pending }),
+    ),
+  ).toBe(false);
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, {
+        cleanup_verified: true,
+        pending: { request_id: "original", action: "close" },
+        state: "exited",
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    view.observe(
+      "parent",
+      resource(5n, {
+        state: "exited",
+        cleanup_verified: true,
+        pending: { action: "close", request_id: "other" },
+      }),
+    ),
+  ).toBe(false);
+  expect(view.hidden("original")).toBe(false);
+  expect(
+    view.observe(
+      "parent",
+      resource(6n, { state: "exited", cleanup_verified: true }),
+    ),
+  ).toBe(true);
+});
+it("keys comparison evidence by original ID", () => {
+  const view = new TerminalPresentation(),
+    other = (revision: bigint, data: object) =>
+      create(ResourceSchema, {
+        ...resource(revision, data),
+        id: "second",
+      });
+  expect(view.observe("parent", resource(5n, { state: "running" }))).toBe(
+    false,
+  );
+  expect(
+    view.observe(
+      "parent",
+      other(5n, { state: "exited", cleanup_verified: true }),
+    ),
+  ).toBe(true);
+  expect(view.hidden("second")).toBe(true);
+  expect(view.hidden("original")).toBe(false);
+});
 it("preserves a retained uncertain operation until its original resolution", () => {
   const view = new TerminalPresentation(),
     exited = resource(4n, { state: "exited", cleanup_verified: true });
