@@ -288,6 +288,106 @@ func TestSafetyMalformedAndForeignBoundaries(t *testing.T) {
 	}
 }
 
+// unsupportedSafetyDescriptor mutates a valid fixture into a payload that only
+// the owned-root closed-descriptor validation rejects.
+func unsupportedSafetyDescriptor(method string, params map[string]any) {
+	switch method {
+	case "model/verification":
+		params["verifications"] = []string{"unknown"}
+	case "model/safetyBuffering/updated":
+		params["reasons"] = []string{strings.Repeat("x", 4097)}
+	case "model/rerouted":
+		params["reason"] = "unknown"
+	case "turn/moderationMetadata":
+		params["metadata"] = map[string]any{"unknown": []any{nil, "unsupported"}}
+	}
+}
+
+func TestSafetyForeignThreadSkipsRootOnlyDescriptorValidation(t *testing.T) {
+	for _, method := range []string{"model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted"} {
+		c, turn := observationClient()
+		paused := c.execution.paused
+		settings := c.execution.settings
+		params := safetyFixture(c, turn, method)
+		params["threadId"] = domain.NewID()
+		unsupportedSafetyDescriptor(method, params)
+		event, err := observeFixture(c, method, params)
+		if err != nil || event.Kind != NativeExtensionEvent || event.Safety != nil || c.problem != nil || c.execution.paused != paused || len(c.safety.observations) != 0 || c.safety.bytes != 0 || len(c.safety.rerouted) != 0 || c.modelObservation != "" || !reflect.DeepEqual(settings, c.execution.settings) || c.execution.active != turn {
+			t.Fatal("foreign unsupported descriptor changed root state", method, err)
+		}
+		// The same payload on the owned root remains an unsupported-profile failure.
+		owned, ownedTurn := observationClient()
+		ownedParams := safetyFixture(owned, ownedTurn, method)
+		unsupportedSafetyDescriptor(method, ownedParams)
+		_, err = observeFixture(owned, method, ownedParams)
+		if method == "turn/moderationMetadata" {
+			// Moderation metadata is any JSONValue, so the root retains it.
+			if err != nil || len(owned.safety.observations) != 1 {
+				t.Fatal("root moderation metadata rejected", err)
+			}
+			continue
+		}
+		assertCode(t, err, domain.Unsupported)
+		if len(owned.safety.observations) != 0 {
+			t.Fatal("root retained unsupported descriptor", method)
+		}
+	}
+}
+
+func TestSafetyRootUnsupportedDescriptorPausesThroughReader(t *testing.T) {
+	c, _, _, _ := boundTurnFixture(t, "ready")
+	result, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.PlanMode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextKind(t, c, MessageCompletedEvent)
+	fixtureSignal(t, c, "notify", map[string]any{"method": "model/verification", "params": map[string]any{"threadId": domain.NewID(), "turnId": result.TurnID, "verifications": []string{"unknown"}}})
+	nextKind(t, c, NativeExtensionEvent)
+	if c.problem != nil || c.execution.paused {
+		t.Fatal("foreign unsupported descriptor paused root")
+	}
+	fixtureSignal(t, c, "notify", map[string]any{"method": "model/verification", "params": map[string]any{"threadId": c.thread, "turnId": result.TurnID, "verifications": []string{"unknown"}}})
+	_, err = c.NextEvent(context.Background())
+	if err == nil || c.problem == nil || !c.execution.paused {
+		t.Fatal("root unsupported descriptor did not pause", err)
+	}
+}
+
+func TestSafetyForeignThreadKeepsBoundedEnvelopeAndIdentity(t *testing.T) {
+	for _, method := range []string{"model/verification", "model/safetyBuffering/updated", "turn/moderationMetadata", "model/rerouted"} {
+		for _, change := range []string{"missing-thread", "null-thread", "numeric-thread", "invalid-thread", "missing-turn", "unknown-field", "oversized"} {
+			c, turn := observationClient()
+			params := safetyFixture(c, turn, method)
+			params["threadId"] = domain.NewID()
+			switch change {
+			case "missing-thread":
+				delete(params, "threadId")
+			case "null-thread":
+				params["threadId"] = nil
+			case "numeric-thread":
+				params["threadId"] = 7
+			case "invalid-thread":
+				params["threadId"] = "not-a-valid-id"
+			case "missing-turn":
+				delete(params, "turnId")
+			case "unknown-field":
+				params["unknown"] = true
+			case "oversized":
+				params["padding"] = strings.Repeat("x", maxSafetyEnvelope)
+				if method == "turn/moderationMetadata" {
+					delete(params, "padding")
+					params["metadata"] = strings.Repeat("x", maxSafetyEnvelope)
+				}
+			}
+			event, err := observeFixture(c, method, params)
+			assertCode(t, err, domain.Unsupported)
+			if event.Kind == NativeExtensionEvent || len(c.safety.observations) != 0 || c.safety.bytes != 0 {
+				t.Fatal("malformed foreign envelope accepted", method, change)
+			}
+		}
+	}
+}
+
 func TestSafetyEvidenceHasAggregateBounds(t *testing.T) {
 	for _, bound := range []string{"count", "bytes"} {
 		c, turn := observationClient()

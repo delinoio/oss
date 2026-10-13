@@ -171,7 +171,13 @@ available for reconciliation and independent cleanup; neither terminal completio
 nor passive observations clears the pause or replays input.
 
 Reject unknown enums, malformed or ambiguous fields and unowned root turns.
-Foreign threads and server requests retain their existing private boundaries.
+Foreign threads and server requests retain their existing private boundaries:
+a foreign-thread safety notification is validated only for the 64 KiB envelope
+bound, the exact native field set and valid thread/turn identity. Closed
+verification and reroute enums and descriptor text bounds apply only to the owned
+root thread, so an unsupported foreign descriptor stays a private native extension
+and cannot pause the execution or alter safety evidence, model selection,
+completion or account authority.
 After terminal completion, accept only an exact previously retained observation
 as late private evidence; changed or unseen late observations fail validation.
 Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors

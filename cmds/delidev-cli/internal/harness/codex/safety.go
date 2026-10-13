@@ -145,13 +145,20 @@ func cloneSafety(o *ModelSafetyObservation) *ModelSafetyObservation {
 	return &next
 }
 
-// Source: openai/codex c1382380de69521303b416720a52f42d51af6248,
-// app-server-protocol/schema/typescript/v2/{ModelVerificationNotification,
-// ModelSafetyBufferingUpdatedNotification,TurnModerationMetadataNotification,
-// ModelReroutedNotification,ModelVerification,ModelRerouteReason}.ts.
-// Pinned native notification schemas use closed verification/reroute enums.
-// Metadata remains JSONValue, including arrays, scalars and explicit null.
-func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, error) {
+// safetyEnvelope is the bounded, identity-checked notification shell shared by
+// every thread. It carries no validated descriptor content.
+type safetyEnvelope struct {
+	raw    json.RawMessage
+	kind   modelSafetyKind
+	fields map[string]json.RawMessage
+	thread domain.ID
+	turn   domain.ID
+}
+
+// decodeSafetyEnvelope bounds the notification, checks the exact native field set
+// and validates thread/turn identity. Descriptor semantics are left to
+// decodeSafetyDescriptors so foreign threads never see root-only validation.
+func decodeSafetyEnvelope(method string, raw json.RawMessage) (*safetyEnvelope, error) {
 	var fields map[string]json.RawMessage
 	if domain.DecodeBounded(raw, &fields, maxSafetyEnvelope) != nil || fields == nil {
 		return nil, incompatible()
@@ -181,10 +188,31 @@ func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, 
 			return nil, incompatible()
 		}
 	}
-	o := &ModelSafetyObservation{kind: kind}
-	if domain.Decode(fields["threadId"], &o.thread) != nil || domain.Decode(fields["turnId"], &o.turn) != nil || o.thread.Validate() != nil || o.turn.Validate() != nil {
+	e := &safetyEnvelope{raw: raw, kind: kind, fields: fields}
+	if domain.Decode(fields["threadId"], &e.thread) != nil || domain.Decode(fields["turnId"], &e.turn) != nil || e.thread.Validate() != nil || e.turn.Validate() != nil {
 		return nil, incompatible()
 	}
+	return e, nil
+}
+
+// Source: openai/codex c1382380de69521303b416720a52f42d51af6248,
+// app-server-protocol/schema/typescript/v2/{ModelVerificationNotification,
+// ModelSafetyBufferingUpdatedNotification,TurnModerationMetadataNotification,
+// ModelReroutedNotification,ModelVerification,ModelRerouteReason}.ts.
+// Pinned native notification schemas use closed verification/reroute enums.
+// Metadata remains JSONValue, including arrays, scalars and explicit null.
+// Only the owned root thread is validated against these closed descriptors.
+func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, error) {
+	e, err := decodeSafetyEnvelope(method, raw)
+	if err != nil {
+		return nil, err
+	}
+	return decodeSafetyDescriptors(e)
+}
+
+func decodeSafetyDescriptors(e *safetyEnvelope) (*ModelSafetyObservation, error) {
+	fields, raw, kind := e.fields, e.raw, e.kind
+	o := &ModelSafetyObservation{kind: kind, thread: e.thread, turn: e.turn}
 	text := func(name string, required bool) (string, error) {
 		var value *string
 		if domain.Decode(fields[name], &value) != nil || value == nil || domain.Text(*value, "native safety descriptor", 4096, required) != nil {
@@ -273,12 +301,18 @@ func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, 
 }
 
 func (c *Client) observeSafetyLocked(native nativewire.Event) (Event, error) {
-	o, err := decodeSafety(native.Method, native.Params)
+	envelope, err := decodeSafetyEnvelope(native.Method, native.Params)
 	if err != nil {
 		return Event{}, err
 	}
-	if o.thread != c.thread {
+	if envelope.thread != c.thread {
+		// Foreign descriptors stay private and are not validated beyond the
+		// bounded envelope and identity.
 		return privateNative(native), nil
+	}
+	o, err := decodeSafetyDescriptors(envelope)
+	if err != nil {
+		return Event{}, err
 	}
 	turn, known := c.execution.turns[o.turn]
 	if !known {
