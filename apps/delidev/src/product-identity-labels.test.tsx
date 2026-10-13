@@ -99,12 +99,18 @@ describe("ProductIdentityProvider cache observation", () => {
     function Subscribed() {
       const data = client.getQueryData<{ projects: Resource[] }>(["projects"]);
       const label = useProductLabels();
-      return <p data-testid="label">{label(PresentationKind.Project, first)}:{data?.projects.length}</p>;
+      return (
+        <p data-testid="label">
+          {label(PresentationKind.Project, first)}:{data?.projects.length}
+        </p>
+      );
     }
     const view = render(<Subscribed />, { wrapper });
     expect(screen.getByTestId("label").textContent).toMatch(/1:1$/);
     act(() => {
-      client.setQueryData(["projects"], { projects: [project(first, "Alpha")] });
+      client.setQueryData(["projects"], {
+        projects: [project(first, "Alpha")],
+      });
     });
     view.rerender(<Subscribed />);
     expect(screen.getByTestId("label").textContent).toBe("Alpha:1");
@@ -112,7 +118,9 @@ describe("ProductIdentityProvider cache observation", () => {
 
   it("keeps numbers stable across cache changes and pagination", () => {
     const { client, wrapper } = harness();
-    client.setQueryData(["projects", 1], { projects: [project(first), project(second)] });
+    client.setQueryData(["projects", 1], {
+      projects: [project(first), project(second)],
+    });
     const { result } = renderHook(() => useProductLabels(), { wrapper });
     const label = result.current;
     const firstLabel = label(PresentationKind.Project, first);

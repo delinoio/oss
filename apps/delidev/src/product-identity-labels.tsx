@@ -143,10 +143,7 @@ export function ProductIdentityProvider({ children }: { children: ReactNode }) {
     created.scan(client.getQueryCache());
     return created;
   });
-  const owner = useMemo(
-    () => ({ registry: observer.registry }),
-    [observer],
-  );
+  const owner = useMemo(() => ({ registry: observer.registry }), [observer]);
   useLayoutEffect(() => {
     const cache = client.getQueryCache();
     const unsubscribe = cache.subscribe((event) => {
@@ -157,7 +154,9 @@ export function ProductIdentityProvider({ children }: { children: ReactNode }) {
     observer.scan(cache);
     return unsubscribe;
   }, [client, observer]);
-  return <IdentityOwner.Provider value={owner}>{children}</IdentityOwner.Provider>;
+  return (
+    <IdentityOwner.Provider value={owner}>{children}</IdentityOwner.Provider>
+  );
 }
 export function useProductLabels(): IdentityLabel {
   const language = useLocale();
