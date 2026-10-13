@@ -1009,6 +1009,7 @@ it("retains compact response waiting after the original native user message appe
     outcome: "running",
     dispatch: "claimed",
     pending_inputs: 0,
+    last_input_sequence: 1,
     preparation: { job_id: newRequestId(), state: "ready" },
     active_execution_id: execution,
     initial_execution: { id: execution, input_id: input },
@@ -1412,6 +1413,47 @@ it.each([
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
     expect(composer).toHaveProperty("value", "Retained startup draft");
     expect(document.activeElement).toBe(composer);
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+    expect(f.recover).not.toHaveBeenCalled();
+  },
+);
+it.each([
+  { delivery: "claimed", hidden: true },
+  { delivery: "rejected-before-start", hidden: false },
+  { delivery: "removed", hidden: false },
+  { delivery: "claimed", execution: "foreign", hidden: false },
+])(
+  "keeps Info availability tied to the original queue row while Starting (%j)",
+  async ({ delivery, execution, hidden }) => {
+    const startup = initialResponseWaiting();
+    const { execution: _observed, ...starting } = startup;
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, starting, (id) => [
+      create(ResourceSchema, {
+        id: starting.initial_execution.input_id,
+        sessionId: id,
+        kind: EntityKind.QUEUE,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          delivery,
+          prompt: "Original queued input",
+          mode: "execute",
+          sequence: 1,
+          content_revision: 1,
+          execution_id:
+            execution === "foreign"
+              ? newRequestId()
+              : starting.initial_execution.id,
+        }),
+      }),
+    ]);
+    const { container } = render(f.view("Retained startup draft"));
+    await screen.findByText("Starting agent");
+    const info = container.querySelector(".session-information")!;
+    expect(info).toHaveProperty("hidden", hidden);
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    expect(composer).toHaveProperty("value", "Retained startup draft");
     expect(f.enqueue).not.toHaveBeenCalled();
     expect(f.control).not.toHaveBeenCalled();
     expect(f.recover).not.toHaveBeenCalled();

@@ -469,7 +469,8 @@ export function initialSessionStartup(
     ![Workspace.Local, Workspace.Worktree, Workspace.GeneralChat].includes(
       d.workspace as Workspace,
     ) ||
-    (d.last_input_sequence !== undefined && d.last_input_sequence !== 1) ||
+    // Unknown first-input history is never pristine: require the durable counter.
+    d.last_input_sequence !== 1 ||
     queue.some((input) => readDocument(input).sequence !== 1)
   )
     return false;
@@ -499,7 +500,23 @@ export function initialSessionStartup(
     selected.input_id !== initial.input_id
   )
     return false;
-  if (phase === SessionProgressPhase.Starting) return true;
+  if (phase === SessionProgressPhase.Starting)
+    // The original queue row must be current and still owned by this execution;
+    // rejected, removed, uncertain, foreign or later rows retain Info.
+    return (
+      queueCurrent &&
+      queue.every((input) => {
+        const queued = readDocument(input);
+        return (
+          input.id === initial.input_id &&
+          originalQueue(input, row.id) &&
+          queued.sequence === 1 &&
+          ["queued", "claimed", "accepted"].includes(String(queued.delivery)) &&
+          (queued.execution_id === undefined ||
+            queued.execution_id === initial.id)
+        );
+      })
+    );
   // Multiple accepted inputs are a later turn, even on the initial execution.
   if (Array.isArray(execution.accepted_inputs))
     return (
