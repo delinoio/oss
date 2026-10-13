@@ -641,7 +641,9 @@ async function runIsolated(body) {
   child.stdout.on("data", (chunk) => (stdout += chunk));
   child.stderr.on("data", (chunk) => (stderr += chunk));
   const startedAt = Date.now();
-  const [code, signal] = await once(child, "exit");
+  // `exit` can fire before the final stdio bytes are consumed; `close` follows
+  // only after both pipes end, so the captured strings are complete.
+  const [code, signal] = await once(child, "close");
   return { code, signal, stdout, stderr, elapsed: Date.now() - startedAt };
 }
 
