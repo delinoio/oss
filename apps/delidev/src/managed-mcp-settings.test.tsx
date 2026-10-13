@@ -374,8 +374,11 @@ it("discovers original pending operations after a fresh category visit without r
   const f = fixture(false, false, State.RECOVERY_REQUIRED);
   await screen.findByRole("heading", { name: "Private MCP" });
   expect(
-    (screen.getByRole("combobox", { name: "Runner Device" }) as HTMLSelectElement)
-      .disabled,
+    (
+      screen.getByRole("combobox", {
+        name: "Runner Device",
+      }) as HTMLSelectElement
+    ).disabled,
   ).toBe(false);
   f.match();
   fireEvent.click(
@@ -396,8 +399,11 @@ it("restores only the original awaiting OAuth attempt after category disposal", 
   await screen.findByRole("heading", { name: "Private MCP" });
   // The restored attempt blocks Runner replacement before it is continued.
   expect(
-    (screen.getByRole("combobox", { name: "Runner Device" }) as HTMLSelectElement)
-      .disabled,
+    (
+      screen.getByRole("combobox", {
+        name: "Runner Device",
+      }) as HTMLSelectElement
+    ).disabled,
   ).toBe(true);
   fireEvent.click(
     screen.getByRole("button", { name: "Continue original authorization" }),
