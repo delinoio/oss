@@ -51,6 +51,22 @@ function connectedAccount() {
     }),
   });
 }
+function disconnectedAccount(subscription: Record<string, unknown>) {
+  return create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.ACCOUNT,
+    revision: 4n,
+    schemaVersion: 2,
+    documentJson: encode({
+      alias: "Server Claude",
+      type: "subscription",
+      subscription_service: "claude",
+      enabled: true,
+      health: "disconnected",
+      subscription: { claude_credential: "server-token", ...subscription },
+    }),
+  });
+}
 function mount(capabilities: SystemCapability[], account = connectedAccount()) {
   const logout = vi.fn((request) => ({
     account,
@@ -69,7 +85,7 @@ function mount(capabilities: SystemCapability[], account = connectedAccount()) {
   render(
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
-        <OAuthNativeProvider control={vi.fn()}>
+        <OAuthNativeProvider control={vi.fn(async () => ({}) as never)}>
           <SettingsLifetime>
             {() => (
               <MutationIntents>
@@ -113,4 +129,51 @@ it("shows update guidance when the server lacks the managed Claude capability", 
   await screen.findByText(/The token expires, cannot use Remote Control/);
   await screen.findByRole("button", { name: /Check support again|Recheck/i });
   expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+});
+
+it("connects a new account instead of offering Sign in on a logged-out server-token account", async () => {
+  const loggedOut = disconnectedAccount({
+    server_operation: {
+      id: newRequestId(),
+      action: "logout",
+      state: "succeeded",
+    },
+  });
+  const value = mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ],
+    loggedOut,
+  );
+  await screen.findByText(/The token expires, cannot use Remote Control/);
+  expect(screen.queryByRole("button", { name: /^Sign in to/ })).toBeNull();
+  const connect = await screen.findByRole("button", {
+    name: "Connect new account",
+  });
+  await waitFor(() =>
+    expect((connect as HTMLButtonElement).disabled).toBe(false),
+  );
+  // Selecting the action never submits a login for the logged-out account.
+  fireEvent.click(connect);
+  expect(value.logout).not.toHaveBeenCalled();
+});
+
+it("keeps Sign in for a server-token account whose first login did not connect", async () => {
+  mount(
+    [
+      SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+      SystemCapability.CLAUDE_SERVER_LOGIN_V1,
+    ],
+    disconnectedAccount({
+      server_operation: {
+        id: newRequestId(),
+        action: "login",
+        state: "failed",
+      },
+    }),
+  );
+  await screen.findByText(/The token expires, cannot use Remote Control/);
+  await screen.findByRole("button", { name: /^Sign in to/ });
+  expect(screen.queryByRole("button", { name: "Connect new account" })).toBeNull();
 });

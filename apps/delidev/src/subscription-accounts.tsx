@@ -190,6 +190,18 @@ function NativeManagedSubscriptionAccount({
     status.data?.capabilities.includes(
       SystemCapability.CLAUDE_SERVER_LOGIN_V1,
     ) === true;
+  // The server permits a server-token account only one first login: a logged-out
+  // or otherwise settled account never signs in again, so reconnecting means
+  // connecting a new account. This mirrors the server's first-login admission.
+  const serverOperation = object(state.server_operation);
+  const connectsNewAccount =
+    managedClaude &&
+    !connected &&
+    (Boolean(text(state.generation)) ||
+      Boolean(text(object(state.lease).id)) ||
+      (Boolean(text(serverOperation.id)) &&
+        (serverOperation.action !== "login" ||
+          serverOperation.state === "succeeded")));
   const supported =
     serviceSupported &&
     (service === SubscriptionServiceId.Claude
@@ -384,7 +396,26 @@ function NativeManagedSubscriptionAccount({
         />
       ) : null}
       <SettingsTaskActions className="">
-        {!connected ? (
+        {!connected && connectsNewAccount ? (
+          <SettingsActionButton
+            icon={SettingsActionIcon.Connect}
+            type="button"
+            disabled={!ready || !flow.available || !claudeServerLogin}
+            onClick={() => {
+              if (
+                !ready ||
+                !flow.available ||
+                !claudeServerLogin ||
+                refreshLock.current
+              )
+                return;
+              // A new account is created; this account is never signed in again.
+              flow.begin(service, undefined, false, true);
+            }}
+          >
+            {copy("claude-subscription.server.connectNew")}
+          </SettingsActionButton>
+        ) : !connected ? (
           <SettingsActionButton
             icon={SettingsActionIcon.Connect}
             type="button"
