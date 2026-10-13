@@ -182,6 +182,20 @@ func (m Manager) oauth(ctx context.Context, c *catalog, q domain.ManagedMCPReque
 		AcceptedAt time.Time `json:"accepted_at"`
 	}{token, m.now()})
 	defer clear(stored)
+	if len(stored) > credentials.MaxSecretBytes {
+		// The authorization server issued a token the vault cannot hold. Settle the
+		// attempt and release its verifier instead of fencing the definition.
+		if e = m.Secrets.Delete(ctx, ref); e != nil {
+			a.State = domain.MCPOperationRecovery
+			c.Attempts[q.AttemptID] = a
+			_ = save()
+			return result, e
+		}
+		a.State = domain.MCPOperationRejected
+		c.Attempts[q.AttemptID] = a
+		result.Operation.State = domain.MCPOperationRejected
+		return result, nil
+	}
 	if e = m.putSecret(ctx, d.ID, q.RequestID, stored); e != nil {
 		return result, e
 	}
