@@ -370,7 +370,6 @@ export function RepositoryDiff({
       wasEnabled = enabled,
       previousBase = chosenBase;
     setRefreshing(true);
-    setRefreshFailedOwner(undefined);
     // The explicit read uses a refresh-scoped disposable query identity, so a
     // late response never reaches the accepted options inventory unless the
     // originating scope still owns it when the response arrives.
@@ -407,6 +406,8 @@ export function RepositoryDiff({
       }
       const fresh = readDiffOptions(response.documentJson, repository);
       queryClient.setQueryData(accepted.queryKey, response);
+      // Only an accepted in-scope inventory ends the stale observation.
+      setRefreshFailedOwner(undefined);
       const nextBase = baseRef ?? fresh.default;
       const available =
         nextBase !== undefined &&

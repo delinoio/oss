@@ -1172,6 +1172,45 @@ it("does not publish a late options response after returning to the original sco
   );
 });
 
+it("keeps the stale marker when a retry is retired before it is accepted", async () => {
+  const { f, operations } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  const stale =
+    "Refresh failed. The previous observation is stale and shown below.";
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(stale);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  const retry = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() => expect(operations().at(-1)).toBe("git-diff:staged:"));
+  retry.release();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  await screen.findByText(stale);
+  expect(addReviewComment().disabled).toBe(true);
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);
