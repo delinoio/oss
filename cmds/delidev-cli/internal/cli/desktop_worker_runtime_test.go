@@ -338,3 +338,56 @@ func TestDesktopWorkerRegistrationRequiresRetainedOriginalGrant(t *testing.T) {
 		t.Fatal("unchanged retained pairing did not follow")
 	}
 }
+
+// Launch and retry first probe the saved credential through the desktop
+// runtime. Missing or mismatched grant evidence must be reported before that
+// authenticated request, so a revoked Worker token cannot turn the required
+// recovery result into an early unauthenticated error.
+func TestDesktopWorkerLaunchVerifiesRetainedGrantBeforeSavedCredentialProbe(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "owner")
+	f := startResidentFixture(t, root, "127.0.0.1:0")
+	f.launch(t)
+	defer f.quit(t)
+	if reply := f.request(t, "device.pair-local"); reply.Error != nil {
+		t.Fatal(reply.Error.Code)
+	}
+	clientCredential, err := worker.LoadCredential(filepath.Join(root, "desktop-client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := options{dataDir: root}
+	prepare := []string{"--mode", "launch", "--client-id", string(clientCredential.DeviceID)}
+	if _, err := desktopWorkerExecutable(context.Background(), o, prepare); err != nil {
+		t.Fatal("initial preparation", domain.SafeError(err).Code)
+	}
+	workerRoot := filepath.Join(root, "worker")
+	credentialPath := filepath.Join(workerRoot, "device.json")
+	journalPath := filepath.Join(workerRoot, "local-pairing.json")
+	marker := filepath.Join(workerRoot, "desktop-runtime-follow.json")
+	var attempt localPairingAttempt
+	raw, err := security.ReadPrivate(journalPath, 4096)
+	if err != nil || json.Unmarshal(raw, &attempt) != nil {
+		t.Fatal("pairing journal")
+	}
+	grantPath := filepath.Join(root, "pairing-codes", string(attempt.RequestID)+".json")
+	revoked, err := security.RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	editDesktopWorkerJSON(t, credentialPath, func(v map[string]any) { v["token"] = revoked })
+	if err := os.Remove(grantPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"launch", "retry"} {
+		_, err := desktopWorkerExecutable(context.Background(), o, []string{"--mode", mode, "--client-id", string(clientCredential.DeviceID)})
+		if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatalf("mode %s: probe ran before grant verification: %v", mode, err)
+		}
+		if _, statErr := os.Stat(marker); statErr == nil {
+			t.Fatalf("mode %s: marker created without a grant", mode)
+		}
+	}
+}

@@ -60,6 +60,25 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 	return nil
 }
 
+// verifyDesktopWorkerGrant proves the saved fixed Local Worker's retained
+// original grant from files alone. Edited or stale credential and journal
+// endpoints never reach a listener or a follow marker, so callers run it before
+// any authenticated probe of the saved credential.
+func verifyDesktopWorkerGrant(o options, root string, saved worker.Credential) error {
+	owner, local, err := desktopruntime.LocalRoot(root, saved.ServerID, saved.Endpoint)
+	if err != nil {
+		return err
+	}
+	if !local || owner != o.dataDir {
+		return recoveryRequired()
+	}
+	if err := verifyOriginalDesktopPairing(owner, root, saved); err != nil {
+		slog.Warn("desktop_worker_registration", "phase", "original-pairing", "code", domain.SafeError(err).Code)
+		return err
+	}
+	return nil
+}
+
 // Recovery authenticates the retained registration without issuing a grant.
 // A revoked Worker must remain diagnostic rather than cycling generations.
 func desktopWorkerRegistration(ctx context.Context, o options, root, expected string) error {
@@ -75,17 +94,7 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 		return recoveryRequired()
 	}
 	if o.desktop != nil {
-		owner, local, err := desktopruntime.LocalRoot(root, saved.ServerID, saved.Endpoint)
-		if err != nil {
-			return err
-		}
-		if !local || owner != o.dataDir {
-			return recoveryRequired()
-		}
-		// Prove the retained original grant from files alone. Edited or stale
-		// credential and journal endpoints never reach a listener or a marker.
-		if err := verifyOriginalDesktopPairing(owner, root, saved); err != nil {
-			slog.Warn("desktop_worker_registration", "phase", "original-pairing", "code", domain.SafeError(err).Code)
+		if err := verifyDesktopWorkerGrant(o, root, saved); err != nil {
 			return err
 		}
 	}
