@@ -194,7 +194,10 @@ describe("describeError", () => {
 describe("product error recovery", () => {
   it("prefers BW code guidance over the generic Connect status", () => {
     const description = describeError(
-      new ConnectError("BW_EXPORT_FAILED: Could not write the report", Code.Internal),
+      new ConnectError(
+        "BW_EXPORT_FAILED: Could not write the report",
+        Code.Internal,
+      ),
     );
     expect(description.code).toBe("BW_EXPORT_FAILED");
     expect(description.recovery).toMatch(/writable/);

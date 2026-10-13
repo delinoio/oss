@@ -142,13 +142,19 @@ function describeMinimizer(rspack, config) {
     if (compress === false || mangle === false) return false;
     // Per-pass compression options (for example { dead_code: false }) and
     // keep-name mangling options also disable what the detectors assume.
-    if (compress && typeof compress === "object" && Object.values(compress).some((value) => value === false)) {
+    if (
+      compress &&
+      typeof compress === "object" &&
+      Object.values(compress).some((value) => value === false)
+    ) {
       return false;
     }
     if (
       mangle &&
       typeof mangle === "object" &&
-      Object.entries(mangle).some(([key, value]) => key.startsWith("keep_") && value)
+      Object.entries(mangle).some(
+        ([key, value]) => key.startsWith("keep_") && value,
+      )
     ) {
       return false;
     }

@@ -57,7 +57,10 @@ const RECOVERY_BY_BW_CODE: Readonly<Record<string, string>> = Object.freeze({
     "Reload the page. If the problem continues, run the bundlewhy command again.",
 });
 
-export function recoveryForCode(code: string | undefined, connect: Code): string {
+export function recoveryForCode(
+  code: string | undefined,
+  connect: Code,
+): string {
   return (code && RECOVERY_BY_BW_CODE[code]) || recoveryFor(connect);
 }
 
