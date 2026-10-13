@@ -551,6 +551,38 @@ it("accepts current service-native v4 exports and preserves original preview byt
   ).toEqual(Array.from(preview));
 });
 
+it("shows product labels for internal preview identities while external reviewer IDs and apply bytes stay exact", async () => {
+  const value = fixture();
+  const sourceId = value.bundle.entries[0].id;
+  const targetId = newRequestId();
+  const template = newRequestId();
+  const reviewerId = "9007199254740993";
+  const bytes = new TextEncoder().encode(
+    `{"token":"server-preview","plan":{"version":4,"changes":[{"source_id":"${sourceId}","id":"${targetId}","kind":"agent","action":"create","expected_revision":0,"after":{"templates":["${template}"],"remediation":{"reviewer_selectors":[{"kind":"user","id":"${reviewerId}","node_id":"MDQ6VXNlcjE="}]},"big":18446744073709551615}}],"machines":[]}}`,
+  );
+  value.preview.mockResolvedValue({ previewJson: bytes });
+  render(value.view());
+  load(value.bundle);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Preview configuration changes" }),
+  );
+  const details = (await screen.findByRole("textbox", {
+    name: "Complete change details",
+  })) as HTMLTextAreaElement;
+  expect(details.value).toContain(`"id": "${reviewerId}"`);
+  expect(details.value).toContain("18446744073709551615");
+  for (const internal of [sourceId, targetId, template])
+    expect(details.value).not.toContain(internal);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Apply reviewed configuration" }),
+  );
+  await waitFor(() => expect(value.apply).toHaveBeenCalledTimes(1));
+  expect(
+    Array.from(
+      (value.apply.mock.calls[0][0] as { previewJson: Uint8Array }).previewJson,
+    ),
+  ).toEqual(Array.from(bytes));
+});
 it.each([1, 2, 3, 5, 6])(
   "refuses portable version %s before requesting an import preview",
   (version) => {

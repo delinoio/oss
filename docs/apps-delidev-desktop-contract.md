@@ -34,6 +34,16 @@ states and recovery guidance; this is not a renderer-wide content replacement.
 Generated metadata previews project only declared internal identity fields, retaining
 numeric precision and protected native/user subtrees. Original import/export bytes,
 proofs and digests remain unchanged.
+The configuration import "Complete change details" preview adds exact-path rules to
+that field map instead of widening it: `plan.changes[].source_id` presents a Resource
+label, `templates[]` of Agent change documents presents Template labels, and
+`agents.ids[]` and `accounts.ids[]` of Project change documents present Agent and
+Account labels, each scoped to `plan.changes[].before` and `plan.changes[].after`.
+`source_id` and `ids` stay out of the global field map because other owners use those
+names for external, native or user identifiers. Every `reviewer_selectors` subtree is
+external GitHub actor and App identity and keeps its original bytes, including decimal
+IDs above the JavaScript safe-integer range. The projection is display-only: Apply
+sends the exact preview bytes, and numeric tokens and malformed JSON are unchanged.
 
 The presentation owners include Home and repository navigation, Projects and
 Repositories, resource/settings selectors and actions, accounts/providers/runners/

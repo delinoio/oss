@@ -25,6 +25,7 @@ export {
   productMetadata,
   productMetadataJSON,
   generatedIdentityFields,
+  configurationPreviewPaths,
 } from "./product-identity";
 
 const kinds: Partial<Record<EntityKind, PresentationKind>> = {
