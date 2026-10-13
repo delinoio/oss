@@ -520,7 +520,9 @@ it("animates the project deletion confirmation once without deleting on completi
   render(value.view(<Settings />));
   category(Opted.Projects);
   await screen.findByText("Fixture project");
-  fireEvent.click(screen.getByRole("button", { name: /^Delete Fixture project/ }));
+  fireEvent.click(
+    screen.getByRole("button", { name: /^Delete Fixture project/ }),
+  );
   expect(taskHeader().getAttribute("data-entrance")).toBe("y4");
   expect(dialog().hasAttribute("data-entrance")).toBe(false);
   dispatch(taskHeader());
