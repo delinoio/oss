@@ -633,12 +633,15 @@ export function SubscriptionQuotaControls({
     // A disconnected account keeps only read-only retained evidence and the
     // status footer. No interactive quota, credit or preference control is
     // admitted here; the guards above stay the only source of eligibility.
-    const retainedError =
-      status.error ||
-      consent.error ||
-      observe.error ||
-      reconcile.error ||
-      preferences.error;
+    // Independent retained operations keep independent failure evidence, so
+    // every present error is shown rather than the first one only.
+    const retainedErrors = [
+      status.error,
+      consent.error,
+      observe.error,
+      reconcile.error,
+      preferences.error,
+    ].filter(Boolean);
     // Hide the saved observation only when the server is known to lack quota
     // support; unread capability data must not invent a support claim.
     const savedObservation =
@@ -647,13 +650,15 @@ export function SubscriptionQuotaControls({
     return (
       <>
         {savedObservation ? <LastQuotaObservation state={state} /> : null}
-        {retainedError ? (
+        {retainedErrors.length > 0 ? (
           <section
             className="reset-credit-results"
             aria-label={copy("subscription-quota.resultsTitle")}
           >
             <h4>{copy("subscription-quota.resultsTitle")}</h4>
-            <Problem error={retainedError} />
+            {retainedErrors.map((error, index) => (
+              <Problem key={index} error={error} />
+            ))}
           </section>
         ) : null}
         {footer?.()}

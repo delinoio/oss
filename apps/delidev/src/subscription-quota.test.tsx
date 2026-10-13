@@ -1236,6 +1236,56 @@ it("leaves the consent confirmation when the account disconnects and does not re
   expect(value.consent).not.toHaveBeenCalled();
 });
 
+it("keeps every independent retained failure visible after the account disconnects", async () => {
+  const value = fixture();
+  value.request.mockRejectedValueOnce(
+    new ConnectError("private-quota-fixture", Code.InvalidArgument),
+  );
+  value.consent.mockRejectedValueOnce(
+    new ConnectError("private-consent-fixture", Code.InvalidArgument),
+  );
+  render(<value.Harness />);
+  const refresh = await screen.findByRole("button", {
+    name: "Refresh account status and quota",
+  });
+  await waitFor(() =>
+    expect((refresh as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(refresh);
+  await waitFor(() => expect(value.request).toHaveBeenCalledOnce());
+  await screen.findByText("DeliDev could not complete this request.");
+  const checkbox = await screen.findByRole("checkbox", {
+    name: "Automatic use",
+  });
+  await waitFor(() =>
+    expect((checkbox as HTMLInputElement).disabled).toBe(false),
+  );
+  fireEvent.click(checkbox);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Enable automatic use" }),
+  );
+  await waitFor(() => expect(value.consent).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      screen.getAllByText("DeliDev could not complete this request."),
+    ).toHaveLength(1),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull(),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Disconnect fixture account" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+  expect(
+    screen.getAllByText("DeliDev could not complete this request."),
+  ).toHaveLength(2);
+  expect(screen.queryByText(/private-(quota|consent)-fixture/)).toBeNull();
+  expect(value.request).toHaveBeenCalledOnce();
+  expect(value.consent).toHaveBeenCalledOnce();
+});
+
 it.each(["light", "dark"])(
   "localizes automatic credit consent in Korean using the %s theme",
   async (theme) => {
