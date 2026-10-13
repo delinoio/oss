@@ -464,6 +464,13 @@ enum RequestDiagnosticOperation {
   REQUEST_DIAGNOSTIC_OPERATION_MESSAGE = 5;
   REQUEST_DIAGNOSTIC_OPERATION_COUNT = 6;
 }
+// Closed non-catalog attribution. UNSPECIFIED means the catalog `model`
+// identifies the request; a builtin attribution never carries a catalog model.
+enum RequestDiagnosticAttribution {
+  REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED = 0;
+  // Canonical Codex approval reviewer (`gpt-5.6-luna`) proxy request.
+  REQUEST_DIAGNOSTIC_ATTRIBUTION_CODEX_REVIEWER = 1;
+}
 message RequestDiagnostic {
   string id = 1;
   uint64 revision = 2;
@@ -499,6 +506,8 @@ message RequestDiagnostic {
   string provider_request_id = 31;
   SubscriptionServiceIdentity subscription_service = 32;
   ModelIdentity model = 33;
+  // Set only for builtin reviewer records, which leave `model` unset.
+  RequestDiagnosticAttribution attribution = 34;
 }
 message ListRequestDiagnosticsRequest {
   string session_id = 1;

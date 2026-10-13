@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -597,7 +598,13 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	bindReferences(lease, scope.ModelID)
 	if scope.ChildModel != nil || scope.ReviewerNativeModel != "" {
 		lease.BindModel = func(ctx context.Context, model string, operation apiproxy.Operation) (*apiproxy.Lease, error) {
+			// With AI review enabled, a request for the canonical reviewer model that
+			// also names the root or child model has no distinguishing role evidence.
+			// It keeps its original lease but gains no response-reference authority.
 			if model == scope.NativeModel {
+				if scope.ReviewerNativeModel != "" && model == scope.ReviewerNativeModel {
+					return ambiguousReferenceLease(a.service.logger, lease, "root"), nil
+				}
 				return lease, nil
 			}
 			child := scope.ChildModel != nil && model == scope.ChildModel.NativeModel
@@ -620,6 +627,9 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			}
 			request.Scope.ChildModel, request.BindModel = nil, nil
 			bindReferences(&request, request.Scope.ModelID)
+			if child && scope.ReviewerNativeModel != "" && model == scope.ReviewerNativeModel {
+				return ambiguousReferenceLease(a.service.logger, &request, "child"), nil
+			}
 			return &request, nil
 		}
 	}
@@ -630,6 +640,32 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		return nil, err
 	}
 	return lease, nil
+}
+
+// ambiguousReferenceLease keeps the exact original scope, credential and
+// request gates of a root or child lease but removes response-reference
+// authority. A reviewer completion that shares the root or child native model
+// cannot be proved to belong to either role, so it must neither be recorded as
+// that role's history nor authorize a later native state reference. The usage
+// path keeps such a response under the unknown reviewer attribution.
+func ambiguousReferenceLease(logger *slog.Logger, source *apiproxy.Lease, role string) *apiproxy.Lease {
+	request := *source
+	request.BindModel = nil
+	// Keep a validation-only observer: the proxy validates the response identity
+	// only while a callback is present, but an ambiguous response must not be
+	// recorded as history.
+	request.ObserveReference = func(context.Context, apiproxy.ReferenceKind, string) error { return nil }
+	request.AuthorizeReference = func(ctx context.Context, kind apiproxy.ReferenceKind, _ string) error {
+		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", kind)
+		return domain.Fail(domain.PermissionDenied, "The native state reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")
+	}
+	// Responses item references are provider-owned history too; the proxy does
+	// not route them through AuthorizeReference, so fence them explicitly.
+	request.AuthorizeItemReference = func(ctx context.Context) error {
+		logger.InfoContext(ctx, "execution_reference_ambiguous_denied", "execution_id", source.Scope.ExecutionID, "session_id", source.Scope.SessionID, "ambiguous_role", role, "reference_kind", "item")
+		return domain.Fail(domain.PermissionDenied, "The native item reference is ambiguous with the automatic reviewer model.", "Use full native history; the "+role+" model name is shared with the canonical reviewer and cannot prove request ownership.")
+	}
+	return &request
 }
 
 // historyObservation returns a pending mode only after fresh durable authority
