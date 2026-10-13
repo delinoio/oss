@@ -9,7 +9,11 @@ import { ConfigurationTransfer } from "./configuration-transfer";
 import { EntranceTarget } from "./entrance-motion";
 import { MutationIntents } from "./mutation";
 import { Settings } from "./settings";
-import { SettingsTaskDialog, SettingsTasks } from "./settings-task";
+import {
+  SettingsDialogSize,
+  SettingsTaskDialog,
+  SettingsTasks,
+} from "./settings-task";
 import { SettingsTaskEntranceContext } from "./settings-task-context";
 import { Modal } from "./ui";
 
@@ -162,6 +166,7 @@ function taskHarness(target?: EntranceTarget) {
           {open ? (
             <SettingsTaskDialog
               title="Entrance task"
+              size={SettingsDialogSize.Form}
               close={() => setOpen(false)}
             >
               <input
