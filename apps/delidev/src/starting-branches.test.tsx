@@ -651,7 +651,9 @@ it("settles an enclosing page entrance before the fixed popup opens", async () =
   host.setAttribute("data-entrance", "y4");
   host.addEventListener("delidev-entrance-settle", settled);
   document.body.append(host);
-  render(f.view(), { container: host.appendChild(document.createElement("div")) });
+  render(f.view(), {
+    container: host.appendChild(document.createElement("div")),
+  });
   await openFirst();
   expect(document.querySelector(".starting-branch-popup")).not.toBeNull();
   expect(settled).toHaveBeenCalled();
