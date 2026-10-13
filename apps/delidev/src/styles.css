@@ -2927,6 +2927,9 @@ dialog nav {
   border-radius: 5px;
   text-align: center;
   overflow-wrap: anywhere;
+  /* Only the selected segment background animates; themes.css suppresses it for
+     Animation Off and reduced motion. */
+  transition: background-color 120ms ease-out;
 }
 .sidebar-pull-requests .pr-state-choice > input:checked + span {
   background: var(--surface);
