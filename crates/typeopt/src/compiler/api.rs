@@ -214,11 +214,11 @@ impl Node {
     }
 
     pub fn condition(self) -> Node {
-        if self.kind() == SyntaxKind::ForStatement {
-            Node::from(self.raw().as_for_statement().condition)
-        } else {
-            Node::from(self.raw().as_conditional_expression().condition)
-        }
+        Node::from(match self.kind() {
+            SyntaxKind::ForStatement => self.raw().as_for_statement().condition,
+            SyntaxKind::IfStatement => Some(self.raw().as_if_statement().expression),
+            _ => Some(self.raw().as_conditional_expression().condition),
+        })
     }
 
     pub fn case_block(self) -> Node {
