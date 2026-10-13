@@ -266,6 +266,135 @@ export class Widget {
     assert!(widget.contains("function factory"), "{widget}");
 }
 
+/// Runs original and optimized sources of a cyclic project whose
+/// initialization throws, and asserts both raise the same `ReferenceError`
+/// before any stdout. `same_behavior` alone cannot prove the exception stays.
+fn assert_tdz_preserved(root: &std::path::Path) {
+    let before = std::process::Command::new("node")
+        .arg(root.join("main.ts"))
+        .output()
+        .unwrap();
+    let after = run_optimized(root);
+    for (label, output) in [("original", &before), ("optimized", &after)] {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "{label} must fail: {stderr}");
+        assert!(stderr.contains("ReferenceError"), "{label}: {stderr}");
+        assert!(output.stdout.is_empty(), "{label} printed output");
+    }
+}
+
+/// Entry `main.ts` and `b.ts` import each other. `b.ts` reads the entry
+/// binding under runtime `typeof` while the entry has not initialized it.
+fn tdz_cycle<'a>(entry_export: &'a str, b_unused: &'a str) -> Vec<(&'a str, String)> {
+    vec![
+        ("main.ts", format!("import \"./b.ts\";\n{entry_export}\n")),
+        (
+            "b.ts",
+            format!(
+                "import {{ x }} from \"./main.ts\";\n{b_unused}\nconsole.log(\"b initialized\");\n"
+            ),
+        ),
+    ]
+}
+
+fn run_tdz(entry_export: &str, b_unused: &str, keep: &[&str]) {
+    let owned = tdz_cycle(entry_export, b_unused);
+    let files: Vec<(&str, &str)> = owned.iter().map(|(n, c)| (*n, c.as_str())).collect();
+    let temp = project(&files);
+    optimize(temp.path(), &args(&only(keep)));
+    assert_tdz_preserved(temp.path());
+}
+
+/// Runtime `typeof` of an imported lexical binding still throws in its
+/// temporal dead zone, so its unused declaration must stay.
+#[test]
+fn residual_keeps_typeof_of_imported_lexical_binding() {
+    for (entry_export, b_unused) in [
+        ("export const x = 1;", "const unused = typeof x;"),
+        ("export const x = 1;", "const unused = typeof (x);"),
+        ("export let x = 1;", "const unused = typeof x;"),
+        ("export class x {}", "const unused = typeof x;"),
+        ("export class x {}", "const unused = typeof (x);"),
+    ] {
+        run_tdz(entry_export, b_unused, &[RESIDUAL]);
+        run_tdz(entry_export, b_unused, &[]);
+        let owned = tdz_cycle(entry_export, b_unused);
+        let files: Vec<(&str, &str)> = owned.iter().map(|(n, c)| (*n, c.as_str())).collect();
+        let temp = project(&files);
+        optimize(temp.path(), &[]);
+        assert_tdz_preserved(temp.path());
+    }
+}
+
+/// With every pass disabled, nothing may rewrite the module: the original
+/// exception is trivially preserved. Guards the test helper itself.
+#[test]
+fn residual_typeof_tdz_all_passes_disabled() {
+    let owned = tdz_cycle("export const x = 1;", "const unused = typeof x;");
+    let files: Vec<(&str, &str)> = owned.iter().map(|(n, c)| (*n, c.as_str())).collect();
+    let temp = project(&files);
+    let disabled = only(&[]);
+    optimize(temp.path(), &args(&disabled));
+    assert_tdz_preserved(temp.path());
+    assert!(emitted_or_source(temp.path(), "b.ts").contains("typeof x"));
+}
+
+/// A `typeof` read deferred into an exported function runs after module
+/// initialization, so behavior is preserved and unrelated dead code still
+/// goes away. Type-only `typeof` queries do not become runtime reads.
+#[test]
+fn residual_typeof_after_initialization_still_optimizes() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            "import { kind } from \"./b.ts\";\nexport const x = 1;\nconsole.log(kind());\n",
+        ),
+        (
+            "b.ts",
+            r#"import { x } from "./main.ts";
+export type XType = typeof x;
+const deadLocal = { a: 1 };
+export function kind(): string { return typeof x; }
+"#,
+        ),
+    ];
+    let (temp, report) = run(files, &[RESIDUAL]);
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let b = emitted(temp.path(), "b.ts");
+    assert!(!b.contains("deadLocal"), "{b}");
+    assert!(!b.contains("XType"), "{b}");
+    assert!(b.contains("typeof x"), "{b}");
+    run_all(files);
+}
+
+/// Initialized same-function locals and undeclared names keep the
+/// non-throwing proof under runtime `typeof`.
+#[test]
+fn residual_typeof_of_initialized_or_undeclared_name_is_removed() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                "import { value } from \"./dep.ts\";\nconsole.log(value());\n",
+            ),
+            (
+                "dep.ts",
+                r#"const local = 1;
+const unusedProbe = typeof local;
+// @ts-ignore Undeclared names never throw under typeof.
+const unusedUndeclared = typeof notDeclaredAnywhere;
+export function value() { return local; }
+"#,
+            ),
+        ],
+        &[RESIDUAL],
+    );
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    assert!(!dep.contains("unusedProbe"), "{dep}");
+    assert!(!dep.contains("unusedUndeclared"), "{dep}");
+}
+
 /// Emitted output when the module was optimized, otherwise its source.
 fn emitted_or_source(root: &std::path::Path, source: &str) -> String {
     let manifest = modules(root);

@@ -423,7 +423,15 @@ impl<'c> Ctx<'c> {
             }
             SyntaxKind::TypeOfExpression => {
                 let operand = skip_outer(node.expression());
-                operand.kind() == SyntaxKind::Identifier || self.is_pure(operand)
+                if operand.kind() == SyntaxKind::Identifier {
+                    // `typeof` never throws for a name that resolves to no
+                    // declaration, but a declared lexical binding still
+                    // throws while it is in its temporal dead zone. Declared
+                    // names need the ordinary identifier initialization proof.
+                    self.resolve(operand).is_nil() || self.is_pure(operand)
+                } else {
+                    self.is_pure(operand)
+                }
             }
             SyntaxKind::VoidExpression => self.is_pure(node.expression()),
             SyntaxKind::PrefixUnaryExpression => {
