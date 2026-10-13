@@ -308,3 +308,37 @@ test("Animation Off and reduced motion suppress entrance animations", () => {
     /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,[^{]+\{\s*animation: none !important;/u,
   );
 });
+
+test("merged pull request dot uses a fixed semantic purple token independent of accent palettes", () => {
+  expect(palettes).toHaveLength(3);
+  for (const palette of palettes) {
+    const merged = palette.get("pr-merged");
+    expect(merged).toBeTruthy();
+    expect(merged).not.toBe(palette.get("accent"));
+    expect(
+      contrast(merged!, palette.get("surface")!),
+      "pr-merged / surface",
+    ).toBeGreaterThanOrEqual(3);
+    // Purple hue: blue and red channels both dominate green.
+    const [red, green, blue] = [1, 3, 5].map((offset) =>
+      parseInt(merged!.slice(offset, offset + 2), 16),
+    );
+    expect(blue).toBeGreaterThan(green);
+    expect(red).toBeGreaterThan(green);
+  }
+  // The token is not user-customizable, so saved themes and accent palettes
+  // (Nord, Dracula and others) can never override it.
+  for (const modes of Object.values(appearancePalettes))
+    for (const colors of Object.values(modes))
+      expect(Object.keys(colors)).not.toContain("pr-merged");
+  const session = readFileSync(join(directory, "session.css"), "utf8");
+  const rule = (name: string) =>
+    session.match(new RegExp(`\\.session-pr-dot-${name}\\s*\\{([^}]*)\\}`))![1];
+  expect(rule("merged")).toMatch(/background:\s*var\(--pr-merged\)/);
+  expect(rule("merged")).not.toContain("--accent");
+  expect(rule("open")).toMatch(/background:\s*var\(--success-text\)/);
+  expect(rule("closed")).toMatch(/background:\s*var\(--danger-text\)/);
+  expect(session).toMatch(
+    /\.session-pr-dot\s*\{[^}]*background:\s*var\(--text-secondary\)/,
+  );
+});
