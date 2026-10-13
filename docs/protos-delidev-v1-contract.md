@@ -1561,6 +1561,8 @@ The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns `ManagedMC
 
 `ListManagedMcpResponse.operations` field 2 owns bounded original-client pending/awaiting recovery metadata. Category disposal cannot authorize replay; list discovery and original-operation reads disclose no credentials and grant no runtime support.
 
+System capability 103 and Worker capability 64 (`CODEX_MANAGED_MCP_V1`, issue 2001) are published by a Worker whose Codex adapter loads selected managed MCP generations, verifies the exact native inventory before input and publishes typed call/elicitation observations. The server derives `ManagedMcpDefinition.supported_harnesses` from this capability on the definition's own Runner; a Worker reply or client request cannot set it. No message changed; the document-level `mcp` tool snapshot and `native-mcp-elicitation-resolved` acceptance evidence are execution-event JSON owned by the sessions contract.
+
 `GetManagedMcpOperationRequest.definition_id` field 3 binds original absence proofs to their exact definition and authenticated original Worker. A read cannot replace that identity or create generic no-receipt authority.
 
 ## Server reset credits V2 allocation

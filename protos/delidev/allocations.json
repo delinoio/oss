@@ -15398,6 +15398,20 @@
       "number": 59
     },
     {
+      "issue": 2001,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_MANAGED_MCP_V1",
+      "number": 103
+    },
+    {
+      "issue": 2001,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_MANAGED_MCP_V1",
+      "number": 64
+    },
+    {
       "issue": 2129,
       "kind": "message",
       "declaration": "ListManagedMcpResponse",

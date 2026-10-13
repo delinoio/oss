@@ -531,7 +531,7 @@ grant no dispatch, media retrieval, reply retry or continuation authority.
 
 ## Managed MCP clients
 
-The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns typed Worker-scoped management, write-only credential inputs and original-operation reads. Export `ManagedMCPQuery` with the generated service/message/enum bindings. Management capability does not grant runtime MCP authority. Retained uncertain mutations can be acknowledged only through the original read response and verifier; the desktop does not resend authentication exchanges automatically.
+The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns typed Worker-scoped management, write-only credential inputs and original-operation reads. Export `ManagedMCPQuery` with the generated service/message/enum bindings. Management capability does not grant runtime MCP authority. Retained uncertain mutations can be acknowledged only through the original read response and verifier; the desktop does not resend authentication exchanges automatically. Generated enums include `SystemCapability.CODEX_MANAGED_MCP_V1` (103) and `WorkerCapability.CODEX_MANAGED_MCP_V1` (64); the Codex runtime capability is published by the Worker, while `supportedHarnesses` on listed definitions is server-derived.
 
 ## Server reset credits V2 negotiation
 
