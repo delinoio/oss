@@ -663,9 +663,23 @@ export function ConfigurationEditor({
           )
       : undefined,
   );
+  // A definitive rejection that predates this editor belongs to an abandoned
+  // draft: its request document is gone, so the reopened saved document must
+  // not inherit the error. Busy, uncertain, accepted-job and retained-input
+  // state keeps its connection-owned recovery and is never treated as stale.
+  const staleRejection = useRef<unknown>(
+    kind === EntityKind.REPOSITORY &&
+      Boolean(source) &&
+      !mutation.busy &&
+      !mutation.uncertain &&
+      !mutation.input
+      ? mutation.error
+      : undefined,
+  );
   useEffect(() => {
     if (
       !mutation.error ||
+      mutation.error === staleRejection.current ||
       observedNameConflict.current === mutation.error ||
       !isConfigurationNameConflict(mutation.error)
     )
@@ -673,6 +687,13 @@ export function ConfigurationEditor({
     observedNameConflict.current = mutation.error;
     setNameConflict(true);
   }, [mutation.error]);
+  useEffect(() => {
+    if (staleRejection.current === undefined) return;
+    console.info("delidev.settings.stale_rejection_cleared", { kind });
+    // clearRejected re-reads the owner and keeps any busy, uncertain, input or
+    // job state that arrived after this editor rendered.
+    mutation.clearRejected();
+  }, []);
   const formatMutation = useRetainedMutation(
     `account-change-format:${source?.id ?? "new"}`,
     AccountQuery.changeAccountApiFormat,

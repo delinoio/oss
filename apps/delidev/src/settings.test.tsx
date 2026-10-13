@@ -15,8 +15,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
-import { StrictMode } from "react";
+import { describe, expect, it, vi } from "vitest";
+import { StrictMode, useState } from "react";
 import { SettingsLifetime, type SettingsOpening } from "./settings-lifetime";
 import {
   SystemService,
@@ -27,6 +27,7 @@ import {
   ApiProtocol,
   ConfigurationService,
   EntityKind,
+  ErrorDetailSchema,
   ProviderApiFormatSchema,
   ProviderInventoryCapability,
   ProviderInventoryEntrySchema,
@@ -2184,6 +2185,177 @@ it("keeps a successor repository edit open when a dismissed pending status read 
   expect(screen.queryByText("Repository saved.")).toBeNull();
   expect(document.activeElement).toBe(focus);
   expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+function repositoryNameConflict() {
+  return new ConnectError("Collision", Code.Aborted, undefined, [
+    {
+      desc: ErrorDetailSchema,
+      value: create(ErrorDetailSchema, {
+        code: "conflict",
+        cause: "configuration_name_conflict",
+      }),
+    },
+  ]);
+}
+const repositoryNameMessage =
+  "A repository with this name already exists. Choose another name.";
+function ReopenableRepositoryEditor({ initial }: { initial: Resource }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button onClick={() => setOpen((value) => !value)}>Toggle editor</button>
+      {open ? (
+        <ConfigurationEditor
+          kind={EntityKind.REPOSITORY}
+          initial={initial}
+          active
+          saved={() => {}}
+          cancel={() => {}}
+        />
+      ) : null}
+    </>
+  );
+}
+async function renameRepository(name: string) {
+  const field = (await screen.findByRole("textbox", {
+    name: "Name",
+  })) as HTMLInputElement;
+  fireEvent.change(field, { target: { value: name } });
+  const save = screen.getByRole("button", { name: "Save Repository" });
+  await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(save);
+  return field;
+}
+function reopen() {
+  fireEvent.click(screen.getByRole("button", { name: "Toggle editor" }));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle editor" }));
+}
+
+describe("reopened repository editors", () => {
+  const saved = () =>
+    resource(EntityKind.REPOSITORY, {
+      name: "Alpha",
+      remote_url: "https://github.com/fixture/repo.git",
+    });
+  it("keeps a rejected name conflict while mounted and clears it for a reopened editor", async () => {
+    const repository = saved();
+    const value = fixture([repository]);
+    value.save.mockRejectedValueOnce(repositoryNameConflict());
+    render(
+      <NotificationProvider>
+        {value.view(<ReopenableRepositoryEditor initial={repository} />)}
+      </NotificationProvider>,
+    );
+    const field = await renameRepository(" Beta ");
+    await screen.findByText(repositoryNameMessage);
+    expect(field.value).toBe(" Beta ");
+    reopen();
+    const restored = (await screen.findByRole("textbox", {
+      name: "Name",
+    })) as HTMLInputElement;
+    expect(restored.value).toBe("Alpha");
+    expect(screen.queryByText(repositoryNameMessage)).toBeNull();
+    expect(restored.getAttribute("aria-invalid")).not.toBe("true");
+    // A rejection observed after the reopen is still presented.
+    value.save.mockRejectedValueOnce(repositoryNameConflict());
+    await renameRepository("Beta");
+    await screen.findByText(repositoryNameMessage);
+    expect(value.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a late rejection that arrives after the editor reopened while busy", async () => {
+    const repository = saved();
+    const value = fixture([repository]);
+    let reject!: (error: unknown) => void;
+    value.save.mockImplementationOnce(
+      () =>
+        new Promise((_, no) => {
+          reject = no;
+        }),
+    );
+    render(
+      <NotificationProvider>
+        {value.view(<ReopenableRepositoryEditor initial={repository} />)}
+      </NotificationProvider>,
+    );
+    await renameRepository("Beta");
+    await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+    reopen();
+    expect(
+      (
+        (await screen.findByRole("button", {
+          name: /Save Repository/,
+        })) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    await act(async () => {
+      reject(repositoryNameConflict());
+    });
+    await screen.findByText(repositoryNameMessage);
+    expect(value.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the original uncertain request when an editor reopens", async () => {
+    const repository = saved();
+    const value = fixture([repository]);
+    value.save.mockRejectedValueOnce(
+      new ConnectError("Original unavailable save", Code.Unavailable),
+    );
+    render(
+      <NotificationProvider>
+        {value.view(<ReopenableRepositoryEditor initial={repository} />)}
+      </NotificationProvider>,
+    );
+    await renameRepository("Beta");
+    await screen.findByRole("button", {
+      name: "Retry the same configuration",
+    });
+    const original = input(value.save.mock.calls[0][0]);
+    reopen();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Retry the same configuration",
+      }),
+    );
+    await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+    const retried = input(value.save.mock.calls[1][0]);
+    expect(retried.mutation.requestId).toBe(original.mutation.requestId);
+    expect(retried.documentJson).toEqual(original.documentJson);
+  });
+
+  it("keeps an accepted job owned by the connection when an editor reopens", async () => {
+    const repository = saved();
+    const job = resource(EntityKind.JOB, {
+      type: "save-repository",
+      state: "queued",
+    });
+    const value = fixture([repository, job]);
+    value.save.mockImplementation(async (request) => ({
+      job,
+      requestId: input(request).mutation.requestId,
+    }));
+    render(
+      <NotificationProvider>
+        {value.view(<ReopenableRepositoryEditor initial={repository} />)}
+      </NotificationProvider>,
+    );
+    await renameRepository("Beta");
+    await screen.findByText(
+      "Accepted by the server. Waiting for the selected Worker to finish.",
+    );
+    reopen();
+    await screen.findByRole("textbox", { name: "Name" });
+    expect(screen.queryByText(repositoryNameMessage)).toBeNull();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /Save Repository/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(value.save).toHaveBeenCalledTimes(1);
+  });
 });
 
 it("preserves the generic configuration job Done step", async () => {
