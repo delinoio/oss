@@ -2376,9 +2376,14 @@ fn run() -> Result<(), NativeFailure> {
                     app.path().app_config_dir().ok(),
                 ),
             ));
-            app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
+            // Inspect the saved presentation in the native startup lifecycle,
+            // before any window or the tray can be created or admitted, so the
+            // first tray status never projects placeholder default colors.
+            let appearance = Arc::new(delidev_desktop::appearance::AppearanceStore::new(
                 config_dir.clone(),
-            )));
+            ));
+            appearance.initialize();
+            app.manage(appearance);
             app.manage(Arc::new(
                 delidev_desktop::date_format::DateFormatStore::new(config_dir.clone()),
             ));
