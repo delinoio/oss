@@ -165,10 +165,11 @@ function fixture() {
   const listSchedules = vi.fn((_request: unknown) => ({
     schedules: [schedule],
   }));
+  const getSchedule = vi.fn((_request: unknown) => ({ schedule }));
   const transport = createRouterTransport((router) => {
     router.service(ScheduleService, {
       listSchedules,
-      getSchedule: () => ({ schedule }),
+      getSchedule,
       saveSchedule: save,
       runScheduleNow: run,
       controlSchedule: control,
@@ -201,6 +202,7 @@ function fixture() {
     remove,
     discovery,
     listSchedules,
+    getSchedule,
     view,
     client,
     list,
@@ -348,6 +350,95 @@ it("restores focus to the retained workspace control after notification review",
   expect(globalThis.document.activeElement).toBe(back);
   rendered.rerender(value.view(<Schedules active open={() => {}} />));
   expect(globalThis.document.activeElement).toBe(prompt);
+});
+
+it("defers an accepted schedule save and list reads until notification review returns", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.save.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { schedule: value.schedule };
+  });
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Weekday review/ }),
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Edit schedule" }));
+  const prompt = screen.getByLabelText(
+    "Scheduled prompt",
+  ) as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: "Saved during review" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  const reads = value.listSchedules.mock.calls.length;
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  // The accepted response keeps the hidden editor and issues no list read.
+  expect(prompt.isConnected).toBe(true);
+  expect((prompt.closest(".schedule-workspace") as HTMLElement).hidden).toBe(
+    true,
+  );
+  expect(value.listSchedules.mock.calls.length).toBe(reads);
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  await waitFor(() =>
+    expect(screen.queryByLabelText("Scheduled prompt")).toBeNull(),
+  );
+  expect(await screen.findByRole("button", { name: "Run now" })).toBeTruthy();
+  await waitFor(() =>
+    expect(value.listSchedules.mock.calls.length).toBeGreaterThan(reads),
+  );
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it("defers the schedule detail refetch after an accepted control until the view is active", async () => {
+  const value = fixture();
+  let release: () => void = () => {};
+  value.control.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { schedule: value.schedule };
+  });
+  const view = (active: boolean) =>
+    value.view(
+      <ScheduleDetails
+        initial={value.schedule}
+        active={active}
+        open={() => {}}
+        close={() => {}}
+        edit={() => {}}
+      />,
+    );
+  const rendered = render(view(true));
+  await waitFor(() => expect(value.getSchedule).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button", { name: "Resume future runs" }));
+  await waitFor(() => expect(value.control).toHaveBeenCalledTimes(1));
+  rendered.rerender(view(false));
+  const reads = value.getSchedule.mock.calls.length;
+  await act(async () => {
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(value.getSchedule.mock.calls.length).toBe(reads);
+  rendered.rerender(view(true));
+  await waitFor(() =>
+    expect(value.getSchedule.mock.calls.length).toBeGreaterThan(reads),
+  );
 });
 
 it("hides selected schedule details without writes during notification review and restores the same instance", async () => {

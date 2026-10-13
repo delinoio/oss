@@ -971,12 +971,26 @@ export function ScheduleDetails({
   const data = document(current),
     definition = object(data.definition),
     problem = object(data.problem);
+  // A late acknowledgement must not read while this view is inactive (for
+  // example during a notification review); the read waits for reactivation.
+  const activeNow = useRef(active);
+  activeNow.current = active;
+  const refetchPending = useRef(false);
+  const refetchWhenActive = () => {
+    if (activeNow.current) void result.refetch();
+    else refetchPending.current = true;
+  };
+  useEffect(() => {
+    if (!active || !refetchPending.current) return;
+    refetchPending.current = false;
+    void result.refetch();
+  }, [active, result.refetch]);
   const control = useRetainedMutation(
     `schedule-control:${initial.id}`,
     ScheduleQuery.controlSchedule,
     (response) => {
       setAcknowledged(response.schedule);
-      void result.refetch();
+      refetchWhenActive();
     },
   );
   const remove = useRetainedMutation(
@@ -993,7 +1007,7 @@ export function ScheduleDetails({
     (response) => {
       setOccurrence(response.occurrence);
       setConfirm(undefined);
-      void result.refetch();
+      refetchWhenActive();
     },
   );
   const operations = [control, remove, run],
@@ -1268,6 +1282,25 @@ export function Schedules({
     navigationActive && !locked,
     result.refresh,
   );
+  // An accepted save that arrives during a notification review must not clear
+  // the retained editor or read the list; it applies when the review clears.
+  const reviewingNow = useRef(reviewingNotification);
+  reviewingNow.current = reviewingNotification;
+  const deferredSave = useRef<{ row?: Resource } | undefined>(undefined);
+  const applySave = (row?: Resource) => {
+    setEditing(undefined);
+    setProtectedWorkflow(false);
+    if (row) setSelected(row);
+    result.refresh();
+  };
+  const latestApplySave = useRef(applySave);
+  latestApplySave.current = applySave;
+  useEffect(() => {
+    if (reviewingNotification || !deferredSave.current) return;
+    const { row } = deferredSave.current;
+    deferredSave.current = undefined;
+    latestApplySave.current(row);
+  }, [reviewingNotification]);
   const selectSchedule = (row: Resource) => {
     if (locked) return;
     setSelected(row);
@@ -1457,10 +1490,8 @@ export function Schedules({
               initial={editing.initial}
               active={workspaceActive}
               saved={(row) => {
-                setEditing(undefined);
-                setProtectedWorkflow(false);
-                if (row) setSelected(row);
-                result.refresh();
+                if (reviewingNow.current) deferredSave.current = { row };
+                else latestApplySave.current(row);
               }}
               cancel={() => {
                 setEditing(undefined);
