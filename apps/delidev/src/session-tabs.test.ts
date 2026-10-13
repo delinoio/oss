@@ -418,4 +418,25 @@ describe("terminal presentation numbers", () => {
       expect(store.snapshot("child").tabs).toHaveLength(1);
     });
   });
+  describe("navigation generation", () => {
+    it("increments only when the selected tab changes and counts away-and-back moves", () => {
+      const store = new SessionTabsStore();
+      const terminal = { kind: SessionTabKind.Terminal as const, id: "t" };
+      expect(store.navigation("s")).toBe(0);
+      store.open("s", terminal);
+      expect(store.navigation("s")).toBe(1);
+      // Reopening or reselecting the selected tab is not navigation.
+      store.open("s", terminal);
+      store.select("s", sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(1);
+      store.open("s", { kind: SessionTabKind.Files });
+      store.open("s", terminal);
+      expect(store.snapshot("s").selected).toBe(sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(3);
+      store.close("s", sessionTabKey(terminal));
+      expect(store.navigation("s")).toBe(4);
+      // Sessions count independently.
+      expect(store.navigation("other")).toBe(0);
+    });
+  });
 });

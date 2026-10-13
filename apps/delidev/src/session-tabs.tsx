@@ -110,7 +110,14 @@ export class SessionTabsStore {
     };
   };
   snapshot = (id: string) => this.sessions.get(id) ?? initial;
+  // Monotonic per-Session navigation generation: bumped whenever a publish
+  // changes the selected tab, so a pending acknowledgment can tell that the
+  // user navigated after sending even when the same key is selected again.
+  private navigations = new Map<string, number>();
+  navigation = (id: string) => this.navigations.get(id) ?? 0;
   private publish(id: string, value: SessionTabsSnapshot) {
+    if (value.selected !== this.snapshot(id).selected)
+      this.navigations.set(id, this.navigation(id) + 1);
     this.sessions.set(id, value);
     for (const callback of this.listeners) callback();
   }
