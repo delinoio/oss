@@ -6083,7 +6083,9 @@ committed-state adoption. Source byte sync, ownership checks and the Unix parent
 sync are unchanged. File flush and read-back alone never establish durability,
 and power-loss durability of these barriers is untested; automated tests cover
 only ordering, identity checking, unsupported-error classification and failure
-mapping.
+mapping. The identity check is tested through an injectable directory opener
+with a read-only handle, so it does not depend on the host allowing a
+`GENERIC_WRITE` directory open.
 Adopt the new selection and private receipt only after cleanup, required parent
 sync and exact published bytes/new-file identity verification succeed. Any
 post-publication failure is OutcomeUnknown and requires Read recovery without

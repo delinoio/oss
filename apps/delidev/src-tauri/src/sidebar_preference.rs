@@ -837,20 +837,36 @@ fn directory_flush_is_unsupported(error: &std::io::Error) -> bool {
 /// durability, which is untested.
 #[cfg(windows)]
 fn flush_directory_entry(directory: &Path, expected: FileIdentity) -> Result<(), SidebarProblem> {
-    use std::{
-        ffi::c_void,
-        os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
-    };
+    flush_directory_entry_with(directory, expected, open_directory_for_flush)
+}
+
+/// Opens the directory with the access `FlushFileBuffers` requires:
+/// GENERIC_WRITE, backup semantics for directories, inspect reparse objects.
+#[cfg(windows)]
+fn open_directory_for_flush(directory: &Path) -> std::io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut options = OpenOptions::new();
+    options
+        .access_mode(0x4000_0000)
+        .custom_flags(0x02000000 | 0x00200000);
+    options.open(directory)
+}
+
+/// `flush_directory_entry` with an injectable directory opener so the identity
+/// and unsupported-open paths stay testable on hosts whose volumes or ACLs
+/// decide whether `GENERIC_WRITE` directory opens succeed.
+#[cfg(windows)]
+fn flush_directory_entry_with(
+    directory: &Path,
+    expected: FileIdentity,
+    open: impl FnOnce(&Path) -> std::io::Result<File>,
+) -> Result<(), SidebarProblem> {
+    use std::{ffi::c_void, os::windows::io::AsRawHandle};
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn FlushFileBuffers(handle: *mut c_void) -> i32;
     }
-    let mut options = OpenOptions::new();
-    // GENERIC_WRITE, backup semantics for directories, inspect reparse objects.
-    options
-        .access_mode(0x4000_0000)
-        .custom_flags(0x02000000 | 0x00200000);
-    let handle = match options.open(directory) {
+    let handle = match open(directory) {
         Ok(handle) => handle,
         Err(error) if directory_flush_is_unsupported(&error) => {
             tracing::warn!(
@@ -2621,13 +2637,45 @@ mod tests {
         let other = tempfile::tempdir().unwrap();
         let (_, parent) = open_evidence(directory.path(), true).unwrap();
         let (_, foreign) = open_evidence(other.path(), true).unwrap();
+        // Succeeds whether the host flushes the directory or reports the
+        // flush as unsupported, so it holds on every volume and ACL.
         assert_eq!(flush_directory_entry(directory.path(), parent), Ok(()));
+        // A read-only handle always opens, so the identity check decides the
+        // outcome even where GENERIC_WRITE directory opens are denied.
+        let open_read_only = |path: &Path| read_options(true).open(path);
         assert_eq!(
-            flush_directory_entry(directory.path(), foreign),
+            flush_directory_entry_with(directory.path(), foreign, open_read_only),
             Err(SidebarProblem::OutcomeUnknown)
         );
         assert_eq!(
+            flush_directory_entry_with(directory.path(), parent, open_read_only),
+            Ok(())
+        );
+        assert_eq!(
             flush_directory_entry(&directory.path().join("missing"), parent),
+            Err(SidebarProblem::OutcomeUnknown)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_directory_flush_skips_unsupported_opens_but_not_real_failures() {
+        let directory = tempfile::tempdir().unwrap();
+        let (_, parent) = open_evidence(directory.path(), true).unwrap();
+        // ERROR_ACCESS_DENIED on the GENERIC_WRITE open is the documented
+        // unsupported case, so the barrier is skipped before any identity
+        // check.
+        assert_eq!(
+            flush_directory_entry_with(directory.path(), parent, |_| Err(
+                std::io::Error::from_raw_os_error(5)
+            )),
+            Ok(())
+        );
+        // ERROR_SHARING_VIOLATION is a real failure.
+        assert_eq!(
+            flush_directory_entry_with(directory.path(), parent, |_| Err(
+                std::io::Error::from_raw_os_error(32)
+            )),
             Err(SidebarProblem::OutcomeUnknown)
         );
     }
