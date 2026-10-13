@@ -72,7 +72,10 @@ function fixture(initial: Resource[]) {
       accepted: () => store.observe(row),
     };
   };
-  const chain = new PaginationChain<{ id: string; revision: bigint }, Resource>();
+  const chain = new PaginationChain<
+    { id: string; revision: bigint },
+    Resource
+  >();
   chain.activate();
   const receipts = (pending: ReadonlySet<string> = new Set()) => {
     const resident = new Set(
