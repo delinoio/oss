@@ -4417,6 +4417,76 @@ it("preserves first Search autofocus after a hidden wide activation", async () =
   expectNoNavigationWrites(value);
 });
 
+it("focuses retained Search once when a compact drawer opens after a hidden wide activation", async () => {
+  const resize = viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const menu = await screen.findByRole("dialog", { name: "Command menu" });
+  fireEvent.click(within(menu).getByRole("option", { name: "Search" }));
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  // Resize below the compact breakpoint without leaving Search.
+  act(() => resize(true));
+  flushFrames();
+  const opener = await screen.findByRole("button", {
+    name: "Open search filters",
+  });
+  // Closed compact content never receives focus.
+  expect(document.activeElement).not.toBe(input);
+  const focused = vi.fn();
+  input.addEventListener("focus", focused);
+
+  fireEvent.click(opener);
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // Reopening an already focused drawer must not replay initial autofocus.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  opener.focus();
+  fireEvent.click(opener);
+  flushFrames();
+  expect(focused).toHaveBeenCalledTimes(1);
+
+  // The explicit SearchFocus shortcut still focuses the query input.
+  fireEvent(
+    document.querySelector(".sidebar-pane-dialog")!,
+    new Event("cancel", { cancelable: true }),
+  );
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => {
+    flushFrames();
+    expect(document.activeElement).toBe(input);
+  });
+  expectNoNavigationWrites(value);
+});
+
 it("autofocuses visible Search after a wide sidebar preference read failure", async () => {
   viewport();
   const flushFrames = animationFrames();
