@@ -19,9 +19,10 @@ const (
 	managedTitleAdmission managedTitlePhase = "admission"
 	// managedTitleTake runs before protected credentials are delivered.
 	managedTitleTake managedTitlePhase = "take"
-	// managedTitleCustody runs during protected Finish, before vault staging and
-	// receipt publication. It checks structural lineage only: a rename, Stop or
-	// Archive that races inference must still allow the refreshed bundle to be
+	// managedTitleCustody runs after the lease commits in Take and during
+	// protected Finish, before vault staging and receipt publication. It checks
+	// structural lineage only: a rename, Stop, Archive or Worker capability
+	// change that races inference must still allow the refreshed bundle to be
 	// staged, and is applied or discarded at publication instead.
 	managedTitleCustody managedTitlePhase = "custody"
 )
@@ -148,7 +149,11 @@ func (s *Service) validateManagedTitle(tx *store.Tx, record store.Record, job do
 	if err != nil {
 		return result, collapse(err)
 	}
-	if !domain.ManagedTitlesSupported(machine.WorkerCapabilities) {
+	// The current capability set gates only new authority: admission and Take.
+	// Once the exact lease exists, the Worker may reattach with a different
+	// capability set, and custody must still publish its confirmed cleanup and
+	// refreshed bundle from the immutable lease lineage.
+	if phase != managedTitleCustody && !domain.ManagedTitlesSupported(machine.WorkerCapabilities) {
 		return result, managedTitleCapabilityAbsent()
 	}
 	accountRecord, account, err := subscriptionAccount(tx, input.AccountID, 0)
