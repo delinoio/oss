@@ -625,7 +625,12 @@ results retain explicit project restriction guidance and continuation remains
 available. Project restriction guidance uses raw counts from every page reached
 in the current validated chain, so an empty first page that continues to a
 terminal page whose workers are all excluded by the project shows the guidance;
-only the first page can enable the creation entry.
+only the first page can enable the creation entry. Retain each page's raw count
+as a bounded scalar in the chain's per-page metadata (not in the evictable
+three-page payload window), so an excluded worker on an evicted page still
+counts. Initial, Reload, Refresh, Restore, reset and scope changes replace the
+scalars together with the pages, and a failed refresh keeps the previous
+consistent chain.
 
 New session and New Chat additionally withhold the entry, showing the ordinary
 Agent Worker loading status, while the creation preference read is unsettled or a

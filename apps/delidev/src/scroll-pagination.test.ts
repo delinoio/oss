@@ -364,3 +364,63 @@ it("keeps a read accepted when its observer throws", async () => {
   expect(chain.getSnapshot().loaded).toBe(true);
   expect(chain.getSnapshot().error).toBeUndefined();
 });
+
+const counted =
+  (counts: Record<string, number>): PaginationReader<Row, Payload> =>
+  async (token, signal) => ({
+    ...(await reader(token, signal)),
+    rawCount: counts[token || "0"] ?? 0,
+  });
+const rawTotal = (chain: PaginationChain<Row, Payload>) =>
+  chain
+    .getSnapshot()
+    .pages.reduce((total, page) => total + (page.rawCount ?? 0), 0);
+
+it("retains the raw page scalar for every reached page after payload eviction", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  const read = counted({ "0": 7 });
+  await chain.refresh(read);
+  for (let index = 0; index < 4; index++) await chain.append(read);
+  expect(chain.getSnapshot().pages).toHaveLength(5);
+  expect(chain.getSnapshot().payloadPages.map((page) => page.token)).toEqual([
+    "2",
+    "3",
+    "4",
+  ]);
+  expect(chain.getSnapshot().pages[0].rawCount).toBe(7);
+  expect(rawTotal(chain)).toBe(7);
+  chain.measure("", 90);
+  expect(chain.getSnapshot().pages[0].rawCount).toBe(7);
+});
+
+it("replaces raw page scalars when a refresh, reload or reset replaces the chain", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(counted({ "0": 3 }));
+  for (let index = 0; index < 4; index++)
+    await chain.append(counted({ "0": 3 }));
+  expect(rawTotal(chain)).toBe(3);
+  await chain.refresh(counted({}));
+  expect(chain.getSnapshot().pages).toHaveLength(5);
+  expect(rawTotal(chain)).toBe(0);
+  await chain.reload(counted({ "0": 2, "1": 1 }));
+  expect(chain.getSnapshot().pages).toHaveLength(1);
+  expect(rawTotal(chain)).toBe(2);
+  chain.reset();
+  expect(chain.getSnapshot().pages).toEqual([]);
+  expect(rawTotal(chain)).toBe(0);
+});
+
+it("keeps the previous raw page scalars when a refresh fails", async () => {
+  const chain = new PaginationChain<Row, Payload>();
+  chain.activate();
+  await chain.refresh(counted({ "0": 4 }));
+  await chain.append(counted({ "0": 4 }));
+  const failing: PaginationReader<Row, Payload> = async () => {
+    throw new ConnectError("denied", Code.PermissionDenied);
+  };
+  await chain.refresh(failing);
+  expect(chain.getSnapshot().error).toBeDefined();
+  expect(rawTotal(chain)).toBe(4);
+});
