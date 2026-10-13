@@ -66,7 +66,7 @@ it("plays the Appearance entrance once per explicit category opening and and not
   expect(column()).toBe(node);
   expect(column().getAttribute("data-entrance")).toBeNull();
   // Leaving and re-entering is a new explicit activation.
-  category("Instructions");
+  category("Repositories");
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("Appearance");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -76,7 +76,7 @@ it("leaves no stale motion when the category changes before completion", () => {
   render(view(<Settings />));
   category("Appearance");
   const old = column();
-  category("Instructions");
+  category("Repositories");
   expect(document.contains(old)).toBe(false);
   dispatch(old);
   expect(column().getAttribute("data-entrance")).toBeNull();
