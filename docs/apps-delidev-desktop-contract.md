@@ -6068,9 +6068,18 @@ bound handle is released for cleanup, call `FlushFileBuffers` on that verified
 write-access handle after proving it is still the created file object by
 volume/128-bit file identity. Any identity mismatch or flush failure is
 OutcomeUnknown with explicit Reload recovery and no committed-state adoption;
-Unix relies on the parent sync below. File flush and read-back alone never
-establish power-loss durability, which is untested; automated tests cover only
-ordering, identity checking and failure mapping.
+Unix relies on the parent sync below.
+On Windows, a Missing-destination first save additionally opens a dedicated
+write-access directory handle (backup semantics, reparse objects not followed),
+proves it is the leased parent by volume/128-bit file identity and calls
+`FlushFileBuffers` on it after cleanup, before the save may be reported as
+committed. Any failure to open, identify or flush that handle,
+including a filesystem that cannot flush directories, is OutcomeUnknown with
+explicit Reload recovery and no committed-state adoption. Source byte sync,
+ownership checks and the Unix parent sync are unchanged. File flush and read-back
+alone never establish durability, and power-loss durability of these barriers is
+untested; automated tests cover only ordering, identity checking and failure
+mapping.
 Adopt the new selection and private receipt only after cleanup, required parent
 sync and exact published bytes/new-file identity verification succeed. Any
 post-publication failure is OutcomeUnknown and requires Read recovery without

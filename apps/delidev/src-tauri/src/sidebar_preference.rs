@@ -536,6 +536,9 @@ enum PersistStep {
     PublishBarrier,
     ScratchUnlinking,
     ScratchRemoved,
+    /// Persistence barrier for the published directory entry (Unix parent
+    /// sync, Windows first-save directory flush). Failure is OutcomeUnknown.
+    DirectoryBarrier,
     DirectorySynced,
     ReceiptVerified,
 }
@@ -807,6 +810,57 @@ fn flush_published(file: &File, expected: FileIdentity) -> Result<(), SidebarPro
         );
         SidebarProblem::OutcomeUnknown
     })
+}
+
+/// Persistence barrier for a directory entry created by a Windows first save.
+/// `FlushFileBuffers` on a directory handle needs write access, so it opens a
+/// dedicated handle, proves it is still the leased parent and flushes it.
+/// Every failure, including filesystems that cannot flush directories, is
+/// reported as OutcomeUnknown so the new selection is never adopted. This does
+/// not establish power-loss durability, which is untested.
+#[cfg(windows)]
+fn flush_directory_entry(directory: &Path, expected: FileIdentity) -> Result<(), SidebarProblem> {
+    use std::{
+        ffi::c_void,
+        os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+    };
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn FlushFileBuffers(handle: *mut c_void) -> i32;
+    }
+    let mut options = OpenOptions::new();
+    // GENERIC_WRITE, backup semantics for directories, inspect reparse objects.
+    options
+        .access_mode(0x4000_0000)
+        .custom_flags(0x02000000 | 0x00200000);
+    let handle = options.open(directory).map_err(|error| {
+        tracing::warn!(
+            operation = "sidebar_preference_publish",
+            code = "directory-barrier-open-failed",
+            kind = ?error.kind()
+        );
+        SidebarProblem::OutcomeUnknown
+    })?;
+    match identity(&handle) {
+        Ok((found, _)) if found == expected => {}
+        _ => {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "directory-barrier-identity-mismatch"
+            );
+            return Err(SidebarProblem::OutcomeUnknown);
+        }
+    }
+    if unsafe { FlushFileBuffers(handle.as_raw_handle()) } == 0 {
+        let error = std::io::Error::last_os_error();
+        tracing::warn!(
+            operation = "sidebar_preference_publish",
+            code = "directory-barrier-failed",
+            kind = ?error.kind()
+        );
+        return Err(SidebarProblem::OutcomeUnknown);
+    }
+    Ok(())
 }
 
 /// The exclusively created scratch file. Publication and cleanup are bound to
@@ -1244,11 +1298,19 @@ fn persist_with(
         scratch.remove(&mut step)?;
         step(PersistStep::ScratchRemoved, &scratch.path)?;
         lease.validate()?;
+        step(PersistStep::DirectoryBarrier, &scratch.path)?;
         #[cfg(unix)]
         lease
             .parent
             .sync_all()
             .map_err(|_| SidebarProblem::OutcomeUnknown)?;
+        // A Missing destination is published without write-through, so the new
+        // directory entry needs its own barrier before it may be adopted.
+        // Present replacement keeps its existing publication semantics.
+        #[cfg(windows)]
+        if matches!(original.document, ObservedDocument::Missing) {
+            flush_directory_entry(&lease.directory, lease.parent_identity)?;
+        }
         step(PersistStep::DirectorySynced, &scratch.path)?;
         let receipt = inspect(path, lease)?;
         match &receipt.document {
@@ -1993,6 +2055,7 @@ mod tests {
             PersistStep::Published,
             PersistStep::PublishBarrier,
             PersistStep::ScratchRemoved,
+            PersistStep::DirectoryBarrier,
             PersistStep::DirectorySynced,
             PersistStep::ReceiptVerified,
         ] {
@@ -2457,6 +2520,74 @@ mod tests {
         fs::remove_file(&second).unwrap();
         fs::write(&second, b"second").unwrap();
         assert!(identity(&File::open(second).unwrap()).unwrap().0 != original);
+    }
+    #[test]
+    fn directory_barrier_runs_after_cleanup_and_before_adoption() {
+        for existing in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("sidebar_preference.json");
+            if existing {
+                fs::write(&path, br#"{"version":1,"sidebar_preference":"expanded"}"#).unwrap();
+            }
+            let store = SidebarStore::new(Some(directory.path().into()));
+            let initial = store.read();
+            let mut steps = Vec::new();
+            let committed = store.update_with(
+                SidebarPreference::Collapsed,
+                initial.revision,
+                |path, preference, original, lease| {
+                    persist_with(path, preference, original, lease, |step, _| {
+                        steps.push(step);
+                        Ok(())
+                    })
+                },
+            );
+            assert_eq!(committed.problem, None);
+            assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+            let position = |wanted| steps.iter().position(|step| *step == wanted).unwrap();
+            assert!(
+                position(PersistStep::ScratchRemoved) < position(PersistStep::DirectoryBarrier)
+            );
+            assert!(
+                position(PersistStep::DirectoryBarrier) < position(PersistStep::DirectorySynced)
+            );
+            assert!(
+                position(PersistStep::DirectorySynced) < position(PersistStep::ReceiptVerified)
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_directory_flush_accepts_only_the_leased_parent() {
+        let directory = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let (_, parent) = open_evidence(directory.path(), true).unwrap();
+        let (_, foreign) = open_evidence(other.path(), true).unwrap();
+        assert_eq!(flush_directory_entry(directory.path(), parent), Ok(()));
+        assert_eq!(
+            flush_directory_entry(directory.path(), foreign),
+            Err(SidebarProblem::OutcomeUnknown)
+        );
+        assert_eq!(
+            flush_directory_entry(&directory.path().join("missing"), parent),
+            Err(SidebarProblem::OutcomeUnknown)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_first_save_commits_only_after_the_directory_flush() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SidebarStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let committed = store.update(SidebarPreference::Collapsed, initial.revision);
+        assert_eq!(committed.problem, None);
+        assert_eq!(committed.sidebar_preference, SidebarPreference::Collapsed);
+        assert_eq!(
+            store.read().sidebar_preference,
+            SidebarPreference::Collapsed
+        );
     }
 
     #[test]
