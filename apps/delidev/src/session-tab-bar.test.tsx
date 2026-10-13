@@ -150,7 +150,8 @@ it("renders each tab as a flat item with a label button and a separate sibling c
     false,
     false,
   ]);
-  for (const tab of tabs) expect(tab.classList.contains("tab-label")).toBe(true);
+  for (const tab of tabs)
+    expect(tab.classList.contains("tab-label")).toBe(true);
   // Conversation stays first and noncloseable; the others own a sibling close.
   expect(items[0].querySelectorAll(".tab-close")).toHaveLength(0);
   for (const item of items.slice(1)) {

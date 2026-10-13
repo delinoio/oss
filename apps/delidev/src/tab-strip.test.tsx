@@ -97,7 +97,9 @@ it("draws a focus indicator independent of selection, inside the scrolling strip
     ".tab-strip .tab-close:focus-visible",
   ]) {
     const focus = block(strip, selector);
-    expect(focus).toContain("outline: 2px solid var(--tab-focus, var(--focus))");
+    expect(focus).toContain(
+      "outline: 2px solid var(--tab-focus, var(--focus))",
+    );
     expect(focus).toContain("outline-offset: -2px");
   }
 });
@@ -125,7 +127,9 @@ it("excludes shared tab controls from broad form-button rules via zero-specifici
           declarations,
         ) &&
         /\bbutton\b/.test(selector) &&
-        !/\.settings-task-footer|\.primary|\.paired-device-revoke/.test(selector)
+        !/\.settings-task-footer|\.primary|\.paired-device-revoke/.test(
+          selector,
+        )
       )
         expect(selector, `${name}: ${selector.trim()}`).toContain(
           "button:where(:not(.tab-item, .tab-label, .tab-close))",
@@ -137,9 +141,11 @@ it("excludes shared tab controls from broad form-button rules via zero-specifici
 it("broad Settings control selectors do not match shared tab controls but still match ordinary buttons", () => {
   const css = withoutComments(read("settings-task.css"));
   const selectors = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .filter(([, selector, declarations]) =>
-      /border-color: var\(--control-border\)|border-radius: 8px/.test(declarations) &&
-      selector.includes(".settings-task-body"),
+    .filter(
+      ([, selector, declarations]) =>
+        /border-color: var\(--control-border\)|border-radius: 8px/.test(
+          declarations,
+        ) && selector.includes(".settings-task-body"),
     )
     .flatMap(([, selector]) => splitSelectors(selector))
     .flatMap((selector) => {
@@ -147,8 +153,8 @@ it("broad Settings control selectors do not match shared tab controls but still 
       // :where(:not()) arguments, so test each button argument as a plain compound.
       const match = /^(.*?)\s*:is\(([\s\S]*)\)$/.exec(selector);
       return match
-        ? splitSelectors(match[2]).map(
-            (argument) => `${match[1]} ${argument}`.replace(/\s+/g, " "),
+        ? splitSelectors(match[2]).map((argument) =>
+            `${match[1]} ${argument}`.replace(/\s+/g, " "),
           )
         : [selector.replace(/\s+/g, " ")];
     })
