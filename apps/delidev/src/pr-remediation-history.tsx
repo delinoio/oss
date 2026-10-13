@@ -130,9 +130,11 @@ export function PRRemediationHistory({
     isFetching: Boolean(traversal.loading),
     isPending: !traversal.loaded && !traversal.error,
     error: paginationError(traversal.error?.failure),
-    refetch: traversal.refresh,
+    refetch: traversal.refreshExplicit,
   };
-  const refresh = traversal.refresh;
+  // Deliberate refreshes recover a retained read error (exact-token retry or
+  // first-page reload); automatic refreshes keep the non-explicit traversal.refresh.
+  const refresh = traversal.refreshExplicit;
   const resume = useRetainedMutation(
     `pr-remediation-resume:${selection.remoteRepositoryId}:${selection.pullRequestId}`,
     IntegrationQuery.resumePullRequestRemediation,
