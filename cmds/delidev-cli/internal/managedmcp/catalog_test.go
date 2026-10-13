@@ -554,3 +554,30 @@ func TestManagedMCPSecretBoundMatchesTheVaultAndIsCheckedBeforeAnyReceipt(t *tes
 	edit.Definition = &edited
 	must(t, m, edit)
 }
+
+func TestManagedMCPCallbackKeepsTheConfiguredRedirectQueryIdentity(t *testing.T) {
+	for name, tc := range map[string]struct {
+		callback string
+		ok       bool
+	}{
+		"exact":         {"http://localhost/callback?tenant=a&state=original-state&code=private-code", true},
+		"with-issuer":   {"http://localhost/callback?tenant=a&iss=https%3A%2F%2Ffixture.test&state=original-state&code=private-code", true},
+		"missing-fixed": {"http://localhost/callback?state=original-state&code=private-code", false},
+		"changed-fixed": {"http://localhost/callback?tenant=b&state=original-state&code=private-code", false},
+		"extra-foreign": {"http://localhost/callback?tenant=a&redirect=evil&state=original-state&code=private-code", false},
+		"repeated":      {"http://localhost/callback?tenant=a&tenant=b&state=original-state&code=private-code", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, _, complete, _ := awaitingOAuth(t, "http://localhost/callback?tenant=a")
+			complete.CallbackURL = tc.callback
+			m.HTTP = tokenResponse(http.StatusOK, `{"access_token":"private-oauth-token","token_type":"Bearer"}`)
+			result, err := m.Execute(context.Background(), complete)
+			if tc.ok && (err != nil || result.Operation.State != domain.MCPOperationCompleted) {
+				t.Fatalf("the original redirect was refused: %v", err)
+			}
+			if !tc.ok && domain.SafeError(err).Code != domain.PermissionDenied {
+				t.Fatalf("another redirect identity was accepted: %v", err)
+			}
+		})
+	}
+}

@@ -94,7 +94,7 @@ func (d ManagedMCPDefinition) Validate() error {
 		return Fail(InvalidArgument, "Unknown MCP authentication.", "Choose none, manual credentials or OAuth.")
 	}
 	if d.Authentication == MCPOAuthAuthentication {
-		if d.Transport != MCPStreamableHTTP || d.OAuth == nil || Text(d.OAuth.ClientID, "OAuth client", 256, true) != nil || ValidateMCPURL(d.OAuth.AuthorizationURL) != nil || ValidateMCPURL(d.OAuth.TokenURL) != nil || ValidateMCPURL(d.OAuth.RedirectURI) != nil || Text(d.OAuth.Scope, "OAuth scope", 2048, false) != nil {
+		if d.Transport != MCPStreamableHTTP || d.OAuth == nil || Text(d.OAuth.ClientID, "OAuth client", 256, true) != nil || ValidateMCPURL(d.OAuth.AuthorizationURL) != nil || ValidateMCPURL(d.OAuth.TokenURL) != nil || ValidateMCPURL(d.OAuth.RedirectURI) != nil || reservedRedirectQuery(d.OAuth.RedirectURI) || Text(d.OAuth.Scope, "OAuth scope", 2048, false) != nil {
 			return Fail(InvalidArgument, "The MCP OAuth profile is incomplete.", "Use the server's explicit public-client OAuth profile.")
 		}
 	} else if d.OAuth != nil {
@@ -232,4 +232,15 @@ type ManagedMCPResult struct {
 	Definitions    []ManagedMCPDefinition `json:"definitions"`
 	Operation      *ManagedMCPOperation   `json:"operation,omitempty"`
 	Replayed       bool                   `json:"replayed,omitempty"`
+}
+
+// reservedRedirectQuery reports a configured redirect whose fixed query uses a
+// name that the authorization response itself carries.
+func reservedRedirectQuery(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return true
+	}
+	query := u.Query()
+	return query.Has("state") || query.Has("code")
 }

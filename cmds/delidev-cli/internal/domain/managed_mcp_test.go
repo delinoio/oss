@@ -46,3 +46,17 @@ func TestManagedMCPSecretPayloadMustFitTheVaultBound(t *testing.T) {
 		t.Fatalf("an oversized aggregate was accepted: %v", err)
 	}
 }
+
+func TestManagedMCPRedirectQueryCannotUseAuthorizationResponseNames(t *testing.T) {
+	profile := func(redirect string) ManagedMCPDefinition {
+		return ManagedMCPDefinition{ID: NewID(), Revision: 1, MachineID: NewID(), WorkerDeviceID: NewID(), Name: "Fixture", Transport: MCPStreamableHTTP, Endpoint: "https://fixture.test/mcp", Authentication: MCPOAuthAuthentication, OAuth: &MCPOAuthProfile{ClientID: "public", AuthorizationURL: "https://fixture.test/auth", TokenURL: "https://fixture.test/token", RedirectURI: redirect}}
+	}
+	if err := profile("http://localhost/callback?tenant=a").Validate(); err != nil {
+		t.Fatalf("a fixed redirect query was rejected: %v", err)
+	}
+	for _, redirect := range []string{"http://localhost/callback?state=x", "http://localhost/callback?tenant=a&code=x"} {
+		if err := profile(redirect).Validate(); SafeError(err).Code != InvalidArgument {
+			t.Fatalf("%s accepted a reserved query name: %v", redirect, err)
+		}
+	}
+}

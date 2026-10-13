@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -216,6 +217,10 @@ func (m Manager) oauth(ctx context.Context, c *catalog, q domain.ManagedMCPReque
 	return result, nil
 }
 
+// oauthResponseParameters are the only parameters an authorization server adds
+// to the configured redirect (RFC 6749 section 4.1.2 and RFC 9207).
+var oauthResponseParameters = []string{"code", "state", "iss", "error", "error_description", "error_uri"}
+
 func validateCallback(raw string, d domain.ManagedMCPDefinition, a oauthAttempt) error {
 	callback, e := url.Parse(raw)
 	redirect, e2 := url.Parse(d.OAuth.RedirectURI)
@@ -223,6 +228,19 @@ func validateCallback(raw string, d domain.ManagedMCPDefinition, a oauthAttempt)
 		return domain.Fail(domain.PermissionDenied, "The MCP callback belongs to another redirect.", "Use the original authorization callback.")
 	}
 	values := callback.Query()
+	// The configured redirect query is part of its identity: every fixed parameter
+	// must come back unchanged and only authorization response parameters may be added.
+	fixed := redirect.Query()
+	for key, want := range fixed {
+		if !slices.Equal(values[key], want) {
+			return domain.Fail(domain.PermissionDenied, "The MCP callback belongs to another redirect.", "Use the original authorization callback.")
+		}
+	}
+	for key := range values {
+		if _, configured := fixed[key]; !configured && !slices.Contains(oauthResponseParameters, key) {
+			return domain.Fail(domain.PermissionDenied, "The MCP callback belongs to another redirect.", "Use the original authorization callback.")
+		}
+	}
 	state := values.Get("state")
 	code := values.Get("code")
 	hash := sha256.Sum256([]byte(state))
