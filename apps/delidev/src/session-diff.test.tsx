@@ -853,18 +853,20 @@ it("fences a late options response after the comparison changes", async () => {
   ]);
 });
 
-type Gate = { release: () => void };
+type Gate = { release: () => void; signal?: AbortSignal };
 
 // Holds the next read until released. Queue gates in request order.
 function holdNextRead(f: ReturnType<typeof fixture>): Gate {
   const inner = f.read.getMockImplementation()!;
   let release: () => void = () => {};
   const opened = new Promise<void>((resolve) => (release = resolve));
-  f.read.mockImplementationOnce(async (request) => {
+  const gate: Gate = { release: () => release() };
+  f.read.mockImplementationOnce(async (request, context?: object) => {
+    gate.signal = (context as { signal?: AbortSignal } | undefined)?.signal;
     await opened;
     return inner(request);
   });
-  return { release: () => release() };
+  return gate;
 }
 
 const addReviewComment = () =>
@@ -1237,6 +1239,53 @@ it("logs only a sanitized operation and closed classification for a failed optio
   } finally {
     warn.mockRestore();
   }
+});
+
+it("cancels the disposable options read when the view closes", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  const view = render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  expect(options.signal?.aborted).toBe(false);
+  view.unmount();
+  // The read is cancelled and its entry removed without waiting for the RPC.
+  await waitFor(() => expect(options.signal?.aborted).toBe(true));
+  expect(f.client.getQueryCache().getAll()).toHaveLength(0);
+  options.release();
+});
+
+it("cancels the disposable options read when the scope changes", async () => {
+  const { f, state, operations } = inventoryFixture(
+    [{ name: "main" }, { name: "late-next" }],
+    "main",
+  );
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  state.defaultName = "late-next";
+  const options = holdNextRead(f);
+  const before = operations().length;
+  refreshDiff();
+  await waitFor(() => expect(operations()).toHaveLength(before + 1));
+  expect(options.signal?.aborted).toBe(false);
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() => expect(options.signal?.aborted).toBe(true));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  expect(cachedOptionDefaults(f.client)).not.toContain("late-next");
+  options.release();
 });
 
 it("keeps working-tree Refresh as a direct diff read without options", async () => {

@@ -325,19 +325,30 @@ export function RepositoryDiff({
   // equal scope later (ABA).
   const scopeGeneration = useRef(0),
     observedScope = useRef(scope),
-    mounted = useRef(true);
+    mounted = useRef(true),
+    activeRefresh = useRef<readonly unknown[] | undefined>(undefined);
   if (observedScope.current !== scope) {
     observedScope.current = scope;
     scopeGeneration.current += 1;
   }
   const transport = useTransport(),
     queryClient = useQueryClient();
+  const cancelRefresh = () => {
+    const key = activeRefresh.current;
+    if (!key) return;
+    activeRefresh.current = undefined;
+    void queryClient.cancelQueries({ queryKey: key, exact: true });
+    queryClient.removeQueries({ queryKey: key, exact: true });
+  };
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  // Changing the scope or closing the view cancels the outstanding disposable
+  // options read; the generation fence still guards any response that races.
+  useEffect(() => cancelRefresh, [scope]);
   const query = {
     operation: "git-diff",
     repository_id: repository,
@@ -386,6 +397,7 @@ export function RepositoryDiff({
       ...accepted.queryKey,
       { optionsRefresh: newRequestId() },
     ];
+    activeRefresh.current = disposableKey;
     try {
       let response: { documentJson: Uint8Array };
       try {
@@ -398,6 +410,8 @@ export function RepositoryDiff({
             accepted.queryFn({ ...context, queryKey: accepted.queryKey }),
         });
       } finally {
+        if (activeRefresh.current === disposableKey)
+          activeRefresh.current = undefined;
         queryClient.removeQueries({ queryKey: disposableKey, exact: true });
       }
       if (!mounted.current || scopeGeneration.current !== token) {
