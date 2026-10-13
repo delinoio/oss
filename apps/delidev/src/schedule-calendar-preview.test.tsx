@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { TimestampSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
   Code,
   ConnectError,
@@ -201,4 +201,196 @@ it("uses the server boundary across browser-clock skew and refreshes at the due 
     await vi.advanceTimersByTimeAsync(1100);
   });
   expect(preview).toHaveBeenCalledTimes(2);
+});
+
+const fakeClock = (skewMs = 0) => {
+  vi.useFakeTimers({
+    toFake: [
+      "Date",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "performance",
+    ],
+  });
+  vi.setSystemTime(new Date(Date.parse("2026-10-10T09:00:00Z") + skewMs));
+};
+const advance = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+const at = (offsetMs: number) =>
+  timestampFromDate(new Date(Date.parse("2026-10-10T09:00:00Z") + offsetMs));
+interface Reply {
+  delayMs?: number;
+  body: () => unknown;
+}
+// Serves one scripted reply per call; the last reply repeats.
+function scripted(replies: Reply[]) {
+  const handler = vi.fn(async () => {
+    const reply = replies[Math.min(handler.mock.calls.length - 1, replies.length - 1)];
+    if (reply.delayMs)
+      await new Promise((resolve) => setTimeout(resolve, reply.delayMs));
+    return reply.body() as ReturnType<typeof response>;
+  });
+  return {
+    handler,
+    transport: createRouterTransport((router) =>
+      router.service(ScheduleService, { previewScheduleCalendar: handler }),
+    ),
+  };
+}
+const firstRunText = () =>
+  document.querySelector(".schedule-calendar-summary [role=status]")
+    ?.textContent;
+function SummaryHarness() {
+  const preview = useScheduleCalendarPreview("0 9 * * 1-5", "UTC", true, true);
+  return (
+    <>
+      <output>{preview.state}</output>
+      <span>{preview.next ?? "no-date"}</span>
+      <ScheduleCalendarSummary
+        preview={preview}
+        cron="0 9 * * 1-5"
+        timezone="UTC"
+        enabled
+        fallback="FALLBACK-RECURRENCE"
+      />
+    </>
+  );
+}
+function mountSummary(transport: Transport) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SummaryHarness />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+}
+it.each([0, 3_600_000, -86_400_000])(
+  "counts response latency toward the boundary refresh with a %i ms skewed browser clock",
+  async (skew) => {
+    fakeClock(skew);
+    // Debounce 300 ms, request starts at 300 ms, response arrives at 1300 ms.
+    const { handler, transport } = scripted([
+      {
+        delayMs: 1000,
+        body: () => ({ ...response(), nextRunAt: at(10_000) }),
+      },
+    ]);
+    mountSummary(transport);
+    await advance(300);
+    expect(handler).toHaveBeenCalledTimes(1);
+    await advance(1001);
+    expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
+    // Boundary is 10000 ms after calculated_at; 1000 ms of it elapsed in flight.
+    await advance(8_000);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
+    await advance(1_100);
+    expect(handler).toHaveBeenCalledTimes(2);
+  },
+);
+it("does not show a boundary that elapsed in flight as Ready and refetches immediately", async () => {
+  fakeClock();
+  const { handler, transport } = scripted([
+    { delayMs: 1000, body: () => ({ ...response(), nextRunAt: at(500) }) },
+    { delayMs: 1000, body: () => ({ ...response(), nextRunAt: at(3_600_000) }) },
+  ]);
+  mountSummary(transport);
+  await advance(300);
+  expect(handler).toHaveBeenCalledTimes(1);
+  await advance(1001);
+  // The first response is already past its boundary on arrival.
+  expect(screen.queryByText(CalendarPreviewState.Ready)).toBeNull();
+  expect(screen.getByText("no-date")).toBeTruthy();
+  await advance(1);
+  expect(handler).toHaveBeenCalledTimes(2);
+  expect(screen.getByText(CalendarPreviewState.Calculating)).toBeTruthy();
+  expect(firstRunText()).toBe(
+    "Calculating the first run…",
+  );
+  await advance(1001);
+  expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
+});
+it("anchors minute refreshes to the refresh request start", async () => {
+  fakeClock();
+  const { handler, transport } = scripted([
+    { body: () => ({ ...response(), nextRunAt: at(130_000) }) },
+    {
+      delayMs: 2_000,
+      body: () => ({ ...response(), calculatedAt: at(60_000), nextRunAt: at(70_000) }),
+    },
+  ]);
+  mountSummary(transport);
+  await advance(301);
+  await advance(50);
+  expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
+  // The minute refresh starts at 60300 ms and answers 2000 ms later.
+  await advance(60_000);
+  expect(handler).toHaveBeenCalledTimes(2);
+  await advance(2_001);
+  expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
+  // Boundary is 10000 ms after calculated_at, 2000 ms of which were in flight.
+  await advance(7_900);
+  expect(handler).toHaveBeenCalledTimes(2);
+  await advance(200);
+  expect(handler).toHaveBeenCalledTimes(3);
+});
+const bare = (patch: Record<string, unknown>) => () => ({
+  ...response(),
+  ...patch,
+});
+it.each([
+  ["missing calculated_at", bare({ calculatedAt: undefined })],
+  ["missing next_run_at", bare({ nextRunAt: undefined })],
+  ["missing constraints", bare({ constraints: undefined })],
+  ["next equal to calculated", bare({ nextRunAt: at(0) })],
+  ["next before calculated", bare({ nextRunAt: at(-60_000) })],
+  [
+    "out-of-range next seconds",
+    bare({
+      nextRunAt: create(TimestampSchema, { seconds: 10n ** 20n, nanos: 0 }),
+    }),
+  ],
+  [
+    "out-of-range calculated seconds",
+    bare({
+      calculatedAt: create(TimestampSchema, { seconds: -(10n ** 20n), nanos: 0 }),
+    }),
+  ],
+])(
+  "classifies a completed response with %s as Unavailable and keeps refreshing",
+  async (_name, body) => {
+    fakeClock();
+    const { handler, transport } = scripted([{ body }]);
+    mountSummary(transport);
+    await advance(301);
+    expect(handler).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(screen.getByText(CalendarPreviewState.Unavailable)).toBeTruthy();
+    expect(screen.getByText("no-date")).toBeTruthy();
+    expect(firstRunText()).toBe(
+      "Preview unavailable; saving determines the next run.",
+    );
+    expect(screen.getByText("FALLBACK-RECURRENCE")).toBeTruthy();
+    await advance(60_000);
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(CalendarPreviewState.Unavailable)).toBeTruthy();
+  },
+);
+it("keeps Calculating only while the initial read is in flight and Ready for complete evidence", async () => {
+  fakeClock();
+  const { transport } = scripted([{ delayMs: 1000, body: response }]);
+  mountSummary(transport);
+  await advance(300);
+  expect(screen.getByText(CalendarPreviewState.Calculating)).toBeTruthy();
+  await advance(1001);
+  expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
+  expect(screen.queryByText("FALLBACK-RECURRENCE")).toBeNull();
 });

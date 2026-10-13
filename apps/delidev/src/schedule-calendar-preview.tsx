@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
@@ -32,7 +32,71 @@ interface PreviewInput {
 }
 interface PreviewSnapshot extends PreviewInput {
   data: PreviewScheduleCalendarResponse;
-  receivedAt: number;
+  /**
+   * Monotonic `performance.now()` sampled when the read that produced `data`
+   * was issued, before the request left the client. The server samples
+   * `calculated_at` after that point, so `now - requestStartedAt` never
+   * under-counts the time elapsed since `calculated_at`.
+   */
+  requestStartedAt: number;
+}
+interface PreviewEvidence {
+  calculated: number;
+  next: number;
+  constraints: ScheduleCalendarConstraints;
+}
+
+/**
+ * Validates a completed successful response. Returns undefined when the
+ * evidence is incomplete or contradictory; callers must then treat the read as
+ * Unavailable rather than Calculating.
+ */
+export function validatePreviewEvidence(
+  data: PreviewScheduleCalendarResponse,
+): PreviewEvidence | undefined {
+  if (!data.calculatedAt || !data.nextRunAt || !data.constraints) return;
+  let calculated: number;
+  let next: number;
+  try {
+    calculated = timestampDate(data.calculatedAt).getTime();
+    next = timestampDate(data.nextRunAt).getTime();
+  } catch {
+    return;
+  }
+  if (!Number.isFinite(calculated) || !Number.isFinite(next)) return;
+  if (next <= calculated) return;
+  return { calculated, next, constraints: data.constraints };
+}
+
+/**
+ * Wraps a transport so every unary preview read records a monotonic start
+ * anchor at the moment the original fetch is issued. Completed anchors are
+ * keyed by response message and also kept as the latest completed anchor,
+ * because TanStack structural sharing may hand back an earlier equal message.
+ */
+function trackRequestStarts(
+  transport: Transport,
+  starts: WeakMap<object, number>,
+  latest: { current: number | undefined },
+): Transport {
+  return {
+    ...transport,
+    unary: async (method, signal, timeoutMs, header, input, contextValues) => {
+      const startedAt = performance.now();
+      const result = await transport.unary(
+        method,
+        signal,
+        timeoutMs,
+        header,
+        input,
+        contextValues,
+      );
+      starts.set(result.message, startedAt);
+      latest.current = startedAt;
+      return result;
+    },
+    stream: transport.stream.bind(transport),
+  };
 }
 
 export function useScheduleCalendarPreview(
@@ -68,10 +132,17 @@ export function useScheduleCalendarPreview(
     return () => clearTimeout(timer);
   }, [cron, timezone, transport, active, valid]);
   const enabled = active && valid && sameInput;
+  const starts = useRef(new WeakMap<object, number>()).current;
+  const latestStart = useRef<number | undefined>(undefined);
+  const tracked = useMemo(
+    () => trackRequestStarts(transport, starts, latestStart),
+    [transport, starts],
+  );
   const query = useQuery(
     ScheduleQuery.previewScheduleCalendar,
     { cron, timezone },
     {
+      transport: tracked,
       enabled,
       retry: false,
       staleTime: 0,
@@ -87,7 +158,8 @@ export function useScheduleCalendarPreview(
       timezone,
       transport,
       data: query.data,
-      receivedAt: performance.now(),
+      requestStartedAt:
+        starts.get(query.data) ?? latestStart.current ?? performance.now(),
     });
     setElapsed(0);
   }, [
@@ -99,6 +171,7 @@ export function useScheduleCalendarPreview(
     cron,
     timezone,
     transport,
+    starts,
   ]);
   const current =
     enabled &&
@@ -109,32 +182,30 @@ export function useScheduleCalendarPreview(
     snapshot.data === query.data
       ? snapshot
       : undefined;
-  const calculated = current?.data.calculatedAt
-    ? timestampDate(current.data.calculatedAt).getTime()
-    : undefined;
-  const next = current?.data.nextRunAt
-    ? timestampDate(current.data.nextRunAt).getTime()
-    : undefined;
+  const evidence = current ? validatePreviewEvidence(current.data) : undefined;
+  const calculated = evidence?.calculated;
+  const next = evidence?.next;
+  // A completed successful read is classified immediately, without waiting for
+  // the snapshot effect, so malformed evidence never lingers as Calculating.
+  const completedInvalid =
+    enabled &&
+    !query.isError &&
+    !query.isFetching &&
+    !!query.data &&
+    !validatePreviewEvidence(query.data);
   useEffect(() => {
-    if (
-      !current ||
-      calculated === undefined ||
-      next === undefined ||
-      !Number.isFinite(calculated) ||
-      !Number.isFinite(next)
-    )
-      return;
+    if (!current || calculated === undefined || next === undefined) return;
     const remaining =
-      next - calculated - (performance.now() - current.receivedAt);
+      next - calculated - (performance.now() - current.requestStartedAt);
     const timer = setTimeout(
       () => {
-        setElapsed(performance.now() - current.receivedAt);
+        setElapsed(performance.now() - current.requestStartedAt);
         if (remaining <= 60000) {
           setSnapshot(undefined);
           void query.refetch();
         }
       },
-      Math.max(1, Math.min(60000, remaining)),
+      Math.max(0, Math.min(60000, remaining)),
     );
     return () => clearTimeout(timer);
   }, [current, calculated, next, elapsed, query.refetch]);
@@ -142,7 +213,10 @@ export function useScheduleCalendarPreview(
     calculated === undefined
       ? undefined
       : calculated +
-        Math.max(elapsed, current ? performance.now() - current.receivedAt : 0);
+        Math.max(
+          elapsed,
+          current ? performance.now() - current.requestStartedAt : 0,
+        );
   let state = CalendarPreviewState.Calculating;
   if (
     !valid ||
@@ -160,19 +234,20 @@ export function useScheduleCalendarPreview(
         : code === Code.InvalidArgument
           ? CalendarPreviewState.Invalid
           : CalendarPreviewState.Unavailable;
-  } else if (
-    current &&
+  } else if ((current && !evidence) || completedInvalid)
+    state = CalendarPreviewState.Unavailable;
+  else if (
+    evidence &&
     next !== undefined &&
     estimate !== undefined &&
-    next > estimate &&
-    current.data.constraints
+    next > estimate
   )
     state = CalendarPreviewState.Ready;
   return {
     state,
     constraints:
       state === CalendarPreviewState.Ready
-        ? current?.data.constraints
+        ? evidence?.constraints
         : undefined,
     next: state === CalendarPreviewState.Ready ? next : undefined,
     now: estimate,

@@ -6279,6 +6279,21 @@ run; a scheduled time does not guarantee execution. The saved authoritative
 
 Connect Query scopes reads to the original transport and exact cron/timezone.
 Valid changed inputs debounce by 300 ms, immediately hiding obsolete dates.
+Every preview read (initial, minute, focus and boundary refresh) records a
+monotonic `performance.now()` anchor when the request is issued, before it
+leaves the client; the browser wall clock is never used. The estimated server
+time is `calculated_at` plus the time since that anchor, so response latency
+counts toward relative wording and the boundary refresh (a response delayed
+1000 ms for a boundary 10000 ms after `calculated_at` refreshes about 9000 ms
+after it arrives). A response whose estimate already reached `next_run_at` on
+arrival is never shown as Ready: the state stays Calculating while an immediate
+refetch runs. A completed successful response is validated before any date or
+constraints are exposed: `calculated_at`, `next_run_at` and constraints must be
+present, both timestamps finite, and `next_run_at` strictly after
+`calculated_at`. Any failure is Unavailable with no provisional date or
+recurrence constraints, the cron/timezone/draft/save validation stay intact and
+minute/focus refresh continues. Calculating is reserved for in-flight reads and
+the normal occurrence-boundary refresh.
 Repeat/Review refresh each minute, at the estimated occurrence boundary, on
 returning to the surface and on window focus. Disposed tasks, replaced connections
 and changed inputs cannot receive an old date. Polite status updates do not move
