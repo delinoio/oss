@@ -189,7 +189,7 @@ afterEach(() => {
 
 it("plays the AI API Keys category entrance once per explicit opening", async () => {
   fixture();
-  category("Instructions");
+  category("Repositories");
   category("AI API Keys");
   const node = column();
   expect(node.getAttribute("data-entrance")).toBe("y4");
@@ -206,7 +206,7 @@ it("plays the AI API Keys category entrance once per explicit opening", async ()
   });
   expect(column()).toBe(node);
   expect(node.getAttribute("data-entrance")).toBeNull();
-  category("Instructions");
+  category("Repositories");
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("AI API Keys");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -216,7 +216,7 @@ it("leaves no stale motion when AI API Keys is left before completion", () => {
   fixture();
   category("AI API Keys");
   const old = column();
-  category("Instructions");
+  category("Repositories");
   expect(document.contains(old)).toBe(false);
   dispatch(old);
   expect(column().getAttribute("data-entrance")).toBeNull();
@@ -389,7 +389,7 @@ it("settles the AI API Keys task entrance for OS reduced motion without replay",
 
 it("plays one entrance per opened manage connection and edit task window", async () => {
   const f = fixture(true);
-  category("Instructions");
+  category("Repositories");
   category("AI API Keys");
   dispatch(column());
   const row = (

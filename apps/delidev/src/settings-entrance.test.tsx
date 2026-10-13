@@ -54,7 +54,7 @@ afterEach(() => {
 it("plays the Appearance entrance once per explicit category opening and and not for categories that have not opted in", async () => {
   render(view(<Settings />));
   // The default landing category (AI Subscription) opted in too, so leave it first.
-  category("Instructions");
+  category("Repositories");
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("Appearance");
   expect(column().getAttribute("data-entrance")).toBe("y4");

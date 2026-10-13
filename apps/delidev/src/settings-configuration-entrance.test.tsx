@@ -222,6 +222,8 @@ it.each(optedCategories)(
   async (name) => {
     const value = fixture();
     render(value.view(<Settings />));
+    // The default landing category (AI Subscription) opted in too, so leave it first.
+    category("Repositories");
     expect(column().getAttribute("data-entrance")).toBeNull();
     category(name);
     const node = column();
