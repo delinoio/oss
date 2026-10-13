@@ -185,6 +185,28 @@ describe("transcript token and time observation toggles", () => {
     expect(view.hidden(/heartbeat/i, "")).toBe(false);
   });
 
+  it.each([
+    [true, true],
+    [true, false],
+  ])("Claude task update paused time tokens=%s time=%s", (tokens, time) => {
+    setToggles(tokens, time);
+    const view = rendered(
+      <NativeClaudeProgress
+        data={progressData({
+          kind: "task-lifecycle",
+          task: {
+            kind: "task_updated",
+            task_id: "original-task",
+            patch: { status: "paused", total_paused_ms: "4321" },
+          },
+        })}
+      />,
+    );
+    expect(view.hidden(/paused/i, "4321")).toBe(!time);
+    // Unrelated task fields stay visible.
+    expect(view.hidden(/^task$/i, "original-task")).toBe(false);
+  });
+
   it("native context compaction hides only the token label and value", () => {
     setToggles(false, true);
     const view = rendered(

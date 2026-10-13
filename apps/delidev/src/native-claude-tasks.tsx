@@ -319,8 +319,10 @@ export function NativeClaudeTask({ value }: { value: unknown }) {
             ) : null}
             {patch.total_paused_ms !== undefined ? (
               <>
-                <dt>{copy("native-claude-tasks.totalPausedMs_f3621c")}</dt>
-                <dd>{patch.total_paused_ms as string}</dd>
+                <dt data-time-observation>
+                  {copy("native-claude-tasks.totalPausedMs_f3621c")}
+                </dt>
+                <dd data-time-observation>{patch.total_paused_ms as string}</dd>
               </>
             ) : null}
           </dl>
