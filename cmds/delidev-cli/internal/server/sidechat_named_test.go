@@ -54,7 +54,7 @@ func TestSidechatClaimAuthorityRequiresNamedDirectoryCapabilityForNamedSource(t 
 		t.Fatal("not a Sidechat assignment", input.Purpose)
 	}
 	validate := func(input domain.ForkJobInput) error {
-		return f.service.Store.Read(context.Background(), func(tx *store.Tx) error { return validateForkAuthority(tx, input) })
+		return f.service.Store.Read(context.Background(), func(tx *store.Tx) error { return validateForkAuthority(tx, input, forkAuthorityClaim) })
 	}
 	if err := validate(input); err != nil {
 		t.Fatal("unnamed Sidechat source changed behavior", err)
