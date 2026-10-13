@@ -664,6 +664,13 @@ func (t *Tx) deleteSessionRecord(r Record) error {
 			return err
 		}
 	}
+	if r.Kind == domain.InboxKind {
+		// Typed notification delivery claims live in metadata keyed by inbox ID,
+		// so the entity delete cannot cascade them; mirror Tx.Delete cleanup.
+		if err := t.deleteNotificationMetadata(r.ID); err != nil {
+			return err
+		}
+	}
 	if _, e := t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO tombstones(id,kind,created_at) VALUES(?,?,?)", r.ID, r.Kind, t.now.UnixMilli()); e != nil {
 		return storageError(e)
 	}
