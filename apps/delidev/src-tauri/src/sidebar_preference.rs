@@ -812,12 +812,29 @@ fn flush_published(file: &File, expected: FileIdentity) -> Result<(), SidebarPro
     })
 }
 
+/// Win32 error codes that mean the volume or ACL does not support flushing a
+/// directory handle (`ERROR_INVALID_FUNCTION`, `ERROR_ACCESS_DENIED`,
+/// `ERROR_NOT_SUPPORTED`). They are an unavailable best-effort barrier, not
+/// evidence that the published entry is lost.
+#[cfg(any(windows, test))]
+const DIRECTORY_FLUSH_UNSUPPORTED_CODES: [i32; 3] = [1, 5, 50];
+
+#[cfg(any(windows, test))]
+fn directory_flush_is_unsupported(error: &std::io::Error) -> bool {
+    error
+        .raw_os_error()
+        .is_some_and(|code| DIRECTORY_FLUSH_UNSUPPORTED_CODES.contains(&code))
+}
+
 /// Persistence barrier for a directory entry created by a Windows first save.
 /// `FlushFileBuffers` on a directory handle needs write access, so it opens a
 /// dedicated handle, proves it is still the leased parent and flushes it.
-/// Every failure, including filesystems that cannot flush directories, is
-/// reported as OutcomeUnknown so the new selection is never adopted. This does
-/// not establish power-loss durability, which is untested.
+/// A volume that reports the directory flush as unsupported (see
+/// `DIRECTORY_FLUSH_UNSUPPORTED_CODES`) keeps the already write-through
+/// published file and the barrier is skipped with a warning. An identity
+/// mismatch or any other open/flush failure is reported as OutcomeUnknown so
+/// the new selection is never adopted. This does not establish power-loss
+/// durability, which is untested.
 #[cfg(windows)]
 fn flush_directory_entry(directory: &Path, expected: FileIdentity) -> Result<(), SidebarProblem> {
     use std::{
@@ -833,14 +850,26 @@ fn flush_directory_entry(directory: &Path, expected: FileIdentity) -> Result<(),
     options
         .access_mode(0x4000_0000)
         .custom_flags(0x02000000 | 0x00200000);
-    let handle = options.open(directory).map_err(|error| {
-        tracing::warn!(
-            operation = "sidebar_preference_publish",
-            code = "directory-barrier-open-failed",
-            kind = ?error.kind()
-        );
-        SidebarProblem::OutcomeUnknown
-    })?;
+    let handle = match options.open(directory) {
+        Ok(handle) => handle,
+        Err(error) if directory_flush_is_unsupported(&error) => {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "directory-barrier-unsupported",
+                stage = "open",
+                os_error = ?error.raw_os_error()
+            );
+            return Ok(());
+        }
+        Err(error) => {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "directory-barrier-open-failed",
+                kind = ?error.kind()
+            );
+            return Err(SidebarProblem::OutcomeUnknown);
+        }
+    };
     match identity(&handle) {
         Ok((found, _)) if found == expected => {}
         _ => {
@@ -853,6 +882,15 @@ fn flush_directory_entry(directory: &Path, expected: FileIdentity) -> Result<(),
     }
     if unsafe { FlushFileBuffers(handle.as_raw_handle()) } == 0 {
         let error = std::io::Error::last_os_error();
+        if directory_flush_is_unsupported(&error) {
+            tracing::warn!(
+                operation = "sidebar_preference_publish",
+                code = "directory-barrier-unsupported",
+                stage = "flush",
+                os_error = ?error.raw_os_error()
+            );
+            return Ok(());
+        }
         tracing::warn!(
             operation = "sidebar_preference_publish",
             code = "directory-barrier-failed",
@@ -2555,6 +2593,25 @@ mod tests {
                 position(PersistStep::DirectorySynced) < position(PersistStep::ReceiptVerified)
             );
         }
+    }
+
+    #[test]
+    fn directory_flush_unsupported_classification_is_limited_to_capability_errors() {
+        for code in [1, 5, 50] {
+            assert!(directory_flush_is_unsupported(
+                &std::io::Error::from_raw_os_error(code)
+            ));
+        }
+        // ERROR_FILE_NOT_FOUND, ERROR_SHARING_VIOLATION, ERROR_DISK_FULL and a
+        // synthetic error without an OS code are real failures.
+        for code in [2, 32, 112] {
+            assert!(!directory_flush_is_unsupported(
+                &std::io::Error::from_raw_os_error(code)
+            ));
+        }
+        assert!(!directory_flush_is_unsupported(&std::io::Error::other(
+            "no code"
+        )));
     }
 
     #[cfg(windows)]

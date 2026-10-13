@@ -6073,12 +6073,16 @@ On Windows, a Missing-destination first save additionally opens a dedicated
 write-access directory handle (backup semantics, reparse objects not followed),
 proves it is the leased parent by volume/128-bit file identity and calls
 `FlushFileBuffers` on it after cleanup, before the save may be reported as
-committed. Any failure to open, identify or flush that handle,
-including a filesystem that cannot flush directories, is OutcomeUnknown with
-explicit Reload recovery and no committed-state adoption. Source byte sync,
-ownership checks and the Unix parent sync are unchanged. File flush and read-back
-alone never establish durability, and power-loss durability of these barriers is
-untested; automated tests cover only ordering, identity checking and failure
+committed. A volume or ACL that reports directory flushing as unsupported
+(Win32 `ERROR_INVALID_FUNCTION`, `ERROR_ACCESS_DENIED` or `ERROR_NOT_SUPPORTED`
+while opening or flushing that handle) makes this directory barrier a skipped
+best-effort step: the file itself was already flushed, a structured warning is
+logged and the save is still committed. Any other open or flush failure and any
+identity mismatch is OutcomeUnknown with explicit Reload recovery and no
+committed-state adoption. Source byte sync, ownership checks and the Unix parent
+sync are unchanged. File flush and read-back alone never establish durability,
+and power-loss durability of these barriers is untested; automated tests cover
+only ordering, identity checking, unsupported-error classification and failure
 mapping.
 Adopt the new selection and private receipt only after cleanup, required parent
 sync and exact published bytes/new-file identity verification succeed. Any
