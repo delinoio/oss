@@ -315,6 +315,21 @@ ineligible accounts retain available read-only status refresh and existing
 update/recovery guidance. Neither a successful status read nor a read-error
 retry submits quota or acquires eligibility for its original activation.
 
+A disconnected ChatGPT account renders only read-only retained evidence above the
+status footer: the last-success timestamp and failed-refresh wording when saved
+`quota_observed_at` or `quota_state = failed` exists (current server or Worker
+quota capability gates only new requests, never saved evidence), plus any retained original
+quota, credit, preference or consent failure Problem and any local
+preference-save alert (a document that cannot be patched locally never sends a
+request), including after the operation settles. Every present retained failure from these independent
+operations stays visible; none hides another. The shared status read failure
+stays with the account owner's single Problem and is not repeated here. An automatic-use confirmation
+opened while connected closes as soon as the account's own connection state
+reports it disconnected, even while the owner keeps the controls visible for an
+in-flight request, and is not restored on reconnect. No timestamp, value or success claim is invented when no
+saved evidence exists, and no checkbox, Use credit, consent, preference or retry
+control is added by this presentation.
+
 The quota/credit/preferences/consent controllers stay mounted for the original
 Manage account, retaining exact uncertain requests when later status reads
 change its connection or presentation. Only explicit original retry reuses
@@ -341,7 +356,7 @@ System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
 
-Account rows show a compact Paid credits card above quota, with a 24px tabular balance, a smaller credits suffix and the original observation status/time. Multiple account-row buckets use a localized balance count and retain separate original timestamps. Manage subscription uses the same numeric presentation in separate labelled buckets in source order. Never aggregate balances. The selected ChatGPT usage popover reuses this validated projection and exact-value disclosure above quota. It shows every bucket separately in source order, without a combined total; only a single bucket omits the redundant native ID label. System 76 display negotiation is independent of capability-17 rail admission. Unsupported peers show update guidance, while quota, saved-only recheck and management remain available. Failed or incomplete saved reads retain the accepted account-bound values and original timestamps until a complete replacement; credential replacement never carries evidence or disclosure state across identities. Credits never affect the quota-only rail badge.
+Account rows show a compact Paid credits card above quota, with a 24px tabular balance, a smaller credits suffix and the original observation status/time. Multiple account-row buckets use a localized balance count and retain separate original timestamps. Manage subscription uses the same numeric presentation in separate labelled buckets in source order. Never aggregate balances. The selected ChatGPT usage popover reuses this validated projection and exact-value disclosure above quota. It shows every bucket separately in source order, without a combined total; only a single bucket omits the redundant native ID label. System 76 display negotiation is independent of capability-17 rail admission. Unsupported peers show update guidance, while quota, saved-only recheck and management remain available. Failed or incomplete saved reads retain the accepted account-bound values and original timestamps until a complete replacement. A read pause alone (server stopping or hidden document) is not a read failure: it keeps the accepted state and timestamps without the refresh-failure label, disables the saved recheck, and admits no new saved read; observation freshness keeps ageing against the wall clock so a retained bucket becomes stale after five minutes; a real saved-read failure or unconfirmed retry keeps the failure label and unsupported or loading peers keep their distinct states; credential replacement never carries evidence or disclosure state across identities. Credits never affect the quota-only rail badge.
 
 Format valid nonnegative decimal strings through string arithmetic and locale grouping, with two fractional digits and half-up rounding. Display actual zero as `0.00` and positive values below `0.01` as `<0.01`. Keep the unchanged exact source string available through a labelled information disclosure. Hover or focus reveals it; click, Enter and Space support persistent disclosure and touch. Escape closes the disclosure without closing its parent and retains or restores the original trigger focus when appropriate. Long values and bucket labels wrap within the existing parent scrolling boundary.
 

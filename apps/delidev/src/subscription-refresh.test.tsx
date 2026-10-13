@@ -785,3 +785,127 @@ it("localizes the combined semantic icon and tooltip in Korean without a second 
   await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
   expect(document.activeElement).toBe(button);
 });
+
+const requestFailed = "DeliDev could not complete this request.";
+const disconnected = { connection: {}, health: "disconnected" };
+const lastObservation = /Last successful observation/;
+function expectReadOnlyDisconnected(f: ReturnType<typeof fixture>) {
+  // Presentation adds no quota, credit, preference or consent admission.
+  expect(screen.queryByRole("button", { name: combined })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Use credit" })).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByRole("button", { name: statusRefresh })).toBeTruthy();
+  expect(f.quota).toHaveBeenCalledTimes(1);
+  expect(f.lifecycle).not.toHaveBeenCalled();
+  expect(f.preferences).not.toHaveBeenCalled();
+}
+
+it.each([
+  { name: "after the settled rejection", firstDisconnect: false },
+  { name: "when the account read completes first", firstDisconnect: true },
+])(
+  "keeps a definitive quota rejection visible once the account reads disconnected $name",
+  async ({ firstDisconnect }) => {
+    const f = fixture();
+    let reject!: () => void;
+    f.quota.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, rejectPromise) => {
+          reject = () =>
+            rejectPromise(
+              new ConnectError(
+                "private-rejection-fixture",
+                Code.InvalidArgument,
+              ),
+            );
+        }),
+    );
+    render(<f.Harness />);
+    fireEvent.click(await screen.findByRole("button", { name: combined }));
+    await waitFor(() => expect(f.quota).toHaveBeenCalledOnce());
+    const disconnect = async () => {
+      f.setAccount(disconnected);
+      await act(async () => {
+        await f.client.invalidateQueries({ refetchType: "active" });
+      });
+    };
+    if (firstDisconnect) await disconnect();
+    await act(async () => reject());
+    if (!firstDisconnect) await disconnect();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: statusRefresh })).toBeTruthy(),
+    );
+    await waitFor(() => expect(screen.getByText(requestFailed)).toBeTruthy());
+    expect(screen.getByText(lastObservation)).toBeTruthy();
+    expect(screen.queryByText(/private-rejection-fixture/)).toBeNull();
+    expectReadOnlyDisconnected(f);
+  },
+);
+
+it("shows saved failed-refresh evidence for a later disconnected account", async () => {
+  const f = fixture({
+    data: disconnected,
+    subscription: { quota_state: "failed" },
+  });
+  render(<f.Harness />);
+  await screen.findByRole("button", { name: statusRefresh });
+  const observation = screen.getByText(lastObservation);
+  expect(observation.textContent).toContain("The latest refresh failed");
+  expect(observation.querySelector("time")?.getAttribute("datetime")).toBe(
+    "2026-10-10T08:00:00Z",
+  );
+  expect(screen.queryByRole("button", { name: combined })).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(f.quota).not.toHaveBeenCalled();
+});
+
+it("keeps the exact uncertain disconnected retry once across a locale change", async () => {
+  const f = fixture();
+  f.quota.mockImplementationOnce(async () => {
+    throw new ConnectError("private-uncertain-fixture", Code.Unavailable);
+  });
+  render(<f.Harness />);
+  fireEvent.click(await screen.findByRole("button", { name: combined }));
+  const retry = await screen.findByRole("button", {
+    name: "Retry original quota or credit request",
+  });
+  f.setAccount(disconnected);
+  await act(async () => {
+    await f.client.invalidateQueries({ refetchType: "active" });
+    await i18n.changeLanguage("ko");
+  });
+  await act(async () => {
+    await i18n.changeLanguage("en");
+  });
+  expect(f.quota).toHaveBeenCalledOnce();
+  const original = f.quota.mock.calls[0][0];
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.quota).toHaveBeenCalledTimes(2));
+  expect(f.quota.mock.calls[1][0]).toEqual(original);
+  expect(f.lifecycle).not.toHaveBeenCalled();
+});
+
+it("shows no invented evidence for a disconnected account without saved evidence", async () => {
+  const f = fixture({
+    data: disconnected,
+    subscription: { quota_observed_at: "", quota_state: "" },
+  });
+  render(<f.Harness />);
+  await screen.findByRole("button", { name: statusRefresh });
+  expect(screen.queryByText(lastObservation)).toBeNull();
+  expect(screen.queryByText(requestFailed)).toBeNull();
+  expect(screen.queryByRole("time")).toBeNull();
+  expect(f.quota).not.toHaveBeenCalled();
+});
+
+it("keeps connected failure presentation unchanged", async () => {
+  const f = fixture();
+  f.quota.mockRejectedValueOnce(
+    new ConnectError("private-rejection-fixture", Code.InvalidArgument),
+  );
+  render(<f.Harness />);
+  fireEvent.click(await screen.findByRole("button", { name: combined }));
+  await screen.findByText(requestFailed);
+  expect(screen.getByText(lastObservation)).toBeTruthy();
+  expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
+});
