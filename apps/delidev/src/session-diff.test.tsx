@@ -1300,9 +1300,7 @@ it("presents a sanitized typed problem for a failed options refresh until a refr
     "Refresh failed. The previous observation is stale and shown below.",
   );
   await screen.findByText("DeliDev could not complete this request.");
-  expect(
-    screen.getByText(/This comparison is unavailable\./),
-  ).toBeTruthy();
+  expect(screen.getByText(/This comparison is unavailable\./)).toBeTruthy();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
       "disabled",
