@@ -278,6 +278,29 @@ it("does not play a Sidechat entrance published in the background", async () => 
   expect(f.control).not.toHaveBeenCalled();
 });
 
+it("plays one entrance when the user opens a Sidechat that mounts selected", async () => {
+  const f = setup();
+  render(f.view());
+  await screen.findByRole("textbox", { name: "Message" });
+  dispatch(parentHeader(), "entrance-y2");
+  const child = {
+    kind: SessionTabKind.Sidechat,
+    id: f.childId,
+    name: "Sidechat",
+  } as const;
+  // An explicit open (for example from a Search result) mounts the retained
+  // pane selected, and that is an explicit activation.
+  act(() => f.store().open(f.parentId, child));
+  expect(f.store().snapshot(f.parentId).selected).toBe(sessionTabKey(child));
+  await waitFor(() => expect(childHeader()).not.toBeNull());
+  expect(childHeader().getAttribute("data-entrance")).toBe("y2");
+  expect(parentHeader().getAttribute("data-entrance")).toBeNull();
+  expect(entrances().length).toBe(1);
+  dispatch(childHeader(), "entrance-y2");
+  expect(entrances().length).toBe(0);
+  expect(f.control).not.toHaveBeenCalled();
+});
+
 it("settles a Sidechat entrance for reduced motion and Animation Off without replay", async () => {
   const change = reducedMotion(false);
   const f = setup();
@@ -292,8 +315,10 @@ it("settles a Sidechat entrance for reduced motion and Animation Off without rep
   } as const;
   act(() => f.store().open(f.parentId, child));
   await waitFor(() => expect(childHeader()).not.toBeNull());
-  // Opening an existing retained tab through the tab bar is a mount here, so
-  // select away and back to make the explicit activation.
+  // The explicit open already played once; settle it, then select away and
+  // back to make another explicit activation.
+  dispatch(childHeader(), "entrance-y2");
+  expect(entrances().length).toBe(0);
   act(() => f.store().select(f.parentId, sessionTabKey(parentTab)));
   act(() => f.store().select(f.parentId, sessionTabKey(child)));
   expect(childHeader().getAttribute("data-entrance")).toBe("y2");

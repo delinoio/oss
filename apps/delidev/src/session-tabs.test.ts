@@ -573,3 +573,25 @@ describe("terminal presentation numbers", () => {
     });
   });
 });
+
+describe("automatic Sidechat publication", () => {
+  const child = {
+    kind: SessionTabKind.Sidechat as const,
+    id: "child",
+    name: "Child",
+  };
+  const draft = { text: "", start: 0, end: 0, focus: false };
+  it("marks a published Sidechat automatic until the user opens it", () => {
+    const store = new SessionTabsStore();
+    expect(store.automaticSidechat("child")).toBe(false);
+    expect(store.publishSidechat("parent", "request", child, draft)).toBe(true);
+    expect(store.automaticSidechat("child")).toBe(true);
+    store.open("parent", child);
+    expect(store.automaticSidechat("child")).toBe(false);
+  });
+  it("treats a Sidechat opened before it was ever published as explicit", () => {
+    const store = new SessionTabsStore();
+    store.open("never-visited-parent", child);
+    expect(store.automaticSidechat("child")).toBe(false);
+  });
+});
