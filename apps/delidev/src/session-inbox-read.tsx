@@ -101,6 +101,7 @@ export function useSessionInboxRead(
     acknowledgeSessionInboxRead,
     true,
   );
+  const busy = mutation.busy;
   const latest = useRef(mutation);
   latest.current = mutation;
   const visit = useRef<
@@ -117,8 +118,12 @@ export function useSessionInboxRead(
       visit.current.activation !== product.activation
     )
       visit.current = { id, activation: product.activation, submitted: false };
+    // A busy earlier request must not consume this activation. Leave it
+    // unsubmitted; settlement flips `busy` and reruns every gate above for the
+    // same still-current activation.
     if (
       visit.current.submitted ||
+      busy ||
       !product.ready ||
       !loaded ||
       !supported ||
@@ -133,14 +138,14 @@ export function useSessionInboxRead(
     console.info("delidev.inbox.session_read_admitted", {
       retry: Boolean(pending.input),
     });
-    if (pending.input) {
-      if (!pending.busy) void pending.retry();
-    } else void pending.send({ requestId: newRequestId(), sessionId: id });
+    if (pending.input) void pending.retry();
+    else void pending.send({ requestId: newRequestId(), sessionId: id });
   }, [
     id,
     active,
     loaded,
     supported,
+    busy,
     product.ready,
     product.foreground,
     product.activation,

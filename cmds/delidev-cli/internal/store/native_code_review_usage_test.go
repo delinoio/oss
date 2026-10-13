@@ -3,7 +3,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -84,5 +87,266 @@ func TestNativeReviewUsageRetainsUnknownAndDeduplicatesAfterRestart(t *testing.T
 		return err
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type reviewPricingFixture struct {
+	t      *testing.T
+	s      *Store
+	record domain.ResponseUsageRecord
+	job    domain.ID
+}
+
+func newReviewPricingFixture(t *testing.T) *reviewPricingFixture {
+	t.Helper()
+	s, _ := openTest(t)
+	record := responseRecord(seedSearch(t, s, "native review pricing", domain.NotArchived))
+	record.Purpose = domain.NativeCodeReviewUsage
+	return &reviewPricingFixture{t: t, s: s, record: record, job: domain.NewID()}
+}
+
+// setPricingTimes moves every retained price activation and clear instant into the
+// past so a test can place observations before and after them deterministically.
+func (f *reviewPricingFixture) setPricingTimes(activated time.Time, cleared time.Time) {
+	f.t.Helper()
+	if _, err := f.s.db.Exec("UPDATE pricing_versions SET created_at=?", activated.UnixMilli()); err != nil {
+		f.t.Fatal(err)
+	}
+	if !cleared.IsZero() {
+		if _, err := f.s.db.Exec("UPDATE metadata SET value=json_set(value,'$.cleared_at',?) WHERE key LIKE 'pricing-cleared-v1:%'", cleared.UnixMilli()); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+}
+
+func (f *reviewPricingFixture) activate(expected uint64, rate string) PricingVersion {
+	f.t.Helper()
+	basis := pricingFixture()
+	basis.InputPerMillion = &rate
+	var price PricingVersion
+	_, err := f.s.Mutate(context.Background(), domain.NewID(), "fixture.activate", nil, func(tx *Tx) (any, error) {
+		var err error
+		price, err = tx.PutPricing(f.record.ModelID, expected, domain.NewID(), basis)
+		return nil, err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return price
+}
+
+func (f *reviewPricingFixture) clear() {
+	f.t.Helper()
+	_, err := f.s.Mutate(context.Background(), domain.NewID(), "fixture.clear", nil, func(tx *Tx) (any, error) {
+		return nil, tx.ClearActivePricing(domain.ModelIdentity{ProviderID: f.record.ProviderID, NativeID: "fixture"})
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *reviewPricingFixture) publish(record domain.ResponseUsageRecord, id domain.ID) (domain.ID, bool) {
+	f.t.Helper()
+	var retained domain.ID
+	var duplicate bool
+	_, err := f.s.Mutate(context.Background(), domain.NewID(), "fixture.native-review-usage", record, func(tx *Tx) (any, error) {
+		var err error
+		retained, duplicate, err = tx.PutNativeCodeReviewUsage(f.job, id, record)
+		return nil, err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return retained, duplicate
+}
+
+func (f *reviewPricingFixture) receipt(id domain.ID) NativeCodeReviewUsage {
+	f.t.Helper()
+	var found NativeCodeReviewUsage
+	err := f.s.Read(context.Background(), func(tx *Tx) error {
+		values, err := tx.NativeCodeReviewUsage(f.job)
+		for _, value := range values {
+			if value.ID == id {
+				found = value
+			}
+		}
+		return err
+	})
+	if err != nil || found.ID != id {
+		f.t.Fatal("receipt unavailable", err)
+	}
+	return found
+}
+
+func (f *reviewPricingFixture) budget(currency domain.Currency) domain.BudgetEvidence {
+	f.t.Helper()
+	var total domain.BudgetEvidence
+	err := f.s.Read(context.Background(), func(tx *Tx) error {
+		var err error
+		total, err = tx.NativeCodeReviewEstimate(f.record.SessionID, currency)
+		return err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return total
+}
+
+func TestNativeReviewDelayedFirstPublicationUsesObservationTimePrice(t *testing.T) {
+	f := newReviewPricingFixture(t)
+	first := preparePrice(t, f.s, f.record)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	f.setPricingTimes(now.Add(-3*time.Hour), time.Time{})
+	observed := now.Add(-2 * time.Hour)
+	second := f.activate(first.Revision, "20")
+
+	record := f.record
+	record.ObservedAt = observed
+	id := domain.NewID()
+	if retained, duplicate := f.publish(record, id); duplicate || retained != id {
+		t.Fatal("first delayed insert")
+	}
+	receipt := f.receipt(id)
+	if !receipt.CreatedAt.Equal(observed) || !receipt.Record.ObservedAt.Equal(observed) {
+		t.Fatal("receipt did not keep the original observation time", receipt.CreatedAt)
+	}
+	if receipt.Pricing == nil || receipt.Pricing.ID != first.ID || receipt.Estimate.PricingID != first.ID || receipt.Estimate.KnownAmount != "0.000065" {
+		t.Fatal("delayed insert did not use the version eligible at observation", receipt.Pricing)
+	}
+	total := f.budget("USD")
+	if total.CompleteResponses != 1 || total.KnownAmount != "0.000065" {
+		t.Fatal("session budget must include the observation-time estimate once", total)
+	}
+
+	// Replay with the newest price active and a different observation time.
+	f.setPricingTimes(now.Add(-3*time.Hour), time.Time{})
+	third := f.activate(second.Revision, "30")
+	if third.ID == first.ID {
+		t.Fatal("fixture did not activate a newer price")
+	}
+	replay := record
+	replay.Sequence++
+	replay.ObservedAt = now
+	if retained, duplicate := f.publish(replay, domain.NewID()); !duplicate || retained != id {
+		t.Fatal("replay changed receipt identity")
+	}
+	replayed := f.receipt(id)
+	if !replayed.CreatedAt.Equal(observed) || replayed.Pricing.ID != first.ID || replayed.Estimate.KnownAmount != "0.000065" {
+		t.Fatal("replay repriced or moved the receipt")
+	}
+	if again := f.budget("USD"); again != total {
+		t.Fatal("replay charged the session budget again", again)
+	}
+}
+
+func TestNativeReviewReceiptCommittedBeforeOutageIsNeverRepriced(t *testing.T) {
+	f := newReviewPricingFixture(t)
+	first := preparePrice(t, f.s, f.record)
+	record := f.record
+	record.ObservedAt = time.Now().UTC().Truncate(time.Millisecond)
+	id := domain.NewID()
+	f.publish(record, id)
+	before := f.receipt(id)
+	budget := f.budget("USD")
+	if before.Pricing == nil || before.Pricing.ID != first.ID {
+		t.Fatal("prompt publication must use the live price")
+	}
+	f.activate(first.Revision, "20")
+	if retained, duplicate := f.publish(record, domain.NewID()); !duplicate || retained != id {
+		t.Fatal("committed receipt did not replay")
+	}
+	after := f.receipt(id)
+	beforeJSON, _ := json.Marshal(before)
+	afterJSON, _ := json.Marshal(after)
+	if string(beforeJSON) != string(afterJSON) || f.budget("USD") != budget {
+		t.Fatal("earlier receipt was repriced")
+	}
+}
+
+func TestNativeReviewUnavailablePriceStaysUnavailableAfterPriceAppears(t *testing.T) {
+	f := newReviewPricingFixture(t)
+	price := preparePrice(t, f.s, f.record)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	// The only price became eligible after the observation.
+	f.setPricingTimes(now.Add(-time.Hour), time.Time{})
+	record := f.record
+	record.ObservedAt = now.Add(-2 * time.Hour)
+	id := domain.NewID()
+	f.publish(record, id)
+	receipt := f.receipt(id)
+	if receipt.Pricing != nil || receipt.Estimate.Coverage != domain.EstimateUnavailable || receipt.Estimate.PricingID != "" {
+		t.Fatal("observation with no eligible price must stay unavailable", receipt.Estimate, price.ID)
+	}
+	budget := f.budget("")
+	if budget.UnavailableResponses != 1 || budget.CompleteResponses != 0 {
+		t.Fatal("unavailable estimate was not counted once", budget)
+	}
+	replay := record
+	replay.Sequence++
+	if retained, duplicate := f.publish(replay, domain.NewID()); !duplicate || retained != id {
+		t.Fatal("replay changed receipt identity")
+	}
+	if again := f.receipt(id); again.Pricing != nil || again.Estimate.Coverage != domain.EstimateUnavailable || f.budget("") != budget {
+		t.Fatal("a later price repriced an unavailable receipt")
+	}
+}
+
+func TestNativeReviewClearedPriceIsNotEligibleAfterClear(t *testing.T) {
+	f := newReviewPricingFixture(t)
+	first := preparePrice(t, f.s, f.record)
+	f.clear()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	f.setPricingTimes(now.Add(-4*time.Hour), now.Add(-2*time.Hour))
+	f.activate(0, "20")
+	if _, err := f.s.db.Exec("UPDATE pricing_versions SET created_at=? WHERE id<>?", now.Add(-time.Hour).UnixMilli(), first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	before := f.record
+	before.ObservedAt = now.Add(-3 * time.Hour)
+	beforeID := domain.NewID()
+	f.publish(before, beforeID)
+	if got := f.receipt(beforeID); got.Pricing == nil || got.Pricing.ID != first.ID {
+		t.Fatal("price active before the clear must be eligible", got.Pricing)
+	}
+
+	gap := f.record
+	gap.Usage.ResponseDigest = strings.Repeat("b", 64)
+	gap.ObservedAt = now.Add(-90 * time.Minute)
+	gapID := domain.NewID()
+	f.publish(gap, gapID)
+	if got := f.receipt(gapID); got.Pricing != nil || got.Estimate.Coverage != domain.EstimateUnavailable {
+		t.Fatal("observation between clear and next activation must be unavailable", got.Pricing)
+	}
+
+	later := f.record
+	later.Usage.ResponseDigest = strings.Repeat("c", 64)
+	later.ObservedAt = now.Add(-30 * time.Minute)
+	laterID := domain.NewID()
+	f.publish(later, laterID)
+	if got := f.receipt(laterID); got.Pricing == nil || got.Pricing.ID == first.ID {
+		t.Fatal("observation after the next activation must use the new version", got.Pricing)
+	}
+}
+
+func TestNativeReviewObservationFallbacksAndClamp(t *testing.T) {
+	f := newReviewPricingFixture(t)
+	first := preparePrice(t, f.s, f.record)
+
+	legacy := f.record
+	legacyID := domain.NewID()
+	f.publish(legacy, legacyID)
+	got := f.receipt(legacyID)
+	if !got.Record.ObservedAt.IsZero() || got.Pricing == nil || got.Pricing.ID != first.ID || time.Since(got.CreatedAt) > time.Minute {
+		t.Fatal("a publication without an observation time must use commit time and the live price")
+	}
+
+	future := f.record
+	future.Usage.ResponseDigest = strings.Repeat("d", 64)
+	future.ObservedAt = time.Now().UTC().Add(24 * time.Hour)
+	futureID := domain.NewID()
+	f.publish(future, futureID)
+	if got := f.receipt(futureID); got.CreatedAt.After(time.Now().UTC()) || got.Record.ObservedAt.After(time.Now().UTC()) {
+		t.Fatal("a future observation must be clamped to the commit time", got.CreatedAt)
 	}
 }

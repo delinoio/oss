@@ -51,7 +51,7 @@ afterEach(() => {
   delete document.documentElement.dataset.animation;
 });
 
-it("plays the Appearance entrance once per explicit category opening and only for Appearance", async () => {
+it("plays the Appearance entrance once per explicit category opening and and not for categories that have not opted in", async () => {
   render(view(<Settings />));
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("Appearance");
@@ -66,7 +66,7 @@ it("plays the Appearance entrance once per explicit category opening and only fo
   expect(column()).toBe(node);
   expect(column().getAttribute("data-entrance")).toBeNull();
   // Leaving and re-entering is a new explicit activation.
-  category("Notifications");
+  category("Instructions");
   expect(column().getAttribute("data-entrance")).toBeNull();
   category("Appearance");
   expect(column().getAttribute("data-entrance")).toBe("y4");
@@ -76,7 +76,7 @@ it("leaves no stale motion when the category changes before completion", () => {
   render(view(<Settings />));
   category("Appearance");
   const old = column();
-  category("Notifications");
+  category("Instructions");
   expect(document.contains(old)).toBe(false);
   dispatch(old);
   expect(column().getAttribute("data-entrance")).toBeNull();

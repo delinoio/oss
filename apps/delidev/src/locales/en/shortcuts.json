@@ -8,6 +8,7 @@
   "shortcuts.toolSuppressed": "The default Open tool shortcut is inactive because a saved custom shortcut uses Command or Control + T.",
   "shortcuts.openFiles": "Open Files",
   "shortcuts.filesSuppressed": "The default Files shortcut is inactive because a saved custom shortcut uses Command or Control + E.",
+  "shortcuts.preferencesPending": "Shortcuts that depend on saved customizations stay inactive until your saved shortcut preferences finish loading.",
   "shortcuts.openTerminals": "Open terminals",
   "shortcuts.terminalsUnavailable": "Terminals are unavailable in a read-only Sidechat.",
   "shortcuts.terminalCreate": "New terminal (while terminal input has focus)",

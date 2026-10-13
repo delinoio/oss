@@ -17,6 +17,12 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+// githubPullRequestWorkspaces reads one complete workspace observation; tests
+// replace it, production uses the GitHub adapter.
+type githubPullRequestWorkspaces interface {
+	WorkspaceWithBudget(context.Context, []byte, string, string, []string, *gh.WorkspaceBudget) (gh.WorkspaceObservation, error)
+}
+
 type prAvatarEntry struct {
 	actor               domain.Principal
 	repository          domain.ID
@@ -88,12 +94,22 @@ func (s *Service) GetPullRequestWorkspace(ctx context.Context, req *connect.Requ
 	}
 	var observed gh.WorkspaceObservation
 	id := domain.ID(req.Msg.RepositoryId)
-	selected, e := s.withRepositoryIntegration(ctx, id, "workspace", correlation, func(ctx context.Context, token []byte, sel repositoryIntegrationSelection) error {
+	// One budget spans every attempt of this request: the adapter deadline is
+	// frozen at the first provider attempt and provider reads are cumulative.
+	budget := gh.NewWorkspaceBudget()
+	selected, _, e := s.readResumablePullRequestWorkspace(ctx, id, correlation, func(ctx context.Context, token []byte, sel repositoryIntegrationSelection) error {
+		// A resumed attempt restarts from the original seeds; nothing observed by an
+		// interrupted attempt, including avatar locators, survives.
+		observed = gh.WorkspaceObservation{}
 		if e := prRevision(sel, req.Msg.ExpectedRevision); e != nil {
 			return e
 		}
+		client := s.githubWorkspaces
+		if client == nil {
+			client = gh.New(s.outboundResolver())
+		}
 		var e error
-		observed, e = gh.New(s.outboundResolver()).Workspace(ctx, token, sel.repository.GitHubOwner, sel.repository.GitHubName, req.Msg.SeedNumbers)
+		observed, e = client.WorkspaceWithBudget(ctx, token, sel.repository.GitHubOwner, sel.repository.GitHubName, req.Msg.SeedNumbers, budget)
 		return e
 	})
 	if e != nil {

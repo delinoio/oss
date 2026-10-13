@@ -58,14 +58,14 @@ interface Controller {
 }
 const Context = createContext<Controller | undefined>(undefined);
 export function ShortcutProvider({ children }: { children: ReactNode }) {
-  const { snapshot } = useShortcutPreferences();
+  const { snapshot, ready } = useShortcutPreferences();
   const [store] = useState(() => new ShortcutStore());
   useLayoutEffect(
     () =>
       store.setResolver((definitions) =>
-        effectiveShortcutDefinitions(definitions, snapshot.overrides),
+        effectiveShortcutDefinitions(definitions, snapshot.overrides, ready),
       ),
-    [store, snapshot.overrides],
+    [store, snapshot.overrides, ready],
   );
   const [platform] = useState(shortcutPlatform);
   const [helpLifetime, setHelpLifetime] = useState<HelpLifetime | null>(null);
@@ -199,8 +199,8 @@ export function useShortcutHelp() {
 }
 export function useGlobalShortcutAria(id: keyof typeof globalShortcutBindings) {
   const controller = useContext(Context);
-  const { snapshot } = useShortcutPreferences();
-  return customizationBindings(id, snapshot.overrides)
+  const { snapshot, ready } = useShortcutPreferences();
+  return customizationBindings(id, snapshot.overrides, ready)
     .map((binding) =>
       bindingAria(binding, controller?.platform ?? shortcutPlatform()),
     )
@@ -208,10 +208,11 @@ export function useGlobalShortcutAria(id: keyof typeof globalShortcutBindings) {
 }
 export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
   const controller = useContext(Context);
-  const { snapshot } = useShortcutPreferences();
+  const { snapshot, ready } = useShortcutPreferences();
   const resolved = effectiveShortcutDefinitions(
     definitions,
     snapshot.overrides,
+    ready,
   );
   const [owner] = useState(() => Symbol("shortcuts"));
   useLayoutEffect(() => {

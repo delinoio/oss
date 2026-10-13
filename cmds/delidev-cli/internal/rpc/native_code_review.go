@@ -3,6 +3,7 @@ package rpc
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -96,8 +97,27 @@ func NativeReviewUsage(p *pb.NativeCodeReviewResponseUsage) (domain.NativeRespon
 	}
 	return value, value.Validate()
 }
-func NativeReviewUsageWire(value domain.NativeResponseUsage, sequence uint64, version string) *pb.NativeCodeReviewResponseUsage {
+
+// NativeReviewUsageObservedAt decodes the Worker observation instant. Zero means
+// an older Worker did not report one; negative or out-of-range values are invalid.
+func NativeReviewUsageObservedAt(p *pb.NativeCodeReviewResponseUsage) (time.Time, error) {
+	if p == nil || p.ObservedAtUnixMs == 0 {
+		return time.Time{}, nil
+	}
+	observed := time.UnixMilli(p.ObservedAtUnixMs).UTC()
+	if p.ObservedAtUnixMs < 0 || observed.Year() < 2000 || observed.Year() > 9999 {
+		return time.Time{}, domain.NativeCodeReviewUnavailable()
+	}
+	return observed, nil
+}
+
+// NativeReviewUsageWire carries the original observation instant so a delayed
+// or replayed publication cannot move the receipt's pricing selection.
+func NativeReviewUsageWire(value domain.NativeResponseUsage, sequence uint64, version string, observedAt time.Time) *pb.NativeCodeReviewResponseUsage {
 	p := &pb.NativeCodeReviewResponseUsage{ResponseDigest: value.ResponseDigest, Sequence: sequence, NativeVersion: version, UnspecifiedNativeCost: value.CostEvidence == domain.UsageCostUnspecified}
+	if !observedAt.IsZero() {
+		p.ObservedAtUnixMs = observedAt.UnixMilli()
+	}
 	if value.Counts != nil {
 		p.CountsAvailable = true
 		p.Input = value.Counts.Input
