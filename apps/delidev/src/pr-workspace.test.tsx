@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -303,4 +303,223 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
     ),
   ).toEqual(["list", "detail", "diff", "feedback"]);
   vi.unstubAllGlobals();
+});
+
+// The server keeps the original workspace RPC pending while a displaced read is
+// resumed. The desktop must show neither a cancellation warning nor Retry on that
+// pending path, publish the final observation without another RPC, and still
+// expose Retry for a real terminal failure.
+function pendingWorkspaceFixture(
+  enrich: (request: { seedNumbers: string[] }) => Promise<unknown>,
+) {
+  const profile = newRequestId(),
+    generation = newRequestId(),
+    selected = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.REPOSITORY,
+      revision: 1n,
+      schemaVersion: 1,
+      documentJson: encode({
+        integration_id: profile,
+        github_owner: "fixture-owner",
+        github_name: "repo",
+      }),
+    });
+  const remote = {
+    provider: "github.com",
+    id: "37",
+    node_id: "R_37",
+    owner: "fixture-owner",
+    name: "repo",
+    private: true,
+  };
+  const scope = {
+    repository_id: selected.id,
+    repository_revision: "1",
+    profile_id: profile,
+    generation_id: generation,
+    observed_at: "2026-10-11T00:00:00Z",
+    repository: remote,
+  };
+  const author = {
+    provider_type: "User",
+    kind: "user",
+    id: "19",
+    node_id: "U_19",
+    login: "fixture-author",
+  };
+  const item = (number: string, detail: boolean) => ({
+    provider: "github.com",
+    kind: "pull-request",
+    identity_source: "pull-request-api",
+    id: String(Number(number) + 1000),
+    node_id: `PR_${number}`,
+    number,
+    title: `Complete original title ${number}`,
+    state: "open",
+    created_at: "2026-10-10T00:00:00Z",
+    updated_at: "2026-10-11T00:00:00Z",
+    url: `https://github.com/fixture-owner/repo/pull/${number}`,
+    author,
+    draft: false,
+    ...(detail
+      ? {
+          body: "Pending path body",
+          merged: false,
+          base_ref: number === "102" ? "s1" : number === "103" ? "s2" : "main",
+          head_ref:
+            number === "101"
+              ? "s1"
+              : number === "102"
+                ? "s2"
+                : number === "103"
+                  ? "s3"
+                  : "independent",
+          base_sha: "a".repeat(40),
+          head_sha: "b".repeat(40),
+          head_repository: {
+            state: "available",
+            repository: { ...remote, default_branch: "main" },
+          },
+        }
+      : {}),
+  });
+  const legacy = vi.fn(async (request: { queryJson: Uint8Array }) => {
+    const query = JSON.parse(new TextDecoder().decode(request.queryJson));
+    const detail = query.operation !== "list";
+    return {
+      schemaVersion: 1,
+      documentJson: encode({
+        ...scope,
+        identity: { id: "17", node_id: "U_17", login: "fixture-user" },
+        query,
+        items: detail
+          ? [item(query.number, true)]
+          : [item("102", false), item("104", false)],
+      }),
+    };
+  });
+  const workspace = vi.fn(enrich);
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.PULL_REQUEST_WORKSPACE_V1],
+      }),
+    });
+    router.service(IntegrationService, {
+      queryRepositoryIntegration: legacy,
+      getPullRequestWorkspace: workspace as never,
+    });
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private callback: (entries: unknown[]) => void) {}
+      observe() {
+        this.callback([{ contentRect: { width: 1000 } }]);
+      }
+      disconnect() {}
+    },
+  );
+  function Fixture() {
+    const [navigation, setNavigation] = useState<PullRequestNavigation>({
+      scopeKey: "fixture",
+      query: {
+        kind: ItemKind.PullRequest,
+        operation: QueryOperation.List,
+        state: ItemState.Open,
+        page: 1,
+        page_size: 20,
+      },
+      previous: [],
+    });
+    return (
+      <StandalonePullRequestResults
+        selected={selected}
+        navigation={navigation}
+        changeNavigation={setNavigation}
+        active
+      />
+    );
+  }
+  const view = render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <Fixture />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  const workspaceDocument = (seeds: string[]) =>
+    encode({
+      ...scope,
+      state: "complete",
+      reasons: [],
+      seeds,
+      nodes: ["101", "102", "103", "104"].map((number) => ({
+        item: item(number, true),
+        seed: seeds.includes(number),
+        counts: { additions: "24", deletions: "8" },
+      })),
+      edges: [
+        { parent: "101", child: "102" },
+        { parent: "102", child: "103" },
+      ],
+    });
+  return { view, legacy, workspace, workspaceDocument };
+}
+
+it("keeps the stack read pending without warning or Retry until the final observation", async () => {
+  let resolveWorkspace: (value: unknown) => void = () => {};
+  const { view, workspace, workspaceDocument } = pendingWorkspaceFixture(
+    (request) =>
+      new Promise((resolve) => {
+        resolveWorkspace = () =>
+          resolve({
+            schemaVersion: 1,
+            documentJson: workspaceDocument(request.seedNumbers),
+          });
+      }),
+  );
+  await waitFor(() =>
+    expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(
+      2,
+    ),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: /#102 Complete original title 102/ }),
+  );
+  await screen.findAllByText("Pending path body");
+  expect(workspace).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/Stack context is incomplete/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry stack context" })).toBeNull();
+  expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(2);
+  await act(async () => resolveWorkspace(undefined));
+  await waitFor(() =>
+    expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(
+      4,
+    ),
+  );
+  expect(workspace).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/Stack context is incomplete/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry stack context" })).toBeNull();
+  view.unmount();
+});
+
+it("still exposes Retry stack context after a terminal workspace failure", async () => {
+  const { view, workspace } = pendingWorkspaceFixture(async () => {
+    throw new ConnectError("The provider failed.", Code.Unavailable);
+  });
+  await waitFor(() =>
+    expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(
+      2,
+    ),
+  );
+  const retry = await screen.findByRole("button", {
+    name: "Retry stack context",
+  });
+  expect(screen.getByText(/Stack context is incomplete/)).toBeTruthy();
+  expect(workspace).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
+  view.unmount();
 });
