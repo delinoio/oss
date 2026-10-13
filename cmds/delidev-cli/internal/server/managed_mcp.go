@@ -223,47 +223,7 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 			if e := check(tx); e != nil {
 				return nil, e
 			}
-			id := q.DefinitionID
-			if q.Definition != nil {
-				id = q.Definition.ID
-			}
-			row, e := tx.Get(domain.ManagedMCPKind, id)
-			record := domain.ManagedMCPRecord{}
-			expected := uint64(0)
-			if e == nil {
-				expected = row.Revision
-				record, e = store.Decode[domain.ManagedMCPRecord](row)
-				if e != nil {
-					return nil, e
-				}
-			} else if domain.SafeError(e).Code != domain.NotFound {
-				return nil, e
-			}
-			if e := managedMCPAdmissionFence(record, q); e != nil {
-				return nil, e
-			}
-			if q.Action == domain.MCPDelete {
-				refs, e := managedMCPReferences(tx, q.MachineID, q.WorkerDeviceID, id)
-				if e != nil {
-					return nil, e
-				}
-				if !q.Confirmed || len(refs) > 0 {
-					return nil, domain.Fail(domain.Conflict, "MCP deletion is blocked by Agent Worker references.", "Unselect the definition from its referencing Agent Workers and confirm deletion.")
-				}
-			}
-			if expected == 0 {
-				if q.Action != domain.MCPSave || q.Definition == nil {
-					return nil, domain.Fail(domain.NotFound, "MCP definition is not retained.", "Read the selected Worker catalog first.")
-				}
-				record.Definition = *q.Definition
-			}
-			if record.Definition.MachineID != q.MachineID || record.Definition.WorkerDeviceID != q.WorkerDeviceID {
-				return nil, domain.Fail(domain.PermissionDenied, "MCP definition belongs to another Worker.", "Select its original Runner Device.")
-			}
-			record.PendingRequestID = q.RequestID
-			record.PendingActorID = q.ActorID
-			record.PendingAction = q.Action
-			return tx.Put(domain.ManagedMCPKind, id, expected, "", "", record)
+			return admitManagedMCPMutation(tx, q)
 		})
 		if e != nil {
 			return empty, e
@@ -377,6 +337,91 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 	})
 	r.WorkerDeviceID = q.WorkerDeviceID
 	return r, e
+}
+
+// admitManagedMCPMutation records the unsettled mutation for one definition in
+// the server catalog before the request is forwarded to the original Worker.
+func admitManagedMCPMutation(tx *store.Tx, q domain.ManagedMCPRequest) (any, error) {
+	id := q.DefinitionID
+	if q.Definition != nil {
+		id = q.Definition.ID
+	}
+	row, e := tx.Get(domain.ManagedMCPKind, id)
+	record := domain.ManagedMCPRecord{}
+	expected := uint64(0)
+	if e == nil {
+		expected = row.Revision
+		record, e = store.Decode[domain.ManagedMCPRecord](row)
+		if e != nil {
+			return nil, e
+		}
+	} else if domain.SafeError(e).Code != domain.NotFound {
+		return nil, e
+	}
+	if e := managedMCPAdmissionFence(record, q); e != nil {
+		return nil, e
+	}
+	if q.Action == domain.MCPDelete {
+		refs, e := managedMCPReferences(tx, q.MachineID, q.WorkerDeviceID, id)
+		if e != nil {
+			return nil, e
+		}
+		if !q.Confirmed || len(refs) > 0 {
+			return nil, domain.Fail(domain.Conflict, "MCP deletion is blocked by Agent Worker references.", "Unselect the definition from its referencing Agent Workers and confirm deletion.")
+		}
+	}
+	if expected == 0 {
+		if q.Action != domain.MCPSave || q.Definition == nil {
+			return nil, domain.Fail(domain.NotFound, "MCP definition is not retained.", "Read the selected Worker catalog first.")
+		}
+		// The Worker rejects an invalid or excess new definition before it creates
+		// a receipt, and no later read can retire the placeholder. Apply its
+		// admission rules first so a rejected save never retains a hidden row.
+		if e := validateNewManagedMCPDefinition(q); e != nil {
+			return nil, e
+		}
+		rows, e := all(tx, domain.ManagedMCPKind)
+		if e != nil {
+			return nil, e
+		}
+		retained := 0
+		for _, existing := range rows {
+			record, e := store.Decode[domain.ManagedMCPRecord](existing)
+			if e != nil {
+				return nil, e
+			}
+			if record.Definition.MachineID == q.MachineID && record.Definition.WorkerDeviceID == q.WorkerDeviceID {
+				retained++
+			}
+		}
+		if retained >= managedMCPCatalogCapacity {
+			return nil, domain.Fail(domain.ResourceExhausted, "The Worker MCP catalog is full.", "Retain original operations and contact the administrator.")
+		}
+		record.Definition = *q.Definition
+	}
+	if record.Definition.MachineID != q.MachineID || record.Definition.WorkerDeviceID != q.WorkerDeviceID {
+		return nil, domain.Fail(domain.PermissionDenied, "MCP definition belongs to another Worker.", "Select its original Runner Device.")
+	}
+	record.PendingRequestID = q.RequestID
+	record.PendingActorID = q.ActorID
+	record.PendingAction = q.Action
+	return tx.Put(domain.ManagedMCPKind, id, expected, "", "", record)
+}
+
+// managedMCPCatalogCapacity mirrors the Worker catalog entry limit.
+const managedMCPCatalogCapacity = 256
+
+// validateNewManagedMCPDefinition applies the Worker's pre-receipt checks for a
+// first save so the server never retains a placeholder the Worker will reject.
+func validateNewManagedMCPDefinition(q domain.ManagedMCPRequest) error {
+	d := q.Definition
+	if d == nil || len(d.SupportedHarnesses) > 0 || d.CredentialID != "" || d.MachineID != q.MachineID || d.WorkerDeviceID != q.WorkerDeviceID || d.Revision != q.ExpectedRevision+1 {
+		return domain.Fail(domain.InvalidArgument, "MCP definition is invalid.", "Save only metadata for the selected Worker.")
+	}
+	if e := d.Validate(); e != nil {
+		return e
+	}
+	return nil
 }
 
 // managedMCPAdmissionFence rejects a mutation while another request is unsettled
