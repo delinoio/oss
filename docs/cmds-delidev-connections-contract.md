@@ -148,6 +148,33 @@ data. Exact receipt recovery preserves original pairing material after expiry;
 expiry never authorizes a fresh grant. Pending cancellation proves the requesting
 private key through the encrypted original transcript and creates no device.
 
+The approval recovery window is 24 hours after a request's five-minute `ExpiresAt`.
+An Approved receipt proves the target decided before expiry, so an Approved Worker
+setup is still reconciled through its original request inside that window: the
+requester's first resume after expiry creates the original Worker grant (original
+grant request UUID, one random verifier) and the target accepts its first
+delivery. Retries replay the retained grant bytes and the prepared pairing journal
+exactly once; a lost delivery response is reconciled from the target's Completed
+receipt without another grant. A first creation or first delivery after the window
+fails with Conflict and creates nothing. Approving a request after `ExpiresAt`
+stays impossible, and a mismatched request ID, requester key, target or actor stays
+rejected.
+
+Admission of a new approval request first reclaims eligible records, then enforces
+the 256-record directory bound and a per-host cap of 8 live unapproved Pending
+requests. The ingress stores a SHA-256 digest of the peer host with each request;
+the digest is never exposed in public approval documents, and the per-host
+throttle and public identity endpoint are unchanged. Excess requests receive a
+bounded ResourceExhausted. Reclamation runs under the approval lock and derives
+only from durable records, so it is identical after restart. After the recovery
+window it removes only unapproved Pending, Denied/canceled/Expired and Approved
+Worker records that never accepted a delivery. Records inside the window,
+Completed receipts, Approved client receipts that froze an original grant, and any
+Worker record holding a delivered grant are never reclaimed, so exact retry and
+replay stay available. Reclamation touches only well-formed approval files in the
+approvals directory; foreign or malformed entries still count toward capacity and
+are left in place, and outgoing journals and Worker scopes are never visited.
+
 Outgoing client completion uses the existing saved-profile pairing journal and
 immutable canonical origin. Approved Worker setup encrypts the selected server's
 original Worker grant to the target approval key, reauthenticates the original

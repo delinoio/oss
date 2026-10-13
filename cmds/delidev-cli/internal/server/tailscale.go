@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,7 +37,99 @@ type tailnetRecord struct {
 	Allow         *bool               `json:"allow,omitempty"`
 	IncomingGrant []byte              `json:"incoming_grant,omitempty"`
 	PairStarted   bool                `json:"pair_started"`
+	// RequesterHost is a SHA-256 digest of the unauthenticated tailnet peer host
+	// that created the request. It bounds live unapproved requests per host and
+	// is never exposed in public approval documents.
+	RequesterHost string `json:"requester_host,omitempty"`
 }
+
+// Tailnet approval lifecycle limits. They are shared by Worker delivery
+// recovery and by approval record reclamation (see the connections contract).
+const (
+	tailnetRequestLifetime = 5 * time.Minute
+	// tailnetRecoveryWindow is how long after ExpiresAt an approval record stays
+	// retained and an Approved Worker setup can still be recovered.
+	tailnetRecoveryWindow = 24 * time.Hour
+	// tailnetApprovalLimit is the maximum retained records per approvals directory.
+	tailnetApprovalLimit = 256
+	// tailnetHostPendingLimit is the maximum live unapproved Pending records one
+	// remote tailnet host may hold at the same time.
+	tailnetHostPendingLimit = 8
+)
+
+// tailnetAdmissionReason is the stable reason recorded when a new approval
+// request is refused for capacity.
+type tailnetAdmissionReason string
+
+const (
+	tailnetAdmissionDirectoryFull tailnetAdmissionReason = "directory_full"
+	tailnetAdmissionHostLimit     tailnetAdmissionReason = "host_limit"
+)
+
+type tailnetHostKey struct{}
+
+// tailnetHostDigest returns the stable digest stored with a request for the
+// given remote address; unattributable callers share the empty digest.
+func tailnetHostDigest(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil || host == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(host))
+	return hex.EncodeToString(sum[:16])
+}
+func tailnetRequestHost(ctx context.Context) string {
+	host, _ := ctx.Value(tailnetHostKey{}).(string)
+	return host
+}
+
+// tailnetClock returns the service clock; tests replace it to cross expiry.
+func (s *Service) tailnetClock() time.Time {
+	if s.tailnetNow != nil {
+		return s.tailnetNow()
+	}
+	return time.Now()
+}
+func (s *Service) tailnetHTTPClient() (*http.Client, *http.Transport) {
+	if s.tailnetHTTP != nil {
+		return s.tailnetHTTP()
+	}
+	return rpc.HTTPClient()
+}
+func (s *Service) tailnetRetryPair(ctx context.Context, root string, grant worker.PairingCode, kind domain.DeviceType, name string) (worker.Credential, error) {
+	if s.tailnetPair != nil {
+		return s.tailnetPair(ctx, root, grant, kind, name)
+	}
+	return worker.RetryPair(ctx, root, grant, kind, name)
+}
+
+// tailnetRecoverableUntil is the last instant at which an Approved Worker setup
+// without a delivered grant may still be reconciled through its original request.
+func tailnetRecoverableUntil(a tailscale.Approval) time.Time {
+	return a.ExpiresAt.Add(tailnetRecoveryWindow)
+}
+
+// tailnetReclaimable reports whether an approval record may be removed. Only
+// unapproved Pending records, Denied/Expired terminal records and Approved Worker
+// records that never accepted a delivery are reclaimable, and only after the
+// recovery window that follows ExpiresAt. Completed receipts, client approvals
+// that froze an original grant and any record holding a delivered Worker grant
+// are the original receipts for exact replay and are never reclaimed.
+func tailnetReclaimable(v tailnetRecord, now time.Time) bool {
+	if !now.After(tailnetRecoverableUntil(v.Approval)) {
+		return false
+	}
+	switch v.Approval.State {
+	case tailscale.Denied, tailscale.Expired:
+		return true
+	case tailscale.Pending:
+		return v.Allow == nil || !*v.Allow || v.Grant == nil
+	case tailscale.Approved:
+		return v.Approval.Role == tailscale.WorkerRole && v.IncomingGrant == nil
+	}
+	return false
+}
+
 type tailnetOutgoing struct {
 	Version        int
 	ID             domain.ID
@@ -164,7 +258,7 @@ func (s *Service) tailnetIngress(origin string) http.Handler {
 				http.Error(w, "limited", http.StatusTooManyRequests)
 				return
 			}
-			public.ServeHTTP(w, r)
+			public.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tailnetHostKey{}, tailnetHostDigest(r.RemoteAddr))))
 			return
 		}
 		// Mount authenticated Connect business transports only. Private native relay,
@@ -224,15 +318,76 @@ func (s *Service) readTailnet(id domain.ID) (tailnetRecord, error) {
 func (s *Service) writeTailnet(v tailnetRecord) error {
 	return security.WriteAtomic(s.tailnetPath(v.Approval.ID), tailnetJSON(v))
 }
-func publicApproval(v tailnetRecord, grant bool) tailscale.Approval {
+func publicApproval(v tailnetRecord, grant bool, now time.Time) tailscale.Approval {
 	a := v.Approval
-	if a.State == tailscale.Pending && time.Now().After(a.ExpiresAt) && (v.Allow == nil || !*v.Allow || v.Grant == nil) {
+	if a.State == tailscale.Pending && now.After(a.ExpiresAt) && (v.Allow == nil || !*v.Allow || v.Grant == nil) {
 		a.State = tailscale.Expired
 	}
 	if !grant {
 		a.EncryptedGrant = nil
 	}
 	return a
+}
+
+// tailnetAdmission is the retained-capacity view used to admit a new request.
+type tailnetAdmission struct {
+	// Records counts every retained entry in the approvals directory, including
+	// entries this service does not own and therefore never touches.
+	Records int
+	// HostPending counts live unapproved Pending records by requester host digest.
+	HostPending map[string]int
+	Reclaimed   int
+}
+
+// reclaimTailnet removes only approval records whose recovery window ended (see
+// tailnetReclaimable) and returns the remaining capacity view. It is derived
+// purely from durable records, so it behaves identically after a restart. Foreign,
+// malformed, non-regular or unreadable entries are retained and still count
+// against capacity; outgoing journals live in a separate directory and are never
+// visited. The caller must hold tailnetMu.
+func (s *Service) reclaimTailnet(ctx context.Context, directory string, now time.Time) (tailnetAdmission, error) {
+	var result tailnetAdmission
+	// Each pass lists a bounded directory; a pass that removes nothing is final.
+	for pass := 0; pass < 4; pass++ {
+		entries, err := tailnetEntries(directory)
+		if err != nil {
+			return result, err
+		}
+		removed := 0
+		result.Records = len(entries)
+		result.HostPending = map[string]int{}
+		for _, e := range entries {
+			name := e.Name()
+			if !e.Type().IsRegular() || len(name) <= len(".json") || filepath.Ext(name) != ".json" {
+				continue
+			}
+			id := domain.ID(name[:len(name)-len(".json")])
+			v, err := s.readTailnet(id)
+			if err != nil {
+				continue
+			}
+			if tailnetReclaimable(v, now) {
+				if err := os.Remove(s.tailnetPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return result, err
+				}
+				if err := security.SyncParent(s.tailnetPath(id)); err != nil {
+					return result, err
+				}
+				s.logger.InfoContext(ctx, "tailscale_approval", "operation_id", id, "phase", "reclaimed", "state", v.Approval.State, "role", v.Approval.Role)
+				removed++
+				result.Records--
+				result.Reclaimed++
+				continue
+			}
+			if v.Approval.State == tailscale.Pending && v.Allow == nil && !now.After(v.Approval.ExpiresAt) {
+				result.HostPending[v.RequesterHost]++
+			}
+		}
+		if removed == 0 {
+			return result, nil
+		}
+	}
+	return result, nil
 }
 func (s *Service) RequestTailscaleApproval(ctx context.Context, req *connect.Request[pb.RequestTailscaleApprovalRequest]) (*connect.Response[pb.RequestTailscaleApprovalResponse], error) {
 	s.tailnetMu.Lock()
@@ -260,15 +415,24 @@ func (s *Service) RequestTailscaleApproval(ctx context.Context, req *connect.Req
 		if err := security.PrivateDir(directory); err != nil {
 			return nil, rpc.Error(err, "")
 		}
-		entries, err := tailnetEntries(directory)
-		if err != nil || len(entries) >= 256 {
+		host := tailnetRequestHost(ctx)
+		admission, err := s.reclaimTailnet(ctx, directory, s.tailnetClock())
+		if err != nil {
+			return nil, rpc.Error(tailnetFailure(domain.ResourceExhausted), "")
+		}
+		if admission.Records >= tailnetApprovalLimit {
+			s.logger.WarnContext(ctx, "tailscale_approval", "operation_id", m.RequestId, "phase", "admission_rejected", "reason", tailnetAdmissionDirectoryFull, "records", admission.Records)
+			return nil, rpc.Error(tailnetFailure(domain.ResourceExhausted), "")
+		}
+		if admission.HostPending[host] >= tailnetHostPendingLimit {
+			s.logger.WarnContext(ctx, "tailscale_approval", "operation_id", m.RequestId, "phase", "admission_rejected", "reason", tailnetAdmissionHostLimit, "host_pending", admission.HostPending[host])
 			return nil, rpc.Error(tailnetFailure(domain.ResourceExhausted), "")
 		}
 		private, public, err := tailscale.NewKey()
 		if err != nil {
 			return nil, rpc.Error(err, "")
 		}
-		v = tailnetRecord{PrivateKey: private, Approval: tailscale.Approval{ID: domain.ID(m.RequestId), ServerID: s.Identity.ServerID, Origin: m.Origin, Role: role, Name: m.Name, RequesterKey: m.RequesterKey, TargetKey: public, SelectedServer: domain.ID(m.SelectedServerId), SelectedOrigin: m.SelectedOrigin, ExpiresAt: time.Now().UTC().Add(5 * time.Minute), State: tailscale.Pending}}
+		v = tailnetRecord{PrivateKey: private, Approval: tailscale.Approval{ID: domain.ID(m.RequestId), ServerID: s.Identity.ServerID, Origin: m.Origin, Role: role, Name: m.Name, RequesterKey: m.RequesterKey, TargetKey: public, SelectedServer: domain.ID(m.SelectedServerId), SelectedOrigin: m.SelectedOrigin, ExpiresAt: s.tailnetClock().UTC().Add(tailnetRequestLifetime), State: tailscale.Pending}, RequesterHost: host}
 		v.Approval.Code = v.Approval.Confirmation()
 		if err = s.writeTailnet(v); err != nil {
 			return nil, rpc.Error(err, "")
@@ -280,7 +444,7 @@ func (s *Service) RequestTailscaleApproval(ctx context.Context, req *connect.Req
 	if a.ServerID != domain.ID(m.ServerId) || a.Origin != m.Origin || a.Role != role || a.Name != m.Name || !bytes.Equal(a.RequesterKey, m.RequesterKey) || a.SelectedServer != domain.ID(m.SelectedServerId) || a.SelectedOrigin != m.SelectedOrigin {
 		return nil, rpc.Error(tailnetFailure(domain.Conflict), "")
 	}
-	return connect.NewResponse(&pb.RequestTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, true))}), nil
+	return connect.NewResponse(&pb.RequestTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, true, s.tailnetClock()))}), nil
 }
 func (s *Service) GetTailscaleApproval(ctx context.Context, req *connect.Request[pb.GetTailscaleApprovalRequest]) (*connect.Response[pb.GetTailscaleApprovalResponse], error) {
 	s.tailnetMu.Lock()
@@ -289,7 +453,7 @@ func (s *Service) GetTailscaleApproval(ctx context.Context, req *connect.Request
 	if err != nil || !bytes.Equal(v.Approval.RequesterKey, req.Msg.RequesterKey) {
 		return nil, rpc.Error(tailnetFailure(domain.PermissionDenied), "")
 	}
-	return connect.NewResponse(&pb.GetTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, true))}), nil
+	return connect.NewResponse(&pb.GetTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, true, s.tailnetClock()))}), nil
 }
 func (s *Service) ListTailscaleApprovals(ctx context.Context, req *connect.Request[pb.ListTailscaleApprovalsRequest]) (*connect.Response[pb.ListTailscaleApprovalsResponse], error) {
 	s.tailnetMu.Lock()
@@ -313,7 +477,7 @@ func (s *Service) ListTailscaleApprovals(ctx context.Context, req *connect.Reque
 		if err != nil {
 			return nil, rpc.Error(err, "")
 		}
-		a := publicApproval(v, false)
+		a := publicApproval(v, false, s.tailnetClock())
 		if a.State == tailscale.Pending || (a.State == tailscale.Approved && a.Role == "worker") {
 			values = append(values, a)
 		}
@@ -331,7 +495,7 @@ func (s *Service) DecideTailscaleApproval(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	a := publicApproval(v, false)
+	a := publicApproval(v, false, s.tailnetClock())
 	if req.Msg.ConfirmationCode != a.Code || (v.Actor != nil && (*v.Actor != actor || v.Allow == nil || *v.Allow != req.Msg.Allow)) {
 		return nil, rpc.Error(tailnetFailure(domain.Conflict), "")
 	}
@@ -382,7 +546,7 @@ func (s *Service) DecideTailscaleApproval(ctx context.Context, req *connect.Requ
 		return nil, rpc.Error(err, "")
 	}
 	s.logger.InfoContext(ctx, "tailscale_approval", "operation_id", a.ID, "phase", "approved")
-	return connect.NewResponse(&pb.DecideTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, false))}), nil
+	return connect.NewResponse(&pb.DecideTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, false, s.tailnetClock()))}), nil
 }
 
 func (s *Service) outgoingPath(id domain.ID) string {
@@ -503,7 +667,7 @@ func (s *Service) resumeOutgoing(ctx context.Context, v tailnetOutgoing) (tailne
 	if v.Complete {
 		return v, nil
 	}
-	httpClient, transport := rpc.HTTPClient()
+	httpClient, transport := s.tailnetHTTPClient()
 	defer transport.CloseIdleConnections()
 	remote := delidevv1connect.NewTailscaleServiceClient(httpClient, v.Origin, connect.WithReadMaxBytes(32<<10), connect.WithSendMaxBytes(32<<10))
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
@@ -537,6 +701,16 @@ func (s *Service) resumeOutgoing(ctx context.Context, v tailnetOutgoing) (tailne
 	if err := s.writeOutgoing(v); err != nil {
 		return v, rpc.Error(err, "")
 	}
+	if v.Role == pb.DeviceType_DEVICE_TYPE_WORKER && approval.State == tailscale.Completed && v.Grant != nil && len(v.EncryptedGrant) > 0 {
+		// The target accepted the original delivery but its response was lost.
+		// Reconcile to the same completed state; never create or deliver another grant.
+		v.Complete = true
+		if err := s.writeOutgoing(v); err != nil {
+			return v, rpc.Error(err, "")
+		}
+		s.logger.InfoContext(ctx, "tailscale_approval", "operation_id", v.ID, "phase", "worker_delivery_reconciled")
+		return v, nil
+	}
 	if approval.State != tailscale.Approved {
 		return v, nil
 	}
@@ -558,7 +732,10 @@ func (s *Service) resumeOutgoing(ctx context.Context, v tailnetOutgoing) (tailne
 		v.Complete = true
 	} else {
 		if v.Grant == nil {
-			if time.Now().After(approval.ExpiresAt) {
+			// An Approved receipt proves the target decided before ExpiresAt, so the
+			// original grant is still created after expiry. Recovery is bounded by
+			// the shared window that also governs record reclamation.
+			if s.tailnetClock().After(tailnetRecoverableUntil(approval)) {
 				return v, rpc.Error(tailnetFailure(domain.Conflict), "")
 			}
 			code, err := worker.RandomToken()
@@ -614,7 +791,7 @@ func (s *Service) DeliverTailscaleWorker(ctx context.Context, req *connect.Reque
 		return nil, rpc.Error(tailnetFailure(domain.Conflict), "")
 	}
 	if v.Approval.State == tailscale.Completed {
-		return connect.NewResponse(&pb.DeliverTailscaleWorkerResponse{DocumentJson: tailnetJSON(publicApproval(v, false))}), nil
+		return connect.NewResponse(&pb.DeliverTailscaleWorkerResponse{DocumentJson: tailnetJSON(publicApproval(v, false, s.tailnetClock()))}), nil
 	}
 	// Reauthenticate the original approving actor at commit/registration. The
 	// unauthenticated key-bound delivery cannot substitute a later owner/client.
@@ -622,7 +799,9 @@ func (s *Service) DeliverTailscaleWorker(ctx context.Context, req *connect.Reque
 	if err := s.Store.Read(owned, func(tx *store.Tx) error { return tx.Authorize() }); err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	if time.Now().After(v.Approval.ExpiresAt) && v.IncomingGrant == nil {
+	// State Approved proves a timely decision; only the shared recovery window
+	// bounds the first delivery.
+	if s.tailnetClock().After(tailnetRecoverableUntil(v.Approval)) && v.IncomingGrant == nil {
 		return nil, rpc.Error(tailnetFailure(domain.Conflict), "")
 	}
 	plain, err := tailscale.Decrypt(v.PrivateKey, v.Approval.RequesterKey, v.Approval.Transcript(), req.Msg.EncryptedGrant)
@@ -645,7 +824,7 @@ func (s *Service) DeliverTailscaleWorker(ctx context.Context, req *connect.Reque
 			return nil, rpc.Error(err, "")
 		}
 	}
-	credential, err := worker.RetryPair(owned, root, grant, domain.WorkerDevice, v.Approval.Name)
+	credential, err := s.tailnetRetryPair(owned, root, grant, domain.WorkerDevice, v.Approval.Name)
 	if err != nil {
 		return nil, rpc.Error(err, "")
 	}
@@ -660,7 +839,7 @@ func (s *Service) DeliverTailscaleWorker(ctx context.Context, req *connect.Reque
 	if err := s.writeTailnet(v); err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	return connect.NewResponse(&pb.DeliverTailscaleWorkerResponse{DocumentJson: tailnetJSON(publicApproval(v, false))}), nil
+	return connect.NewResponse(&pb.DeliverTailscaleWorkerResponse{DocumentJson: tailnetJSON(publicApproval(v, false, s.tailnetClock()))}), nil
 }
 
 func (s *Service) ListTailscaleConnections(ctx context.Context, req *connect.Request[pb.ListTailscaleConnectionsRequest]) (*connect.Response[pb.ListTailscaleConnectionsResponse], error) {
@@ -730,7 +909,7 @@ func (s *Service) CancelTailscaleConnection(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	httpClient, transport := rpc.HTTPClient()
+	httpClient, transport := s.tailnetHTTPClient()
 	defer transport.CloseIdleConnections()
 	remote := delidevv1connect.NewTailscaleServiceClient(httpClient, v.Origin, connect.WithReadMaxBytes(32<<10), connect.WithSendMaxBytes(32<<10))
 	result, err := remote.CancelTailscaleApproval(ctx, connect.NewRequest(&pb.CancelTailscaleApprovalRequest{RequestId: string(v.ID), EncryptedConfirmation: proof}))
@@ -766,7 +945,7 @@ func (s *Service) CancelTailscaleApproval(ctx context.Context, req *connect.Requ
 			return nil, rpc.Error(err, "")
 		}
 	}
-	return connect.NewResponse(&pb.CancelTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, false))}), nil
+	return connect.NewResponse(&pb.CancelTailscaleApprovalResponse{DocumentJson: tailnetJSON(publicApproval(v, false, s.tailnetClock()))}), nil
 }
 
 func (s *Service) tailnetWorkerEndpoint() string {
