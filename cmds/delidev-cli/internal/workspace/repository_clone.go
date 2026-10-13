@@ -81,7 +81,7 @@ func (g Git) Clone(ctx context.Context, privateRoot string, request CloneRequest
 	if _, err := domain.ParseRepositoryCloneURL(request.URL); err != nil {
 		return result, err
 	}
-	if err := domain.ValidateRepositoryCloneDirectory(request.DirectoryName); err != nil {
+	if err := domain.ValidateHistoricalRepositoryDirectory(request.DirectoryName); err != nil {
 		return result, err
 	}
 	if domain.Text(request.ParentPath, "clone parent path", 4096, true) != nil || !filepath.IsAbs(request.ParentPath) {

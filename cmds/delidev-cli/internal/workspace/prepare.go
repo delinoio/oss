@@ -211,7 +211,7 @@ func (r PrepareRequest) validateStructure() error {
 	if len(r.Repositories) == 0 || len(r.Repositories) > 100 {
 		return domain.Fail(domain.InvalidArgument, "Invalid project repository count.", "Configure 1 through 100 repositories.")
 	}
-	if err := validateRepositoryDirectories(r); err != nil {
+	if err := validateRepositoryDirectories(r, historicalDirectoryAdmission); err != nil {
 		return err
 	}
 	ids := []domain.ID{}
