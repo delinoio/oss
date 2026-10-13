@@ -25,9 +25,14 @@ type observerFixture struct {
 
 func newObserverFixture(t *testing.T) *observerFixture {
 	t.Helper()
+	return newProtectedObserverFixture(t)
+}
+
+func newProtectedObserverFixture(t *testing.T, protected ...string) *observerFixture {
+	t.Helper()
 	creation := &sessionCreation{request: domain.NewID(), settings: fixtureSettings(), identity: sessionIdentity{id: fixtureSessionID, project: "global", slug: "private-fixture", created: 1234}}
 	input := &sessionInput{receipt: InputReceipt{RequestID: domain.NewID(), SessionID: fixtureSessionID, MessageID: fixtureMessageID, PartID: fixturePartID}, digest: sha256.Sum256([]byte("private input"))}
-	api := &sessionAPI{creation: creation, input: input, events: &eventStream{ctx: context.Background()}, gate: make(chan struct{}, 1), cwd: fixtureWorkspacePath()}
+	api := &sessionAPI{creation: creation, input: input, events: &eventStream{ctx: context.Background()}, gate: make(chan struct{}, 1), cwd: fixtureWorkspacePath(), protectedValues: protected}
 	o, err := api.observeInput(context.Background(), fixtureObserverRoot())
 	if err != nil {
 		t.Fatal(err)
