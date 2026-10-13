@@ -135,3 +135,38 @@ func TestNamedManagedWorkspaceRetainsLayoutAcrossRecoverySnapshotAndFork(t *test
 		t.Fatal("named child cleanup failed", err)
 	}
 }
+
+func TestForkRequiresNamedDirectoriesCoversSidechatAndIndependentSources(t *testing.T) {
+	repository := domain.NewID()
+	for _, test := range []struct {
+		name    string
+		purpose domain.ForkPurpose
+		kind    domain.WorkspaceType
+		frozen  string
+		want    bool
+	}{
+		{"sidechat named worktree", domain.SidechatFork, domain.Worktree, "oss", true},
+		{"sidechat unnamed worktree", domain.SidechatFork, domain.Worktree, "", false},
+		{"sidechat local", domain.SidechatFork, domain.Local, "", false},
+		{"independent named worktree", domain.IndependentFork, domain.Worktree, "oss", true},
+		{"independent unnamed worktree", domain.IndependentFork, domain.Worktree, "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			preparation, err := json.Marshal(PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), Type: test.kind, PrimaryRepository: repository, Repositories: []RepositorySpec{{ID: repository, DirectoryName: test.frozen}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := domain.ForkJobInput{Purpose: test.purpose, Workspace: test.kind}
+			input.SourceAssignment.Preparation = preparation
+			got, err := ForkRequiresNamedDirectories(input)
+			if err != nil || got != test.want {
+				t.Fatalf("named requirement = %v, %v; want %v", got, err, test.want)
+			}
+		})
+	}
+	input := domain.ForkJobInput{Purpose: domain.SidechatFork}
+	input.SourceAssignment.Preparation = []byte(`{"unknown":`)
+	if _, err := ForkRequiresNamedDirectories(input); err == nil {
+		t.Fatal("undecodable Sidechat source preparation was accepted")
+	}
+}
