@@ -190,3 +190,19 @@ func TestManagedMCPCredentialExpiryIsExposedAndEnforcedAtSelection(t *testing.T)
 		t.Fatal("a definition without expiry exposed one")
 	}
 }
+
+func TestManagedMCPSupportIsDerivedFromTheWorkerCapabilityNotTheWorkerReply(t *testing.T) {
+	claimed := domain.ManagedMCPDefinition{ID: domain.NewID(), Revision: 1, SupportedHarnesses: []domain.Harness{domain.ClaudeCode, domain.OpenCode}}
+	result := domain.ManagedMCPResult{Definitions: []domain.ManagedMCPDefinition{claimed}}
+	stampManagedMCPSupport(&result, []domain.WorkerCapability{domain.ManagedMCPV1})
+	if len(result.Definitions[0].SupportedHarnesses) != 0 {
+		t.Fatal("a Worker without the Codex adapter capability published support")
+	}
+	stampManagedMCPSupport(&result, []domain.WorkerCapability{domain.ManagedMCPV1, domain.CodexManagedMCPV1})
+	if got := result.Definitions[0].SupportedHarnesses; len(got) != 1 || got[0] != domain.Codex {
+		t.Fatalf("support was not derived from the published capability: %v", got)
+	}
+	if len(claimed.SupportedHarnesses) != 2 {
+		t.Fatal("stamping rewrote the caller's retained value")
+	}
+}

@@ -24,6 +24,10 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	if update.Snapshot != nil && update.Snapshot.Kind == domain.SleepTool && (input.Configuration.Harness != domain.Codex || update.NativeParentID != "") {
 		return executionEventConflict()
 	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.MCPTool && (input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || update.Snapshot.MCP == nil || !input.Configuration.MatchesManagedMCP(update.Snapshot.MCP.MCPServerIdentity)) {
+		// A call is attributed only to a generation frozen in this execution.
+		return executionEventConflict()
+	}
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
@@ -107,6 +111,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 				}
 			}
 			if tool.Started.Kind == domain.ImageViewTool && (tool.Started.ImageView == nil || update.Snapshot.ImageView == nil || *tool.Started.ImageView != *update.Snapshot.ImageView) {
+				return executionEventConflict()
+			}
+			if tool.Started.Kind == domain.MCPTool && (tool.Started.MCP == nil || update.Snapshot.MCP == nil || tool.Started.MCP.MCPServerIdentity != update.Snapshot.MCP.MCPServerIdentity || tool.Started.MCP.Tool != update.Snapshot.MCP.Tool) {
 				return executionEventConflict()
 			}
 			if tool.Started.Kind == domain.SleepTool && (tool.Started.Sleep == nil || tool.Started.Sleep.DurationMS == nil || update.Snapshot.Sleep == nil || update.Snapshot.Sleep.DurationMS == nil || *tool.Started.Sleep.DurationMS != *update.Snapshot.Sleep.DurationMS) {
