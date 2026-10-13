@@ -1,20 +1,35 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* The workspace wrapper keeps the editor and details mounted while a
+   notification occurrence is shown; it must not affect layout when visible. */
+.schedule-workspace:not([hidden]) {
+  display: contents;
+}
 /* Creation owns its scroll region and a separate footer row. The footer's
    actual wrapped height reserves space without overlays or inline geometry.
    Bound creation to the viewport even when zoom makes it shorter than the
    shared shell's CSS minimum; the native minimum remains unchanged. */
-main:has(> .schedule-page:not([hidden]) > .schedule-creation) {
+main:has(
+    > .schedule-page:not([hidden])
+      > .schedule-workspace:not([hidden])
+      > .schedule-creation
+  ) {
   display: flex;
   height: 100dvh;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
 }
-main:has(> .schedule-page:not([hidden]) > .schedule-creation)
+main:has(
+    > .schedule-page:not([hidden])
+      > .schedule-workspace:not([hidden])
+      > .schedule-creation
+  )
   > .sidebar-context-trigger {
   flex-shrink: 0;
 }
-.schedule-page:has(.schedule-creation) {
+.schedule-page:has(
+  > .schedule-workspace:not([hidden]) > .schedule-creation
+) {
   flex: 1;
   width: 100%;
   max-width: none;

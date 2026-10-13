@@ -1204,6 +1204,7 @@ export function Schedules({
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
   const closeDrawer = useCloseSidebarDrawer();
   const locked = protectedWorkflow || Boolean(editing);
+  const workspaceActive = active && !notificationOccurrence;
   const request = useCallback(
     (token: string) => ({
       projectId,
@@ -1406,47 +1407,56 @@ export function Schedules({
             )}
           </section>
         ) : null}
-        {editing ? (
-          <ScheduleEditor
-            readLocalWorker={readLocalWorker}
-            key={editing.key}
-            initial={editing.initial}
-            active={active}
-            saved={(row) => {
-              setEditing(undefined);
-              setProtectedWorkflow(false);
-              if (row) setSelected(row);
-              result.refresh();
-            }}
-            cancel={() => {
-              setEditing(undefined);
-              setProtectedWorkflow(false);
-            }}
-            protectedChange={setProtectedWorkflow}
-          />
-        ) : selected ? (
-          <ScheduleDetails
-            key={selected.id}
-            initial={selected}
-            active={active}
-            open={open}
-            close={() => {
-              setSelected(undefined);
-              setProtectedWorkflow(false);
-              result.refresh();
-            }}
-            edit={(initial) => {
-              setSelected(undefined);
-              setEditing({ initial, key: newRequestId() });
-            }}
-            protectedChange={setProtectedWorkflow}
-          />
-        ) : (
-          <section>
-            <h2>{copy("schedules.schedules_221ff1")}</h2>
-            <p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p>
-          </section>
-        )}
+        {/* The notification occurrence destination is exclusive: the normal
+            workspace stays mounted (draft, focus and request identity) but is
+            hidden, inert and inactive until the user explicitly returns. */}
+        <div
+          hidden={Boolean(notificationOccurrence)}
+          inert={Boolean(notificationOccurrence)}
+          className="schedule-workspace"
+        >
+          {editing ? (
+            <ScheduleEditor
+              readLocalWorker={readLocalWorker}
+              key={editing.key}
+              initial={editing.initial}
+              active={workspaceActive}
+              saved={(row) => {
+                setEditing(undefined);
+                setProtectedWorkflow(false);
+                if (row) setSelected(row);
+                result.refresh();
+              }}
+              cancel={() => {
+                setEditing(undefined);
+                setProtectedWorkflow(false);
+              }}
+              protectedChange={setProtectedWorkflow}
+            />
+          ) : selected ? (
+            <ScheduleDetails
+              key={selected.id}
+              initial={selected}
+              active={workspaceActive}
+              open={open}
+              close={() => {
+                setSelected(undefined);
+                setProtectedWorkflow(false);
+                result.refresh();
+              }}
+              edit={(initial) => {
+                setSelected(undefined);
+                setEditing({ initial, key: newRequestId() });
+              }}
+              protectedChange={setProtectedWorkflow}
+            />
+          ) : (
+            <section>
+              <h2>{copy("schedules.schedules_221ff1")}</h2>
+              <p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p>
+            </section>
+          )}
+        </div>
       </div>
     </>
   );

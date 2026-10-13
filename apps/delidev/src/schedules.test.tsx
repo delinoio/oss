@@ -266,6 +266,99 @@ it("retains a new schedule draft when navigating away and back", () => {
   expect(value.save).not.toHaveBeenCalled();
 });
 
+function notificationTarget(value: ReturnType<typeof fixture>) {
+  return {
+    id: value.occurrence.id,
+    scheduleId: value.schedule.id,
+    generation: "notification-1",
+  };
+}
+
+it("keeps the editing draft hidden and inert during notification review and restores it on return", async () => {
+  const value = fixture(),
+    clear = vi.fn();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+  const prompt = screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: "Draft kept during review" } });
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={clear}
+      />,
+    ),
+  );
+  await screen.findByText("Original occurrence prompt");
+  const workspace = prompt.closest(".schedule-workspace") as HTMLElement;
+  expect(workspace.hidden).toBe(true);
+  expect(workspace.hasAttribute("inert")).toBe(true);
+  expect(
+    screen.queryByRole("textbox", { name: "Scheduled prompt" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save schedule" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Back to schedules" })).toBeTruthy();
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  const restored = screen.getByLabelText("Scheduled prompt") as HTMLTextAreaElement;
+  expect(restored).toBe(prompt);
+  expect(restored.value).toBe("Draft kept during review");
+  expect(workspace.hidden).toBe(false);
+  expect(workspace.hasAttribute("inert")).toBe(false);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("hides selected schedule details without writes during notification review and restores the same instance", async () => {
+  const value = fixture();
+  const rendered = render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(await screen.findByRole("button", { name: /Weekday review/ }));
+  const heading = await screen.findByRole("button", { name: "Run now" });
+  const workspace = heading.closest(".schedule-workspace") as HTMLElement;
+  rendered.rerender(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={notificationTarget(value)}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  await screen.findAllByText("Original occurrence prompt");
+  expect(workspace.hidden).toBe(true);
+  expect(workspace.hasAttribute("inert")).toBe(true);
+  expect(screen.queryByRole("button", { name: "Run now" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete schedule" })).toBeNull();
+  rendered.rerender(value.view(<Schedules active open={() => {}} />));
+  expect(screen.getByRole("button", { name: "Run now" })).toBe(heading);
+  expect(value.run).not.toHaveBeenCalled();
+  expect(value.control).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("hides the empty workspace and keeps the unavailable status for a missing notification occurrence", async () => {
+  const value = fixture();
+  render(
+    value.view(
+      <Schedules
+        active
+        open={() => {}}
+        notificationOccurrence={{
+          ...notificationTarget(value),
+          id: newRequestId(),
+        }}
+        clearNotificationOccurrence={() => {}}
+      />,
+    ),
+  );
+  expect((await screen.findByRole("status")).textContent).toBeTruthy();
+  expect(
+    screen.queryByText("Select a schedule from the sidebar."),
+  ).toBeNull();
+  expect(screen.queryByText("Original occurrence prompt")).toBeNull();
+});
+
 it("binds Run now retries to one occurrence without resuming the paused schedule", async () => {
   const value = fixture();
   value.run.mockRejectedValueOnce(
