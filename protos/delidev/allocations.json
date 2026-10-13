@@ -9613,6 +9613,13 @@
       "number": 38
     },
     {
+      "issue": 2324,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_BRANCH_PREFIX_EXACT_QUOTE_V1",
+      "number": 65
+    },
+    {
       "issue": 1980,
       "kind": "enum",
       "declaration": "SystemCapability",

@@ -1,5 +1,17 @@
 # DeliDev v1 Connect contract
 
+## Branch prefix exact-quote negotiation
+
+Worker `BRANCH_PREFIX_EXACT_QUOTE_V1 = 65` is allocated and activated with
+the immutable selection version 2 change. It is independent of `BRANCH_PREFIX_INSTRUCTIONS_V1 = 38`
+and advertises that the Worker validates immutable branch prefix selection
+version 2 (exact JSON-style quoting of the Execute instruction). The server
+echoes it in `AttachWorkerResponse.supported_worker_capabilities`; a Worker
+reports it only after observing that echo. Existing numeric assignments are
+unchanged. Go and TypeScript Worker descriptors expose the new enum. No public
+RPC, System capability or SQLite migration is added. The
+[catalog contract](cmds-delidev-catalog-contract.md) owns selection behavior.
+
 ## Named managed checkout negotiation
 
 Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` is allocated and activated with the complete frozen checkout layout. Preserve Worker 19 remote clone ownership and every existing numeric assignment. Private version-1 preparation/result JSON adds optional immutable `directory_name`; historical omission preserves bytes and UUID paths. Original session/Schedule admission, assignment, execution, storage/restoration and independent Fork separately require the negotiated capability. Unsupported peers cannot receive named work or substitute UUID directories. No public RPC, System capability or SQLite migration is added. Go and TypeScript Worker descriptors expose the new enum; other service/query declarations remain unchanged. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-repository-checkout-names) and [storage contract](cmds-delidev-storage-contract.md#frozen-live-checkout-layout).
