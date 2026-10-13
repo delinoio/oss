@@ -13,6 +13,7 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
+import { settleEnclosingEntrances } from "./entrance-motion";
 import "./settings-action.css";
 
 /** Closed presentation catalog. It grants no domain or mutation authority. */
@@ -167,6 +168,8 @@ export function SettingsActionButton({
   }, [Boolean(tooltip)]);
   const iconOnly = scoped && presentation === SettingsActionPresentation.Icon;
   const reveal = (button: HTMLButtonElement) => {
+    // Measure the untransformed button, not one inside an in-flight page entrance.
+    settleEnclosingEntrances(button);
     const rect = button.getBoundingClientRect(),
       zoom = Number(getComputedStyle(document.body).zoom) || 1;
     const width = window.innerWidth / zoom;

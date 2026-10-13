@@ -32,6 +32,9 @@ OpenCode steps still require their original valid Provider UUID with no service;
 missing, foreign or mixed identities reject without retaining partial usage or
 accounting. Source replay and conflicting steps preserve the existing immutable
 history and exact category counts. No synthetic Provider or migration is added.
+A Go-only usage selection filters by service before the usage read bounds, so
+excluded API history never exhausts it. Only provably valid excluded units are
+filtered; a Go unit with corrupted service or source identity still fails closed.
 
 ### Project requirements
 

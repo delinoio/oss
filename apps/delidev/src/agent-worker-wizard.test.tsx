@@ -13,7 +13,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   ConfigurationService,
   EntityKind,
@@ -694,4 +694,145 @@ it("keeps name precedence over alias in the retained selected account name", asy
     await f.client.refetchQueries({ type: "active" });
   });
   expect(selectedAccountNames()).toEqual(["Select Named"]);
+});
+
+// Issue 3183: the step heading plays one 160ms Y4 entrance per user-selected
+// step change and never for automatic routing, refresh or discovery.
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete globalThis.document.documentElement.dataset.animation;
+});
+const stepHeading = (name: string) =>
+  screen.getByRole("heading", { name, level: 3 });
+function settleEntrance(node: Element) {
+  const event = new Event("animationend", { bubbles: true });
+  Object.defineProperty(event, "animationName", { value: "entrance-y4" });
+  act(() => {
+    node.dispatchEvent(event);
+  });
+}
+it("plays one step heading entrance for each user-selected step change and none on mount", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByRole("radio", { name: "Codex" });
+  const heading = stepHeading("Harness");
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  // Harness confirmation.
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  expect(stepHeading("Accounts")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  // Change harness.
+  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  expect(stepHeading("Harness")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  // Next to Model, Next to Configure, then Back.
+  const input = await accounts(f);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  fireEvent.change(input, { target: { value: "typed-exact" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(stepHeading("Model")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  settleEntrance(heading);
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("restarts the step entrance for a quick second step change without waiting for the first", async () => {
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  const heading = stepHeading("Accounts");
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  expect(stepHeading("Harness")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  // Focus moved to the heading without waiting for the motion.
+  expect(globalThis.document.activeElement).toBe(heading);
+});
+
+it("does not animate model refresh, discovery, typing or refetch and preserves requests", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  const input = await accounts(f);
+  const heading = stepHeading("Model");
+  settleEntrance(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  fireEvent.focus(input);
+  await screen.findByRole("option", { name: /Endpoint One/ });
+  fireEvent.change(input, { target: { value: "typed-exact" } });
+  await f.client.invalidateQueries();
+  view.rerender(f.view(false));
+  view.rerender(f.view());
+  expect(stepHeading("Model")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  expect(f.endpoint).toHaveBeenCalledTimes(1);
+  expect(input.value).toBe("typed-exact");
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("does not animate validation failure routing through fail()", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.change(input, { target: { value: "typed-exact" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
+  const heading = stepHeading("Configure");
+  settleEntrance(heading);
+  fireEvent.change(screen.getByLabelText("Name"), {
+    target: { value: "Inline Worker" },
+  });
+  // The hidden Model control becomes invalid; Save routes back to Model.
+  fireEvent.change(input, { target: { value: "x".repeat(257) } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  expect(stepHeading("Model")).toBe(heading);
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  // A failed Next on the same step does not animate either.
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+});
+
+it("suppresses the step entrance when Animation is Off and settles it mid-flight without replay", async () => {
+  globalThis.document.documentElement.dataset.animation = "false";
+  const f = fixture();
+  render(f.view());
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  const heading = stepHeading("Accounts");
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  globalThis.document.documentElement.dataset.animation = "true";
+  await act(async () => {
+    await Promise.resolve();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
+  expect(heading.getAttribute("data-entrance")).toBe("y4");
+  await act(async () => {
+    globalThis.document.documentElement.dataset.animation = "false";
+    await Promise.resolve();
+  });
+  expect(heading.getAttribute("data-entrance")).toBeNull();
+  await act(async () => {
+    globalThis.document.documentElement.dataset.animation = "true";
+    await Promise.resolve();
+  });
+  expect(heading.getAttribute("data-entrance")).toBeNull();
 });

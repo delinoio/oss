@@ -4,14 +4,17 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 func TestCodexApprovalReviewerRequiresCapabilityBeforeDispatch(t *testing.T) {
@@ -160,5 +163,62 @@ func TestAutoReviewProgressPublishesDistinctImmutableHistory(t *testing.T) {
 		if e != nil || message.Role != domain.ProgressMessage || message.Tool != nil || message.Text != "" || message.Progress.AutoReview == nil || row.Revision != 1 {
 			t.Fatal("review became mutable tool/result")
 		}
+	}
+}
+
+func TestRequestDiagnosticsListReviewerAttributionBesideCatalogRoot(t *testing.T) {
+	var count atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"id": fmt.Sprintf("resp_diagnostic_%d", count.Add(1)), "model": body.Model, "output": []any{}})
+	}))
+	defer upstream.Close()
+	f := newConfiguredAuthorityFixture(t, upstream.URL, func(i *domain.ExecutionJobInput) {
+		i.Configuration.Options.ApprovalsReviewer = domain.CodexReviewerAuto
+		i.Configuration.Options.ApprovalPolicy = "on-request"
+		i.Configuration.ReviewerNativeModel = domain.CodexReviewerNativeModel
+		i.ConfigurationDigest, _ = i.Configuration.Digest()
+	}, false)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.reviewer-machine", nil, func(tx *store.Tx) (any, error) {
+		r, m, e := activeMachine(tx, f.input.MachineID)
+		if e != nil {
+			return nil, e
+		}
+		m.WorkerCapabilities = append(m.WorkerCapabilities, domain.CodexApprovalReviewV1)
+		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.registerGrant(t)
+	for _, model := range []string{f.input.Configuration.NativeModel, domain.CodexReviewerNativeModel} {
+		response := f.request(t, f.token, fmt.Sprintf(`{"model":%q,"input":[]}`, model))
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatal("relay failed", model, response.StatusCode)
+		}
+	}
+	rows := awaitDiagnosticRows(t, f, 2)
+	var catalog, reviewer *pb.RequestDiagnostic
+	for _, row := range rows {
+		if row.Attribution == pb.RequestDiagnosticAttribution_REQUEST_DIAGNOSTIC_ATTRIBUTION_UNSPECIFIED {
+			catalog = row
+		} else {
+			reviewer = row
+		}
+	}
+	if catalog == nil || reviewer == nil {
+		t.Fatal("page lost the catalog root or reviewer record")
+	}
+	if catalog.Model == nil || catalog.Model.NativeId != f.input.Configuration.NativeModel || catalog.Model.ProviderId != catalog.ProviderId {
+		t.Fatal("catalog record lost its model identity")
+	}
+	if reviewer.Attribution != pb.RequestDiagnosticAttribution_REQUEST_DIAGNOSTIC_ATTRIBUTION_CODEX_REVIEWER || reviewer.Model != nil || reviewer.ModelId != "" || reviewer.Harness != string(domain.Codex) || reviewer.Source != pb.RequestDiagnosticSource_REQUEST_DIAGNOSTIC_SOURCE_PROXY_HTTP {
+		t.Fatal("reviewer record borrowed a catalog model or lost its attribution")
 	}
 }
