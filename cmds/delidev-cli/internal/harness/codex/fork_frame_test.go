@@ -68,6 +68,8 @@ func TestForkTurnsAcceptPrivateHistoryAboveDomainBoundUnderNativeFrameProfile(t 
 		// Only the enclosing page exceeds 1 MiB; each turn stays below it.
 		{"page-above-1MiB-with-small-turns", repeatedTurns(3, field)},
 		{"aggregate-just-below-4MiB", repeatedTurns(5, 800<<10)},
+		// One private field alone exceeds the public 1 MiB document limit.
+		{"single-field-above-1MiB", repeatedTurns(1, 1200<<10)},
 	}
 	for _, managed := range []bool{false, true} {
 		for _, test := range cases {
