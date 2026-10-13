@@ -778,6 +778,10 @@ name/fallback. Muted monospace previews show a literal `> ` prefix with visual
 ellipsis and the complete accessible string. Only Codex's exact leading
 `/bin/zsh -lc ` is hidden in the preview; no shell parsing, trimming, unquoting or
 other rewriting occurs. The full original command remains in collapsed Details.
+A Codex completion whose command or working directory differs from its started
+snapshot (exact string comparison, no normalization) retains the original tool
+fallback; late output, exit code, duration, process metadata and admitted source
+transitions remain accepted.
 
 Expanding a recognized command displays original output directly in inert
 `pre`/`code` blocks. Codex prefers completed aggregate output, including empty
@@ -6145,7 +6149,15 @@ The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus
 survive revisions, completion and locale changes. Preserve actual streaming,
 interrupted, failed, recovery and unavailable states. Malformed, mixed and unknown
-records retain the original fallback; OpenCode reasoning-text, Claude thinking
+records retain the original fallback. The dedicated disclosure requires a complete
+valid message envelope: role `artifact`, absent or empty-string `text` (non-string
+text is never coerced), and only the common metadata `execution_id`,
+`native_thread_id`, `native_turn_id`, `native_id`, `native_parent_id`,
+`first_sequence`, `last_sequence`, `context_revision` and `attachments` beside
+`state` and `artifact`. Role-specific fields such as `phase`, `input_id`,
+`inherited`, `turn_timing`, `tool`, `progress`, provider content and unknown
+fields select the generic artifact fallback without stripping or repair.
+OpenCode reasoning-text, Claude thinking
 and other artifacts retain their source-specific rules. Preserve reader gates,
 mounting, measured history wrappers, pagination, scroll anchors and live/history
 ordering. Disclosure adds no reads, execution authority, RPC, schema, migration,
