@@ -1,0 +1,75 @@
+# Troubleshooting bundlewhy
+
+:::warning Availability
+bundlewhy is not yet published to npm. Version 0.1.0 is in development.
+:::
+
+Every error prints a stable `BW_*` code, a message and a recovery instruction. A failed or cancelled run never retries automatically; after you fix the cause, start a new run.
+
+## Project and configuration selection
+
+| Code | Meaning | Recovery |
+| --- | --- | --- |
+| `BW_USAGE` | The command line or a request is invalid. | Check the command with `bundlewhy --help`. |
+| `BW_PROJECT_NOT_FOUND` | The project directory or its `package.json` cannot be read or is invalid. | Run bundlewhy in a directory that contains a valid `package.json`, or pass `--project <dir>`. |
+| `BW_BUNDLER_NOT_DETECTED` | No supported bundler was found, or the bundler cannot be inferred from the configuration file. | Pass `--bundler vite` or `--bundler rspack`, together with `--config <file>` if needed. |
+| `BW_BUNDLER_AMBIGUOUS` | Several bundlers are candidates. | Select one with `--bundler`. |
+| `BW_CONFIG_NOT_FOUND` | No configuration file was found, or the selected file cannot be read. | Pass an existing file with `--config <file>`. |
+| `BW_CONFIG_AMBIGUOUS` | Several configuration files or builds are candidates. | Select one with `--config <file>`, or with `--config-name <name>` for an Rspack configuration that exports several builds. |
+| `BW_CONFIG_LOAD_FAILED` | The bundler could not load the configuration. | Fix the error in the configuration. TypeScript Rspack configurations load through Node.js type stripping, so they must use only erasable TypeScript syntax (for example, no enums or parameter properties). |
+| `BW_UNSUPPORTED_BUILD` | The selected configuration is a library, SSR or Node-target build. | Select a client production build configuration. |
+
+## Engine and Node.js
+
+| Code | Meaning | Recovery |
+| --- | --- | --- |
+| `BW_BUNDLER_NOT_INSTALLED` | The bundler package is not installed in the project. | Install the project's dependencies, then start a new run. |
+| `BW_ENGINE_VERSION_UNSUPPORTED` | The installed bundler version is not in the [compatibility matrix](/bundlewhy/supported-engines). | Install a supported version, or pass `--allow-unsupported-engine` to analyze anyway. |
+| `BW_NODE_NOT_FOUND` | The Node.js executable was not found. | Install Node.js 22 or newer, or set `BUNDLEWHY_NODE` to the path of the Node.js executable. |
+| `BW_MINIFIER_NON_DEFAULT` | The build uses a non-default JavaScript minifier. Minifier categories are unavailable. | Use the default minifier to analyze minifier optimizations. Module-graph results remain usable. |
+| `BW_MINIFICATION_DISABLED` | JavaScript minification is disabled in the selected configuration. | Enable minification for production builds to analyze minifier optimizations. |
+
+## Build and collection
+
+| Code | Meaning | Recovery |
+| --- | --- | --- |
+| `BW_BUILD_FAILED` | The diagnostic build failed. | Fix the build error, confirm the production build succeeds in the project, then start a new run. |
+| `BW_COLLECTION_FAILED` | bundlewhy could not collect or read the build information. | Start a new run and do not change the run directory while it runs. Report a bug if the problem continues. |
+| `BW_SOURCE_MAP_MISSING` | Some chunks have no usable source map. Their findings use generated locations. | Check plugins that disable or rewrite source maps. |
+| `BW_SOURCE_UNREADABLE` | Some source files could not be read. | Check the file permissions, then start a new run. |
+| `BW_PROJECT_MODIFIED` | `package.json`, the selected configuration or a lockfile changed during the run. | Do not change these files while a run is in progress, then start a new run. |
+| `BW_RUN_CANCELLED` | The run was cancelled. Its results are incomplete. | Start a new run when you are ready. |
+| `BW_RUN_INTERRUPTED` | The run stopped before it finished, for example because the process was terminated. Its results are incomplete. | Start a new run. |
+| `BW_OUTPUT_DIR_INVALID` | The output directory cannot be created or written. | Choose a writable `--out-dir`. |
+
+## Result and report problems
+
+| Code | Meaning | Recovery |
+| --- | --- | --- |
+| `BW_SCHEMA_UNSUPPORTED` | The saved results use a format version that this bundlewhy version does not read. | Open the results with the bundlewhy version that wrote them, or start a new run. |
+| `BW_RESULT_INVALID` | The saved results or the report are damaged, incomplete or not written by bundlewhy. | Pass a run directory created by `bundlewhy analyze`, or start a new run. |
+| `BW_EXPORT_FAILED` | The report could not be written, or the output file already exists. | Choose another `--output` path, pass `--force` to replace the file, or check that the destination is writable. |
+| `BW_SOURCE_STALE` | Source files changed or were removed after the analysis. | Saved locations and snippets describe the analyzed version. Start a new run to analyze the current code. |
+| `BW_SOURCE_NOT_FOUND` | The requested source is not part of this analysis. | Select a source from the analysis, or start a new run if sources were excluded. |
+
+## Local server and browser
+
+| Code | Meaning | Recovery |
+| --- | --- | --- |
+| `BW_SERVER_BIND_FAILED` | The local server could not listen on `127.0.0.1`. | Check local firewall or sandbox settings, or use `--no-serve` and open the results later. |
+| `BW_BROWSER_OPEN_FAILED` | The browser could not be opened. | Open the printed URL manually. |
+| `BW_ACCESS_DENIED` | The local server rejected a request without a valid access token or from another origin. | Open the exact URL that bundlewhy printed for this run. |
+| `BW_ACCESS_TOKEN_MISSING` | The UI page has no access token. | Open the exact URL that bundlewhy printed, including its fragment. |
+
+## Logs
+
+- Add `--verbose` to show debug logs on the terminal.
+- Set `BUNDLEWHY_LOG` to a log filter, for example `BUNDLEWHY_LOG=bundlewhy=debug`, to choose the detail level.
+- Logs are colored by default. Disable color with `--no-color` or the `NO_COLOR` environment variable.
+- Each run directory contains `bundlewhy.log` with JSON lines: timestamps, run identifier, stage, durations, engine versions and error codes.
+
+Logs never include source content, environment variable values, credentials or access tokens. Review any file before you attach it to a report.
+
+## Support
+
+Report problems through [Delino OSS GitHub Issues](https://github.com/delinoio/oss/issues). Include the bundlewhy version, the output of `bundlewhy engines`, the error code and the relevant lines from `bundlewhy.log`. There is no support response-time commitment.

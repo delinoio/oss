@@ -183,7 +183,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### public-docs
 
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, seven project subpaths, site selector, and stable `/devhud` section)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, eight project subpaths including bundlewhy, site selector, and stable `/devhud` section)
 - `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
