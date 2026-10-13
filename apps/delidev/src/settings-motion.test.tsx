@@ -187,27 +187,32 @@ const dialog = () =>
 const taskHeader = () =>
   document.querySelector<HTMLElement>(".settings-task-header")!;
 
-it("animates a task dialog once per explicit opening and never for drafts", () => {
+it("animates a task header once per explicit opening and never for drafts", () => {
   taskHarness(EntranceTarget.Surface);
   fireEvent.click(screen.getByRole("button", { name: "Open task" }));
   const node = dialog();
-  expect(node.getAttribute("data-entrance")).toBe("y4");
-  expect(taskHeader().getAttribute("data-entrance")).toBeNull();
+  const header = taskHeader();
+  // The native dialog host never carries the transform: it would become the
+  // containing block of fixed descendants such as portaled tooltips.
+  expect(node.hasAttribute("data-entrance")).toBe(false);
+  expect(node.parentElement?.closest("[data-entrance]")).toBeNull();
+  expect(header.getAttribute("data-entrance")).toBe("y4");
   const input = screen.getByRole("textbox", { name: "Draft" });
   // Edits during the motion keep the same dialog and control identity.
   fireEvent.change(input, { target: { value: "draft while entering" } });
   expect(dialog()).toBe(node);
   expect(screen.getByRole("textbox", { name: "Draft" })).toBe(input);
-  expect(node.getAttribute("data-entrance")).toBe("y4");
-  dispatch(node);
-  expect(node.getAttribute("data-entrance")).toBeNull();
+  expect(header.getAttribute("data-entrance")).toBe("y4");
+  dispatch(header);
+  expect(header.getAttribute("data-entrance")).toBeNull();
   fireEvent.change(input, { target: { value: "draft afterwards" } });
-  expect(node.getAttribute("data-entrance")).toBeNull();
+  expect(header.getAttribute("data-entrance")).toBeNull();
   // Dismissal is immediate with no exit animation; reopening replays.
   fireEvent.click(screen.getByRole("button", { name: /^Close/ }));
   expect(document.querySelector("dialog.settings-task-dialog")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open task" }));
-  expect(dialog().getAttribute("data-entrance")).toBe("y4");
+  expect(dialog().hasAttribute("data-entrance")).toBe(false);
+  expect(taskHeader().getAttribute("data-entrance")).toBe("y4");
 });
 
 it("moves only the task heading for heading-only categories", () => {
@@ -231,18 +236,19 @@ it("settles a task entrance when Animation turns Off mid-flight without replay",
   taskHarness(EntranceTarget.Surface);
   fireEvent.click(screen.getByRole("button", { name: "Open task" }));
   const node = dialog();
+  const header = taskHeader();
   const input = screen.getByRole("textbox", { name: "Draft" });
-  expect(node.getAttribute("data-entrance")).toBe("y4");
+  expect(header.getAttribute("data-entrance")).toBe("y4");
   await act(async () => {
     document.documentElement.dataset.animation = "false";
     await Promise.resolve();
   });
-  expect(node.getAttribute("data-entrance")).toBeNull();
+  expect(header.getAttribute("data-entrance")).toBeNull();
   await act(async () => {
     document.documentElement.dataset.animation = "true";
     await Promise.resolve();
   });
-  expect(node.getAttribute("data-entrance")).toBeNull();
+  expect(header.getAttribute("data-entrance")).toBeNull();
   expect(dialog()).toBe(node);
   expect(screen.getByRole("textbox", { name: "Draft" })).toBe(input);
 });
