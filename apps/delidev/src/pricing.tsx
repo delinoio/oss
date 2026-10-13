@@ -94,7 +94,9 @@ export function compactRateRows(basis?: TokenPricing): CompactRateRow[] {
     return [inputRow, cachedRow, outputRow];
   }
   return [
-    basis ? { ...inputRow, note: copy("pricing.unknownMode_892fdb") } : inputRow,
+    basis
+      ? { ...inputRow, note: copy("pricing.unknownMode_892fdb") }
+      : inputRow,
     cachedRow,
     outputRow,
   ];

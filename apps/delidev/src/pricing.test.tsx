@@ -3,7 +3,14 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   InputPricingMode,
@@ -313,9 +320,17 @@ function compactBasis(kind: CompactCase) {
   };
   switch (kind) {
     case CompactCase.UniformPresent:
-      return { ...base, inputMode: InputPricingMode.UNIFORM, inputPerMillion: "2.5" };
+      return {
+        ...base,
+        inputMode: InputPricingMode.UNIFORM,
+        inputPerMillion: "2.5",
+      };
     case CompactCase.UniformZero:
-      return { ...base, inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0" };
+      return {
+        ...base,
+        inputMode: InputPricingMode.UNIFORM,
+        inputPerMillion: "0",
+      };
     case CompactCase.UniformMissing:
       return { ...base, inputMode: InputPricingMode.UNIFORM };
     case CompactCase.DiscountPresent:
@@ -357,14 +372,38 @@ function rateRow(label: string) {
 for (const locale of ["en", "ko"] as const) {
   const t = compactLabels[locale];
   for (const [kind, expected] of [
-    [CompactCase.UniformPresent, { input: "USD 2.5 / 1M", cached: undefined, note: t.uniform }],
-    [CompactCase.UniformZero, { input: "USD 0 / 1M", cached: undefined, note: t.uniform }],
-    [CompactCase.UniformMissing, { input: t.unavailable, cached: undefined, note: t.uniform }],
-    [CompactCase.DiscountPresent, { input: "USD 2.5 / 1M", cached: "USD 0.5 / 1M", note: undefined }],
-    [CompactCase.DiscountZero, { input: "USD 2.5 / 1M", cached: "USD 0 / 1M", note: undefined }],
-    [CompactCase.DiscountMissing, { input: "USD 2.5 / 1M", cached: t.unavailable, note: undefined }],
-    [CompactCase.UnknownMode, { input: "USD 2.5 / 1M", cached: t.unavailable, note: t.unknown }],
-    [CompactCase.AbsentBasis, { input: t.unavailable, cached: t.unavailable, note: undefined }],
+    [
+      CompactCase.UniformPresent,
+      { input: "USD 2.5 / 1M", cached: undefined, note: t.uniform },
+    ],
+    [
+      CompactCase.UniformZero,
+      { input: "USD 0 / 1M", cached: undefined, note: t.uniform },
+    ],
+    [
+      CompactCase.UniformMissing,
+      { input: t.unavailable, cached: undefined, note: t.uniform },
+    ],
+    [
+      CompactCase.DiscountPresent,
+      { input: "USD 2.5 / 1M", cached: "USD 0.5 / 1M", note: undefined },
+    ],
+    [
+      CompactCase.DiscountZero,
+      { input: "USD 2.5 / 1M", cached: "USD 0 / 1M", note: undefined },
+    ],
+    [
+      CompactCase.DiscountMissing,
+      { input: "USD 2.5 / 1M", cached: t.unavailable, note: undefined },
+    ],
+    [
+      CompactCase.UnknownMode,
+      { input: "USD 2.5 / 1M", cached: t.unavailable, note: t.unknown },
+    ],
+    [
+      CompactCase.AbsentBasis,
+      { input: t.unavailable, cached: t.unavailable, note: undefined },
+    ],
   ] as const) {
     it(`renders the compact ${kind} summary in ${locale}`, async () => {
       const f = fixture(true);
@@ -380,10 +419,9 @@ for (const locale of ["en", "ko"] as const) {
         );
         await waitFor(() =>
           expect(
-            within(rateRow(t.input)).getByText(
-              expected.input,
-              { exact: false },
-            ),
+            within(rateRow(t.input)).getByText(expected.input, {
+              exact: false,
+            }),
           ).toBeTruthy(),
         );
         const input = rateRow(t.input);
@@ -399,8 +437,7 @@ for (const locale of ["en", "ko"] as const) {
               document.querySelector(".usage-price-rates") as HTMLElement,
             ).queryByText(t.cached, { selector: "dt" }),
           ).toBeNull();
-        else
-          expect(rateRow(t.cached).textContent).toContain(expected.cached);
+        else expect(rateRow(t.cached).textContent).toContain(expected.cached);
         expect(rateRow(t.output).textContent).toContain(
           basis ? "USD 4 / 1M" : t.unavailable,
         );
