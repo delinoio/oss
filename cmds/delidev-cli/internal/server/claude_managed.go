@@ -855,14 +855,29 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: id}, err
 	})
+	if err == nil && s.claudeFinishAck != nil {
+		// Test seam for a commit whose acknowledgment never reached this goroutine.
+		err = s.claudeFinishAck()
+	}
 	if err != nil {
 		if vaultPut {
-			// The metadata commit is unknown; remove only the staged generation.
-			if e := cleanupSubscriptionReferences(ctx, vault, id, o.Generation); e != nil {
+			// The metadata commit may or may not have happened. Read the account
+			// before touching the staged token: a published generation must keep it.
+			published, e := s.reconcileManagedClaudeStaging(id, o, vault)
+			switch {
+			case e != nil:
+				// Unproven either way, so nothing is deleted. A committed login keeps its
+				// cleanup checkpoint; an uncommitted one is fenced and recovery removes
+				// every reference of the account.
 				s.logger.Warn("claude_managed_staging_cleanup_pending", "operation_id", o.ID, "code", domain.SafeError(e).Code)
+			case published:
+				s.logger.WarnContext(ctx, "claude_managed_finish_commit_confirmed", "operation_id", o.ID, "code", domain.SafeError(err).Code)
+				err = nil
 			}
 		}
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	keep := o.Generation
 	if success {
@@ -885,6 +900,42 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 	}
 	s.logger.InfoContext(ctx, "claude_managed_finished", "account_id", id, "operation_id", o.ID, "action", o.Action, "state", result, "cleanup_confirmed", cleanup)
 	return nil
+}
+
+// managedClaudePublished reports whether the login receipt of o is committed:
+// the account is connected under exactly the staged generation of o.
+func managedClaudePublished(a domain.Account, o domain.ServerSubscriptionOperation) bool {
+	if !a.ManagedClaudeAccount() || o.Action != domain.SubscriptionLogin || a.Connection == nil {
+		return false
+	}
+	st := a.Subscription
+	current := st.ServerOperation
+	return current != nil && current.ID == o.ID && current.State == domain.SubscriptionSucceeded && st.Generation == o.FinishID && a.Connection.ID == o.FinishID
+}
+
+// reconcileManagedClaudeStaging resolves an ambiguous finish commit from the
+// stored account on a fresh bounded context. A published generation keeps its
+// vault token. An unpublished staged token is removed. The caller holds the
+// account gate, so no other managed operation can change the account between
+// the read and the deletion. A read or deletion error leaves the token in place.
+func (s *Service) reconcileManagedClaudeStaging(id domain.ID, o domain.ServerSubscriptionOperation, vault accountSecrets) (published bool, err error) {
+	ctx, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 10*time.Second)
+	defer cancel()
+	err = s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, e := accountFromTx(tx, id, 0)
+		if e != nil {
+			return e
+		}
+		published = managedClaudePublished(a, o)
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if published {
+		return true, nil
+	}
+	return false, cleanupSubscriptionReferences(ctx, vault, id, o.Generation)
 }
 
 // retireManagedClaudeReferences deletes every vault reference except keep, then

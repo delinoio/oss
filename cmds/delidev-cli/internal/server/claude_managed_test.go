@@ -916,3 +916,79 @@ func TestManagedClaudeLogoutDeadlineStartsAfterTheOriginalLeaseClears(t *testing
 		t.Fatalf("logout state %v", got.State)
 	}
 }
+
+// A commit that reached SQLite but whose acknowledgment was lost must keep the
+// staged token: the account is already connected and ready under that generation.
+func TestManagedClaudeAmbiguousFinishCommitKeepsThePublishedToken(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	f.secrets.values[stale] = []byte("stale-generation")
+	f.service.claudeFinishAck = func() error {
+		return domain.Fail(domain.Unavailable, "The commit acknowledgment was lost.", "")
+	}
+	generation := f.connect()
+	current := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	_, account := f.record()
+	o := account.Subscription.ServerOperation
+	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.Generation != generation || generation != o.FinishID || o.State != domain.SubscriptionSucceeded || account.Subscription.RecoveryRequired {
+		t.Fatal("a lost commit acknowledgment unsettled the published login")
+	}
+	if len(f.secrets.values[current]) == 0 {
+		t.Fatal("the published token was deleted after an ambiguous commit error")
+	}
+	// Reconciliation continues the normal retirement of obsolete references.
+	if len(f.secrets.values[stale]) != 0 || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
+		t.Fatal("a confirmed publication did not retire stale references")
+	}
+	raw := f.secrets.values[current]
+	opened, err := subscription.OpenClaudeToken(raw, f.service.Identity.ServerID, f.input.AccountID, generation)
+	if err != nil || string(opened.Token) != managedFixtureToken {
+		t.Fatalf("the retained envelope is not the sealed token: %v", err)
+	}
+	opened.Clear()
+}
+
+// A finish that definitely did not commit never connected the account, so its
+// staged token is removed and recovery settles the operation without relaunch.
+func TestManagedClaudeUncommittedFinishRemovesTheStagedToken(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	f.secrets.afterPut = func() {
+		// A concurrent fence makes the metadata transaction fail before it commits.
+		_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.fence", nil, func(tx *store.Tx) (any, error) {
+			r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+			if err != nil {
+				return nil, err
+			}
+			a.Subscription.RecoveryRequired = true
+			a.Health = domain.AccountFailed
+			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+			return nil, err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	op, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.run()
+	close(f.native.ready)
+	close(f.native.finish)
+	awaitServerFixture(t, done)
+	_, account := f.record()
+	if account.Connection != nil || account.Subscription.Generation != "" || account.Health == domain.AccountReady {
+		t.Fatal("an uncommitted finish connected the account")
+	}
+	if f.secrets.puts == 0 {
+		t.Fatal("the fixture never staged a token")
+	}
+	for ref, value := range f.secrets.values {
+		if ref.Owner == f.input.AccountID && len(value) != 0 && !f.secrets.removed[ref] {
+			t.Fatal("an unpublished staged token stayed in the vault")
+		}
+	}
+	if got := f.progressFor(op.OperationId); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_RECOVERY_REQUIRED {
+		t.Fatalf("state %v", got.State)
+	}
+}

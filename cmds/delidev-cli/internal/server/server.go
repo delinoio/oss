@@ -129,6 +129,7 @@ type Service struct {
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
 	claudeSetupOpen               managedClaudeOpener
+	claudeFinishAck               func() error
 	quotaOpen                     serverQuotaOpener
 	creditOpen                    serverCreditOpener
 	subscriptionCallbackTransport http.RoundTripper
