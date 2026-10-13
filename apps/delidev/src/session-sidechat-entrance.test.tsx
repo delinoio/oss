@@ -3,7 +3,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   EntityKind,
@@ -101,12 +107,7 @@ function setup() {
           <SessionNameEditorProvider>
             <SessionTabsProvider>
               <Capture />
-              <SessionView
-                id={parentId}
-                draft=""
-                setDraft={() => {}}
-                active
-              />
+              <SessionView id={parentId} draft="" setDraft={() => {}} active />
             </SessionTabsProvider>
           </SessionNameEditorProvider>
         </MutationIntents>
