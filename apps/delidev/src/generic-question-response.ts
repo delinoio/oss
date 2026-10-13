@@ -46,9 +46,7 @@ function validText(value: unknown, max: number, required: boolean): boolean {
   if (typeof value !== "string" || value.includes("\0")) return false;
   const bytes = utf8Length(value);
   return (
-    bytes !== undefined &&
-    bytes <= max &&
-    !(required && GO_BLANK.test(value))
+    bytes !== undefined && bytes <= max && !(required && GO_BLANK.test(value))
   );
 }
 
@@ -85,7 +83,9 @@ export interface GenericQuestion {
 
 /** Mirrors Question.UnmarshalJSON required fields plus QuestionRequest.Validate.
  * Returns the response-relevant view, or undefined for an invalid request. */
-export function genericQuestions(request: unknown): GenericQuestion[] | undefined {
+export function genericQuestions(
+  request: unknown,
+): GenericQuestion[] | undefined {
   const questions = object(request).questions;
   if (
     !Array.isArray(questions) ||

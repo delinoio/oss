@@ -104,7 +104,9 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
     { claim: { id: newRequestId() } },
     { claim: { ...acceptedResponse.claim, device_id: "device" } },
     { claim: { ...acceptedResponse.claim, claimed_at: "yesterday" } },
-    { claim: { ...acceptedResponse.claim, claimed_at: "2026-02-30T03:04:05Z" } },
+    {
+      claim: { ...acceptedResponse.claim, claimed_at: "2026-02-30T03:04:05Z" },
+    },
     { id: undefined },
     { id: "not-a-uuid" },
     { input: undefined },
@@ -413,18 +415,18 @@ const expectRejected = (data: Record<string, unknown>, label: string) => {
   expect(projection.unavailable, label).toBe(true);
   expect(displayed, label).toBe(true);
   // A matching retained mutation keeps recovery visible independently.
-  expect(displayedInteraction(projection, new Set([projection.mutationKey]))).toBe(
-    true,
-  );
+  expect(
+    displayedInteraction(projection, new Set([projection.mutationKey])),
+  ).toBe(true);
 };
 const expectRetired = (data: Record<string, unknown>, label: string) => {
   const { projection, retired, displayed } = projectionOf(data);
   expect(retired, label).toBe(true);
   expect(projection.unavailable, label).toBe(false);
   expect(displayed, label).toBe(false);
-  expect(displayedInteraction(projection, new Set([projection.mutationKey]))).toBe(
-    true,
-  );
+  expect(
+    displayedInteraction(projection, new Set([projection.mutationKey])),
+  ).toBe(true);
 };
 
 it("rejects normalized or malformed accepted_at and claimed_at timestamps", () => {
@@ -448,7 +450,10 @@ it("rejects normalized or malformed accepted_at and claimed_at timestamps", () =
     "2026-01-02T03:04:05.1234567890Z",
   ];
   for (const value of invalid) {
-    expectRejected(withResponse({ accepted_at: value }), `accepted_at ${value}`);
+    expectRejected(
+      withResponse({ accepted_at: value }),
+      `accepted_at ${value}`,
+    );
     expectRejected(withClaim({ claimed_at: value }), `claimed_at ${value}`);
   }
 });
@@ -563,16 +568,42 @@ it("rejects accepted generic questions whose original request is invalid", () =>
   const answers = { original: [] };
   const requests: [string, Record<string, unknown>[]][] = [
     ["no questions", []],
-    ["129 questions", Array.from({ length: 129 }, (_, i) => question({ id: `q${i}` }))],
+    [
+      "129 questions",
+      Array.from({ length: 129 }, (_, i) => question({ id: `q${i}` })),
+    ],
     ["duplicate ids", [question(), question()]],
     ["blank id", [question({ id: " " })]],
     ["oversized id", [question({ id: bytes(129) })]],
     ["missing header", [question({ header: undefined })]],
     ["missing other", [question({ other: undefined })]],
     ["missing secret", [question({ secret: undefined })]],
-    ["129 options", [question({ options: Array.from({ length: 129 }, (_, i) => ({ label: `o${i}`, description: "" })) })]],
-    ["duplicate option labels", [question({ options: [{ label: "A", description: "" }, { label: "A", description: "" }] })]],
-    ["blank option label", [question({ options: [{ label: " ", description: "" }] })]],
+    [
+      "129 options",
+      [
+        question({
+          options: Array.from({ length: 129 }, (_, i) => ({
+            label: `o${i}`,
+            description: "",
+          })),
+        }),
+      ],
+    ],
+    [
+      "duplicate option labels",
+      [
+        question({
+          options: [
+            { label: "A", description: "" },
+            { label: "A", description: "" },
+          ],
+        }),
+      ],
+    ],
+    [
+      "blank option label",
+      [question({ options: [{ label: " ", description: "" }] })],
+    ],
     ["missing option description", [question({ options: [{ label: "A" }] })]],
     ["non-array options", [question({ options: "A" })]],
   ];
@@ -634,7 +665,10 @@ it("counts Go JSON escaping toward the complete response bound", () => {
   // "<" is one byte raw but six bytes once Go HTML-escapes it, so this
   // 100000-character answer expands to 600000 bytes and exceeds the bound.
   expectRejected(accepting(free, { original: ["<".repeat(100000)] }), "<");
-  expectRejected(accepting(free, { original: ["\u2028".repeat(50000)] }), "u2028");
+  expectRejected(
+    accepting(free, { original: ["\u2028".repeat(50000)] }),
+    "u2028",
+  );
   expectRetired(accepting(free, { original: ["<".repeat(40000)] }), "40000 <");
 });
 it("keeps invalid generic accepted rows compact through eviction and receipt projection", () => {
@@ -644,29 +678,42 @@ it("keeps invalid generic accepted rows compact through eviction and receipt pro
   expect(projection.presentation).toBe(InteractionPresentation.Pending);
   expect(projection.unavailable).toBe(true);
   // Payload evicted: the compact receipt is retained without a mutation.
-  const receipts = missingQuestionReceipts(store.entries(), new Set(), new Set(), new Set());
+  const receipts = missingQuestionReceipts(
+    store.entries(),
+    new Set(),
+    new Set(),
+    new Set(),
+  );
   expect(receipts.map(([requestId]) => requestId)).toEqual([id]);
   // An older valid payload cannot revive or retire it.
-  const older = store.observe(row(accepting([question()], { original: ["A"] }), 10n));
+  const older = store.observe(
+    row(accepting([question()], { original: ["A"] }), 10n),
+  );
   expect(older).toBe(projection);
   expect(
     missingQuestionReceipts(store.entries(), new Set(), new Set(), new Set()),
   ).toHaveLength(1);
   // A valid higher revision retires normally, and retained mutations stay visible.
-  const fixed = store.observe(row(accepting([question()], { original: ["A"] }), 12n));
+  const fixed = store.observe(
+    row(accepting([question()], { original: ["A"] }), 12n),
+  );
   expect(fixed.presentation).toBe(InteractionPresentation.Retired);
   expect(
     missingQuestionReceipts(store.entries(), new Set(), new Set(), new Set()),
   ).toHaveLength(0);
   expect(
-    missingQuestionReceipts(store.entries(), new Set(), new Set(), new Set([fixed.mutationKey])),
+    missingQuestionReceipts(
+      store.entries(),
+      new Set(),
+      new Set(),
+      new Set([fixed.mutationKey]),
+    ),
   ).toHaveLength(1);
 });
 
 it("matches the Go encoding/json byte size of the complete response", () => {
   // Reference: Go json.Marshal of {Answers: {"id<": [s, "b"], "q": []}} is 108.
-  const s =
-    '"\\\b\f\n\r\t\x01\x1f\x7f<>&\u2028\u2029\u00e9\u20ac\u{1F600} z';
+  const s = '"\\\b\f\n\r\t\x01\x1f\x7f<>&\u2028\u2029\u00e9\u20ac\u{1F600} z';
   const ids = ["id<", "q"].map((qid) => ({
     id: qid,
     other: true,
