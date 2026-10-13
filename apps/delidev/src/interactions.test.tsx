@@ -463,10 +463,15 @@ it("keeps the Agent question heading for retained questions whose newer revision
         family,
       ).toBeTruthy();
       expect(screen.queryByText("Native approval"), family).toBeNull();
-      expect(screen.getByText(/The operation is unavailable/), family).toBeTruthy();
+      expect(
+        screen.getByText(/The operation is unavailable/),
+        family,
+      ).toBeTruthy();
       expect(screen.queryByRole("checkbox"), family).toBeNull();
       expect(screen.queryByRole("textbox"), family).toBeNull();
-      expect(screen.queryByRole("button", { name: /Accept|Decline/ })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Accept|Decline/ }),
+      ).toBeNull();
       mounted.unmount();
     }
   }
