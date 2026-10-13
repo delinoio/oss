@@ -20,7 +20,8 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@connectrpc/connect-query";
+import { createConnectQueryKey, useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
   BrowserQuery,
@@ -51,6 +52,20 @@ enum BrowserAction {
   Hide = "hide",
 }
 /** Native-local page operations. Only Create and Close mutate a page. */
+// The read-only profile enumeration state. Only Found and Absent admit a new
+// page: Absent is a settled read with no matching profile and no further token.
+enum ProfileDiscovery {
+  Loading = "loading",
+  Paginating = "paginating",
+  Failed = "failed",
+  Found = "found",
+  Absent = "absent",
+}
+enum DiscoveryProof {
+  Absent = "absent",
+  Failed = "failed",
+}
+
 enum PageAction {
   Inventory = "inventory",
   Create = "create",
@@ -383,6 +398,7 @@ function NativeSessionBrowser({
   accountId: string;
 } & TabbedBrowser) {
   useLocale();
+  const queryClient = useQueryClient();
   // An explicit activation is the rising edge of "the session is visible and a
   // page is selected", derived from props only. It never follows the
   // asynchronous inventory, native observation or `needsPresentation`, so a
@@ -415,7 +431,18 @@ function NativeSessionBrowser({
   // the last mutation settled may align the descriptors.
   const mutationEpoch = useRef(0);
   const [profilePage, setProfilePage] = useState("");
-  const profileTokens = useRef(new Set<string>());
+  // The terminal enumeration proof for one account; cleared whenever the walk
+  // continues or is explicitly retried.
+  const [proof, setProof] = useState<{
+    accountId: string;
+    kind: DiscoveryProof;
+  }>();
+  // Re-runs the read-only initial inventory after a failed read.
+  const [inventoryRetry, setInventoryRetry] = useState(0);
+  // Every settled profile page of the current walk, keyed by its request token.
+  const profileWalk = useRef(
+    new Map<string, { matches: BrowserProfile[]; next: string }>(),
+  );
   const needsPresentation = useRef(false);
   needsPresentation.current = Boolean(
     selectedPage &&
@@ -481,26 +508,93 @@ function NativeSessionBrowser({
       const matching = profiles.data.profiles.filter(
         (profile) => profile.accountId === accountId,
       );
-      if (matching.length > 1)
+      // Pages are keyed by their request token, so re-processing the same
+      // settled page is idempotent. The first page has the empty token.
+      profileWalk.current.set(profilePage, {
+        matches: matching,
+        next: profiles.data.nextPageToken,
+      });
+      const walked = [...profileWalk.current.values()];
+      const found = walked.flatMap((page) => page.matches);
+      if (found.length > 1)
         throw new Error("Browser profile proof is unavailable.");
-      if (matching.length) setProfileId(browserProfile(matching[0], accountId));
-      else if (profiles.data.nextPageToken) {
-        if (
-          profileTokens.current.has(profiles.data.nextPageToken) ||
-          profileTokens.current.size >= 64
-        )
+      const next = profiles.data.nextPageToken;
+      if (next) {
+        // A found profile stays a candidate: a later page could still hold a
+        // second matching profile, so only the terminal page admits it. The
+        // walk is bounded to 64 pages, so a token returned by page 64 or a
+        // repeated token is invalid proof.
+        if (profileWalk.current.has(next) || profileWalk.current.size >= 64)
           throw new Error("Browser profile proof is unavailable.");
-        profileTokens.current.add(profiles.data.nextPageToken);
-        setProfilePage(profiles.data.nextPageToken);
+        setProof(undefined);
+        setProfilePage(next);
+      } else if (found.length) {
+        setProfileId(browserProfile(found[0], accountId));
       } else {
         // This account has no retained profile, so no page descriptor of an
         // earlier account's profile can remain in the workspace.
         tabsStore.reconcilePages(session.id, "", []);
+        setProof({ accountId, kind: DiscoveryProof.Absent });
       }
     } catch {
       setFailure(ownedMessage("session-browser.extra.5092c54369dd"));
+      setProof({ accountId, kind: DiscoveryProof.Failed });
     }
   }, [profiles.data, profiles.isFetching, profileId, accountId]);
+  const currentProof = proof?.accountId === accountId ? proof.kind : undefined;
+  const discovery: ProfileDiscovery = profileId
+    ? ProfileDiscovery.Found
+    : profiles.isFetching
+      ? profilePage
+        ? ProfileDiscovery.Paginating
+        : ProfileDiscovery.Loading
+      : profiles.error || currentProof === DiscoveryProof.Failed
+        ? ProfileDiscovery.Failed
+        : currentProof === DiscoveryProof.Absent
+          ? ProfileDiscovery.Absent
+          : profilePage
+            ? ProfileDiscovery.Paginating
+            : ProfileDiscovery.Loading;
+  // A discovered profile also needs an observed inventory: an unread inventory
+  // is unknown, never an empty one.
+  const inventoryKnown = state !== undefined;
+  // A failed inventory read invalidates the earlier observation until a later
+  // read succeeds, so a stale inventory never admits a Create.
+  const admitted = profileId
+    ? inventoryKnown && !inventoryFailure
+    : discovery === ProfileDiscovery.Absent;
+  // Re-reads profiles from the first page only; no mutation is repeated.
+  const restartDiscovery = (
+    phase: "discovery_retry" | "discovery_reactivated",
+  ) => {
+    console.info("delidev.browser_profiles", { phase });
+    setFailure(undefined);
+    setProof(undefined);
+    profileWalk.current.clear();
+    // Successful profile pages stay fresh in the query cache, so a restarted
+    // walk would replay them without any list request. Invalidate every cached
+    // page first; the invalidated first-page query then refetches on mount.
+    void queryClient.invalidateQueries({
+      queryKey: createConnectQueryKey({
+        schema: BrowserQuery.listBrowserProfiles,
+        cardinality: "finite",
+      }),
+      refetchType: "none",
+    });
+    if (profilePage) setProfilePage("");
+    else void profiles.refetch();
+  };
+  const retryDiscovery = () => restartDiscovery("discovery_retry");
+  // Re-enabling the query refetches only the current page, which would pair a
+  // fresh page with entries retained from before the session was inactive, so
+  // a reactivated session restarts its unresolved walk from the first page.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    const reactivated = active && !wasActive.current;
+    wasActive.current = active;
+    if (reactivated && supported && !profileId && idPattern.test(accountId))
+      restartDiscovery("discovery_reactivated");
+  }, [active]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -707,6 +801,7 @@ function NativeSessionBrowser({
       !idPattern.test(accountId) ||
       registration.busy ||
       registration.uncertain ||
+      !admitted ||
       state?.removal_pending ||
       (state?.tabs.tabs.length ?? 0) >= pageLimit
     )
@@ -837,7 +932,7 @@ function NativeSessionBrowser({
       window.clearInterval(operations);
       window.clearInterval(inventories);
     };
-  }, [profileId, active, Boolean(operation)]);
+  }, [profileId, active, Boolean(operation), inventoryRetry]);
   // The toolbar address follows the selected page's observed URL.
   const selectedUrl = state?.tabs.tabs.find(
     (page) =>
@@ -1310,7 +1405,15 @@ function NativeSessionBrowser({
         ? copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")
         : atLimit
           ? copy("session-browser.pageLimit")
-          : undefined;
+          : profileId
+            ? inventoryKnown || inventoryFailure
+              ? undefined
+              : copy("session-browser.inventoryPending")
+            : discovery === ProfileDiscovery.Failed
+              ? copy("session-browser.discoveryFailed")
+              : discovery === ProfileDiscovery.Absent
+                ? undefined
+                : copy("session-browser.discoveryPending");
   return (
     <>
       {statusContent
@@ -1423,6 +1526,7 @@ function NativeSessionBrowser({
             !idPattern.test(accountId) ||
             registration.busy ||
             registration.uncertain ||
+            !admitted ||
             state?.removal_pending ||
             atLimit ||
             (operation && operation.action !== PageAction.Create),
@@ -1451,6 +1555,29 @@ function NativeSessionBrowser({
             </button>
           ) : null}
           <Problem error={registration.error} />
+          {!profileId && discovery === ProfileDiscovery.Failed ? (
+            <button
+              type="button"
+              disabled={profiles.isFetching}
+              onClick={retryDiscovery}
+            >
+              {copy("session-browser.retryProfileRead")}
+            </button>
+          ) : null}
+          {profileId && inventoryFailure ? (
+            <>
+              <p role="alert">{inventoryFailure}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  // The failure stays until a read succeeds and replaces it.
+                  setInventoryRetry((n) => n + 1);
+                }}
+              >
+                {copy("session-browser.retryInventoryRead")}
+              </button>
+            </>
+          ) : null}
           {operationFailure ? <p role="alert">{operationFailure}</p> : null}
           {createPending ? operationNotice : null}
         </NewPageDialog>
