@@ -421,6 +421,8 @@ impl Lease {
             Problem::WriteFailed
         })?;
         validate_sidecar(&file.metadata().map_err(|_| Problem::WriteFailed)?)?;
+        #[cfg(windows)]
+        validate_windows_single_link(&file)?;
         let mut attempt = 1;
         loop {
             match file.try_lock() {
@@ -480,6 +482,10 @@ impl Lease {
                 .custom_flags(0x00200000) // FILE_FLAG_OPEN_REPARSE_POINT
                 .open(lock_path)
                 .map_err(|_| Problem::WriteFailed)?;
+            // The path-based metadata cannot report the NTFS link count, so
+            // read it from both handles and reject a hard-linked sidecar.
+            validate_windows_single_link(&self.file)?;
+            validate_windows_single_link(&current)?;
             let locked = windows_file_identity(&self.file)?;
             if locked != windows_file_identity(&current)? {
                 tracing::warn!(
@@ -576,6 +582,39 @@ fn windows_file_identity(file: &File) -> Result<WindowsFileIdentity, Problem> {
         file_index: (u64::from(information.nFileIndexHigh) << 32)
             | u64::from(information.nFileIndexLow),
     })
+}
+
+/// Rejects a Windows sidecar that has more than one hard link.
+///
+/// `fs::Metadata` does not expose the NTFS link count on stable Rust, so it is
+/// read from the open handle. This mirrors the Unix `nlink() != 1` check and
+/// fails closed when the count cannot be read.
+#[cfg(windows)]
+fn validate_windows_single_link(file: &File) -> Result<(), Problem> {
+    use std::os::windows::io::AsRawHandle;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+    let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is owned by `file` for the duration of the call and
+    // `information` is a valid, writable out-pointer.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
+        tracing::warn!(
+            operation = "creation_preferences_lease",
+            code = "lease-link-count-unavailable"
+        );
+        return Err(Problem::WriteFailed);
+    }
+    if information.nNumberOfLinks != 1 {
+        tracing::warn!(
+            operation = "creation_preferences_lease",
+            code = "lease-hard-linked",
+            links = information.nNumberOfLinks
+        );
+        return Err(Problem::WriteFailed);
+    }
+    Ok(())
 }
 
 impl Drop for Lease {
