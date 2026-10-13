@@ -30,6 +30,7 @@ tracing = "0.1"
 uuid = { version = "=1.23.0", features = ["serde", "v7"] }
 zeroize = "=1.8.2"
 url = "=2.5.8"
+plist = "=1.10.0"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", default-features = false, features = ["compression", "tray-icon", "unstable"], optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "json"], optional = true }
 tokio = { version = "=1.49.0", features = ["sync", "time", "rt", "macros"], optional = true }

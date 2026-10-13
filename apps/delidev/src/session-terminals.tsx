@@ -46,6 +46,13 @@ import type { TerminalScreen } from "./terminal-emulator";
 import { TerminalInputQueue } from "./terminal-input-queue";
 import { terminalDockHeight } from "./terminal-dock-size";
 import { ServiceProblem, Failure, Problem } from "./ui";
+import {
+  ExternalLinkFailure,
+  externalLinkFailure,
+  externalLinkFailureMessages,
+  openExternalUrl,
+} from "./external-links";
+import "./external-links.css";
 
 export enum TerminalDockPresentation {
   Docked = "docked",
@@ -813,6 +820,7 @@ function TerminalView({
     [state, setState] = useState(OutputState.Connecting),
     [error, setError] = useState<unknown>();
   const [ready, setReady] = useState(false);
+  const [linkFailure, setLinkFailure] = useState<ExternalLinkFailure>();
   const [rendererUnavailable, setRendererUnavailable] = useState(false),
     [gap, setGap] = useState(false),
     [overflow, setOverflow] = useState(false),
@@ -910,6 +918,15 @@ function TerminalView({
           },
           unavailable,
           tabShortcut,
+          (url) => {
+            // One click is one launch request; native code validates and
+            // classifies the URL and never retries or falls back.
+            setLinkFailure(undefined);
+            openExternalUrl(url).catch((failure) => {
+              if (!disposed && alive.current)
+                setLinkFailure(externalLinkFailure(failure));
+            });
+          },
         );
         focusPending.current = true;
         setReady(true);
@@ -1087,6 +1104,20 @@ function TerminalView({
       ) : null}
       {rendererUnavailable ? (
         <p role="alert">{copy("session-terminals.rendererUnavailable")}</p>
+      ) : null}
+      {linkFailure ? (
+        <p role="alert" className="external-link-error">
+          <span>{copy(externalLinkFailureMessages[linkFailure])}</span>
+          <button
+            type="button"
+            aria-label={copy("external-link.dismiss")}
+            onClick={() => setLinkFailure(undefined)}
+          >
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </p>
       ) : null}
       <div
         ref={host}

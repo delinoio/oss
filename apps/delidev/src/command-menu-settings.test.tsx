@@ -169,3 +169,26 @@ it("retains an uncommitted Git policy draft and read identity through same-categ
   expect((checkbox as HTMLInputElement).checked).toBe(checked);
   expect(value.list).toHaveBeenCalledTimes(reads);
 });
+it("offers command navigation to the Browser category and each destination", () => {
+  const openSettings = vi.fn();
+  const commands = applicationCommands({
+    navigate: vi.fn(),
+    navigateHeader: vi.fn(),
+    openSettings,
+    newSession: vi.fn(),
+    newGeneralChat: vi.fn(),
+    newProject: vi.fn(),
+    help: vi.fn(),
+  });
+  const values = commands.map((command) => command.value);
+  expect(values).toContain("settings:browser:category");
+  for (const [value, target] of [
+    ["settings:browser:browser-general", SettingsSearchTarget.BrowserGeneral],
+    ["settings:browser:browser-local", SettingsSearchTarget.BrowserLocal],
+  ] as const) {
+    commands.find((command) => command.value === value)!.run();
+    expect(openSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ category: SettingsCategory.Browser, target }),
+    );
+  }
+});
