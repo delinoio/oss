@@ -510,8 +510,11 @@ export function initialSessionStartup(
   if (phase === SessionProgressPhase.Starting)
     // The original queue row must be current and still owned by this execution;
     // rejected, removed, uncertain, foreign or later rows retain Info.
+    // An empty current queue is missing proof, not vacuous proof: require
+    // exactly the original input row.
     return (
       queueCurrent &&
+      queue.length === 1 &&
       queue.every((input) => {
         const queued = readDocument(input);
         return (

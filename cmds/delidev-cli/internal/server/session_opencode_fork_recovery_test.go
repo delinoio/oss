@@ -224,7 +224,7 @@ func TestOpenCodeForkChildLostReportKeepsIndependentCreation(t *testing.T) {
 }
 
 func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
-	for _, change := range []string{"valid", "missing-job", "digest", "runtime", "child", "selection", "device", "marker", "valid-foreign-marker", "checkpoint", "output"} {
+	for _, change := range []string{"valid", "missing-job", "digest", "runtime", "child", "selection", "device", "marker", "valid-foreign-marker", "checkpoint", "output", "startup-path", "startup-digest", "startup-harness", "startup-missing"} {
 		t.Run(change, func(t *testing.T) {
 			f, child, seed := publishedOpenCodeRecoveryFork(t)
 			f.change.Session = child
@@ -242,6 +242,13 @@ func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
 			}
 			session.Fork.OpenCodeCreationRequestID = ""
 			session.Fork.OpenCodeCreationProof = nil
+			// Recovery compares the current assignment selection with the retained one.
+			current := f.input
+			if current.Startup == nil || session.Fork.Startup == nil || *current.Startup != *session.Fork.Startup {
+				t.Fatal("fixture current startup must equal retained selection", current.Startup, session.Fork.Startup)
+			}
+			selection := *current.Startup
+			current.Startup = &selection
 			_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.legacy-fork-proof", nil, func(tx *store.Tx) (any, error) {
 				original, err := tx.Get(domain.JobKind, session.Fork.JobID)
 				if err != nil {
@@ -284,8 +291,16 @@ func TestOpenCodeForkLegacyCreationRequiresExactOriginalSeed(t *testing.T) {
 					session.Fork.OpenCodeCreationRequestID = domain.NewID()
 				case "marker":
 					session.Fork.OpenCodeCreationRequestID = "invalid-original-marker"
+				case "startup-path":
+					selection.ExplicitPath += "-replacement"
+				case "startup-digest":
+					selection.ExecutableSHA256 = strings.Repeat("ab", 32)
+				case "startup-harness":
+					selection.Harness = domain.Codex
+				case "startup-missing":
+					current.Startup = nil
 				}
-				creation, proofErr := openCodeForkRecoveryCreation(tx, row, session, f.input, seed.RuntimeID, f.workerDevice)
+				creation, proofErr := openCodeForkRecoveryCreation(tx, row, session, current, seed.RuntimeID, f.workerDevice)
 				if change == "valid" {
 					if proofErr != nil || creation != seed.OpenCode.Fork {
 						t.Fatal("exact legacy original seed not resolved", proofErr)
@@ -419,6 +434,75 @@ func TestOpenCodeForkForeignCreationRejectedBeforeAdmission(t *testing.T) {
 			jobsAfter, listErr := f.service.Store.List(ctx, store.Filter{Kind: domain.JobKind, SessionID: row.ID, Limit: 100})
 			if err != nil || listErr != nil || after.Revision != before.Revision || string(after.Data) != string(before.Data) || len(jobsAfter) != len(jobsBefore) {
 				t.Fatal("rejected foreign marker admitted recovery work or mutated original session", err, listErr)
+			}
+		})
+	}
+}
+
+// A changed current startup selection must be rejected inside recovery admission
+// for the first child turn and later continuation turns without creating work.
+func TestOpenCodeForkChangedStartupRejectedBeforeAdmission(t *testing.T) {
+	for _, turns := range []int{1, 2} {
+		t.Run(fmt.Sprintf("turn-%d", turns), func(t *testing.T) {
+			f, child, _ := publishedOpenCodeRecoveryFork(t)
+			f.change.Session = child
+			ctx := context.Background()
+			for n := 1; n <= turns; n++ {
+				if n == turns {
+					// Record a ready executable digest that differs from the retained Fork
+					// selection; continuation assignments adopt it as their current digest.
+					row := f.refresh(t)
+					if _, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.changed-startup", nil, func(tx *store.Tx) (any, error) {
+						session, err := store.Decode[domain.Session](row)
+						if err != nil {
+							return nil, err
+						}
+						session.Startup = &domain.ExecutionStartupRecord{JobID: domain.NewID(), ExecutionID: domain.NewID(), Ready: &domain.ExecutionStartupObservation{State: domain.StartupReady, Phase: domain.StartupSettings, Harness: domain.OpenCode, ExecutableSHA256: strings.Repeat("ab", 32), Protocol: domain.ProtocolFor(domain.OpenCode), CorrelationID: domain.NewID(), InputDelivery: domain.StartupNotSent}}
+						return tx.Put(row.Kind, row.ID, row.Revision, row.SessionID, row.ProjectID, session)
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				f.enqueue(t, "Ordinary child input.", domain.ExecuteMode)
+				if n == 1 {
+					f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+				} else if err := f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
+					t.Fatal(err)
+				}
+				f.claim(t)
+				f.thread = "ses_01960dcbe1fdabcdefghijklmn"
+				f.turn = domain.ID(fmt.Sprintf("msg_01960dcbe1f%dABCDEFGHIJKLMN", n))
+				f.grant(t)
+				finishOpenCodeRecoveryTurn(t, f, n < turns)
+			}
+			if err := f.workerStream.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.fork-worker-stale", nil, func(tx *store.Tx) (any, error) {
+				return nil, tx.SetWorkerInstance(domain.ID(f.machine.Id), domain.ID(f.workerInstance), time.Now().UTC().Add(-2*time.Minute))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			f.workerInstance = string(domain.NewID())
+			if _, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version})); err != nil {
+				t.Fatal(err)
+			}
+			before := f.refresh(t)
+			session, err := store.Decode[domain.Session](before)
+			if err != nil || session.Fork == nil || session.Fork.OpenCodeCreationProof == nil || session.Fork.Startup == nil {
+				t.Fatal("missing retained publication proof or startup selection", err)
+			}
+			jobsBefore, err := f.service.Store.List(ctx, store.Filter{Kind: domain.JobKind, SessionID: before.ID, Limit: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = sessionClient(f.accountFixture).RecoverSessionExecution(ctx, ownerRequest(f.identity, &pb.RecoverSessionExecutionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID()), ExpectedExecutionId: string(f.input.ExecutionID)})); err == nil {
+				t.Fatal("changed startup selection admitted recovery")
+			}
+			after, err := f.service.Store.Get(ctx, before.Kind, before.ID)
+			jobsAfter, listErr := f.service.Store.List(ctx, store.Filter{Kind: domain.JobKind, SessionID: before.ID, Limit: 100})
+			if err != nil || listErr != nil || after.Revision != before.Revision || string(after.Data) != string(before.Data) || len(jobsAfter) != len(jobsBefore) {
+				t.Fatal("rejected startup change created recovery work or mutated the session", err, listErr)
 			}
 		})
 	}

@@ -1404,6 +1404,12 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
     // unknown receiver of a prototype write may be one of them.
     let mut escaping: HashSet<String> = HashSet::new();
     let mut writes: Vec<(Node, Node, Member)> = Vec::new();
+    // Executable code outside the application cannot be inspected, so any
+    // runtime import of it may replace any built-in member at initialization.
+    // Bundle mode rejects imports outside the bundle before planning.
+    if !crate::app::bundle_mode() && imports_external_runtime(ctx) {
+        patches.add(Owner::Any, Member::Any);
+    }
     for index in 0..ctx.files.len() {
         if ctx.files[index].js {
             let text = &ctx.files[index].text;
@@ -1535,6 +1541,170 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
         }
     }
     patches
+}
+
+/// Node.js core modules. Importing one runs only the host's own code, which
+/// does not replace language built-ins.
+const NODE_CORE_MODULES: [&str; 12] = [
+    "assert", "buffer", "crypto", "events", "fs", "os", "path", "process", "stream", "url", "util",
+    "zlib",
+];
+
+/// How an application module reaches the module a specifier names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ImportTarget {
+    /// An application module; the scan inspects its statements itself.
+    Application,
+    /// A host module or a JSON file that cannot patch built-ins.
+    Inert,
+    /// An external package, a declaration-only package, an ambient module
+    /// declaration or an unresolved specifier. Its runtime code is unknown.
+    Unknown,
+}
+
+/// Classifies a literal module specifier without loading the module.
+fn import_target(ctx: &mut Ctx, importer: &str, specifier: Node) -> ImportTarget {
+    let text = specifier.text();
+    if text.starts_with("node:")
+        || NODE_CORE_MODULES.contains(&text)
+        || text.split('?').next().is_some_and(|p| p.ends_with(".json"))
+    {
+        return ImportTarget::Inert;
+    }
+    let symbol = ctx.checker.get_symbol_at_location(specifier);
+    if symbol.is_nil() {
+        // A side-effect import of a script (a file without imports or
+        // exports) has no module symbol; match relative specifiers against
+        // the application files by path.
+        return if relative_application_file(ctx, importer, text) {
+            ImportTarget::Application
+        } else {
+            ImportTarget::Unknown
+        };
+    }
+    let declarations = ctx.checker.sym(symbol).declarations.to_vec();
+    // An ambient `declare module "x"` inside the application still names
+    // runtime code the compiler cannot see.
+    let Some(file) = declarations
+        .first()
+        .copied()
+        .filter(|d| d.kind() == SyntaxKind::SourceFile)
+    else {
+        return ImportTarget::Unknown;
+    };
+    let name = source_file_info(file).file_name.clone();
+    if name.ends_with(".json") {
+        ImportTarget::Inert
+    } else if ctx.file_of(&name).is_some() {
+        ImportTarget::Application
+    } else {
+        ImportTarget::Unknown
+    }
+}
+
+/// Whether a relative specifier names an application file, matching the
+/// extension substitutions and index files TypeScript tries.
+fn relative_application_file(ctx: &Ctx, importer: &str, specifier: &str) -> bool {
+    if !specifier.starts_with("./") && !specifier.starts_with("../") {
+        return false;
+    }
+    let mut segments: Vec<&str> = importer.split('/').collect();
+    segments.pop();
+    for segment in specifier.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    let base = segments.join("/");
+    let stem = base
+        .rsplit_once('.')
+        .filter(|(_, ext)| matches!(*ext, "js" | "jsx" | "mjs" | "cjs"))
+        .map(|(stem, _)| stem);
+    let mut candidates = vec![base.clone()];
+    for extension in ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"] {
+        candidates.push(format!("{base}.{extension}"));
+        candidates.push(format!("{base}/index.{extension}"));
+        if let Some(stem) = stem {
+            candidates.push(format!("{stem}.{extension}"));
+        }
+    }
+    candidates
+        .iter()
+        .any(|candidate| ctx.file_of(candidate).is_some())
+}
+
+/// Whether any application module has a runtime import, re-export, dynamic
+/// import or `require` of code outside the application. Type-only imports
+/// and re-exports are erased and exempt. The scan reads syntax and resolves
+/// specifiers through the checker; it never executes or reads dependencies.
+fn imports_external_runtime(ctx: &mut Ctx) -> bool {
+    for index in 0..ctx.files.len() {
+        for position in 0..ctx.files[index].nodes.len() {
+            let node = ctx.files[index].nodes[position];
+            let specifier = match node.kind() {
+                SyntaxKind::ImportDeclaration => {
+                    let clause = node.import_clause();
+                    if clause.is_some() && clause.is_type_only() {
+                        continue;
+                    }
+                    node.module_specifier()
+                }
+                SyntaxKind::ExportDeclaration => {
+                    if node.is_type_only() {
+                        continue;
+                    }
+                    node.module_specifier()
+                }
+                SyntaxKind::CallExpression => {
+                    let callee = skip_outer(node.expression());
+                    let dynamic = callee.kind() == SyntaxKind::ImportKeyword;
+                    let require = callee.kind() == SyntaxKind::Identifier
+                        && callee.text() == "require"
+                        && ctx.files[index].js;
+                    if !dynamic && !require {
+                        continue;
+                    }
+                    match node.arguments().first() {
+                        Some(argument)
+                            if matches!(
+                                argument.kind(),
+                                SyntaxKind::StringLiteral
+                                    | SyntaxKind::NoSubstitutionTemplateLiteral
+                            ) =>
+                        {
+                            argument
+                        }
+                        // A computed specifier may load any package.
+                        _ => {
+                            tracing::debug!(
+                                file = %ctx.files[index].name,
+                                "computed module load may run unknown runtime code"
+                            );
+                            return true;
+                        }
+                    }
+                }
+                _ => continue,
+            };
+            if specifier.is_nil() {
+                continue;
+            }
+            let importer = ctx.files[index].name.clone();
+            if import_target(ctx, &importer, specifier) == ImportTarget::Unknown {
+                tracing::debug!(
+                    file = %ctx.files[index].name,
+                    specifier = specifier.text(),
+                    "external runtime import may replace built-ins"
+                );
+                return true;
+            }
+        }
+    }
+    false
 }
 
 const REFLECTION_WRITERS: [&str; 7] = [

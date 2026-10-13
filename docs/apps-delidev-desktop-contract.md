@@ -778,6 +778,10 @@ name/fallback. Muted monospace previews show a literal `> ` prefix with visual
 ellipsis and the complete accessible string. Only Codex's exact leading
 `/bin/zsh -lc ` is hidden in the preview; no shell parsing, trimming, unquoting or
 other rewriting occurs. The full original command remains in collapsed Details.
+A Codex completion whose command or working directory differs from its started
+snapshot (exact string comparison, no normalization) retains the original tool
+fallback; late output, exit code, duration, process metadata and admitted source
+transitions remain accepted.
 
 Expanding a recognized command displays original output directly in inert
 `pre`/`code` blocks. Codex prefers completed aggregate output, including empty
@@ -1534,6 +1538,7 @@ Unsupported-schema Agent display names/aliases are projected only within the exi
 - OpenCode 1.18.32 foreground child reads use the shared Subagents page with independent capability 23. Validate exact native session/message/part identities, the original root task reference, initial task source, same requested/observed model and exact closed response usage. Keep original task JSON inert, reject a malformed complete page and expose no child mutation controls.
 
 - OpenCode Fork presentation requires the independent server capability plus the original macOS/Linux Runner Device capability and completed Build General Chat profile. Retain the accepted operation across navigation; cloned conversation is inherited context with no new input or usage. Follow `cmds-delidev-forks-contract.md` and the desktop contract.
+- Independent Fork presentation for a settled Codex source also requires an empty observed native subagent inventory, matching the OpenCode profile and Side Chat gate. The server rejects every Fork whose source observed subagents, so a nonempty inventory never renders the action; server validation remains authoritative. Follow `cmds-delidev-forks-contract.md`.
 
 - OpenCode Fork presentation reads the complete bounded canonical transcript through authenticated Resource RPC, keyed by exact source revision/native thread and rechecked before submit. Require every retained message to match the plain-text/empty-changes profile; incomplete, repeated, invalid or changed pages cannot expose the action. Go retains independent acceptance/publication authority and the Worker retains native-history proof. Task-only OpenCode child observations remain pending, and automatic compaction references require original native part IDs.
 
@@ -1915,7 +1920,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - New schedule creation presentation is owned by `src/schedule-creation.tsx` and `src/schedule-creation.css` (relative to `apps/delidev`) and follows the previous feature section in `apps-delidev-desktop-contract.md`: creation-only Task/Execution/Repeat/Review wizard with a centered 720px column, noninteractive status indicator, step count and persistent footer and an unobscured main-content action row, mounted collapsed overrides, native radios, explicit catalog states and once-only name focus. Inactive authoring steps stay mounted/hidden/unfocusable and outside native validation, with inventory reads suspended but pagination retained. Next validates/focuses its first invalid control; Back and distinct Review Edit actions preserve drafts without saves. Only Review invokes the original create path after all-step validation/reveal, including collapsed invalid references. Preserve full exact identities, available labels, prompt/reference text, raw cron/timezone and paused/enabled state; review is configuration, not readiness. Lock all navigation while proof/save/uncertain and preserve exact retry. User step changes focus the heading without refetch/reconnect focus theft. Step/frequency/time/weekday/disclosure stay in connection memory, emit only canonical existing Cron fields, preserve raw Custom transitions and invalid Time drafts, and never replace server calendar authority. Preserve strict schema-v1 writes, limits, fresh Local proof, exact uncertain retry and all existing edit/list/detail/history/sidebar behavior. Keep native viewport/zoom evidence separate from component checks.
 
-- Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies only and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `cmds-delidev-sidechat-contract.md`.
+- Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies from the selected answer generation only (superseded same-question retry answers remain read-only history) and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `cmds-delidev-sidechat-contract.md`.
 
 - Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `cmds-delidev-storage-contract.md`.
 
@@ -4829,6 +4834,29 @@ composer focus only when the active visible pending composer owned it at
 publication. Preserve the actual inherited transcript and existing paused/Resume
 behavior. Creation, publication and transfer never enqueue, Resume or send
 findings. Logs contain only operation IDs, closed phases and stable error codes.
+Publication also requires the returned child Session ID to be nonempty and
+different from the original parent ID. A succeeded matching job with a malformed
+readback is treated as unverified: keep the pending draft, request and accepted
+job, show the unverified-status guidance and permit only original-job status
+reinspection. It never publishes a descriptor, relationship or published log and
+never releases preparation state. The connection tab store independently rejects
+an empty child ID or one equal to the parent or an ancestor, so a self-child can
+never mount recursively.
+
+Retry current read appears only when the original parent read itself failed and no
+job state exists. A definite creation rejection with a healthy parent read shows
+its diagnostic, editable draft and guarded Discard without a read retry; a read
+retry refetches only the parent and never resends creation. An explicit replay
+that returns a definite error keeps the original uncertainty.
+
+Open Sidechat from another Session while a pending Sidechat is retained routes the
+application to the original parent through the existing Session navigation callback
+and selects the original pending descriptor, sending no second Fork request,
+input, Resume or findings transfer. Composer focus is deferred until that parent is
+active and visible; a newer reopen or later navigation invalidates the deferred
+callback. Repeating selects the same tab. Automatic publication while backgrounded
+or closed never navigates, reopens presentation or steals focus.
+
 Original account/snapshot/native ownership and dependent cleanup remain in the
 [Sidechat contract](cmds-delidev-sidechat-contract.md#direct-desktop-preparation).
 
@@ -4873,7 +4901,7 @@ Encrypted Worker export starts from its bounded original public recipient and se
 
 Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and disabled saved values on older servers. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
 
-OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. Follow the subagent contract.
+OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. The unsupported-OpenCode update warning derives from a closed harness value retained beside each reached child row's ID/revision, so it survives eviction of the bounded three-page payload window; the retained value carries no output, usage or child authority and is disposed with the original scope. Follow the subagent contract.
 
 Session Context uses authenticated Connect queries for native observations and
 current per-profile compaction eligibility. Bind the observed exact session
@@ -5897,17 +5925,22 @@ compact row after initial input publication. Every hiding path requires the
 durable first-input counter to equal exactly one; an omitted or later counter
 retains Info. Starting agent additionally requires a current queue read whose only
 row is the original input (sequence one, delivery queued, claimed or accepted,
-execution absent or the original execution); a rejected-before-start, removed,
+execution absent or the original execution); a current empty queue is missing
+proof and retains Info, as do a rejected-before-start, removed,
 uncertain, foreign or later row, or a stale queue read, retains Info. A later
 follow-up, replacement execution, unsupported workspace or unknown first-input
 evidence retains Info.
 Every hiding path additionally requires, at the visibility boundary only: a
 complete current transcript, queue and interaction read (payload present, no
-error, not pending, not fetching and no continuation token), and current
+error, not pending, not fetching, no continuation token, and a resident payload
+page for every retained page token), and current
 successful non-blocking session budget evidence. A refresh that retains stale
 pages (`isFetching`) keeps the retained startup presentation but restores Info
 until the read settles; the fence is not applied to the progress projection, so
-routine refreshes cause no startup-list flicker. Pending, absent, failed or
+routine refreshes cause no startup-list flicker. A terminal token proves
+traversal only; when the three-page payload bound has evicted any retained page,
+that read is incomplete and Info stays visible, while the bound and the explicit
+restoration controls are unchanged. Pending, absent, failed or
 unavailable budget evidence, and evidence of another session identity, retain
 Info and its existing Retry; threshold-reached remains blocking. The budget
 controller reports a closed status (Pending, Failed, Ready, Blocked) keyed to the
@@ -6122,7 +6155,15 @@ The original default is collapsed; the existing `reasoning_disclosure` Expanded
 and Collapsed preferences govern initial mount. Explicit user choices and focus
 survive revisions, completion and locale changes. Preserve actual streaming,
 interrupted, failed, recovery and unavailable states. Malformed, mixed and unknown
-records retain the original fallback; OpenCode reasoning-text, Claude thinking
+records retain the original fallback. The dedicated disclosure requires a complete
+valid message envelope: role `artifact`, absent or empty-string `text` (non-string
+text is never coerced), and only the common metadata `execution_id`,
+`native_thread_id`, `native_turn_id`, `native_id`, `native_parent_id`,
+`first_sequence`, `last_sequence`, `context_revision` and `attachments` beside
+`state` and `artifact`. Role-specific fields such as `phase`, `input_id`,
+`inherited`, `turn_timing`, `tool`, `progress`, provider content and unknown
+fields select the generic artifact fallback without stripping or repair.
+OpenCode reasoning-text, Claude thinking
 and other artifacts retain their source-specific rules. Preserve reader gates,
 mounting, measured history wrappers, pagination, scroll anchors and live/history
 ordering. Disclosure adds no reads, execution authority, RPC, schema, migration,
