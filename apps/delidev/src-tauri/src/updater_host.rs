@@ -12,8 +12,8 @@ use delidev_desktop::{
     Connector, NativeFailure,
     oauth::OAuthHost,
     updater::{
-        AcceptedInstallation, Action, DesktopUpdateRequest, Phase, Prepared, PublicResult,
-        ReconcileScope,
+        AcceptedInstallation, Action, BeginOutcome, DesktopUpdateRequest, Phase, Prepared,
+        PublicResult, ReconcileScope,
     },
 };
 use tauri::WebviewWindow;
@@ -133,9 +133,16 @@ fn run_retained(
     let mut pending = task.pending.lock().map_err(|_| NativeFailure::Busy)?;
     *pending = Some((begun, Phase::Uncertain));
     let (accepted, phase) = pending.as_mut().unwrap();
-    *phase = select_phase(check, stopping, budget, interval, || {
-        accepted.install(connector)
-    });
+    *phase = if accepted.is_settlement_only() {
+        // Recovered ownership never reaches the installer and its original
+        // effects are unknown, so it needs no authority check to stay
+        // Uncertain.
+        Phase::Uncertain
+    } else {
+        select_phase(check, stopping, budget, interval, || {
+            accepted.install(connector)
+        })
+    };
     drop(pending);
     task.settle(connector)
 }
@@ -274,10 +281,19 @@ impl UpdateHost {
             },
             &|| false,
         );
+        let scope = ReconcileScope::Original {
+            server,
+            id,
+            revision,
+            saved_connection,
+        };
+        let intents = connector.reconcile_begin_intents(&scope, &|| false);
         tracing::info!(
             operation = "desktop_update_inspect_reconcile",
             settled = report.settled,
-            retained = report.retained
+            retained = report.retained,
+            intents_settled = intents.settled,
+            intents_retained = intents.retained
         );
         Ok(())
     }
@@ -291,11 +307,18 @@ impl UpdateHost {
             let report = connector.reconcile_retained_outcomes(&ReconcileScope::Launch, &|| {
                 host.stopping.load(Ordering::Acquire)
             });
+            // Outcomes settle first so an exact retained phase is never
+            // replaced by an inferred Uncertain from a begin intent.
+            let intents = connector.reconcile_begin_intents(&ReconcileScope::Launch, &|| {
+                host.stopping.load(Ordering::Acquire)
+            });
             tracing::info!(
                 operation = "desktop_update_launch_reconcile",
                 settled = report.settled,
                 retained = report.retained,
-                skipped = report.skipped
+                skipped = report.skipped,
+                intents_settled = intents.settled,
+                intents_retained = intents.retained
             );
             host.recovering.store(false, Ordering::Release);
         });
@@ -620,7 +643,7 @@ pub async fn desktop_update_native(
         let native_original = original.clone();
         let native_host = Arc::clone(&host);
         let task = host.start(move |task| {
-            let begun = c.begin_desktop_installation(
+            let begun = match c.begin_desktop_installation(
                 saved.as_ref(),
                 DesktopUpdateRequest {
                     server: &sid,
@@ -630,7 +653,23 @@ pub async fn desktop_update_native(
                     action: "native-begin",
                     outcome: None,
                 },
-            )?;
+            ) {
+                BeginOutcome::Accepted(begun) => begun,
+                // The response was canceled or lost but the exact original
+                // journal is Installing. Own it for settlement only.
+                BeginOutcome::Recovered {
+                    installation,
+                    cause,
+                } => {
+                    tracing::warn!(
+                        operation = "desktop_update",
+                        phase = "begin-recovered",
+                        ?cause
+                    );
+                    installation
+                }
+                other => return Err(other.failure().unwrap_or(NativeFailure::InvalidEvidence)),
+            };
             run_retained(
                 &task,
                 &c,
@@ -677,6 +716,14 @@ pub async fn desktop_update_native(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn accepted(outcome: BeginOutcome) -> AcceptedInstallation {
+        match outcome {
+            BeginOutcome::Accepted(accepted) => accepted,
+            _ => panic!("expected an accepted original begin"),
+        }
+    }
     #[test]
     fn quit_joins_original_task_after_caller_departure_and_fences_new_admission() {
         let temp = tempfile::tempdir().unwrap();
@@ -733,6 +780,29 @@ mod tests {
     /// file, plus the original accepted installation token from its begin.
     #[cfg(unix)]
     fn native_fixture() -> (NativeFixture, AcceptedInstallation) {
+        let (fixture, generation) = native_parts();
+        let accepted = accepted(begin_original(&fixture, &generation));
+        (fixture, accepted)
+    }
+
+    #[cfg(unix)]
+    fn begin_original(fixture: &NativeFixture, generation: &str) -> BeginOutcome {
+        fixture.connector.begin_desktop_installation(
+            None,
+            DesktopUpdateRequest {
+                server: &fixture.server,
+                id: &fixture.id,
+                revision: 7,
+                generation,
+                action: "native-begin",
+                outcome: None,
+            },
+        )
+    }
+
+    /// The fixture before any begin, plus the original native generation.
+    #[cfg(unix)]
+    fn native_parts() -> (NativeFixture, String) {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
@@ -751,16 +821,30 @@ if sys.argv[3]=='server':
   if op in ('runtime.cancel','runtime.fence'): continue
   assert op=='update.native-begin'
   open(os.path.join(root,'calls'),'a').write('x')
+  if os.path.exists(os.path.join(root,'reject')):
+   print(json.dumps({'version':2,'id':request['id'],'error':{'code':'recovery_required'}}),flush=True)
+   continue
   result=json.load(open(os.path.join(root,'begin.json')))['result']
   print(json.dumps({'version':2,'id':request['id'],'result':result}),flush=True)
 else:
- assert sys.argv[3:5]==['update','native-outcome']
+ assert sys.argv[3]=='update' and sys.argv[4] in ('native-outcome','native-inspect')
+ if sys.argv[4]=='native-inspect':
+  open(os.path.join(root,'calls'),'a').write('i')
+  name='inspect.json' if os.path.exists(os.path.join(root,'inspect.json')) else 'begin.json'
+  print(open(os.path.join(root,name)).read())
+  sys.exit(0)
  open(os.path.join(root,'calls'),'a').write('x')
  print(open(os.path.join(root,'outcome.json')).read())
 "#,
         )
         .unwrap();
         std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::create_dir(root.join("desktop-updates")).unwrap();
+        std::fs::set_permissions(
+            root.join("desktop-updates"),
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
         let connector = Arc::new(Connector::new(sidecar, root.clone()).unwrap());
         let id = uuid::Uuid::now_v7().to_string();
         let server = uuid::Uuid::now_v7().to_string();
@@ -792,19 +876,6 @@ else:
             serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
         )
         .unwrap();
-        let accepted = connector
-            .begin_desktop_installation(
-                None,
-                DesktopUpdateRequest {
-                    server: &server,
-                    id: &id,
-                    revision: 7,
-                    generation: &generation,
-                    action: "native-begin",
-                    outcome: None,
-                },
-            )
-            .unwrap();
         (
             NativeFixture {
                 _temp: temp,
@@ -813,7 +884,7 @@ else:
                 server,
                 id,
             },
-            accepted,
+            generation,
         )
     }
 
@@ -1100,6 +1171,104 @@ else:
 
     #[cfg(unix)]
     #[test]
+    fn recovered_begin_ownership_settles_uncertain_without_authority_check_or_installer() {
+        let (fixture, generation) = native_parts();
+        // The runtime rejects the response, but the original journal is
+        // Installing, so the begin was accepted.
+        std::fs::write(fixture.root.join("reject"), b"x").unwrap();
+        let BeginOutcome::Recovered {
+            installation,
+            cause,
+        } = begin_original(&fixture, &generation)
+        else {
+            panic!("an Installing journal must recover settlement-only ownership");
+        };
+        assert_eq!(cause, NativeFailure::InvalidEvidence);
+        assert!(installation.is_settlement_only());
+        let task = Installation::default();
+        let checks = std::sync::atomic::AtomicUsize::new(0);
+        let stopping = AtomicBool::new(false);
+        let result = run_retained(
+            &task,
+            &fixture.connector,
+            installation,
+            || {
+                checks.fetch_add(1, Ordering::AcqRel);
+                Ok(())
+            },
+            &stopping,
+            Duration::from_secs(5),
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        assert_eq!(result.phase, Phase::Uncertain);
+        assert_eq!(checks.load(Ordering::Acquire), 0, "no authority check runs");
+        assert!(task.pending.lock().unwrap().is_none());
+        assert_eq!(
+            std::fs::read(fixture.root.join("calls")).unwrap(),
+            b"xix",
+            "one begin, one inspection and one same-phase outcome; no installer"
+        );
+        assert!(fixture.connector.intent_store().scan().unwrap().is_empty());
+        fixture.connector.shutdown_owned().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unresolved_begin_keeps_a_retry_from_racing_the_original_request() {
+        let (fixture, generation) = native_parts();
+        std::fs::write(fixture.root.join("reject"), b"x").unwrap();
+        // The original journal is still Prepared, so the lost begin is
+        // unproven.
+        let mut prepared: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture.root.join("begin.json")).unwrap())
+                .unwrap();
+        prepared["result"]["phase"] = serde_json::json!("prepared");
+        std::fs::write(
+            fixture.root.join("inspect.json"),
+            serde_json::to_vec(&prepared).unwrap(),
+        )
+        .unwrap();
+        let host = Arc::new(UpdateHost::default());
+        for expected in [NativeFailure::InvalidEvidence, NativeFailure::Busy] {
+            let connector = Arc::clone(&fixture.connector);
+            let (server, id, generation) = (
+                fixture.server.clone(),
+                fixture.id.clone(),
+                generation.clone(),
+            );
+            let task = host
+                .start(move |_| {
+                    let outcome = connector.begin_desktop_installation(
+                        None,
+                        DesktopUpdateRequest {
+                            server: &server,
+                            id: &id,
+                            revision: 7,
+                            generation: &generation,
+                            action: "native-begin",
+                            outcome: None,
+                        },
+                    );
+                    assert!(matches!(outcome, BeginOutcome::Unresolved(_)));
+                    Err(outcome.failure().unwrap())
+                })
+                .unwrap();
+            assert_eq!(task.wait().err(), Some(expected));
+        }
+        let calls = std::fs::read(fixture.root.join("calls")).unwrap();
+        assert_eq!(
+            calls.iter().filter(|call| **call == b'x').count(),
+            1,
+            "native-begin is submitted once; the retry only re-inspects"
+        );
+        assert_eq!(fixture.connector.intent_store().scan().unwrap().len(), 1);
+        host.join(&fixture.connector);
+        fixture.connector.shutdown_owned().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn failed_quit_settlement_is_retained_and_replayed_on_next_launch_without_installer() {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
@@ -1122,11 +1291,16 @@ if sys.argv[3]=='server':
   result=json.load(open(os.path.join(root,'begin.json')))['result']
   print(json.dumps({'version':2,'id':request['id'],'result':result}),flush=True)
 else:
- assert sys.argv[3:5]==['update','native-outcome']
+ assert sys.argv[3] == 'update' and sys.argv[4] in ('native-outcome','native-inspect')
+ if sys.argv[4]=='native-inspect':
+  name='outcome.json' if os.path.exists(os.path.join(root,'settled')) else 'begin.json'
+  print(open(os.path.join(root,name)).read())
+  sys.exit(0)
  open(os.path.join(root,'outcomes'),'a').write('x')
  if os.path.exists(os.path.join(root,'down')):
   print(json.dumps({'version':1,'error':{'code':'unavailable'}}))
   sys.exit(1)
+ open(os.path.join(root,'settled'),'w').write('x')
  print(open(os.path.join(root,'outcome.json')).read())
 "#,
         )
@@ -1169,19 +1343,17 @@ else:
             serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
         )
         .unwrap();
-        let accepted = connector
-            .begin_desktop_installation(
-                None,
-                DesktopUpdateRequest {
-                    server: &server,
-                    id: &id,
-                    revision: 7,
-                    generation: &generation,
-                    action: "native-begin",
-                    outcome: None,
-                },
-            )
-            .unwrap();
+        let accepted = accepted(connector.begin_desktop_installation(
+            None,
+            DesktopUpdateRequest {
+                server: &server,
+                id: &id,
+                revision: 7,
+                generation: &generation,
+                action: "native-begin",
+                outcome: None,
+            },
+        ));
         // Every outcome writer attempt fails while Quit joins the task.
         std::fs::write(root.join("down"), b"x").unwrap();
         let host = Arc::new(UpdateHost::default());
@@ -1237,6 +1409,8 @@ else:
         }
         next.join(&connector);
         assert!(store.scan().unwrap().is_empty());
+        // The begin intent is retired once the settled journal is inspected.
+        assert!(connector.intent_store().scan().unwrap().is_empty());
         assert_eq!(std::fs::read(root.join("outcomes")).unwrap().len(), 5);
         assert_eq!(
             std::fs::read(root.join("begins")).unwrap().len(),
