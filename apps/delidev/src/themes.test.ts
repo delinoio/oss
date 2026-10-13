@@ -12,6 +12,10 @@ import {
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
 const usageStyles = readFileSync(join(directory, "usage.css"), "utf8");
+const disclosureStyles = readFileSync(
+  join(directory, "disclosure.css"),
+  "utf8",
+);
 const quotaColors = readFileSync(join(directory, "quota-color.ts"), "utf8");
 const palettes = [
   ...source.matchAll(/color-scheme: (?:light|dark);([^}]+)/g),
@@ -151,9 +155,19 @@ test("selected-border cue contrasts at least 3:1 with adjacent surfaces in every
   }
 });
 
-test("Usage token breakdown focus uses the inverse-surface contrast token", () => {
+test("Usage token breakdown focus keeps the shared focus outline over the ordinary surface", () => {
+  // The summary is an ordinary surface, so no inverse-surface override may remain.
+  expect(usageStyles).not.toMatch(
+    /\.usage-summary-breakdown[^{}]*:focus-visible[^{}]*\{[^}]*outline/u,
+  );
+  expect(usageStyles).not.toMatch(
+    /\.usage-page\s+\.usage-summary\s*\{[^}]*background:\s*var\(--inverse-surface\)/u,
+  );
   expect(usageStyles).toMatch(
-    /:root\s+\.usage-page\s+\.usage-summary-breakdown\s*>\s*\.disclosure-header:focus-visible\s*\{\s*outline-color:\s*var\(--on-inverse\);\s*\}/u,
+    /\.usage-page\s+\.usage-summary\s*\{[^}]*background:\s*var\(--surface\);/u,
+  );
+  expect(disclosureStyles).toMatch(
+    /:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--focus\);[^}]*outline-offset:\s*2px;/u,
   );
 });
 
