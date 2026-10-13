@@ -2567,6 +2567,63 @@ it("keeps the dropped invalidated base on a retained base-free tab that opens an
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
 });
 
+it("republishes the dropped invalidated base after the options cache is gone and the Diff presentation reopens", async () => {
+  const state = { names: ["main", "other"] };
+  const f = tabsFixture({ options: namedInventory(state) });
+  render(<f.Harness />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  fireEvent.change(screen.getByLabelText("Base"), {
+    target: { value: baseValue("other") },
+  });
+  await waitFor(() => expect(branchBaseNames(f.read).at(-1)).toBe("other"));
+  state.names = ["main"];
+  await refreshWhenReady();
+  await screen.findByText(/No available default base/);
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "staged" },
+  });
+  await waitFor(() =>
+    expect(f.comparisons().some((tab) => tab.comparison === "staged")).toBe(
+      true,
+    ),
+  );
+  // Leaving the Diff removes every cached options inventory (no cache time).
+  fireEvent.click(screen.getByRole("button", { name: "Leave Diff" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Refresh diff" })).toBeNull(),
+  );
+  state.names = ["main", "other"];
+  fireEvent.click(screen.getByRole("button", { name: "Reopen Diff" }));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Comparison") as HTMLSelectElement).value,
+    ).toBe("staged"),
+  );
+  const settled = branchReads(f.read).length;
+  fireEvent.change(screen.getByLabelText("Comparison"), {
+    target: { value: "branch" },
+  });
+  // The Branch tab is opened before any options inventory exists and still
+  // carries the dropped base instead of adopting the inventory default.
+  await waitFor(() => {
+    const snapshot = f.store.snapshot(f.sessionId),
+      tab = snapshot.tabs.find(
+        (value) => sessionTabKey(value) === snapshot.selected,
+      );
+    expect(tab).toMatchObject({
+      comparison: "branch",
+      base_ref: { name: "other" },
+    });
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(branchReads(f.read)).toHaveLength(settled);
+  expect(comparisonRegion()).toBeNull();
+  expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
+});
+
 it("does not republish a dropped invalidated base for a recreated base-free tab after its tab closed", async () => {
   const state = { names: ["main", "other"] };
   const f = tabsFixture({ options: namedInventory(state) });

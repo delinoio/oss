@@ -589,7 +589,7 @@ export function RepositoryDiff({
       repository,
       comparison: next,
       path: nextPath,
-      ...(next === Comparison.Branch && options.data && base
+      ...(next === Comparison.Branch && base && (retained || options.data)
         ? { base_ref: base }
         : {}),
       ...(dropped ? { dropped_base: dropped } : {}),

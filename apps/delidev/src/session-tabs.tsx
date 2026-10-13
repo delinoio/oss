@@ -126,11 +126,7 @@ export class SessionTabsStore {
    * one. Without it the incoming `dropped_base` (or its absence) replaces the
    * destination's.
    */
-  open(
-    id: string,
-    tab: SessionTab,
-    options?: { inheritDropped?: boolean },
-  ) {
+  open(id: string, tab: SessionTab, options?: { inheritDropped?: boolean }) {
     if (
       tab.kind === SessionTabKind.Terminal &&
       this.terminalPresentation(id).hidden(tab.id)
