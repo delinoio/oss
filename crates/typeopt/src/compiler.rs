@@ -1164,8 +1164,13 @@ fn html_scripts(dir: &std::path::Path) -> Result<HtmlScripts> {
         if attribute.starts_with("on") {
             return true;
         }
+        // Decode the references this parser knows first: they can spell the
+        // scheme (`java&#115;cript:`) next to one it cannot decode. A
+        // reference that stays undecoded is dropped, since it may expand to
+        // a character the URL parser strips.
+        let decoded = crate::bundle::decode_references_lossy(raw);
         let mut stripped = String::new();
-        let mut chars = raw.chars().peekable();
+        let mut chars = decoded.chars().peekable();
         while let Some(c) = chars.next() {
             if c == '&' {
                 while chars

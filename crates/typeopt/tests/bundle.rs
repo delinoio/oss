@@ -1402,6 +1402,8 @@ fn keeps_exports_when_a_handler_has_an_undecodable_reference() {
         r#"<a href="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
         r#"<a href="java&Tab;script:import('./lib.js').then(m=>m.handlerOnly())"></a>"#,
         r#"<a href="&Tab;JavaScript:void 0"></a>"#,
+        r#"<a href="java&#115;cript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="javascript&colon;import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
     ] {
         let temp = handler_bundle(html);
         optimize(temp.path(), &[]);

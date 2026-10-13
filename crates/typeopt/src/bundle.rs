@@ -39,7 +39,7 @@ fn decode_references(value: &str) -> Option<String> {
 
 /// Like [`decode_references`], but keeps a reference it cannot decode as
 /// literal text and decodes the rest: each reference is independent.
-fn decode_references_lossy(value: &str) -> String {
+pub(crate) fn decode_references_lossy(value: &str) -> String {
     decode_references_in(value, false).expect("lossy decoding never fails")
 }
 
