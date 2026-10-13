@@ -3,6 +3,7 @@ import { useSessionNameEditor } from "./session-name-editor";
 import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
 import {
   EntranceMotion,
+  settleEnclosingEntrances,
   useActivationCount,
   useEntranceActivation,
 } from "./entrance-motion";
@@ -1757,7 +1758,12 @@ export function Sidebar({
                       )}
                       aria-haspopup="dialog"
                       aria-expanded={optionsOpen}
-                      onClick={() => setOptionsOpen((current) => !current)}
+                      onClick={() => {
+                        // The dialog mounts inside the Home wrapper; settle its
+                        // entrance first so the popup is not animated with Home.
+                        settleEnclosingEntrances(optionsButton.current);
+                        setOptionsOpen((current) => !current);
+                      }}
                     >
                       <Icon name="options" />
                     </button>

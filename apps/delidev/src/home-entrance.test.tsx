@@ -250,3 +250,14 @@ it("plays the welcome entrance once per Home activation and never for reads", as
   await setAnimation(undefined);
   expect(welcome().getAttribute("data-entrance")).toBeNull();
 });
+
+it("settles the Home entrance before the options dialog opens", async () => {
+  mountSidebar();
+  await screen.findByRole("button", { name: "Entrance project" });
+  expect(homeEntering()).toBe("y4");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Project and conversation options" }),
+  );
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(homeEntering()).toBeNull();
+});
