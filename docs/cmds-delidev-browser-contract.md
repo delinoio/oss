@@ -88,6 +88,15 @@ automatic retries. Profile explanation uses the original accessible Modal and
 native visibility boundary. Initial explicit registration retains the local-summary/
 address card and no empty viewport. Page labels derive only from retained URLs;
 no title/favicon discovery, URL logging, page scripts or generalized key bridge.
+Shared Page descriptors follow native observation without changing identity: each
+observed URL refreshes only the label of the existing exact profile/page descriptor
+(never its order, selection or any foreign profile page), and unchanged URLs publish
+nothing. When a busy action settles, the native page is reconciled once to the
+current shared selection; a failed reconciliation is not retried until the
+selection or native state changes, and inactive or replaced presentations send
+nothing. Only an acknowledged native close whose state no longer lists the exact
+page removes that one descriptor (selection falls back through the shared tab
+close rule); rejected or unacknowledged closes keep it.
 The original 16-page gate and explicit resource Close remain separate from shared
 presentation Close. Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner

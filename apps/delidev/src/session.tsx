@@ -3155,6 +3155,10 @@ export function SessionView({
                         ...page,
                       })
                     }
+                    refreshPage={(page) => tabs.store.updatePage(id, page)}
+                    closePage={(page) =>
+                      tabs.store.closePage(id, page.profile, page.id)
+                    }
                   />
                 </div>
               ) : null}

@@ -149,6 +149,43 @@ export class SessionTabsStore {
       this.publish(id, { ...previous, selected: key });
     }
   }
+  /**
+   * Refreshes the presentation fields of an existing Page descriptor addressed
+   * by its exact profile/page identity. Order, selection and foreign pages are
+   * never touched, and an unchanged label publishes nothing.
+   */
+  updatePage(
+    id: string,
+    page: { profile: string; id: string; title: string; label?: string },
+  ) {
+    const previous = this.snapshot(id),
+      key = sessionTabKey({ kind: SessionTabKind.Page, ...page });
+    const found = previous.tabs.findIndex(
+      (value) => sessionTabKey(value) === key,
+    );
+    const current = previous.tabs[found];
+    if (
+      !current ||
+      current.kind !== SessionTabKind.Page ||
+      (current.title === page.title && current.label === page.label)
+    )
+      return;
+    const tabs = [...previous.tabs];
+    tabs[found] = { ...current, title: page.title, label: page.label };
+    this.publish(id, { ...previous, tabs });
+  }
+  /** Removes exactly one acknowledged Page descriptor by profile/page identity. */
+  closePage(id: string, profile: string, pageId: string) {
+    this.close(
+      id,
+      sessionTabKey({
+        kind: SessionTabKind.Page,
+        profile,
+        id: pageId,
+        title: "",
+      }),
+    );
+  }
   position(id: string, number: number) {
     const tab = this.snapshot(id).tabs[number - 1];
     if (number >= 1 && number <= 9 && tab) this.select(id, sessionTabKey(tab));
