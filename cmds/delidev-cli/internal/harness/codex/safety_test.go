@@ -137,6 +137,44 @@ func TestSafetyBufferingTransitionsUsageAndTerminalRemainOriginal(t *testing.T) 
 	}
 }
 
+func TestSafetyBufferingModelMustMatchSelectedModel(t *testing.T) {
+	const method = "model/safetyBuffering/updated"
+	for _, model := range []string{"other-model", "Fixture-Model", "fixture-model ", "fixture-model-faster"} {
+		c, turn := observationClient()
+		params := safetyFixture(c, turn, method)
+		params["model"] = model
+		paused := c.execution.paused
+		event, err := observeFixture(c, method, params)
+		if err == nil || event.Kind == ModelSafetyEvent || event.Safety != nil || len(c.safety.observations) != 0 || c.safety.bytes != 0 || c.execution.paused != paused || c.execution.settings.Model != "fixture-model" || c.modelObservation != "" {
+			t.Fatal("mismatched buffering model retained as passive evidence", model, err)
+		}
+		assertCode(t, err, domain.Unsupported)
+	}
+}
+
+func TestSafetyBufferingIgnoresFasterModelForSelection(t *testing.T) {
+	const method = "model/safetyBuffering/updated"
+	for _, faster := range []any{"other-model", nil} {
+		c, turn := observationClient()
+		params := safetyFixture(c, turn, method)
+		params["fasterModel"] = faster
+		event, err := observeFixture(c, method, params)
+		if err != nil || event.Kind != ModelSafetyEvent || !event.Safety.PassiveFor(c.thread, turn) || len(c.safety.observations) != 1 || c.execution.settings.Model != "fixture-model" || c.modelObservation != "" || c.problem != nil {
+			t.Fatal("fasterModel affected passive buffering", faster, err)
+		}
+	}
+}
+
+func TestSafetyForeignBufferingModelStaysPrivate(t *testing.T) {
+	c, turn := observationClient()
+	params := safetyFixture(c, turn, "model/safetyBuffering/updated")
+	params["threadId"], params["model"] = domain.NewID(), "other-model"
+	event, err := observeFixture(c, "model/safetyBuffering/updated", params)
+	if err != nil || event.Kind != NativeExtensionEvent || len(c.safety.observations) != 0 || c.problem != nil {
+		t.Fatal("foreign buffering model changed root evidence", err)
+	}
+}
+
 func TestSafetyTerminalReplayIsExactPrivateEvidence(t *testing.T) {
 	for _, method := range []string{"model/verification", "turn/moderationMetadata", "model/safetyBuffering/updated", "model/rerouted"} {
 		c, turn := observationClient()

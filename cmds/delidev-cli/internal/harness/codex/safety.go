@@ -287,6 +287,11 @@ func (c *Client) observeSafetyLocked(native nativewire.Event) (Event, error) {
 	if o.reroute != nil && o.reroute.from != c.execution.settings.Model {
 		return Event{}, incompatible()
 	}
+	// Buffering evidence is bound to the immutable selected model; fasterModel is
+	// advisory and is never compared or adopted.
+	if o.buffering != nil && o.buffering.model != c.execution.settings.Model {
+		return Event{}, incompatible()
+	}
 	late := turn.Turn.Status.terminal()
 	if late {
 		replay := false

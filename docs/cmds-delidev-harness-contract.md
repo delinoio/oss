@@ -149,7 +149,10 @@ Retain typed `model/verification` values, including `trustedAccessForCyber`,
 without granting account readiness, model eligibility or permissions. Required
 empty verification arrays retain their existing discarded-metadata representation.
 `model/safetyBuffering/updated` retains the original model, ordered use cases and
-reasons, buffering UI flag and required nullable faster-model descriptor.
+reasons, buffering UI flag and required nullable faster-model descriptor. The
+buffering `model` must equal the selected execution model exactly; any other value
+is rejected as incompatible and is neither retained nor published as passive
+evidence. The faster-model descriptor is never compared with or adopted as a model.
 `turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
 scalars and explicit null. These private observations emit no product prompt,
 response, tool or input mutation. Neither buffering nor verification selects a
