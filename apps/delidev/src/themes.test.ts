@@ -223,7 +223,7 @@ test("the shared entrance primitive is a static opaque 160ms Y4 ease-out keyfram
   expect(css).not.toMatch(/style=|@import|url\(/u);
 });
 
-test("the shared 120ms Y2 and X4 primitives are static opaque ease-out keyframes", () => {
+test("the shared 120ms Y2, X4 and short Y4 primitives are static opaque ease-out keyframes", () => {
   const css = readFileSync(
     join(directory, "entrance-motion.css"),
     "utf8",
@@ -231,6 +231,7 @@ test("the shared 120ms Y2 and X4 primitives are static opaque ease-out keyframes
   for (const [name, axis, distance] of [
     ["y2", "Y", "2px"],
     ["x4", "X", "4px"],
+    ["y4-short", "Y", "4px"],
   ]) {
     expect(css).toMatch(
       new RegExp(

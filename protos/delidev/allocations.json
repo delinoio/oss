@@ -14722,6 +14722,13 @@
       "number": 12
     },
     {
+      "issue": 3069,
+      "kind": "message",
+      "declaration": "GetStatusResponse",
+      "member": "production_root_ready",
+      "number": 9
+    },
+    {
       "issue": 2129,
       "kind": "enum",
       "declaration": "ManagedMcpTransport",

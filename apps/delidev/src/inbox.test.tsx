@@ -1168,3 +1168,227 @@ it("retains invalid original recorded timestamps as inert shared labels", async 
   expect(value.get).not.toHaveBeenCalled();
   expect(value.setRead).not.toHaveBeenCalled();
 });
+
+describe("Inbox detail entrance", () => {
+  const entrance = () =>
+    globalThis.document.querySelector<HTMLElement>(".inbox-detail-entrance");
+  const entering = () => entrance()?.getAttribute("data-entrance") ?? null;
+  const detailPane = () =>
+    globalThis.document.querySelector<HTMLElement>(".inbox-detail-pane")!;
+
+  function finish(name = "entrance-x4", type = "animationend") {
+    const event = new Event(type, { bubbles: true });
+    Object.defineProperty(event, "animationName", { value: name });
+    act(() => {
+      entrance()!.dispatchEvent(event);
+    });
+  }
+  function reducedMotion(initial: boolean) {
+    const listeners = new Set<() => void>();
+    const media = {
+      matches: initial,
+      addEventListener: (_: string, listener: () => void) =>
+        listeners.add(listener),
+      removeEventListener: (_: string, listener: () => void) =>
+        listeners.delete(listener),
+    };
+    vi.stubGlobal("matchMedia", () => media);
+    return (next: boolean) =>
+      act(() => {
+        media.matches = next;
+        listeners.forEach((changed) => changed());
+      });
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    delete globalThis.document.documentElement.dataset.animation;
+  });
+
+  it("plays one 120ms X4 entrance on the detail content for a row selection and never marks it read", async () => {
+    const value = fixture();
+    render(value.renderInbox());
+    await screen.findByRole("button", { name: /Agent question/ });
+    expect(entrance()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBe("x4");
+    // The scroll-root pane, list and rows never carry the transform.
+    expect(detailPane().hasAttribute("data-entrance")).toBe(false);
+    expect(entrance()!.parentElement).toBe(detailPane());
+    expect(globalThis.document.querySelectorAll("[data-entrance]").length).toBe(
+      1,
+    );
+    expect(entrance()!.querySelector(".inbox-detail-top")).not.toBeNull();
+    expect(entrance()!.querySelector(".inbox-detail-content")).not.toBeNull();
+    finish();
+    expect(entering()).toBeNull();
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+
+  it("does not replay for draft edits, read retries or a re-click of the open row", async () => {
+    const value = fixture();
+    render(value.renderInbox());
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
+    const answer = await screen.findByRole("textbox", { name: "Your answer" });
+    const wrapper = entrance();
+    finish();
+    fireEvent.change(answer, { target: { value: "Passkeys" } });
+    expect(entering()).toBeNull();
+    // Choosing the already open row is not a new visit.
+    fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+    await waitFor(() => expect(value.get).toHaveBeenCalledTimes(2));
+    expect(entering()).toBeNull();
+    expect(entrance()).toBe(wrapper);
+    expect(screen.getByRole("textbox", { name: "Your answer" })).toBe(answer);
+    expect(value.setRead).not.toHaveBeenCalled();
+  });
+
+  it("plays again for a different row and for keyboard-originated selection", async () => {
+    const value = fixture();
+    render(value.renderInbox());
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBe("x4");
+    // A selection while the first entrance still runs restarts the same wrapper.
+    const wrapper = entrance();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Execution succeeded/ }),
+    );
+    await screen.findByText("Original terminal observation");
+    expect(entrance()).toBe(wrapper);
+    expect(entering()).toBe("x4");
+    finish();
+    expect(entering()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+    expect(entering()).toBe("x4");
+    expect(value.setRead).not.toHaveBeenCalled();
+  });
+
+  it("plays for each notification activation without marking the item read", async () => {
+    const value = fixture();
+    const rendered = render(
+      value.renderInbox({
+        notificationId: value.entry.id,
+        notificationActivation: 1,
+      }),
+    );
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBe("x4");
+    finish();
+    rendered.rerender(
+      value.renderInbox({
+        notificationId: value.entry.id,
+        notificationActivation: 1,
+      }),
+    );
+    expect(entering()).toBeNull();
+    rendered.rerender(
+      value.renderInbox({
+        notificationId: value.entry.id,
+        notificationActivation: 2,
+      }),
+    );
+    await waitFor(() => expect(value.get).toHaveBeenCalledTimes(2));
+    expect(entering()).toBe("x4");
+    expect(value.setRead).not.toHaveBeenCalled();
+    expect(value.answer).not.toHaveBeenCalled();
+  });
+
+  it("never replays for the five-second detail and list refresh", async () => {
+    vi.useFakeTimers();
+    const value = fixture();
+    render(value.renderInbox());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(entering()).toBe("x4");
+    finish();
+    const lists = value.list.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(value.get).toHaveBeenCalledTimes(2);
+    expect(value.list.mock.calls.length).toBeGreaterThan(lists);
+    expect(entering()).toBeNull();
+    expect(value.setRead).not.toHaveBeenCalled();
+  });
+
+  it("removes the detail immediately on close with no exit animation, and reopening plays again", async () => {
+    const value = fixture();
+    render(value.renderInbox());
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
+    await screen.findByText("Which methods should be supported?");
+    fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
+    expect(entrance()).toBeNull();
+    expect(
+      screen.getByText("Select an item to view its request or result."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBe("x4");
+  });
+
+  it("settles mid-flight for Animation Off and reduced motion without replay", async () => {
+    const change = reducedMotion(false);
+    const value = fixture();
+    const rendered = render(value.renderInbox());
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBe("x4");
+    change(true);
+    expect(entering()).toBeNull();
+    change(false);
+    expect(entering()).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Execution succeeded/ }),
+    );
+    expect(entering()).toBe("x4");
+    await act(async () => {
+      globalThis.document.documentElement.dataset.animation = "false";
+      await Promise.resolve();
+    });
+    expect(entering()).toBeNull();
+    await act(async () => {
+      globalThis.document.documentElement.dataset.animation = "true";
+      await Promise.resolve();
+    });
+    expect(entering()).toBeNull();
+    rendered.unmount();
+  });
+
+  it("does not start motion while Animation is Off or reduced motion is requested", async () => {
+    globalThis.document.documentElement.dataset.animation = "false";
+    const value = fixture();
+    const rendered = render(value.renderInbox());
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBeNull();
+    rendered.unmount();
+    delete globalThis.document.documentElement.dataset.animation;
+    reducedMotion(true);
+    const reduced = fixture();
+    render(reduced.renderInbox());
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Agent question/ }),
+    );
+    await screen.findByText("Which methods should be supported?");
+    expect(entering()).toBeNull();
+  });
+});

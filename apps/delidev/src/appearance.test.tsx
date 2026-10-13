@@ -15,6 +15,7 @@ import {
   AppearanceSettings,
   Theme,
   parseAppearance,
+  useAppearanceReady,
   type AppearanceBridge,
   type AppearanceSnapshot,
 } from "./appearance";
@@ -1090,4 +1091,39 @@ test("keeps described settings, separate disclosure choices and unavailable rend
       ),
     ).toBe(true);
   expect(value.bridge.update).not.toHaveBeenCalled();
+});
+
+function ReadyProbe() {
+  return <p data-testid="ready">{String(useAppearanceReady())}</p>;
+}
+test("readiness stays false until the initial read settles, including a failed read", async () => {
+  scheme(false);
+  const value = fixture(),
+    initial = deferred<unknown>();
+  vi.mocked(value.bridge.read).mockReturnValueOnce(initial.promise);
+  const mounted = render(
+    <AppearanceProvider bridge={value.bridge}>
+      <ReadyProbe />
+    </AppearanceProvider>,
+  );
+  await waitFor(() => expect(value.bridge.read).toHaveBeenCalled());
+  expect(screen.getByTestId("ready").textContent).toBe("false");
+  await act(async () =>
+    initial.resolve({ revision: 1, theme: Theme.Light, problem: null }),
+  );
+  expect(screen.getByTestId("ready").textContent).toBe("true");
+  mounted.unmount();
+
+  const failing = fixture(),
+    rejected = deferred<unknown>();
+  vi.mocked(failing.bridge.read).mockReturnValueOnce(rejected.promise);
+  render(
+    <AppearanceProvider bridge={failing.bridge}>
+      <ReadyProbe />
+    </AppearanceProvider>,
+  );
+  await waitFor(() => expect(failing.bridge.read).toHaveBeenCalled());
+  expect(screen.getByTestId("ready").textContent).toBe("false");
+  await act(async () => rejected.reject(new Error("unavailable")));
+  expect(screen.getByTestId("ready").textContent).toBe("true");
 });

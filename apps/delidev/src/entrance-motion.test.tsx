@@ -234,11 +234,22 @@ it("settles each 120ms primitive only on its own animation name", () => {
   dispatch(surface(), "animationend", "entrance-y2");
   expect(entering()).toBeNull();
   unmount();
-  render(<MotionHarness motion={EntranceMotion.X4} />);
+  const { unmount: unmount2 } = render(
+    <MotionHarness motion={EntranceMotion.X4} />,
+  );
   expect(entering()).toBe("x4");
   dispatch(surface(), "animationend", "entrance-y2");
   expect(entering()).toBe("x4");
   dispatch(surface(), "animationcancel", "entrance-x4");
+  expect(entering()).toBeNull();
+  unmount2();
+  render(<MotionHarness motion={EntranceMotion.Y4Short} />);
+  expect(entering()).toBe("y4-short");
+  // The 160ms Y4 and 120ms Y2 names do not settle the short Y4 shape.
+  dispatch(surface(), "animationend", "entrance-y4");
+  dispatch(surface(), "animationend", "entrance-y2");
+  expect(entering()).toBe("y4-short");
+  dispatch(surface(), "animationend", "entrance-y4-short");
   expect(entering()).toBeNull();
 });
 

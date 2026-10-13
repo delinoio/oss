@@ -5,7 +5,7 @@ import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   InstallationQuery,
@@ -493,6 +493,12 @@ export function Updates({
   const supported =
     status.data?.capabilities.includes(SystemCapability.SIGNED_UPDATES_V1) ===
     true;
+  // Explicit false means this server build has no production signing root. An
+  // absent field is a legacy server and keeps the explicit check behavior.
+  const rootUnavailable =
+    !machine && supported && status.data?.productionRootReady === false;
+  const rootHelpId = useId(),
+    rootStatusId = useId();
   useEffect(() => {
     let alive = true;
     if (expanded && active && controls)
@@ -559,7 +565,7 @@ export function Updates({
             className={!machine ? "app-update-status" : "worker-update-check"}
           >
             {!machine ? (
-              <p role="status">
+              <p role="status" id={rootStatusId}>
                 {copy(
                   check.busy
                     ? "updates.checking"
@@ -571,7 +577,9 @@ export function Updates({
                           ? "updates.available"
                           : checked
                             ? "updates.current"
-                            : "updates.unchecked",
+                            : rootUnavailable
+                              ? "updates.rootUnavailable"
+                              : "updates.unchecked",
                 )}
               </p>
             ) : null}
@@ -581,7 +589,11 @@ export function Updates({
                   ? SettingsActionIcon.Confirm
                   : SettingsActionIcon.Refresh
               }
+              aria-describedby={
+                rootUnavailable ? `${rootStatusId} ${rootHelpId}` : undefined
+              }
               disabled={
+                rootUnavailable ||
                 !active ||
                 !targets[target] ||
                 !version ||
@@ -589,7 +601,8 @@ export function Updates({
                 check.uncertain ||
                 (Boolean(recoveryCandidateId) && recoveryCandidateId === id)
               }
-              onClick={() =>
+              onClick={() => {
+                if (rootUnavailable) return;
                 void check.send({
                   requestId: newRequestId(),
                   component: machine
@@ -599,8 +612,8 @@ export function Updates({
                   currentVersion: version,
                   machineId: machine?.id ?? "",
                   expectedMachineRevision: machine?.revision ?? 0n,
-                })
-              }
+                });
+              }}
             >
               {!machine ? (
                 copy("updates.check")
@@ -620,6 +633,9 @@ export function Updates({
               )}
             </SettingsActionButton>
           </div>
+          {rootUnavailable ? (
+            <p id={rootHelpId}>{copy("updates.rootUnavailableHelp")}</p>
+          ) : null}
           {check.uncertain ? (
             <SettingsActionButton
               icon={SettingsActionIcon.Retry}
