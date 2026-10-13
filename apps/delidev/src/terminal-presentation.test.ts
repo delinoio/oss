@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema } from "@delinoio/delidev-api-client";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { encode } from "./documents";
 import {
   TerminalPresentation,
+  TerminalPresentationRejection,
   terminalFallback,
 } from "./terminal-presentation";
 const resource = (revision: bigint, data: object) =>
@@ -133,6 +134,36 @@ it.each([
   ).toBe(false);
   expect(view.observe("parent", resource(5n, change))).toBe(false);
   expect(view.hidden("original")).toBe(false);
+});
+it("logs a content-free diagnostic only for equal-revision contradictions", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const view = new TerminalPresentation(),
+      pending = { request_id: "secret-request" };
+    // Ordinary running, unsettled, stale and identical-replay observations
+    // stay silent.
+    view.observe("parent", resource(5n, { state: "running" }));
+    view.observe("parent", resource(5n, { state: "running" }));
+    view.observe("parent", resource(4n, { state: "running" }));
+    expect(warn).not.toHaveBeenCalled();
+    expect(
+      view.observe(
+        "parent",
+        resource(5n, { state: "exited", cleanup_verified: true, pending }),
+      ),
+    ).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith({
+      event: "terminal-presentation-observation-rejected",
+      category: TerminalPresentationRejection.RevisionContradiction,
+      terminalId: "original",
+      revision: "5",
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("secret-request");
+    expect(view.hidden("original")).toBe(false);
+  } finally {
+    warn.mockRestore();
+  }
 });
 const nested = (depth: number, leaf: unknown = "leaf"): unknown => {
   let value = leaf;

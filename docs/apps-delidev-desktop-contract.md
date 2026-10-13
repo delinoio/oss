@@ -1398,7 +1398,9 @@ or null `pending` field means no operation, so an empty object, scalar or array
 `pending` value stays unsettled and never dismisses. Each original ID
 retains one compact fingerprint (no document bytes) of its latest accepted
 revision; an equal-revision observation whose state, cleanup proof or pending
-evidence differs is contradictory and rejected without tombstoning, while an
+evidence differs is contradictory and rejected without tombstoning (logging only a
+content-free `revision-contradiction` diagnostic with the original terminal ID
+and revision), while an
 identical replay (including a deferred exit observed again after its control
 settles) is accepted once without requiring a newer revision. Fingerprinting
 bounds container nesting depth; evidence nested deeper receives one fixed

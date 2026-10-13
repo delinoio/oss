@@ -90,6 +90,12 @@ function fingerprint(data: Record<string, unknown>): string {
   return evidence === null ? OVER_DEPTH_FINGERPRINT : digest(evidence);
 }
 
+/** Stable categories for authenticated observations rejected as unsafe. */
+export enum TerminalPresentationRejection {
+  /** Same revision as the accepted observation, but different evidence. */
+  RevisionContradiction = "revision-contradiction",
+}
+
 /** Connection-memory presentation tombstones never change server history. */
 export class TerminalPresentation {
   private revisions = new Map<string, bigint>();
@@ -132,8 +138,17 @@ export class TerminalPresentation {
     if (
       resource.revision === previous &&
       this.fingerprints.get(resource.id) !== current
-    )
+    ) {
+      // Content-free diagnostic: distinguishes this integrity contradiction
+      // from an ordinary running or unsettled terminal, which also returns false.
+      console.warn({
+        event: "terminal-presentation-observation-rejected",
+        category: TerminalPresentationRejection.RevisionContradiction,
+        terminalId: resource.id,
+        revision: resource.revision.toString(),
+      });
       return false;
+    }
     this.revisions.set(resource.id, resource.revision);
     this.fingerprints.set(resource.id, current);
     if (
