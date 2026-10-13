@@ -378,7 +378,13 @@ export function SessionForkProvider({
     current.data?.resource &&
     current.data.resource.revision !== source.revision,
   );
-  const blocked = mutation.busy || mutation.uncertain || local.busy || invalid;
+  // Admitted ownership (an in-flight, uncertain or invalid mutation) blocks
+  // explicit replacement and Discard. A pending read-only Local proof or an
+  // OpenCode profile refresh has admitted nothing, so those stay revocable.
+  const admitted = mutation.busy || mutation.uncertain || invalid;
+  // The request is frozen before asynchronous prerequisites run, so every draft
+  // control and the submit gesture stay locked until they settle.
+  const controlsLocked = admitted || checking || local.busy;
   const invalidatePreflight = () => {
     generation.current += 1;
     preflight.current = undefined;
@@ -413,7 +419,7 @@ export function SessionForkProvider({
     }
     if (
       !source ||
-      (!blocked &&
+      (!admitted &&
         !job &&
         !direct &&
         (source.id !== resource.id || purpose !== requestedPurpose))
@@ -432,7 +438,7 @@ export function SessionForkProvider({
     }
     if (
       requestedPurpose === ForkPurpose.SIDECHAT &&
-      (!source || (!blocked && !job && !direct))
+      (!source || (!admitted && !job && !direct))
     ) {
       const value: DirectSidechat = {
         requestId: newRequestId(),
@@ -480,7 +486,7 @@ export function SessionForkProvider({
     if (
       !source ||
       preflight.current !== undefined ||
-      blocked ||
+      controlsLocked ||
       job ||
       stale ||
       !name.trim() ||
@@ -733,7 +739,7 @@ export function SessionForkProvider({
                     required
                     maxLength={256}
                     value={name}
-                    disabled={blocked}
+                    disabled={controlsLocked}
                     onChange={(event) => setName(event.target.value)}
                   />
                 </label>
@@ -742,7 +748,7 @@ export function SessionForkProvider({
                     {copy("session-fork.workspace_87bb59")}
                     <select
                       value={workspace}
-                      disabled={blocked}
+                      disabled={controlsLocked}
                       onChange={(event) =>
                         setWorkspace(
                           Number(event.target.value) as ForkWorkspace,
@@ -793,8 +799,7 @@ export function SessionForkProvider({
                 {local.problem ? <p role="alert">{local.problem}</p> : null}
                 <button
                   disabled={
-                    blocked ||
-                    checking ||
+                    controlsLocked ||
                     stale ||
                     !name.trim() ||
                     !settled(current.data?.resource ?? source) ||
@@ -808,7 +813,7 @@ export function SessionForkProvider({
                     ? copy("session-fork.createSidechat_664521")
                     : copy("session-fork.createFork_d217b7")}
                 </button>
-                {!blocked ? (
+                {!admitted ? (
                   <button type="button" onClick={reset}>
                     {copy("session-fork.discardForkDraft_8920d0")}
                   </button>
