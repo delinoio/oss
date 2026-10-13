@@ -842,10 +842,7 @@ it.each([
 );
 
 it("resumes the comparison with a different available base after invalidation", async () => {
-  const setup = inventoryFixture(
-    [{ name: "main" }, { name: "other" }],
-    "main",
-  );
+  const setup = inventoryFixture([{ name: "main" }, { name: "other" }], "main");
   const { state, operations } = setup;
   await invalidateOther([{ name: "main" }], setup);
   state.choices = [{ name: "main" }, { name: "other" }];
@@ -862,10 +859,7 @@ it("resumes the comparison with a different available base after invalidation", 
 });
 
 it("does not restore trust through path submission or comparison round trips", async () => {
-  const setup = inventoryFixture(
-    [{ name: "main" }, { name: "other" }],
-    "main",
-  );
+  const setup = inventoryFixture([{ name: "main" }, { name: "other" }], "main");
   const { state, operations } = setup;
   await invalidateOther([{ name: "main" }], setup);
   state.choices = [{ name: "main" }, { name: "other" }];
@@ -892,10 +886,9 @@ it("does not restore trust through path submission or comparison round trips", a
     expect(screen.getByRole("option", { name: "other" })).toBeTruthy(),
   );
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(diffReads(operations).filter((op) => op.startsWith("git-diff:branch"))).toEqual([
-    "git-diff:branch:main",
-    "git-diff:branch:other",
-  ]);
+  expect(
+    diffReads(operations).filter((op) => op.startsWith("git-diff:branch")),
+  ).toEqual(["git-diff:branch:main", "git-diff:branch:other"]);
   expect(comparisonRegion()).toBeNull();
   expect((screen.getByLabelText("Base") as HTMLSelectElement).value).toBe("");
   fireEvent.change(screen.getByLabelText("Base"), {
