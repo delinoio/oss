@@ -778,6 +778,10 @@ name/fallback. Muted monospace previews show a literal `> ` prefix with visual
 ellipsis and the complete accessible string. Only Codex's exact leading
 `/bin/zsh -lc ` is hidden in the preview; no shell parsing, trimming, unquoting or
 other rewriting occurs. The full original command remains in collapsed Details.
+A Codex completion whose command or working directory differs from its started
+snapshot (exact string comparison, no normalization) retains the original tool
+fallback; late output, exit code, duration, process metadata and admitted source
+transitions remain accepted.
 
 Expanding a recognized command displays original output directly in inert
 `pre`/`code` blocks. Codex prefers completed aggregate output, including empty
