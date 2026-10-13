@@ -239,8 +239,8 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 			} else if domain.SafeError(e).Code != domain.NotFound {
 				return nil, e
 			}
-			if record.PendingRequestID != "" && (record.PendingRequestID != q.RequestID || record.PendingActorID != q.ActorID) {
-				return nil, domain.Fail(domain.RecoveryRequired, "The original MCP mutation is unsettled.", "Inspect its original request before another mutation.")
+			if e := managedMCPAdmissionFence(record, q); e != nil {
+				return nil, e
 			}
 			if q.Action == domain.MCPDelete {
 				refs, e := managedMCPReferences(tx, q.MachineID, q.WorkerDeviceID, id)
@@ -361,7 +361,7 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 			if e != nil {
 				return nil, e
 			}
-			if record.PendingRequestID == r.Operation.ID && record.PendingActorID == q.ActorID && r.Operation.State != domain.MCPOperationStarted && r.Operation.State != domain.MCPOperationRecovery {
+			if managedMCPSettlesPending(record, r.Operation, q.ActorID) {
 				if record.PendingAction == domain.MCPDelete && r.Operation.State == domain.MCPOperationCompleted {
 					record.Deleted = true
 				}
@@ -377,6 +377,34 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 	})
 	r.WorkerDeviceID = q.WorkerDeviceID
 	return r, e
+}
+
+// managedMCPAdmissionFence rejects a mutation while another request is unsettled
+// for the definition. An authorization attempt that is still awaiting stays
+// fenced; only its original actor may complete or cancel that exact attempt.
+func managedMCPAdmissionFence(record domain.ManagedMCPRecord, q domain.ManagedMCPRequest) error {
+	if record.PendingRequestID == "" || record.PendingRequestID == q.RequestID && record.PendingActorID == q.ActorID {
+		return nil
+	}
+	finishesAttempt := record.PendingAction == domain.MCPOAuthBegin && record.PendingActorID == q.ActorID && q.AttemptID == record.PendingRequestID && (q.Action == domain.MCPOAuthComplete || q.Action == domain.MCPOAuthCancel)
+	if finishesAttempt {
+		return nil
+	}
+	return domain.Fail(domain.RecoveryRequired, "The original MCP mutation is unsettled.", "Inspect its original request before another mutation.")
+}
+
+// managedMCPSettlesPending reports whether the Worker result ends the pending
+// admission. Started, recovery and awaiting-authorization states keep the fence
+// because the native attempt can still change the definition's credential.
+func managedMCPSettlesPending(record domain.ManagedMCPRecord, operation *domain.ManagedMCPOperation, actorID domain.ID) bool {
+	if operation == nil || record.PendingRequestID != operation.ID || record.PendingActorID != actorID {
+		return false
+	}
+	switch operation.State {
+	case domain.MCPOperationStarted, domain.MCPOperationRecovery, domain.MCPOperationAwaiting:
+		return false
+	}
+	return true
 }
 func mcpWire(d domain.ManagedMCPDefinition) *pb.ManagedMcpDefinition {
 	transport := pb.ManagedMcpTransport_MANAGED_MCP_TRANSPORT_STDIO
