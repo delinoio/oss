@@ -1590,6 +1590,45 @@ it(
   SLOW_TEST,
 );
 
+it(
+  "treats a nonempty removal-pending Create inventory as empty without reviving the created page",
+  async () => {
+    const f = fixture({ pages: 1 });
+    f.model.outcome = "lose-reply";
+    mount(f);
+    await waitFor(() => expect(tabNames()).toHaveLength(2));
+    const dialog = await openDialog();
+    await submit(dialog, "https://fixture.test/raced");
+    const check = await within(dialog).findByRole("button", {
+      name: "Check status",
+    });
+    // The host can answer a committed Create that raced with removal with the
+    // loaded tabs, including the new page, next to removal_pending.
+    const base = native.getMockImplementation()!;
+    native.mockImplementation(async (operation: string, args: any) => {
+      const reply = await base(operation, args);
+      return operation === "browser_pages" &&
+        ["observe", "inventory"].includes(args.request.action)
+        ? { ...reply, state: { ...reply.state, removal_pending: true } }
+        : reply;
+    });
+    fireEvent.click(check);
+    await waitFor(() =>
+      expect(
+        within(dialog).queryByRole("button", { name: "Check status" }),
+      ).toBeNull(),
+    );
+    expect(screen.queryByText("https://fixture.test/raced")).toBeNull();
+    expect(tabNames()).toEqual(["Conversation"]);
+    expect(pageCalls("create")).toHaveLength(1);
+    expect(calls("open_browser")).toHaveLength(0);
+    expect(
+      nativeMutations().filter(([name]) => name !== "browser_pages"),
+    ).toHaveLength(0);
+  },
+  SLOW_TEST,
+);
+
 const invalidProofs: [string, (receipt: Receipt) => Receipt][] = [
   [
     "native cleanup incomplete",

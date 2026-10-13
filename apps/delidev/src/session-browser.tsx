@@ -174,6 +174,21 @@ function browserState(value: BrowserState): BrowserState {
   return value;
 }
 
+/**
+ * A removal-pending profile is unavailable, so its inventory is authoritative
+ * and empty even when the host replies with the loaded tabs (a committed
+ * Create can race with removal). The raw reply is only used to prove the
+ * original receipt; reconciliation and completion handling see no pages.
+ */
+function pendingInventory(value: PageInventory): PageInventory {
+  if (!value.state.removal_pending || !value.state.tabs.tabs.length)
+    return value;
+  return {
+    ...value,
+    state: { ...value.state, tabs: { tabs: [], selected: "" } },
+  };
+}
+
 /** Proves a native page reply against the operation that requested it. */
 function pageInventory(
   value: PageInventory,
@@ -184,9 +199,9 @@ function pageInventory(
   if (!operation) {
     if (receipt !== null)
       throw new Error("Browser inventory proof is invalid.");
-    return value;
+    return pendingInventory(value);
   }
-  if (receipt === null) return value;
+  if (receipt === null) return pendingInventory(value);
   if (
     !receipt ||
     receipt.operation_id !== operation.operation_id ||
@@ -204,8 +219,9 @@ function pageInventory(
       (page) => page.id === receipt.page_id,
     );
     // The original receipt is validated independently of the current profile
-    // availability. A removal-pending inventory is deliberately empty, so a
-    // completed Create is not required to be listed there.
+    // availability. A removal-pending inventory is treated as empty, so a
+    // completed Create is not required to be listed there; a Close proof is
+    // still checked against the raw listing.
     if (
       receipt.failure !== null ||
       !receipt.metadata_committed ||
@@ -216,7 +232,7 @@ function pageInventory(
     )
       throw new Error("Browser operation proof is invalid.");
   }
-  return value;
+  return pendingInventory(value);
 }
 
 /** A command failure that proves nothing was admitted may be retried freshly. */

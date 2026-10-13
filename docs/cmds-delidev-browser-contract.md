@@ -166,7 +166,11 @@ has one of four actions:
   removal-pending is still accepted. A Close proof requires the page to be
   absent; a Create proof requires the page to be listed only while the profile is
   available, because a removal-pending inventory is deliberately empty. Such a
-  Create settles without restoring a descriptor or sending a second Create.
+  Create settles without restoring a descriptor or sending a second Create. The
+  client treats a removal-pending reply as an empty inventory even when the host
+  returns the loaded tabs next to `removal_pending: true` (a committed Create can
+  race with removal): the raw listing only proves the original receipt, and
+  reconciliation and completion handling never see or open those pages.
 
 Every reply carries `{state, receipt}`. A receipt separates committed metadata
 from incomplete native cleanup (`phase` accepted, cleanup-pending, completed or
