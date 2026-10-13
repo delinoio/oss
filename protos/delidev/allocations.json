@@ -14737,6 +14737,13 @@
       "number": 101
     },
     {
+      "issue": 3143,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_CLEANUP_RECOVERY_V1",
+      "number": 64
+    },
+    {
       "declaration": "NativeCodeReviewResponseUsage",
       "issue": 3331,
       "kind": "message",
