@@ -210,7 +210,10 @@ it("lets ESC, CAN and SUB abort a discarded OSC52 string, whole or split across 
 it("starts a new discard after ESC aborts an OSC52 and keeps BEL, ESC backslash and C1 ST termination", async () => {
   const core = await create();
   const feed = (text: string) => {
-    for (const part of splitAt(text, Array.from({ length: text.length - 1 }, (_, i) => i + 1)))
+    for (const part of splitAt(
+      text,
+      Array.from({ length: text.length - 1 }, (_, i) => i + 1),
+    ))
       core.writeRaw(encoder.encode(part));
   };
   // ESC ] 52 restarts the discard instead of leaking the second payload.
@@ -218,7 +221,11 @@ it("starts a new discard after ESC aborts an OSC52 and keeps BEL, ESC backslash 
   expect(row(core, 0)).toBe("after");
   expect(core.getClipboardWrite()).toBeNull();
   feed("\r\n\x1b]52;c;QQ==\x07bel\x1b]52;c;QQ==\x1b\\st");
-  core.writeRaw(new Uint8Array([0x1b, 0x5d, 0x35, 0x32, 0x3b, 0x63, 0x3b, 0x51, 0x51, 0x3d, 0x3d, 0x9c]));
+  core.writeRaw(
+    new Uint8Array([
+      0x1b, 0x5d, 0x35, 0x32, 0x3b, 0x63, 0x3b, 0x51, 0x51, 0x3d, 0x3d, 0x9c,
+    ]),
+  );
   core.writeRaw(encoder.encode("c1"));
   expect(row(core, 1)).toBe("belstc1");
   // A continuation byte with the C1 value inside UTF-8 text does not end the discard.
