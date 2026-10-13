@@ -265,7 +265,9 @@ describe("isolated tray panel", () => {
     removed.windows.splice(1, 1);
     update(removed);
     await screen.findByText("57.00% remaining");
-    fireEvent.click(screen.getByRole("button", { name: "Manage subscriptions" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Manage subscriptions" }),
+    );
     await waitFor(() =>
       expect(bridge.activate).toHaveBeenCalledWith(
         TrayPanelAction.Settings,
@@ -319,7 +321,9 @@ describe("isolated tray panel", () => {
     render(<TrayStatus instance={instance} bridge={bridge} />);
     await screen.findByText("No accounts in this observation.");
     update({ ...snapshot, windows: [], recent: null });
-    await waitFor(() => expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open DeliDev" }));
     await waitFor(() =>
       expect(bridge.activate).toHaveBeenCalledWith(
