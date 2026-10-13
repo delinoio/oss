@@ -42,6 +42,8 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 				ID      domain.ID `json:"id"`
 				Outputs [][]int   `json:"outputs"`
 			} `json:"turns"`
+			// CursorPad grows the page envelope without adding turn bytes.
+			CursorPad int `json:"cursorPad"`
 		}
 		if domain.Decode(raw, &params) != nil || f.thread == nil {
 			os.Exit(66)
@@ -66,7 +68,7 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 			turns = append(turns, turn)
 		}
 		page, _ := json.Marshal(map[string]any{"data": turns, "nextCursor": "opaque-older-turns", "backwardsCursor": "opaque-reverse-cursor"})
-		f.history = page
+		f.history, f.historyCursorPad = page, params.CursorPad
 		write(id, map[string]any{})
 		return true
 	}
@@ -111,6 +113,9 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 			os.Exit(65)
 		}
 		page["nextCursor"], page["backwardsCursor"] = json.RawMessage("null"), json.RawMessage("null")
+		if f.historyCursorPad > 0 {
+			page["backwardsCursor"], _ = json.Marshal(strings.Repeat("c", f.historyCursorPad))
+		}
 		write(id, page)
 	} else {
 		write(id, f.history)

@@ -23,6 +23,13 @@ type largeHistoryTurn struct {
 // builds oversized private history itself because client requests stay bounded.
 func frameProfileFixture(t *testing.T, turns []largeHistoryTurn) *Client {
 	t.Helper()
+	return framePaddedFixture(t, turns, 0)
+}
+
+// framePaddedFixture also pads the page envelope with an unused cursor of the
+// given length, which adds page bytes but no turn bytes.
+func framePaddedFixture(t *testing.T, turns []largeHistoryTurn, cursorPad int) *Client {
+	t.Helper()
 	config := fixtureConfig(t, "thread-managed-image-enabled")
 	config.Mode, config.ManagedAuthentication, config.EnableImageGeneration = ThreadProtocol, true, true
 	config.ImageRoot, config.ImageMachineID = t.TempDir(), domain.NewID()
@@ -45,7 +52,7 @@ func frameProfileFixture(t *testing.T, turns []largeHistoryTurn) *Client {
 	if _, err := c.ResumeThread(ctx, domain.NewID(), domain.NewID(), settings); err != nil {
 		t.Fatal(err)
 	}
-	fixtureSignal(t, c, "large-history", map[string]any{"turns": turns})
+	fixtureSignal(t, c, "large-history", map[string]any{"turns": turns, "cursorPad": cursorPad})
 	return c
 }
 
@@ -140,6 +147,24 @@ func TestForkTurnsRejectAggregateAboveFourMiBUnderNativeFrameProfile(t *testing.
 		c.managedForkHistory = managed
 		if _, err := c.forkTurnsLocked(context.Background(), c.thread); err == nil {
 			t.Fatal("aggregate history above 4 MiB was accepted", managed)
+		}
+	}
+}
+
+func TestForkTurnsCountCompletePageResultsTowardAggregateBudget(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		// Small turns with envelope padding below the budget stay eligible.
+		c := framePaddedFixture(t, repeatedTurns(1, 1<<10), 3<<20)
+		c.managedForkHistory = managed
+		if turns, err := c.forkTurnsLocked(context.Background(), c.thread); err != nil || len(turns) != 1 {
+			t.Fatal("page within the aggregate budget was rejected", managed, err)
+		}
+		// The same turns are rejected once the complete page result exceeds 4 MiB,
+		// even though the retained turn bytes alone stay far below it.
+		c = framePaddedFixture(t, repeatedTurns(1, 1<<10), 5<<20)
+		c.managedForkHistory = managed
+		if _, err := c.forkTurnsLocked(context.Background(), c.thread); err == nil {
+			t.Fatal("page envelope bytes bypassed the aggregate budget", managed)
 		}
 	}
 }
