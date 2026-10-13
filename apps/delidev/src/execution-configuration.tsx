@@ -457,7 +457,15 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
       };
   const templates = items(configuration.templates);
   const accounts = items(configuration.accounts);
+  // The strict shared predicate gates only the saved-configuration section.
+  // Native observations and applied instructions keep their original
+  // independent gate: the basic identity fields of the retained snapshot.
   const ready = savedExecutionSnapshot(resource).ready;
+  const identified = Boolean(
+    text(initial.id) &&
+    text(configuration.agent_id) &&
+    text(configuration.native_model),
+  );
   return (
     <div className="execution-configuration">
       {resource.schemaVersion !== 1 ? (
@@ -468,7 +476,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
             )}
           </p>
         </TechnicalEvidence>
-      ) : !ready ? (
+      ) : !identified ? (
         <TechnicalEvidence target={diagnosticsTarget}>
           <p>
             {data.initial_execution == null
@@ -482,297 +490,323 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
         </TechnicalEvidence>
       ) : (
         <>
-          <TechnicalEvidence target={diagnosticsTarget}>
-            <section
-              aria-label={copy(
-                "execution-configuration.savedExecutionConfiguration_2d8ee9",
-              )}
-            >
-              <h3>
-                {copy("execution-configuration.savedConfiguration_d194b3")}
-              </h3>
+          {!ready ? (
+            <TechnicalEvidence target={diagnosticsTarget}>
               <p>
                 {copy(
-                  "execution-configuration.capturedWhenTheFirstExecutionWas_e736dd",
+                  "execution-configuration.theSavedExecutionConfigurationIsIncomplete_2c32e0",
                 )}
               </p>
-              <dl>
-                <dt>{copy("execution-configuration.harness_e3b5b4")}</dt>
-                <dd>
-                  {text(configuration.harness) ||
-                    copy("execution-configuration.extra.ca1844969742")}
-                </dd>
-                <dt>{copy("execution-configuration.requestedModel_b36591")}</dt>
-                <dd>{text(configuration.native_model)}</dd>
-                {configuration.harness === Harness.Grok ? (
-                  <>
-                    <dt>
-                      {copy(
-                        "execution-configuration.savedGrokContextWindow_df1d70",
-                      )}
-                    </dt>
-                    <dd>
-                      {context.source !== "known" &&
-                      context.source !== "user-declared"
-                        ? copy("execution-configuration.unavailable_ca1844")
-                        : grokContext(context.tokens)}
-                    </dd>
-                    <dt>
-                      {copy(
-                        "execution-configuration.savedContextSource_adf512",
-                      )}
-                    </dt>
-                    <dd>{contextSource}</dd>
-                  </>
+            </TechnicalEvidence>
+          ) : (
+            <TechnicalEvidence target={diagnosticsTarget}>
+              <section
+                aria-label={copy(
+                  "execution-configuration.savedExecutionConfiguration_2d8ee9",
+                )}
+              >
+                <h3>
+                  {copy("execution-configuration.savedConfiguration_d194b3")}
+                </h3>
+                <p>
+                  {copy(
+                    "execution-configuration.capturedWhenTheFirstExecutionWas_e736dd",
+                  )}
+                </p>
+                <dl>
+                  <dt>{copy("execution-configuration.harness_e3b5b4")}</dt>
+                  <dd>
+                    {text(configuration.harness) ||
+                      copy("execution-configuration.extra.ca1844969742")}
+                  </dd>
+                  <dt>
+                    {copy("execution-configuration.requestedModel_b36591")}
+                  </dt>
+                  <dd>{text(configuration.native_model)}</dd>
+                  {configuration.harness === Harness.Grok ? (
+                    <>
+                      <dt>
+                        {copy(
+                          "execution-configuration.savedGrokContextWindow_df1d70",
+                        )}
+                      </dt>
+                      <dd>
+                        {context.source !== "known" &&
+                        context.source !== "user-declared"
+                          ? copy("execution-configuration.unavailable_ca1844")
+                          : grokContext(context.tokens)}
+                      </dd>
+                      <dt>
+                        {copy(
+                          "execution-configuration.savedContextSource_adf512",
+                        )}
+                      </dt>
+                      <dd>{contextSource}</dd>
+                    </>
+                  ) : null}
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedReasoningEffort_dc59bb",
+                    )}
+                  </dt>
+                  <dd>{requested(configuration.effort)}</dd>
+                  <dt>
+                    {copy(
+                      "execution-configuration.savedPermissionSelection_abd7db",
+                    )}
+                  </dt>
+                  <dd>{requested(options.permission)}</dd>
+                  {configuration.harness === Harness.Claude ||
+                  options.claude_permission !== undefined ? (
+                    <>
+                      <dt>
+                        {copy(
+                          "execution-configuration.savedClaudePermission_0741e2",
+                        )}
+                      </dt>
+                      <dd>{requested(options.claude_permission)}</dd>
+                    </>
+                  ) : null}
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedApprovalPolicy_617392",
+                    )}
+                  </dt>
+                  <dd>{requested(options.approval_policy)}</dd>
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedSubagentModel_cbe7e9",
+                    )}
+                  </dt>
+                  <dd>{requested(options.subagent_model)}</dd>
+                  {text(childModel.model_key) && diagnosticsTarget
+                    ? createPortal(
+                        <section>
+                          <h3>
+                            {copy(
+                              "execution-configuration.savedChildModelIdentity_be5624",
+                            )}
+                          </h3>
+                          <dl>
+                            <dt>
+                              {copy(
+                                "execution-configuration.savedChildModelIdentity_be5624",
+                              )}
+                            </dt>
+                            <dd>
+                              <LocalizedText
+                                id="execution-configuration.revision_dfefbf"
+                                components={{
+                                  s0: <>{text(childModel.model_key)}</>,
+                                  s1: <>{integer(childModel.model_revision)}</>,
+                                }}
+                              />
+                            </dd>
+                          </dl>
+                        </section>,
+                        diagnosticsTarget,
+                      )
+                    : null}
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedSubagentEffort_bb821c",
+                    )}
+                  </dt>
+                  <dd>{requested(options.subagent_effort)}</dd>
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedConcurrency_406d92",
+                    )}
+                  </dt>
+                  <dd>
+                    {options.max_concurrency === undefined ||
+                    options.max_concurrency === 0
+                      ? copy(
+                          "execution-configuration.nativeDefaultRequested_6a1fdb",
+                        )
+                      : integer(options.max_concurrency)}
+                  </dd>
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedApprovalReviewModel_136d13",
+                    )}
+                  </dt>
+                  <dd>{requested(options.approval_review_model)}</dd>
+                  <dt>
+                    {copy(
+                      "execution-configuration.requestedServiceTier_14f88a",
+                    )}
+                  </dt>
+                  <dd>{requested(options.service_tier)}</dd>
+                  <dt>
+                    {copy("execution-configuration.accountRouting_0c3707")}
+                  </dt>
+                  <dd>
+                    {text(configuration.routing) ||
+                      copy("execution-configuration.extra.ca1844969742")}
+                  </dd>
+                </dl>
+                {Object.keys(options).some((key) => !knownOptions.has(key)) ? (
+                  <p className="notice">
+                    {copy(
+                      "execution-configuration.thisSnapshotContainsAdditionalOptionsThat_76c12b",
+                    )}
+                  </p>
                 ) : null}
-                <dt>
-                  {copy(
-                    "execution-configuration.requestedReasoningEffort_dc59bb",
-                  )}
-                </dt>
-                <dd>{requested(configuration.effort)}</dd>
-                <dt>
-                  {copy(
-                    "execution-configuration.savedPermissionSelection_abd7db",
-                  )}
-                </dt>
-                <dd>{requested(options.permission)}</dd>
-                {configuration.harness === Harness.Claude ||
-                options.claude_permission !== undefined ? (
-                  <>
-                    <dt>
-                      {copy(
-                        "execution-configuration.savedClaudePermission_0741e2",
-                      )}
-                    </dt>
-                    <dd>{requested(options.claude_permission)}</dd>
-                  </>
-                ) : null}
-                <dt>
-                  {copy(
-                    "execution-configuration.requestedApprovalPolicy_617392",
-                  )}
-                </dt>
-                <dd>{requested(options.approval_policy)}</dd>
-                <dt>
-                  {copy(
-                    "execution-configuration.requestedSubagentModel_cbe7e9",
-                  )}
-                </dt>
-                <dd>{requested(options.subagent_model)}</dd>
-                {text(childModel.model_key) && diagnosticsTarget
+                {diagnosticsTarget
                   ? createPortal(
                       <section>
                         <h3>
                           {copy(
-                            "execution-configuration.savedChildModelIdentity_be5624",
+                            "execution-configuration.snapshotReferencesAndAccountOrder_513309",
                           )}
                         </h3>
                         <dl>
+                          {" "}
                           <dt>
                             {copy(
-                              "execution-configuration.savedChildModelIdentity_be5624",
+                              "execution-configuration.firstAccount_2896cc",
                             )}
+                          </dt>
+                          <dd>
+                            {productLabel(
+                              PresentationKind.Account,
+                              text(initial.initial_account_id),
+                            )}
+                          </dd>
+                          <dt>
+                            {copy(
+                              "execution-configuration.selectedExecutionAccount_012de8",
+                            )}
+                          </dt>
+                          <dd>
+                            {productLabel(
+                              PresentationKind.Account,
+                              text(selection.account_id),
+                            )}
+                          </dd>
+                          <dt>
+                            {copy(
+                              "execution-configuration.firstExecution_5294a1",
+                            )}
+                          </dt>
+                          <dd>
+                            {productLabel(
+                              PresentationKind.Execution,
+                              text(initial.id),
+                            )}
+                          </dd>
+                          <dt>
+                            {copy(
+                              "execution-configuration.selectedExecution_c6fa3c",
+                            )}
+                          </dt>
+                          <dd>
+                            {productLabel(
+                              PresentationKind.Execution,
+                              text(selection.id),
+                            )}
+                          </dd>
+                          <dt>
+                            {copy("execution-configuration.agentWorker_a4caa7")}
                           </dt>
                           <dd>
                             <LocalizedText
                               id="execution-configuration.revision_dfefbf"
                               components={{
-                                s0: <>{text(childModel.model_key)}</>,
-                                s1: <>{integer(childModel.model_revision)}</>,
+                                s0: (
+                                  <>
+                                    {productLabel(
+                                      PresentationKind.Agent,
+                                      text(configuration.agent_id),
+                                    )}
+                                  </>
+                                ),
+                                s1: (
+                                  <>{integer(configuration.agent_revision)}</>
+                                ),
                               }}
                             />
                           </dd>
+                          <dt>
+                            {copy("execution-configuration.model_5e2c61")}
+                          </dt>
+                          <dd>
+                            <LocalizedText
+                              id="execution-configuration.revision_dfefbf"
+                              components={{
+                                s0: <>{text(configuration.native_model)}</>,
+                                s1: (
+                                  <>{integer(configuration.model_revision)}</>
+                                ),
+                              }}
+                            />
+                          </dd>
+                          <dt>
+                            {copy("execution-configuration.provider_472590")}
+                          </dt>
+                          <dd>
+                            {productLabel(
+                              PresentationKind.Provider,
+                              text(configuration.provider_id),
+                            )}
+                          </dd>
+                          <dt>
+                            {copy("execution-configuration.acceptedAt_1b8950")}
+                          </dt>
+                          <dd>
+                            {
+                              <Timestamp
+                                value={text(initial.accepted_at)}
+                                fallback={copy(
+                                  "execution-configuration.extra.ca1844969742",
+                                )}
+                              />
+                            }
+                          </dd>
                         </dl>
+                        {Array.isArray(configuration.accounts) ? (
+                          <ol
+                            aria-label={copy(
+                              "execution-configuration.savedAccountOrder_c00a0a",
+                            )}
+                          >
+                            {accounts.map((value, index) => {
+                              const account = object(value);
+                              return (
+                                <li key={index}>
+                                  <LocalizedText
+                                    id="execution-configuration.weight_0d7216"
+                                    components={{
+                                      s0: (
+                                        <>
+                                          {productLabel(
+                                            PresentationKind.Account,
+                                            text(account.id),
+                                          )}
+                                        </>
+                                      ),
+                                      s1: <>{integer(account.weight)}</>,
+                                    }}
+                                  />
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        ) : (
+                          <p>
+                            {copy(
+                              "execution-configuration.savedAccountOrderIsUnavailable_e54c4a",
+                            )}
+                          </p>
+                        )}
                       </section>,
                       diagnosticsTarget,
                     )
                   : null}
-                <dt>
-                  {copy(
-                    "execution-configuration.requestedSubagentEffort_bb821c",
-                  )}
-                </dt>
-                <dd>{requested(options.subagent_effort)}</dd>
-                <dt>
-                  {copy("execution-configuration.requestedConcurrency_406d92")}
-                </dt>
-                <dd>
-                  {options.max_concurrency === undefined ||
-                  options.max_concurrency === 0
-                    ? copy(
-                        "execution-configuration.nativeDefaultRequested_6a1fdb",
-                      )
-                    : integer(options.max_concurrency)}
-                </dd>
-                <dt>
-                  {copy(
-                    "execution-configuration.requestedApprovalReviewModel_136d13",
-                  )}
-                </dt>
-                <dd>{requested(options.approval_review_model)}</dd>
-                <dt>
-                  {copy("execution-configuration.requestedServiceTier_14f88a")}
-                </dt>
-                <dd>{requested(options.service_tier)}</dd>
-                <dt>{copy("execution-configuration.accountRouting_0c3707")}</dt>
-                <dd>
-                  {text(configuration.routing) ||
-                    copy("execution-configuration.extra.ca1844969742")}
-                </dd>
-              </dl>
-              {Object.keys(options).some((key) => !knownOptions.has(key)) ? (
-                <p className="notice">
-                  {copy(
-                    "execution-configuration.thisSnapshotContainsAdditionalOptionsThat_76c12b",
-                  )}
-                </p>
-              ) : null}
-              {diagnosticsTarget
-                ? createPortal(
-                    <section>
-                      <h3>
-                        {copy(
-                          "execution-configuration.snapshotReferencesAndAccountOrder_513309",
-                        )}
-                      </h3>
-                      <dl>
-                        {" "}
-                        <dt>
-                          {copy("execution-configuration.firstAccount_2896cc")}
-                        </dt>
-                        <dd>
-                          {productLabel(
-                            PresentationKind.Account,
-                            text(initial.initial_account_id),
-                          )}
-                        </dd>
-                        <dt>
-                          {copy(
-                            "execution-configuration.selectedExecutionAccount_012de8",
-                          )}
-                        </dt>
-                        <dd>
-                          {productLabel(
-                            PresentationKind.Account,
-                            text(selection.account_id),
-                          )}
-                        </dd>
-                        <dt>
-                          {copy(
-                            "execution-configuration.firstExecution_5294a1",
-                          )}
-                        </dt>
-                        <dd>
-                          {productLabel(
-                            PresentationKind.Execution,
-                            text(initial.id),
-                          )}
-                        </dd>
-                        <dt>
-                          {copy(
-                            "execution-configuration.selectedExecution_c6fa3c",
-                          )}
-                        </dt>
-                        <dd>
-                          {productLabel(
-                            PresentationKind.Execution,
-                            text(selection.id),
-                          )}
-                        </dd>
-                        <dt>
-                          {copy("execution-configuration.agentWorker_a4caa7")}
-                        </dt>
-                        <dd>
-                          <LocalizedText
-                            id="execution-configuration.revision_dfefbf"
-                            components={{
-                              s0: (
-                                <>
-                                  {productLabel(
-                                    PresentationKind.Agent,
-                                    text(configuration.agent_id),
-                                  )}
-                                </>
-                              ),
-                              s1: <>{integer(configuration.agent_revision)}</>,
-                            }}
-                          />
-                        </dd>
-                        <dt>{copy("execution-configuration.model_5e2c61")}</dt>
-                        <dd>
-                          <LocalizedText
-                            id="execution-configuration.revision_dfefbf"
-                            components={{
-                              s0: <>{text(configuration.native_model)}</>,
-                              s1: <>{integer(configuration.model_revision)}</>,
-                            }}
-                          />
-                        </dd>
-                        <dt>
-                          {copy("execution-configuration.provider_472590")}
-                        </dt>
-                        <dd>
-                          {productLabel(
-                            PresentationKind.Provider,
-                            text(configuration.provider_id),
-                          )}
-                        </dd>
-                        <dt>
-                          {copy("execution-configuration.acceptedAt_1b8950")}
-                        </dt>
-                        <dd>
-                          {
-                            <Timestamp
-                              value={text(initial.accepted_at)}
-                              fallback={copy(
-                                "execution-configuration.extra.ca1844969742",
-                              )}
-                            />
-                          }
-                        </dd>
-                      </dl>
-                      {Array.isArray(configuration.accounts) ? (
-                        <ol
-                          aria-label={copy(
-                            "execution-configuration.savedAccountOrder_c00a0a",
-                          )}
-                        >
-                          {accounts.map((value, index) => {
-                            const account = object(value);
-                            return (
-                              <li key={index}>
-                                <LocalizedText
-                                  id="execution-configuration.weight_0d7216"
-                                  components={{
-                                    s0: (
-                                      <>
-                                        {productLabel(
-                                          PresentationKind.Account,
-                                          text(account.id),
-                                        )}
-                                      </>
-                                    ),
-                                    s1: <>{integer(account.weight)}</>,
-                                  }}
-                                />
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      ) : (
-                        <p>
-                          {copy(
-                            "execution-configuration.savedAccountOrderIsUnavailable_e54c4a",
-                          )}
-                        </p>
-                      )}
-                    </section>,
-                    diagnosticsTarget,
-                  )
-                : null}
-            </section>
-          </TechnicalEvidence>
+              </section>
+            </TechnicalEvidence>
+          )}
           <NativeObservations
             progress={object(data.execution)}
             selection={selection}

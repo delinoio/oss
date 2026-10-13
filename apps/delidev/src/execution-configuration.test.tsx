@@ -342,7 +342,7 @@ it.each(invalidSnapshots)(
     expect(
       screen.getByRole("group", { name: "Saved model: Unavailable" }),
     ).toBeTruthy();
-    expect(screen.queryByText("original-model")).toBeNull();
+    expect(screen.queryByRole("group", { name: /original-model/ })).toBeNull();
     expect(
       screen.queryByRole("group", { name: /Saved reasoning effort/ }),
     ).toBeNull();
@@ -355,6 +355,28 @@ it.each(invalidSnapshots)(
     view.unmount();
   },
 );
+
+it("keeps native observations and applied instructions when only strict saved-configuration fields are invalid", () => {
+  const value = fixture();
+  const data = structuredClone(value.data);
+  delete (data.initial_execution.configuration as Record<string, unknown>)
+    .templates;
+  const resource = { ...value.resource, documentJson: encode(data) };
+  expect(savedExecutionSnapshot(resource).ready).toBe(false);
+  render(<ExecutionConfiguration resource={resource} />);
+  expect(
+    screen.getByText(/saved execution configuration is incomplete/i),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("region", { name: "Saved execution configuration" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("region", { name: "Native execution observations" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("region", { name: "Applied DeliDev instructions" }),
+  ).toBeTruthy();
+});
 
 it("accepts the source-scoped model key of API provider and subscription snapshots", () => {
   const api = fixture();
