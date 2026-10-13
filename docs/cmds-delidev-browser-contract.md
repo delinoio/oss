@@ -159,8 +159,12 @@ and unrelated children are never awaited, so neither delays nor satisfies the
 original cleanup; two windows presenting one page require both original
 callbacks. If profile removal begins after the metadata commit and before this
 reconciliation, the reconciliation does not replace children; instead the receipt
-awaits every native child of that profile until removal's own close requests
-report `on_before_close`, so it never reports completed cleanup early. Closing a
+awaits every original native child of that profile (within the receipt's
+generation boundary) until removal's own close requests report
+`on_before_close`, so it never reports completed cleanup early. A receipt that
+no longer tracks outstanding children, such as an idempotent Close of an already
+absent page whose awaited set is final and empty, registers nothing on this path
+and completes without waiting for removal's callbacks. Closing a
 page that no native child presents completes immediately.
 A page selection control from another window that supersedes children after the
 metadata commit but before this reconciliation registers those children on the

@@ -397,7 +397,11 @@ impl State {
     // UI-loop reconciliation owns the teardown of every child. The receipt
     // still waits for the close callback of each child that holds, or is
     // creating, a native browser, so it never reports cleanup complete before
-    // removal's CloseBrowser requests have been observed.
+    // removal's CloseBrowser requests have been observed. Only an operation
+    // that still tracks outstanding children registers them, and only the
+    // originals within its generation boundary: an idempotent Close that
+    // committed nothing already holds a final empty set, and a replacement
+    // child created after the commit never delays the original cleanup.
     fn await_removing_children(&mut self, key: &str, profile: &str) {
         let children: Vec<(String, u64)> = self
             .views
@@ -405,8 +409,12 @@ impl State {
             .filter(|(_, v)| v.profile == profile && (v.browser.is_some() || v.creation_pending))
             .map(|(label, v)| (label.clone(), v.generation))
             .collect();
-        if let Some(operation) = self.page_operations.get_mut(key) {
-            operation.awaiting_close.extend(children);
+        if let Some(operation) = self
+            .page_operations
+            .get_mut(key)
+            .filter(|operation| operation.tracks_outstanding(profile))
+        {
+            operation.await_originals(&children);
         }
     }
 
@@ -6539,6 +6547,56 @@ esac
             state.page_operations[&key].awaiting_close,
             BTreeSet::from([("fixture".to_string(), original.generation)])
         );
+    }
+
+    #[test]
+    fn idempotent_close_racing_profile_removal_completes_without_awaiting_children() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        // The page is already absent, so the Close commits nothing and its
+        // empty awaited set is final.
+        let absent = uuid::Uuid::now_v7().to_string();
+        let key = admit_close(&host, &record, &absent);
+        assert!(host.state.lock().unwrap().page_operations[&key].cleanup_reconciled);
+        // Removal begins after the commit and before the UI-loop
+        // reconciliation, which then registers the profile's children.
+        {
+            let mut state = host.state.lock().unwrap();
+            state.profiles.get_mut(&record.id).unwrap().removing = true;
+            state.await_removing_children(&key, &record.id);
+            assert!(state.page_operations[&key].awaiting_close.is_empty());
+        }
+        let receipt = host
+            .complete_page_cleanup(&key, &record.id, true, Ok(()))
+            .unwrap()
+            .receipt
+            .unwrap();
+        assert_eq!(receipt.phase, PagePhase::Completed);
+        assert!(receipt.native_cleanup_complete);
+        // The profile child's own callback leaves the settled receipt alone.
+        host.child_closed(&original);
+        assert_eq!(host.page_receipt(&key).unwrap().phase, PagePhase::Completed);
+    }
+
+    #[test]
+    fn removal_race_awaits_only_children_within_the_generation_boundary() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let key = admit_close(&host, &record, &original.tab);
+        {
+            let mut state = host.state.lock().unwrap();
+            // A sibling window's child created after the commit is a
+            // replacement, not an original of this receipt.
+            let mut late = state.views["fixture"].clone();
+            late.generation = original.generation + 100;
+            state.views.insert("late".to_string(), late);
+            state.profiles.get_mut(&record.id).unwrap().removing = true;
+            state.await_removing_children(&key, &record.id);
+            assert_eq!(
+                state.page_operations[&key].awaiting_close,
+                BTreeSet::from([("fixture".to_string(), original.generation)])
+            );
+        }
     }
 
     #[test]
