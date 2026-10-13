@@ -2455,6 +2455,20 @@ fn validate_claude_subscription_authorization(raw: &str) -> Result<(), NativeFai
     {
         return Err(invalid);
     }
+    let scopes: Vec<_> = field("scope").split_whitespace().collect();
+    // The server-owned setup-token profile is separately constrained: exactly
+    // the inference scope, the manual code callback and the code=true
+    // marker. It never accepts the auth-login scopes or a localhost
+    // callback.
+    if scopes == ["user:inference"] {
+        return if field("redirect_uri") == "https://platform.claude.com/oauth/code/callback"
+            && field("code") == "true"
+        {
+            Ok(())
+        } else {
+            Err(invalid)
+        };
+    }
     if field("redirect_uri") != "https://platform.claude.com/oauth/code/callback" {
         let callback = url::Url::parse(field("redirect_uri")).map_err(|_| invalid)?;
         if callback.scheme() != "http"
@@ -2470,7 +2484,6 @@ fn validate_claude_subscription_authorization(raw: &str) -> Result<(), NativeFai
             return Err(invalid);
         }
     }
-    let scopes: Vec<_> = field("scope").split_whitespace().collect();
     if !scopes.contains(&"user:profile") || !scopes.contains(&"user:inference") {
         return Err(invalid);
     }
@@ -2605,6 +2618,70 @@ mod claude_subscription_tests {
             )
             .is_err()
         );
+    }
+    fn setup_token_authorization() -> String {
+        authorization().replace(
+            "user%3Aprofile+user%3Ainference+user%3Asessions%3Aclaude_code",
+            "user%3Ainference",
+        )
+    }
+    #[test]
+    fn claude_browser_accepts_only_the_constrained_setup_token_profile() {
+        let url = setup_token_authorization();
+        assert!(url.contains("scope=user%3Ainference&"));
+        assert!(validate_claude_subscription_authorization(&url).is_ok());
+        // The setup-token profile must keep the manual code callback and
+        // code=true.
+        for changed in [
+            url.replace(
+                "https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback",
+                "http%3A%2F%2Flocalhost%3A54545%2Fcallback",
+            ),
+            url.replace("&code=true", ""),
+            url.replace("&code=true", "&code=false"),
+            url.replace("user%3Ainference", "user%3Ainference+user%3Amcp_servers"),
+            url.replace("user%3Ainference", "user%3Aprofile"),
+            url.replace("scope=user%3Ainference", "scope="),
+        ] {
+            assert!(
+                validate_claude_subscription_authorization(&changed).is_err(),
+                "{changed}"
+            );
+        }
+        // The auth-login profile keeps requiring both of its scopes.
+        let login = authorization();
+        assert!(validate_claude_subscription_authorization(&login).is_ok());
+        assert!(
+            validate_claude_subscription_authorization(&login.replace("user%3Aprofile+", ""))
+                .is_err()
+        );
+    }
+    #[test]
+    fn setup_token_browser_opens_through_the_native_control() {
+        let host = OAuthHost::default();
+        let scope = OAuthScope {
+            window: "main".into(),
+            instance: uuid::Uuid::now_v7().to_string(),
+            server: uuid::Uuid::now_v7().to_string(),
+            opening: uuid::Uuid::now_v7().to_string(),
+            window_epoch: host.window_epoch("main").unwrap(),
+        };
+        let url = setup_token_authorization();
+        let opened = AtomicUsize::new(0);
+        host.control_with_opener(
+            scope,
+            OAuthAction::ClaudeSubscriptionOpen,
+            "",
+            &uuid::Uuid::now_v7().to_string(),
+            &url,
+            |observed, _| {
+                assert_eq!(observed, url);
+                opened.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
     }
     #[test]
     fn claude_browser_rejects_substituted_authority() {
