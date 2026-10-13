@@ -44,6 +44,18 @@
   border-bottom: 1px solid var(--border-subtle);
   background: var(--background);
 }
+/* The compact header is a scroll root, so the entrance never transforms it.
+   This inner wrapper owns the motion and mirrors the header's flex layout. */
+.session-header-entrance {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: inherit;
+  flex-wrap: inherit;
+  align-items: inherit;
+  justify-content: inherit;
+  gap: inherit;
+  min-width: 0;
+}
 .session-heading {
   min-width: 0;
   flex: 1;
