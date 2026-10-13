@@ -112,7 +112,7 @@ so an unread or unreadable inventory is never treated as empty. A later inventor
 until a retry read succeeds. The dialog shows
 localized read-only guidance for pending states and, for a failed profile or
 inventory read, a retry that re-reads only that state (profiles from the first
-page, or the inventory) and never repeats any accepted or uncertain mutation.
+page with cached pages bypassed, or the inventory) and never repeats any accepted or uncertain mutation.
 
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an

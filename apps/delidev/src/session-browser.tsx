@@ -20,7 +20,8 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@connectrpc/connect-query";
+import { createConnectQueryKey, useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import {
   BrowserQuery,
@@ -391,6 +392,7 @@ function NativeSessionBrowser({
   accountId: string;
 } & TabbedBrowser) {
   useLocale();
+  const queryClient = useQueryClient();
   const [address, setAddress] = useState("");
   const [draft, setDraft] = useState("");
   const [profileId, setProfileId] = useState<string>();
@@ -546,6 +548,16 @@ function NativeSessionBrowser({
     setFailure(undefined);
     setProof(undefined);
     profileWalk.current.clear();
+    // Successful profile pages stay fresh in the query cache, so a restarted
+    // walk would replay them without any list request. Invalidate every cached
+    // page first; the invalidated first-page query then refetches on mount.
+    void queryClient.invalidateQueries({
+      queryKey: createConnectQueryKey({
+        schema: BrowserQuery.listBrowserProfiles,
+        cardinality: "finite",
+      }),
+      refetchType: "none",
+    });
     if (profilePage) setProfilePage("");
     else void profiles.refetch();
   };

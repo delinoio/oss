@@ -1530,3 +1530,34 @@ it("revokes admission when a later inventory read fails until a retry succeeds",
   await waitFor(() => expect(tabNames()).toHaveLength(4));
   expect(pageCalls("create")).toHaveLength(1);
 }, 20000);
+
+const listedTokens = (f: Fixture) =>
+  (f.list.mock.calls as unknown as [{ pageToken: string }][]).map(
+    ([request]) => request.pageToken,
+  );
+
+it("restarts the profile walk with a network read of the first page when retried", async () => {
+  const f = fixture({ registered: false });
+  // The production client treats a successful read as fresh for one second.
+  f.client.setDefaultOptions({ queries: { retry: false, staleTime: 1000 } });
+  let failing = true;
+  setList(f, async ({ pageToken }) => {
+    if (!pageToken) return { profiles: [], nextPageToken: "second" };
+    if (failing) throw new ConnectError("down", Code.Unavailable);
+    return { profiles: [], nextPageToken: "" };
+  });
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/refetch");
+  const retry = await within(dialog).findByRole("button", {
+    name: "Retry profile read",
+  });
+  expect(listedTokens(f)).toEqual(["", "second"]);
+  failing = false;
+  fireEvent.click(retry);
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  // Both pages were read again instead of being replayed from the cache.
+  expect(listedTokens(f)).toEqual(["", "second", "", "second"]);
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+});
