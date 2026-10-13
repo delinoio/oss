@@ -257,3 +257,18 @@ it("clears the tab entrance when Usage becomes inactive so a return never stacks
   expect(pageEntering()).toBe("y4");
   expect(contentEntering()).toBeNull();
 });
+
+it("settles the Usage entrances before the model price picker opens", async () => {
+  const f = fixture();
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  fireEvent.click(screen.getByRole("tab", { name: "Model prices" }));
+  expect(contentEntering()).toBe("y4");
+  const pickers = await screen.findAllByRole("combobox");
+  // The model price picker is the combobox inside the animated tab content.
+  const picker = pickers.find((node) => content().contains(node))!;
+  fireEvent.click(picker);
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(pageEntering()).toBeNull();
+  expect(contentEntering()).toBeNull();
+});
