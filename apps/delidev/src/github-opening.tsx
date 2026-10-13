@@ -321,6 +321,10 @@ export function GitHubDraftTokenForm({
   const epoch = useRef(0),
     working = useRef(false),
     mounted = useRef(false);
+  // The epoch tracks the action's lifetime only (departure, a replaced
+  // Settings opening, unmount). `disabled` gates new clicks and also flips
+  // during routine capability status polls, so it must not retire an already
+  // admitted opening; `working` keeps the buttons locked until it settles.
   useLayoutEffect(() => {
     mounted.current = true;
     epoch.current++;
@@ -329,7 +333,7 @@ export function GitHubDraftTokenForm({
       mounted.current = false;
       epoch.current++;
     };
-  }, [active, disabled, opening]);
+  }, [active, opening]);
   const options = {
     enabled: false,
     retry: false,

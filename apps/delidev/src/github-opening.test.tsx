@@ -329,7 +329,49 @@ it.each(["url", "requestId", "resourceOwner", "tokenKind", "access"])(
     expect(native.invoke).not.toHaveBeenCalled();
   },
 );
-it.each(["disabled", "departure", "unmount"])(
+it("keeps an admitted draft opening alive through a transient disabled flip", async () => {
+  const f = draftFixture(),
+    original = f.form.getMockImplementation()!;
+  let release!: () => void;
+  f.form.mockImplementationOnce(async (r) => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return original(r);
+  });
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Classic" }));
+  await waitFor(() => expect(f.form).toHaveBeenCalledTimes(1));
+  // Simulate a capability status poll toggling the new-click gate.
+  view.rerender(f.view(true, true));
+  view.rerender(f.view(true, false));
+  const classic = screen.getByRole("button", { name: "Classic" });
+  const fine = screen.getByRole("button", { name: "Fine grained" });
+  expect((classic as HTMLButtonElement).disabled).toBe(true);
+  expect((fine as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(fine);
+  expect(f.form).toHaveBeenCalledTimes(1);
+  release();
+  await screen.findByText(/Sent to your browser/);
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  expect(f.form).toHaveBeenCalledTimes(1);
+  await waitFor(() =>
+    expect((classic as HTMLButtonElement).disabled).toBe(false),
+  );
+});
+it("keeps new draft openings disabled while the gate is closed", async () => {
+  const f = draftFixture();
+  render(f.view(true, true));
+  const classic = screen.getByRole("button", { name: "Classic" });
+  const fine = screen.getByRole("button", { name: "Fine grained" });
+  expect((classic as HTMLButtonElement).disabled).toBe(true);
+  expect((fine as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(classic);
+  fireEvent.click(fine);
+  expect(f.form).not.toHaveBeenCalled();
+  expect(native.invoke).not.toHaveBeenCalled();
+});
+it.each(["departure", "unmount"])(
   "discards a delayed draft form after %s",
   async (change) => {
     const f = draftFixture(),
@@ -344,8 +386,7 @@ it.each(["disabled", "departure", "unmount"])(
     const view = render(f.view());
     fireEvent.click(screen.getByRole("button", { name: "Fine grained" }));
     await waitFor(() => expect(f.form).toHaveBeenCalledTimes(1));
-    if (change === "disabled") view.rerender(f.view(true, true));
-    else if (change === "unmount") view.unmount();
+    if (change === "unmount") view.unmount();
     else view.rerender(f.view(false));
     release();
     await waitFor(() => expect(f.client.isFetching()).toBe(0));

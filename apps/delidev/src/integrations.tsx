@@ -437,7 +437,10 @@ function IntegrationCreation({
           {copy("integrations.onboardingSupportChanged")} {retryStatus}
         </p>
       ) : null}
-      {!negotiated.current && !status.error ? (
+      {!negotiated.current && supported ? (
+        <p role="status">{copy("integrations.onboardingSupportRecovered")}</p>
+      ) : null}
+      {!negotiated.current && !supported && !status.error ? (
         <p role="status">{copy("integrations.onboardingUnsupported")}</p>
       ) : null}
       {negotiated.current ? (

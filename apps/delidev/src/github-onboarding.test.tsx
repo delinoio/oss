@@ -416,6 +416,142 @@ it.each([
   },
 );
 
+const UNSUPPORTED_COPY = /Update the selected server to verify a token/;
+const RECOVERED_COPY = /now available on the selected server.*reopen/;
+const CHANGED_COPY = /GitHub token verification support changed/;
+
+it.each([[[]], [undefined]])(
+  "describes recovered support without swapping the metadata editor: initial %j",
+  async (initial) => {
+    const f = fixture();
+    if (initial) f.status.mockResolvedValue({ capabilities: initial });
+    else
+      f.status.mockRejectedValue(
+        new ConnectError("Initial status failure", Code.Unavailable),
+      );
+    render(f.view());
+    fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+    const name = (await screen.findByLabelText(
+      "Profile name",
+    )) as HTMLInputElement;
+    fireEvent.change(name, { target: { value: "Fallback draft" } });
+    f.owner();
+    if (initial) expect(screen.getByText(UNSUPPORTED_COPY)).toBeTruthy();
+    f.save.mockRejectedValueOnce(
+      new ConnectError("Lost fallback save", Code.Unavailable),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    await screen.findByRole("button", { name: "Retry the same profile save" });
+    const original = f.save.mock.calls[0][0];
+    f.status.mockResolvedValue({
+      capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1],
+    });
+    await act(async () => {
+      await f.client.invalidateQueries({ refetchType: "active" });
+    });
+    await screen.findByText(RECOVERED_COPY);
+    expect(screen.queryByText(UNSUPPORTED_COPY)).toBeNull();
+    expect(screen.queryByText(CHANGED_COPY)).toBeNull();
+    expect(screen.getByLabelText("Profile name")).toBe(name);
+    expect(name.value).toBe("Fallback draft");
+    expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry the same profile save" }),
+    );
+    await screen.findByRole("button", { name: "Manage Fallback draft" });
+    expect(f.save.mock.calls[1][0]).toEqual(original);
+    expect(f.inspect).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps the changed-support copy when admitted token-first support is lost", async () => {
+  const f = fixture();
+  render(f.view());
+  await f.enter();
+  expect(screen.queryByText(CHANGED_COPY)).toBeNull();
+  f.status.mockResolvedValue({ capabilities: [] });
+  await act(async () => {
+    await f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await screen.findByText(CHANGED_COPY);
+  expect(screen.queryByText(RECOVERED_COPY)).toBeNull();
+  expect(screen.queryByText(UNSUPPORTED_COPY)).toBeNull();
+});
+
+it.each([
+  [
+    "duplicate capability",
+    [
+      SystemCapability.GITHUB_TOKEN_ONBOARDING_V1,
+      SystemCapability.GITHUB_TOKEN_ONBOARDING_V1,
+    ],
+  ],
+  [
+    "unknown capability",
+    [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1, 999 as SystemCapability],
+  ],
+  [
+    "unspecified capability",
+    [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1, SystemCapability.UNSPECIFIED],
+  ],
+])(
+  "keeps the unsupported copy for a malformed later inventory: %s",
+  async (_name, malformed) => {
+    const f = fixture();
+    f.status.mockResolvedValue({ capabilities: [] });
+    render(f.view());
+    fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+    await screen.findByLabelText("Profile name");
+    f.status.mockResolvedValue({ capabilities: malformed });
+    await act(async () => {
+      await f.client.invalidateQueries({ refetchType: "active" });
+    });
+    expect(screen.getByText(UNSUPPORTED_COPY)).toBeTruthy();
+    expect(screen.queryByText(RECOVERED_COPY)).toBeNull();
+  },
+);
+
+it("keeps the read error truthful after fallback without recovered-support copy", async () => {
+  const f = fixture();
+  f.status.mockResolvedValue({ capabilities: [] });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  await screen.findByLabelText("Profile name");
+  f.status.mockRejectedValue(new ConnectError("Lost", Code.Unavailable));
+  await act(async () => {
+    await f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(screen.queryByText(RECOVERED_COPY)).toBeNull();
+  expect(screen.queryByText(UNSUPPORTED_COPY)).toBeNull();
+});
+
+it("keeps the unsupported copy while a later fetch is in flight and recovers once it validates", async () => {
+  const f = fixture();
+  f.status.mockResolvedValue({ capabilities: [] });
+  render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  await screen.findByLabelText("Profile name");
+  let release!: () => void;
+  f.status.mockImplementation(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] };
+  });
+  act(() => {
+    void f.client.invalidateQueries({ refetchType: "active" });
+  });
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  expect(screen.getByText(UNSUPPORTED_COPY)).toBeTruthy();
+  expect(screen.queryByText(RECOVERED_COPY)).toBeNull();
+  await act(async () => {
+    release();
+  });
+  await screen.findByText(RECOVERED_COPY);
+  expect(screen.queryByText(UNSUPPORTED_COPY)).toBeNull();
+});
+
 it("does not inspect a new token after support becomes unavailable", async () => {
   const f = fixture();
   render(f.view());
