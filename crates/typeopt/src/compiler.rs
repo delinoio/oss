@@ -54,6 +54,20 @@ pub enum InputKind {
     Absent,
 }
 
+/// The compiler filesystem call that reported a path as missing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum ProbeKind {
+    /// `file_exists`: only a regular file satisfies the probe.
+    File,
+    /// `directory_exists`: only a directory satisfies the probe.
+    Directory,
+    /// `stat`: anything that resolves satisfies the probe.
+    Stat,
+}
+
+/// Missing non-`bundled:` paths and the probes that reported each as missing.
+type MissLog = Arc<Mutex<BTreeMap<String, BTreeSet<ProbeKind>>>>;
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Input {
     pub path: String,
@@ -77,7 +91,7 @@ pub struct Project {
     reads: Arc<Mutex<BTreeMap<String, String>>>,
     /// Non-`bundled:` paths whose existence the compiler probed and found
     /// missing (`file_exists`, `directory_exists` or `stat`).
-    misses: Arc<Mutex<BTreeSet<String>>>,
+    misses: MissLog,
     fs: Arc<dyn Fs>,
     cwd: String,
     version: Rc<CompilerProgram>,
@@ -114,7 +128,7 @@ impl Project {
         // snapshot that consumers validate.
         let base: Arc<dyn Fs> = Arc::new(bundled::wrap_fs(tsrs_vfs::osvfs::fs()));
         let reads = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
-        let misses = Arc::new(Mutex::new(BTreeSet::<String>::new()));
+        let misses = MissLog::default();
         let (reader, recorded) = (base.clone(), reads.clone());
         let fs = wrapvfs_wrap(
             base,
@@ -646,17 +660,30 @@ impl Project {
         inputs.sort();
         inputs.dedup();
         // Negative resolution dependencies come after the positive inputs, in
-        // path order. A path is kept only when nothing resolves there (a
-        // dangling symlink counts), so a probe that failed only because the
-        // path is a directory (or the reverse) never becomes a false absence.
-        let mut absent: Vec<String> = self
-            .misses
-            .lock()
-            .expect("compiler probe log")
-            .iter()
-            .filter(|path| !known.contains(*path) && is_absent_on_disk(path))
-            .cloned()
-            .collect();
+        // path order. A path is kept when nothing resolves there (a dangling
+        // symlink counts) or when it appeared after the failed probe: the
+        // already-built program ignores such a file, so the entry makes
+        // consumers reject the output instead of trusting a stale module
+        // graph. A probe that failed only because the path is a directory (or
+        // the reverse) never becomes a false absence.
+        let mut absent = Vec::new();
+        for (path, probes) in self.misses.lock().expect("compiler probe log").iter() {
+            if known.contains(path) {
+                continue;
+            }
+            match classify_miss(path, probes) {
+                MissState::Absent => absent.push(path.clone()),
+                MissState::Appeared => {
+                    tracing::warn!(
+                        path = path.as_str(),
+                        "resolution candidate appeared after the compiler found it missing; \
+                         recording it so the output is rejected"
+                    );
+                    absent.push(path.clone());
+                }
+                MissState::Unrelated => {}
+            }
+        }
         absent.sort();
         tracing::debug!(
             probes = absent.len(),
@@ -977,18 +1004,20 @@ struct OverlayFs {
     replacements: Replacements,
     /// Receives every missing non-`bundled:` path the compiler probes. Rebuilds
     /// over this overlay pass `None` because the wrapped base already records.
-    misses: Option<Arc<Mutex<BTreeSet<String>>>>,
+    misses: Option<MissLog>,
 }
 
 impl OverlayFs {
-    fn record_miss(&self, path: &str) {
+    fn record_miss(&self, path: &str, probe: ProbeKind) {
         if let Some(misses) = &self.misses
             && !path.starts_with("bundled:")
         {
             misses
                 .lock()
                 .expect("compiler probe log")
-                .insert(path.to_owned());
+                .entry(path.to_owned())
+                .or_default()
+                .insert(probe);
         }
     }
 }
@@ -1000,7 +1029,7 @@ impl Fs for OverlayFs {
     fn file_exists(&self, path: &str) -> bool {
         let exists = self.base.file_exists(path);
         if !exists {
-            self.record_miss(path);
+            self.record_miss(path, ProbeKind::File);
         }
         exists
     }
@@ -1015,7 +1044,7 @@ impl Fs for OverlayFs {
     fn directory_exists(&self, path: &str) -> bool {
         let exists = self.base.directory_exists(path);
         if !exists {
-            self.record_miss(path);
+            self.record_miss(path, ProbeKind::Directory);
         }
         exists
     }
@@ -1027,7 +1056,7 @@ impl Fs for OverlayFs {
     fn stat(&self, path: &str) -> Option<tsrs_vfs::FileInfo> {
         let info = self.base.stat(path);
         if info.is_none() {
-            self.record_miss(path);
+            self.record_miss(path, ProbeKind::Stat);
         }
         info
     }
@@ -1059,7 +1088,7 @@ impl Fs for OverlayFs {
 }
 fn wrapvfs_wrap(
     base: Arc<dyn Fs>,
-    misses: Option<Arc<Mutex<BTreeSet<String>>>>,
+    misses: Option<MissLog>,
     replacements: Replacements,
 ) -> Arc<dyn Fs> {
     Arc::new(OverlayFs {
@@ -1069,16 +1098,45 @@ fn wrapvfs_wrap(
     })
 }
 
-/// Whether nothing resolves at `path`. The compiler probes follow symlinks, so
-/// a dangling symlink is missing too: creating its target changes resolution.
-/// Other failures, such as a permission error, are not proof of absence.
-fn is_absent_on_disk(path: &str) -> bool {
+/// What the filesystem holds now at a path the compiler probed as missing.
+#[derive(Debug, PartialEq, Eq)]
+enum MissState {
+    /// Nothing resolves there. A dangling symlink counts, because the compiler
+    /// probes follow symlinks and creating its target changes resolution.
+    Absent,
+    /// Something now satisfies a probe that reported a miss, so the path
+    /// appeared after the compiler resolved modules and the program was built
+    /// from a different filesystem state than the one on disk.
+    Appeared,
+    /// The path exists but never satisfied the failed probes (for example, a
+    /// directory probed with `file_exists`), or its state is unknown, such as
+    /// after a permission error. It is not a resolution dependency.
+    Unrelated,
+}
+
+fn classify_miss(path: &str, probes: &BTreeSet<ProbeKind>) -> MissState {
     match std::fs::metadata(path) {
-        Ok(_) => false,
-        Err(error) => matches!(
-            error.kind(),
-            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-        ),
+        Ok(metadata) => {
+            let satisfies = |probe: &ProbeKind| match probe {
+                ProbeKind::File => metadata.is_file(),
+                ProbeKind::Directory => metadata.is_dir(),
+                ProbeKind::Stat => true,
+            };
+            if probes.iter().any(satisfies) {
+                MissState::Appeared
+            } else {
+                MissState::Unrelated
+            }
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            MissState::Absent
+        }
+        Err(_) => MissState::Unrelated,
     }
 }
 
@@ -1531,4 +1589,113 @@ fn token_start(node: Node) -> usize {
         get_source_file_of_node(node).raw().as_source_file_p(),
         false,
     ) as usize
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+
+    fn probes(kinds: &[ProbeKind]) -> BTreeSet<ProbeKind> {
+        kinds.iter().copied().collect()
+    }
+
+    fn classify(path: &std::path::Path, kinds: &[ProbeKind]) -> MissState {
+        classify_miss(&path.to_string_lossy(), &probes(kinds))
+    }
+
+    #[test]
+    fn missing_paths_and_dangling_symlinks_are_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("file.ts");
+        std::fs::write(&file, "").unwrap();
+        let dangling = temp.path().join("dangling.ts");
+        std::os::unix::fs::symlink(temp.path().join("target.ts"), &dangling).unwrap();
+        for kind in [ProbeKind::File, ProbeKind::Directory, ProbeKind::Stat] {
+            assert_eq!(
+                classify(&temp.path().join("none.ts"), &[kind]),
+                MissState::Absent
+            );
+            assert_eq!(classify(&dangling, &[kind]), MissState::Absent);
+            // A path below a regular file reports ENOTDIR.
+            assert_eq!(
+                classify(&file.join("nested.ts"), &[kind]),
+                MissState::Absent
+            );
+        }
+        // The symlink target appearing turns the candidate into a hit.
+        std::fs::write(temp.path().join("target.ts"), "").unwrap();
+        assert_eq!(classify(&dangling, &[ProbeKind::File]), MissState::Appeared);
+    }
+
+    #[test]
+    fn a_path_that_now_satisfies_a_failed_probe_has_appeared() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("file.ts");
+        std::fs::write(&file, "").unwrap();
+        let directory = temp.path().join("dir");
+        std::fs::create_dir(&directory).unwrap();
+        assert_eq!(classify(&file, &[ProbeKind::File]), MissState::Appeared);
+        assert_eq!(classify(&file, &[ProbeKind::Stat]), MissState::Appeared);
+        assert_eq!(
+            classify(&file, &[ProbeKind::Directory, ProbeKind::File]),
+            MissState::Appeared
+        );
+        assert_eq!(
+            classify(&directory, &[ProbeKind::Directory]),
+            MissState::Appeared
+        );
+        assert_eq!(
+            classify(&directory, &[ProbeKind::Stat]),
+            MissState::Appeared
+        );
+    }
+
+    #[test]
+    fn a_probe_of_the_wrong_kind_is_not_a_resolution_dependency() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("file.ts");
+        std::fs::write(&file, "").unwrap();
+        let directory = temp.path().join("dir");
+        std::fs::create_dir(&directory).unwrap();
+        assert_eq!(
+            classify(&file, &[ProbeKind::Directory]),
+            MissState::Unrelated
+        );
+        assert_eq!(
+            classify(&directory, &[ProbeKind::File]),
+            MissState::Unrelated
+        );
+    }
+
+    #[test]
+    fn candidate_created_before_snapshot_is_still_recorded() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        std::fs::write(
+            root.join("tsconfig.json"),
+            r#"{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"jsx":"react-jsx"}}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("main.ts"), "import { f } from './dep'; f();").unwrap();
+        std::fs::write(root.join("dep.tsx"), "export function f() {}").unwrap();
+        let project = Project::load(
+            &root.join("tsconfig.json").to_string_lossy(),
+            vec![root.join("main.ts").to_string_lossy().into_owned()],
+        )
+        .unwrap();
+        // The higher-priority candidate appears after `./dep` resolved past
+        // it but before the snapshot is taken.
+        let late = root.join("dep.ts");
+        std::fs::write(&late, "export function f() {}").unwrap();
+        let snapshot = project.snapshot().unwrap();
+        let late = late.to_string_lossy();
+        assert!(
+            snapshot
+                .inputs
+                .iter()
+                .any(|i| i.kind == InputKind::Absent && i.path == late.as_ref()),
+            "{:#?}",
+            snapshot.inputs
+        );
+    }
 }
