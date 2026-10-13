@@ -709,6 +709,71 @@ func TestManagedClaudeDisconnectWaitsForOriginalWorkerThenDeletesVault(t *testin
 	}
 }
 
+func TestManagedClaudeLoginKeepsSettledStateAndRetriesStaleCleanupFromCheckpoint(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	stale := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	f.secrets.values[stale] = []byte("stale-generation")
+	f.secrets.deleteError = errors.New("vault deletion unavailable")
+	generation := f.connect()
+	current := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	_, account := f.record()
+	o := account.Subscription.ServerOperation
+	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.Generation != generation {
+		t.Fatal("failed stale-reference cleanup unsettled the connected account")
+	}
+	if o.State != domain.SubscriptionSucceeded || o.CleanupPhase != domain.SubscriptionCredentialCleanupPending || !managedClaudeNeedsRecovery(account) {
+		t.Fatal("failed stale-reference cleanup left no durable retry checkpoint")
+	}
+	if len(f.secrets.values[stale]) == 0 || len(f.secrets.values[current]) == 0 {
+		t.Fatal("cleanup fixture changed unexpectedly")
+	}
+	f.secrets.deleteError = nil
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, o.ID); err != nil {
+		t.Fatalf("checkpoint recovery failed: %v", err)
+	}
+	_, account = f.record()
+	if len(f.secrets.values[stale]) != 0 || len(f.secrets.values[current]) == 0 {
+		t.Fatal("recovery did not retire only the stale reference")
+	}
+	o = account.Subscription.ServerOperation
+	if account.Connection == nil || account.Health != domain.AccountReady || account.Subscription.Generation != generation || account.Subscription.RecoveryRequired || o.State != domain.SubscriptionSucceeded || o.CleanupPhase != "" || managedClaudeNeedsRecovery(account) {
+		t.Fatal("checkpoint recovery did not preserve the settled generation and clear the checkpoint")
+	}
+}
+
+func TestManagedClaudeLogoutCheckpointSurvivesFailedVaultDeletion(t *testing.T) {
+	f := newManagedClaudeFixture(t)
+	generation := f.connect()
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin}
+	logout, err := f.request(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.deleteError = errors.New("server stopped before vault deletion")
+	awaitServerFixture(t, f.run())
+	_, account := f.record()
+	o := account.Subscription.ServerOperation
+	if account.Connection != nil || account.Subscription.Generation != "" || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || o.State != domain.SubscriptionSucceeded {
+		t.Fatal("settled logout was not published")
+	}
+	if len(f.secrets.values[ref]) == 0 || o.CleanupPhase != domain.SubscriptionCredentialCleanupPending || !managedClaudeNeedsRecovery(account) {
+		t.Fatal("the retained setup token has no durable cleanup checkpoint")
+	}
+	if got := f.progressFor(logout.OperationId); got.State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED {
+		t.Fatalf("logout state %v", got.State)
+	}
+	f.secrets.deleteError = nil
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.recoverManagedClaude(ctx, f.input.AccountID, domain.ID(logout.OperationId)); err != nil {
+		t.Fatalf("checkpoint recovery failed: %v", err)
+	}
+	_, account = f.record()
+	if len(f.secrets.values[ref]) != 0 || account.Subscription.ServerOperation.CleanupPhase != "" || managedClaudeNeedsRecovery(account) || account.Connection != nil {
+		t.Fatal("recovery did not delete the retained token and clear the checkpoint")
+	}
+}
+
 func TestManagedClaudeRestartRecoveryOnlyReconcilesTheOriginalRuntime(t *testing.T) {
 	f := newManagedClaudeFixture(t)
 	f.native.closeErr = errors.New("still running")

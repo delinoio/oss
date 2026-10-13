@@ -174,7 +174,10 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
-		if o.CleanupPhase != "" {
+		if o.CleanupPhase == SubscriptionCredentialCleanupPending && !account.ManagedClaudeAccount() {
+			return invalid()
+		}
+		if o.CleanupPhase != "" && o.CleanupPhase != SubscriptionCredentialCleanupPending {
 			if o.Action != SubscriptionLogin || o.Generation != "" || account.Connection != nil || s.Generation != "" || s.IdentityCommitment != "" || s.Lease != nil || s.OwnerMachineID != "" || s.Observation != nil || s.ServerCredit != nil || s.ResetCredits != nil || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || (o.CleanupPhase != SubscriptionNativeCleanupConfirmed && o.CleanupPhase != SubscriptionCredentialCleanupConfirmed) {
 				return invalid()
 			}
@@ -223,6 +226,10 @@ type SubscriptionCleanupPhase string
 const (
 	SubscriptionNativeCleanupConfirmed     SubscriptionCleanupPhase = "native-confirmed"
 	SubscriptionCredentialCleanupConfirmed SubscriptionCleanupPhase = "credentials-confirmed"
+	// SubscriptionCredentialCleanupPending is written with a settled server-token
+	// Claude login or logout. It records that vault references still need
+	// retirement and is cleared only after that deletion is confirmed.
+	SubscriptionCredentialCleanupPending SubscriptionCleanupPhase = "credentials-pending"
 )
 
 type SubscriptionLoginState string

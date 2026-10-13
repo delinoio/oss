@@ -70,3 +70,36 @@ func TestManagedClaudeModeIsOmittedForDeviceAccounts(t *testing.T) {
 		}
 	}
 }
+
+func TestManagedClaudeCredentialCleanupCheckpointValidation(t *testing.T) {
+	settled := func() Account {
+		a := managedClaudeFixture()
+		o := a.Subscription.ServerOperation
+		o.State = SubscriptionSucceeded
+		o.CleanupPhase = SubscriptionCredentialCleanupPending
+		a.Subscription.Pending = nil
+		a.Subscription.Generation = o.FinishID
+		a.Subscription.IdentityCommitment = strings.Repeat("ab", 32)
+		a.Connection = &AccountConnection{ID: o.FinishID, Authentication: SubscriptionAuth, ConnectedAt: time.Now().UTC()}
+		a.Health = AccountReady
+		return a
+	}
+	if a := settled(); a.Subscription.Validate(a) != nil {
+		t.Fatal("a settled login with a pending credential cleanup checkpoint was rejected")
+	}
+	for name, mutate := range map[string]func(*Account){
+		"not settled":     func(a *Account) { a.Subscription.ServerOperation.State = SubscriptionFailed },
+		"native started":  func(a *Account) { a.Subscription.ServerOperation.NativeStarted = true },
+		"unknown phase":   func(a *Account) { a.Subscription.ServerOperation.CleanupPhase = SubscriptionNativeCleanupConfirmed },
+		"device account":  func(a *Account) { a.Subscription.ClaudeCredential = "" },
+		"chatgpt account": func(a *Account) { a.SubscriptionService = SubscriptionChatGPT },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := settled()
+			mutate(&a)
+			if a.Subscription.Validate(a) == nil {
+				t.Fatal("an invalid credential cleanup checkpoint was accepted")
+			}
+		})
+	}
+}

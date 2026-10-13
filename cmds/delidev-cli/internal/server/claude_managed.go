@@ -417,9 +417,23 @@ func managedClaudeCandidate(a domain.Account) bool {
 	return a.ManagedClaudeAccount() && !st.RecoveryRequired && st.ServerOperation != nil && st.ServerOperation.State == domain.SubscriptionPreparing && !st.ServerOperation.NativeStarted && st.Pending != nil && st.Pending.Phase == domain.SubscriptionQueued && st.Lease == nil
 }
 
+// managedClaudeCredentialCleanupPending selects a settled login or logout whose
+// durable checkpoint says obsolete vault references still need retirement. It
+// never reopens native work and preserves the settled connection state.
+func managedClaudeCredentialCleanupPending(a domain.Account) bool {
+	if !a.ManagedClaudeAccount() || a.Removal != nil {
+		return false
+	}
+	o := a.Subscription.ServerOperation
+	return o != nil && o.CleanupPhase == domain.SubscriptionCredentialCleanupPending && o.State == domain.SubscriptionSucceeded && !o.NativeStarted && a.Subscription.Pending == nil
+}
+
 // managedClaudeNeedsRecovery selects an interrupted server operation whose
 // native child is no longer owned by a live goroutine in this server epoch.
 func managedClaudeNeedsRecovery(a domain.Account) bool {
+	if managedClaudeCredentialCleanupPending(a) {
+		return true
+	}
 	st := a.Subscription
 	if !a.ManagedClaudeAccount() || st.ServerOperation == nil || st.Lease != nil || !st.RecoveryRequired || a.Removal != nil {
 		return false
@@ -811,11 +825,16 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 				if err := uniqueSubscriptionIdentity(tx, id, commitment); err != nil {
 					return nil, err
 				}
+				// Stale references are retired after publication; the checkpoint keeps
+				// that obligation durable across a restart or failed deletion.
+				st.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupPending
 				st.Generation = o.FinishID
 				st.IdentityCommitment = commitment
 				a.Connection = &domain.AccountConnection{ID: o.FinishID, Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}
 				a.Health = domain.AccountReady
 			case success && !login:
+				// The settled logout still owes deletion of the retired generation.
+				st.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupPending
 				a.Connection = nil
 				a.Health = domain.AccountDisconnected
 				a.Validation, a.Catalog, a.Quota = nil, nil, nil
@@ -846,13 +865,46 @@ func (s *Service) finishManagedClaude(ctx context.Context, id domain.ID, o domai
 			keep = ""
 		}
 	}
-	if cleanup {
+	if success {
+		// The settled state and its cleanup checkpoint are committed. A failed or
+		// interrupted deletion is retried from the checkpoint, never by fencing or
+		// rewriting the settled operation.
+		if err := s.retireManagedClaudeReferences(ctx, vault, id, o.ID, keep); err != nil {
+			s.logger.WarnContext(ctx, "claude_managed_cleanup_pending", "operation_id", o.ID, "code", domain.SafeError(err).Code)
+		}
+	} else if cleanup {
 		if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
 			return err
 		}
 	}
 	s.logger.InfoContext(ctx, "claude_managed_finished", "account_id", id, "operation_id", o.ID, "action", o.Action, "state", result, "cleanup_confirmed", cleanup)
 	return nil
+}
+
+// retireManagedClaudeReferences deletes every vault reference except keep, then
+// clears the operation's credential-cleanup checkpoint. The caller holds the
+// account gate. The checkpoint is cleared only after deletion is confirmed.
+func (s *Service) retireManagedClaudeReferences(ctx context.Context, vault accountSecrets, id, operation, keep domain.ID) error {
+	if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
+		return err
+	}
+	return s.clearManagedClaudeCleanupCheckpoint(ctx, id, operation)
+}
+
+func (s *Service) clearManagedClaudeCleanupCheckpoint(ctx context.Context, id, operation domain.ID) error {
+	_, err := s.Store.Mutate(ctx, domain.NewID(), "claude.managed.credential-cleanup-confirmed", struct{ Account, Operation domain.ID }{id, operation}, func(tx *store.Tx) (any, error) {
+		r, a, err := managedClaudeAccount(tx, id, 0)
+		if err != nil {
+			return nil, err
+		}
+		if !managedClaudeCredentialCleanupPending(a) || a.Subscription.ServerOperation.ID != operation {
+			return struct{}{}, nil
+		}
+		a.Subscription.ServerOperation.CleanupPhase = ""
+		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return struct{}{}, err
+	})
+	return err
 }
 
 func (s *Service) markManagedClaudeRecovery(id, operation domain.ID, diagnostic *domain.NativeSubscriptionDiagnostic) error {
@@ -901,6 +953,8 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 	}
 	defer unlock()
 	var o domain.ServerSubscriptionOperation
+	var generation domain.ID
+	checkpoint := false
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -913,8 +967,37 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 			return subscriptionDenied()
 		}
 		o = *a.Subscription.ServerOperation
+		generation = a.Subscription.Generation
+		checkpoint = managedClaudeCredentialCleanupPending(a)
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if checkpoint {
+		// A settled operation only owes vault cleanup. The settled generation is
+		// preserved; no native runtime, fence or connection state is touched.
+		expected := domain.ID("")
+		if o.Action == domain.SubscriptionLogin {
+			expected = o.FinishID
+		}
+		if generation != expected {
+			// The settled generation changed after publication. Nothing here may
+			// decide which reference is current, so delete nothing.
+			s.logger.WarnContext(ctx, "claude_managed_cleanup_checkpoint_stale", "operation_id", operation)
+			return s.clearManagedClaudeCleanupCheckpoint(ctx, id, operation)
+		}
+		vault, err := s.secrets()
+		if err != nil {
+			return err
+		}
+		if err := s.retireManagedClaudeReferences(ctx, vault, id, operation, generation); err != nil {
+			return err
+		}
+		s.logger.InfoContext(ctx, "claude_managed_credential_cleanup_confirmed", "account_id", id, "operation_id", operation, "action", o.Action)
+		return nil
+	}
+	vault, err := s.secrets()
 	if err != nil {
 		return err
 	}
@@ -922,10 +1005,6 @@ func (s *Service) recoverManagedClaude(parent context.Context, id, operation dom
 		if err := reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), o); err != nil {
 			return err
 		}
-	}
-	vault, err := s.secrets()
-	if err != nil {
-		return err
 	}
 	if err := cleanupSubscriptionReferences(ctx, vault, id, ""); err != nil {
 		return err

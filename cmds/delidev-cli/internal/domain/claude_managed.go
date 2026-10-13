@@ -54,6 +54,14 @@ func (s SubscriptionState) validateManagedClaude(account Account) error {
 		if o.LoginMethod != 0 && o.LoginMethod != SubscriptionBrowserCode || o.CodeSubmissionID != "" && (o.CodeSubmissionID.Validate() != nil || o.LoginMethod != SubscriptionBrowserCode) || o.CodeConsumed && o.CodeSubmissionID == "" {
 			return invalid()
 		}
+		if o.CleanupPhase != "" {
+			// Only a settled operation can still owe vault cleanup. Later account
+			// changes, such as a database restore, keep the checkpoint until the
+			// bounded retirement of obsolete references is confirmed.
+			if o.CleanupPhase != SubscriptionCredentialCleanupPending || o.State != SubscriptionSucceeded || o.NativeStarted {
+				return invalid()
+			}
+		}
 		if d := o.ClaudeDiagnostic; d != nil && (d.Validate() != nil || d.CorrelationID != o.ID || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
