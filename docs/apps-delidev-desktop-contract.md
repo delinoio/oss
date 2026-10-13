@@ -4821,6 +4821,29 @@ composer focus only when the active visible pending composer owned it at
 publication. Preserve the actual inherited transcript and existing paused/Resume
 behavior. Creation, publication and transfer never enqueue, Resume or send
 findings. Logs contain only operation IDs, closed phases and stable error codes.
+Publication also requires the returned child Session ID to be nonempty and
+different from the original parent ID. A succeeded matching job with a malformed
+readback is treated as unverified: keep the pending draft, request and accepted
+job, show the unverified-status guidance and permit only original-job status
+reinspection. It never publishes a descriptor, relationship or published log and
+never releases preparation state. The connection tab store independently rejects
+an empty child ID or one equal to the parent or an ancestor, so a self-child can
+never mount recursively.
+
+Retry current read appears only when the original parent read itself failed and no
+job state exists. A definite creation rejection with a healthy parent read shows
+its diagnostic, editable draft and guarded Discard without a read retry; a read
+retry refetches only the parent and never resends creation. An explicit replay
+that returns a definite error keeps the original uncertainty.
+
+Open Sidechat from another Session while a pending Sidechat is retained routes the
+application to the original parent through the existing Session navigation callback
+and selects the original pending descriptor, sending no second Fork request,
+input, Resume or findings transfer. Composer focus is deferred until that parent is
+active and visible; a newer reopen or later navigation invalidates the deferred
+callback. Repeating selects the same tab. Automatic publication while backgrounded
+or closed never navigates, reopens presentation or steals focus.
+
 Original account/snapshot/native ownership and dependent cleanup remain in the
 [Sidechat contract](cmds-delidev-sidechat-contract.md#direct-desktop-preparation).
 

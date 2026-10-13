@@ -114,7 +114,24 @@ export class SessionTabsStore {
     this.sessions.set(id, value);
     for (const callback of this.listeners) callback();
   }
+  // A Sidechat child must be a nonempty Session distinct from its parent and
+  // from every ancestor, so malformed ownership can never form a render cycle.
+  private validChild(parent: string, child: string) {
+    if (!child) return false;
+    const seen = new Set<string>();
+    for (
+      let ancestor: string | undefined = parent;
+      ancestor !== undefined && !seen.has(ancestor);
+      ancestor = this.parents.get(ancestor)
+    ) {
+      if (ancestor === child) return false;
+      seen.add(ancestor);
+    }
+    return true;
+  }
   open(id: string, tab: SessionTab) {
+    if (tab.kind === SessionTabKind.Sidechat && !this.validChild(id, tab.id))
+      return;
     if (
       tab.kind === SessionTabKind.Terminal &&
       this.terminalPresentation(id).hidden(tab.id)
@@ -287,6 +304,8 @@ export class SessionTabsStore {
     tab: SidechatTab,
     draft: { text: string; start: number; end: number; focus: boolean },
   ) {
+    // Reject malformed child identity before any ownership or draft mutation.
+    if (!this.validChild(parent, tab.id)) return false;
     const previous = this.snapshot(parent);
     const key = sessionTabKey({
       kind: SessionTabKind.PendingSidechat,
@@ -303,7 +322,7 @@ export class SessionTabsStore {
     children.set(tab.id, tab);
     this.children.set(parent, children);
     // Publication cannot reopen closed presentation or select a background result.
-    if (index < 0) return;
+    if (index < 0) return true;
     const tabs = [...previous.tabs];
     tabs[index] = tab;
     this.publish(parent, {
@@ -311,10 +330,13 @@ export class SessionTabsStore {
       selected:
         previous.selected === key ? sessionTabKey(tab) : previous.selected,
     });
+    return true;
   }
   // Child controllers survive presentation close and retain their original parent.
   sidechats(parent: string) {
-    return [...(this.children.get(parent)?.values() ?? [])];
+    return [...(this.children.get(parent)?.values() ?? [])].filter((tab) =>
+      this.validChild(parent, tab.id),
+    );
   }
   parent(child: string) {
     return this.parents.get(child);

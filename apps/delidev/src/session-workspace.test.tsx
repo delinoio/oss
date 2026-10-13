@@ -12,6 +12,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import {
   BudgetState,
@@ -33,7 +34,11 @@ import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
-import { SessionTabsProvider } from "./session-tabs";
+import {
+  SessionTabKind,
+  SessionTabsProvider,
+  useSessionTabsStore,
+} from "./session-tabs";
 import { SessionView } from "./session";
 import { ShortcutProvider } from "./shortcut-provider";
 import {
@@ -288,7 +293,12 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true, embedded = false) => (
+  const view = (
+    value = "Original draft",
+    active = true,
+    embedded = false,
+    inside?: ReactNode,
+  ) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
@@ -301,6 +311,7 @@ function fixture(
                 active={active}
                 embedded={embedded}
               />
+              {inside}
             </SessionTabsProvider>
           </SessionNameEditorProvider>
         </MutationIntents>
@@ -2740,6 +2751,38 @@ it("opens the shared Open tool dialog from primary+T, keeps the draft and select
       ),
     );
     expect(composer).toHaveProperty("value", "Original draft");
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+
+it("does not mount a self-child Sidechat through the real SessionView composition", async () => {
+  const f = fixture();
+  let seeded: (() => string[]) | undefined;
+  function SeedSelfChild() {
+    const store = useSessionTabsStore();
+    useState(() => {
+      // Malformed ownership must be rejected before any recursive child mounts.
+      store.open(f.session.id, {
+        kind: SessionTabKind.Sidechat,
+        id: f.session.id,
+        name: "Self",
+      });
+      seeded = () => store.sidechats(f.session.id).map((tab) => tab.id);
+    });
+    return null;
+  }
+  const view = render(f.view("Original draft", true, false, <SeedSelfChild />));
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(seeded?.()).toEqual([]);
+    expect(screen.getAllByRole("textbox", { name: "Message" })).toHaveLength(1);
+    expect(document.querySelector(".session-sidechat-pane")).toBeNull();
+    expect(screen.getAllByRole("tab", { name: "Conversation" })).toHaveLength(
+      1,
+    );
+    expect(f.enqueue).not.toHaveBeenCalled();
   } finally {
     view.unmount();
     f.client.clear();

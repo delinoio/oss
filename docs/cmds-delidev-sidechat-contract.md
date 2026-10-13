@@ -321,6 +321,12 @@ metadata-only workspace references, native read-only enforcement and durable
 parent-dependent cleanup remain unchanged. Independent Fork keeps its separate
 form and native/workspace lifetime.
 
+The published child Session ID must be nonempty and distinct from the original
+parent; a malformed succeeded readback stays unverified and permits only original
+job status reads. A definite creation rejection offers no parent-read retry, and
+reopening a retained pending Sidechat from another Session routes to the original
+parent without any new Fork, input, Resume or findings transfer.
+
 ## Session-tab presentation
 
 A retained Sidechat is presented inside its original parent workspace as a typed

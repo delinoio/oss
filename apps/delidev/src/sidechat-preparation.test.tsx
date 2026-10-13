@@ -9,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -46,6 +47,9 @@ async function fixture(
     hidden?: boolean;
     stale?: boolean;
     runnerError?: boolean;
+    rejected?: boolean;
+    replayRejected?: boolean;
+    second?: boolean;
   } = {},
 ) {
   const machineId = newRequestId(),
@@ -91,10 +95,10 @@ async function fixture(
       schemaVersion: 1,
       documentJson: encode({ state, input: { source_session_id: sourceId } }),
     });
-  const child = (parent = sourceId, overlay = true) =>
+  const child = (parent = sourceId, overlay = true, id = childId) =>
     create(ResourceSchema, {
       kind: EntityKind.SESSION,
-      id: childId,
+      id,
       revision: 1n,
       schemaVersion: 1,
       documentJson: encode({
@@ -105,16 +109,27 @@ async function fixture(
         },
       }),
     });
+  // A second completed Session B shares the same Runner and eligibility data.
+  const other = create(ResourceSchema, {
+    ...source,
+    id: newRequestId(),
+    documentJson: source.documentJson,
+  });
   let result: {
     job: ReturnType<typeof job>;
     session?: ReturnType<typeof child>;
   } = { job: job("claimed") };
   const fork = vi.fn(async (request) => {
+    if (options.rejected)
+      throw new ConnectError("Original creation denied", Code.PermissionDenied);
+    if (options.replayRejected && fork.mock.calls.length > 1)
+      throw new ConnectError("Replay denied", Code.PermissionDenied);
     if (options.lost && fork.mock.calls.length === 1)
       throw new ConnectError("Lost original response", Code.Unavailable);
     return { job: job("claimed") };
   });
   let runnerError = options.runnerError;
+  let sessionReadFailing = false;
   const observe = vi.fn((_request: { jobId: string }) => result),
     read = vi.fn((request) => {
       if (runnerError && request.kind === EntityKind.MACHINE)
@@ -122,6 +137,8 @@ async function fixture(
           "Original Runner read unavailable",
           Code.Unavailable,
         );
+      if (sessionReadFailing && request.kind === EntityKind.SESSION)
+        throw new ConnectError("Original parent read failed", Code.Unavailable);
       return {
         resource:
           request.kind === EntityKind.MACHINE
@@ -226,6 +243,14 @@ async function fixture(
                 source={source}
                 action={SessionCreationAction.Sidechat}
               />
+              {options.second ? (
+                <section aria-label="Session B actions">
+                  <SessionForkAction
+                    source={other}
+                    action={SessionCreationAction.Sidechat}
+                  />
+                </section>
+              ) : null}
             </SessionForkProvider>
           </SessionTabsProvider>
         </MutationIntents>
@@ -236,6 +261,7 @@ async function fixture(
   await waitFor(() => expect(client.isFetching()).toBe(0));
   return {
     sourceId,
+    otherId: other.id,
     childId,
     fork,
     observe,
@@ -249,6 +275,9 @@ async function fixture(
     child,
     setRunnerHealthy: () => {
       runnerError = false;
+    },
+    setSessionReadFailing: (value: boolean) => {
+      sessionReadFailing = value;
     },
     setResult: (value: typeof result) => {
       result = value;
@@ -491,5 +520,272 @@ it("confirmed failure retains the editable draft until explicit guarded discard"
       .snapshot(f.sourceId)
       .tabs.some((tab) => tab.kind === SessionTabKind.PendingSidechat),
   ).toBe(false);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+});
+
+it("definite creation rejection with a healthy parent read offers no read retry and keeps the draft", async () => {
+  const f = await fixture({ rejected: true });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Denied but retained" } });
+  await waitFor(() => expect(f.fork).toHaveBeenCalledTimes(1));
+  await screen.findByRole("button", { name: "Discard Sidechat draft" });
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
+  expect(input).toHaveProperty("value", "Denied but retained");
+  expect(input).toHaveProperty("disabled", false);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+});
+
+it("failed parent read retries only the read and never resends rejected creation", async () => {
+  const f = await fixture({ rejected: true });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Still here" } });
+  await waitFor(() => expect(f.fork).toHaveBeenCalledTimes(1));
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
+  f.setSessionReadFailing(true);
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  const retry = await screen.findByRole("button", {
+    name: "Retry current read",
+  });
+  const reads = f.read.mock.calls.length;
+  f.setSessionReadFailing(false);
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.read.mock.calls.length).toBeGreaterThan(reads));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Retry current read" }),
+    ).toBeNull(),
+  );
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  expect(input).toHaveProperty("value", "Still here");
+  expect(
+    screen.getByRole("button", { name: "Discard Sidechat draft" }),
+  ).toBeTruthy();
+});
+
+it("definite error on explicit replay keeps the original uncertainty and discard unavailable", async () => {
+  const f = await fixture({ lost: true, replayRejected: true });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Keep this draft" } });
+  const retry = await screen.findByRole("button", {
+    name: "Retry original Sidechat request",
+  });
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.fork).toHaveBeenCalledTimes(2));
+  expect(f.fork.mock.calls[1]![0]).toEqual(f.fork.mock.calls[0]![0]);
+  await act(async () => {});
+  expect(
+    screen.getByRole("button", { name: "Retry original Sidechat request" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Discard Sidechat draft" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry current read" }),
+  ).toBeNull();
+  expect(input).toHaveProperty("value", "Keep this draft");
+});
+
+it.each(["parent-id", "empty-id"])(
+  "malformed succeeded readback never publishes, keeps pending state and reinspects only the original job: %s",
+  async (mode) => {
+    const f = await fixture();
+    const info = vi.spyOn(console, "info");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
+    await waitFor(() => expect(f.observe).toHaveBeenCalled());
+    const input = screen.getByRole("textbox", {
+      name: "Message",
+    }) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "My original question" } });
+    input.setSelectionRange(3, 8);
+    fireEvent.select(input);
+    f.setResult({
+      job: f.job("succeeded"),
+      session: f.child(f.sourceId, true, mode === "parent-id" ? f.sourceId : ""),
+    });
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    await screen.findByText(/Sidechat could not be verified/);
+    const retry = screen.getByRole("button", {
+      name: "Retry original status read",
+    });
+    expect(f.store().parent(f.sourceId)).toBeUndefined();
+    expect(f.store().parent("")).toBeUndefined();
+    expect(f.store().sidechats(f.sourceId)).toEqual([]);
+    const snapshot = f.store().snapshot(f.sourceId);
+    expect(
+      snapshot.tabs.filter((tab) => tab.kind === SessionTabKind.Sidechat),
+    ).toEqual([]);
+    expect(
+      snapshot.tabs.filter((tab) => tab.kind === SessionTabKind.PendingSidechat),
+    ).toHaveLength(1);
+    expect(input).toHaveProperty("value", "My original question");
+    expect(
+      info.mock.calls.some(
+        (call) =>
+          call[0] === "delidev.sidechat.preparation" &&
+          (call[1] as { phase?: string }).phase === "published",
+      ),
+    ).toBe(false);
+    const reads = f.observe.mock.calls.length;
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(f.observe.mock.calls.length).toBeGreaterThan(reads),
+    );
+    expect(f.fork).toHaveBeenCalledTimes(1);
+    expect(
+      f.observe.mock.calls.every(
+        (call) => call[0].jobId === f.job("claimed").id,
+      ),
+    ).toBe(true);
+    // A later valid distinct child publishes exactly once with the draft.
+    f.setResult({ job: f.job("succeeded"), session: f.child() });
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    await waitFor(() => expect(f.store().parent(f.childId)).toBe(f.sourceId));
+    expect(f.store().sidechats(f.sourceId)).toHaveLength(1);
+    expect(
+      (document.getElementById(`prompt-${f.childId}`) as HTMLTextAreaElement)
+        .value,
+    ).toBe("My original question");
+    expect(
+      info.mock.calls.filter(
+        (call) =>
+          call[0] === "delidev.sidechat.preparation" &&
+          (call[1] as { phase?: string }).phase === "published",
+      ),
+    ).toHaveLength(1);
+    expect(f.fork).toHaveBeenCalledTimes(1);
+    info.mockRestore();
+  },
+);
+
+async function retainedInA() {
+  const f = await fixture({ second: true });
+  fireEvent.click(
+    screen.getAllByRole("menuitem", { name: "Open Sidechat" })[0]!,
+  );
+  const input = (await screen.findByRole("textbox", {
+    name: "Message",
+  })) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "Retained in A" } });
+  input.setSelectionRange(2, 6);
+  fireEvent.select(input);
+  await waitFor(() => expect(f.fork).toHaveBeenCalledTimes(1));
+  const pending = f
+    .store()
+    .snapshot(f.sourceId)
+    .tabs.find((tab) => tab.kind === SessionTabKind.PendingSidechat)!;
+  const callbacks: FrameRequestCallback[] = [];
+  vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
+    (callback) => callbacks.push(callback),
+  );
+  const openFromB = () =>
+    fireEvent.click(
+      within(
+        screen.getByRole("region", { name: "Session B actions" }),
+      ).getByRole("menuitem", { name: "Open Sidechat" }),
+    );
+  const flush = () =>
+    act(() => {
+      for (const callback of callbacks.splice(0)) callback(0);
+    });
+  return { f, input, pending, callbacks, openFromB, flush };
+}
+
+it("opening Sidechat from another Session routes to the retained parent and focuses the original draft only after it is active", async () => {
+  const { f, input, pending, callbacks, openFromB, flush } =
+    await retainedInA();
+  // Session B is current: A's workspace is hidden, so nothing may be focused yet.
+  f.rendered.rerender(f.view(false));
+  f.store().select(f.sourceId, SessionTabKind.Conversation);
+  openFromB();
+  expect(f.navigate).toHaveBeenCalledTimes(1);
+  expect(f.navigate).toHaveBeenCalledWith(f.sourceId);
+  expect(f.store().snapshot(f.sourceId).selected).toBe(sessionTabKey(pending));
+  expect(callbacks).toHaveLength(1);
+  // The route activates A before the deferred focus callback runs.
+  f.rendered.rerender(f.view(true));
+  flush();
+  expect(document.activeElement).toBe(input);
+  expect(input).toHaveProperty("value", "Retained in A");
+  expect(input.selectionStart).toBe(2);
+  expect(input.selectionEnd).toBe(6);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+  expect(
+    f
+      .store()
+      .snapshot(f.sourceId)
+      .tabs.filter((tab) => tab.kind === SessionTabKind.PendingSidechat),
+  ).toHaveLength(1);
+  expect(f.store().snapshot(f.sourceId).tabs).toContainEqual(pending);
+  // Repeating reuses the same tab and still sends no second request.
+  openFromB();
+  expect(f.navigate).toHaveBeenCalledTimes(2);
+  expect(
+    f
+      .store()
+      .snapshot(f.sourceId)
+      .tabs.filter((tab) => tab.kind === SessionTabKind.PendingSidechat),
+  ).toHaveLength(1);
+  expect(f.fork).toHaveBeenCalledTimes(1);
+});
+
+it("a deferred reopen focus callback cannot steal focus after later navigation away", async () => {
+  const { f, input, callbacks, openFromB, flush } = await retainedInA();
+  openFromB();
+  expect(callbacks).toHaveLength(1);
+  const elsewhere = document.createElement("button");
+  document.body.append(elsewhere);
+  elsewhere.focus();
+  // Navigating to Session B hides A before the callback fires.
+  f.rendered.rerender(f.view(false));
+  flush();
+  expect(document.activeElement).toBe(elsewhere);
+  expect(document.activeElement).not.toBe(input);
+  elsewhere.remove();
+  // A newer reopen gesture invalidates an older callback.
+  f.rendered.rerender(f.view(true));
+  openFromB();
+  openFromB();
+  expect(callbacks).toHaveLength(2);
+  document.body.append(elsewhere);
+  elsewhere.focus();
+  const [stale, current] = callbacks.splice(0);
+  act(() => stale!(0));
+  expect(document.activeElement).toBe(elsewhere);
+  act(() => current!(0));
+  expect(document.activeElement).toBe(input);
+  elsewhere.remove();
+  expect(f.fork).toHaveBeenCalledTimes(1);
+});
+
+it("automatic publication while backgrounded or closed never navigates or reopens presentation", async () => {
+  const { f, openFromB, flush } = await retainedInA();
+  openFromB();
+  expect(f.navigate).toHaveBeenCalledTimes(1);
+  f.navigate.mockClear();
+  act(() => f.store().open(f.sourceId, { kind: SessionTabKind.Files }));
+  f.setResult({ job: f.job("succeeded"), session: f.child() });
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+  await waitFor(() => expect(f.store().parent(f.childId)).toBe(f.sourceId));
+  flush();
+  expect(f.navigate).not.toHaveBeenCalled();
+  expect(f.store().snapshot(f.sourceId).selected).toBe(SessionTabKind.Files);
   expect(f.fork).toHaveBeenCalledTimes(1);
 });
