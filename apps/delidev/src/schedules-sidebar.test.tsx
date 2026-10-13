@@ -428,6 +428,108 @@ it.each(
   },
 );
 
+it("rejects a schedule page with duplicate IDs before accepting rows or its continuation, then accepts the exact retry", async () => {
+  const value = fixture();
+  const [first, second] = value.schedules;
+  const duplicate = create(ResourceSchema, {
+    ...first,
+    revision: first.revision + 1n,
+  });
+  value.list.mockImplementation(async () => ({
+    schedules: [first, duplicate],
+    nextPageToken: "schedule-next",
+  }));
+  render(value.view());
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(pane().queryByRole("button", { name: /^Morning review/ })).toBeNull();
+  expect(
+    pane().queryByRole("button", { name: "Load more Saved schedules" }),
+  ).toBeNull();
+  expect(screen.queryByText("No saved schedules.")).toBeNull();
+  value.list.mockImplementation(async (request) => ({
+    schedules: [first, second],
+    nextPageToken: request.pageToken ? "" : "schedule-next",
+  }));
+  fireEvent.click(pane().getByRole("button", { name: "Refresh" }));
+  await screen.findByRole("button", { name: /^Morning review/ });
+  expect(pane().getByRole("button", { name: /^Weekly cleanup/ })).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(
+    pane().getByRole("button", { name: "Load more Saved schedules" }),
+  ).toBeTruthy();
+});
+
+it("keeps accepted schedule pages when a later page has duplicate IDs and retries the exact token", async () => {
+  const value = fixture();
+  const [first, second] = value.schedules;
+  value.list.mockImplementation(async (request) => ({
+    schedules: request.pageToken ? [second, second] : [first],
+    nextPageToken: request.pageToken ? "unaccepted-tail" : "schedule-next",
+  }));
+  render(value.view());
+  await screen.findByRole("button", { name: /^Morning review/ });
+  await waitFor(() =>
+    expect(
+      (
+        pane().getByRole("button", {
+          name: "Load more Saved schedules",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(
+    pane().getByRole("button", { name: "Load more Saved schedules" }),
+  );
+  await waitFor(() =>
+    expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"),
+  );
+  await screen.findByRole("alert");
+  expect(pane().getByRole("button", { name: /^Morning review/ })).toBeTruthy();
+  expect(pane().queryByRole("button", { name: /^Weekly cleanup/ })).toBeNull();
+  value.list.mockImplementation(async (request) => ({
+    schedules: request.pageToken ? [second] : [first],
+    nextPageToken: request.pageToken ? "" : "schedule-next",
+  }));
+  fireEvent.click(pane().getByRole("button", { name: "Retry" }));
+  await pane().findByRole("button", { name: /^Weekly cleanup/ });
+  expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next");
+  expect(pane().getByRole("button", { name: /^Morning review/ })).toBeTruthy();
+});
+
+it("rejects an occurrence history page with duplicate IDs even when revisions differ, then accepts the retry", async () => {
+  const value = fixture();
+  const occurrence = (revision: bigint, id = newRequestId()) =>
+    create(ResourceSchema, {
+      id,
+      kind: EntityKind.OCCURRENCE,
+      revision,
+      schemaVersion: 1,
+      documentJson: encode({}),
+    });
+  const repeated = occurrence(1n);
+  value.history.mockImplementation(async () => ({
+    occurrences: [repeated, occurrence(2n, repeated.id)],
+    nextPageToken: "history-next",
+  }));
+  render(value.view());
+  await screen.findByRole("button", { name: /^Morning review/ });
+  selectMorning();
+  await waitFor(() => expect(value.history).toHaveBeenCalled());
+  const failed = await screen.findAllByRole("alert");
+  expect(failed.length).toBeGreaterThan(0);
+  expect(screen.queryByText("No retained occurrences.")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Load more Occurrence history" }),
+  ).toBeNull();
+  value.history.mockImplementation(async () => ({
+    occurrences: [occurrence(1n)],
+    nextPageToken: "",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh history" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(value.history.mock.lastCall?.[0].pageToken).toBe("");
+});
+
 it("retains detail occurrence history while sidebar refresh does not open history", async () => {
   const value = fixture();
   render(value.view());
