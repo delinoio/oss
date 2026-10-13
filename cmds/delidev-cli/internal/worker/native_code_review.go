@@ -98,6 +98,26 @@ func nativeReviewTerminalProof(action domain.ID, failure error, nativeSent, revi
 	return raw, kind, true
 }
 
+// settleNativeReviewOutcome makes the single final classification of a native
+// review attempt. A verified stale proof is logged only as verified stale
+// cleanup, never first as unconfirmed. Any other failure, including a verified
+// no-send rejection, keeps its unconfirmed diagnostic before a proof replaces
+// the problem. It runs after every cleanup defer so it sees the final error.
+func settleNativeReviewOutcome(ctx context.Context, logger *slog.Logger, action domain.ID, output json.RawMessage, returned error, nativeSent, reviewCompleted, cleanupJoined bool) (json.RawMessage, error) {
+	proof, kind, ok := nativeReviewTerminalProof(action, returned, nativeSent, reviewCompleted, cleanupJoined)
+	if ok && kind == nativeReviewStaleProofKind {
+		logger.WarnContext(ctx, "native_code_review_stale_cleanup_verified", "cleanup_verified", true)
+		return proof, nil
+	}
+	if returned != nil {
+		logger.WarnContext(ctx, "native_code_review_unconfirmed", "code", domain.SafeError(returned).Code)
+	}
+	if ok {
+		return proof, nil
+	}
+	return output, returned
+}
+
 func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	c := config.execution
 	var input domain.NativeCodeReviewInput
@@ -113,20 +133,11 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 	// reviewCompleted is set only after the original native turn finished and
 	// its native owner was joined inside the workspace callback.
 	reviewCompleted := false
-	// This deferred function is registered first so it runs after every cleanup
-	// defer and sees the final joined state.
+	// This single deferred function is registered first so it runs after every
+	// cleanup defer, sees the final joined state and makes the one terminal
+	// classification and log decision for the outcome.
 	defer func() {
-		if proof, kind, ok := nativeReviewTerminalProof(input.ActionID, returned, nativeSent, reviewCompleted, nativeJoined && workspaceJoined && authJoined); ok {
-			output, returned = proof, nil
-			if kind == nativeReviewStaleProofKind {
-				logger.WarnContext(ctx, "native_code_review_stale_cleanup_verified", "cleanup_verified", true)
-			}
-		}
-	}()
-	defer func() {
-		if returned != nil {
-			logger.WarnContext(ctx, "native_code_review_unconfirmed", "code", domain.SafeError(returned).Code)
-		}
+		output, returned = settleNativeReviewOutcome(ctx, logger, input.ActionID, output, returned, nativeSent, reviewCompleted, nativeJoined && workspaceJoined && authJoined)
 	}()
 	var prep workspace.PrepareRequest
 	var manifest workspace.Manifest
