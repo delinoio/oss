@@ -75,7 +75,10 @@ func init() {
 			log(map[string]any{"event": "call", "params": json.RawMessage(request.Params)})
 			send(map[string]any{"id": request.ID, "result": map[string]any{"content": []any{map[string]any{"type": "text", "text": "fixture-result"}}}})
 		case "resources/list":
-			send(map[string]any{"id": request.ID, "result": map[string]any{"resources": []any{}}})
+			send(map[string]any{"id": request.ID, "result": map[string]any{"resources": []any{map[string]any{"uri": "fixture://doc", "name": "doc", "mimeType": "text/plain"}}}})
+		case "resources/read":
+			log(map[string]any{"event": "resource", "params": json.RawMessage(request.Params)})
+			send(map[string]any{"id": request.ID, "result": map[string]any{"contents": []any{map[string]any{"uri": "fixture://doc", "mimeType": "text/plain", "text": "resource-body"}}}})
 		case "resources/templates/list":
 			send(map[string]any{"id": request.ID, "result": map[string]any{"resourceTemplates": []any{}}})
 		default:
@@ -562,5 +565,53 @@ func TestManualNativeManagedMCPReconnectsOnlyTheOriginalSelectedServer(t *testin
 	}
 	if _, err := client.StartTurn(ctx, domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Use the fixture tool."}); err != nil {
 		t.Fatalf("input remained blocked after reconnect: %v", err)
+	}
+}
+
+func TestManualNativeManagedMCPResourceReadKeepsServerIdentity(t *testing.T) {
+	binary := requireNativeExecutable(t)
+	model := &scriptedMCPModel{calls: []map[string]any{{"type": "function_call", "name": "read_mcp_resource", "call_id": "call_res_1", "arguments": `{"server":"fx_stdio","uri":"fixture://doc"}`}}}
+	provider := httptest.NewServer(model.handler(t))
+	t.Cleanup(provider.Close)
+	executable, _ := os.Executable()
+	logPath := filepath.Join(t.TempDir(), "stdio.log")
+	stdio := mcpStdioServer("fx_stdio")
+	stdio.Command, stdio.Arguments, stdio.Cwd = executable, []string{"-delidev-mcp-log=" + logPath, mcpStdioFixtureArgument}, filepath.Dir(executable)
+	cfg := nativeFixtureConfig(t, binary, provider.URL)
+	cfg.ManagedMCP = []ManagedMCPServer{stdio}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	t.Cleanup(cancel)
+	client, err := Open(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	settings := ThreadSettings{Model: "fixture-model", Provider: "delidev_fixture", Effort: "high", Cwd: cfg.Process.Cwd, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}}
+	if _, err := client.StartThread(ctx, domain.NewID(), settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.StartTurn(ctx, domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Read the resource."}); err != nil {
+		t.Fatal(err)
+	}
+	var completed *Event
+	for {
+		event, err := client.NextEvent(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.Kind == ToolCompletedEvent {
+			completed = &event
+		}
+		if event.Kind == TurnCompletedEvent {
+			break
+		}
+	}
+	if completed == nil || completed.Tool.Kind != MCPToolKind || completed.Tool.MCP.Identity.Server != "fx_stdio" || completed.Tool.Status != ToolCompleted {
+		t.Fatalf("resource read lost its original server identity: %+v", completed)
+	}
+	t.Logf("native resource read is observed as tool %q", completed.Tool.MCP.Tool)
+	log, _ := os.ReadFile(logPath)
+	if strings.Count(string(log), `"event":"resource"`) != 1 {
+		t.Fatalf("server received a different number of resource reads: %s", log)
 	}
 }
