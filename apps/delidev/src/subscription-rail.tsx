@@ -37,7 +37,11 @@ import {
   type RailAccount,
   type RailWindow,
 } from "./subscription-rail-data";
-import { PaidCredits, PaidCreditState } from "./subscription-paid-credits";
+import {
+  ExactDisclosurePresentation,
+  PaidCredits,
+  PaidCreditState,
+} from "./subscription-paid-credits";
 import "./subscription-rail.css";
 import { Failure, InlineRemediation } from "./ui";
 import { LocalConnectionHelp } from "./local-connection-presentation";
@@ -386,6 +390,7 @@ export function SubscriptionRail({
                   <PaidCredits
                     key={`${account.id}:${account.connectionId}:${account.generation}`}
                     buckets={account.paidCredits}
+                    exactPresentation={ExactDisclosurePresentation.Overlay}
                     state={
                       !status.data
                         ? PaidCreditState.Loading

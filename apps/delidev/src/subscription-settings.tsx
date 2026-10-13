@@ -1,4 +1,5 @@
 import {
+  ExactDisclosurePresentation,
   PaidCredits,
   PaidCreditState,
   type PaidCreditBucket,
@@ -471,6 +472,7 @@ export function SubscriptionRow({
               buckets={account.paidCredits}
               state={account.paidCreditState ?? PaidCreditState.Unknown}
               compact
+              exactPresentation={ExactDisclosurePresentation.Overlay}
               active={active}
               now={now}
             />

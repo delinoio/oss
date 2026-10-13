@@ -100,7 +100,7 @@ try {
       ]) {
         await page.setViewportSize({ width, height });
         await page.goto(
-          `${origin}/?theme=${theme}&language=${language}&subscriptionDetails=true`,
+          `${origin}/?theme=${theme}&language=${language}&subscriptionDetails=true&paidCredits=true`,
         );
         await page
           .getByRole("button", {
@@ -110,6 +110,69 @@ try {
           .click();
         const row = page.locator(".subscription-row").first();
         await row.waitFor();
+        // The exact paid-credit decimal is an overlay: opening, pinning and
+        // closing it must not move the Settings row, its card or the scroller.
+        {
+          const geometry = () =>
+            row.evaluate((node) => {
+              const rect = (target) => {
+                const bounds = target?.getBoundingClientRect();
+                return bounds
+                  ? [bounds.x, bounds.y, bounds.width, bounds.height]
+                  : [0, 0, 0, 0];
+              };
+              return {
+                row: rect(node),
+                card: rect(node.querySelector(".subscription-paid-credits")),
+                observation: rect(
+                  node.querySelector(".subscription-paid-observation"),
+                ),
+                quota: rect(node.querySelector(".subscription-quota-grid")),
+                scrollHeight: [document.scrollingElement.scrollHeight],
+                scrollTop: [document.scrollingElement.scrollTop],
+              };
+            });
+          const same = (left, right) => {
+            for (const key of Object.keys(left))
+              left[key].forEach((value, index) =>
+                assert(
+                  Math.abs(value - right[key][index]) <= 1,
+                  `${key}: ${value} ${right[key][index]}`,
+                ),
+              );
+          };
+          const info = row.locator(".subscription-paid-info");
+          await info.waitFor();
+          const resting = await geometry();
+          const tooltip = row.locator('[role="tooltip"]');
+          await info.focus();
+          await tooltip.waitFor();
+          const bounds = await tooltip.evaluate((node) => {
+            const box = node.getBoundingClientRect();
+            return {
+              position: getComputedStyle(node).position,
+              text: node.textContent,
+              fits:
+                box.left >= 0 &&
+                box.top >= 0 &&
+                box.right <= window.innerWidth &&
+                box.bottom <= window.innerHeight,
+              complete: node.scrollWidth <= node.clientWidth + 1,
+            };
+          });
+          assert.equal(bounds.position, "fixed");
+          assert(bounds.text.includes("60961.1135370000"));
+          assert(bounds.fits && bounds.complete, JSON.stringify(bounds));
+          same(resting, await geometry());
+          await info.click();
+          same(resting, await geometry());
+          await info.click();
+          await info.click();
+          same(resting, await geometry());
+          await page.keyboard.press("Escape");
+          assert.equal(await tooltip.count(), 0);
+          same(resting, await geometry());
+        }
         const before = await page.evaluate(() => ({
           reads:
             document.documentElement.dataset.subscriptionDetailReads ?? "0",

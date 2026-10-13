@@ -1065,6 +1065,10 @@ it("shows selected saved paid credits above quota with exact disclosure and unch
   expect(within(popup).getByRole("tooltip").textContent).toContain(
     "60961.1135370000",
   );
+  // The disclosure leaves normal flow so it cannot resize the card or popover.
+  expect(within(popup).getByRole("tooltip").className).toContain(
+    "subscription-paid-exact-overlay",
+  );
   fireEvent.keyDown(info, { key: "Escape" });
   expect(screen.getByRole("dialog")).toBe(popup);
   expect(within(popup).queryByRole("tooltip")).toBeNull();

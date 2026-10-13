@@ -86,6 +86,24 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+/* Overlay: out of flow, so it can never change the owning card's geometry. */
+.subscription-paid-exact-overlay {
+  position: fixed;
+  inset: auto;
+  left: 0;
+  top: 0;
+  flex-basis: auto;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 16px));
+  margin: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  line-height: 1.4;
+  z-index: 1;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.16);
+}
 .subscription-paid-empty {
   margin: 0;
   font-size: 16px;

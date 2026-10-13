@@ -175,15 +175,82 @@ try {
             ),
           );
           const info = credits.locator(".subscription-paid-info");
+          // The exact decimal is an overlay: no card, observation, quota or
+          // scroll geometry may change while it opens, pins and closes.
+          const geometry = () =>
+            popup.evaluate((node) => {
+              const rect = (selector) => {
+                const bounds = node.querySelector(selector)?.getBoundingClientRect();
+                return bounds
+                  ? [bounds.x, bounds.y, bounds.width, bounds.height]
+                  : null;
+              };
+              return {
+                popup: rect(":scope"),
+                self: [
+                  node.getBoundingClientRect().x,
+                  node.getBoundingClientRect().y,
+                  node.getBoundingClientRect().width,
+                  node.getBoundingClientRect().height,
+                ],
+                card: rect(".subscription-paid-credits"),
+                value: rect(".subscription-paid-value"),
+                observation: rect(".subscription-paid-observation"),
+                quota: rect(".subscription-quota-id"),
+                actions: rect(".subscription-account-actions"),
+                scrollHeight: node.scrollHeight,
+                scrollTop: node.scrollTop,
+              };
+            });
+          const same = (left, right) => {
+            for (const key of Object.keys(left)) {
+              const a = [left[key]].flat(),
+                b = [right[key]].flat();
+              assert.equal(a.length, b.length, key);
+              a.forEach((value, index) =>
+                assert(Math.abs(value - b[index]) <= 1, `${key}: ${value} ${b[index]}`),
+              );
+            }
+          };
+          const resting = await geometry();
           await info.focus();
           assert(
             (await credits.locator('[role="tooltip"]').textContent()).includes(
               "60961.1135370000",
             ),
           );
+          const tooltip = credits.locator('[role="tooltip"]');
+          const overlay = await tooltip.evaluate((node) => {
+            const bounds = node.getBoundingClientRect();
+            return {
+              position: getComputedStyle(node).position,
+              fits:
+                bounds.left >= 0 &&
+                bounds.top >= 0 &&
+                bounds.right <= window.innerWidth &&
+                bounds.bottom <= window.innerHeight,
+              complete: node.scrollWidth <= node.clientWidth + 1,
+              width: bounds.width,
+            };
+          });
+          assert.equal(overlay.position, "fixed");
+          assert(overlay.fits, JSON.stringify(overlay));
+          assert(overlay.complete, JSON.stringify(overlay));
+          assert(overlay.width <= 280 + 1, JSON.stringify(overlay));
+          same(resting, await geometry());
+          await info.click();
+          assert.equal(await tooltip.count(), 1);
+          same(resting, await geometry());
+          await info.click();
+          assert.equal(await tooltip.count(), 0);
+          same(resting, await geometry());
+          // Pin once more so Escape below closes only the disclosure.
+          await info.click();
+          assert.equal(await tooltip.count(), 1);
           await page.keyboard.press("Escape");
           assert.equal(await popup.count(), 1);
           assert.equal(await credits.locator('[role="tooltip"]').count(), 0);
+          same(resting, await geometry());
           assert(
             await info.evaluate((node) => document.activeElement === node),
           );

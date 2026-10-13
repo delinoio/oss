@@ -777,6 +777,31 @@ it("expires retained paid buckets before freshly observed quota windows without 
     vi.useRealTimers();
   }
 });
+it("shows the Settings row exact paid-credit disclosure out of flow and Escape closes only it", () => {
+  const first = {
+    ...row("chatgpt", [window("five-hour", 0.68)]),
+    paidCredits: [
+      {
+        id: "codex",
+        hasCredits: true,
+        unlimited: false,
+        balance: "7.1250000000000000001",
+        observedAt: new Date(now).toISOString(),
+      },
+    ],
+  };
+  render(view([first]));
+  const trigger = screen.getByRole("button", {
+    name: "Show exact paid-credit balance",
+  });
+  fireEvent.focus(trigger);
+  const tip = screen.getByRole("tooltip");
+  expect(tip.className).toContain("subscription-paid-exact-overlay");
+  expect(tip.textContent).toContain("7.1250000000000000001");
+  fireEvent.keyDown(trigger, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(first.refresh).not.toHaveBeenCalled();
+});
 it.each(
   Object.values(Read).flatMap((state) =>
     Object.values(SupportedLanguage).map((language) => ({ state, language })),
