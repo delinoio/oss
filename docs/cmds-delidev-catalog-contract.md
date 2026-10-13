@@ -716,7 +716,7 @@ enter shell commands or diagnostics.
 
 The accepted configuration transaction pins the selected prefix and original
 Settings/Project IDs and revisions in optional immutable execution
-metadata (version 2 for new selections; retained version 1 remains valid).
+metadata (version 2 for new selections on Workers with capability 65; retained version 1 remains valid).
 Omitted declarations preserve historical bytes and digests. Current
 settings never rewrite prior generations. Retain selection through Plan/Execute
 transitions, continuation, retry, recovery, compaction and Fork snapshots.
@@ -735,7 +735,13 @@ Claude Code, OpenCode and Grok Build use their existing instruction channels;
 Grok's unchanged empty-template Plan profile remains independently required.
 Worker capability 38 negotiates the complete declaration before native dispatch;
 unsupported Workers receive an explicit update requirement, with no native
-version gate. This preference never creates/renames branches, changes detached
+version gate. Worker capability 65 (`BRANCH_PREFIX_EXACT_QUOTE_V1`) separately
+negotiates acceptance of selection version 2. Initial execution preview pins
+version 2 only for a Runner Device that reported capability 65 and otherwise
+pins version 1, so a Worker that negotiated only capability 38 keeps receiving
+selections it validates. Dispatch of a retained version-2 selection to a Runner
+Device without capability 65 fails before native execution with an explicit
+update requirement; no selection is rewritten or downgraded. This preference never creates/renames branches, changes detached
 Worktree or Local preparation, grants Git workspace authority, or guarantees
 model compliance. General Chat gains no repository authority.
 

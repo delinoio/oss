@@ -1,6 +1,8 @@
 package store
 
 import (
+	"slices"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
@@ -190,7 +192,13 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
-	configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: domain.BranchPrefixVersionExactQuote, Prefix: project.EffectiveBranchPrefix(settings.EffectiveBranchPrefix()), SettingsID: settingsRecord.ID, SettingsRevision: settingsRecord.Revision, ProjectID: projectRecord.ID, ProjectRevision: projectRecord.Revision}
+	// Pin version 2 only for a Runner Device that negotiated exact quoting; other
+	// devices keep the version-1 selection they already understand.
+	prefixVersion := domain.BranchPrefixVersionLegacyQuote
+	if slices.Contains(machine.WorkerCapabilities, domain.BranchPrefixExactQuoteV1) {
+		prefixVersion = domain.BranchPrefixVersionExactQuote
+	}
+	configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: prefixVersion, Prefix: project.EffectiveBranchPrefix(settings.EffectiveBranchPrefix()), SettingsID: settingsRecord.ID, SettingsRevision: settingsRecord.Revision, ProjectID: projectRecord.ID, ProjectRevision: projectRecord.Revision}
 	if err := configuration.Validate(); err != nil {
 		return empty, err
 	}
