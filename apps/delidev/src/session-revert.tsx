@@ -212,8 +212,12 @@ export function useSessionRevert({
     false,
     (request) => {
       const value = retained.read();
-      if (value?.pending?.action === request.mutation?.requestId)
-        savePresentation({ ...value, pending: undefined });
+      if (value?.pending?.action !== request.mutation?.requestId) return;
+      // Release only the matching guard. Keep a prior restored identity or
+      // replacement, and free the registry slot when nothing meaningful stays.
+      const { pending: _released, ...rest } = value;
+      if (rest.replacement || rest.restoredAction) savePresentation(rest);
+      else retained.release();
     },
   );
   const original =
@@ -304,7 +308,10 @@ export function useSessionRevert({
       target = document(selected.row),
       context = revision(document(session).context_revision)!;
     try {
+      // Read the current retained presentation at commit time so a restored
+      // identity survives navigation and remounts while this attempt is pending.
       savePresentation({
+        restoredAction: retained.read()?.restoredAction,
         pending: {
           action,
           message: selected.row.id,
