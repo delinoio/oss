@@ -254,9 +254,6 @@ function useSessionStream(
     const client = createClient(ResourceService, transport);
     const tombstones = new Set<string>();
     const known = new Set<string>();
-    // Original resource kinds, so only interaction (or not yet seen) identities
-    // reach the durable interaction removal fence.
-    const kinds = new Map<string, EntityKind>();
     const run = async () => {
       for await (const change of synchronizeResources(
         client,
@@ -276,11 +273,7 @@ function useSessionStream(
         if (change.kind === SyncKind.Snapshot) {
           setSnapshotOwner(readOwner);
           known.clear();
-          kinds.clear();
-          for (const row of change.resources) {
-            known.add(row.id);
-            kinds.set(row.id, row.kind);
-          }
+          for (const row of change.resources) known.add(row.id);
           setResources(new Map(change.resources.map((r) => [r.id, r])));
           setRemoved(new Set());
           setNewMessageIds((current) => current.filter((id) => known.has(id)));
@@ -312,20 +305,15 @@ function useSessionStream(
               );
           }
           known.add(change.resource.id);
-          kinds.set(change.resource.id, change.resource.kind);
           setResources((current) =>
             new Map(current).set(change.resource.id, change.resource),
           );
         } else if (change.kind === SyncKind.Remove) {
           known.delete(change.id);
-          const removedKind = kinds.get(change.id);
-          kinds.delete(change.id);
-          // The fence must exist before any following Snapshot clears the
-          // stream-scoped tombstones below.
-          if (
-            removedKind === undefined ||
-            removedKind === EntityKind.INTERACTION
-          )
+          // Only confirmed interaction removals reach the durable fence, and it
+          // must exist before any following Snapshot clears the stream-scoped
+          // tombstones below.
+          if (change.entityKind === EntityKind.INTERACTION)
             presentation.remove(change.id);
           setNewMessageIds((current) =>
             current.filter((id) => id !== change.id),

@@ -27,6 +27,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { document, encode } from "./documents";
+import { InteractionPresentationStore } from "./interaction-presentation";
 import { i18n } from "./localization";
 
 it("retires the latest question through RPC and live closure while keeping composer identity, draft and focus", async () => {
@@ -1067,6 +1068,30 @@ it("keeps an authoritatively removed question absent through a Snapshot and a re
   });
   expect(region.querySelector(".requests summary")?.textContent).toContain("1");
   await waitFor(() => expect(channels.size).toBeGreaterThan(0));
+  // An unseen message deletion is not an interaction removal: it must not
+  // consume an interaction tombstone slot.
+  const fence = vi.spyOn(InteractionPresentationStore.prototype, "remove");
+  const unrelated = newRequestId();
+  await act(async () => {
+    for (const channel of channels) {
+      channel.events.push(
+        create(WatchEventsResponseSchema, {
+          id: newRequestId(),
+          cursor: newRequestId(),
+          entityId: unrelated,
+          kind: EntityKind.MESSAGE,
+          sessionId,
+          revision: 3n,
+          action: EventAction.DELETED,
+        }),
+      );
+      channel.notify();
+    }
+  });
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 50));
+  });
+  expect(fence).not.toHaveBeenCalled();
   // Receipt count 0: an authoritative stream Remove drops it.
   await act(async () => {
     for (const channel of channels) {
@@ -1085,6 +1110,9 @@ it("keeps an authoritatively removed question absent through a Snapshot and a re
     }
   });
   await waitFor(() => expect(region.querySelector(".requests")).toBeNull());
+  expect(fence).toHaveBeenCalledTimes(1);
+  expect(fence).toHaveBeenCalledWith(original.id);
+  fence.mockRestore();
   // A stale list page still lists the removed id; a Snapshot clears the
   // stream-scoped removed set before that page is restored.
   listed = [original];
