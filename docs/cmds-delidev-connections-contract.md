@@ -156,7 +156,9 @@ grant request UUID, one random verifier) and the target accepts its first
 delivery. Retries replay the retained grant bytes and the prepared pairing journal
 exactly once; a lost delivery response is reconciled from the target's Completed
 receipt without another grant. A first creation or first delivery after the window
-fails with Conflict and creates nothing. Approving a request after `ExpiresAt`
+fails with Conflict and creates nothing. The requester rechecks the deadline on
+every retry until the encrypted delivery is durably journaled, so a retained but
+undelivered grant never creates its pairing after the window. Approving a request after `ExpiresAt`
 stays impossible, and a mismatched request ID, requester key, target or actor stays
 rejected.
 

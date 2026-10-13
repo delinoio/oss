@@ -761,13 +761,17 @@ func (s *Service) resumeOutgoing(ctx context.Context, v tailnetOutgoing) (tailne
 		v.ProfileID = profile.ID
 		v.Complete = true
 	} else {
+		// An Approved receipt proves the target decided before ExpiresAt, so the
+		// original grant is still created after expiry. Recovery is bounded by the
+		// shared window that also governs record reclamation. The deadline stays
+		// enforced until the encrypted delivery is durably journaled: a retained
+		// grant without that journal (for example after a stop between persisting
+		// it and CreatePairing) is not delivery-attempt evidence, and creating the
+		// pairing after the window would leave one that the target rejects.
+		if v.EncryptedGrant == nil && s.tailnetClock().After(tailnetRecoverableUntil(approval)) {
+			return v, rpc.Error(tailnetFailure(domain.Conflict), "")
+		}
 		if v.Grant == nil {
-			// An Approved receipt proves the target decided before ExpiresAt, so the
-			// original grant is still created after expiry. Recovery is bounded by
-			// the shared window that also governs record reclamation.
-			if s.tailnetClock().After(tailnetRecoverableUntil(approval)) {
-				return v, rpc.Error(tailnetFailure(domain.Conflict), "")
-			}
 			code, err := worker.RandomToken()
 			if err != nil {
 				return v, rpc.Error(err, "")

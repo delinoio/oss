@@ -4,6 +4,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -660,5 +661,74 @@ func TestTailnetIngressBoundsApprovalsPerOriginatingPeerBehindServe(t *testing.T
 	}
 	if len(digests) != 2 || digests[tailnetHostDigest("100.64.0.1:0")] != tailnetHostPendingLimit || digests[tailnetHostDigest("100.64.0.2:0")] != 1 {
 		t.Fatalf("requests must be attributed to the forwarded peer, got %v", digests)
+	}
+}
+
+func TestTailnetWorkerRetryAfterWindowCreatesNoPairingFromRetainedGrant(t *testing.T) {
+	f := newTailnetWorkerPair(t)
+	if _, err := f.resume(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.decide(true); err != nil {
+		t.Fatal(err)
+	}
+	// Model a stop after the original grant was persisted inside the window but
+	// before CreatePairing or any journaled delivery.
+	f.clock.Advance(tailnetRequestLifetime + time.Hour)
+	journal, err := f.requester.s.readOutgoing(f.outgoing.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := worker.RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Grant = &worker.PairingCode{Version: 1, ServerID: f.requester.s.Identity.ServerID, Endpoint: journal.Approval.SelectedOrigin, Code: code}
+	if err := f.requester.s.writeOutgoing(journal); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(tailnetRecoveryWindow)
+	_, err = f.resume()
+	assertCode(t, err, connect.CodeAborted)
+	left, err := f.requester.s.readOutgoing(f.outgoing.ID)
+	if err != nil || len(left.EncryptedGrant) != 0 || left.Complete {
+		t.Fatalf("no delivery may be journaled beyond the window: %v", err)
+	}
+	// The original CreatePairing request was never executed, so replaying its
+	// exact input now creates the pairing for the first time.
+	digest := sha256.Sum256([]byte(code))
+	created, err := f.requester.s.CreatePairing(f.requester.owner, connect.NewRequest(&pb.CreatePairingRequest{RequestId: string(f.outgoing.GrantRequest), Name: f.outgoing.Name, Type: pb.DeviceType_DEVICE_TYPE_WORKER, CodeDigest: digest[:]}))
+	if err != nil || created.Msg.Replayed {
+		t.Fatalf("a pairing was created after the recovery window: %v", err)
+	}
+	if f.pairCalls.Load() != 0 || f.started.Load() != 0 {
+		t.Fatal("no Worker may be paired beyond the recovery window")
+	}
+}
+
+func TestTailnetWorkerRetainedGrantStillResumesInsideWindow(t *testing.T) {
+	f := newTailnetWorkerPair(t)
+	if _, err := f.resume(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.decide(true); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(tailnetRequestLifetime + time.Hour)
+	journal, err := f.requester.s.readOutgoing(f.outgoing.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := worker.RandomToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Grant = &worker.PairingCode{Version: 1, ServerID: f.requester.s.Identity.ServerID, Endpoint: journal.Approval.SelectedOrigin, Code: code}
+	if err := f.requester.s.writeOutgoing(journal); err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.resume()
+	if err != nil || !done.Complete || done.Grant.Code != code {
+		t.Fatalf("a retained grant inside the window must complete with its original verifier: %v", err)
 	}
 }
