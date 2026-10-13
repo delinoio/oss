@@ -2704,7 +2704,8 @@ The app-server removes `input_image` and `input_audio` entries from
 `item/started` and `item/completed` notifications. When the client owns a
 native session, it reads the latest full turn from the owning thread, requires
 the exact item id to appear once, and accepts it only if every remaining
-notification entry matches the authoritative item in order (an empty remainder
+notification entry matches the authoritative item in order, comparing private
+ciphertext bytes before they are reduced to presence (an empty remainder
 equals an omitted one). Mismatch or an unreadable history requires recovery.
 Results owned by restricted Sidechat or a native code-review child turn stay
 private native extensions.

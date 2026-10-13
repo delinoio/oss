@@ -181,6 +181,18 @@ func TestFunctionOutputLifecycleCoversProtectedHistoryBytes(t *testing.T) {
 	}
 }
 
+func TestFunctionOutputRejectsChangedCiphertextBeforeRedaction(t *testing.T) {
+	notification := `{"type":"functionCallOutput","id":"original-output","name":"fixture_tool","namespace":"original_namespace","output":[{"type":"input_text","text":"<script>inert()</script>"},{"type":"encrypted_content","encrypted_content":"private-encrypted-sentinel"},{"type":"input_text","text":"last"}]}`
+	if !functionOutputNotificationMatches(json.RawMessage(notification), json.RawMessage(richFunctionOutput)) {
+		t.Fatal("matching ciphertext was not correlated with authoritative history")
+	}
+	// Both values redact to the same public projection, so only the private bytes differ.
+	changed := strings.Replace(notification, "private-encrypted-sentinel", "other-encrypted-sentinel", 1)
+	if functionOutputNotificationMatches(json.RawMessage(changed), json.RawMessage(richFunctionOutput)) {
+		t.Fatal("changed ciphertext was accepted because both values redact identically")
+	}
+}
+
 func TestFunctionOutputRejectsUncorrelatedHistoryProjection(t *testing.T) {
 	notification := json.RawMessage(`{"type":"functionCallOutput","id":"original-output","name":"fixture_tool","output":[{"type":"input_text","text":"changed"}]}`)
 	if functionOutputNotificationMatches(notification, json.RawMessage(richFunctionOutput)) {

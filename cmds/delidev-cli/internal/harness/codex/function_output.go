@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strconv"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -85,7 +86,32 @@ func functionOutputNotificationMatches(notification, authoritative json.RawMessa
 			filtered = append(filtered, content)
 		}
 	}
-	return reflect.DeepEqual(append([]domain.FunctionOutputContent{}, observed.Content...), filtered)
+	if !reflect.DeepEqual(append([]domain.FunctionOutputContent{}, observed.Content...), filtered) {
+		return false
+	}
+	// The public projection redacts ciphertext to presence only, so compare the
+	// private bytes of the entries the notification keeps before they are hidden.
+	return slices.Equal(functionOutputCiphertexts(notification), functionOutputCiphertexts(authoritative))
+}
+
+// Return the ordered private ciphertext values of an already validated item.
+// Validation owns strict field checks, so this projection ignores other fields.
+func functionOutputCiphertexts(raw json.RawMessage) []string {
+	var item functionOutputItem
+	var parts []struct {
+		Type      domain.FunctionOutputKind `json:"type"`
+		Encrypted *string                   `json:"encrypted_content"`
+	}
+	if json.Unmarshal(raw, &item) != nil || json.Unmarshal(item.Output, &parts) != nil {
+		return nil
+	}
+	values := []string{}
+	for _, part := range parts {
+		if part.Type == domain.FunctionEncrypted && part.Encrypted != nil {
+			values = append(values, *part.Encrypted)
+		}
+	}
+	return values
 }
 
 func sameFunctionNamespace(left, right *string) bool {
