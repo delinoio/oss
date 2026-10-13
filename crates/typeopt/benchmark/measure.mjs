@@ -96,8 +96,7 @@ function scanModuleSpecifiers(text) {
       }
       i++;
       const [before, last] = previous;
-      if (last === "from" || last === "import")
-        specifiers.push(value);
+      if (last === "from" || last === "import") specifiers.push(value);
       else if (last === "(" && before === "import") specifiers.push(value);
       remember('"');
     } else if (character === "`") {
@@ -118,7 +117,8 @@ function scanModuleSpecifiers(text) {
       let end = i;
       while (isIdentifierCharacter(text[end])) end++;
       // A property access such as `module.import(` is not a module edge.
-      const word = text[i - 1] === "." ? "." + text.slice(i, end) : text.slice(i, end);
+      const word =
+        text[i - 1] === "." ? "." + text.slice(i, end) : text.slice(i, end);
       remember(word);
       i = end;
     } else {
@@ -169,7 +169,11 @@ function loadingSpecifiers(file, text) {
 function localTarget(file, specifier) {
   const bare = specifier.trim().split(/[?#]/)[0];
   if (!bare || URL_SCHEME.test(bare)) return null;
-  if (!bare.startsWith("/") && !bare.startsWith("./") && !bare.startsWith("../"))
+  if (
+    !bare.startsWith("/") &&
+    !bare.startsWith("./") &&
+    !bare.startsWith("../")
+  )
     return null;
   if (!SCRIPT_FILE.test(bare)) return null;
   return bare.startsWith("/")
