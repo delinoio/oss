@@ -11,6 +11,12 @@ import {
   useLocale,
 } from "./localization";
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  EntranceMotion,
+  settleEnclosingEntrances,
+  useActivationCount,
+  useEntranceActivation,
+} from "./entrance-motion";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -276,6 +282,33 @@ export function Usage({
   const [detail, setDetail] = useState<PriceSelection>();
 
   const [tab, setTab] = useState(UsageTab.Overview);
+  // Explicit destination activation owns one 160ms Y4 entrance on the page; an
+  // explicit internal-tab selection owns one on the content below the tab strip,
+  // so the strip itself never moves. Refresh, range and source changes, polling
+  // and data updates change neither key, and values render immediately.
+  const [tabSelections, setTabSelections] = useState(0);
+  const selectTab = (next: UsageTab) => {
+    if (next === tab) return;
+    setTab(next);
+    setTabSelections((count) => count + 1);
+  };
+  const destinationActivations = useActivationCount(active);
+  const pageEntrance = useEntranceActivation(
+    `usage:${destinationActivations}`,
+    active,
+    EntranceMotion.Y4,
+  );
+  const tabEntrance = useEntranceActivation(
+    `usage-tab:${tabSelections}`,
+    active && tabSelections > 0,
+    EntranceMotion.Y4,
+  );
+  const tabStrip = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    // Only one entrance is active at a time: a tab selection during the page
+    // entrance settles the page so no 8px of transforms stack. Nothing waits.
+    if (tabSelections > 0) settleEnclosingEntrances(tabStrip.current);
+  }, [tabSelections]);
   const tabId = useId();
   const pricesTab = useRef<HTMLButtonElement>(null);
   const pendingPriceFocus = useRef(false);
@@ -345,7 +378,7 @@ export function Usage({
   const selectPrice = (identity: PriceSelection) => {
     pendingPriceFocus.current = true;
     setDetail({ ...identity, history: retainedPrices(data, identity) });
-    setTab(UsageTab.Prices);
+    selectTab(UsageTab.Prices);
   };
   const emptySummary = emptyRecordedSummary(data?.totals);
   const responseGroups =
@@ -548,8 +581,10 @@ export function Usage({
         hidden={!active}
         className="page usage-page"
         aria-busy={result.isFetching}
+        {...pageEntrance}
       >
         <div
+          ref={tabStrip}
           className="tab-strip usage-tabs"
           role="tablist"
           aria-label={copy("usage.analysisTabs")}
@@ -565,7 +600,7 @@ export function Usage({
               aria-controls={`${tabId}-${value}-panel`}
               aria-selected={tab === value}
               tabIndex={tab === value ? 0 : -1}
-              onClick={() => setTab(value)}
+              onClick={() => selectTab(value)}
               onFocus={(event) => revealTabItem(event.currentTarget)}
               onKeyDown={(event) => {
                 const next =
@@ -580,7 +615,7 @@ export function Usage({
                           : undefined;
                 if (!next) return;
                 event.preventDefault();
-                setTab(next);
+                selectTab(next);
                 window.document.getElementById(`${tabId}-${next}-tab`)?.focus();
               }}
             >
@@ -588,6 +623,7 @@ export function Usage({
             </button>
           ))}
         </div>
+        <div className="usage-content" {...tabEntrance}>
         <div hidden={tab === UsageTab.Prices}>
           <header className="usage-header">
             <div>
@@ -1142,6 +1178,7 @@ export function Usage({
             </div>
           </>
         ) : null}
+        </div>
       </section>
     </>
   );
