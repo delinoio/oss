@@ -1,4 +1,5 @@
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
+import type { IdentityLabel } from "./product-identity";
 import type { PriceSelection } from "./usage-prices";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -16,6 +17,8 @@ import {
 import {
   AccountingUnitKind,
   UsageAccountingProfile,
+  subscriptionServiceLabel,
+  type SubscriptionServiceIdentity,
   type GetUsageSummaryResponse,
   type NativeAccountingMeasure,
   type NativeAccountingSummary,
@@ -40,6 +43,24 @@ export function nativeMeasure(value?: NativeAccountingMeasure): string {
   )
     return copy("native-accounting.extra.ca1844969742");
   return `${BigInt(value.knownTotal).toLocaleString(displayLocale())}${value.unavailableUnits ? copy("native-accounting.unavailableUnits", { count: value.unavailableUnits }) : ""}`;
+}
+
+/**
+ * Source line for a native accounting row. Service-backed rows (for example
+ * OpenCode Go) carry an empty provider ID by contract and keep their identity in
+ * the subscription service, so the service label replaces the generic provider
+ * fallback. Provider-backed rows keep their provider label.
+ */
+function sourceLabel(
+  providerId: string,
+  subscriptionService: SubscriptionServiceIdentity,
+  productLabel: IdentityLabel,
+): string {
+  if (!providerId) {
+    const service = subscriptionServiceLabel(subscriptionService);
+    if (service) return service;
+  }
+  return productLabel(PresentationKind.Provider, providerId);
 }
 
 function Estimates({ totals }: { totals?: NativeAccountingTotals }) {
@@ -240,9 +261,10 @@ function NativeSummary({
                         )}
                       </button>
                       <p>
-                        {productLabel(
-                          PresentationKind.Provider,
+                        {sourceLabel(
                           group.providerId,
+                          group.subscriptionService,
+                          productLabel,
                         )}
                       </p>
                     </td>
@@ -360,9 +382,10 @@ function NativeSummary({
                           )}
                         </button>
                         <p>
-                          {productLabel(
-                            PresentationKind.Provider,
+                          {sourceLabel(
                             model.providerId,
+                            model.subscriptionService,
+                            productLabel,
                           )}
                         </p>
                       </td>

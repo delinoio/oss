@@ -230,8 +230,15 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		if !eligible {
 			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 		}
+		// The checkpoint digest pins the composed instructions the worker passed to
+		// the native adapter, so recovery must compose them from the same frozen
+		// execution configuration and original input mode.
+		instructions, err := input.Configuration.NativeInstructions(input.Input.Mode)
+		if err != nil {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
 		result.Harness = domain.ClaudeCode
-		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
 		if input.Version == 4 {
 			if session.Startup == nil || session.Startup.Ready == nil || session.Startup.Ready.Validate() != nil {
 				return result, domain.ExecutionRecoveryUncertain()
@@ -346,13 +353,18 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 						g.Completed = true
 						session.SidechatCurrentAnswer = g.ExecutionID
 					}
-					session.SidechatActiveRetry = ""
+					// Recovery proves only this generation's own execution cleanup. A
+					// newer failed or uncertain Fork generation keeps its owner reservation.
+					if session.SidechatActiveRetry == g.ID {
+						session.SidechatActiveRetry = ""
+					}
 				}
 			}
 		}
 		session.Execution.CleanupVerified = true
 		session.Recovery, session.ActiveExecutionID = domain.NoRecovery, ""
-		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired {
+		// The retained problem belongs to the newer owner while it remains active.
+		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired && session.SidechatActiveRetry == "" {
 			session.Problem = nil
 		}
 		if session.Archive == domain.ArchivePending {
@@ -385,6 +397,12 @@ func nativeRecoveryClaimVersion(input domain.ExecutionJobInput) uint32 {
 	return 1
 }
 
+// Recovery admission must not reinterpret the executable selection. Compare the
+// full harness, explicit path and executable digest; a missing side fails closed.
+func sameExecutionStartupSelection(current, retained *domain.ExecutionStartupSelection) bool {
+	return current != nil && retained != nil && *current == *retained
+}
+
 // The child owns its immutable creation marker independently of its parent.
 // Legacy seeds may derive it only from the exact retained completed Fork input.
 func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain.Session, input domain.ExecutionJobInput, history, device domain.ID) (domain.ID, error) {
@@ -396,7 +414,9 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	if f.OpenCodeCreationProof != nil {
-		if !f.VerifyOpenCodeCreation(row.ID) {
+		// The proof binds the retained Fork record, not the current assignment, so
+		// the current startup selection must equal the retained one before admission.
+		if !f.VerifyOpenCodeCreation(row.ID) || !sameExecutionStartupSelection(input.Startup, f.Startup) {
 			return "", domain.ExecutionRecoveryUncertain()
 		}
 		return f.OpenCodeCreationRequestID, nil
@@ -419,6 +439,15 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 	selected, _ := json.Marshal(f.Startup)
 	originalSelection, _ := json.Marshal(seed.Startup)
 	if !bytes.Equal(actual, expected) || !bytes.Equal(selected, originalSelection) {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	// Older children may have no retained selection; the surviving original seed
+	// is then the only evidence of the selection the current assignment must match.
+	retained := f.Startup
+	if retained == nil {
+		retained = seed.Startup
+	}
+	if !sameExecutionStartupSelection(input.Startup, retained) {
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	if f.OpenCodeCreationRequestID != "" && f.OpenCodeCreationRequestID != seed.OpenCode.Fork {

@@ -20,7 +20,10 @@ import {
 import { startupTimingGroups, useStartupTimes } from "./session-startup-timing";
 import { useStartupLeaseExpiry } from "./session-startup-presence";
 import { startupWorkerLeaseRemainingMs } from "./session-startup-operations";
-import { SessionProgressStatus } from "./session-progress-status";
+import {
+  RetainedStartupTimes,
+  SessionProgressStatus,
+} from "./session-progress-status";
 import { SessionProgressPhase } from "./session-progress";
 import type { ReactNode } from "react";
 
@@ -43,8 +46,8 @@ function fixture() {
     documentJson: new TextEncoder().encode(
       JSON.stringify({
         machine_id: machineId,
-        preparation: { job_id: workspaceJob },
-        initial_execution: { id: execution },
+        preparation: { job_id: workspaceJob, state: "ready" },
+        initial_execution: { id: execution, input_id: inputId },
         startup: { job_id: agentJob, execution_id: execution },
         startup_progress: {
           workspace: {
@@ -98,6 +101,45 @@ function fixture() {
     },
   };
 }
+const inputId = newRequestId();
+/** Replaces top-level Session document fields while keeping startup timing. */
+function withDocument(
+  session: ReturnType<typeof fixture>["session"],
+  patch: Record<string, unknown>,
+) {
+  return create(ResourceSchema, {
+    ...session,
+    documentJson: new TextEncoder().encode(
+      JSON.stringify({
+        ...JSON.parse(new TextDecoder().decode(session.documentJson)),
+        ...patch,
+      }),
+    ),
+  });
+}
+function finishAgent(
+  session: ReturnType<typeof fixture>["session"],
+  at: string,
+) {
+  return create(ResourceSchema, {
+    ...session,
+    startupTiming: create(SessionStartupTimingSchema, {
+      ...session.startupTiming!,
+      agent: create(StartupGroupTimingSchema, {
+        ...session.startupTiming!.agent!,
+        finishedAt: at,
+      }),
+    }),
+  });
+}
+const acceptedExecution = (extra: Record<string, unknown> = {}) => ({
+  execution_id: execution,
+  input_id: inputId,
+  job_id: agentJob,
+  outcome: "running",
+  accepted_inputs: [{ input_id: inputId, prompt_digest: "a".repeat(64) }],
+  ...extra,
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -131,6 +173,124 @@ it("validates exact jobs/executions and UTC intervals without historical backfil
       create(ResourceSchema, { ...f.session, startupTiming: undefined }),
     ),
   ).toEqual({});
+});
+it("confirms a finished interval only from matching successful settlement", () => {
+  const f = fixture();
+  const finished = finishAgent(f.session, "2026-10-12T00:00:20Z");
+  const display = (session: typeof f.session) =>
+    renderHook(
+      () => useStartupTimes(session, f.observation, true, "original"),
+      { wrapper: Wrapper },
+    ).result.current;
+  // Stop-pending claimed job: finished_at is only a freeze, original input unaccepted.
+  const pending = withDocument(finished, {
+    outcome: "not-started",
+    dispatch: "paused",
+    execution: acceptedExecution({
+      outcome: "not-started",
+      accepted_inputs: undefined,
+    }),
+  });
+  expect(startupTimingGroups(pending).agent).toMatchObject({ settled: false });
+  expect(display(pending).agent).toMatchObject({
+    seconds: 8,
+    running: false,
+    unconfirmed: true,
+  });
+  // No execution document at all (cancelled before any native evidence).
+  expect(display(finished).agent).toMatchObject({
+    seconds: 8,
+    unconfirmed: true,
+  });
+  // Matching accepted original input confirms the fixed interval.
+  const accepted = withDocument(finished, { execution: acceptedExecution() });
+  expect(startupTimingGroups(accepted).agent?.settled).toBe(true);
+  expect(display(accepted).agent).toMatchObject({
+    seconds: 8,
+    running: false,
+    unconfirmed: false,
+  });
+  // Foreign, malformed, empty or later-only acceptance evidence never confirms.
+  for (const execution_patch of [
+    { job_id: newRequestId() },
+    { execution_id: newRequestId() },
+    { input_id: newRequestId() },
+    { accepted_inputs: [] },
+    { accepted_inputs: "bad" },
+    { accepted_inputs: [{ input_id: newRequestId() }, { input_id: inputId }] },
+    { accepted_inputs: [{}] },
+    // The complete ordered list must be valid, not only its first entry.
+    { accepted_inputs: [{ input_id: inputId }] },
+    { accepted_inputs: [{ input_id: inputId, prompt_digest: "bad" }] },
+    {
+      accepted_inputs: [
+        { input_id: inputId, prompt_digest: "a".repeat(64) },
+        { input_id: inputId, prompt_digest: "b".repeat(64) },
+      ],
+    },
+    {
+      accepted_inputs: [
+        { input_id: inputId, prompt_digest: "a".repeat(64) },
+        { input_id: "not-a-uuid", prompt_digest: "b".repeat(64) },
+      ],
+    },
+    {
+      accepted_inputs: [
+        { input_id: inputId, prompt_digest: "a".repeat(64) },
+        { input_id: newRequestId() },
+      ],
+    },
+    {
+      accepted_inputs: Array.from({ length: 4096 }, (_, index) => ({
+        input_id: index ? newRequestId() : inputId,
+        prompt_digest: "a".repeat(64),
+      })),
+    },
+  ]) {
+    const bad = withDocument(finished, {
+      execution: acceptedExecution(execution_patch),
+    });
+    // A foreign active job makes the whole group unavailable; the rest are unsettled.
+    expect(startupTimingGroups(bad).agent?.settled ?? false).toBe(false);
+    expect(display(bad).agent?.unconfirmed ?? true).toBe(true);
+  }
+  // A foreign selected input never matches either.
+  const foreignInput = withDocument(finished, {
+    execution: acceptedExecution(),
+    initial_execution: { id: execution, input_id: newRequestId() },
+  });
+  expect(startupTimingGroups(foreignInput).agent?.settled).toBe(false);
+  // Workspace: only readiness confirms; failed, pending or missing state does not.
+  const workspace = (preparation: Record<string, unknown>) =>
+    display(withDocument(f.session, { preparation })).workspace;
+  expect(workspace({ job_id: workspaceJob, state: "ready" })).toMatchObject({
+    seconds: 12,
+    running: false,
+    unconfirmed: false,
+  });
+  for (const state of ["failed", "pending", undefined, "unknown"])
+    expect(workspace({ job_id: workspaceJob, state })).toMatchObject({
+      seconds: 12,
+      unconfirmed: true,
+    });
+  // Malformed or reversed timestamps and foreign jobs stay unavailable.
+  expect(
+    startupTimingGroups(
+      withDocument(
+        create(ResourceSchema, {
+          ...finished,
+          startupTiming: create(SessionStartupTimingSchema, {
+            ...finished.startupTiming!,
+            agent: create(StartupGroupTimingSchema, {
+              ...finished.startupTiming!.agent!,
+              finishedAt: "2026-10-12T00:00:11Z",
+            }),
+          }),
+        }),
+        { execution: acceptedExecution() },
+      ),
+    ).agent,
+  ).toBeUndefined();
 });
 it("ticks closed groups from server time, freezes at acceptance, and stops on stale presence", () => {
   vi.useFakeTimers();
@@ -167,16 +327,10 @@ it("ticks closed groups from server time, freezes at acceptance, and stops on st
     running: false,
     unconfirmed: true,
   });
-  const finished = create(ResourceSchema, {
-    ...f.session,
-    startupTiming: create(SessionStartupTimingSchema, {
-      ...f.session.startupTiming!,
-      agent: create(StartupGroupTimingSchema, {
-        ...f.session.startupTiming!.agent!,
-        finishedAt: "2026-10-12T00:00:20Z",
-      }),
-    }),
-  });
+  const finished = withDocument(
+    finishAgent(f.session, "2026-10-12T00:00:20Z"),
+    { execution: acceptedExecution() },
+  );
   act(() => hook.rerender({ ...props, session: finished }));
   expect(hook.result.current.agent).toMatchObject({
     seconds: 8,
@@ -387,3 +541,20 @@ it.each([false, true])(
     expect(screen.getByRole("status").textContent).not.toMatch(/unconfirmed/i);
   },
 );
+it("shows a frozen unsettled interval as Unconfirmed without a spinner in the retained row", () => {
+  const rendered = render(
+    <RetainedStartupTimes
+      timing={{
+        workspace: { seconds: 12, running: false, unconfirmed: false },
+        agent: { seconds: 8, running: false, unconfirmed: true },
+      }}
+    />,
+  );
+  const rows = [...rendered.container.querySelectorAll("p")];
+  expect(rows).toHaveLength(2);
+  expect(rows[0].querySelector(".session-startup-unconfirmed")).toBeNull();
+  expect(rows[1].querySelector(".session-startup-unconfirmed")).not.toBeNull();
+  expect(
+    rendered.container.querySelector(".session-progress-spinner"),
+  ).toBeNull();
+});

@@ -94,3 +94,60 @@ func TestAutoReviewReplayRejectsChangedPrivateReviewContext(t *testing.T) {
 		t.Fatal("changed native replay discarded")
 	}
 }
+
+func networkReviewFixture(thread, turn domain.ID, status, protocol string) map[string]any {
+	p := reviewFixture(thread, turn, status)
+	p["action"] = map[string]any{"type": "networkAccess", "target": "https://example.test:443", "host": "example.test", "protocol": protocol, "port": 443}
+	return p
+}
+
+func TestNativeAutoReviewNetworkAccessRejectsUnknownProtocolsBeforeStateChange(t *testing.T) {
+	for _, protocol := range []string{"ftp", "", "unknown", "HTTP", "Https", "socks5tcp", "socks5UDP", " http"} {
+		c, turn := observationClient()
+		c.execution.settings.ApprovalsReviewer = "auto_review"
+		if _, err := observeFixture(c, "item/autoApprovalReview/started", networkReviewFixture(c.thread, turn, "inProgress", protocol)); err == nil {
+			t.Fatalf("protocol %q was accepted", protocol)
+		}
+		if len(c.execution.autoReviews) != 0 || len(c.execution.autoReviewActions) != 0 || len(c.execution.autoReviewPayloads) != 0 {
+			t.Fatalf("protocol %q changed auto-review state", protocol)
+		}
+		// A rejected start leaves no state, so a completion cannot settle it.
+		if _, err := observeFixture(c, "item/autoApprovalReview/completed", networkReviewFixture(c.thread, turn, "approved", protocol)); err == nil {
+			t.Fatalf("protocol %q completion was accepted", protocol)
+		}
+	}
+	// A valid start followed by a completion with an unknown protocol must not settle.
+	c, turn := observationClient()
+	c.execution.settings.ApprovalsReviewer = "auto_review"
+	if _, err := observeFixture(c, "item/autoApprovalReview/started", networkReviewFixture(c.thread, turn, "inProgress", string(ApprovalHTTPS))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := observeFixture(c, "item/autoApprovalReview/completed", networkReviewFixture(c.thread, turn, "approved", "ftp")); err == nil {
+		t.Fatal("completion with unknown protocol was accepted")
+	}
+	if got := c.execution.autoReviews[turn]["review-fixture"].Status; got != domain.AutoReviewInProgress {
+		t.Fatalf("rejected completion changed review state: %v", got)
+	}
+}
+
+func TestNativeAutoReviewNetworkAccessAllowedProtocolsSettleAndReplay(t *testing.T) {
+	for _, protocol := range []NetworkApprovalProtocol{ApprovalHTTP, ApprovalHTTPS, ApprovalSOCKSTCP, ApprovalSOCKSUDP} {
+		c, turn := observationClient()
+		c.execution.settings.ApprovalsReviewer = "auto_review"
+		start := networkReviewFixture(c.thread, turn, "inProgress", string(protocol))
+		done := networkReviewFixture(c.thread, turn, "approved", string(protocol))
+		event, err := observeFixture(c, "item/autoApprovalReview/started", start)
+		if err != nil || event.Kind != AutoReviewEvent || event.AutoReview.Status != domain.AutoReviewInProgress {
+			t.Fatalf("%s start failed: %v", protocol, err)
+		}
+		if event, err = observeFixture(c, "item/autoApprovalReview/started", start); err != nil || event.Kind != MetadataEvent {
+			t.Fatalf("%s start replay was not idempotent: %v", protocol, err)
+		}
+		if event, err = observeFixture(c, "item/autoApprovalReview/completed", done); err != nil || event.Kind != AutoReviewEvent || event.AutoReview.Status != domain.AutoReviewApproved {
+			t.Fatalf("%s completion failed: %v", protocol, err)
+		}
+		if event, err = observeFixture(c, "item/autoApprovalReview/completed", done); err != nil || event.Kind != MetadataEvent {
+			t.Fatalf("%s completion replay was not idempotent: %v", protocol, err)
+		}
+	}
+}

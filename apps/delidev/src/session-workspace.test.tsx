@@ -1,5 +1,6 @@
 import { sessionInputReceipt } from "./test-session-input";
 // SPDX-License-Identifier: Apache-2.0
+import { readFileSync } from "node:fs";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -12,6 +13,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import {
   BudgetState,
@@ -33,7 +35,12 @@ import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
-import { SessionTabsProvider } from "./session-tabs";
+import {
+  SessionTabKind,
+  SessionTabsProvider,
+  useSessionTabsStore,
+  type SessionTabsStore,
+} from "./session-tabs";
 import { SessionView } from "./session";
 import { ShortcutProvider } from "./shortcut-provider";
 import {
@@ -288,12 +295,24 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true, embedded = false) => (
+  // Exposes the connection-owned tab store so tests can open presentation tabs.
+  let tabsStore: SessionTabsStore | undefined;
+  const StoreProbe = () => {
+    tabsStore = useSessionTabsStore();
+    return null;
+  };
+  const view = (
+    value = "Original draft",
+    active = true,
+    embedded = false,
+    inside?: ReactNode,
+  ) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
           <SessionNameEditorProvider>
             <SessionTabsProvider>
+              <StoreProbe />
               <SessionView
                 id={id}
                 draft={value}
@@ -301,6 +320,7 @@ function fixture(
                 active={active}
                 embedded={embedded}
               />
+              {inside}
             </SessionTabsProvider>
           </SessionNameEditorProvider>
         </MutationIntents>
@@ -328,6 +348,7 @@ function fixture(
     terminalCreate,
     terminalWatches,
     terminals,
+    tabs: () => tabsStore!,
   };
 }
 
@@ -1495,33 +1516,43 @@ it.each([
   { delivery: "rejected-before-start", hidden: false },
   { delivery: "removed", hidden: false },
   { delivery: "claimed", execution: "foreign", hidden: false },
+  { delivery: "claimed", execution: "empty-queue", hidden: false },
 ])(
   "keeps Info availability tied to the original queue row while Starting (%j)",
   async ({ delivery, execution, hidden }) => {
     const startup = initialResponseWaiting();
     const { execution: _observed, ...starting } = startup;
-    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, starting, (id) => [
-      create(ResourceSchema, {
-        id: starting.initial_execution.input_id,
-        sessionId: id,
-        kind: EntityKind.QUEUE,
-        revision: 1n,
-        schemaVersion: 1,
-        documentJson: encode({
-          delivery,
-          prompt: "Original queued input",
-          mode: "execute",
-          sequence: 1,
-          content_revision: 1,
-          execution_id:
-            execution === "foreign"
-              ? newRequestId()
-              : starting.initial_execution.id,
-        }),
-      }),
-    ]);
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, starting, (id) =>
+      // A successful current queue read with no rows is not original-input proof.
+      execution === "empty-queue"
+        ? []
+        : [
+            create(ResourceSchema, {
+              id: starting.initial_execution.input_id,
+              sessionId: id,
+              kind: EntityKind.QUEUE,
+              revision: 1n,
+              schemaVersion: 1,
+              documentJson: encode({
+                delivery,
+                prompt: "Original queued input",
+                mode: "execute",
+                sequence: 1,
+                content_revision: 1,
+                execution_id:
+                  execution === "foreign"
+                    ? newRequestId()
+                    : starting.initial_execution.id,
+              }),
+            }),
+          ],
+    );
     const { container } = render(f.view("Retained startup draft"));
     await screen.findByText("Starting agent");
+    if (!hidden) {
+      await waitFor(() => expect(f.listQueue).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     const info = container.querySelector(".session-information")!;
     expect(info).toHaveProperty("hidden", hidden);
     const composer = screen.getByRole("textbox", { name: "Message" });
@@ -1629,7 +1660,10 @@ it.each(["pending", "failed"] as const)(
       f.budget.mockImplementation((async () => {
         await held.gate;
         return {
-          view: create(SessionBudgetViewSchema, { session: f.session }),
+          view: create(SessionBudgetViewSchema, {
+            session: f.session,
+            state: BudgetState.ALLOW_INCOMPLETE,
+          }),
         };
       }) as never);
     else
@@ -1682,7 +1716,10 @@ it("does not reuse budget evidence from another session identity", async () => {
   second.budget.mockImplementation((async () => {
     await held.gate;
     return {
-      view: create(SessionBudgetViewSchema, { session: second.session }),
+      view: create(SessionBudgetViewSchema, {
+        session: second.session,
+        state: BudgetState.ALLOW_INCOMPLETE,
+      }),
     };
   }) as never);
   const next = render(second.view("Retained startup draft"));
@@ -1690,6 +1727,95 @@ it("does not reuse budget evidence from another session identity", async () => {
   expect(nextInfo).toHaveProperty("hidden", false);
   held.release();
   await waitFor(() => expect(nextInfo).toHaveProperty("hidden", true));
+});
+it("keeps startup Info visible while only the budget is being reread", async () => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  const held = deferred();
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  composer.focus();
+  const view = f.budget().view;
+  f.budget.mockImplementation((async () => {
+    await held.gate;
+    return { view };
+  }) as never);
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+  await waitFor(() => expect(info).toHaveProperty("hidden", false));
+  // Retained startup progress and mounted controllers are unaffected.
+  expect(screen.getByText("Waiting for response")).toBeTruthy();
+  held.release();
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  expectStartupPreserved(f, composer);
+});
+it("keeps startup Info visible when a budget reread fails", async () => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(info).toHaveProperty("hidden", true));
+  f.budget.mockImplementation((() => {
+    throw new ConnectError("Budget unavailable", Code.Unavailable);
+  }) as never);
+  act(() => {
+    void f.client.invalidateQueries();
+  });
+  await waitFor(() => expect(info).toHaveProperty("hidden", false));
+  await screen.findAllByRole("button", { name: "Retry read" });
+  expect(f.enqueue).not.toHaveBeenCalled();
+});
+it.each([
+  { name: "unspecified state", state: BudgetState.UNSPECIFIED, foreign: false },
+  { name: "unknown state", state: 99 as BudgetState, foreign: false },
+  {
+    name: "another session",
+    state: BudgetState.ALLOW_INCOMPLETE,
+    foreign: true,
+  },
+  {
+    name: "a missing session",
+    state: BudgetState.ALLOW_INCOMPLETE,
+    missing: true,
+  },
+] as {
+  name: string;
+  state: BudgetState;
+  foreign?: boolean;
+  missing?: boolean;
+}[])("keeps startup Info visible for budget evidence with $name", async (c) => {
+  const f = fixture(
+    BudgetState.ALLOW_INCOMPLETE,
+    false,
+    initialResponseWaiting(),
+  );
+  f.budget.mockImplementation((() => ({
+    view: create(SessionBudgetViewSchema, {
+      ...(c.missing
+        ? {}
+        : {
+            session: c.foreign
+              ? create(ResourceSchema, { ...f.session, id: newRequestId() })
+              : f.session,
+          }),
+      state: c.state,
+    }),
+  })) as never);
+  const { container } = render(f.view("Retained startup draft"));
+  const info = await startupInfo(container);
+  await waitFor(() => expect(f.budget).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(info).toHaveProperty("hidden", false);
+  expect(f.enqueue).not.toHaveBeenCalled();
 });
 it.each(["transcript", "queue", "interactions"] as const)(
   "keeps startup Info visible while a %s refresh retains stale complete pages",
@@ -1728,6 +1854,120 @@ it.each(["transcript", "queue", "interactions"] as const)(
     held.release();
     await waitFor(() => expect(info).toHaveProperty("hidden", true));
     expectStartupPreserved(f, composer);
+  },
+);
+/** Four single-row pages with a terminal last token leave three payload pages. */
+const evictedPageLabels = {
+  transcript: "Load more Conversation pages",
+  queue: "Load more Queue pages",
+  interactions: "Load more Request pages",
+} as const;
+it.each(
+  (["transcript", "queue", "interactions"] as const).flatMap((read) => [
+    { read, pageCount: 4, hidden: false },
+    { read, pageCount: 3, hidden: true },
+  ]),
+)(
+  "startup Info hidden=$hidden for $read with $pageCount terminal pages",
+  async ({ read, pageCount, hidden }) => {
+    const startup = initialResponseWaiting();
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, startup);
+    const kind =
+      read === "transcript" ? EntityKind.MESSAGE : EntityKind.INTERACTION;
+    const row = (index: number) =>
+      create(ResourceSchema, {
+        id: newRequestId(),
+        sessionId: f.session.id,
+        kind: read === "queue" ? EntityKind.QUEUE : kind,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode(
+          read === "queue"
+            ? {
+                delivery: "accepted",
+                prompt: "Original queued input",
+                mode: "execute",
+                sequence: 1,
+                content_revision: 1,
+              }
+            : read === "interactions"
+              ? { type: "native-approval", closure: "closed" }
+              : {
+                  // The original accepted input, so resident pages stay compatible
+                  // with the startup progress projection.
+                  execution_id: startup.initial_execution.id,
+                  input_id: startup.initial_execution.input_id,
+                  native_thread_id: "thread",
+                  native_turn_id: "turn",
+                  role: "user",
+                  state: "complete",
+                  text: `Page ${index}`,
+                  first_sequence: 1,
+                  last_sequence: 1,
+                },
+        ),
+      });
+    const pages = Array.from({ length: pageCount }, (_, index) => row(index));
+    const page = (token: string | undefined) => {
+      const index = Number(token || 0);
+      return {
+        rows: [pages[index]!],
+        nextPageToken: index < pages.length - 1 ? String(index + 1) : "",
+      };
+    };
+    if (read === "queue")
+      f.listQueue.mockImplementation(((request: { pageToken: string }) => {
+        const { rows, nextPageToken } = page(request.pageToken);
+        return { inputs: rows, nextPageToken };
+      }) as never);
+    else
+      f.list.mockImplementation(async (request) => {
+        if (request.filter?.kind !== kind)
+          return { resources: [], nextPageToken: "" };
+        const { rows, nextPageToken } = page(request.filter.pageToken);
+        return { resources: rows, nextPageToken };
+      });
+    const { container } = render(f.view("Retained startup draft"));
+    const info = container.querySelector<HTMLElement>(".session-information")!;
+    if (read === "interactions")
+      // The tray stays collapsed without an open request; expand it explicitly.
+      fireEvent.click(await screen.findByText(/Agent requests/));
+    // A continuation token keeps Info visible until the traversal is terminal.
+    for (let index = 1; index < pages.length; index++) {
+      fireEvent.click(
+        await screen.findByRole("button", { name: evictedPageLabels[read] }),
+      );
+      await waitFor(() =>
+        expect(
+          (read === "queue"
+            ? f.listQueue.mock.calls.map(([request]) => request.pageToken)
+            : f.list.mock.calls
+                .filter(([request]) => request.filter?.kind === kind)
+                .map(([request]) => request.filter?.pageToken)
+          ).includes(String(index)),
+        ).toBe(true),
+      );
+    }
+    if (hidden) {
+      // Every reached payload page is resident, so a current snapshot may hide.
+      await waitFor(() => expect(info).toHaveProperty("hidden", true));
+      expect(
+        screen.queryByRole("button", {
+          name: "Restore previously loaded items",
+        }),
+      ).toBeNull();
+    } else {
+      await screen.findByRole("button", {
+        name: "Restore previously loaded items",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(info).toHaveProperty("hidden", false);
+      expect(info.hasAttribute("inert")).toBe(false);
+    }
+    // Restoration remains reachable and no mutation was started.
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+    expect(f.recover).not.toHaveBeenCalled();
   },
 );
 it.each(["failed", "incomplete"] as const)(
@@ -2746,6 +2986,38 @@ it("opens the shared Open tool dialog from primary+T, keeps the draft and select
   }
 });
 
+it("does not mount a self-child Sidechat through the real SessionView composition", async () => {
+  const f = fixture();
+  let seeded: (() => string[]) | undefined;
+  function SeedSelfChild() {
+    const store = useSessionTabsStore();
+    useState(() => {
+      // Malformed ownership must be rejected before any recursive child mounts.
+      store.open(f.session.id, {
+        kind: SessionTabKind.Sidechat,
+        id: f.session.id,
+        name: "Self",
+      });
+      seeded = () => store.sidechats(f.session.id).map((tab) => tab.id);
+    });
+    return null;
+  }
+  const view = render(f.view("Original draft", true, false, <SeedSelfChild />));
+  try {
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(seeded?.()).toEqual([]);
+    expect(screen.getAllByRole("textbox", { name: "Message" })).toHaveLength(1);
+    expect(document.querySelector(".session-sidechat-pane")).toBeNull();
+    expect(screen.getAllByRole("tab", { name: "Conversation" })).toHaveLength(
+      1,
+    );
+    expect(f.enqueue).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    f.client.clear();
+  }
+});
+
 it("keeps Terminals disabled in the dialog for a Sidechat parent snapshot", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
@@ -2880,3 +3152,73 @@ it("omits Files guidance and keeps the custom primary+E binding authoritative wh
     f.client.clear();
   }
 });
+
+it.each([SessionTabKind.Sidechat, SessionTabKind.PendingSidechat] as const)(
+  "gives a selected %s tab the whole conversation region and restores Conversation state",
+  async (kind) => {
+    const f = fixture();
+    const { container } = render(f.view("Retained parent draft"));
+    const composer = (await screen.findByRole("textbox", {
+      name: "Message",
+    })) as HTMLTextAreaElement;
+    const upper = container.querySelector<HTMLElement>(
+      ".session-upper-content",
+    )!;
+    const region = upper.querySelector<HTMLElement>(
+      ".session-conversation-region",
+    )!;
+    const body = region.querySelector<HTMLElement>(":scope > .session-body")!;
+    // Counterexample: Conversation selected keeps its body visible and the
+    // region is the only child consuming the upper content row.
+    expect(upper.children).toHaveLength(1);
+    expect(upper.firstElementChild).toBe(region);
+    expect(body.hidden).toBe(false);
+    expect(body.hasAttribute("inert")).toBe(false);
+    const child = newRequestId();
+    act(() =>
+      f
+        .tabs()
+        .open(
+          f.session.id,
+          kind === SessionTabKind.Sidechat
+            ? { kind, id: child, name: "Side question" }
+            : { kind, requestId: child, name: "Side question" },
+        ),
+    );
+    await waitFor(() => expect(body.hidden).toBe(true));
+    // Trigger: the selected pane lives inside the sole region child, never as
+    // a width-sharing sibling of a blank conversation wrapper.
+    const pane = region.querySelector<HTMLElement>(".session-sidechat-pane")!;
+    expect(pane).toBeTruthy();
+    expect(upper.children).toHaveLength(1);
+    expect(upper.firstElementChild).toBe(region);
+    expect(pane.closest(".session-upper-content")).toBe(upper);
+    expect(upper.querySelectorAll(".session-sidechat-pane")).toHaveLength(1);
+    expect(pane.hidden).toBe(false);
+    expect(pane.hasAttribute("inert")).toBe(false);
+    expect(body.hasAttribute("inert")).toBe(true);
+    // jsdom has no layout engine, so the width contract is asserted on CSS text.
+    const css = readFileSync("src/session.css", "utf8");
+    const rule = (selector: string) =>
+      css.match(
+        new RegExp(
+          `(?:^|\n)${selector.replace(/[.\[\]]/g, "\\$&")} \\{([^}]*)\\}`,
+        ),
+      )?.[1] ?? "";
+    expect(rule(".session-tabbed .session-conversation-region")).toMatch(
+      /width:\s*100%/,
+    );
+    expect(rule(".session-sidechat-pane")).toMatch(/width:\s*100%/);
+    expect(rule(".session-sidechat-pane")).toMatch(/min-width:\s*0/);
+    // Returning to Conversation restores the same retained mounted composer.
+    act(() => f.tabs().select(f.session.id, SessionTabKind.Conversation));
+    await waitFor(() => expect(body.hidden).toBe(false));
+    expect(body.hasAttribute("inert")).toBe(false);
+    expect(pane.hidden).toBe(true);
+    expect(pane.hasAttribute("inert")).toBe(true);
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+    expect(composer.value).toBe("Retained parent draft");
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+  },
+);

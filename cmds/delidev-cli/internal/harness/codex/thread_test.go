@@ -25,6 +25,7 @@ type threadFixture struct {
 	steerCount             int
 	history                json.RawMessage
 	historyChangeAfterRead bool
+	historyCursorPad       int
 	historyNotification    *fixtureHistoryNotification
 	sidechatDrift          string
 	reverted               bool
@@ -41,6 +42,9 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		return true
 	}
 	if f.handleSidechatCompaction(id, method, raw, write) {
+		return true
+	}
+	if method == "model/list" && strings.HasPrefix(f.mode, "thread-turn-images-models-") && f.handleImageModelListFailure(id, write) {
 		return true
 	}
 	if method == "model/list" {
@@ -591,4 +595,22 @@ func fixtureModalities(mode string) []string {
 		return []string{"text", "image"}
 	}
 	return []string{"text"}
+}
+
+// handleImageModelListFailure serves controlled model/list failures for the
+// image preparation tests. It returns false for modes that need a valid page.
+func (f *threadFixture) handleImageModelListFailure(id json.RawMessage, write func(json.RawMessage, any)) bool {
+	switch f.mode {
+	case "thread-turn-images-models-native-error":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "fixture-protected-diagnostic"}})
+	case "thread-turn-images-models-malformed":
+		write(id, map[string]any{"nextCursor": nil})
+	case "thread-turn-images-models-exit":
+		os.Exit(23)
+	case "thread-turn-images-models-hang":
+		// No response: the caller deadline or cancellation decides the outcome.
+	default:
+		return false
+	}
+	return true
 }

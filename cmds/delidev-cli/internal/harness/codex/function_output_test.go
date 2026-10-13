@@ -363,6 +363,31 @@ func TestFunctionOutputPrivateLocatorMayUseNativeFrame(t *testing.T) {
 	}
 }
 
+func TestFunctionOutputSinglePrivateFieldMayExceedPublicDocumentLimit(t *testing.T) {
+	// One field above 1 MiB and below the 16 MiB native frame must decode, for
+	// every private content kind, without entering the public projection.
+	field := strings.Repeat("l", 1200<<10)
+	for _, part := range []string{
+		`{"type":"input_image","image_url":"` + field + `"}`,
+		`{"type":"encrypted_content","encrypted_content":"` + field + `"}`,
+		`{"type":"input_audio","audio_url":"` + field + `"}`,
+	} {
+		raw := `{"type":"functionCallOutput","id":"single-large-field","name":"tool","output":[` + part + `]}`
+		_, output, err := decodeFunctionOutput(json.RawMessage(raw))
+		if err != nil || len(output.Content) != 1 {
+			t.Fatal("a single private field above 1 MiB was rejected", err)
+		}
+		public, _ := json.Marshal(output)
+		if bytes.Contains(public, []byte("lllll")) {
+			t.Fatal("private field escaped into the public projection")
+		}
+	}
+	oversized := `{"type":"functionCallOutput","id":"single-oversized-field","name":"tool","output":[{"type":"input_image","image_url":"` + strings.Repeat("l", 16<<20) + `"}]}`
+	if _, _, err := decodeFunctionOutput(json.RawMessage(oversized)); err == nil {
+		t.Fatal("a field above the native frame was accepted")
+	}
+}
+
 func TestFunctionOutputReviewChildTurnRemainsPrivate(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()

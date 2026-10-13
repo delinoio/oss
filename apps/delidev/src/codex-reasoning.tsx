@@ -110,6 +110,60 @@ export function codexReasoning(
     deltas: deltas as Observation[],
   };
 }
+// Common envelope metadata a Codex reasoning artifact message may carry. Role
+// specific fields (phase, input_id, inherited, turn_timing, tool, progress and
+// provider content) are foreign to this record and select the generic fallback.
+const messageKeys = [
+  "role",
+  "state",
+  "text",
+  "artifact",
+  "execution_id",
+  "native_thread_id",
+  "native_turn_id",
+  "native_id",
+  "native_parent_id",
+  "first_sequence",
+  "last_sequence",
+  "context_revision",
+  "attachments",
+];
+const stringKeys = [
+  "execution_id",
+  "native_thread_id",
+  "native_turn_id",
+  "native_id",
+  "native_parent_id",
+];
+const counterKeys = ["first_sequence", "last_sequence", "context_revision"];
+// Validates the complete retained message envelope, then its nested artifact.
+// Text is never coerced: only absent or an empty string selects the disclosure.
+// Rejected records are never stripped, repaired or partially rendered.
+export function codexReasoningMessage(
+  message: Record<string, unknown>,
+  state: string,
+): CodexReasoningData | undefined {
+  if (
+    message.role !== "artifact" ||
+    !only(message, messageKeys) ||
+    (message.text !== undefined && message.text !== "") ||
+    typeof message.state !== "string" ||
+    message.state !== state ||
+    stringKeys.some(
+      (key) => message[key] !== undefined && typeof message[key] !== "string",
+    ) ||
+    counterKeys.some(
+      (key) =>
+        message[key] !== undefined &&
+        (typeof message[key] !== "number" ||
+          !Number.isSafeInteger(message[key]) ||
+          (message[key] as number) < 0),
+    ) ||
+    (message.attachments !== undefined && !Array.isArray(message.attachments))
+  )
+    return undefined;
+  return codexReasoning(message.artifact, state);
+}
 function hasText(snapshot: Snapshot | undefined) {
   return (
     snapshot &&

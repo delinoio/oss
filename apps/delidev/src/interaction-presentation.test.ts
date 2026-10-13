@@ -7,6 +7,7 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { genericResponseBytes } from "./generic-question-response";
 import {
   interactionProjection,
   InteractionPresentation,
@@ -22,7 +23,16 @@ const original = {
   type: "user-question",
   closure: "open",
   questions: {
-    questions: [{ id: "original", text: "Choose", options: [] }],
+    questions: [
+      {
+        id: "original",
+        header: "Original",
+        text: "Choose",
+        other: false,
+        secret: false,
+        options: [{ label: "A", description: "" }],
+      },
+    ],
   },
 };
 const id = newRequestId();
@@ -94,6 +104,9 @@ it("keeps accepted questions with a malformed envelope pending and unavailable",
     { claim: { id: newRequestId() } },
     { claim: { ...acceptedResponse.claim, device_id: "device" } },
     { claim: { ...acceptedResponse.claim, claimed_at: "yesterday" } },
+    {
+      claim: { ...acceptedResponse.claim, claimed_at: "2026-02-30T03:04:05Z" },
+    },
     { id: undefined },
     { id: "not-a-uuid" },
     { input: undefined },
@@ -379,4 +392,340 @@ it("leaves only receipts that no reached page owns for the trailing position", (
       new Set(["old", "newer"]),
     ),
   ).toEqual([["live", 1]]);
+});
+
+const projectionOf = (data: Record<string, unknown>) => {
+  const projection = interactionProjection(row(data));
+  return {
+    projection,
+    retired: projection.presentation === InteractionPresentation.Retired,
+    displayed: displayedInteraction(projection, new Set()),
+  };
+};
+const withResponse = (patch: Record<string, unknown>) => ({
+  ...accepted,
+  response: { ...acceptedResponse, ...patch },
+});
+const withClaim = (patch: Record<string, unknown>) =>
+  withResponse({ claim: { ...acceptedResponse.claim, ...patch } });
+const expectRejected = (data: Record<string, unknown>, label: string) => {
+  const { projection, retired, displayed } = projectionOf(data);
+  expect(retired, label).toBe(false);
+  expect(projection.presentation, label).toBe(InteractionPresentation.Pending);
+  expect(projection.unavailable, label).toBe(true);
+  expect(displayed, label).toBe(true);
+  // A matching retained mutation keeps recovery visible independently.
+  expect(
+    displayedInteraction(projection, new Set([projection.mutationKey])),
+  ).toBe(true);
+};
+const expectRetired = (data: Record<string, unknown>, label: string) => {
+  const { projection, retired, displayed } = projectionOf(data);
+  expect(retired, label).toBe(true);
+  expect(projection.unavailable, label).toBe(false);
+  expect(displayed, label).toBe(false);
+  expect(
+    displayedInteraction(projection, new Set([projection.mutationKey])),
+  ).toBe(true);
+};
+
+it("rejects normalized or malformed accepted_at and claimed_at timestamps", () => {
+  const invalid = [
+    "2026-02-30T03:04:05Z",
+    "2026-02-29T03:04:05Z",
+    "2026-04-31T03:04:05Z",
+    "2026-01-02T24:00:00Z",
+    "2026-01-02T24:00:00.000Z",
+    "2026-01-02",
+    "yesterday",
+    "2026-13-02T03:04:05Z",
+    "2026-00-02T03:04:05Z",
+    "2026-01-00T03:04:05Z",
+    "2026-01-02T25:00:00Z",
+    "2026-01-02T03:60:05Z",
+    "2026-01-02T03:04:60Z",
+    "2026-01-02T03:04:05",
+    "2026-01-02T03:04:05+24:00",
+    "2026-01-02T03:04:05+01:60",
+    "2026-01-02T03:04:05.1234567890Z",
+  ];
+  for (const value of invalid) {
+    expectRejected(
+      withResponse({ accepted_at: value }),
+      `accepted_at ${value}`,
+    );
+    expectRejected(withClaim({ claimed_at: value }), `claimed_at ${value}`);
+  }
+});
+it("retires valid leap days, UTC, offsets and 1-9 digit fractions", () => {
+  const valid = [
+    "2024-02-29T03:04:05Z",
+    "2000-02-29T23:59:59Z",
+    "2026-01-02T03:04:05Z",
+    "2026-01-02T03:04:05+09:00",
+    "2026-01-02T03:04:05-05:30",
+    "2026-04-30T03:04:05+23:59",
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(
+      (digits) => `2026-01-02T03:04:05.${"123456789".slice(0, digits)}Z`,
+    ),
+  ];
+  for (const value of valid) {
+    expectRetired(withResponse({ accepted_at: value }), `accepted_at ${value}`);
+    expectRetired(withClaim({ claimed_at: value }), `claimed_at ${value}`);
+  }
+});
+
+const question = (patch: Record<string, unknown> = {}) => ({
+  id: "original",
+  header: "Original",
+  text: "Choose",
+  other: false,
+  secret: false,
+  options: [
+    { label: "A", description: "" },
+    { label: "B", description: "second" },
+  ],
+  ...patch,
+});
+const accepting = (
+  questions: Record<string, unknown>[],
+  answers: Record<string, unknown>,
+) => ({
+  ...accepted,
+  questions: { questions },
+  response: { ...acceptedResponse, input: { answers } },
+});
+const bytes = (length: number, char = "x") => char.repeat(length);
+
+it("does not retire generic accepted questions with answers that mismatch the original questions", () => {
+  const two = [question(), question({ id: "second", options: [] })];
+  const cases: [string, Record<string, unknown>[], Record<string, unknown>][] =
+    [
+      ["empty answers", [question()], {}],
+      ["foreign key", [question()], { foreign: [] }],
+      ["foreign extra key", [question()], { original: [], foreign: [] }],
+      ["missing second question", two, { original: ["A"] }],
+      ["replaced key", two, { original: ["A"], foreign: ["x"] }],
+      ["unoffered label", [question()], { original: ["C"] }],
+      ["case-different label", [question()], { original: ["a"] }],
+      ["duplicate answers", [question()], { original: ["A", "A"] }],
+      [
+        "duplicate custom answers",
+        [question({ options: [], other: true })],
+        { original: ["x", "x"] },
+      ],
+      ["null list", [question()], { original: null }],
+      ["non-array list", [question()], { original: "A" }],
+      ["non-string element", [question()], { original: [1] }],
+      ["null element", [question()], { original: [null] }],
+      ["blank answer", [question({ other: true })], { original: ["  "] }],
+      ["empty answer", [question({ other: true })], { original: [""] }],
+      ["NUL answer", [question({ other: true })], { original: ["a\0b"] }],
+      [
+        "lone surrogate answer",
+        [question({ other: true })],
+        { original: ["\ud800"] },
+      ],
+      [
+        "129 distinct answers without options",
+        [question({ options: [] })],
+        { original: Array.from({ length: 129 }, (_, i) => `v${i}`) },
+      ],
+      [
+        "answer over the byte bound",
+        [question({ options: [], other: true })],
+        { original: [bytes(256 * 1024 + 1)] },
+      ],
+      [
+        "multibyte answer over the byte bound",
+        [question({ options: [], other: true })],
+        { original: ["\u20ac".repeat(Math.floor((256 * 1024) / 3) + 1)] },
+      ],
+      [
+        "complete response over the bound",
+        [question({ options: [], other: true })],
+        {
+          original: Array.from({ length: 128 }, (_, i) =>
+            `${i}`.padEnd(2049, "x"),
+          ),
+        },
+      ],
+      [
+        "secret original question",
+        [question({ secret: true, options: [], other: true })],
+        { original: ["hidden"] },
+      ],
+      [
+        "secret original question alongside a plain one",
+        [question(), question({ id: "s", secret: true })],
+        { original: ["A"], s: [] },
+      ],
+    ];
+  for (const [label, questions, answers] of cases)
+    expectRejected(accepting(questions, answers), label);
+});
+it("rejects accepted generic questions whose original request is invalid", () => {
+  const answers = { original: [] };
+  const requests: [string, Record<string, unknown>[]][] = [
+    ["no questions", []],
+    [
+      "129 questions",
+      Array.from({ length: 129 }, (_, i) => question({ id: `q${i}` })),
+    ],
+    ["duplicate ids", [question(), question()]],
+    ["blank id", [question({ id: " " })]],
+    ["oversized id", [question({ id: bytes(129) })]],
+    ["missing header", [question({ header: undefined })]],
+    ["missing other", [question({ other: undefined })]],
+    ["missing secret", [question({ secret: undefined })]],
+    [
+      "129 options",
+      [
+        question({
+          options: Array.from({ length: 129 }, (_, i) => ({
+            label: `o${i}`,
+            description: "",
+          })),
+        }),
+      ],
+    ],
+    [
+      "duplicate option labels",
+      [
+        question({
+          options: [
+            { label: "A", description: "" },
+            { label: "A", description: "" },
+          ],
+        }),
+      ],
+    ],
+    [
+      "blank option label",
+      [question({ options: [{ label: " ", description: "" }] })],
+    ],
+    ["missing option description", [question({ options: [{ label: "A" }] })]],
+    ["non-array options", [question({ options: "A" })]],
+  ];
+  for (const [label, questions] of requests)
+    expectRejected(accepting(questions, answers), label);
+  expectRejected(
+    { ...accepted, questions: undefined },
+    "missing questions request",
+  );
+});
+it("retires generic accepted questions with valid empty, offered and permitted custom answers", () => {
+  const cases: [string, Record<string, unknown>[], Record<string, unknown>][] =
+    [
+      ["explicit empty array", [question()], { original: [] }],
+      ["offered label", [question()], { original: ["B"] }],
+      ["multiple offered labels", [question()], { original: ["A", "B"] }],
+      [
+        "custom text when other is permitted",
+        [question({ other: true })],
+        { original: ["something else"] },
+      ],
+      [
+        "free text without options",
+        [question({ options: [], other: false })],
+        { original: ["free"] },
+      ],
+      [
+        "absent options as free text",
+        [question({ options: undefined })],
+        { original: ["free"] },
+      ],
+      [
+        "128 distinct answers",
+        [question({ options: [] })],
+        { original: Array.from({ length: 128 }, (_, i) => `v${i}`) },
+      ],
+      [
+        "two questions",
+        [question(), question({ id: "second", options: [] })],
+        { original: ["A"], second: [] },
+      ],
+      [
+        "answer at the byte bound",
+        [question({ options: [], other: true })],
+        // 2 bytes of quotes and the fixed wrapper reduce the exact fit.
+        { original: [bytes(256 * 1024 - 100)] },
+      ],
+      [
+        "unicode whitespace is not blank when mixed with text",
+        [question({ options: [], other: true })],
+        { original: ["\u00a0x\u3000"] },
+      ],
+    ];
+  for (const [label, questions, answers] of cases)
+    expectRetired(accepting(questions, answers), label);
+});
+it("counts Go JSON escaping toward the complete response bound", () => {
+  const free = [question({ options: [], other: true })];
+  // "<" is one byte raw but six bytes once Go HTML-escapes it, so this
+  // 100000-character answer expands to 600000 bytes and exceeds the bound.
+  expectRejected(accepting(free, { original: ["<".repeat(100000)] }), "<");
+  expectRejected(
+    accepting(free, { original: ["\u2028".repeat(50000)] }),
+    "u2028",
+  );
+  expectRetired(accepting(free, { original: ["<".repeat(40000)] }), "40000 <");
+});
+it("keeps invalid generic accepted rows compact through eviction and receipt projection", () => {
+  const store = new InteractionPresentationStore();
+  const invalid = accepting([question()], { original: ["B", "B"] });
+  const projection = store.observe(row(invalid, 11n));
+  expect(projection.presentation).toBe(InteractionPresentation.Pending);
+  expect(projection.unavailable).toBe(true);
+  // Payload evicted: the compact receipt is retained without a mutation.
+  const receipts = missingQuestionReceipts(
+    store.entries(),
+    new Set(),
+    new Set(),
+    new Set(),
+  );
+  expect(receipts.map(([requestId]) => requestId)).toEqual([id]);
+  // An older valid payload cannot revive or retire it.
+  const older = store.observe(
+    row(accepting([question()], { original: ["A"] }), 10n),
+  );
+  expect(older).toBe(projection);
+  expect(
+    missingQuestionReceipts(store.entries(), new Set(), new Set(), new Set()),
+  ).toHaveLength(1);
+  // A valid higher revision retires normally, and retained mutations stay visible.
+  const fixed = store.observe(
+    row(accepting([question()], { original: ["A"] }), 12n),
+  );
+  expect(fixed.presentation).toBe(InteractionPresentation.Retired);
+  expect(
+    missingQuestionReceipts(store.entries(), new Set(), new Set(), new Set()),
+  ).toHaveLength(0);
+  expect(
+    missingQuestionReceipts(
+      store.entries(),
+      new Set(),
+      new Set(),
+      new Set([fixed.mutationKey]),
+    ),
+  ).toHaveLength(1);
+});
+
+it("matches the Go encoding/json byte size of the complete response", () => {
+  // Reference: Go json.Marshal of {Answers: {"id<": [s, "b"], "q": []}} is 108.
+  const s = '"\\\b\f\n\r\t\x01\x1f\x7f<>&\u2028\u2029\u00e9\u20ac\u{1F600} z';
+  const ids = ["id<", "q"].map((qid) => ({
+    id: qid,
+    other: true,
+    secret: false,
+    options: [],
+  }));
+  expect(genericResponseBytes({ "id<": [s, "b"], q: [] }, ids)).toBe(108);
+  const free = [question({ options: [], other: true })];
+  // Wrapper, key and quotes add 29 bytes around the answer text.
+  expectRetired(accepting(free, { original: [bytes(256 * 1024 - 29)] }), "fit");
+  expectRejected(
+    accepting(free, { original: [bytes(256 * 1024 - 28)] }),
+    "one over",
+  );
 });

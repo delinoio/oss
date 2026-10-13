@@ -98,3 +98,36 @@ func TestCheckpointInspectionRejectsChangedComparisonOrHistory(t *testing.T) {
 		})
 	}
 }
+
+// Checkpoints pin the composed native instructions, so inspection accepts the
+// composed digest (template plus Execute branch-prefix guidance) and refuses the
+// uncomposed template digest without granting replacement authority.
+func TestCheckpointInspectionPinsComposedExecuteInstructions(t *testing.T) {
+	configuration := domain.ExecutionConfiguration{Instructions: "Private original template.", BranchPrefix: &domain.BranchPrefixSelection{Version: 1, Prefix: domain.DefaultBranchPrefix}}
+	composed, err := configuration.NativeInstructions(domain.ExecuteMode)
+	if err != nil || composed == configuration.Instructions {
+		t.Fatal("fixture did not compose branch prefix guidance", err)
+	}
+	s, _ := continuationFixture(t)
+	for _, message := range s.history.messages {
+		s.current.seen[message.NativeID] = true
+	}
+	s.config.Instructions = composed
+	closed, err := s.CloseForContinuation(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, ref, err := closed.RetainCheckpoint(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := s.config
+	cfg.Instructions = ""
+	cfg.API = APIConfig{ServerOrigin: s.serverOrigin}
+	if err := InspectCheckpoint(context.Background(), cfg, checkpointDigest([]byte(composed)), raw, ref); err != nil {
+		t.Fatal("composed original instruction digest was refused", err)
+	}
+	if err := InspectCheckpoint(context.Background(), cfg, checkpointDigest([]byte(configuration.Instructions)), raw, ref); err == nil {
+		t.Fatal("uncomposed template digest was accepted")
+	}
+}

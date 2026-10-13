@@ -25,9 +25,12 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
-	CodeReviewModel       string `json:"-"`
-	DynamicTools          bool
-	ManagedForkHistory    bool
+	CodeReviewModel    string `json:"-"`
+	DynamicTools       bool
+	ManagedForkHistory bool
+	// FrameProfile explicitly selects the native transport and decoder frame
+	// limit. The zero value keeps the one-MiB native frame.
+	FrameProfile          FrameProfile
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
 	EnableImageGeneration bool
@@ -140,6 +143,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
 		return nil, incompatible()
 	}
+	// The enlarged Fork history frame belongs only to the managed independent
+	// Fork route, for both the source inspection and the paused child.
+	if config.FrameProfile != DefaultFrameProfile && (config.FrameProfile != ForkHistoryFrameProfile || !config.ManagedForkHistory || config.API != nil) {
+		return nil, incompatible()
+	}
 	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
 		return nil, incompatible()
 	}
@@ -207,9 +215,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		if err != nil {
 			return nil, err
 		}
+		// Retirement on a failed startup runs inside the wire cleanup defer below,
+		// after the original native tree is joined. This defer then only releases
+		// proof handles that retirement has not already released.
 		defer func() {
 			if returned != nil {
-				helpers.release()
+				helpers.releaseUnlessRetired()
 			}
 		}()
 	}
@@ -226,9 +237,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	defer func() {
 		if returned != nil {
-			if err := wire.CloseGracefully(3 * time.Second); err != nil {
-				returned = domain.CodexRecoveryFailure(config.Version, domain.CodexPhase(phase), returned, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
-			}
+			returned = finishFailedStartup(config.Version, domain.CodexPhase(phase), returned, wire.CloseGracefully(3*time.Second), helpers, home, config.Process.OwnerID, wire.Identity())
 		}
 	}()
 	phase = initializePhase
@@ -304,7 +313,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
 	process.ObserveStartup(config.Process, domain.StartupSettings, domain.StartupProgressRunning)
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations)
+		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations, "frame_profile", config.FrameProfile)
 	}
 	client = &Client{codeReviewModel: config.CodeReviewModel, codeReviewRoot: config.Process.Cwd, reviewProtected: security.NewProtectedJSON(config.Process.ProtectedValues), dynamicToolsEnabled: config.DynamicTools, executionHelpers: helpers, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
@@ -333,6 +342,42 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, err
 	}
 	return client, nil
+}
+
+// finishFailedStartup combines a failed Open with its independent cleanup
+// results. The native join result gates helper retirement: only a joined
+// original tree may retire the proof captured by this startup, and a failed join
+// never infers retirement success. A pre-capture failure holds no proof and
+// keeps release-only cleanup. Both cleanup failures stay recovery-required and
+// are joined with the original startup error; a retirement failure after a
+// successful join is additionally marked so callers can still run independent
+// authentication cleanup.
+func finishFailedStartup(version string, phase domain.CodexPhase, original, joinErr error, helpers *executionHelpers, home string, owner domain.ID, native process.Process) error {
+	if joinErr != nil {
+		return domain.CodexRecoveryFailure(version, phase, original, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
+	}
+	if helpers != nil && helpers.hasCapturedProof() {
+		if err := helpers.retire(home, owner, native); err != nil {
+			return &joinedHelperRetirementFailure{domain.CodexRecoveryFailure(version, phase, original, err)}
+		}
+	}
+	return original
+}
+
+// joinedHelperRetirementFailure marks a recovery-required failed Open whose
+// original native tree was already joined and whose only unconfirmed cleanup is
+// helper retirement. It keeps the wrapped recovery-required diagnostic intact.
+type joinedHelperRetirementFailure struct{ error }
+
+func (e *joinedHelperRetirementFailure) Unwrap() error { return e.error }
+
+// NativeJoinedHelperRetirementFailed reports whether a failed Open joined the
+// original native tree but could not retire the captured execution helpers.
+// The error stays recovery-required so the caller retains its credential lease,
+// while the joined tree still authorizes independent authentication cleanup.
+func NativeJoinedHelperRetirementFailed(err error) bool {
+	var joined *joinedHelperRetirementFailure
+	return errors.As(err, &joined)
 }
 func handshakeError(wire *nativewire.Connection, err error) error {
 	if observed := wire.Err(); observed != nil && observed.Code == domain.Unsupported {

@@ -19,6 +19,9 @@ import (
 
 const forkThread threadMethod = "thread/fork"
 const maxForkTurns = 128
+
+// maxForkHistoryBytes bounds the complete original page results of one history.
+const maxForkHistoryBytes = 4 << 20
 const maxForkRollout = 64 << 20
 
 // ForkSource is in-memory evidence from the exact original Worker runtime.
@@ -159,7 +162,14 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			Next *string           `json:"nextCursor"`
 			Back *string           `json:"backwardsCursor"`
 		}
-		if response.ErrorCode != nil || domain.Decode(response.Result, &page) != nil || page.Data == nil || len(page.Data) > 50 {
+		// The 4 MiB history budget covers every complete page result, including
+		// its envelope and cursors, and is checked before the page is decoded so
+		// padding cannot make the client decode up to a frame per page.
+		bytes += len(response.Result)
+		if bytes > maxForkHistoryBytes {
+			return nil, unsupportedFork()
+		}
+		if response.ErrorCode != nil || domain.DecodeBounded(response.Result, &page, c.nativeFrameLimit()) != nil || page.Data == nil || len(page.Data) > 50 {
 			return nil, unsupportedFork()
 		}
 		for _, raw := range page.Data {
@@ -169,7 +179,9 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			}
 			seen[string(turn.ID)] = true
 			var wire turnWire
-			if domain.Decode(raw, &wire) != nil {
+			// Private native turns may carry original function-output bytes up to the
+			// admitted native frame; the aggregate 4 MiB history bound still applies.
+			if domain.DecodeBounded(raw, &wire, c.nativeFrameLimit()) != nil {
 				return nil, unsupportedFork()
 			}
 			for _, item := range wire.Items {
@@ -214,8 +226,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					}
 				}
 			}
-			bytes += len(raw)
-			if len(turns) >= maxForkTurns || bytes > 4<<20 {
+			if len(turns) >= maxForkTurns {
 				return nil, unsupportedFork()
 			}
 			// Normalize only JSON representation for comparison; never rebuild
@@ -468,7 +479,9 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 		if c.Source != AgentCommand && c.Source != UserShellCommand || c.PluginID != nil || c.ScriptPath != nil {
 			return false
 		}
-		if tool.Status != ToolDeclined && c.ExitCode == nil {
+		// A declined command never executed, so executed evidence contradicts it;
+		// every executed status must instead carry an exit code.
+		if tool.Status == ToolDeclined && c.ExitCode != nil || tool.Status != ToolDeclined && c.ExitCode == nil {
 			return false
 		}
 	}

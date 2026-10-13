@@ -460,6 +460,15 @@ func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
 	return nil
 }
 
+// cleanupPreNativeAuthentication runs the independent unused-original
+// authentication cleanup for a failed native startup. A joined original tree
+// authorizes that cleanup even when execution-helper retirement failed, but
+// unretired helpers keep the credential lease unconfirmed.
+func cleanupPreNativeAuthentication(home string, original []byte, helperRetained bool) (confirmed bool, err error) {
+	err = cleanupUnusedExecutionAuthentication(home, original)
+	return err == nil && !helperRetained, err
+}
+
 type executionAuthenticationStage string
 type executionAuthenticationReason string
 

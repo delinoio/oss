@@ -256,3 +256,21 @@ func TestOpenCodeTextCannotChangeIntoReasoning(t *testing.T) {
 		t.Fatal("an original answer part changed into reasoning")
 	}
 }
+
+func TestOpenCodeTextPublishesNothingForFullyWithheldDeltaAndRecoversTailFromSnapshot(t *testing.T) {
+	f := newOpenCodeTextFixture(t)
+	f.user(t)
+	f.publish(t, f.assistant(false))
+	f.publish(t, f.part(textPartOneID, "", false))
+	before := len(f.rpc.events)
+	// The native adapter releases an empty delta when every byte is a possible
+	// protected-value prefix; the observation is retained but publishes nothing.
+	f.publish(t, opencode.Observation{Kind: opencode.MessagePartDeltaEvent, Delta: &opencode.NativeTextDelta{MessageID: textAssistantID, PartID: textPartOneID, Text: ""}})
+	if len(f.rpc.events) != before || f.c.parts[textPartOneID].message.Text != "" {
+		t.Fatal("a withheld delta published private text or an empty event")
+	}
+	f.publish(t, f.part(textPartOneID, "tail-", true))
+	if len(f.rpc.events) != before+1 || f.c.parts[textPartOneID].message.Text != "tail-" {
+		t.Fatal("the verified snapshot did not supply the exact withheld text")
+	}
+}

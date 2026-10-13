@@ -58,6 +58,9 @@ func updateCommand(ctx context.Context, c client, o options, args []string) (any
 		if e != nil {
 			return nil, rpc.ClientError(e)
 		}
+		if e := verifyUpdateReceipt(r.Msg.RequestId, o); e != nil {
+			return nil, e
+		}
 		return map[string]any{"update": resourceJSON(r.Msg.Update), "replayed": r.Msg.Replayed}, nil
 	case "get":
 		if parse(fs, args[1:]) != nil || *revision != 0 {
@@ -78,16 +81,33 @@ func updateCommand(ctx context.Context, c client, o options, args []string) (any
 			if e != nil {
 				return nil, rpc.ClientError(e)
 			}
+			if e := verifyUpdateReceipt(r.Msg.RequestId, o); e != nil {
+				return nil, e
+			}
 			return map[string]any{"update": resourceJSON(r.Msg.Update), "replayed": r.Msg.Replayed}, nil
 		}
 		r, e := c.installation.RequestWorkerUpdate(ctx, request(c, &pb.RequestWorkerUpdateRequest{Mutation: m}))
 		if e != nil {
 			return nil, rpc.ClientError(e)
 		}
+		if e := verifyUpdateReceipt(r.Msg.RequestId, o); e != nil {
+			return nil, e
+		}
 		return map[string]any{"update": resourceJSON(r.Msg.Update), "replayed": r.Msg.Replayed}, nil
 	default:
 		return nil, usage()
 	}
+}
+
+// verifyUpdateReceipt requires an update mutation response to acknowledge the
+// exact request ID the CLI dispatched. Empty, malformed or foreign IDs are not
+// adopted: the failure keeps the sent ID in the output envelope for recovery and
+// the mutation is never repeated.
+func verifyUpdateReceipt(received string, o options) error {
+	if received == string(o.requestID) {
+		return nil
+	}
+	return domain.Fail(domain.RecoveryRequired, "The update receipt does not match.", "Preserve the original request ID.")
 }
 
 // Native selects these fixed paired scopes; no token, endpoint or path is an IPC

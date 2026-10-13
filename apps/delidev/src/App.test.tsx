@@ -451,13 +451,22 @@ function fixture(
     includeArchived: boolean;
     pageToken: string;
   }[] = [];
+  // Tests register extra retained Sessions, Search hits and a GetResource hook.
+  const extraResources: Resource[] = [];
+  const searchHits: { sessionName: string; message: Resource }[] = [];
+  const readHook: {
+    current?: (
+      request: { id: string; kind: EntityKind },
+      signal: AbortSignal,
+    ) => Promise<void>;
+  } = {};
   const searches = vi.fn(
     (request: {
       query: string;
       archive: SearchArchiveState;
       pageToken: string;
     }) => ({
-      hits: [],
+      hits: request.pageToken ? [] : searchHits,
       nextPageToken: request.pageToken ? undefined : "search-next",
     }),
   );
@@ -497,13 +506,26 @@ function fixture(
       createSession: creates,
     });
     router.service(ResourceService, {
-      getResource: (request) => ({
-        resource: [...projects, ...repositories, agent, machine].find(
-          (row) => row.kind === request.kind && row.id === request.id,
-        ),
-      }),
+      getResource: async (request, context) => {
+        await readHook.current?.(request, context.signal);
+        return {
+          resource: [
+            ...projects,
+            ...repositories,
+            agent,
+            machine,
+            ...extraResources,
+          ].find((row) => row.kind === request.kind && row.id === request.id),
+        };
+      },
       getSnapshot: (request) => ({
-        resources: [request.filter?.sessionId === other.id ? other : session],
+        resources: [
+          request.filter?.sessionId === other.id
+            ? other
+            : (extraResources.find(
+                (row) => row.id === request.filter?.sessionId,
+              ) ?? session),
+        ],
         cursor: "snapshot",
       }),
       listResources: async (request) => {
@@ -581,6 +603,10 @@ function fixture(
     agent,
     machine,
     searches,
+    other,
+    extraResources,
+    searchHits,
+    readHook,
     inboxReads,
     readStates,
     responses,
@@ -4232,4 +4258,491 @@ it("autofocuses visible Search after a wide sidebar preference read failure", as
   flushFrames();
   expect(document.activeElement).toBe(input);
   expectNoNavigationWrites(value);
+});
+
+// Search results carry only the child ID, so routing reads retained metadata.
+function retainedSession(name: string, fork?: Record<string, unknown>) {
+  const id = newRequestId();
+  return create(ResourceSchema, {
+    id,
+    sessionId: id,
+    kind: EntityKind.SESSION,
+    revision: 3n,
+    schemaVersion: 1,
+    documentJson: encode({
+      name,
+      workspace: "general-chat",
+      outcome: "stopped",
+      archive: "active",
+      dispatch: "paused",
+      recovery: "none",
+      ...(fork ? { fork } : {}),
+    }),
+  });
+}
+const searchHit = (row: Resource, sessionName: string) => ({
+  sessionName,
+  message: create(ResourceSchema, {
+    id: newRequestId(),
+    sessionId: row.id,
+    kind: EntityKind.MESSAGE,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({
+      role: "assistant",
+      text: `Match in ${sessionName}`,
+      state: "completed",
+    }),
+  }),
+});
+const sidechatOf = (parent: Resource) =>
+  retainedSession("Side question", {
+    source_session_id: parent.id,
+    sidechat_parent_snapshot: { revision: "1" },
+  });
+async function searchRetained(view: ReturnType<typeof fixture>) {
+  fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+  const input = await screen.findByRole("textbox", {
+    name: "Search conversations",
+  });
+  fireEvent.change(input, { target: { value: "match" } });
+  fireEvent.submit(input.closest("form")!);
+  await waitFor(() => expect(view.searches).toHaveBeenCalled());
+}
+const sidechatTabs = () =>
+  screen.queryAllByRole("tab", { name: /Side question/ });
+
+it("opens a never-visited Sidechat search result under its original parent without duplicates", async () => {
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await waitFor(() => expect(sidechatTabs()).toHaveLength(1));
+  expect(sidechatTabs()[0].getAttribute("aria-selected")).toBe("true");
+  // The child tab belongs to its exact original parent, selected top-level.
+  const tab = sidechatTabs()[0];
+  expect(tab.id.startsWith(`session-tab-${value.session.id}-`)).toBe(true);
+  expect(tab.getAttribute("aria-controls")).toBe(
+    `session-pane-${value.session.id}`,
+  );
+  expect(
+    screen
+      .getByRole("tab", { name: "Conversation" })
+      .getAttribute("aria-selected"),
+  ).toBe("false");
+  // Repeating the same result reuses the retained child tab under the parent.
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("textbox", { name: "Search conversations" }),
+    ).toBeNull(),
+  );
+  expect(sidechatTabs()).toHaveLength(1);
+});
+
+it("keeps ordinary sessions and independent Forks top-level when opened from search", async () => {
+  const value = fixture([], [], [], false, true);
+  const fork = retainedSession("Independent fork", {
+    source_session_id: value.session.id,
+  });
+  value.extraResources.push(value.other, fork);
+  value.searchHits.push(
+    searchHit(value.other, "Ordinary hit"),
+    searchHit(fork, "Fork hit"),
+  );
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Ordinary hit" }));
+  expect(
+    await screen.findByRole("heading", { name: "Other session" }),
+  ).toBeTruthy();
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Fork hit" }));
+  expect(
+    await screen.findByRole("heading", { name: "Independent fork" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryAllByRole("tab", { name: /Independent fork/ }),
+  ).toHaveLength(0);
+});
+
+it.each([
+  ["failed read", undefined],
+  [
+    "malformed parent metadata",
+    { source_session_id: "not-a-session", sidechat_parent_snapshot: { x: 1 } },
+  ],
+  [
+    "empty parent snapshot",
+    { source_session_id: "", sidechat_parent_snapshot: {} },
+  ],
+] as const)(
+  "reports an unavailable Sidechat result without selecting a host (%s)",
+  async (_name, fork) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const value = fixture([], [], [], false, true);
+    const child = fork
+      ? retainedSession("Side question", fork)
+      : sidechatOf(value.session);
+    value.extraResources.push(child);
+    value.searchHits.push(searchHit(child, "Side hit"));
+    if (!fork)
+      value.readHook.current = async (request) => {
+        if (request.id === child.id)
+          throw new ConnectError("Read unavailable", Code.Unavailable);
+      };
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/could not be opened/);
+    expect(sidechatTabs()).toHaveLength(0);
+    expect(
+      screen.queryByRole("heading", { name: "Retained session" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+    warn.mockRestore();
+  },
+);
+
+it.each([
+  [
+    "a foreign session ID",
+    (row: Resource) => {
+      row.sessionId = newRequestId();
+    },
+  ],
+  [
+    "an empty session ID",
+    (row: Resource) => {
+      row.sessionId = "";
+    },
+  ],
+  [
+    "a nonpositive revision",
+    (row: Resource) => {
+      row.revision = 0n;
+    },
+  ],
+  [
+    "an unsupported schema",
+    (row: Resource) => {
+      row.schemaVersion = 99;
+    },
+  ],
+] as const)(
+  "reports an unavailable result for a Sidechat child with %s",
+  async (_name, corrupt) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const value = fixture([], [], [], false, true);
+    const child = sidechatOf(value.session);
+    corrupt(child);
+    value.extraResources.push(child);
+    value.searchHits.push(searchHit(child, "Side hit"));
+    render(<App transport={value.transport} />);
+    await searchRetained(value);
+    fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/could not be opened/);
+    expect(sidechatTabs()).toHaveLength(0);
+    expect(screen.queryByRole("heading", { name: "Side question" })).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: "Search conversations" }),
+    ).toBeTruthy();
+    expect(warn).toHaveBeenCalledWith(
+      "delidev.search.session_route_unavailable",
+      { sessionId: child.id, reason: "invalid-resource-envelope" },
+    );
+    warn.mockRestore();
+  },
+);
+
+it("discards a pending Search read after the connection is replaced", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const original = fixture([], [], [], false, true),
+    replacement = fixture([], [], [], false, true);
+  const child = sidechatOf(original.session);
+  original.extraResources.push(child);
+  original.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  original.readHook.current = async (request) => {
+    if (request.id === child.id) await gate;
+  };
+  const view = render(<App transport={original.transport} />);
+  await searchRetained(original);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  view.rerender(<App transport={replacement.transport} />);
+  await screen.findByRole("button", { name: "Search" });
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  expect(sidechatTabs()).toHaveLength(0);
+  info.mockRestore();
+});
+
+it("clears a pending Search opening when a same-identity reconnect replaces the transport", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const original = fixture([], [], [], false, true),
+    replacement = fixture([], [], [], false, true);
+  const child = sidechatOf(original.session);
+  original.extraResources.push(child);
+  original.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  original.readHook.current = async (request, readSignal) => {
+    if (request.id !== child.id) return;
+    signal = readSignal;
+    await gate;
+  };
+  const authority = {
+      endpoint: "http://127.0.0.1:9090",
+      serverId: newRequestId(),
+    },
+    deviceId = newRequestId();
+  const view = render(
+    <App
+      transport={original.transport}
+      pairingAuthority={authority}
+      currentDeviceId={deviceId}
+    />,
+  );
+  await searchRetained(original);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  view.rerender(
+    <App
+      transport={replacement.transport}
+      pairingAuthority={authority}
+      currentDeviceId={deviceId}
+      connectionEpoch={1}
+    />,
+  );
+  // The shell is retained, but the opening owned by the old transport is gone
+  // even while its read has not settled.
+  expect(
+    screen.getByRole("textbox", { name: "Search conversations" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  expect(sidechatTabs()).toHaveLength(0);
+  info.mockRestore();
+});
+
+it("keeps the chosen destination when a pending Search read settles after leaving Search", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  value.readHook.current = async (request) => {
+    if (request.id === child.id) await gate;
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  // Navigation away from Search supersedes the opening in the same handler.
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  expect(sidechatTabs()).toHaveLength(0);
+  expect(
+    screen.queryByRole("textbox", { name: "Search conversations" }),
+  ).toBeNull();
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  info.mockRestore();
+});
+
+it("aborts the pending Search read when Search is left, superseded or unmounted", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const first = sidechatOf(value.session),
+    second = sidechatOf(value.session);
+  value.extraResources.push(first, second);
+  value.searchHits.push(
+    searchHit(first, "First hit"),
+    searchHit(second, "Second hit"),
+  );
+  const signals = new Map<string, AbortSignal>();
+  value.readHook.current = async (request, signal) => {
+    if (request.id !== first.id && request.id !== second.id) return;
+    signals.set(request.id, signal);
+    await new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true }),
+    );
+  };
+  const view = render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "First hit" }));
+  await waitFor(() => expect(signals.has(first.id)).toBe(true));
+  expect(signals.get(first.id)!.aborted).toBe(false);
+  // A later result supersedes the earlier opening and cancels its read.
+  fireEvent.click(screen.getByRole("button", { name: "Second hit" }));
+  await waitFor(() => expect(signals.get(first.id)!.aborted).toBe(true));
+  await waitFor(() => expect(signals.has(second.id)).toBe(true));
+  expect(signals.get(second.id)!.aborted).toBe(false);
+  // Leaving Search cancels the current opening's read.
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await waitFor(() => expect(signals.get(second.id)!.aborted).toBe(true));
+  expect(sidechatTabs()).toHaveLength(0);
+  // Unmounting the shell cancels a still-pending read.
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "First hit" }));
+  await waitFor(() => expect(signals.get(first.id)!.aborted).toBe(false));
+  const third = signals.get(first.id)!;
+  view.unmount();
+  await waitFor(() => expect(third.aborted).toBe(true));
+  info.mockRestore();
+});
+
+const submitSearch = (term: string) => {
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  fireEvent.change(input, { target: { value: term } });
+  fireEvent.submit(input.closest("form")!);
+};
+
+it("cancels a pending Search opening when a new search replaces the results", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  value.readHook.current = async (request, readSignal) => {
+    if (request.id !== child.id) return;
+    signal = readSignal;
+    await gate;
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  submitSearch("another term");
+  expect(screen.queryByText("Opening the conversation…")).toBeNull();
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  // The late result of the previous search neither navigates nor reports.
+  expect(sidechatTabs()).toHaveLength(0);
+  expect(
+    screen.getByRole("textbox", { name: "Search conversations" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  info.mockRestore();
+});
+
+it("clears an unavailable Search opening alert when a new search replaces the results", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child);
+  value.searchHits.push(searchHit(child, "Side hit"));
+  value.readHook.current = async (request) => {
+    if (request.id === child.id)
+      throw new ConnectError("Read unavailable", Code.Unavailable);
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  expect((await screen.findByRole("alert")).textContent).toMatch(
+    /could not be opened/,
+  );
+  submitSearch("another term");
+  await waitFor(() => expect(value.searches).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("alert")).toBeNull();
+  warn.mockRestore();
+});
+
+it("discards a pending Search read after another target is opened", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const value = fixture([], [], [], false, true);
+  const child = sidechatOf(value.session);
+  value.extraResources.push(child, value.other);
+  value.searchHits.push(
+    searchHit(child, "Side hit"),
+    searchHit(value.other, "Ordinary hit"),
+  );
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  value.readHook.current = async (request) => {
+    if (request.id === child.id) await gate;
+  };
+  render(<App transport={value.transport} />);
+  await searchRetained(value);
+  fireEvent.click(await screen.findByRole("button", { name: "Side hit" }));
+  await screen.findByText("Opening the conversation…");
+  fireEvent.click(screen.getByRole("button", { name: "Ordinary hit" }));
+  expect(
+    await screen.findByRole("heading", { name: "Other session" }),
+  ).toBeTruthy();
+  await act(async () => {
+    release();
+    await gate;
+  });
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith(
+      "delidev.search.session_route_discarded",
+      { sessionId: child.id },
+    ),
+  );
+  expect(sidechatTabs()).toHaveLength(0);
+  expect(screen.getByRole("heading", { name: "Other session" })).toBeTruthy();
+  info.mockRestore();
 });

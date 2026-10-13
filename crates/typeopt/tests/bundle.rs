@@ -317,6 +317,152 @@ fn keeps_chunks_with_eval_unchanged() {
     assert!(saved(&report) > 0, "{report:#}");
 }
 
+/// A module chunk `sub.js` made of `snippet` and an optimizable function,
+/// imported by an optimizable `index.js`. Returns the temp dir, the chunk
+/// text and the report of an optimization whose Node behavior is unchanged.
+fn syntax_boundary_case(snippet: &str) -> (tempfile::TempDir, String, Value) {
+    let sub = format!(
+        "{snippet};function own(n){{return{{verticalSpacing:n,horizontalSpacing:n}}}}const \
+         s=own(1);console.log(s.verticalSpacing+s.horizontalSpacing);export{{}};"
+    );
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import"./sub.js";function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);"#,
+        ),
+        ("sub.js", &sub),
+    ]);
+    (temp, sub, report)
+}
+
+/// Mentions of `eval` and `importScripts` that cannot run code or load a
+/// script (feature checks, property names, property keys) do not make a
+/// chunk a boundary: it is optimized and Node output is unchanged.
+#[test]
+fn optimizes_chunks_that_only_mention_eval_or_import_scripts() {
+    for snippet in [
+        r#"const g=typeof self!=="undefined"&&typeof self.importScripts"#,
+        r#"console.log(typeof importScripts,typeof eval)"#,
+        r#"console.log(typeof (importScripts),typeof (eval),typeof ((eval)))"#,
+        r#"const g=typeof self!=="undefined"&&typeof (self.importScripts)"#,
+        r#"console.log(typeof (globalThis.eval),typeof (globalThis["importScripts"]))"#,
+        r#"const o={eval:1,importScripts:2};console.log(o.eval,o.importScripts)"#,
+        r#"const o={"eval":1,eval(){return 2},get importScripts(){return 3}};console.log(o.eval(),o.importScripts)"#,
+        r#"class K{eval(){return 1}importScripts=2}console.log(new K().eval(),new K().importScripts)"#,
+        r#"const w={importScripts:()=>1};console.log(typeof w.importScripts,w["eval"])"#,
+        r#"const{eval:ev}={eval:5};console.log(ev)"#,
+        r#"const{importScripts:load}={importScripts:5};console.log(load)"#,
+        r#"let ev;({eval:ev}={eval:5});console.log(ev)"#,
+    ] {
+        let (temp, sub, report) = syntax_boundary_case(snippet);
+        assert_ne!(out(temp.path(), "sub.js"), sub, "{snippet}: {report:#}");
+        assert!(saved(&report) > 0, "{snippet}: {report:#}");
+    }
+}
+
+/// Module import and export names such as `import { eval as helper }` and
+/// `export { helper as eval }` name an export, not the global `eval`, so
+/// their chunks are optimized.
+#[test]
+fn optimizes_chunks_that_name_module_exports_eval_or_import_scripts() {
+    let lib = r#"function pick(){return{verticalSpacing:1,horizontalSpacing:2}}function run(){const p=pick();return p.verticalSpacing+p.horizontalSpacing}export{run as eval,run as importScripts};"#;
+    let sub = r#"import{eval as helper,importScripts as other}from"./lib.js";export{eval as again,importScripts as more}from"./lib.js";function own(n){return{leftSpacing:n,rightSpacing:n}}function wrapped(){const o=own(2);return o.leftSpacing+o.rightSpacing}export{wrapped as eval,wrapped as importScripts};console.log(helper(),other(),wrapped());"#;
+    let namespace = r#"function own(n){return{upperSpacing:n,lowerSpacing:n}}function total(){const o=own(3);return o.upperSpacing+o.lowerSpacing}export{total};export*as eval from"./lib.js";"#;
+    let (temp, report) = run(&[
+        (
+            "index.js",
+            r#"import"./sub.js";import"./namespace.js";console.log("index");"#,
+        ),
+        ("lib.js", lib),
+        ("sub.js", sub),
+        ("namespace.js", namespace),
+    ]);
+    for (chunk, original) in [
+        ("sub.js", sub),
+        ("lib.js", lib),
+        ("namespace.js", namespace),
+    ] {
+        assert_ne!(out(temp.path(), chunk), original, "{chunk}: {report:#}");
+    }
+}
+
+/// A call or an alias of the global `eval` or `importScripts` keeps the
+/// chunk unchanged while the rest of the bundle is optimized.
+#[test]
+fn keeps_chunks_that_use_eval_or_import_scripts_as_values() {
+    for snippet in [
+        r#"const e=eval;console.log(e("1+1"))"#,
+        r#"console.log(eval("1+1"))"#,
+        r#"console.log(globalThis.eval("1+1"))"#,
+        r#"console.log(globalThis["eval"]("1+1"))"#,
+        r#"const o={eval};console.log(typeof o.eval)"#,
+        r#"globalThis.__never&&importScripts("a.js")"#,
+        r#"globalThis.__never&&self.importScripts("a.js")"#,
+        r#"globalThis.__never&&globalThis.importScripts("a.js")"#,
+        r#"const f=typeof importScripts=="function"?importScripts:null;console.log(f)"#,
+        r#"const f=globalThis.importScripts;console.log(f)"#,
+        r#"typeof importScripts=="function"&&importScripts("vendor.js")"#,
+        r#"function f(){const{importScripts:load}=self;return load("a.js")}globalThis.__never&&f()"#,
+        r#"const{importScripts:load}=(globalThis);console.log(load)"#,
+        r#"globalThis.__never&&(importScripts)("a.js")"#,
+        r#"console.log((0,eval)("1+1"))"#,
+        r#"const{eval:ev}=globalThis;console.log(ev("1+1"))"#,
+        r#"let load;({importScripts:load}=globalThis);globalThis.__never&&load("a.js")"#,
+    ] {
+        let (temp, sub, report) = syntax_boundary_case(snippet);
+        assert_eq!(out(temp.path(), "sub.js"), sub, "{snippet}: {report:#}");
+        assert!(saved(&report) > 0, "{snippet}: {report:#}");
+    }
+}
+
+/// Debug logging names the rule that made each chunk a boundary.
+#[test]
+fn logs_the_rule_that_makes_a_chunk_a_boundary() {
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"import"./evaluating.js";import"./loading.js";console.log(1);"#,
+        ),
+        (
+            "evaluating.js",
+            r#"const e=eval;console.log(e("1"));export{};"#,
+        ),
+        (
+            "loading.js",
+            r#"globalThis.__never&&self.importScripts("a.js");export{};"#,
+        ),
+    ]);
+    let output = run_typeopt(temp.path(), &[]);
+    assert!(output.status.success());
+    let log = String::from_utf8_lossy(&output.stderr);
+    let line = |chunk: &str| {
+        log.lines()
+            .find(|l| l.contains("bundle chunk is a boundary") && l.contains(chunk))
+            .unwrap_or_else(|| panic!("no boundary log for {chunk}: {log}"))
+            .to_string()
+    };
+    assert!(line("evaluating.js").contains("eval-reference"), "{log}");
+    assert!(line("loading.js").contains("import-scripts-call"), "{log}");
+}
+
+/// A `with` statement keeps its chunk unchanged. Modules are strict code, so
+/// the chunk is not run by Node here.
+#[test]
+fn keeps_chunks_with_with_statements_unchanged() {
+    let with = r#"function own(n){return{verticalSpacing:n,horizontalSpacing:n}}with({a:1}){own(a)}export{};"#;
+    let temp = bundle(&[
+        (
+            "index.js",
+            r#"function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);export{};"#,
+        ),
+        ("with.js", with),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    same_behavior(temp.path());
+    assert_eq!(out(temp.path(), "with.js"), with);
+    assert!(saved(&report) > 0, "{report:#}");
+}
+
 /// A chunk that uses `import.meta` is an ES module even without imports or
 /// exports.
 #[test]
@@ -410,6 +556,35 @@ fn keeps_exports_that_classic_workers_reach() {
     let only = bundle(&[("sw.js", worker)]);
     optimize(only.path(), &[]);
     assert_eq!(out(only.path(), "sw.js"), worker);
+}
+
+/// A script that a worker loads through any callee form of `importScripts`
+/// is a classic script, even when another chunk also imports it statically.
+#[test]
+fn keeps_scripts_loaded_by_every_import_scripts_callee_form() {
+    let vendor = r#"function legacyHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var legacyState=legacyHelper();"#;
+    for call in [
+        r#"importScripts("./vendor.js")"#,
+        r#"self.importScripts("./vendor.js")"#,
+        r#"self["importScripts"]("./vendor.js")"#,
+        r#"globalThis[`importScripts`]("./vendor.js")"#,
+        r#"(self.importScripts)("./vendor.js")"#,
+        r#"(self["importScripts"])("./vendor.js")"#,
+    ] {
+        let worker = format!("globalThis.__never&&{call};");
+        let temp = bundle(&[
+            (
+                "index.js",
+                r#"import"./vendor.js";function mine(n){return{firstOwnValue:n,secondOwnValue:n}}const m=mine(1);console.log(m.firstOwnValue+m.secondOwnValue);"#,
+            ),
+            ("vendor.js", vendor),
+            ("sw.js", &worker),
+        ]);
+        let report = optimize(temp.path(), &[]);
+        same_behavior(temp.path());
+        assert_eq!(out(temp.path(), "vendor.js"), vendor, "{call}: {report:#}");
+        assert_eq!(out(temp.path(), "sw.js"), worker, "{call}");
+    }
 }
 
 #[test]
@@ -906,6 +1081,52 @@ fn rehashes_rewritten_hashed_text_assets() {
     }
 }
 
+/// A CSS asset that spells `url( name )` with whitespace still follows the
+/// renamed chunk it references, and its own hash changes.
+#[test]
+fn rewrites_spaced_css_url_references() {
+    let mut chunks: Vec<(&str, &str)> = HASHED.to_vec();
+    chunks[0] = (
+        "index.html",
+        r#"<link rel="stylesheet" href="/assets/style-FFFF1111.css"><script type="module" src="/assets/index-AAAAAAAA.js"></script>"#,
+    );
+    chunks.push((
+        "assets/style-FFFF1111.css",
+        "@import url( /assets/index-AAAAAAAA.js );a{b:url(/assets/settings-BBBBBBBB.js)}c{d:url( https://cdn.example/assets/index-AAAAAAAA.js )}",
+    ));
+    let run = || {
+        let temp = bundle(&chunks);
+        optimize(temp.path(), &[]);
+        let assets = listing(&temp.path().join("out/assets"));
+        let style = assets
+            .iter()
+            .find(|a| a.starts_with("style-"))
+            .unwrap()
+            .clone();
+        let css = fs::read_to_string(temp.path().join("out/assets").join(&style)).unwrap();
+        (assets, style, css)
+    };
+    let (assets, style, css) = run();
+    assert_ne!(style, "style-FFFF1111.css", "{assets:?}");
+    assert!(!css.contains("url( /assets/index-AAAAAAAA.js )"), "{css}");
+    // The external URL keeps its name.
+    assert!(
+        css.contains("url( https://cdn.example/assets/index-AAAAAAAA.js )"),
+        "{css}"
+    );
+    for part in css.split("url(").skip(1).take(2) {
+        let name = part
+            .trim_start()
+            .split([' ', ')'])
+            .next()
+            .unwrap()
+            .trim_start_matches("/assets/");
+        assert!(assets.contains(&name.to_owned()), "{name} {assets:?}");
+    }
+    // Repeated runs publish the same names and bytes.
+    assert_eq!(run(), (assets, style, css));
+}
+
 /// A reference spelled with escapes cannot be rewritten: the original chunk
 /// (and what it imports) stays under its old name next to the renamed one.
 #[test]
@@ -1372,6 +1593,129 @@ fn keeps_exports_that_inline_scripts_import() {
     assert!(out(temp.path(), "lazy.js").contains("lazyOnly"));
 }
 
+/// Fixture for the handler attribute tests: `index.js` uses `used` while
+/// `handlerOnly` is reachable only from the HTML page; `other.js` is imported
+/// by `index.js`, so its unused export is removed unless every chunk is public.
+fn handler_bundle(html: &str) -> tempfile::TempDir {
+    bundle(&[
+        ("index.html", html),
+        (
+            "lib.js",
+            r#"function used(){return 1}function handlerOnly(){return 2}export{used,handlerOnly};"#,
+        ),
+        (
+            "index.js",
+            r#"import{used as u}from"./lib.js";import{unrelatedExport as r}from"./other.js";console.log(u(),r());"#,
+        ),
+        (
+            "other.js",
+            r#"function unrelatedExport(){return 3}function unusedOther(){return 4}export{unrelatedExport,unusedOther};"#,
+        ),
+    ])
+}
+
+/// An event handler with a character reference the parser cannot decode may
+/// hide an import: every chunk becomes a public entry.
+#[test]
+fn keeps_exports_when_a_handler_has_an_undecodable_reference() {
+    for html in [
+        r#"<button onclick="import&Tab;('./lib.js').then(m=>m.handlerOnly())"></button>"#,
+        r#"<a href="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="java&Tab;script:import('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="&Tab;JavaScript:void 0"></a>"#,
+        r#"<form action="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></form>"#,
+        r#"<iframe src="javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></iframe>"#,
+        r#"<a href="java&#115;cript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="javascript&colon;import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(out(temp.path(), "lib.js").contains("handlerOnly"), "{html}");
+        assert!(
+            out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
+/// An internal space or control character other than TAB, LF and CR keeps a
+/// value from being a `javascript:` URL, so it does not broaden the public
+/// entries; leading spaces and controls are still trimmed by the browser.
+#[test]
+fn preserves_internal_spaces_when_detecting_javascript_urls() {
+    for html in [
+        r#"<a href="java script:&Tab;"></a>"#,
+        r#"<a href="java&Tab; script:import('./lib.js')"></a>"#,
+        r#"<a href="java&#1;script:&Tab;"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            !out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+    for html in [
+        r#"<a href="  javascript:import&Tab;('./lib.js').then(m=>m.handlerOnly())"></a>"#,
+        r#"<a href="&#1; javascript&Tab;:void 0"></a>"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
+/// A fully decoded handler keeps precise import discovery.
+#[test]
+fn decodes_handlers_with_known_references_precisely() {
+    let temp = handler_bundle(
+        r#"<button onclick="import&#9;('./lib.js').then(m=>m.handlerOnly())"></button>"#,
+    );
+    optimize(temp.path(), &[]);
+    assert!(out(temp.path(), "lib.js").contains("handlerOnly"));
+    assert!(!out(temp.path(), "other.js").contains("unusedOther"));
+}
+
+/// An undecodable reference in an attribute that cannot run code does not
+/// broaden the public entries.
+#[test]
+fn ignores_undecodable_references_in_non_executable_attributes() {
+    for html in [
+        r#"<p title="&unknownref; text" data-x="&Tab;"></p>"#,
+        r#"<a href="/docs&Tab;/page">docs</a>"#,
+        r#"<div title="javascript:&Tab;" data-url="javascript:import&Tab;('./lib.js')"></div>"#,
+        r#"<img src="javascript:&Tab;"><link href="javascript:&Tab;">"#,
+    ] {
+        let temp = handler_bundle(html);
+        optimize(temp.path(), &[]);
+        assert!(
+            !out(temp.path(), "other.js").contains("unusedOther"),
+            "{html}"
+        );
+    }
+}
+
+/// An undecodable script `type` or base `href` is still rejected.
+#[test]
+fn rejects_undecodable_script_type_and_base_href() {
+    for html in [
+        r#"<script type="mod&unknownref;ule" src="index.js"></script>"#,
+        r#"<base href="/a&unknownref;/"><script src="index.js"></script>"#,
+    ] {
+        let temp = handler_bundle(html);
+        let output = run_typeopt(temp.path(), &[]);
+        assert!(!output.status.success(), "{html}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("an HTML script or base URL uses an unsupported character reference"),
+            "{html}"
+        );
+    }
+}
+
 /// A file that calls `importScripts` can run as a classic worker even when a
 /// module imports it: it stays unchanged.
 #[test]
@@ -1456,6 +1800,46 @@ fn keeps_chunks_that_workers_import_scripts_from() {
     ]);
     optimize(temp.path(), &[]);
     assert_eq!(out(temp.path(), "vendor.js"), vendor);
+}
+
+/// A root-relative `importScripts` URL resolves under the bundle root like a
+/// root-relative module import, so the classic chunk stays unchanged.
+#[test]
+fn keeps_chunks_that_workers_import_scripts_from_root_relative_urls() {
+    let vendor = r#"function vendorHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var vendorState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "assets/index.js",
+            r#"import"./vendor.js";const w=new URL("./sw.js",import.meta.url);console.log(w.pathname.length>0);"#,
+        ),
+        ("assets/vendor.js", vendor),
+        (
+            "assets/sw.js",
+            r#"typeof importScripts=="function"&&importScripts("/assets/vendor.js");console.log(typeof vendorHelper);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "assets/vendor.js"), vendor);
+}
+
+/// A root-relative `importScripts` URL with a deployment base prefix drops the
+/// prefix segments to find the bundled chunk.
+#[test]
+fn keeps_chunks_that_workers_import_scripts_from_with_a_deployment_base() {
+    let vendor = r#"function vendorHelper(){return{verticalSpacing:1,horizontalSpacing:2}}var vendorState={counter:0};"#;
+    let temp = bundle(&[
+        (
+            "assets/index.js",
+            r#"import"./vendor.js";const w=new URL("./sw.js",import.meta.url);console.log(w.pathname.length>0);"#,
+        ),
+        ("assets/vendor.js", vendor),
+        (
+            "assets/sw.js",
+            r#"typeof importScripts=="function"&&importScripts("/app/assets/vendor.js");console.log(typeof vendorHelper);"#,
+        ),
+    ]);
+    optimize(temp.path(), &[]);
+    assert_eq!(out(temp.path(), "assets/vendor.js"), vendor);
 }
 
 /// A query in an import specifier still loads the chunk, but the compiler

@@ -25,6 +25,8 @@ func (b *ExecutionBinding) observeInterruptedAssistant(parent string, message pr
 		return nil, lifecycleUncertain()
 	}
 	b.content.bufferedBytes -= state.retainedBytes()
+	// The interrupted block is final; its private holdback is never released.
+	state.guard.Discard()
 	delete(b.content.active, parent)
 	b.interruptedMessage = true
 	index := uint32(0)

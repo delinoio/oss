@@ -39,6 +39,26 @@ func requireSidechatParent(tx *store.Tx, child domain.Session) error {
 	return nil
 }
 
+// sidechatSupersededExecutions returns every answer generation that the
+// presentation pointer may leave behind: each retry execution plus the original
+// question execution recorded by the first retry. It is empty for legacy
+// Sidechat sessions without retries, so their selection rules are unchanged.
+func sidechatSupersededExecutions(child domain.Session) map[domain.ID]bool {
+	generations := map[domain.ID]bool{}
+	if child.SidechatCurrentAnswer == "" || len(child.SidechatRetries) == 0 {
+		return generations
+	}
+	if first := child.SidechatRetries[0].PreviousExecutionID; first != "" {
+		generations[first] = true
+	}
+	for _, g := range child.SidechatRetries {
+		if g.ExecutionID != "" {
+			generations[g.ExecutionID] = true
+		}
+	}
+	return generations
+}
+
 func (s *Service) SendSidechatFindings(ctx context.Context, req *connect.Request[pb.SendSidechatFindingsRequest]) (*connect.Response[pb.SendSidechatFindingsResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	meta := req.Msg.Mutation
@@ -78,6 +98,7 @@ func (s *Service) SendSidechatFindings(ctx context.Context, req *connect.Request
 			return nil, forkConflict()
 		}
 		seen := map[domain.ID]bool{}
+		generations := sidechatSupersededExecutions(child)
 		var text strings.Builder
 		text.WriteString("Selected Sidechat findings:\n\n")
 		for n, selection := range identity.Messages {
@@ -92,6 +113,12 @@ func (s *Service) SendSidechatFindings(ctx context.Context, req *connect.Request
 			m, err := store.Decode[domain.ExecutionMessage](mr)
 			if err != nil || mr.SessionID != cr.ID || mr.Revision != selection.ExpectedRevision || m.Role != domain.AssistantMessage || m.State != domain.MessageComplete || m.Inherited != nil || m.Tool != nil || m.Artifact != nil || m.Text == "" {
 				s.logger.InfoContext(ctx, "sidechat_finding_selection_rejected", "sidechat_session_id", identity.Child, "message_id", mr.ID, "revision_match", mr.Revision == selection.ExpectedRevision, "owner_match", mr.SessionID == cr.ID, "complete_assistant", m.Role == domain.AssistantMessage && m.State == domain.MessageComplete, "inherited", m.Inherited != nil, "code", domain.Conflict)
+				return nil, forkConflict()
+			}
+			// Only the selected answer generation may be transferred. Older
+			// generations stay immutable history and never reach the parent queue.
+			if generations[m.ExecutionID] && m.ExecutionID != child.SidechatCurrentAnswer {
+				s.logger.InfoContext(ctx, "sidechat_finding_selection_superseded", "sidechat_session_id", identity.Child, "message_id", mr.ID, "execution_id", m.ExecutionID, "current_answer", child.SidechatCurrentAnswer, "code", domain.Conflict)
 				return nil, forkConflict()
 			}
 			if n != 0 {

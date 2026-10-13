@@ -132,7 +132,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 	var managed *managedSubscriptionLease
 	var latest []byte
 	var closeRPC func()
-	managedClosed, managedUnused, managedStarted := false, false, false
+	managedClosed, managedUnused, managedStarted, managedHelperRetained := false, false, false, false
 	protected := []string{token}
 	defer func() {
 		if closeRPC != nil {
@@ -142,7 +142,9 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			return
 		}
 		if !managedStarted {
-			managedClosed = cleanupUnusedExecutionAuthentication(nativeHome, managed.response.Bundle) == nil
+			// A joined tree with failed helper retirement still authorizes the
+			// independent authentication cleanup but keeps the lease retained.
+			managedClosed, _ = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
 			if managedClosed {
 				latest = bytes.Clone(managed.response.Bundle)
 				managedUnused = true
@@ -264,8 +266,8 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 			if managed != nil && len(failures) == 0 {
 				var e error
 				if !managedStarted {
-					e = cleanupUnusedExecutionAuthentication(nativeHome, managed.response.Bundle)
-					if e == nil {
+					_, e = cleanupPreNativeAuthentication(nativeHome, managed.response.Bundle, managedHelperRetained)
+					if e == nil && !managedHelperRetained {
 						latest = bytes.Clone(managed.response.Bundle)
 						managedUnused = true
 					}
@@ -274,7 +276,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 				}
 				if e != nil {
 					failures = append(failures, e)
-				} else {
+				} else if !managedHelperRetained {
 					managedClosed = true
 				}
 			}
@@ -294,7 +296,8 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 		managedStarted = managed != nil
 		native, err = codex.Open(nativeCtx, nativeConfig)
 		if err != nil {
-			if domain.SafeError(err).Code != domain.RecoveryRequired {
+			managedHelperRetained = codex.NativeJoinedHelperRetirementFailed(err)
+			if managedHelperRetained || domain.SafeError(err).Code != domain.RecoveryRequired {
 				managedStarted = false
 			}
 			return err

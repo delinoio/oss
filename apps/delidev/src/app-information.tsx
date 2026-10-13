@@ -18,6 +18,14 @@ export enum AppInformationLink {
 export type OpenAppInformationLink = (
   link: AppInformationLink,
 ) => Promise<void>;
+// Decorative leading icons for Related information rows: tag (releases),
+// document (license) and file stack (notices).
+const relatedLinkIconPaths: Record<AppInformationLink, string> = {
+  [AppInformationLink.Releases]: "M3 12V4h8l10 10-8 8L3 12Zm5-4h.01",
+  [AppInformationLink.License]: "M6 3h8l5 5v13H6V3Zm8 0v5h5M9 13h7M9 17h7",
+  [AppInformationLink.Notices]:
+    "M8 7V3h9l4 4v10h-4M3 8h10l4 4v9H3V8Zm9 0v4h4M6 16h7",
+};
 const platformKeys = {
   "darwin-amd64": "settings.appInformation.macIntel",
   "darwin-arm64": "settings.appInformation.macApple",
@@ -176,8 +184,21 @@ export function AppInformation({
               disabled={!active || !openLink || Boolean(opening)}
               onClick={() => void open(link)}
             >
-              <span>{copy(label)}</span>
-              <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+              <svg
+                className="app-information-link-icon"
+                aria-hidden="true"
+                focusable="false"
+                viewBox="0 0 24 24"
+              >
+                <path d={relatedLinkIconPaths[link]} />
+              </svg>
+              <span className="app-information-link-label">{copy(label)}</span>
+              <svg
+                className="app-information-link-external"
+                aria-hidden="true"
+                focusable="false"
+                viewBox="0 0 24 24"
+              >
                 <path d="M14 4h6v6m0-6-10 10M10 4H4v16h16v-6" />
               </svg>
             </button>

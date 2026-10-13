@@ -220,3 +220,200 @@ func TestExecutionHelpersBoundStartupAndNeverAdoptHistoricalAliases(t *testing.T
 		}
 	})
 }
+
+func captureHelperFixture(t *testing.T) (*executionHelpers, string, string) {
+	t.Helper()
+	h, home, directory, _ := helperFixture(t)
+	if err := h.capture(process.Process{OwnerID: h.owner, PID: 1, Birth: "synthetic", ScopeDir: filepath.Join(h.home, "original-process")}); err != nil {
+		t.Fatal(err)
+	}
+	return h, home, directory
+}
+
+func requireHelperEntries(t *testing.T, directory string, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if _, err := os.Lstat(filepath.Join(directory, name)); err != nil {
+			t.Fatal("entry was removed or lost", name, err)
+		}
+	}
+}
+
+func TestExecutionHelpersRejectRenamedDirectory(t *testing.T) {
+	h, home, directory := captureHelperFixture(t)
+	renamed := directory + ".renamed"
+	if err := os.Rename(directory, renamed); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("renamed captured directory was accepted as destructor removal", err)
+	}
+	requireHelperEntries(t, renamed, append([]string{".lock"}, executionHelperNames[:]...)...)
+	if _, err := os.Lstat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("cleanup created or adopted the original basename", err)
+	}
+	if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("failed cleanup result did not replay", err)
+	}
+}
+
+func TestExecutionHelpersNativeRemovalWithUnrelatedParentEntries(t *testing.T) {
+	h, home, directory := captureHelperFixture(t)
+	unrelated := filepath.Join(filepath.Dir(directory), "unrelated-native")
+	if err := os.Mkdir(unrelated, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(directory); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.retire(home, h.owner, h.native); err != nil {
+		t.Fatal("native destructor removal was rejected", err)
+	}
+	requireHelperEntries(t, filepath.Dir(directory), "unrelated-native")
+}
+
+func TestExecutionHelpersRejectRenamedAlias(t *testing.T) {
+	for _, nativeRemovedOthers := range []bool{false, true} {
+		t.Run(strconv.FormatBool(nativeRemovedOthers), func(t *testing.T) {
+			h, home, directory := captureHelperFixture(t)
+			if nativeRemovedOthers {
+				// Original names for the other aliases are absent, so only the
+				// bounded identity scan can detect the renamed alias.
+				for _, name := range executionHelperNames[1:] {
+					if err := os.Remove(filepath.Join(directory, name)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			renamed := "renamed-" + executionHelperNames[0]
+			if err := os.Rename(filepath.Join(directory, executionHelperNames[0]), filepath.Join(directory, renamed)); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("renamed captured alias was accepted as removal", err)
+			}
+			requireHelperEntries(t, directory, renamed, ".lock")
+			if !nativeRemovedOthers {
+				requireHelperEntries(t, directory, executionHelperNames[1:]...)
+			}
+		})
+	}
+}
+
+func TestExecutionHelpersRejectHardLinkedAlias(t *testing.T) {
+	for _, original := range []string{"kept", "removed"} {
+		t.Run(original, func(t *testing.T) {
+			h, home, directory := captureHelperFixture(t)
+			alias := filepath.Join(directory, executionHelperNames[0])
+			second := filepath.Join(directory, "second-name")
+			if err := os.Link(alias, second); err != nil {
+				t.Skip("symlink hard links are unsupported on this platform", err)
+			}
+			linked, linkErr := os.Lstat(second)
+			captured, captureErr := os.Lstat(alias)
+			if linkErr != nil || captureErr != nil || !os.SameFile(linked, captured) {
+				// Some platforms follow the symlink when linking.
+				t.Skip("platform did not hard-link the symlink itself")
+			}
+			if original == "removed" {
+				if err := os.Remove(alias); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := h.retire(home, h.owner, h.native); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("hard-linked captured alias was accepted as removal", err)
+			}
+			requireHelperEntries(t, directory, "second-name", ".lock", executionHelperNames[1], executionHelperNames[2])
+		})
+	}
+}
+
+func TestFinishFailedStartupGatesRetirementOnJoinedCapturedProof(t *testing.T) {
+	original := incompatible()
+	native := func(h *executionHelpers) process.Process {
+		return process.Process{OwnerID: h.owner, PID: 1, Birth: "synthetic", ScopeDir: filepath.Join(h.home, "original-process")}
+	}
+	aliasesRemain := func(directory string) bool {
+		for _, name := range executionHelperNames {
+			if _, err := os.Lstat(filepath.Join(directory, name)); err != nil {
+				return false
+			}
+		}
+		return true
+	}
+	t.Run("joined captured proof retires and keeps the original error", func(t *testing.T) {
+		h, home, directory, _ := helperFixture(t)
+		if err := h.capture(native(h)); err != nil {
+			t.Fatal(err)
+		}
+		err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, h.native)
+		if err != error(original) {
+			t.Fatal("successful retirement changed the original startup error", err)
+		}
+		if aliasesRemain(directory) || !h.closed || h.result != nil {
+			t.Fatal("captured aliases were not retired")
+		}
+		if h.hasCapturedProof() {
+			t.Fatal("retired proof can retire twice")
+		}
+		if err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, h.native); err != error(original) {
+			t.Fatal("repeated cleanup changed the result", err)
+		}
+		h.releaseUnlessRetired()
+	})
+	t.Run("failed join never infers retirement", func(t *testing.T) {
+		h, home, directory, logs := helperFixture(t)
+		if err := h.capture(native(h)); err != nil {
+			t.Fatal(err)
+		}
+		err := finishFailedStartup("", domain.CodexProfile, original, errors.New("synthetic join failure"), h, home, h.owner, h.native)
+		if domain.SafeError(err).Code != domain.RecoveryRequired || domain.CodexErrorDiagnostic(err).Code != domain.Unsupported {
+			t.Fatal("failed join did not preserve both failures", err)
+		}
+		if !aliasesRemain(directory) || h.closed || strings.Contains(logs.String(), `"stage":"retirement"`) {
+			t.Fatal("failed join attempted retirement")
+		}
+		if NativeJoinedHelperRetirementFailed(err) {
+			t.Fatal("failed join was marked as a joined native tree", err)
+		}
+		h.releaseUnlessRetired()
+		if !h.closed || h.result == nil {
+			t.Fatal("release-only cleanup did not record an unconfirmed result")
+		}
+	})
+	t.Run("retirement failure is joined with the original error", func(t *testing.T) {
+		h, home, directory, _ := helperFixture(t)
+		if err := h.capture(native(h)); err != nil {
+			t.Fatal(err)
+		}
+		h.unlink = func(*os.Root, string) error { return errors.New("synthetic unlink failure") }
+		err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, h.native)
+		if domain.SafeError(err).Code != domain.RecoveryRequired || domain.CodexErrorDiagnostic(err).Code != domain.Unsupported {
+			t.Fatal("retirement failure did not preserve both failures", err)
+		}
+		if !errors.Is(err, error(original)) {
+			t.Fatal("original startup error is no longer retained", err)
+		}
+		if !NativeJoinedHelperRetirementFailed(err) {
+			t.Fatal("joined helper retirement failure lost its joined marker", err)
+		}
+		if !aliasesRemain(directory) {
+			t.Fatal("failed unlink removed aliases")
+		}
+	})
+	t.Run("pre-capture failure keeps release-only cleanup", func(t *testing.T) {
+		h, home, directory, logs := helperFixture(t)
+		err := finishFailedStartup("", domain.CodexProfile, original, nil, h, home, h.owner, process.Process{})
+		if err != error(original) || !aliasesRemain(directory) || strings.Contains(logs.String(), `"stage":"retirement"`) {
+			t.Fatal("pre-capture failure retired helpers", err)
+		}
+		if h.hasCapturedProof() {
+			t.Fatal("uncaptured proof reports retirement authority")
+		}
+	})
+	t.Run("no helpers", func(t *testing.T) {
+		if err := finishFailedStartup("", domain.CodexProfile, original, nil, nil, "", domain.NewID(), process.Process{}); err != error(original) {
+			t.Fatal("missing helpers changed the original error", err)
+		}
+	})
+}

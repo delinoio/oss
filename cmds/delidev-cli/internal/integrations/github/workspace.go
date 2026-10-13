@@ -179,9 +179,10 @@ func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string
 			reason("head_repository_unavailable")
 			continue
 		}
-		// Foreign forks do not acquire same-repository graph edges.
+		// A validated foreign fork stays a complete flat node: it acquires no
+		// same-repository graph edges, so no relation reads are issued for it and
+		// it is not incomplete evidence (retrying cannot add a relationship).
 		if node.Item.HeadRepository.Repository.ID != result.Repository.ID {
-			reason("foreign_head_repository")
 			continue
 		}
 		for _, filter := range []url.Values{{"head": {result.Repository.Owner + ":" + node.Item.BaseRef}}, {"base": {node.Item.HeadRef}}} {

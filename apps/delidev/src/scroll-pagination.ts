@@ -15,6 +15,10 @@ export interface PaginationBatch<Row extends PaginationRow, Payload = never> {
   rows: Row[];
   nextPageToken: string;
   payload?: Payload[];
+  /** Runs once after generation, abort, boundary and continuation checks
+   * accept this read and before any payload is evicted. Rejected, canceled and
+   * superseded reads never call it. A throwing callback never fails the read. */
+  accepted?: () => void;
 }
 export interface PaginationPage<Row extends PaginationRow> {
   rows: Row[];
@@ -55,6 +59,20 @@ export type PaginationReader<Row extends PaginationRow, Payload = never> = (
   token: string,
   signal: AbortSignal,
 ) => Promise<PaginationBatch<Row, Payload>>;
+
+/**
+ * True when every retained page token still has its payload resident. A
+ * terminal continuation token proves traversal only: the chain keeps page
+ * metadata for every reached page but at most three payload pages.
+ */
+export function pagesResident(query: {
+  pages: readonly { token: string }[];
+  payloadPages: readonly { token: string }[];
+}): boolean {
+  return query.pages.every((page) =>
+    query.payloadPages.some((payload) => payload.token === page.token),
+  );
+}
 
 function uniqueRows<Row extends PaginationRow>(
   pages: PaginationPage<Row>[],
@@ -316,6 +334,15 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
             },
           });
           return;
+        }
+        // The accepted read is the only point where an evictable page's
+        // documents are still available to domain projections.
+        try {
+          batch.accepted?.();
+        } catch {
+          console.warn("delidev.pagination.accepted_observer_failed", {
+            stage,
+          });
         }
         const acceptedBatch = {
           rows: batch.rows,
