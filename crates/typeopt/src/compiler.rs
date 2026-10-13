@@ -427,27 +427,26 @@ impl Project {
             }
             for node in nodes {
                 // `importScripts(…)` loads its targets as classic scripts.
-                if node.kind() == SyntaxKind::CallExpression {
-                    if is_import_scripts_callee(node.expression()) {
-                        for argument in node.arguments().iter() {
-                            let literal = matches!(
-                                argument.kind(),
-                                SyntaxKind::StringLiteral
-                                    | SyntaxKind::NoSubstitutionTemplateLiteral
-                            );
-                            if !literal {
-                                worker_computed = true;
-                                continue;
-                            }
-                            let path = percent_decode(
-                                argument.text().split(['?', '#']).next().unwrap_or_default(),
-                            );
-                            if let Ok(resolved) = base.join(&path).canonicalize() {
-                                worker_scripts.insert(resolved.to_string_lossy().into_owned());
-                            }
+                if node.kind() == SyntaxKind::CallExpression
+                    && is_import_scripts_callee(node.expression())
+                {
+                    for argument in node.arguments().iter() {
+                        let literal = matches!(
+                            argument.kind(),
+                            SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral
+                        );
+                        if !literal {
+                            worker_computed = true;
+                            continue;
                         }
-                        continue;
+                        let path = percent_decode(
+                            argument.text().split(['?', '#']).next().unwrap_or_default(),
+                        );
+                        if let Ok(resolved) = base.join(&path).canonicalize() {
+                            worker_scripts.insert(resolved.to_string_lossy().into_owned());
+                        }
                     }
+                    continue;
                 }
                 let specifier = match node.kind() {
                     SyntaxKind::ImportDeclaration | SyntaxKind::ExportDeclaration => {
