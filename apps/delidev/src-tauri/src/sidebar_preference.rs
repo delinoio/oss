@@ -814,10 +814,13 @@ fn flush_published(file: &File, expected: FileIdentity) -> Result<(), SidebarPro
 
 /// Win32 error codes that mean the volume or ACL does not support flushing a
 /// directory handle (`ERROR_INVALID_FUNCTION`, `ERROR_ACCESS_DENIED`,
-/// `ERROR_NOT_SUPPORTED`). They are an unavailable best-effort barrier, not
-/// evidence that the published entry is lost.
+/// `ERROR_INVALID_HANDLE`, `ERROR_NOT_SUPPORTED`). They are an unavailable
+/// best-effort barrier, not evidence that the published entry is lost.
+/// `ERROR_INVALID_HANDLE` is only reached after the directory handle passed
+/// the leased-parent identity check, so it means the filesystem or redirector
+/// rejects `FlushFileBuffers` on directory handles.
 #[cfg(any(windows, test))]
-const DIRECTORY_FLUSH_UNSUPPORTED_CODES: [i32; 3] = [1, 5, 50];
+const DIRECTORY_FLUSH_UNSUPPORTED_CODES: [i32; 4] = [1, 5, 6, 50];
 
 #[cfg(any(windows, test))]
 fn directory_flush_is_unsupported(error: &std::io::Error) -> bool {
@@ -2613,7 +2616,7 @@ mod tests {
 
     #[test]
     fn directory_flush_unsupported_classification_is_limited_to_capability_errors() {
-        for code in [1, 5, 50] {
+        for code in [1, 5, 6, 50] {
             assert!(directory_flush_is_unsupported(
                 &std::io::Error::from_raw_os_error(code)
             ));

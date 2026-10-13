@@ -6074,8 +6074,8 @@ write-access directory handle (backup semantics, reparse objects not followed),
 proves it is the leased parent by volume/128-bit file identity and calls
 `FlushFileBuffers` on it after cleanup, before the save may be reported as
 committed. A volume or ACL that reports directory flushing as unsupported
-(Win32 `ERROR_INVALID_FUNCTION`, `ERROR_ACCESS_DENIED` or `ERROR_NOT_SUPPORTED`
-while opening or flushing that handle) makes this directory barrier a skipped
+(Win32 `ERROR_INVALID_FUNCTION`, `ERROR_ACCESS_DENIED`, `ERROR_INVALID_HANDLE`
+or `ERROR_NOT_SUPPORTED` while opening or flushing that handle) makes this directory barrier a skipped
 best-effort step: the file itself was already flushed, a structured warning is
 logged and the save is still committed. Any other open or flush failure and any
 identity mismatch is OutcomeUnknown with explicit Reload recovery and no
