@@ -45,6 +45,20 @@ enum BrowserAction {
   Hide = "hide",
 }
 /** Native-local page operations. Only Create and Close mutate a page. */
+// The read-only profile enumeration state. Only Found and Absent admit a new
+// page: Absent is a settled read with no matching profile and no further token.
+enum ProfileDiscovery {
+  Loading = "loading",
+  Paginating = "paginating",
+  Failed = "failed",
+  Found = "found",
+  Absent = "absent",
+}
+enum DiscoveryProof {
+  Absent = "absent",
+  Failed = "failed",
+}
+
 enum PageAction {
   Inventory = "inventory",
   Create = "create",
@@ -394,6 +408,14 @@ function NativeSessionBrowser({
   // the last mutation settled may align the descriptors.
   const mutationEpoch = useRef(0);
   const [profilePage, setProfilePage] = useState("");
+  // The terminal enumeration proof for one account; cleared whenever the walk
+  // continues or is explicitly retried.
+  const [proof, setProof] = useState<{
+    accountId: string;
+    kind: DiscoveryProof;
+  }>();
+  // Re-runs the read-only initial inventory after a failed read.
+  const [inventoryRetry, setInventoryRetry] = useState(0);
   const profileTokens = useRef(new Set<string>());
   const needsPresentation = useRef(false);
   needsPresentation.current = Boolean(
@@ -470,16 +492,48 @@ function NativeSessionBrowser({
         )
           throw new Error("Browser profile proof is unavailable.");
         profileTokens.current.add(profiles.data.nextPageToken);
+        setProof(undefined);
         setProfilePage(profiles.data.nextPageToken);
       } else {
         // This account has no retained profile, so no page descriptor of an
         // earlier account's profile can remain in the workspace.
         tabsStore.reconcilePages(session.id, "", []);
+        setProof({ accountId, kind: DiscoveryProof.Absent });
       }
     } catch {
       setFailure(ownedMessage("session-browser.extra.5092c54369dd"));
+      setProof({ accountId, kind: DiscoveryProof.Failed });
     }
   }, [profiles.data, profiles.isFetching, profileId, accountId]);
+  const currentProof = proof?.accountId === accountId ? proof.kind : undefined;
+  const discovery: ProfileDiscovery = profileId
+    ? ProfileDiscovery.Found
+    : profiles.isFetching
+      ? profilePage
+        ? ProfileDiscovery.Paginating
+        : ProfileDiscovery.Loading
+      : profiles.error || currentProof === DiscoveryProof.Failed
+        ? ProfileDiscovery.Failed
+        : currentProof === DiscoveryProof.Absent
+          ? ProfileDiscovery.Absent
+          : profilePage
+            ? ProfileDiscovery.Paginating
+            : ProfileDiscovery.Loading;
+  // A discovered profile also needs an observed inventory: an unread inventory
+  // is unknown, never an empty one.
+  const inventoryKnown = state !== undefined;
+  const admitted = profileId
+    ? inventoryKnown
+    : discovery === ProfileDiscovery.Absent;
+  // Re-reads profiles from the first page only; no mutation is repeated.
+  const retryDiscovery = () => {
+    console.info("delidev.browser_profiles", { phase: "discovery_retry" });
+    setFailure(undefined);
+    setProof(undefined);
+    profileTokens.current.clear();
+    if (profilePage) setProfilePage("");
+    else void profiles.refetch();
+  };
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -686,6 +740,7 @@ function NativeSessionBrowser({
       !idPattern.test(accountId) ||
       registration.busy ||
       registration.uncertain ||
+      !admitted ||
       state?.removal_pending ||
       (state?.tabs.tabs.length ?? 0) >= pageLimit
     )
@@ -816,7 +871,7 @@ function NativeSessionBrowser({
       window.clearInterval(operations);
       window.clearInterval(inventories);
     };
-  }, [profileId, active, Boolean(operation)]);
+  }, [profileId, active, Boolean(operation), inventoryRetry]);
   // The toolbar address follows the selected page's observed URL.
   const selectedUrl = state?.tabs.tabs.find(
     (page) =>
@@ -1289,7 +1344,15 @@ function NativeSessionBrowser({
         ? copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")
         : atLimit
           ? copy("session-browser.pageLimit")
-          : undefined;
+          : profileId
+            ? inventoryKnown || inventoryFailure
+              ? undefined
+              : copy("session-browser.inventoryPending")
+            : discovery === ProfileDiscovery.Failed
+              ? copy("session-browser.discoveryFailed")
+              : discovery === ProfileDiscovery.Absent
+                ? undefined
+                : copy("session-browser.discoveryPending");
   return (
     <>
       {statusContent
@@ -1402,6 +1465,7 @@ function NativeSessionBrowser({
             !idPattern.test(accountId) ||
             registration.busy ||
             registration.uncertain ||
+            !admitted ||
             state?.removal_pending ||
             atLimit ||
             (operation && operation.action !== PageAction.Create),
@@ -1430,6 +1494,29 @@ function NativeSessionBrowser({
             </button>
           ) : null}
           <Problem error={registration.error} />
+          {!profileId && discovery === ProfileDiscovery.Failed ? (
+            <button
+              type="button"
+              disabled={profiles.isFetching}
+              onClick={retryDiscovery}
+            >
+              {copy("session-browser.retryProfileRead")}
+            </button>
+          ) : null}
+          {profileId && !inventoryKnown && inventoryFailure ? (
+            <>
+              <p role="alert">{inventoryFailure}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setInventoryFailure(undefined);
+                  setInventoryRetry((n) => n + 1);
+                }}
+              >
+                {copy("session-browser.retryInventoryRead")}
+              </button>
+            </>
+          ) : null}
           {operationFailure ? <p role="alert">{operationFailure}</p> : null}
           {createPending ? operationNotice : null}
         </NewPageDialog>

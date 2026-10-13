@@ -1190,3 +1190,205 @@ it("sends no page operation or presentation while the session is inactive", asyn
   expect(f.list).not.toHaveBeenCalled();
   expect(tabNames()).toEqual(["Conversation"]);
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void, reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((a, b) => {
+    resolve = a;
+    reject = b;
+  });
+  return { promise, resolve, reject };
+}
+type ProfileList = (request: {
+  pageToken: string;
+}) => Promise<{ profiles: unknown[]; nextPageToken: string }>;
+const setList = (f: Fixture, implementation: ProfileList) =>
+  (f.list as unknown as { mockImplementation: (value: ProfileList) => void })
+    .mockImplementation(implementation);
+/** Intercepts only the native inventory read; everything else is unchanged. */
+function interceptInventory(read: () => Promise<unknown>) {
+  const original = native.getMockImplementation()!;
+  native.mockImplementation(async (operation: string, args: any) =>
+    operation === "browser_pages" && args.request.action === "inventory"
+      ? read()
+      : original(operation, args),
+  );
+}
+const typeAddress = (dialog: HTMLElement, address: string) =>
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Address" }), {
+    target: { value: address },
+  });
+const openButton = (dialog: HTMLElement) =>
+  within(dialog).getByRole("button", { name: "Open page" }) as HTMLButtonElement;
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+
+it("keeps Open page closed while the first profile page is pending, then registers and creates once when absence is confirmed", async () => {
+  const f = fixture({ registered: false });
+  const first = deferred<{ profiles: unknown[]; nextPageToken: string }>();
+  setList(f, () => first.promise);
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/absent");
+  await waitFor(() => expect(f.list).toHaveBeenCalledTimes(1));
+  expect(openButton(dialog).disabled).toBe(true);
+  expect(
+    within(dialog).getByText("Checking this account's browser profile…"),
+  ).toBeTruthy();
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+  first.resolve({ profiles: [], nextPageToken: "" });
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  expect(f.register).not.toHaveBeenCalled();
+  // A double submission neither registers nor creates twice.
+  fireEvent.submit(dialog.querySelector("form")!);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(f.register).toHaveBeenCalledTimes(1);
+  expect(pageCalls("create")).toHaveLength(1);
+});
+
+it("does not treat an incomplete walk as absence and reuses a profile found on a later page", async () => {
+  const f = fixture({ registered: false });
+  const second = deferred<{ profiles: unknown[]; nextPageToken: string }>();
+  setList(f, async ({ pageToken }) =>
+    pageToken ? second.promise : { profiles: [], nextPageToken: "next" },
+  );
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/later");
+  await waitFor(() => expect(f.list).toHaveBeenCalledTimes(2));
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+  second.resolve({ profiles: [f.profile], nextPageToken: "" });
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  fireEvent.click(openButton(dialog));
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(1);
+});
+
+it("blocks admission on a profile read failure and retries only the profile read", async () => {
+  const f = fixture({ registered: false });
+  let failing = true;
+  setList(f, async () => {
+    if (failing) throw new ConnectError("down", Code.Unavailable);
+    return { profiles: [], nextPageToken: "" };
+  });
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/retry");
+  const retry = await within(dialog).findByRole("button", {
+    name: "Retry profile read",
+  });
+  expect(
+    within(dialog).getByText(/could not be confirmed/).textContent,
+  ).toContain("nothing is registered or opened");
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+  failing = false;
+  fireEvent.click(retry);
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  expect(within(dialog).queryByRole("button", { name: "Retry profile read" }))
+    .toBeNull();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+});
+
+it("treats a repeated profile page token as an invalid proof that stays closed", async () => {
+  const f = fixture({ registered: false });
+  setList(f, async () => ({ profiles: [], nextPageToken: "same" }));
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/loop");
+  await within(dialog).findByRole("button", { name: "Retry profile read" });
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(f.register).not.toHaveBeenCalled();
+  expect(pageCalls("create")).toHaveLength(0);
+});
+
+it("keeps Create closed for a discovered profile until its inventory is observed", async () => {
+  const f = fixture({ pages: 16 });
+  const inventory = deferred<unknown>();
+  interceptInventory(() => inventory.promise);
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/seventeenth");
+  await waitFor(() => expect(f.list).toHaveBeenCalled());
+  await settle();
+  expect(openButton(dialog).disabled).toBe(true);
+  expect(
+    within(dialog).getByText("Reading this profile's open pages…"),
+  ).toBeTruthy();
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(pageCalls("create")).toHaveLength(0);
+  inventory.resolve({ state: f.state(), receipt: null });
+  await waitFor(() => expect(tabNames()).toHaveLength(17));
+  // A full inventory keeps creation closed.
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(pageCalls("create")).toHaveLength(0);
+});
+
+it("shows an inventory read failure in the dialog and enables creation after a successful retry", async () => {
+  const f = fixture({ pages: 2 });
+  let failing = true;
+  const original = native.getMockImplementation()!;
+  interceptInventory(async () => {
+    if (failing) throw new Error("inventory unavailable");
+    return original("browser_pages", {
+      request: { action: "inventory" },
+    });
+  });
+  mount(f);
+  const dialog = await openDialog();
+  typeAddress(dialog, "https://fixture.test/third");
+  const retry = await within(dialog).findByRole("button", {
+    name: "Retry page inventory read",
+  });
+  expect(
+    within(dialog).getByText("The local browser state is unavailable."),
+  ).toBeTruthy();
+  expect(openButton(dialog).disabled).toBe(true);
+  fireEvent.submit(dialog.querySelector("form")!);
+  await settle();
+  expect(pageCalls("create")).toHaveLength(0);
+  failing = false;
+  fireEvent.click(retry);
+  await waitFor(() => expect(openButton(dialog).disabled).toBe(false));
+  expect(f.register).not.toHaveBeenCalled();
+  fireEvent.click(openButton(dialog));
+  await waitFor(() => expect(tabNames()).toHaveLength(4));
+  expect(pageCalls("create")).toHaveLength(1);
+});
+
+it("does not require a nonexistent profile's inventory and sends nothing on open or dismissal", async () => {
+  const f = fixture({ registered: false });
+  mount(f);
+  const dialog = await openDialog();
+  await waitFor(() => expect(f.list).toHaveBeenCalled());
+  await settle();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(f.register).not.toHaveBeenCalled();
+  expect(native).not.toHaveBeenCalled();
+  const again = await openDialog();
+  await submit(again, "https://fixture.test/once");
+  await waitFor(() => expect(tabNames()).toHaveLength(2));
+  expect(f.register).toHaveBeenCalledTimes(1);
+  expect(pageCalls("create")).toHaveLength(1);
+});

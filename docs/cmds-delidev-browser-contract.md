@@ -98,6 +98,19 @@ than 16 pages. Capability loading, unsupported and removal-pending guidance, the
 original exact registration retry, and safe failure text never create a fallback
 page.
 
+Admission follows the read-only enumeration state. Open page stays disabled, and
+submission returns without sending anything, while the `ListBrowserProfiles`
+walk is loading, paginating (a next page token is outstanding), failed or
+invalid (a read error, more than one matching profile, a repeated token or more
+than 64 pages). Only a profile found on any reached page or a confirmed absence
+(a settled read with no matching profile and no next page token) can admit a new
+page; absence permits exactly one registration at explicit submission. A found
+profile additionally needs one successfully observed current-profile inventory,
+so an unread or unreadable inventory is never treated as empty. The dialog shows
+localized read-only guidance for pending states and, for a failed profile or
+inventory read, a retry that re-reads only that state (profiles from the first
+page, or the inventory) and never repeats any accepted or uncertain mutation.
+
 Only explicit submission may change the inventory. It reuses the original
 capability/account/session/revision checks and exact registration recovery: an
 existing profile (found by the read-only `ListBrowserProfiles` page walk) is
