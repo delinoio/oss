@@ -11,7 +11,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EntityKind,
   ResourceSchema,
@@ -114,6 +114,7 @@ it("projects safe independent identities and excludes disconnected/removal/recov
     "connected",
     "connectionId",
     "disabled",
+    "generation",
     "id",
     "paidCreditState",
     "paidCredits",
@@ -1314,4 +1315,77 @@ it("preserves a 64-character source decimal in the selected rail disclosure", as
     }),
   );
   expect(within(popup).getByRole("tooltip").textContent).toContain(balance);
+});
+
+describe("credential generation identity", () => {
+  const connection = { id: newRequestId() };
+  const generationA = newRequestId();
+  const generationB = newRequestId();
+  const accountAt = (id: string, generation: string, revision: bigint) => ({
+    ...withCredits([paidBucket("1.2300")], { generation }),
+    id,
+    revision,
+    documentJson: encode({
+      type: "subscription",
+      name: "Personal",
+      subscription_service: "chatgpt",
+      connection,
+      subscription: { paid_credits: [paidBucket("1.2300")], generation },
+    }),
+  });
+  async function pin() {
+    const { popup } = await openPersonal();
+    const info = within(popup).getByRole("button", {
+      name: "Show exact paid-credit balance",
+    });
+    fireEvent.click(info);
+    expect(info.getAttribute("aria-expanded")).toBe("true");
+    expect(within(popup).getByRole("tooltip").textContent).toContain("1.2300");
+    return popup;
+  }
+  it("closes a pinned exact disclosure when only the credential generation changes", async () => {
+    const id = newRequestId();
+    let current = accountAt(id, generationA, 1n);
+    const f = mount(() => ({ resources: [current] }), true, true);
+    const popup = await pin();
+    current = accountAt(id, generationB, 2n);
+    fireEvent(globalThis.window, new Event("focus"));
+    await waitFor(() => expect(f.requests).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        within(popup)
+          .getByRole("button", {
+            name: "Show exact paid-credit balance",
+          })
+          .getAttribute("aria-expanded"),
+      ).toBe("false"),
+    );
+    expect(within(popup).queryByRole("tooltip")).toBeNull();
+    expect(within(popup).getByText("1.23")).toBeTruthy();
+  });
+  it("keeps the pinned disclosure across a same-generation saved refresh", async () => {
+    const id = newRequestId();
+    let current = accountAt(id, generationA, 1n);
+    const f = mount(() => ({ resources: [current] }), true, true);
+    const popup = await pin();
+    current = accountAt(id, generationA, 2n);
+    fireEvent(globalThis.window, new Event("focus"));
+    await waitFor(() => expect(f.requests).toHaveBeenCalledTimes(2));
+    expect(
+      within(popup)
+        .getByRole("button", { name: "Show exact paid-credit balance" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(within(popup).getByRole("tooltip").textContent).toContain("1.2300");
+  });
+  it("sends no extra request when interacting with the disclosure", async () => {
+    const id = newRequestId();
+    const f = mount(
+      () => ({ resources: [accountAt(id, generationA, 1n)] }),
+      true,
+      true,
+    );
+    await pin();
+    expect(f.requests).toHaveBeenCalledOnce();
+  });
 });

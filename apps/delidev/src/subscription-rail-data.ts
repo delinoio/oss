@@ -32,6 +32,8 @@ export interface RailAccount {
   paidCredits: PaidCreditBucket[];
   paidCreditState: PaidCreditState;
   connectionId: string;
+  /** Credential generation; a replacement must remount identity-bound disclosure state. */
+  generation: string;
 }
 export function railAccount(resource: Resource): RailAccount {
   if (!serviceAccount(resource))
@@ -50,6 +52,7 @@ export function railAccount(resource: Resource): RailAccount {
     service: subscriptionService(data.subscription_service)!,
     disabled: data.enabled === false,
     connectionId: text(object(data.connection).id),
+    generation: text(subscription.generation),
     paidCredits,
     paidCreditState:
       subscription.quota_state === "failed"
