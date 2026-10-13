@@ -427,7 +427,10 @@ it("does not let a delayed older generation replace newer generation evidence", 
       await new Promise<void>((resolve) => {
         release = resolve;
       });
-    return multiRangeReply(request, read.mock.calls.length === 1 ? "111" : "222");
+    return multiRangeReply(
+      request,
+      read.mock.calls.length === 1 ? "111" : "222",
+    );
   });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -457,7 +460,10 @@ it("does not let a delayed older generation replace newer generation evidence", 
 });
 
 it.each([
-  ["session id", (id: string) => generationSession(newRequestId(), 1n, "response-1")],
+  [
+    "session id",
+    (id: string) => generationSession(newRequestId(), 1n, "response-1"),
+  ],
   [
     "creation time",
     (id: string) =>

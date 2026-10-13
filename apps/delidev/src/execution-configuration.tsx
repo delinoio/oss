@@ -40,9 +40,7 @@ function TechnicalEvidence({
   ) : null;
 }
 
-const supportedHarnesses: ReadonlySet<string> = new Set(
-  Object.values(Harness),
-);
+const supportedHarnesses: ReadonlySet<string> = new Set(Object.values(Harness));
 const supportedRouting: ReadonlySet<string> = new Set(Object.values(Routing));
 
 // Revisions are server uint64 values. Imprecise (unsafe) integers stay valid
@@ -52,8 +50,7 @@ function positiveRevision(value: unknown): boolean {
 }
 
 export type SavedExecutionSnapshot =
-  | { ready: false }
-  | { ready: true; nativeModel: string; effort: string };
+  { ready: false } | { ready: true; nativeModel: string; effort: string };
 
 /**
  * Validates the immutable initial execution snapshot of a Session resource.

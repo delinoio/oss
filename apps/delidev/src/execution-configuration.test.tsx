@@ -143,54 +143,102 @@ type Mutation = (
   configuration: Record<string, unknown>,
 ) => void;
 const invalidSnapshots: [string, Mutation][] = [
-  ["a non-canonical execution id", (data) => {
-    data.initial_execution.id = "not-a-uuid";
-  }],
-  ["an uppercase execution id", (data) => {
-    data.initial_execution.id = data.initial_execution.id.toUpperCase();
-  }],
-  ["a non-canonical agent id", (_, configuration) => {
-    configuration.agent_id = "agent-1";
-  }],
-  ["a non-canonical model key", (_, configuration) => {
-    configuration.model_key = "model-1";
-  }],
-  ["an unsupported harness", (_, configuration) => {
-    configuration.harness = "unknown-harness";
-  }],
-  ["a missing harness", (_, configuration) => {
-    delete configuration.harness;
-  }],
-  ["a missing agent revision", (_, configuration) => {
-    delete configuration.agent_revision;
-  }],
-  ["a missing model revision", (_, configuration) => {
-    delete configuration.model_revision;
-  }],
-  ["a missing native model", (_, configuration) => {
-    delete configuration.native_model;
-  }],
-  ["an empty native model", (_, configuration) => {
-    configuration.native_model = "";
-  }],
-  ["a non-string effort", (_, configuration) => {
-    configuration.effort = 5;
-  }],
-  ["missing options", (_, configuration) => {
-    delete configuration.options;
-  }],
-  ["non-array accounts", (_, configuration) => {
-    configuration.accounts = {};
-  }],
-  ["unsupported routing", (_, configuration) => {
-    configuration.routing = "random";
-  }],
-  ["missing templates", (_, configuration) => {
-    delete configuration.templates;
-  }],
-  ["missing instructions", (_, configuration) => {
-    delete configuration.instructions;
-  }],
+  [
+    "a non-canonical execution id",
+    (data) => {
+      data.initial_execution.id = "not-a-uuid";
+    },
+  ],
+  [
+    "an uppercase execution id",
+    (data) => {
+      data.initial_execution.id = data.initial_execution.id.toUpperCase();
+    },
+  ],
+  [
+    "a non-canonical agent id",
+    (_, configuration) => {
+      configuration.agent_id = "agent-1";
+    },
+  ],
+  [
+    "a non-canonical model key",
+    (_, configuration) => {
+      configuration.model_key = "model-1";
+    },
+  ],
+  [
+    "an unsupported harness",
+    (_, configuration) => {
+      configuration.harness = "unknown-harness";
+    },
+  ],
+  [
+    "a missing harness",
+    (_, configuration) => {
+      delete configuration.harness;
+    },
+  ],
+  [
+    "a missing agent revision",
+    (_, configuration) => {
+      delete configuration.agent_revision;
+    },
+  ],
+  [
+    "a missing model revision",
+    (_, configuration) => {
+      delete configuration.model_revision;
+    },
+  ],
+  [
+    "a missing native model",
+    (_, configuration) => {
+      delete configuration.native_model;
+    },
+  ],
+  [
+    "an empty native model",
+    (_, configuration) => {
+      configuration.native_model = "";
+    },
+  ],
+  [
+    "a non-string effort",
+    (_, configuration) => {
+      configuration.effort = 5;
+    },
+  ],
+  [
+    "missing options",
+    (_, configuration) => {
+      delete configuration.options;
+    },
+  ],
+  [
+    "non-array accounts",
+    (_, configuration) => {
+      configuration.accounts = {};
+    },
+  ],
+  [
+    "unsupported routing",
+    (_, configuration) => {
+      configuration.routing = "random";
+    },
+  ],
+  [
+    "missing templates",
+    (_, configuration) => {
+      delete configuration.templates;
+    },
+  ],
+  [
+    "missing instructions",
+    (_, configuration) => {
+      delete configuration.instructions;
+    },
+  ],
 ];
 
 it.each(invalidSnapshots)(
