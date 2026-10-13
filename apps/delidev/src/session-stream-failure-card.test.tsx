@@ -128,7 +128,7 @@ it.each([
   [FailureStage.Snapshot, Code.Unauthenticated],
   [FailureStage.Watch, Code.Unauthenticated],
 ])(
-  "keeps the connection refresh action and Info target on a %s authentication failure",
+  "keeps the gated connection refresh action on a %s authentication failure",
   async (stage, code) => {
     await mountSession(stage, code);
     const region = await screen.findByRole("region", {
