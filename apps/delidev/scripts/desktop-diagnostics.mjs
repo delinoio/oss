@@ -305,43 +305,44 @@ export function captureDesktopDiagnostics(
     let completion;
     return () =>
       (completion ??= (async () => {
+        // One deadline bounds the whole post-exit drain, including the wait for
+        // a failed sink's discarded pipe, so the launcher never waits twice.
         let timer;
-        const outcomes = await Promise.race([
-          drained,
-          new Promise((resolve) => {
-            timer = setTimeout(() => resolve(undefined), drainTimeoutMs);
-          }),
-        ]);
-        clearTimeout(timer);
-        if (outcomes?.every((outcome) => outcome === CaptureOutcome.Complete))
-          return;
-        const timedOut = outcomes === undefined;
-        if (timedOut) for (const stream of streams) stream.stop();
-        else {
-          // A failed sink resolves its capture immediately, but its pipe is
-          // still being discarded. Give a descendant-held pipe the same bound
-          // after the child result, then close only our read end so the
-          // launcher can exit.
-          const discarding = streams.filter((stream) => stream.writeFailed());
-          if (discarding.length) {
-            let discardTimer;
-            await Promise.race([
-              Promise.all(discarding.map((stream) => stream.sourceClosed)),
-              new Promise((resolve) => {
-                discardTimer = setTimeout(resolve, drainTimeoutMs);
-              }),
-            ]);
-            clearTimeout(discardTimer);
-            for (const stream of discarding) stream.stop();
+        const deadline = new Promise((resolve) => {
+          timer = setTimeout(() => resolve(undefined), drainTimeoutMs);
+        });
+        try {
+          const outcomes = await Promise.race([drained, deadline]);
+          if (
+            outcomes?.every((outcome) => outcome === CaptureOutcome.Complete)
+          )
+            return;
+          const timedOut = outcomes === undefined;
+          if (timedOut) for (const stream of streams) stream.stop();
+          else {
+            // A failed sink resolves its capture immediately, but its pipe is
+            // still being discarded. Give a descendant-held pipe only the time
+            // left in the original bound, then close just our read end so the
+            // launcher can exit.
+            const discarding = streams.filter((stream) => stream.writeFailed());
+            if (discarding.length) {
+              await Promise.race([
+                Promise.all(discarding.map((stream) => stream.sourceClosed)),
+                deadline,
+              ]);
+              for (const stream of discarding) stream.stop();
+            }
           }
+          // A write that is still incomplete at the bound is reported as a
+          // timeout; the process exit code and signal are never changed here.
+          if (timedOut) incomplete(IncompleteCode.DrainTimeout);
+          else if (outcomes.includes(CaptureOutcome.ReadFailed))
+            incomplete(IncompleteCode.ReadFailed);
+          if (streams.some((stream) => stream.writeFailed()))
+            incomplete(IncompleteCode.WriteFailed);
+        } finally {
+          clearTimeout(timer);
         }
-        // A write that is still incomplete at the bound is reported as a
-        // timeout; the process exit code and signal are never changed here.
-        if (timedOut) incomplete(IncompleteCode.DrainTimeout);
-        else if (outcomes.includes(CaptureOutcome.ReadFailed))
-          incomplete(IncompleteCode.ReadFailed);
-        if (streams.some((stream) => stream.writeFailed()))
-          incomplete(IncompleteCode.WriteFailed);
       })());
   };
 }

@@ -960,6 +960,35 @@ test("a failed sink pipe is closed when another stream times out", async () => {
   assert.deepEqual(incomplete, ["output-drain-timeout", "output-write-failed"]);
 });
 
+test("a failed sink pipe shares the original drain deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const failed = new PassThrough();
+  const slow = new PassThrough();
+  const incomplete = [];
+  let settled = false;
+  const completion = captureDesktopDiagnostics([], {
+    stdout: failingSink([]),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout: failed, stderr: slow })().then(() => (settled = true));
+  failed.write("early\n");
+  await flush();
+  // The other stream settles late in the drain window, leaving 10 ms.
+  t.mock.timers.tick(90);
+  slow.end();
+  await flush();
+  assert.equal(settled, false);
+  // The failed sink's descendant-held pipe has only the remaining time, not a
+  // second full interval.
+  t.mock.timers.tick(10);
+  await flush();
+  assert.equal(settled, true);
+  await completion;
+  assert.equal(failed.destroyed, true);
+  assert.deepEqual(incomplete, ["output-write-failed"]);
+});
+
 test("a sink error before input end is classified without an unhandled error", async () => {
   const input = new PassThrough();
   const writes = [];

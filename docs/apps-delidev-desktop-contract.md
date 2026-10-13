@@ -4458,8 +4458,9 @@ is still reported as `output-write-failed`. The launcher owns an `error` listene
 destination from before the first write. A destination error stops all further
 forwarding to that sink, keeps consuming and discarding the child's pipe, and
 reports `output-write-failed` independently for stdout and stderr. After the
-original child exits, a failed destination's discarded pipe gets the same 100 ms
-bound: if a descendant still holds it open, the launcher closes only its reader
+original child exits, a failed destination's discarded pipe shares the same
+single 100 ms drain deadline rather than starting a second interval: if a
+descendant still holds it open at that deadline, the launcher closes only its reader
 so the launcher can exit, and the classification stays `output-write-failed`. The listener
 is removed only when no outstanding write can still emit an error; a failed
 destination keeps it until the destination closes. The launcher also keeps an
