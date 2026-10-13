@@ -10,6 +10,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -22,6 +23,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { i18n, SupportedLanguage } from "./localization";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionPullRequests, readSessionPR } from "./session-pull-requests";
 
@@ -628,5 +630,84 @@ it.each(["number", "id"])(
         screen.queryByRole("button", { name: "Retry original PR link" }),
       ).toBeNull(),
     );
+  },
+);
+
+it.each([
+  [SupportedLanguage.English, "Pending PR unlink: "],
+  [SupportedLanguage.Korean, "대기 중인 PR 연결 해제: "],
+] as const)(
+  "names each pending unlink article by its purpose and safe association label in %s",
+  async (language, purpose) => {
+    const f = fixture(),
+      commit = f.unlink.getMockImplementation()!;
+    f.unlink.mockImplementation(async (request) => {
+      await commit(request);
+      throw new ConnectError("Original acknowledgment lost", Code.Unavailable);
+    });
+    f.replace([
+      ...f.rows,
+      create(ResourceSchema, {
+        id: newRequestId(),
+        projectId: f.rows[0]!.projectId,
+        sessionId: f.session.id,
+        kind: EntityKind.PULL_REQUEST,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode({
+          ...f.value,
+          number: "18",
+          pull_request_id: "9007199254740994",
+          pull_request_node_id: "PR_18",
+        }),
+      }),
+    ]);
+    try {
+      render(f.view);
+      openAssociations();
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Unlink #17" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Unlink #18" }),
+      );
+      await waitFor(() => expect(f.unlink).toHaveBeenCalledTimes(2));
+      void f.client.invalidateQueries({ refetchType: "active" });
+      await screen.findAllByRole("button", { name: "Retry original PR unlink" });
+      await act(async () => {
+        await i18n.changeLanguage(language);
+      });
+      const region = screen.getByRole("region", {
+        name: language === SupportedLanguage.English ? "Pending PR unlinks" : "대기 중인 PR 연결 해제",
+      });
+      const articles = within(region).getAllByRole("article");
+      expect(articles).toHaveLength(2);
+      const names = articles.map((article) => article.getAttribute("aria-label")!);
+      expect(new Set(names).size).toBe(2);
+      if (language === SupportedLanguage.English)
+        expect([...names].sort()).toEqual([
+          "Pending PR unlink: Resource unavailable · 1",
+          "Pending PR unlink: Resource unavailable · 2",
+        ]);
+      for (const name of names) expect(name.startsWith(purpose)).toBe(true);
+      // Neither text nor any accessibility attribute may expose the opaque IDs.
+      const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}|[0-9a-f]{8}/i;
+      for (const article of articles)
+        for (const element of [article, ...article.querySelectorAll("*")]) {
+          for (const attribute of element.getAttributeNames())
+            if (attribute.startsWith("aria-") || attribute === "title" || attribute === "alt")
+              expect(element.getAttribute(attribute)).not.toMatch(uuidPattern);
+        }
+      expect(region.textContent).not.toMatch(uuidPattern);
+      // Visible status and controls stay unchanged.
+      expect(within(articles[0]!).getByRole("status").textContent).toBe(
+        "PR unlink acknowledgment is uncertain.",
+      );
+      expect(screen.getAllByRole("button", { name: /Retry original PR unlink|원래 PR 연결 해제 다시 시도/ }).length).toBe(2);
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage(SupportedLanguage.English);
+      });
+    }
   },
 );
