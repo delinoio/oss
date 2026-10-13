@@ -507,7 +507,8 @@ function RetainedImage({
       url = URL.createObjectURL(
         new Blob([bytes], { type: imageMime[reference.mediaType] }),
       );
-      setState({ url, bytes: exportable ? bytes : undefined });
+      // Only the native Save command may export; skip retaining a copy elsewhere.
+      setState({ url, bytes: exportable && isTauri() ? bytes : undefined });
     })().catch((error) => {
       if (!controller.signal.aborted) {
         console.warn("delidev.image_input.readback_failed", {
@@ -536,20 +537,14 @@ function RetainedImage({
   ]);
   return (
     <li ref={element}>
-      {exportable && state.url && state.bytes ? (
-        isTauri() ? (
-          <GeneratedImageExport
-            bytes={state.bytes}
-            reference={reference}
-            sessionId={sessionId}
-            number={number}
-            active={active}
-          />
-        ) : (
-          <a href={state.url} download={`generated-image-${number}.png`}>
-            {copy("image-input.exportGenerated", { number })}
-          </a>
-        )
+      {exportable && state.url && state.bytes && isTauri() ? (
+        <GeneratedImageExport
+          bytes={state.bytes}
+          reference={reference}
+          sessionId={sessionId}
+          number={number}
+          active={active}
+        />
       ) : null}
       {pending ? (
         <p role="status">{copy("image-input.loading")}</p>
