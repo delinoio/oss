@@ -12,6 +12,16 @@ reorder, pagination, removal, filtering, reflow and same-identity reconnect. Num
 are never reassigned within that lifetime; replacing the connection identity resets
 the registry. Labels confer no eligibility, resource existence or operation authority.
 
+Saved Runner Device inventory rows label both the heading and the secondary
+identity line with the Runner presentation kind, so a nameless row shows the
+localized Runner fallback and Runner numbers stay independent from generic Resource
+numbers. Original machine IDs remain the React key and the value passed to
+inspection. The Agent Worker wizard retains only the exact optional document name or
+alias of a selected account (`productResourceObservedName`); it never stores a
+localized or numbered presentation string, so a nameless selected account derives
+its Account fallback at render time and relocalizes after a failed poll or a language
+change. A genuine alias that equals a generated fallback string stays a user name.
+
 `apps/delidev/src/product-identity.ts` owns the shared pure typed projection;
 `product-identity-labels.tsx` owns desktop observation of existing query-cache data.
 Mobile imports the pure projection with its own connection/view lifetime. Preserve

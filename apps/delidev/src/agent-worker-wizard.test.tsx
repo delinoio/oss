@@ -599,3 +599,95 @@ it.each([
   expect(screen.queryByRole("option", { name: /Endpoint One/ })).toBeNull();
   expect(f.save).not.toHaveBeenCalled();
 });
+async function selectFirstAccount(f: ReturnType<typeof fixture>) {
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Account source 1" }),
+    `api:${f.provider.id}`,
+  );
+  const row = f.accounts[0];
+  const rows = await screen.findAllByRole("checkbox");
+  fireEvent.click(rows[0]);
+  await waitFor(() =>
+    expect(
+      f.client
+        .getQueryCache()
+        .getAll()
+        .some(
+          (q) =>
+            (q.state.data as { resource?: Resource } | undefined)?.resource
+              ?.id === row.id &&
+            q.state.status === "success" &&
+            q.state.fetchStatus === "idle",
+        ),
+    ).toBe(true),
+  );
+  await act(async () => {});
+}
+function selectedAccountNames() {
+  return screen
+    .getAllByRole("checkbox", { checked: true })
+    .map((box) => box.getAttribute("aria-label"));
+}
+it("derives the nameless selected account fallback at render time across a poll failure and a language change", async () => {
+  const { i18n } = await import("./localization");
+  const f = fixture();
+  const row = f.accounts[0];
+  row.documentJson = encode({ ...document(row), alias: undefined });
+  render(f.view());
+  await selectFirstAccount(f);
+  expect(selectedAccountNames()).toEqual([
+    expect.stringMatching(/^Select Account unavailable · \d+$/),
+  ]);
+  const english = selectedAccountNames()[0]!;
+  const original = f.get.getMockImplementation()!;
+  f.get.mockImplementation(() => {
+    throw new ConnectError("Fixture poll unavailable", Code.Unavailable);
+  });
+  await act(async () => {
+    await f.client.refetchQueries({ type: "active" });
+  });
+  await waitFor(() => expect(f.get).toHaveBeenCalled());
+  expect(selectedAccountNames()).toEqual([english]);
+  try {
+    await act(() => i18n.changeLanguage("ko"));
+    expect(selectedAccountNames()).toEqual([
+      expect.stringMatching(/^계정 정보 없음 · \d+ 선택$/),
+    ]);
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+  expect(selectedAccountNames()).toEqual([english]);
+  f.get.mockImplementation(original);
+});
+it("retains a genuine alias equal to a generated fallback byte for byte after a poll failure", async () => {
+  const f = fixture();
+  const row = f.accounts[0];
+  const alias = "Account unavailable · 9";
+  row.documentJson = encode({ ...document(row), alias });
+  render(f.view());
+  await selectFirstAccount(f);
+  expect(selectedAccountNames()).toEqual([`Select ${alias}`]);
+  f.get.mockImplementation(() => {
+    throw new ConnectError("Fixture poll unavailable", Code.Unavailable);
+  });
+  await act(async () => {
+    await f.client.refetchQueries({ type: "active" });
+  });
+  expect(selectedAccountNames()).toEqual([`Select ${alias}`]);
+});
+it("keeps name precedence over alias in the retained selected account name", async () => {
+  const f = fixture();
+  const row = f.accounts[0];
+  row.documentJson = encode({ ...document(row), name: "Named", alias: "Other" });
+  render(f.view());
+  await selectFirstAccount(f);
+  expect(selectedAccountNames()).toEqual(["Select Named"]);
+  f.get.mockImplementation(() => {
+    throw new ConnectError("Fixture poll unavailable", Code.Unavailable);
+  });
+  await act(async () => {
+    await f.client.refetchQueries({ type: "active" });
+  });
+  expect(selectedAccountNames()).toEqual(["Select Named"]);
+});
