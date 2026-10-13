@@ -284,8 +284,11 @@ impl State {
 
     // Replaces the children that no longer show the shared selection and
     // records the superseded ones on the operation, whose receipt must observe
-    // their close callbacks. Both steps run under one state lock, so a callback
-    // cannot arrive before the registration.
+    // their close callbacks. An older committed receipt whose reconciliation
+    // failed and still owns an original generation awaits it as well, so it
+    // cannot complete early once a newer operation's replacement is selected.
+    // All steps run under one state lock, so a callback cannot arrive before
+    // the registration.
     fn supersede_children(
         &mut self,
         key: &str,
@@ -297,6 +300,7 @@ impl State {
         if let Some(operation) = self.page_operations.get_mut(key) {
             operation.await_originals(&replacement.superseded);
         }
+        self.track_outstanding_superseded(profile, &replacement.superseded);
         Ok(replacement)
     }
 
@@ -6434,6 +6438,44 @@ esac
         assert_eq!(retried.phase, PagePhase::CleanupPending);
         host.child_closed(&original);
         assert_eq!(host.page_receipt(&key).unwrap().phase, PagePhase::Completed);
+    }
+
+    #[test]
+    fn later_reconciliation_registers_with_an_older_unresolved_receipt() {
+        let (_temp, host, record, _view_id, original) = active_storage_fixture();
+        mark_native_child(&host, "fixture");
+        let older = admit_close(&host, &record, &original.tab);
+        // The older reconciliation fails before it records any child, so its
+        // slot is released while the committed receipt stays pending.
+        host.complete_page_cleanup(&older, &record.id, true, Err(NativeFailure::SidecarFailed))
+            .unwrap();
+        // A later operation commits on the same profile and supersedes the
+        // older receipt's still-original child.
+        let request = page_request(PageAction::Create, Some("https://fixture.test/next"), None);
+        host.prepare_pages(OWNER, None, &record, &request, commit_fixture)
+            .unwrap();
+        let newer = operation_key(OWNER, &record.id, request.operation_id.as_deref().unwrap());
+        assert_eq!(
+            finish_fixture_pages(&host, &record, &newer).phase,
+            PagePhase::CleanupPending
+        );
+        let original_child = BTreeSet::from([("fixture".to_string(), original.generation)]);
+        {
+            let state = host.state.lock().unwrap();
+            assert_eq!(state.page_operations[&newer].awaiting_close, original_child);
+            assert_eq!(state.page_operations[&older].awaiting_close, original_child);
+        }
+        // Observing the older receipt before the close callback finds nothing
+        // to reconcile, yet must keep waiting.
+        let retried = finish_fixture_pages(&host, &record, &older);
+        assert_eq!(retried.phase, PagePhase::CleanupPending);
+        assert!(!retried.native_cleanup_complete);
+        host.child_closed(&original);
+        for key in [&older, &newer] {
+            let receipt = host.page_receipt(key).unwrap();
+            assert_eq!(receipt.phase, PagePhase::Completed);
+            assert!(receipt.native_cleanup_complete);
+        }
     }
 
     #[test]

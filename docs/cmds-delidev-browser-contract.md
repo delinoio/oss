@@ -187,7 +187,11 @@ child removed before the retried Observe is still awaited. Only children that
 existed when the receipt's metadata committed are attributed to it: the receipt
 records the highest view generation at that commit, so a replacement child created
 after it (for example by a partially failed reconciliation) is never added to the
-awaited set when it is later hidden or closed. Observing the
+awaited set when it is later hidden or closed. When a later
+operation's reconciliation supersedes a child that such an older unresolved receipt
+still owns as an original, the child is registered on that receipt as well, so
+observing the older receipt before the close callback cannot complete it early.
+Observing the
 receipt re-evaluates this set without a second metadata mutation or a duplicate
 close request. Failures before admission are returned as a
 typed `not-admitted` error and prove nothing changed; any later failure is
