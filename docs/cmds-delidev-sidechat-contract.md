@@ -369,6 +369,15 @@ renews the accepted retry: claim is rejected, or publication records the claimed
 runtime as a retained cleanup owner without native re-execution, retargeting
 child metadata or releasing the active generation.
 
+The retry execution keeps the initiating actor's authority after Fork publication.
+Every execution authority decision (grant registration, native startup, input
+send and proxied inference) resolves the succeeded retry Fork job named by the
+execution's Fork identity, requires its generation, child, runtime, question,
+previous execution and captured Worker instance/device to match, and rechecks its
+recorded actor. Revoking that paired client prevents the retained question from
+being claimed or sent; the published runtime stays a cleanup owner and no other
+actor, generation or Worker adopts the authority.
+
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted
 prefix. Verify the original metadata-only child reference without preparing it

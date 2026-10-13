@@ -3,10 +3,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -199,4 +203,154 @@ func TestSidechatQuestionRetryRequiresExactPostAdmissionChildRevision(t *testing
 			}
 		})
 	}
+}
+
+// pairedClientRetryFixture admits a retry under a paired client device and
+// publishes its Fork. The retry execution is delivered but not yet registered.
+func pairedClientRetryFixture(t *testing.T, child *continuationFixture) (domain.ID, domain.SidechatRetry, domain.ForkJobInput) {
+	t.Helper()
+	client := domain.NewID()
+	doctorPut(t, child.service, domain.DeviceKind, client, 0, domain.Device{Type: domain.ClientDevice})
+	actor := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: client})
+	request := retryRequestFixture(t, child)
+	if _, err := child.service.RetrySidechatQuestion(actor, connect.NewRequest(request)); err != nil {
+		t.Fatal(err)
+	}
+	generation := retryViewFixture(t, child, request.Mutation.RequestId).Generations[0]
+	job, input := forkClaimFixture(t, child, string(generation.ForkJobID))
+	if input.Actor.DeviceID != client {
+		t.Fatal("retry did not record its initiating client")
+	}
+	reportRetryForkFixture(t, child, job, input)
+	return client, generation, input
+}
+
+func deliverRetryExecutionFixture(t *testing.T, child *continuationFixture) {
+	t.Helper()
+	for {
+		if !child.workerStream.Receive() {
+			t.Fatal("missing retry execution assignment", child.workerStream.Err())
+		}
+		if job := child.workerStream.Msg().Job; job != nil {
+			child.job, child.turn, child.startupToken, child.input = job, domain.NewID(), "", domain.ExecutionJobInput{}
+			var envelope domain.Job
+			if domain.Decode(job.DocumentJson, &envelope) != nil || envelope.Type != domain.ExecuteSessionJob || domain.Decode(envelope.Input, &child.input) != nil || child.input.SidechatRetry == nil {
+				t.Fatal("invalid retry execution assignment")
+			}
+			return
+		}
+	}
+}
+
+func registerRetryExecutionFixture(f *continuationFixture) error {
+	token := apiproxy.TokenPrefix + strings.Repeat("x", 32) + string(domain.NewID())
+	digest := sha256.Sum256([]byte(token))
+	_, err := f.workerClient.RegisterExecution(context.Background(), ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]}))
+	return err
+}
+
+func TestSidechatQuestionRetryExecutionRechecksInitiatingActor(t *testing.T) {
+	t.Run("revoked actor cannot claim the retained question", func(t *testing.T) {
+		_, child := completedRetrySidechatFixture(t)
+		client, generation, input := pairedClientRetryFixture(t, child)
+		deliverRetryExecutionFixture(t, child)
+		record, err := child.service.Store.Get(context.Background(), domain.DeviceKind, client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doctorPut(t, child.service, domain.DeviceKind, client, record.Revision, domain.Device{Type: domain.ClientDevice, Revoked: true})
+		if err := registerRetryExecutionFixture(child); err == nil {
+			t.Fatal("revoked initiating actor claimed native execution")
+		}
+		// The accepted runtime stays recorded for cleanup and the generation stays active.
+		session, _ := store.Decode[domain.Session](child.refresh(t))
+		g := session.SidechatRetries[0]
+		if session.SidechatActiveRetry != generation.ID || g.Fork == nil || g.Fork.RuntimeID != input.RuntimeID || g.Completed {
+			t.Fatal("revocation released the original runtime owner", g)
+		}
+	})
+	t.Run("unrevoked actor proceeds once", func(t *testing.T) {
+		_, child := completedRetrySidechatFixture(t)
+		pairedClientRetryFixture(t, child)
+		deliverRetryExecutionFixture(t, child)
+		if err := registerRetryExecutionFixture(child); err != nil {
+			t.Fatal("valid initiating actor was denied", err)
+		}
+	})
+	t.Run("mismatched origin denies", func(t *testing.T) {
+		_, child := completedRetrySidechatFixture(t)
+		_, generation, _ := pairedClientRetryFixture(t, child)
+		deliverRetryExecutionFixture(t, child)
+		grant := store.ExecutionGrant{JobID: domain.ID(child.job.Id), ExecutionID: child.input.ExecutionID, MachineID: domain.ID(child.machine.Id), InstanceID: domain.ID(child.workerInstance)}
+		check := func(input domain.ExecutionJobInput) error {
+			return child.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+				return requireSidechatRetryExecutionOrigin(tx, grant, input)
+			})
+		}
+		if err := check(child.input); err != nil {
+			t.Fatal("exact origin denied", err)
+		}
+		cases := map[string]func(*domain.ExecutionJobInput){
+			"missing job": func(i *domain.ExecutionJobInput) { fork := *i.Fork; fork.JobID = domain.NewID(); i.Fork = &fork },
+			"wrong job": func(i *domain.ExecutionJobInput) {
+				fork := *i.Fork
+				fork.JobID = generation.ForkJobID
+				i.Fork = &fork
+				i.SessionID = domain.NewID()
+			},
+			"other generation": func(i *domain.ExecutionJobInput) {
+				retry := *i.SidechatRetry
+				retry.GenerationID = domain.NewID()
+				i.SidechatRetry = &retry
+			},
+			"stale instance": func(i *domain.ExecutionJobInput) {
+				retry := *i.SidechatRetry
+				retry.WorkerInstanceID = domain.NewID()
+				i.SidechatRetry = &retry
+			},
+			"other device": func(i *domain.ExecutionJobInput) {
+				retry := *i.SidechatRetry
+				retry.WorkerDeviceID = domain.NewID()
+				i.SidechatRetry = &retry
+			},
+			"other runtime": func(i *domain.ExecutionJobInput) { fork := *i.Fork; fork.RuntimeID = domain.NewID(); i.Fork = &fork },
+			"other question": func(i *domain.ExecutionJobInput) {
+				retry := *i.SidechatRetry
+				retry.QuestionID = domain.NewID()
+				i.SidechatRetry = &retry
+			},
+			"not a retry": func(i *domain.ExecutionJobInput) { i.SidechatRetry = nil },
+		}
+		for name, mutate := range cases {
+			changed := child.input
+			mutate(&changed)
+			if check(changed) == nil {
+				t.Fatal("mismatched origin accepted:", name)
+			}
+		}
+		// A Fork job whose recorded actor no longer exists cannot authorize the execution.
+		_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-foreign-actor", nil, func(tx *store.Tx) (any, error) {
+			r, e := tx.Get(domain.JobKind, generation.ForkJobID)
+			if e != nil {
+				return nil, e
+			}
+			job, e := store.Decode[domain.Job](r)
+			var fork domain.ForkJobInput
+			if e != nil || domain.Decode(job.Input, &fork) != nil {
+				return nil, e
+			}
+			fork.Actor.DeviceID = domain.NewID()
+			job.Input, e = json.Marshal(fork)
+			if e != nil {
+				return nil, e
+			}
+			return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if check(child.input) == nil {
+			t.Fatal("unknown initiating actor accepted")
+		}
+	})
 }

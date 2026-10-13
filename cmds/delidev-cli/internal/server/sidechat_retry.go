@@ -343,6 +343,32 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 	return nil
 }
 
+// requireSidechatRetryExecutionOrigin resolves the published retry Fork that
+// created this execution and rechecks its initiating actor. Revocation after
+// Fork publication must stop the retained question from being sent, while the
+// original runtime stays recorded for cleanup. Any missing or mismatched Fork
+// job, generation, runtime or Worker identity denies without adopting another
+// authority.
+func requireSidechatRetryExecutionOrigin(tx *store.Tx, grant store.ExecutionGrant, input domain.ExecutionJobInput) error {
+	retry := input.SidechatRetry
+	if retry == nil || input.Fork == nil || input.Fork.JobID.Validate() != nil {
+		return retryConflict()
+	}
+	r, err := tx.Get(domain.JobKind, input.Fork.JobID)
+	if err != nil {
+		return err
+	}
+	job, err := store.Decode[domain.Job](r)
+	var fork domain.ForkJobInput
+	if err != nil || r.SessionID != input.SessionID || job.Type != domain.ForkSessionJob || job.State != domain.JobSucceeded || job.MachineID != grant.MachineID || job.InstanceID != retry.WorkerInstanceID || job.AssignedDeviceID != retry.WorkerDeviceID || domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil {
+		return retryConflict()
+	}
+	if fork.Retry == nil || fork.Retry.GenerationID != retry.GenerationID || fork.ChildSessionID != input.SessionID || fork.RuntimeID != input.Fork.RuntimeID || fork.Retry.WorkerInstanceID != retry.WorkerInstanceID || fork.Retry.WorkerDeviceID != retry.WorkerDeviceID || fork.Retry.QuestionID != retry.QuestionID || fork.Retry.PreviousJobID != retry.PreviousJobID || fork.Retry.PreviousExecutionID != retry.PreviousExecutionID {
+		return retryConflict()
+	}
+	return tx.RequireForkActor(fork.Actor)
+}
+
 // Reject only the current queued job. A retry owner can be released only when
 // the original admission still proves that no Worker or native runtime claimed it.
 func failForkBeforeClaim(tx *store.Tx, r store.Record, job domain.Job, problem error) (store.Record, domain.ID, error) {
