@@ -723,7 +723,8 @@ The existing ordered template text remains exact. Compose one deterministic
 shared instruction after it in Execute only, including it in the aggregate
 256 KiB limit. The instruction quotes the prefix JSON-style (escaping quotes,
 backslashes and control characters) without HTML escaping, so `<`, `>` and `&`
-stay exact UTF-8 rather than becoming `\u003c`, `\u003e` or `\u0026`. Plan and
+stay exact UTF-8 rather than becoming `\u003c`, `\u003e` or `\u0026`, and
+U+2028/U+2029 line separators are likewise kept literal. Plan and
 read-only Sidechat receive no prefix instruction. Codex,
 Claude Code, OpenCode and Grok Build use their existing instruction channels;
 Grok's unchanged empty-template Plan profile remains independently required.

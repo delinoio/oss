@@ -80,6 +80,9 @@ func TestBranchPrefixInstructionLiteralIsExact(t *testing.T) {
 		{"non-ascii", "팀-🐦/", `"팀-🐦/"`},
 		{"quote", `a"b`, `"a\"b"`},
 		{"tab", "a\tb", `"a\tb"`},
+		{"line-separator", "a\u2028b", "\"a\u2028b\""},
+		{"paragraph-separator", "a\u2029b", "\"a\u2029b\""},
+		{"replacement-character", "a\ufffdb", "\"a\ufffdb\""},
 	}
 	for _, tc := range cases {
 		c := ExecutionConfiguration{Harness: Codex, BranchPrefix: &BranchPrefixSelection{Version: 1, Prefix: tc.prefix}}
@@ -87,7 +90,7 @@ func TestBranchPrefixInstructionLiteralIsExact(t *testing.T) {
 		if err != nil || !strings.Contains(got, "concatenate the literal prefix "+tc.quoted+" with a suffix") {
 			t.Fatalf("%s: instruction literal changed: %q %v", tc.name, got, err)
 		}
-		if strings.Contains(got, `\u00`) {
+		if strings.Contains(got, `\u00`) || strings.Contains(got, `\u20`) || strings.Contains(got, `\ufffd`) {
 			t.Fatalf("%s: unexpected unicode substitution: %q", tc.name, got)
 		}
 		for _, mode := range []SessionMode{PlanMode} {

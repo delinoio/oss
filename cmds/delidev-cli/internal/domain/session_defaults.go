@@ -77,17 +77,43 @@ func (p BranchPrefixSelection) Validate() error {
 }
 
 // quoteBranchPrefixLiteral returns the JSON-style quoted prefix for the plain-text
-// instruction. Unlike json.Marshal it keeps <, > and & exact because the result
-// is never embedded in HTML; quotes, backslashes and control characters stay escaped.
+// instruction. Unlike encoding/json it keeps <, > & and the U+2028/U+2029
+// separators exact because the result is never embedded in HTML or JavaScript;
+// quotes, backslashes and control characters stay escaped.
 func quoteBranchPrefixLiteral(prefix string) string {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(prefix); err != nil {
-		// A string cannot fail JSON encoding; fall back to strconv quoting defensively.
-		return strconv.Quote(prefix)
+	const hexDigits = "0123456789abcdef"
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(prefix); {
+		r, size := utf8.DecodeRuneInString(prefix[i:])
+		i += size
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\b':
+			b.WriteString(`\b`)
+		case r == '\f':
+			b.WriteString(`\f`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20:
+			b.WriteString(`\u00`)
+			b.WriteByte(hexDigits[r>>4])
+			b.WriteByte(hexDigits[r&0xf])
+		case r == utf8.RuneError && size == 1:
+			// Invalid UTF-8 becomes U+FFFD, as encoding/json does.
+			b.WriteString(`\ufffd`)
+		default:
+			b.WriteRune(r)
+		}
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	b.WriteByte('"')
+	return b.String()
 }
 
 // NativeInstructions retains template bytes and appends exactly one shared
