@@ -14,6 +14,7 @@ import {
   SessionQuery,
   clientFailure,
   newRequestId,
+  type ClientFailure,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import {
@@ -28,7 +29,7 @@ import {
 } from "./session-diff-model";
 import { readReviewContext, type ReviewFile } from "./local-review-model";
 import { workspaceReadOptions } from "./session-files";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 import { useRetainedMutationIntents } from "./mutation";
@@ -305,13 +306,14 @@ export function RepositoryDiff({
   // The explicit refresh reads through a disposable query, so its failure is
   // recorded here, bound to the session and repository that issued it.
   const optionsOwner = [sessionId, repository].join("\u0000");
-  const [refreshFailedOwner, setRefreshFailedOwner] = useState<
-    string | undefined
+  const [refreshFailure, setRefreshFailure] = useState<
+    { owner: string; failure: ClientFailure; code: Code } | undefined
   >();
+  const refreshFailed = refreshFailure?.owner === optionsOwner;
   const optionsStale =
     comparison === Comparison.Branch &&
     Boolean(options.data) &&
-    (options.isError || refreshFailedOwner === optionsOwner);
+    (options.isError || refreshFailed);
   const [refreshing, setRefreshing] = useState(false);
   const scope = [
     sessionId,
@@ -425,7 +427,7 @@ export function RepositoryDiff({
       const fresh = readDiffOptions(response.documentJson, repository);
       queryClient.setQueryData(accepted.queryKey, response);
       // Only an accepted in-scope inventory ends the stale observation.
-      setRefreshFailedOwner(undefined);
+      setRefreshFailure(undefined);
       const nextBase = baseRef ?? fresh.default;
       const available =
         nextBase !== undefined &&
@@ -444,13 +446,18 @@ export function RepositoryDiff({
         await result.refetch();
     } catch (error) {
       if (mounted.current && scopeGeneration.current === token) {
+        const failure = clientFailure(error);
         console.warn("delidev.diff.options_refresh_failed", {
           sessionId,
           repository,
           operation: "git-diff-options",
-          classification: clientFailure(error).code,
+          classification: failure.code,
         });
-        setRefreshFailedOwner(optionsOwner);
+        setRefreshFailure({
+          owner: optionsOwner,
+          failure,
+          code: ConnectError.from(error).code,
+        });
       }
     } finally {
       if (mounted.current) setRefreshing(false);
@@ -480,14 +487,20 @@ export function RepositoryDiff({
       setBaseRef(nextBase);
     }
   };
-  const failureMessage = (error: unknown) =>
-    error instanceof ConnectError && error.code === Code.PermissionDenied
+  const failureCodeMessage = (code?: Code) =>
+    code === Code.PermissionDenied
       ? copy("session-diff.permissionFailure")
-      : error instanceof ConnectError && error.code === Code.ResourceExhausted
+      : code === Code.ResourceExhausted
         ? copy("session-diff.oversizedResult")
-        : error instanceof ConnectError && error.code === Code.Aborted
+        : code === Code.Aborted
           ? copy("session-diff.changedComparison")
           : copy("session-diff.unavailableComparison");
+  const failureMessage = (error: unknown) =>
+    failureCodeMessage(error instanceof ConnectError ? error.code : undefined);
+  const optionsFailureMessage = (code: Code) =>
+    [Code.InvalidArgument, Code.Unimplemented].includes(code)
+      ? copy("session-diff.optionsUnavailable")
+      : failureCodeMessage(code);
   const closeMenu = () => {
     setMenu(false);
     menuTrigger.current?.focus();
@@ -636,13 +649,19 @@ export function RepositoryDiff({
         <>
           <Problem error={options.error} />
           <p role="alert">
-            {options.error instanceof ConnectError &&
-            [Code.InvalidArgument, Code.Unimplemented].includes(
-              options.error.code,
-            )
-              ? copy("session-diff.optionsUnavailable")
+            {options.error instanceof ConnectError
+              ? optionsFailureMessage(options.error.code)
               : failureMessage(options.error)}
           </p>
+        </>
+      ) : null}
+      {comparison === Comparison.Branch &&
+      !options.error &&
+      refreshFailure &&
+      refreshFailed ? (
+        <>
+          <Failure failure={refreshFailure.failure} />
+          <p role="alert">{optionsFailureMessage(refreshFailure.code)}</p>
         </>
       ) : null}
       {comparison === Comparison.Branch && options.data && !supportedBase ? (

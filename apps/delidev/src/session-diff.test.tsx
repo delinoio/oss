@@ -1288,6 +1288,40 @@ it("cancels the disposable options read when the scope changes", async () => {
   options.release();
 });
 
+it("presents a sanitized typed problem for a failed options refresh until a refresh is accepted", async () => {
+  const { f } = inventoryFixture([{ name: "main" }], "main");
+  render(<f.View />);
+  await screen.findByText("+<script>doNotRun()</script>");
+  f.read.mockRejectedValueOnce(
+    new ConnectError("Worker unavailable", Code.Unavailable),
+  );
+  refreshDiff();
+  await screen.findByText(
+    "Refresh failed. The previous observation is stale and shown below.",
+  );
+  await screen.findByText("DeliDev could not complete this request.");
+  expect(
+    screen.getByText(/This comparison is unavailable\./),
+  ).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Refresh diff" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  refreshDiff();
+  await waitFor(() =>
+    expect(
+      screen.queryByText("DeliDev could not complete this request."),
+    ).toBeNull(),
+  );
+  expect(
+    screen.queryByText(
+      "Refresh failed. The previous observation is stale and shown below.",
+    ),
+  ).toBeNull();
+});
+
 it("keeps working-tree Refresh as a direct diff read without options", async () => {
   const { f, operations } = inventoryFixture([{ name: "main" }], "main");
   render(<f.View />);
