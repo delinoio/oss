@@ -98,7 +98,10 @@ function readEscape(text, at) {
     const limit = next <= "3" ? 3 : 2;
     let end = at + 1;
     while (end < at + 1 + limit && /[0-7]/.test(text[end] ?? "")) end++;
-    return [String.fromCharCode(Number.parseInt(text.slice(at + 1, end), 8)), end];
+    return [
+      String.fromCharCode(Number.parseInt(text.slice(at + 1, end), 8)),
+      end,
+    ];
   }
   return [next, at + 2];
 }
